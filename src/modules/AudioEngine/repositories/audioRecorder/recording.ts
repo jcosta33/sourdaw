@@ -19,6 +19,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
+import { isRecordingSampleCount } from '../../models/RecordingRingProtocol';
 import { audioRecordingStore } from '../../stores/audioRecordingStore';
 import { audioEngine } from '../createWebAudioEngine';
 
@@ -121,6 +122,7 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
                     sourceNode,
                     recordingNode: readyRecordingNode,
                     recordingWorker: readyRecordingWorker,
+                    captureSampleRate: ctx.sampleRate,
                     status: 'starting',
                     onTerminal,
                     decodePending: false,
@@ -152,7 +154,12 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
                 recordingWorker.onmessage = ({ data }: MessageEvent): void => {
                     const msg = data as
                         | { type: 'ready' }
-                        | { type: 'wav'; buffer: ArrayBuffer }
+                        | {
+                              type: 'wav';
+                              buffer: ArrayBuffer;
+                              sampleZeroContextFrame?: unknown;
+                              sampleRate?: unknown;
+                          }
                         | { type: 'error'; message: string; tempFile?: string };
 
                     if (msg.type === 'ready') {
@@ -166,7 +173,7 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
                         audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: true });
                     } else if (msg.type === 'wav') {
                         // Worker has flushed OPFS → decode WAV on the main thread.
-                        void decodeAndDeliver(session, msg.buffer, ctx);
+                        void decodeAndDeliver(session, msg.buffer, msg.sampleZeroContextFrame, msg.sampleRate, ctx);
                     } else {
                         logger.error(new Error(`Recording worker error on track ${trackId}: ${msg.message}`));
                         settleRecordingSession(session, { kind: 'failed', reason: 'worker-error' });
@@ -217,7 +224,13 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function decodeAndDeliver(session: RecordingSession, wavBuffer: ArrayBuffer, ctx: AudioContext): Promise<void> {
+async function decodeAndDeliver(
+    session: RecordingSession,
+    wavBuffer: ArrayBuffer,
+    sampleZeroContextFrame: unknown,
+    sampleRate: unknown,
+    ctx: AudioContext
+): Promise<void> {
     const { trackId } = session;
     if (activeSessions.get(trackId) !== session) {
         return;
@@ -234,13 +247,24 @@ async function decodeAndDeliver(session: RecordingSession, wavBuffer: ArrayBuffe
         settleRecordingSession(session, { kind: 'failed', reason: 'empty-wav' });
         return;
     }
+    if (
+        typeof sampleZeroContextFrame !== 'number' ||
+        !isRecordingSampleCount(sampleZeroContextFrame) ||
+        typeof sampleRate !== 'number' ||
+        !Number.isInteger(sampleRate) ||
+        sampleRate <= 0 ||
+        sampleRate !== session.captureSampleRate
+    ) {
+        settleRecordingSession(session, { kind: 'failed', reason: 'invalid-capture-metadata' });
+        return;
+    }
 
     try {
         const buffer = await ctx.decodeAudioData(wavBuffer);
         if (activeSessions.get(trackId) !== session) {
             return;
         }
-        settleRecordingSession(session, { kind: 'completed', buffer });
+        settleRecordingSession(session, { kind: 'completed', buffer, sampleZeroContextFrame, sampleRate });
     } catch (error) {
         if (activeSessions.get(trackId) !== session) {
             return;

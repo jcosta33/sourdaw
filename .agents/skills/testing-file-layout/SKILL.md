@@ -60,6 +60,15 @@ removal inverse's intermediate snapshot or run grouped undo and redo. When one b
 by an earlier member, inspect the real history entry and replay the group against both raw CRDT authority and its store
 projection; a correct forward final state alone cannot prove the inverse was composed from the batch prefix.
 
+### 9. Worker-ready recording admission needs the real first-frame seam
+
+Commit `c9fd03bfb9b13d939c20998ff6b3307fc7b5d755` made recording capture start from a worker-ready
+continuation while the command still returned success before the worklet captured input. For any recording-admission
+change, hold worker readiness through the real recorder-to-transport route and drive the first nonempty processor block
+at a known `AudioWorkletGlobalScope.currentFrame`. Prove that no successful-start observable or uncaptured transport
+interval exists before the actual sample-zero receipt, then prove exactly one start after it. A returned boolean, worker
+ready message, main-thread callback time, or pre-resolved recorder mock cannot establish capture-clock alignment.
+
 ## References
 
 - [docs/06-testing.md](../../../docs/06-testing.md) — Vitest layout, mocks, DI in tests.

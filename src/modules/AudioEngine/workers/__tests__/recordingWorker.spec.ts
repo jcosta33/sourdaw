@@ -2,11 +2,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import {
     beginRecordingRingWrite,
+    clearRecordingSampleZeroContextFrame,
     completeRecordingRingWrite,
     RECORDING_RING_CONTROL_BYTES,
     RECORDING_RING_CONTROL_INTS,
     RECORDING_RING_SEQUENCE_INDEX,
     storeRecordingSampleCount,
+    storeRecordingSampleZeroContextFrame,
 } from '../../models/RecordingRingProtocol';
 import { MAX_MONO_FLOAT32_RIFF_SAMPLES } from '../../models/RecordingWavLimits';
 
@@ -146,7 +148,12 @@ function makeRing(capacity: number): { sab: SharedArrayBuffer; control: Int32Arr
     return { sab, control, ring };
 }
 
-function publishCount(control: Int32Array, sampleCount: number): void {
+function publishCount(control: Int32Array, sampleCount: number, sampleZeroContextFrame = 17): void {
+    if (sampleCount === 0) {
+        clearRecordingSampleZeroContextFrame(control);
+    } else {
+        storeRecordingSampleZeroContextFrame(control, sampleZeroContextFrame);
+    }
     storeRecordingSampleCount(control, sampleCount);
 }
 
@@ -394,8 +401,8 @@ describe('recordingWorker temp-file isolation', () => {
             const bRing = makeRing(16);
             aRing.ring.set([0.125, -0.25]);
             bRing.ring.set([0.75, -1]);
-            publishCount(aRing.control, 2);
-            publishCount(bRing.control, 2);
+            publishCount(aRing.control, 2, 101);
+            publishCount(bRing.control, 2, 202);
 
             sendToIsolatedWorker(a, { type: 'init', sab: aRing.sab, sampleRate: 48000 });
             await waitForIsolatedWorker(a, 'ready');
@@ -419,6 +426,7 @@ describe('recordingWorker temp-file isolation', () => {
             const aWav = await waitForIsolatedWorker(a, 'wav');
             await new Promise((resolve) => setTimeout(resolve, 0));
             expect(Array.from(new Float32Array(aWav.buffer as ArrayBuffer, WAV_HEADER_BYTES))).toEqual([0.125, -0.25]);
+            expect(aWav).toMatchObject({ sampleZeroContextFrame: 101, sampleRate: 48000 });
             expect(directory.removedEntries).toEqual(['rec-tmp-worker-a.pcm']);
             expect(directory.entries.has('rec-tmp-worker-b.pcm')).toBe(true);
 
@@ -428,6 +436,7 @@ describe('recordingWorker temp-file isolation', () => {
             await new Promise((resolve) => setTimeout(resolve, 0));
 
             expect(Array.from(new Float32Array(bWav.buffer as ArrayBuffer, WAV_HEADER_BYTES))).toEqual([0.75, -1]);
+            expect(bWav).toMatchObject({ sampleZeroContextFrame: 202, sampleRate: 48000 });
             expect(directory.removedEntries).toEqual(['rec-tmp-worker-a.pcm', 'rec-tmp-worker-b.pcm']);
             expect(directory.entries.size).toBe(0);
         } finally {
@@ -464,6 +473,8 @@ describe('buildWavHeader', () => {
         expect(() => mod.buildWavHeader(MAX_MONO_FLOAT32_RIFF_SAMPLES + 1, 48000)).toThrow(RangeError);
         expect(mod.canAppendWavSamples(MAX_MONO_FLOAT32_RIFF_SAMPLES - 1, 1)).toBe(true);
         expect(mod.canAppendWavSamples(MAX_MONO_FLOAT32_RIFF_SAMPLES, 1)).toBe(false);
+        expect(() => mod.buildWavHeader(1, 0)).toThrow(RangeError);
+        expect(() => mod.buildWavHeader(1, Number.NaN)).toThrow(RangeError);
     });
 });
 
@@ -484,8 +495,9 @@ describe('acquireRingChunk', () => {
 
         // The reader already drained 0–3; the remaining interval 4–5 starts
         // inside surviving history and reads the wrapped slots 0–1.
-        const { chunk, nextReadHead } = expectOkRead(mod.acquireRingChunk(ring, control, 4));
+        const { chunk, nextReadHead, sampleZeroContextFrame } = expectOkRead(mod.acquireRingChunk(ring, control, 4));
         expect(nextReadHead).toBe(6);
+        expect(sampleZeroContextFrame).toBe(17);
         // The chunk is a byte view over a fresh ArrayBuffer; reinterpret as floats.
         expect(chunkSamples(chunk)).toEqual([4, 5]);
     });
@@ -506,9 +518,10 @@ describe('acquireRingChunk', () => {
     it('returns an empty chunk when nothing new is published', () => {
         const { control, ring } = makeRing(4);
         publishCount(control, 3);
-        const { chunk, nextReadHead } = expectOkRead(mod.acquireRingChunk(ring, control, 3));
+        const { chunk, nextReadHead, sampleZeroContextFrame } = expectOkRead(mod.acquireRingChunk(ring, control, 3));
         expect(chunk.length).toBe(0);
         expect(nextReadHead).toBe(3);
+        expect(sampleZeroContextFrame).toBe(17);
     });
 
     it('reports overrun at capacity plus one instead of duplicated samples when the producer lapped the reader', () => {
@@ -592,8 +605,8 @@ describe('acquireRingChunk', () => {
         const secondBlock = new Float32Array(128).map((_, index) => -index - 0.5);
         publishCount(control, firstHead);
 
-        const afterFirst = writeRingRelease(ring, control, firstHead, firstBlock);
-        const afterSecond = writeRingRelease(ring, control, afterFirst, secondBlock);
+        const afterFirst = writeRingRelease(ring, control, firstHead, firstBlock, 145);
+        const afterSecond = writeRingRelease(ring, control, afterFirst, secondBlock, 273);
 
         const copied = expectOkRead(mod.acquireRingChunk(ring, control, firstHead));
         expect(copied.nextReadHead).toBe(afterSecond);
@@ -661,12 +674,38 @@ describe('acquireRingChunk', () => {
         expect(Atomics.load(control, RECORDING_RING_SEQUENCE_INDEX)).toBe(0);
     });
 
+    it('rejects receipt metadata changed during the PCM copy under an unchanged sequence', () => {
+        const { control, ring } = makeRing(8);
+        ring.set([1, 2, 3, 4]);
+        publishCount(control, 4, 99);
+        let injected = false;
+        const observedRing = new Proxy(ring, {
+            get(target, property): unknown {
+                const value = Reflect.get(target, property, target);
+                if (!injected && typeof property === 'string' && /^\d+$/.test(property)) {
+                    injected = true;
+                    storeRecordingSampleZeroContextFrame(control, 100);
+                }
+                return value;
+            },
+        });
+
+        expect(mod.acquireRingChunk(observedRing, control, 0)).toEqual({ status: 'retry' });
+    });
+
     it('rejects invalid reader and publication counts as protocol errors', () => {
         const { control, ring } = makeRing(8);
         Atomics.store(control, 2, 0x20_0000);
 
         expect(mod.acquireRingChunk(ring, control, 0)).toEqual({ status: 'protocol-error' });
         expect(mod.acquireRingChunk(ring, control, -1)).toEqual({ status: 'protocol-error' });
+    });
+
+    it('rejects nonempty publication without a sample-zero receipt', () => {
+        const { control, ring } = makeRing(8);
+        storeRecordingSampleCount(control, 1);
+
+        expect(mod.acquireRingChunk(ring, control, 0)).toEqual({ status: 'protocol-error' });
     });
 });
 
@@ -773,6 +812,7 @@ describe('recordingWorker ring overrun drop policy', () => {
 
         releasePcmWrite?.();
         const wav = await waitFor('wav');
+        expect(wav).toMatchObject({ sampleZeroContextFrame: 17, sampleRate: 48000 });
         expect(messages.filter((message) => message.type === 'wav')).toHaveLength(1);
         const wavBuffer = wav.buffer as ArrayBuffer;
         expect(wavBuffer.byteLength).toBe(mod.WAV_HEADER_BYTES + 4 * Float32Array.BYTES_PER_ELEMENT);
@@ -822,6 +862,31 @@ describe('recordingWorker ring overrun drop policy', () => {
         const wav = await waitFor('wav');
         const pcm = new Float32Array(wav.buffer as ArrayBuffer, mod.WAV_HEADER_BYTES, 4);
         expect(Array.from(pcm)).toEqual([100, 101, 102, 103]);
+    });
+
+    it('abandons a take whose sample-zero receipt changes after the first accepted chunk', async () => {
+        const { sab, control, ring } = makeRing(64);
+        ring.set([0.25, -0.5]);
+        publishCount(control, 2, 100);
+
+        sendToWorker({ type: 'init', sab, sampleRate: 48000 });
+        await waitFor('ready');
+        sendToWorker({ type: 'start' });
+        await vi.waitFor(() => {
+            expect(fakeDir.handle.store.bytes.byteLength).toBe(
+                mod.WAV_HEADER_BYTES + 2 * Float32Array.BYTES_PER_ELEMENT
+            );
+        });
+
+        beginRecordingRingWrite(control);
+        ring[2] = 0.75;
+        storeRecordingSampleZeroContextFrame(control, 200);
+        storeRecordingSampleCount(control, 3);
+        completeRecordingRingWrite(control);
+
+        const error = await waitFor('error');
+        expect(String(error.message)).toMatch(/sample-zero frame receipt changed/i);
+        expect(messages.some((message) => message.type === 'wav')).toBe(false);
     });
 
     it('abandons an odd final publication even when the acknowledged count is zero', async () => {
@@ -893,7 +958,7 @@ describe('recordingWorker WAV header does not clobber the first samples', () => 
         for (let i = 0; i < samples.length; i++) {
             ring[i] = samples[i]!;
         }
-        publishCount(control, samples.length);
+        publishCount(control, samples.length, 0);
 
         sendToWorker({ type: 'init', sab, sampleRate });
         await waitFor('ready');
@@ -912,6 +977,7 @@ describe('recordingWorker WAV header does not clobber the first samples', () => 
         const headerView = new DataView(buffer, 0, mod.WAV_HEADER_BYTES);
         expect(headerView.getUint32(0, false)).toBe(0x52494646); // RIFF
         expect(headerView.getUint32(40, true)).toBe(samples.length * 4); // data size
+        expect(wav).toMatchObject({ sampleZeroContextFrame: 0, sampleRate });
 
         // PCM payload begins at byte 44 — the FIRST sample must be intact, not
         // overwritten by the header (this is the regression).
