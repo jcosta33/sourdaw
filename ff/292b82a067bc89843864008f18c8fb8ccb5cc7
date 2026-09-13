@@ -1,0 +1,61 @@
+.agents/skills/crdt-collaboration/SKILL.md
+  s_87ab0a2f60ccf8::t_b20fa5b114f9f8 155-162
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionTeardownUnderStoragePressure.spec.ts
+  s_87ab0a2f60ccf8::t_04057ab3f15524 169,172,182,184-197,200,203,213-221,223-228
+  s_87ab0a2f60ccf8::t_ff9ac11eb6d99d 7,170-171,173-181,183,198-199,201-202,204-212,222,229
+  s_87ab0a2f60ccf8::t_768f3a5be64a00 45-48
+  s_87ab0a2f60ccf8::t_6843f19e30bd6e 230
+src/modules/CrdtDocument/useCases/restoreBranchStateAfterSession.ts
+  s_87ab0a2f60ccf8::t_ebd966c17a7e24 9-13
+src/modules/CrdtDocument/useCases/__tests__/restoreBranchStateAfterSession.spec.ts
+  s_87ab0a2f60ccf8::t_7d0d6e1e90ad64 98-99,103
+  s_87ab0a2f60ccf8::t_74463fbdf24f91 89-97,100-102,104-113
+src/modules/Collaboration/handlers/collaboration/__tests__/handleCreateCollabSession.spec.ts
+  s_87ab0a2f60ccf8::t_9efb983e56c7e9 34,36,43
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_87ab0a2f60ccf8::t_29247b42173d2b 392-405,408-411,413-414,416-421,423-426,428-429,436,440,442-444,446-450
+  s_87ab0a2f60ccf8::t_2960cffc440edc 391,406-407,412,415,422,427,430-435,437-439,441,445
+src/modules/CrdtDocument/useCases/__tests__/initBranchState.spec.ts
+  s_87ab0a2f60ccf8::t_5a749fe80284e5 128-146
+src/modules/CrdtDocument/useCases/initBranchState.ts
+  s_87ab0a2f60ccf8::t_ebd966c17a7e24 41-50
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_87ab0a2f60ccf8::t_e875123109283b 361-363,379-386,810-813
+src/modules/CrdtDocument/stores/branchStore.ts
+  s_87ab0a2f60ccf8::t_54e7b37363621b 330-335,344-351,364,372-413,415
+  s_87ab0a2f60ccf8::t_9306fb9bd5e838 2,251-254
+  s_87ab0a2f60ccf8::t_ac45f12e90b02e 156,158-159,162-167,173-175,178-180,205,207-208,221-223,226-228,230,232-234,239,247,250,255-276
+  s_87ab0a2f60ccf8::t_e4a1e79a40facb 152-153,155,157,160-161,172,177,187-195,199-204,231,235,240-242,246,296,314-320,324-327,336-341,343,368
+  s_87ab0a2f60ccf8::t_f99e9fa70c7b17 206
+src/modules/CrdtDocument/stores/__tests__/branchStoreBoot.spec.ts
+  s_87ab0a2f60ccf8::t_a09c5d38db8091 162,183-188,191
+  s_87ab0a2f60ccf8::t_06cd71fd203938 163-182,189-190,192-209,212-214,216-227,467,516-531,541-543,546,577,581-590,592
+  s_87ab0a2f60ccf8::t_fce46ba3ba2633 210-211,215,533-534,538
+  s_87ab0a2f60ccf8::t_68a6c4f383d6ea 468-515,532,535-537,539-540,544-545,547-576,578-580,591
+  s_87ab0a2f60ccf8::t_268166daa96fe8 228-253
+  s_87ab0a2f60ccf8::t_3d9f16c3a7b440 433-444,449
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_87ab0a2f60ccf8::t_e12aa2c64f3752 694-696,699-700,704-735
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_87ab0a2f60ccf8::t_cda7208f3c9f83 1397-1404,1406,1408,1462,1464-1467,1471,1473,1486-1488,1491-1493,1495-1504,1507-1508,1517-1520
+  s_87ab0a2f60ccf8::t_7b12e7266a6c9d 33,760,780-784
+  s_87ab0a2f60ccf8::t_f5ade8f72b41dc 1436-1443,1509-1516
+  s_87ab0a2f60ccf8::t_b902e9e17ca20d 1396,1405,1407,1409-1435,1444-1461,1463,1468-1470,1472,1474-1485,1490,1494,1505-1506
+  s_87ab0a2f60ccf8::t_cbefffbc08eb3b 1489
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ff292b82a067bc89843864008f18c8fb8ccb5cc7",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
