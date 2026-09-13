@@ -1,0 +1,47 @@
+src/modules/AudioEngine/services/__tests__/recordingProcessor.spec.ts
+  s_87ab0a2f60ccf8::t_9e40d3ecd0d32d 1
+  s_87ab0a2f60ccf8::t_ba8a5c4ff52cae 198,205,214
+  s_87ab0a2f60ccf8::t_7ea70a5599d302 131-135,137-138,142-144,148-152,155,167-168
+  s_87ab0a2f60ccf8::t_27257fc511a882 7-9,136,139-141,145-147,153-154,203-204,255
+  s_87ab0a2f60ccf8::t_1e7f6fcc63d378 12,57-69,112,156-166,211,216,224-225,236,240-241,252,256
+src/modules/AudioEngine/workers/__tests__/recordingWorker.spec.ts
+  s_87ab0a2f60ccf8::t_d492316f182fac 498,521,875-879
+  s_87ab0a2f60ccf8::t_abcc27bb2cf0c8 5,11,151-156,404-405,429,439,500,524,608-609,677-695,703-709,815,867-874,880-889
+  s_87ab0a2f60ccf8::t_ba8a5c4ff52cae 476-477,961,980
+  s_87ab0a2f60ccf8::t_840652895897d6 890-891
+src/modules/AudioEngine/repositories/audioRecorder/recordingSession.ts
+  s_87ab0a2f60ccf8::t_780161cd4d9512 15,18-24,35
+src/modules/AudioEngine/models/RecordingRingProtocol.ts
+  s_87ab0a2f60ccf8::t_780161cd4d9512 4-7,14-16,29-42,63-65,70,78-89
+src/modules/AudioEngine/models/__tests__/RecordingRingProtocol.spec.ts
+  s_87ab0a2f60ccf8::t_763737ec9dffc7 1-79
+.agents/skills/testing-file-layout/SKILL.md
+  s_87ab0a2f60ccf8::t_0e0cf9ad019f66 63-71
+src/modules/AudioEngine/repositories/audioRecorder/recording.ts
+  s_87ab0a2f60ccf8::t_2fd5e4dde14721 22,125,157-162,176,227-233,250-260,267
+src/modules/AudioEngine/workers/recordingWorker.ts
+  s_87ab0a2f60ccf8::t_0e9b33ed5b03d9 23-24,59-61,91-96,138-143,175-179,182-187,195,214-216,225,263-264,266-274,411-424,448-450
+  s_87ab0a2f60ccf8::t_5cfc2d0dc6c4d8 265
+  s_87ab0a2f60ccf8::t_78483cd4ade07e 451
+src/modules/AudioEngine/services/recordingProcessor.ts
+  s_87ab0a2f60ccf8::t_780161cd4d9512 20,25,41-47,53-55,84,111-117
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/stopAudioRecording.spec.ts
+  s_87ab0a2f60ccf8::t_742df4440aaee1 377-396
+  s_87ab0a2f60ccf8::t_7e4a7ca6617eba 9,200-206,236-241,258-263,405,430-431,447-452,465,519-524
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2a9ec5d57e815eedc13bb0ac2c0632b625bc8bde",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
