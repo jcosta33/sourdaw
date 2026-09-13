@@ -91,6 +91,12 @@ over stale disk PCM. Review every acquisition route with a genuine durability re
 change the source after retention commits and prove exact-token cleanup either removes the row or reports retained
 ownership explicitly.
 
+### Async cache admission must stay release-visible before every await
+
+Review the path from request admission through every await before cache registration. Release or cancel while transfer
+data is pending, then admit a fresh request and prove late cleanup affects only its exact former entry. Tests must
+observe release-visible ownership before provider creation begins.
+
 ## Prepared settlement review crosses module instances
 
 Use a strongest-tier integrity review with two module instances sharing IndexedDB and the named storage lock. Test

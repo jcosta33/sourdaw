@@ -62,13 +62,18 @@ type SessionLoad = {
     promise: Promise<SessionEntry>;
 };
 
+type ActiveRequest = {
+    modelId: string;
+    controller: AbortController;
+};
+
 // ── Session manager ────────────────────────────────────────────────────────
 
 const SESSION_MEMORY_BUDGET = 1024 * 1024 * 1024; // 1 GB
 
 const sessionCache: Map<string, SessionEntry> = new Map();
 const sessionLoads = new Map<string, SessionLoad>();
-const activeRequests = new Map<string, AbortController>();
+const activeRequests = new Map<string, ActiveRequest>();
 let totalMemoryBytes = 0;
 // Cache the in-flight import PROMISE (not just the resolved module): self.onmessage
 // async chains interleave at every await, so two concurrent first messages could
@@ -213,6 +218,10 @@ async function getOrCreateSession(
     requestId?: string,
     signal?: AbortSignal
 ): Promise<SessionEntry> {
+    if (signal?.aborted) {
+        throw new Error(`Session creation was cancelled: ${modelId}`);
+    }
+
     const cached = sessionCache.get(modelId);
     if (cached) {
         cached.lastUsedAt = Date.now();
@@ -274,21 +283,51 @@ async function getOrCreateSession(
     return waitForSession(load, requestId, signal);
 }
 
-function receiveModelData(port: MessagePort): Promise<ArrayBuffer> {
+function receiveModelData(port: MessagePort, signal: AbortSignal): Promise<ArrayBuffer> {
     return new Promise((resolve, reject) => {
-        port.onmessage = (event: MessageEvent<ModelStorageTransferMessage>) => {
+        let settled = false;
+        const cleanup = (): void => {
+            signal.removeEventListener('abort', onAbort);
+            port.onmessage = null;
+            port.onmessageerror = null;
             port.close();
-            const message = event.data;
-            if (message.type === 'model-data') {
-                resolve(message.modelData);
+        };
+        const succeed = (modelData: ArrayBuffer): void => {
+            if (settled) {
                 return;
             }
-            reject(new Error(`${message.name}: ${message.message}`));
+            settled = true;
+            cleanup();
+            resolve(modelData);
+        };
+        const fail = (error: Error): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            cleanup();
+            reject(error);
+        };
+        const onAbort = (): void => {
+            fail(new Error('Model data transfer was cancelled'));
+        };
+
+        port.onmessage = (event: MessageEvent<ModelStorageTransferMessage>) => {
+            const message = event.data;
+            if (message.type === 'model-data') {
+                succeed(message.modelData);
+                return;
+            }
+            fail(new Error(`${message.name}: ${message.message}`));
         };
         port.onmessageerror = () => {
-            port.close();
-            reject(new Error('Model storage worker returned unreadable model data'));
+            fail(new Error('Model storage worker returned unreadable model data'));
         };
+        signal.addEventListener('abort', onAbort, { once: true });
+        if (signal.aborted) {
+            onAbort();
+            return;
+        }
         port.start();
     });
 }
@@ -589,19 +628,22 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
     const req = event.data;
 
     if (req.type === 'cancel-request') {
-        const controller = activeRequests.get(req.requestId);
-        if (controller) {
-            controller.abort();
-            activeRequests.delete(req.requestId);
+        const activeRequest = activeRequests.get(req.requestId);
+        if (activeRequest) {
+            activeRequest.controller.abort();
         }
         return;
     }
 
     if (req.type === 'create-session') {
         const controller = new AbortController();
-        activeRequests.set(req.requestId, controller);
+        const activeRequest: ActiveRequest = { modelId: req.modelId, controller };
+        activeRequests.set(req.requestId, activeRequest);
         try {
             const entry = await getOrCreateSession(req.modelId, req.modelData, req.requestId, controller.signal);
+            if (controller.signal.aborted) {
+                throw new Error(`Session creation was cancelled: ${req.modelId}`);
+            }
             const response: WorkerResponse = {
                 type: 'session-created',
                 requestId: req.requestId,
@@ -613,17 +655,23 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
             const response: WorkerResponse = { type: 'error', requestId: req.requestId, error: String(error) };
             self.postMessage(response);
         } finally {
-            activeRequests.delete(req.requestId);
+            if (activeRequests.get(req.requestId) === activeRequest) {
+                activeRequests.delete(req.requestId);
+            }
         }
         return;
     }
 
     if (req.type === 'create-session-from-model-port') {
         const controller = new AbortController();
-        activeRequests.set(req.requestId, controller);
+        const activeRequest: ActiveRequest = { modelId: req.modelId, controller };
+        activeRequests.set(req.requestId, activeRequest);
         try {
-            const modelData = await receiveModelData(req.modelDataPort);
+            const modelData = await receiveModelData(req.modelDataPort, controller.signal);
             const entry = await getOrCreateSession(req.modelId, modelData, req.requestId, controller.signal);
+            if (controller.signal.aborted) {
+                throw new Error(`Session creation was cancelled: ${req.modelId}`);
+            }
             const response: WorkerResponse = {
                 type: 'session-created',
                 requestId: req.requestId,
@@ -635,7 +683,9 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
             const response: WorkerResponse = { type: 'error', requestId: req.requestId, error: String(error) };
             self.postMessage(response);
         } finally {
-            activeRequests.delete(req.requestId);
+            if (activeRequests.get(req.requestId) === activeRequest) {
+                activeRequests.delete(req.requestId);
+            }
         }
         return;
     }
@@ -685,6 +735,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
     }
 
     if (req.type === 'release-session') {
+        for (const activeRequest of activeRequests.values()) {
+            if (activeRequest.modelId === req.modelId) {
+                activeRequest.controller.abort();
+            }
+        }
         const inFlight = sessionLoads.get(req.modelId);
         if (inFlight) {
             inFlight.controller.abort();
