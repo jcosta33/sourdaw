@@ -1,0 +1,46 @@
+src/modules/Arrangement/useCases/comping/compRegionInterval.ts
+  s_87ab0a2f60ccf8::t_0c2fc6ffb505a8 16-17,172,174,178,183,193-213,252,256,260,268,302
+  s_87ab0a2f60ccf8::t_a41e0f62bccd4a 168,185,258
+src/modules/Arrangement/handlers/takeLane/selectTake.ts
+  s_87ab0a2f60ccf8::t_0c2fc6ffb505a8 5-6,10-13,15-18,57,60-61,64,68-69,71-73,76,87,98
+src/modules/Arrangement/useCases/comping/__tests__/selectTake.spec.ts
+  s_87ab0a2f60ccf8::t_b2723b9a5a8ab0 261,263-314,350-351
+  s_87ab0a2f60ccf8::t_eb056a217f6274 228,315-349
+  s_87ab0a2f60ccf8::t_e43197c136e5e9 12,224-227,229-260
+  s_87ab0a2f60ccf8::t_40644c253b7742 262
+src/modules/Arrangement/useCases/__tests__/captureTrackRemovalSnapshot.spec.ts
+  s_87ab0a2f60ccf8::t_ff3572898f1481 120,124-163
+  s_87ab0a2f60ccf8::t_6c17dc84903850 164-165
+.agents/skills/state-and-write-paths/SKILL.md
+  s_87ab0a2f60ccf8::t_5f39a6bd334fc9 86-95
+src/modules/Arrangement/handlers/comping/__tests__/handleSetCompRegion.integration.spec.ts
+  s_87ab0a2f60ccf8::t_e43197c136e5e9 1324-1367,1369-1375,1380-1392,1394-1396
+  s_87ab0a2f60ccf8::t_36cff46f949912 1368,1376-1379,1393
+src/modules/Arrangement/useCases/comping/takeLaneSelection.ts
+  s_87ab0a2f60ccf8::t_d08e4211e8d942 35-38,43
+  s_87ab0a2f60ccf8::t_0c2fc6ffb505a8 1-34,39-42,44-67
+src/modules/Arrangement/useCases/comping/__tests__/compRegionInterval.spec.ts
+  s_87ab0a2f60ccf8::t_ff3572898f1481 219-222,234,269,279-345
+  s_87ab0a2f60ccf8::t_d8da1084e9b0a9 346-348
+src/modules/Arrangement/useCases/captureTrackRemovalSnapshot.ts
+  s_87ab0a2f60ccf8::t_0c2fc6ffb505a8 32-34,37,41,43
+src/modules/Arrangement/handlers/takeLane/__tests__/selectTake.spec.ts
+  s_87ab0a2f60ccf8::t_ff3572898f1481 147,178,233-275
+  s_87ab0a2f60ccf8::t_48919de9acdee6 276
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3477af0427fccf274fb6115d4b3f2a93cf7b61a5",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
