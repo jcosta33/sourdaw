@@ -868,7 +868,12 @@ function resolvePublishMetadata(
             }
         }
     }
-    const projectTitles = resolveProjectTitles(inherited?.projectTitles ?? [], flags?.projects, port);
+    const projectTitles = resolveProjectTitles(
+        laneIssue !== undefined,
+        inherited?.projectTitles ?? [],
+        flags?.projects,
+        port
+    );
     if (flaggedModel !== undefined) {
         port.saveAuthorModel(lane.branch, model);
     }
@@ -893,19 +898,24 @@ function readRecordedAuthorModel(branch: string, port: PublishLanePort): string 
 
 /**
  * Installation tokens cannot access user-owned Projects v2 — the platform offers no installation
- * permission for them — so applying project membership depends on the owner's projects being
- * reachable by this token at all. `gh project list` under the App is therefore a preflight, run
- * before any pull-request write: with explicit `--project` flags an unreachable list is a hard
- * failure (the operator asked for something this token cannot deliver and must know now), while
- * inherited-only projects are skipped with one loud line and the publish continues, leaving the
- * pull request's project membership to the operator backfill.
+ * permission for them — and gh ≥ 2.92 swallows the Projects v2 enrichment error and answers
+ * `gh issue view --json projectItems` with `projectItems: []` and exit 0, so under this token an
+ * empty read cannot be trusted as "no projects": empty and unreadable are indistinguishable. The
+ * project list probe is therefore the only reliable capability signal, and it runs before any
+ * pull-request write whenever a lane issue is bound or `--project` flags are present. With
+ * explicit flags an unreachable list is a hard failure (the operator asked for something this
+ * token cannot deliver and must know now), while an issue-bound lane with no flags skips project
+ * application with one loud line and the publish continues, leaving the pull request's project
+ * membership to the operator backfill. Only a lane with neither a bound issue nor flags skips the
+ * probe entirely — there is nothing to apply and nothing to report.
  */
 function resolveProjectTitles(
+    issueBound: boolean,
     inheritedTitles: string[],
     flaggedTitles: string[] | undefined,
     port: PublishLanePort
 ): string[] {
-    if (flaggedTitles === undefined && inheritedTitles.length === 0) {
+    if (!issueBound && flaggedTitles === undefined) {
         return [];
     }
     let knownTitles: string[];

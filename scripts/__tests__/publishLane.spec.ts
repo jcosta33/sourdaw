@@ -2214,21 +2214,53 @@ describe('lane publish', () => {
             expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
         });
 
-        it("skips inherited projects loudly when the App cannot list the owner's projects", () => {
+        it('skips project inheritance loudly when a bound issue reads empty and the App cannot list projects', () => {
+            // The reachable production shape: gh >= 2.92 swallows the Projects v2 enrichment error
+            // under an installation token, so the bound issue answers projectItems: [] while the
+            // owner's user-owned projects are unreadable. The probe must fire on the bound issue,
+            // not on a non-empty inherited list, or this skip is dead code.
             const { port, calls, logs } = fakePort({
-                issueTracker: { milestone: null, projectItems: [{ title: 'Roadmap' }] },
+                issueTracker: { milestone: { title: 'v1.2' }, projectItems: [] },
+                openMilestoneTitles: ['v1.2'],
                 projectListError: 'gh: Must have admin rights',
-                currentMetadata: { labels: [], projectTitles: [] },
+                currentMetadata: { labels: [], milestoneTitle: 'v1.0', projectTitles: [] },
             });
 
             expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
 
+            expect(calls).toContain('projectList');
             expect(logs).toContain(
                 "cannot list the owner's projects as the author App (gh: Must have admin rights); " +
                     "leaving the pull request's project membership to the operator backfill"
             );
-            // Label and nothing else: the skip must not drop the whole metadata assertion.
+            // Label and milestone still asserted, with no --add-project piece: the skip must not
+            // drop the whole metadata assertion.
+            expect(calls).toContain('metaEdit:88:model:glm-5.3:v1.2:-');
+        });
+
+        it('applies no projects and stays quiet when a bound issue reads empty and the list succeeds', () => {
+            const { port, calls, logs } = fakePort({
+                issueTracker: { milestone: null, projectItems: [] },
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+
+            expect(calls).toContain('projectList');
+            expect(logs.some((line) => line.startsWith("cannot list the owner's projects"))).toBe(false);
             expect(calls).toContain('metaEdit:88:model:glm-5.3:-:-');
+        });
+
+        it('skips the project-list probe entirely on an issueless lane without flags', () => {
+            const { port, calls } = fakePort({
+                trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+                cwd: CLEANUP_LANE,
+            });
+
+            expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            expect(calls.some((call) => call === 'projectList')).toBe(false);
+            expect(calls.some((call) => call.startsWith('issueView:'))).toBe(false);
         });
 
         it("applies inherited projects when the App can list the owner's projects", () => {
