@@ -1,0 +1,33 @@
+scripts/recoverPublishReviewLock.ts
+  s_e440ffdc6997b7::t_4002b9e1903d23 20,412
+scripts/reviewApprovalFormat.ts
+  s_e440ffdc6997b7::t_5b30be88e89967 1-69
+scripts/__tests__/publishReview.spec.ts
+  s_e440ffdc6997b7::t_d77841cf6228d3 70-72,155-163,256-262,397-402,405-408,410-415,418-423,427-437,439-455,457,459-460,462-513,517-536,604-633,635,673-679,3915-3920,4003-4012,4038-4042,4074-4076
+  s_e440ffdc6997b7::t_3754f124779df0 19,554,581,900,1833,3963,3967
+  s_e440ffdc6997b7::t_cb2dd810f91fe6 395-396,403-404,409,416-417,424-426,438,456,458,461,514-516,537-543
+  s_e440ffdc6997b7::t_4a1c6c53de928a 2,385-394
+  s_e440ffdc6997b7::t_561006ede58051 650,670,4018,4060
+  s_e440ffdc6997b7::t_391a246984832d 4016-4017,4021-4023,4025,4036,4062
+  s_e440ffdc6997b7::t_eab9c07eaba385 4077
+scripts/publishReview.ts
+  s_e440ffdc6997b7::t_2ac35d3b664866 75,170-173,175-176,178,185-187,247,276,281,297,318-320
+  s_e440ffdc6997b7::t_f40fb02b6dee9f 43-44,144
+  s_e440ffdc6997b7::t_5b30be88e89967 35-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "41d957f6ea0e8075d7f69c5f767e1823ef22622f",
+  "prompts": {},
+  "sessions": {
+    "s_e440ffdc6997b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080b9-9340-7d60-8bb4-ece48d01fa39",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
