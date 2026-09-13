@@ -1,0 +1,53 @@
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_87ab0a2f60ccf8::t_d4da7d93e75063 98-101,429,434
+.agents/skills/state-and-write-paths/SKILL.md
+  s_a8f6f15ead5a48::t_38946d8494af49 79-85
+release/open-source-inventory.json
+  s_a8f6f15ead5a48::t_2424910d98a6a1 1202,1204-1206
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_a8f6f15ead5a48::t_e61bc6ead81687 854,856-857,859-864,881-890
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_a8f6f15ead5a48::t_70776e498b4ef4 688
+src/modules/Arrangement/handlers/takeLane/__tests__/selectTake.spec.ts
+  s_a8f6f15ead5a48::t_e6f5983736f68e 147-203,215-220,224-229,233,241-279
+src/modules/Arrangement/handlers/takeLane/selectTake.ts
+  s_a8f6f15ead5a48::t_22cf6df17bf679 2,8-9,23-27,49-94,98,115-116,124,132,140-141,151-158,161-169,172-180,183
+src/modules/Arrangement/useCases/comping/__tests__/selectTake.spec.ts
+  s_a8f6f15ead5a48::t_4a65e4f847a279 5-8,19,101-105,111-114,119,165-172,176-189,193-218,220-262,281
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_a8f6f15ead5a48::t_98a5d65505820e 746-747,749,755,765,793-794,807,819
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationSlewGrainParity.spec.ts
+  s_a8f6f15ead5a48::t_aa6f12d490a6b1 79-80,127-128,139-140
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/builtinDeviceAutomationUnits.spec.ts
+  s_a8f6f15ead5a48::t_e4b0416d683ca1 1-268
+src/modules/Command/useCases/__tests__/undoWitnessPersistenceStamp.integration.spec.ts
+  s_a8f6f15ead5a48::t_dcd97401dcb64a 1,3,8-9,17,21,34,36,38,61-119,145-148,192-195,251-411
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_a8f6f15ead5a48::t_d339436e580990 921-922
+src/utils/handlerContract.ts
+  s_a8f6f15ead5a48::t_f0ca7717216425 1089-1091,1093,1095-1100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "60fbc7aa762b2be6b103ca642a20dc991eea75a3",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a8f6f15ead5a48": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09b44-61dd-7762-afdf-271994a579d3",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
