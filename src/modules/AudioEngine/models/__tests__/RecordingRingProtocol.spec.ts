@@ -64,6 +64,10 @@ describe('RecordingRingProtocol', () => {
         expect(readRecordingPublication(control)).toEqual({ status: 'protocol-error' });
 
         storeRecordingSampleCount(control, 0);
+        Atomics.store(control, RECORDING_RING_SAMPLE_ZERO_FRAME_PRESENT_INDEX, 1);
+        expect(readRecordingPublication(control)).toEqual({ status: 'protocol-error' });
+
+        clearRecordingSampleZeroContextFrame(control);
         Atomics.store(control, RECORDING_RING_SAMPLE_ZERO_FRAME_LOW_INDEX, 1);
         expect(readRecordingPublication(control)).toEqual({ status: 'protocol-error' });
 
