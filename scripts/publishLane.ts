@@ -301,11 +301,15 @@ export function canonicalLabelName(name: string, knownNames: string[]): string {
 
 /**
  * `priority:` and `status:` are issue-workflow namespaces — the boards' status follows issue
- * labels — so they never describe a pull request and are dropped from inheritance. Triage labels
- * need no exclusion: they are never inherited, because they do not appear on issues.
+ * labels — so they never describe a pull request and are dropped from inheritance, and so is
+ * `model:`, which belongs to the authoring-model mechanism alone: it is set from the recorded or
+ * flagged model, never inherited from an issue. Triage labels need no exclusion: they are never
+ * inherited, because they do not appear on issues.
  */
 export function descriptiveLabelNames(labelNames: string[]): string[] {
-    return labelNames.filter((name) => !name.startsWith('priority:') && !name.startsWith('status:'));
+    return labelNames.filter(
+        (name) => !name.startsWith('priority:') && !name.startsWith('status:') && !name.startsWith('model:')
+    );
 }
 
 const SUBJECT_TYPE_LABELS: Readonly<Record<string, string>> = {
@@ -317,10 +321,11 @@ const SUBJECT_TYPE_LABELS: Readonly<Record<string, string>> = {
 /**
  * An explicit, deliberately small map: only the three conventional types whose meaning matches an
  * existing repository label. Every other type (chore, test, refactor, build, ...) names work that
- * is none of these, and guessing beyond the map would put wrong descriptors on pull requests.
+ * is none of these, and guessing beyond the map would put wrong descriptors on pull requests. The
+ * optional `!` matches TITLE_PATTERN's breaking-change marker, so `feat!:` derives like `feat:`.
  */
 export function derivedLabelFromSubject(subject: string): string | undefined {
-    const type = /^([a-z]+)(?:\([^)]*\))?:/.exec(subject)?.[1];
+    const type = /^([a-z]+)(?:\([^)]*\))?!?:/.exec(subject)?.[1];
     return type === undefined ? undefined : SUBJECT_TYPE_LABELS[type];
 }
 
@@ -836,7 +841,7 @@ export function publishLane(
     );
     // Resolved before the push: every refusal it can raise (no model on record, an unknown flag
     // title or label) must land with nothing written, not even the branch push.
-    const metadata = resolvePublishMetadata(lane, laneIssue, write?.title, metadataFlags, port);
+    const metadata = resolvePublishMetadata(lane, laneIssue, write?.effectiveTitle, metadataFlags, port);
     port.reportDiff?.(lane.path, comparisonHead, headSha);
     if (stack !== undefined) {
         port.pinStackParent?.(lane.branch, stack.parentNumber);
@@ -917,9 +922,11 @@ export function publishLane(
  * `model:*` they are never created on demand. The model record is written only after every
  * validation here has passed, so a refused run leaves the shared git config untouched.
  *
- * `subject` is the newest non-merge conventional subject `pullRequestWrite` already derived the
- * title from — the one commit that names the lane's work. It is `undefined` for a legacy lane,
- * whose title is not this script's to derive, so a legacy lane derives no label either.
+ * `subject` is the pull request's effective title: the title frozen on an existing pull request
+ * (this script never retitles, so a follow-up commit's subject must not re-derive the label), or
+ * the newest non-merge conventional subject on a fresh create. A manually retitled,
+ * non-conventional title derives nothing. It is `undefined` for a legacy lane, whose title is not
+ * this script's to derive, so a legacy lane derives no label either.
  */
 function resolvePublishMetadata(
     lane: ResolvedLane,
@@ -967,7 +974,9 @@ function resolvePublishMetadata(
     }
     return {
         model,
-        labels: [modelLabelName(model), ...descriptive],
+        // Deduped at construction: the model label is this list's head, and nothing in
+        // `descriptive` may repeat it.
+        labels: [...new Set([modelLabelName(model), ...descriptive])],
         ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
         projectTitles,
     };
@@ -975,11 +984,13 @@ function resolvePublishMetadata(
 
 /**
  * Descriptive labels from three sources, unioned and deduped: the bound issue's labels minus the
- * issue-workflow namespaces, one type label derived from the conventional subject on an issueless
- * lane, and canonicalized `--label` flags. Only `model:*` labels are ever created on demand;
- * descriptive labels must already exist — the live-list validation enforces it for flags, and the
- * other two sources carry names the repository already issued (the issue wears its labels, and
- * the derived three are repository staples).
+ * issue-workflow and `model:` namespaces, one type label derived from the pull request's effective
+ * title on an issueless lane, and canonicalized `--label` flags. Only `model:*` labels are ever
+ * created on demand; descriptive labels must already exist — the live-list validation enforces it
+ * for flags, and the other two sources carry names the repository already issued (the issue wears
+ * its labels, and the derived three are repository staples). A `model:`-prefixed `--label` is
+ * refused outright: the namespace is `--model`'s to set, and a flag spelling of it could only
+ * contradict the recorded model.
  */
 function resolveDescriptiveLabels(
     inheritedLabelNames: string[] | undefined,
@@ -998,6 +1009,14 @@ function resolveDescriptiveLabels(
     }
     if (flaggedLabels === undefined) {
         return [...new Set(carried)];
+    }
+    for (const name of flaggedLabels) {
+        if (name.startsWith('model:')) {
+            fail(
+                `--label "${name}" uses the reserved model: namespace; the authoring model is set with ` +
+                    '--model <family>, never --label'
+            );
+        }
     }
     const knownNames = port.knownLabelNames();
     const canonical = flaggedLabels.map((name) => canonicalLabelName(name, knownNames));
@@ -1117,8 +1136,19 @@ function pullRequestNumber(
  * The title and body to write, plus the pull request they are written to. `existing` travels with
  * them because it is read once, before the push: the relationship a flagless update must preserve
  * and the create-vs-update decision both come out of that single read.
+ *
+ * `title` is the newest lane subject — the title a create writes. `effectiveTitle` is the title
+ * GitHub will show after this publish: the existing title when one is frozen on the pull request
+ * (this script never retitles), the lane subject only on a fresh create. Label derivation reads
+ * `effectiveTitle`, because the label must describe the change the title names, not a follow-up
+ * commit the PR was never retitled for.
  */
-type PullRequestWrite = { title: string; body: string; existing: ExistingPullRequest | undefined };
+type PullRequestWrite = {
+    title: string;
+    effectiveTitle: string;
+    body: string;
+    existing: ExistingPullRequest | undefined;
+};
 
 /**
  * The title and body to write, or `undefined` for a legacy lane, whose pull request this script must
@@ -1199,6 +1229,7 @@ function pullRequestWrite(
     const pullRequestTitle = typeof existingTitle === 'string' ? existingTitle : laneSubject;
     return {
         title: laneSubject,
+        effectiveTitle: pullRequestTitle,
         body: composePublishBody(
             laneIssue,
             pullRequestTitle,

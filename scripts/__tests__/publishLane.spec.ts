@@ -2048,11 +2048,10 @@ describe('lane publish', () => {
             );
         });
 
-        it('drops the issue-workflow namespaces from inherited labels', () => {
-            expect(descriptiveLabelNames(['bug', 'priority:P2', 'status:ready', 'enhancement'])).toEqual([
-                'bug',
-                'enhancement',
-            ]);
+        it('drops the issue-workflow and model namespaces from inherited labels', () => {
+            expect(
+                descriptiveLabelNames(['bug', 'priority:P2', 'status:ready', 'model:kimi-k2.5', 'enhancement'])
+            ).toEqual(['bug', 'enhancement']);
             expect(descriptiveLabelNames([])).toEqual([]);
         });
 
@@ -2060,9 +2059,13 @@ describe('lane publish', () => {
             expect(derivedLabelFromSubject('feat(vcs): add identities')).toBe('enhancement');
             expect(derivedLabelFromSubject('fix(audio): repair dropout')).toBe('bug');
             expect(derivedLabelFromSubject('docs: explain lanes')).toBe('documentation');
+            // TITLE_PATTERN's breaking-change marker derives like the plain type.
+            expect(derivedLabelFromSubject('feat!: change the storage format')).toBe('enhancement');
+            expect(derivedLabelFromSubject('fix(ui)!: urgent regression')).toBe('bug');
             expect(derivedLabelFromSubject('chore(build): bump')).toBeUndefined();
             expect(derivedLabelFromSubject('test(delivery): cover publish')).toBeUndefined();
             expect(derivedLabelFromSubject('refactor: simplify')).toBeUndefined();
+            expect(derivedLabelFromSubject('Knob polishing pass')).toBeUndefined();
         });
 
         it('resolves --label values to the canonical live spelling', () => {
@@ -2294,10 +2297,16 @@ describe('lane publish', () => {
             expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
         });
 
-        it('inherits the bound issue labels minus the issue-workflow namespaces', () => {
+        it('inherits the bound issue labels minus the issue-workflow and model namespaces', () => {
             const { port, calls } = fakePort({
                 issueTracker: {
-                    labels: [{ name: 'bug' }, { name: 'priority:P2' }, { name: 'status:ready' }],
+                    labels: [
+                        { name: 'bug' },
+                        { name: 'priority:P2' },
+                        { name: 'status:ready' },
+                        { name: 'model:kimi-k2.5' },
+                        { name: 'model:glm-5.3' },
+                    ],
                     milestone: null,
                     projectItems: [],
                 },
@@ -2306,11 +2315,13 @@ describe('lane publish', () => {
 
             expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
 
-            // Exactly bug joins the model label; the boards' priority/status namespaces stay on
-            // the issue where they belong.
+            // Exactly bug joins the model label — once: the boards' namespaces stay on the issue,
+            // and the model namespace is this lane's own record, never inherited, so the issue's
+            // spellings of it contribute nothing and the head of the list is not duplicated.
             expect(calls).toContain('metaEdit:88:model:glm-5.3,bug:-:-');
             expect(calls.some((call) => call.includes('priority:'))).toBe(false);
             expect(calls.some((call) => call.includes('status:'))).toBe(false);
+            expect(calls.some((call) => call.includes('kimi'))).toBe(false);
         });
 
         it('derives the type label from the lane subject on an issueless lane without flags', () => {
@@ -2324,6 +2335,54 @@ describe('lane publish', () => {
 
             expect(calls.some((call) => call.startsWith('issueView:'))).toBe(false);
             expect(calls).toContain('metaEdit:88:model:glm-5.3,enhancement:-:-');
+        });
+
+        it('derives from the frozen existing title on a republish, not the newest subject', () => {
+            // lane:publish never retitles: the PR keeps the feat title it opened with, so a
+            // fix-typed follow-up commit must not smuggle bug in next to enhancement.
+            const { port, calls } = fakePort({
+                trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+                cwd: CLEANUP_LANE,
+                existing: 41,
+                existingTitle: 'feat(foo): add knob',
+                existingBody: composePublishBody(undefined, 'feat(foo): add knob', DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
+                subject: 'fix(foo): tighten knob',
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            expect(publishLane(undefined, port)).toBe(41);
+
+            expect(calls).toContain('metaEdit:41:model:glm-5.3,enhancement:-:-');
+            expect(calls.some((call) => call.includes('bug'))).toBe(false);
+        });
+
+        it('derives nothing from a manually retitled pull request', () => {
+            const { port, calls } = fakePort({
+                trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+                cwd: CLEANUP_LANE,
+                existing: 41,
+                existingTitle: 'Knob polishing pass',
+                existingBody: composePublishBody(undefined, 'Knob polishing pass', DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            expect(publishLane(undefined, port)).toBe(41);
+
+            expect(calls).toContain('metaEdit:41:model:glm-5.3:-:-');
+        });
+
+        it('refuses a --label value from the reserved model namespace before any write', () => {
+            const { port, calls } = fakePort();
+
+            expect(() =>
+                publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
+                    labels: ['model:glm-5.3'],
+                })
+            ).toThrow(/reserved model: namespace; the authoring model is set with --model/);
+            expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('metaEdit:'))).toBe(false);
         });
 
         it('refuses an unknown --label before writing anything, naming the live list', () => {
