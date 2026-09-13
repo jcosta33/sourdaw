@@ -1,0 +1,65 @@
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_87ab0a2f60ccf8::t_4467bd812ca3bb 19-20,88
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_87ab0a2f60ccf8::t_02099924a8e731 65-66
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_87ab0a2f60ccf8::t_460435d8e3b7d2 145-146
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_87ab0a2f60ccf8::t_db02946b6622e3 44-45
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_87ab0a2f60ccf8::t_2e2cbcd9d4f836 142-143
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_87ab0a2f60ccf8::t_74d6c56a85fade 38-39
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_87ab0a2f60ccf8::t_328775354dedd8 50-51
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_87ab0a2f60ccf8::t_ab7f368c85a33e 70-71
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts
+  s_87ab0a2f60ccf8::t_1b0a4717475a51 12-13
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_87ab0a2f60ccf8::t_f3a0611df38a6f 105-106,218
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_87ab0a2f60ccf8::t_ac04577000ae5c 52-53
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  s_87ab0a2f60ccf8::t_b16c97c425fe68 50-51
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_87ab0a2f60ccf8::t_de3b9cc2514859 157-158
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_87ab0a2f60ccf8::t_c003dc68ebc581 56-57
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_87ab0a2f60ccf8::t_96be1a9d002c4f 189-190
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_87ab0a2f60ccf8::t_45219ab45e6ae5 59-60,172
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_87ab0a2f60ccf8::t_8e6c676c27326f 41-42
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_87ab0a2f60ccf8::t_69e812b89ba851 20-21
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_87ab0a2f60ccf8::t_86a91a3e39f8b4 30-31
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_87ab0a2f60ccf8::t_8a2e3584960afd 38-39
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  s_87ab0a2f60ccf8::t_6f9479708c78bf 42-43
+src/app/__tests__/bootstrap.spec.ts
+  s_87ab0a2f60ccf8::t_87ad79a3d857d6 296-297,361-362
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_87ab0a2f60ccf8::t_4bf8229c0b0894 82-84,239
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_87ab0a2f60ccf8::t_2304a672010a3e 34-35,145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0254cb65943e176bef8745de628bc2c2cdfcc904",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
