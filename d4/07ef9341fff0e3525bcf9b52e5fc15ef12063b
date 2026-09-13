@@ -1,0 +1,48 @@
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/runProjectLoadTransaction.spec.ts
+  s_87ab0a2f60ccf8::t_1a23015fbfef6e 97-138
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionTeardownUnderStoragePressure.spec.ts
+  s_87ab0a2f60ccf8::t_501b68c554ca47 23-31,49,102,106-129,147,152,160,164,172-174,177,186-188,205,221,256,265,267
+  s_87ab0a2f60ccf8::t_ec67301a8bd734 217,224-230
+  s_87ab0a2f60ccf8::t_7979fc8a5d3c8d 4,143-145
+src/modules/CrdtDocument/stores/branchSessionBackupStorage.ts
+  s_87ab0a2f60ccf8::t_852e68352f555b 7
+  s_87ab0a2f60ccf8::t_410dbddd4606af 3-6,8-9
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_87ab0a2f60ccf8::t_dc3a50c849975c 22,606,615,632,639-640,661
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_87ab0a2f60ccf8::t_9ea24291d4670d 186
+  s_87ab0a2f60ccf8::t_94a3dfc14faa68 227,254,262-264,1182
+  s_87ab0a2f60ccf8::t_526bc1b3f895ec 102,228-253,255-261,265-272
+  s_87ab0a2f60ccf8::t_8ae0eef38e39bb 915-940,942-1046,1048-1071,1073-1090,1092-1119,1121-1180,1183
+  s_87ab0a2f60ccf8::t_eda06547032f7c 273
+.agents/skills/crdt-collaboration/SKILL.md
+  s_87ab0a2f60ccf8::t_66f2cffe9ee142 152-153,156
+  s_87ab0a2f60ccf8::t_eb87d6bfeb4d63 154-155
+src/modules/CrdtDocument/stores/__tests__/branchStoreBoot.spec.ts
+  s_87ab0a2f60ccf8::t_b3633805baface 134-161,319,326-340,349-350,352,354-368
+  s_87ab0a2f60ccf8::t_eb87d6bfeb4d63 320-325,341-348,351,353,369-370
+src/modules/Collaboration/presentations/views/__tests__/CollaborationPanel.spec.tsx
+  s_87ab0a2f60ccf8::t_0b5f1e5639483c 464-485
+src/modules/CrdtDocument/stores/branchStore.ts
+  s_87ab0a2f60ccf8::t_410dbddd4606af 7,261,266-271
+  s_87ab0a2f60ccf8::t_5aef1f67f1ca49 272-273
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_87ab0a2f60ccf8::t_e572bda22aea3f 1802-1837,1879-1885,1888-1892
+  s_87ab0a2f60ccf8::t_30cff0222c2122 1838-1878,1886-1887
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d407ef9341fff0e3525bcf9b52e5fc15ef12063b",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
