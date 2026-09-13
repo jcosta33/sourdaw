@@ -35,6 +35,10 @@ vi.mock('../webLlmArtifactManifest', () => ({
 }));
 vi.mock('../../llmWorker?worker', () => ({
     default: class MockLlmWorker {
+        addEventListener(): void {}
+
+        removeEventListener(): void {}
+
         terminate(): void {
             terminateWorkerMock();
         }

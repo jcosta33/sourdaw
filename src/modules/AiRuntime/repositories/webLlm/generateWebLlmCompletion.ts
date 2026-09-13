@@ -4,6 +4,7 @@ import { ToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedErro
 
 import { engineState } from './engineLifecycleState';
 import { initWebLlmEngine } from './initWebLlmEngine';
+import { webLlmRequestCoordinator } from './webLlmRequestCoordinator';
 
 type GenerateWebLlmCompletionOptions = {
     temperature?: number;
@@ -41,18 +42,10 @@ export async function generateWebLlmCompletion(
     // attachment surfaces cleanly instead of as an `UnsupportedModelIdError`.
     logger.info(`[WebLLM] completion model=${engineState.activeModelId} keys=${Object.keys(payload).sort().join(',')}`);
 
-    function interruptGeneration(): void {
-        eng.interruptGenerate();
-    }
-    options?.signal?.addEventListener('abort', interruptGeneration, { once: true });
-
-    let response: unknown;
-    try {
-        response = await eng.chat.completions.create(payload);
-    } finally {
-        options?.signal?.removeEventListener('abort', interruptGeneration);
-    }
-    options?.signal?.throwIfAborted();
+    const response = await webLlmRequestCoordinator.run(eng, {
+        signal: options?.signal,
+        execute: () => eng.chat.completions.create(payload),
+    });
 
     let raw: string;
     if (options?.requireComplete) {
