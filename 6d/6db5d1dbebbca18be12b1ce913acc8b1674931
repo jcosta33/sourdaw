@@ -1,0 +1,31 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationSlewGrainParity.spec.ts
+  s_87ab0a2f60ccf8::t_3958f77396db4d 167-169,174,176,240-241,243
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.morph.spec.tsx
+  s_28e7cf1b044534::t_5a7efe9ad5b7c6 5,43-46,48,72,82
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.routing.spec.tsx
+  s_87ab0a2f60ccf8::t_9a3adfd9f76f86 5,49-52,54,100,110,120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6d6db5d1dbebbca18be12b1ce913acc8b1674931",
+  "prompts": {},
+  "sessions": {
+    "s_28e7cf1b044534": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09b68-8415-7a01-a8e9-2b5ed31cfea3",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
