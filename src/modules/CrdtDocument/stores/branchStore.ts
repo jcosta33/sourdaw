@@ -4,7 +4,7 @@ import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 import { DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 import { DEFAULT_CRDT_ROOT_LINEAGE, parseCrdtRootLineage } from '../models/CrdtRootLineage';
 
-import { branchSessionBackupStorage } from './branchSessionBackupStorage';
+import { branchSessionBackupStorage, readDurableBranchSessionBackup } from './branchSessionBackupStorage';
 
 export type BranchRecord = {
     branchId: string;
@@ -258,9 +258,17 @@ export function suspendSessionBackupInvalidation(): void {
  * achieve — see `BranchStateRestoreOutcome`.
  */
 export function restoreBranchStateFromSessionBackup(): BranchStateRestoreOutcome {
-    const backup = branchSessionBackupStorage.get();
+    const backup = readDurableBranchSessionBackup();
     if (backup === null) {
         return 'restored';
+    }
+
+    if (
+        durableStateAtRestoreFailure !== undefined &&
+        !isSameBranchState(readDurableBranchState(), durableStateAtRestoreFailure)
+    ) {
+        invalidateStaleSessionBackup();
+        return readDurableBranchSessionBackup() === null ? 'restored' : 'backup-not-cleared';
     }
 
     const durableBeforeRestore = readDurableBranchState();

@@ -19,6 +19,7 @@ import { durableAssetOwnerResolution } from '../repositories/durableAssetOwnerRe
 import {
     createDurableAssetRepository,
     DEFAULT_STAGE_RECOVERY_PREFIX,
+    type DurableAssetFailure,
     type DurableAssetRepository,
     type DurableAssetCommitProof,
     type DurableAssetRecoveryFence,
@@ -602,6 +603,7 @@ export class AssetTransfer {
             const sources: Array<{
                 repository: DurableAssetRepository;
                 created: boolean;
+                abortSettled: boolean;
                 progress: DurableOwnerHandoffSourceProgress;
             }> = [];
             const prepare = async (repository: DurableAssetRepository) => {
@@ -610,6 +612,7 @@ export class AssetTransfer {
                     sources.push({
                         repository,
                         created: prepared.created,
+                        abortSettled: false,
                         progress: {
                             previousOwnerId: prepared.previousOwnerId,
                             status: prepared.previousOwnerId === nextOwnerId ? 'committed' : 'pending',
@@ -626,13 +629,15 @@ export class AssetTransfer {
             const rollbackCreated = async (): Promise<DurableOwnerHandoffSettlement> => {
                 const failures: unknown[] = [];
                 for (const source of sources.toReversed()) {
-                    if (!source.created || source.progress.status === 'committed') {
+                    if (!source.created || source.abortSettled || source.progress.status === 'committed') {
                         continue;
                     }
                     try {
                         const aborted = await source.repository.abortOwnerRebind(nextOwnerId);
                         if (aborted.status === 'failed') {
                             failures.push(new Error(`Durable asset owner handoff abort failed: ${aborted.reason}`));
+                        } else {
+                            source.abortSettled = true;
                         }
                     } catch (error) {
                         failures.push(error);
@@ -653,7 +658,7 @@ export class AssetTransfer {
             };
 
             let preparationError: unknown = null;
-            let preparationFailureReason: 'owner-handoff-conflict' | null = null;
+            let preparationFailureReason: DurableAssetFailure['reason'] | null = null;
             try {
                 const current = await prepare(durableAssets);
                 if (current.status === 'failed') {

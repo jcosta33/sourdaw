@@ -94,4 +94,46 @@ describe('runProjectLoadTransaction', () => {
         await expect(transaction.prepare()).rejects.toBe(failure);
         expect(transaction.activate()).toBe(false);
     });
+
+    it('does not activate until an entered collaboration shutdown completes', async () => {
+        const shutdownEntered = Promise.withResolvers<void>();
+        const shutdown = Promise.withResolvers<void>();
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: () => {
+                shutdownEntered.resolve();
+                return shutdown.promise;
+            },
+        });
+        const transaction = runProjectLoadTransaction();
+        const preparing = transaction.prepare();
+
+        await shutdownEntered.promise;
+        expect(transaction.activate()).toBe(false);
+
+        shutdown.resolve();
+        await expect(preparing).resolves.toBe(true);
+        expect(transaction.activate()).toBe(true);
+    });
+
+    it('preserves an entered collaboration shutdown rejection and refuses activation', async () => {
+        const failure = new Error('held peer shutdown failed');
+        const shutdownEntered = Promise.withResolvers<void>();
+        const shutdown = Promise.withResolvers<void>();
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: () => {
+                shutdownEntered.resolve();
+                return shutdown.promise;
+            },
+        });
+        const transaction = runProjectLoadTransaction();
+        const preparing = transaction.prepare();
+
+        await shutdownEntered.promise;
+        expect(transaction.activate()).toBe(false);
+
+        const rejected = expect(preparing).rejects.toBe(failure);
+        shutdown.reject(failure);
+        await rejected;
+        expect(transaction.activate()).toBe(false);
+    });
 });

@@ -461,6 +461,28 @@ describe('CollaborationPanel', () => {
             await waitFor(() => expect(mocks.joinSession).toHaveBeenCalledWith('inv-1', 'Bea'));
         });
 
+        it('keeps one join pending until session negotiation completes', async () => {
+            const joining = Promise.withResolvers<string>();
+            mocks.joinSession.mockImplementationOnce(async () => {
+                const answer = await joining.promise;
+                setState({ isEnabled: true });
+                return answer;
+            });
+            render(<CollaborationPanel />);
+
+            fireEvent.change(screen.getByPlaceholderText('Paste invite'), { target: { value: 'inv-held' } });
+            fireEvent.click(screen.getByRole('button', { name: 'Join Session' }));
+
+            await waitFor(() => expect(mocks.joinSession).toHaveBeenCalledOnce());
+            const pendingButton = screen.getByRole('button', { name: 'Gathering...' });
+            expect(pendingButton).toBeDisabled();
+            fireEvent.click(pendingButton);
+            expect(mocks.joinSession).toHaveBeenCalledOnce();
+
+            joining.resolve('answer-held');
+            await waitFor(() => expect(screen.getByText('answer-held')).toBeInTheDocument());
+        });
+
         it('logs a warning when joining fails', async () => {
             mocks.joinSession.mockRejectedValue(new Error('join failed'));
             render(<CollaborationPanel />);

@@ -99,7 +99,7 @@ const SANITATION_ATTEMPTS_PER_DELIVERY = 2;
  */
 const MAX_SANITATION_FAILURES = 3;
 
-function haveSameHeads(left: Heads, right: Heads): boolean {
+function haveSameHeads(left: readonly string[], right: readonly string[]): boolean {
     if (left.length !== right.length) {
         return false;
     }
@@ -183,7 +183,7 @@ export type AutomergeSyncHooks = {
         projectId?: string;
         rootHeads: readonly string[];
         senderIsHost: boolean;
-    }) => Promise<SyncPersistenceTransition | undefined> | SyncPersistenceTransition | undefined;
+    }) => Promise<SyncPersistencePreparation | undefined> | SyncPersistencePreparation | undefined;
     /** Called when a prepared side effect fails after document persistence. */
     onPostPersistError?: (error: unknown) => void;
     /** Called when an async persist after a received sync fails. */
@@ -223,6 +223,53 @@ type SyncPersistenceTransition = {
     commit: () => Promise<SyncTransitionSettlement>;
     abort: () => Promise<SyncTransitionSettlement>;
 };
+
+type SyncPersistencePreparation = SyncPersistenceTransition | { status: 'failed'; reason: string };
+
+type RootPersistenceRequest = {
+    peerId: PeerId;
+    docId: string;
+    projectId?: string;
+    rootHeads: readonly string[];
+    generation: number;
+    senderIsHost: boolean;
+    validateBeforePublication: () => boolean;
+    publish: () => void;
+    publishBeforePersistence: boolean;
+    documentChanged: boolean;
+    failureLabel: string;
+    retryAgainstNewerRoot?: () => void;
+};
+
+type RootPersistencePreparationResult =
+    | { status: 'ready'; transition?: SyncPersistenceTransition }
+    | { status: 'declined'; retryAgainstNewerRoot: boolean }
+    | {
+          status: 'failed';
+          error: Error;
+          transition?: SyncPersistenceTransition;
+          retainAbort: boolean;
+      };
+
+type RootPersistenceExecutionEvidence = {
+    transition?: SyncPersistenceTransition;
+    publicationStarted: boolean;
+    persistenceStarted: boolean;
+    retryAgainstNewerRoot: boolean;
+    failureStage: 'persist' | 'post-persist';
+};
+
+type RootPersistenceExecutionResult = RootPersistenceExecutionEvidence &
+    ({ status: 'settled' | 'declined' } | { status: 'failed'; error: Error });
+
+type RootPersistenceExecutionHolder = { value?: RootPersistenceExecutionResult };
+type PersistenceBarrierResult = Awaited<ReturnType<typeof runCrdtPersistenceBarrier>>;
+type PersistCurrentProject = (expectedRootHeads?: readonly string[]) => Promise<PersistenceBarrierResult>;
+
+type TransitionSettlementResult = { status: 'settled' } | { status: 'failed'; error: Error };
+type ExactRootPersistenceResult =
+    | { status: 'settled'; durable: PersistenceBarrierResult['durable'] }
+    | { status: 'failed'; error: Error; durable: PersistenceBarrierResult['durable'] };
 
 type RetainedSyncTransition = {
     projectId: string;
@@ -865,168 +912,275 @@ export class AutomergeSync {
         this.trackPersistenceTask(persistence);
     }
 
-    private queueRootPersistence({
-        peerId,
-        docId,
-        projectId,
-        rootHeads,
-        generation,
-        senderIsHost,
-        validateBeforePublication,
-        publish,
-        publishBeforePersistence,
-        documentChanged,
-        failureLabel,
-        retryAgainstNewerRoot,
-    }: {
-        peerId: PeerId;
-        docId: string;
-        projectId?: string;
-        rootHeads: readonly string[];
-        generation: number;
-        senderIsHost: boolean;
-        validateBeforePublication: () => boolean;
-        publish: () => void;
-        publishBeforePersistence: boolean;
-        documentChanged: boolean;
-        failureLabel: string;
-        retryAgainstNewerRoot?: () => void;
-    }): void {
-        this.persistenceBarrierCount += 1;
-        let shouldRetryAgainstNewerRoot = false;
-        const task = (async () => {
-            let transition: SyncPersistenceTransition | undefined;
-            let publicationStarted = false;
-            let persistenceStarted = false;
-            let declinedCleanly = false;
-            let failureStage: 'persist' | 'post-persist' = 'persist';
-            const barrier = await runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
-                if (generation !== this.lifecycleGeneration) {
-                    declinedCleanly = true;
-                    return;
-                }
-                transition = await this.hooks.prepareSyncPersistence?.({
-                    peerId,
-                    docId,
-                    projectId,
-                    rootHeads,
-                    senderIsHost,
-                });
-                if (transition?.status === 'retry-required' && transition.phase === 'abort') {
-                    let abortFailure: Error | null;
-                    try {
-                        const abortResult = await transition.abort();
-                        abortFailure = AutomergeSync.getTransitionFailure(abortResult);
-                    } catch (error) {
-                        abortFailure = toError(error);
-                    }
-                    if (abortFailure && projectId) {
-                        this.retainTransition(transition, projectId, 'abort');
-                    }
-                    throw toError(
-                        transition.error ?? abortFailure ?? new Error('Durable asset owner handoff preparation failed')
-                    );
-                }
-                if (generation !== this.lifecycleGeneration || !validateBeforePublication()) {
-                    let abortFailure: Error | null;
-                    try {
-                        const abortResult = await transition?.abort();
-                        abortFailure = AutomergeSync.getTransitionFailure(abortResult);
-                    } catch (error) {
-                        abortFailure = toError(error);
-                    }
-                    if (transition && abortFailure && projectId) {
-                        this.retainTransition(transition, projectId, 'abort');
-                        throw abortFailure;
-                    }
-                    shouldRetryAgainstNewerRoot = generation === this.lifecycleGeneration;
-                    declinedCleanly = true;
-                    return;
-                }
-                if (publishBeforePersistence) {
-                    publish();
-                    publicationStarted = true;
-                }
-                persistenceStarted = true;
-                const persisted = await persistCurrentProject(rootHeads);
-                const persistenceFailure = AutomergeSync.getPersistenceFailure(persisted);
-                if (persistenceFailure) {
-                    this.retainPersistenceFailure(persistenceFailure, persisted.durable);
-                    if (transition && projectId) {
-                        this.retainTransition(transition, projectId, 'commit');
-                    }
-                    throw persistenceFailure;
-                }
-                if (
-                    persisted.status !== 'settled' ||
-                    persisted.mode !== 'exact' ||
-                    !haveSameHeads(persisted.expectedRootHeads, rootHeads)
-                ) {
-                    const error = new Error('Exact CRDT persistence did not reserve the synchronized project root');
-                    this.retainPersistenceFailure(error, persisted.durable);
-                    if (transition && projectId) {
-                        this.retainTransition(transition, projectId, 'commit');
-                    }
-                    throw error;
-                }
-                const currentRoot = getCrdtDoc<Record<string, unknown>>(DOC_PREFIX_ROOT);
-                const currentProjectId = currentRoot ? readSettledProjectId(currentRoot.projectMeta) : undefined;
-                if (
-                    generation !== this.lifecycleGeneration ||
-                    !currentRoot ||
-                    !haveSameHeads(rootHeads, getHeads(currentRoot)) ||
-                    currentProjectId !== projectId
-                ) {
-                    const error = new Error('Collaboration root persistence was superseded before owner handoff');
-                    this.retainPersistenceFailure(error, persisted.durable);
-                    if (transition && projectId) {
-                        this.retainTransition(transition, projectId, 'commit');
-                    }
-                    throw error;
-                }
-                if (!publishBeforePersistence) {
-                    publish();
-                    publicationStarted = true;
-                }
-                failureStage = 'post-persist';
-                let commitFailure: Error | null;
-                try {
-                    const commitResult = await transition?.commit();
-                    commitFailure = AutomergeSync.getTransitionFailure(commitResult);
-                } catch (error) {
-                    commitFailure = toError(error);
-                }
-                if (commitFailure) {
-                    if (transition && projectId) {
-                        this.retainTransition(transition, projectId, 'commit');
-                    }
-                    throw commitFailure;
-                }
-                this.lastPersistenceFailure = null;
-                this.scheduleAcceptedSyncProgress({ peerId, docId, documentChanged, generation });
+    private async settleTransitionAbort(
+        transition: SyncPersistenceTransition | undefined
+    ): Promise<TransitionSettlementResult> {
+        if (!transition) {
+            return { status: 'settled' };
+        }
+        try {
+            const failure = AutomergeSync.getTransitionFailure(await transition.abort());
+            return failure ? { status: 'failed', error: failure } : { status: 'settled' };
+        } catch (error) {
+            return { status: 'failed', error: toError(error) };
+        }
+    }
+
+    private async prepareRootPersistence(request: RootPersistenceRequest): Promise<RootPersistencePreparationResult> {
+        if (request.generation !== this.lifecycleGeneration) {
+            return { status: 'declined', retryAgainstNewerRoot: false };
+        }
+        let prepared: SyncPersistencePreparation | undefined;
+        try {
+            prepared = await this.hooks.prepareSyncPersistence?.({
+                peerId: request.peerId,
+                docId: request.docId,
+                projectId: request.projectId,
+                rootHeads: request.rootHeads,
+                senderIsHost: request.senderIsHost,
             });
-            if (barrier.status === 'skipped' && declinedCleanly) {
-                return;
+        } catch (error) {
+            return { status: 'failed', error: toError(error), retainAbort: false };
+        }
+        if (prepared?.status === 'failed') {
+            return {
+                status: 'failed',
+                error: new Error(`Durable asset owner handoff preparation failed: ${prepared.reason}`),
+                retainAbort: false,
+            };
+        }
+        const transition = prepared;
+        if (transition?.status === 'retry-required' && transition.phase === 'abort') {
+            const abort = await this.settleTransitionAbort(transition);
+            return {
+                status: 'failed',
+                error: toError(
+                    transition.error ??
+                        (abort.status === 'failed' ? abort.error : undefined) ??
+                        new Error('Durable asset owner handoff preparation failed')
+                ),
+                transition,
+                retainAbort: abort.status === 'failed',
+            };
+        }
+        if (request.generation === this.lifecycleGeneration && request.validateBeforePublication()) {
+            return { status: 'ready', transition };
+        }
+        const abort = await this.settleTransitionAbort(transition);
+        if (abort.status === 'failed') {
+            return { status: 'failed', error: abort.error, transition, retainAbort: true };
+        }
+        return {
+            status: 'declined',
+            retryAgainstNewerRoot: request.generation === this.lifecycleGeneration,
+        };
+    }
+
+    private async persistExactRoot(
+        request: RootPersistenceRequest,
+        persistCurrentProject: PersistCurrentProject
+    ): Promise<ExactRootPersistenceResult> {
+        const persisted = await persistCurrentProject(request.rootHeads);
+        const failure = AutomergeSync.getPersistenceFailure(persisted);
+        if (failure) {
+            return { status: 'failed', error: failure, durable: persisted.durable };
+        }
+        if (
+            persisted.status !== 'settled' ||
+            persisted.mode !== 'exact' ||
+            !haveSameHeads(persisted.expectedRootHeads, request.rootHeads)
+        ) {
+            return {
+                status: 'failed',
+                error: new Error('Exact CRDT persistence did not reserve the synchronized project root'),
+                durable: persisted.durable,
+            };
+        }
+        const currentRoot = getCrdtDoc<Record<string, unknown>>(DOC_PREFIX_ROOT);
+        const currentProjectId = currentRoot ? readSettledProjectId(currentRoot.projectMeta) : undefined;
+        if (
+            request.generation !== this.lifecycleGeneration ||
+            !currentRoot ||
+            !haveSameHeads(request.rootHeads, getHeads(currentRoot)) ||
+            currentProjectId !== request.projectId
+        ) {
+            return {
+                status: 'failed',
+                error: new Error('Collaboration root persistence was superseded before owner handoff'),
+                durable: persisted.durable,
+            };
+        }
+        return { status: 'settled', durable: persisted.durable };
+    }
+
+    private async settleTransitionCommit(
+        transition: SyncPersistenceTransition | undefined
+    ): Promise<TransitionSettlementResult> {
+        if (!transition) {
+            return { status: 'settled' };
+        }
+        try {
+            const failure = AutomergeSync.getTransitionFailure(await transition.commit());
+            return failure ? { status: 'failed', error: failure } : { status: 'settled' };
+        } catch (error) {
+            return { status: 'failed', error: toError(error) };
+        }
+    }
+
+    private async executeRootPersistence(
+        request: RootPersistenceRequest,
+        persistCurrentProject: PersistCurrentProject
+    ): Promise<RootPersistenceExecutionResult> {
+        const preparation = await this.prepareRootPersistence(request);
+        if (preparation.status === 'declined') {
+            return {
+                status: 'declined',
+                publicationStarted: false,
+                persistenceStarted: false,
+                retryAgainstNewerRoot: preparation.retryAgainstNewerRoot,
+                failureStage: 'persist',
+            };
+        }
+        if (preparation.status === 'failed') {
+            if (preparation.transition && preparation.retainAbort && request.projectId) {
+                this.retainTransition(preparation.transition, request.projectId, 'abort');
             }
-            const failure = AutomergeSync.getPersistenceFailure(barrier);
-            if (failure) {
-                if (transition && projectId && (publicationStarted || persistenceStarted)) {
-                    this.retainTransition(transition, projectId, 'commit');
-                }
-                if (barrier.status === 'superseded' || (barrier.status === 'skipped' && !declinedCleanly)) {
-                    this.retainPersistenceFailure(failure, barrier.durable);
-                }
-                logger.warn(failureLabel, failure);
-                if (failureStage === 'post-persist') {
-                    this.hooks.onPostPersistError?.(failure);
-                } else {
-                    this.hooks.onPersistError?.(failure);
-                }
+            return {
+                status: 'failed',
+                error: preparation.error,
+                transition: preparation.transition,
+                publicationStarted: false,
+                persistenceStarted: false,
+                retryAgainstNewerRoot: false,
+                failureStage: 'persist',
+            };
+        }
+        const transition = preparation.transition;
+        let publicationStarted = false;
+        let persistenceStarted = false;
+        try {
+            if (request.publishBeforePersistence) {
+                request.publish();
+                publicationStarted = true;
             }
-        })().finally(() => {
+            persistenceStarted = true;
+            const persistence = await this.persistExactRoot(request, persistCurrentProject);
+            if (persistence.status === 'failed') {
+                this.retainPersistenceFailure(persistence.error, persistence.durable);
+                if (transition && request.projectId) {
+                    this.retainTransition(transition, request.projectId, 'commit');
+                }
+                return {
+                    status: 'failed',
+                    error: persistence.error,
+                    transition,
+                    publicationStarted,
+                    persistenceStarted,
+                    retryAgainstNewerRoot: false,
+                    failureStage: 'persist',
+                };
+            }
+            if (!request.publishBeforePersistence) {
+                request.publish();
+                publicationStarted = true;
+            }
+            const commit = await this.settleTransitionCommit(transition);
+            if (commit.status === 'failed') {
+                if (transition && request.projectId) {
+                    this.retainTransition(transition, request.projectId, 'commit');
+                }
+                return {
+                    status: 'failed',
+                    error: commit.error,
+                    transition,
+                    publicationStarted,
+                    persistenceStarted,
+                    retryAgainstNewerRoot: false,
+                    failureStage: 'post-persist',
+                };
+            }
+            this.lastPersistenceFailure = null;
+            this.scheduleAcceptedSyncProgress({
+                peerId: request.peerId,
+                docId: request.docId,
+                documentChanged: request.documentChanged,
+                generation: request.generation,
+            });
+            return {
+                status: 'settled',
+                transition,
+                publicationStarted,
+                persistenceStarted,
+                retryAgainstNewerRoot: false,
+                failureStage: 'post-persist',
+            };
+        } catch (error) {
+            if (transition && request.projectId && (publicationStarted || persistenceStarted)) {
+                this.retainTransition(transition, request.projectId, 'commit');
+            }
+            return {
+                status: 'failed',
+                error: toError(error),
+                transition,
+                publicationStarted,
+                persistenceStarted,
+                retryAgainstNewerRoot: false,
+                failureStage: 'persist',
+            };
+        }
+    }
+
+    private reportRootPersistenceResult(
+        request: RootPersistenceRequest,
+        barrier: PersistenceBarrierResult,
+        execution: RootPersistenceExecutionResult | undefined
+    ): void {
+        if (barrier.status === 'skipped' && execution?.status === 'declined') {
+            return;
+        }
+        const failure = AutomergeSync.getPersistenceFailure(barrier);
+        if (!failure) {
+            return;
+        }
+        if (
+            execution?.transition &&
+            request.projectId &&
+            (execution.publicationStarted || execution.persistenceStarted)
+        ) {
+            this.retainTransition(execution.transition, request.projectId, 'commit');
+        }
+        if (barrier.status === 'superseded' || (barrier.status === 'skipped' && execution?.status !== 'declined')) {
+            this.retainPersistenceFailure(failure, barrier.durable);
+        }
+        logger.warn(request.failureLabel, failure);
+        if (execution?.failureStage === 'post-persist') {
+            this.hooks.onPostPersistError?.(failure);
+        } else {
+            this.hooks.onPersistError?.(failure);
+        }
+    }
+
+    private async runRootPersistence(
+        request: RootPersistenceRequest,
+        execution: RootPersistenceExecutionHolder
+    ): Promise<void> {
+        const barrier = await runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
+            const result = await this.executeRootPersistence(request, persistCurrentProject);
+            execution.value = result;
+            if (result.status === 'failed') {
+                throw result.error;
+            }
+        });
+        this.reportRootPersistenceResult(request, barrier, execution.value);
+    }
+
+    private queueRootPersistence(request: RootPersistenceRequest): void {
+        this.persistenceBarrierCount += 1;
+        const execution: RootPersistenceExecutionHolder = {};
+        const task = this.runRootPersistence(request, execution).finally(() => {
             this.persistenceBarrierCount -= 1;
-            if (shouldRetryAgainstNewerRoot && generation === this.lifecycleGeneration) {
-                retryAgainstNewerRoot?.();
+            if (execution.value?.retryAgainstNewerRoot && request.generation === this.lifecycleGeneration) {
+                request.retryAgainstNewerRoot?.();
             }
         });
         this.trackPersistenceTask(task);

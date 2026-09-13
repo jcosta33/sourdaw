@@ -1799,6 +1799,97 @@ describe('durable asset ownership lifecycle', () => {
         joining.dispose();
     });
 
+    it('preserves a fresh source journal while retrying a partially completed owner abort', async () => {
+        const provisionalOwner = 'collaboration-join:partial-abort-provisional';
+        const sourceOwner = 'project:partial-abort-source';
+        const targetOwner = 'project:partial-abort-target';
+        const laterTargetOwner = 'project:partial-abort-later-target';
+        const joining = new AssetTransfer(
+            peer,
+            { onAssetAvailable, onProgress, onTransferFailed },
+            provisionalOwner,
+            createDurableAssetRepository(provisionalOwner),
+            { handoffSourceOwnerIds: [sourceOwner] }
+        );
+        const prepared = await joining.prepareDurableOwnerRebind(targetOwner);
+        if (prepared.status !== 'prepared') {
+            throw new Error('Expected partial-abort handoff preparation');
+        }
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(2);
+
+        // Rollback runs in reverse source order: S succeeds, then P aborts.
+        durableAssetIndexedDb.failReadwriteTransactionAfter(1);
+        await expect(prepared.abort()).resolves.toMatchObject({
+            status: 'retry-required',
+            phase: 'abort',
+            error: expect.objectContaining({ message: 'The transaction was aborted' }),
+        });
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(1);
+
+        const freshSourceRepository = createDurableAssetRepository(sourceOwner);
+        await expect(freshSourceRepository.prepareOwnerRebind(targetOwner)).resolves.toMatchObject({
+            status: 'prepared',
+            created: true,
+        });
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(2);
+
+        await expect(prepared.abort()).resolves.toMatchObject({ status: 'aborted', phase: 'abort' });
+        const handoffCountAfterRetry = durableAssetIndexedDb.countRecords('ownerHandoffs');
+        const freshSourceConflict =
+            await createDurableAssetRepository(sourceOwner).prepareOwnerRebind(laterTargetOwner);
+        const originalSourceReleased =
+            await createDurableAssetRepository(provisionalOwner).prepareOwnerRebind(laterTargetOwner);
+
+        expect({ handoffCountAfterRetry, freshSourceConflict, originalSourceReleased }).toEqual({
+            handoffCountAfterRetry: 1,
+            freshSourceConflict: { status: 'failed', reason: 'owner-handoff-conflict' },
+            originalSourceReleased: expect.objectContaining({ status: 'prepared', created: true }),
+        });
+        joining.dispose();
+    });
+
+    it('does not strand a partial abort when the completed source starts a different handoff', async () => {
+        const provisionalOwner = 'collaboration-join:different-abort-provisional';
+        const sourceOwner = 'project:different-abort-source';
+        const originalTargetOwner = 'project:different-abort-original-target';
+        const freshTargetOwner = 'project:different-abort-fresh-target';
+        const laterTargetOwner = 'project:different-abort-later-target';
+        const joining = new AssetTransfer(
+            peer,
+            { onAssetAvailable, onProgress, onTransferFailed },
+            provisionalOwner,
+            createDurableAssetRepository(provisionalOwner),
+            { handoffSourceOwnerIds: [sourceOwner] }
+        );
+        const prepared = await joining.prepareDurableOwnerRebind(originalTargetOwner);
+        if (prepared.status !== 'prepared') {
+            throw new Error('Expected different-target abort preparation');
+        }
+
+        durableAssetIndexedDb.failReadwriteTransactionAfter(1);
+        await expect(prepared.abort()).resolves.toMatchObject({ status: 'retry-required', phase: 'abort' });
+        const freshSourceRepository = createDurableAssetRepository(sourceOwner);
+        await expect(freshSourceRepository.prepareOwnerRebind(freshTargetOwner)).resolves.toMatchObject({
+            status: 'prepared',
+            created: true,
+        });
+
+        const retry = await prepared.abort();
+        const handoffCountAfterRetry = durableAssetIndexedDb.countRecords('ownerHandoffs');
+        const freshSourceConflict =
+            await createDurableAssetRepository(sourceOwner).prepareOwnerRebind(laterTargetOwner);
+        const originalSourceReleased =
+            await createDurableAssetRepository(provisionalOwner).prepareOwnerRebind(laterTargetOwner);
+
+        expect({ retry, handoffCountAfterRetry, freshSourceConflict, originalSourceReleased }).toEqual({
+            retry: expect.objectContaining({ status: 'aborted', phase: 'abort' }),
+            handoffCountAfterRetry: 1,
+            freshSourceConflict: { status: 'failed', reason: 'owner-handoff-conflict' },
+            originalSourceReleased: expect.objectContaining({ status: 'prepared', created: true }),
+        });
+        joining.dispose();
+    });
+
     it('records a retryable partial real multi-source commit after a later transaction aborts', async () => {
         const provisionalOwner = 'collaboration-join:two-source-commit-provisional';
         const sourceAOwner = 'project:two-source-commit-a';

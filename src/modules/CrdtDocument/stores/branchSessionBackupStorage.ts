@@ -1,3 +1,9 @@
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 
-export const branchSessionBackupStorage = createLocalStorage<unknown>('sourdaw-branch-session-backup');
+const BRANCH_SESSION_BACKUP_STORAGE_KEY = 'sourdaw-branch-session-backup';
+
+export const branchSessionBackupStorage = createLocalStorage<unknown>(BRANCH_SESSION_BACKUP_STORAGE_KEY);
+
+export function readDurableBranchSessionBackup(): unknown {
+    return createLocalStorage<unknown>(BRANCH_SESSION_BACKUP_STORAGE_KEY).get();
+}

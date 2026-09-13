@@ -149,6 +149,11 @@ initialization, and a second explicit lifecycle attempt that retries the retaine
 cleared. A successful promise tail, a committed write without fresh exact authority, or a configuration-object
 assertion does not establish durable teardown.
 
+Commit `51572a423a` in PR #1581 made non-throwing local-storage writes advance their cache after failure. When a durable
+session backup is consumed in stages, reject repeated removal failures until a fresh durable read proves the backup is
+gone. Write newer branch state while removal remains refused, then prove retry does not replay the stale backup and a
+later successful removal settles it.
+
 ### Receive-side sync progress must be real, fenced transport work
 
 Commit `78060bccd0bcc3d8f41637c7403443826f9de355` suppressed repository change notifications while applying a remote
