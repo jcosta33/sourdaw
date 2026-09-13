@@ -1,0 +1,38 @@
+scripts/__tests__/stackedLanes.spec.ts
+  s_e440ffdc6997b7::t_1cf74ee92774de 245-282,284
+  s_e440ffdc6997b7::t_b2b98d34431016 2,196-244
+  s_e440ffdc6997b7::t_364c324628b347 283
+  s_e440ffdc6997b7::t_3105320e0c996b 285-287
+  s_f53e4514e9ccfe::t_cca6046ab9e006 288-316
+scripts/syncParentLane.ts
+  s_e440ffdc6997b7::t_6195a57291c910 30,45-72,89-92,95-97,99-103,105,107
+AGENTS.md
+  s_e440ffdc6997b7::t_eab937ba7546ee 262-263
+  s_e440ffdc6997b7::t_245e57efe5c8ed 253-261
+scripts/stackedLanes.ts
+  s_e440ffdc6997b7::t_6195a57291c910 240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "52bc4e3b626d6415b287ca143bf24ad0fcfed4a9",
+  "prompts": {},
+  "sessions": {
+    "s_e440ffdc6997b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080b9-9340-7d60-8bb4-ece48d01fa39",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_f53e4514e9ccfe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a48-16df-7141-80ed-544231d24206",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
