@@ -1,0 +1,27 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_87ab0a2f60ccf8::t_0d1605086d0aa2 745-746,748,754,764,787-788,801,813
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/builtinDeviceAutomationUnits.spec.ts
+  s_87ab0a2f60ccf8::t_8cc534f60fd2b1 1-268
+src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts
+  s_87ab0a2f60ccf8::t_7343b78e727428 18
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_87ab0a2f60ccf8::t_cfee2533338f65 399,423-434,444
+src/modules/AudioEngine/services/deviceResolution.ts
+  s_87ab0a2f60ccf8::t_ce335aad48884d 1-2,32,39,52-54,62,64-65,121,125-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "feeca4c678fb97845527e7140f9f79d5ee2202d8",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
