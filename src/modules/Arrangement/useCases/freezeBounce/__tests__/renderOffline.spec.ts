@@ -6,18 +6,24 @@ import { type Track } from '../../../models/Track';
 import { renderTrackOffline } from '../renderOffline';
 
 import type { renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
+import type { getSendReturnSubgraph } from '../../../services/getSendReturnSubgraph';
+import type { getUpstreamSubgraph } from '../../../services/getUpstreamSubgraph';
 
 type RenderOfflineMocks = {
     renderTrackSubgraphOffline: Mock<typeof renderTrackSubgraphOffline>;
-    getUpstreamSubgraph: Mock<() => Set<string>>;
+    getUpstreamSubgraph: Mock<typeof getUpstreamSubgraph>;
+    getSendReturnSubgraph: Mock<typeof getSendReturnSubgraph>;
     notifyUser: Mock<(message: string, level?: string) => void>;
     trackStore: { value: unknown };
     sidechainStore: { value: unknown };
 };
 
+const EMPTY_SEND_RETURNS = { returnTrackIds: new Set<string>(), keyTrackIds: new Set<string>() };
+
 const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
     renderTrackSubgraphOffline: vi.fn<typeof renderTrackSubgraphOffline>(),
     getUpstreamSubgraph: vi.fn<() => Set<string>>(),
+    getSendReturnSubgraph: vi.fn<typeof getSendReturnSubgraph>(),
     notifyUser: vi.fn<(message: string, level?: string) => void>(),
     trackStore: { value: null },
     sidechainStore: { value: null },
@@ -41,6 +47,10 @@ vi.mock('../../../stores/trackStore', () => ({
 
 vi.mock('../../../services/getUpstreamSubgraph', () => ({
     getUpstreamSubgraph: mocks.getUpstreamSubgraph,
+}));
+
+vi.mock('../../../services/getSendReturnSubgraph', () => ({
+    getSendReturnSubgraph: mocks.getSendReturnSubgraph,
 }));
 
 /** Minimal AudioBuffer constructor stand-in for the trim/normalize paths. */
@@ -140,6 +150,7 @@ describe('renderTrackOffline', () => {
         mocks.trackStore.value = null;
         mocks.sidechainStore.value = null;
         mocks.getUpstreamSubgraph.mockReturnValue(new Set<string>());
+        mocks.getSendReturnSubgraph.mockReturnValue(EMPTY_SEND_RETURNS);
         mocks.renderTrackSubgraphOffline.mockResolvedValue(createAudioBuffer([0.25]));
     });
 
@@ -269,6 +280,8 @@ describe('renderTrackOffline', () => {
         expect(mocks.renderTrackSubgraphOffline).toHaveBeenCalledWith({
             targetTrackId: 'track-midi',
             renderTracks: [track],
+            // No sends included: no return bus prints alongside the target.
+            printTrackIds: [],
             startBeat: 2,
             endBeat: 6,
             tailSeconds: 0,
@@ -404,5 +417,72 @@ describe('renderTrackOffline', () => {
             'upstream',
             'target',
         ]);
+    });
+
+    describe('send-return capture (#3690)', () => {
+        it('renders the target outgoing returns into the graph and prints their output', async () => {
+            const target = TrackDummy.create({ id: 'target', kind: 'audio', sends: [] });
+            const returnBus = TrackDummy.create({ id: 'return-bus', kind: 'bus' });
+            const keyTrack = TrackDummy.create({ id: 'key-1', kind: 'audio' });
+            const keyUpstream = TrackDummy.create({ id: 'key-upstream', kind: 'audio', outputId: 'key-1' });
+            mocks.trackStore.value = {
+                tracks: [target, returnBus, keyTrack, keyUpstream],
+                selectedTrackId: target.id,
+                ghostClips: [],
+            };
+            mocks.getSendReturnSubgraph.mockReturnValue({
+                returnTrackIds: new Set(['return-bus']),
+                keyTrackIds: new Set(['key-1']),
+            });
+            // Each return key gets the same full-upstream expansion the target's
+            // own keys get, so its detector feed is faithful.
+            mocks.getUpstreamSubgraph.mockImplementation((trackId: string) =>
+                trackId === 'key-1' ? new Set(['key-upstream']) : new Set<string>()
+            );
+
+            await renderTrackOffline(target, 0, 4, { includeSends: true });
+
+            const call = mocks.renderTrackSubgraphOffline.mock.calls[0]?.[0];
+            expect(call?.renderTracks.map((track) => track.id)).toEqual([
+                'target',
+                'return-bus',
+                'key-1',
+                'key-upstream',
+            ]);
+            // The return's own output routing leaves the subgraph; without the
+            // print marking its wet would route nowhere.
+            expect(call?.printTrackIds).toEqual(['return-bus']);
+        });
+
+        it('does not walk send returns or print anything beyond the target when sends are excluded', async () => {
+            const target = TrackDummy.create({ id: 'target', kind: 'audio' });
+            const returnBus = TrackDummy.create({ id: 'return-bus', kind: 'bus' });
+            mocks.trackStore.value = { tracks: [target, returnBus], selectedTrackId: target.id, ghostClips: [] };
+
+            await renderTrackOffline(target, 0, 4, { includeSends: false });
+
+            expect(mocks.getSendReturnSubgraph).not.toHaveBeenCalled();
+            const call = mocks.renderTrackSubgraphOffline.mock.calls[0]?.[0];
+            expect(call?.renderTracks.map((track) => track.id)).toEqual(['target']);
+            expect(call?.printTrackIds).toEqual([]);
+        });
+
+        it('keeps an ineligible return out of both the render graph and the print list', async () => {
+            const target = TrackDummy.create({ id: 'target', kind: 'audio' });
+            const dormantReturn = TrackDummy.create({ id: 'dormant-return', kind: 'audio' });
+            Object.defineProperty(dormantReturn, 'kind', { value: 'vca', configurable: true });
+            mocks.trackStore.value = { tracks: [target, dormantReturn], selectedTrackId: target.id, ghostClips: [] };
+            mocks.getSendReturnSubgraph.mockReturnValue({
+                returnTrackIds: new Set(['dormant-return']),
+                keyTrackIds: new Set<string>(),
+            });
+
+            await renderTrackOffline(target, 0, 4, { includeSends: true });
+
+            const call = mocks.renderTrackSubgraphOffline.mock.calls[0]?.[0];
+            expect(call?.renderTracks.map((track) => track.id)).toEqual(['target']);
+            // A strip that is never built cannot be asked to print.
+            expect(call?.printTrackIds).toEqual([]);
+        });
     });
 });

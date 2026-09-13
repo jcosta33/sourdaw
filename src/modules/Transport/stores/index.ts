@@ -15,3 +15,4 @@ export type { TransportState } from './transportStore';
 
 export { readTempoAtBeat } from './readTempoAtBeat';
 export { readSecondsAtBeat } from './readSecondsAtBeat';
+export { readBeatAtSamples } from './readBeatAtSamples';
