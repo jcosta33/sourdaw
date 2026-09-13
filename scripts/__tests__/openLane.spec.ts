@@ -102,6 +102,54 @@ function fakePort(exists = false, nodeModulesLinkTarget?: (lanePath: string) => 
 }
 
 describe('lane open', () => {
+    it('accepts an explicit absolute parent selector without treating it as a slug', () => {
+        expect(parseOpenLaneArgs(['child', '--stack-on', '/repo/.agents/worktrees/agent--parent'])).toEqual({
+            slug: 'child',
+            help: false,
+            stackOn: '/repo/.agents/worktrees/agent--parent',
+        });
+        expect(() => parseOpenLaneArgs(['child', '--stack-on', '../parent'])).toThrow(/absolute/);
+    });
+
+    it('records stack intent before creating the child at the exact parent head', () => {
+        const { port, calls } = fakePort();
+        const head = 'a'.repeat(40);
+        port.stackParent = (path, branch) => {
+            expect(path).toBe('/repo/parent');
+            return { version: 1, childBranch: branch, parentBranch: 'agent/parent', forkHead: head, parentHead: head };
+        };
+        port.saveStack = () => {
+            calls.push('descriptor');
+        };
+        port.worktreeAdd = (_path, _branch, start) => {
+            calls.push(`start:${start}`);
+        };
+        openLane(undefined, 'child', port, '/repo/parent');
+        expect(calls.indexOf('descriptor')).toBeLessThan(calls.indexOf(`start:${head}`));
+        expect(calls.at(-1)).toBe('lock:/repo/.agents/worktrees/agent--child');
+    });
+
+    it('refuses parent validation or descriptor persistence failures before creating a child', () => {
+        const { port, calls } = fakePort();
+        port.stackParent = () => {
+            throw new Error('dirty parent');
+        };
+        expect(() => openLane(undefined, 'child', port, '/repo/parent')).toThrow(/dirty parent/);
+        expect(calls.some((call) => call.startsWith('add:'))).toBe(false);
+        port.stackParent = (_path, childBranch) => ({
+            version: 1,
+            childBranch,
+            parentBranch: 'agent/parent',
+            forkHead: 'a'.repeat(40),
+            parentHead: 'a'.repeat(40),
+        });
+        port.saveStack = () => {
+            throw new Error('descriptor write failed');
+        };
+        expect(() => openLane(undefined, 'child', port, '/repo/parent')).toThrow(/descriptor write failed/);
+        expect(calls.some((call) => call.startsWith('add:'))).toBe(false);
+    });
+
     it('creates a locked worktree from origin/main after fetch', () => {
         const { port, calls, logs } = fakePort();
 
