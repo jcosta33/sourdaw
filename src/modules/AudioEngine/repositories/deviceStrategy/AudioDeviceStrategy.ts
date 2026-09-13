@@ -15,6 +15,7 @@ export type OfflineAutomationTarget = {
     readonly audioParam: AudioParam;
     readonly scale: number;
     readonly offset: number;
+    readonly transform?: (value: number) => number;
 };
 
 /**

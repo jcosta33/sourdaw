@@ -1,3 +1,5 @@
+import { dbToGain } from '#/utils/audioLevelLaw';
+
 import { getDrumKitByIndex } from '../models/FactoryDrumKits';
 import { type OfflineDeviceNode } from '../models/OfflineDeviceNode';
 import { type DrumKit } from '../models/SynthModels';
@@ -27,12 +29,14 @@ type DeviceParamTargetDefinition = {
     property: string;
     scale?: number;
     offset?: number;
+    transform?: (value: number) => number;
 };
 
 export type ResolvedDeviceParamTarget = {
     audioParam: AudioParam;
     scale: number;
     offset: number;
+    transform?: (value: number) => number;
 };
 
 const paramTargetMap: Record<string, readonly DeviceParamTargetDefinition[]> = {
@@ -45,9 +49,9 @@ const paramTargetMap: Record<string, readonly DeviceParamTargetDefinition[]> = {
     'builtin-eq:eq-high-freq': [{ nodeIndex: 2, property: 'frequency' }],
     'builtin-compressor:comp-threshold': [{ nodeIndex: 0, property: 'threshold' }],
     'builtin-compressor:comp-ratio': [{ nodeIndex: 0, property: 'ratio' }],
-    'builtin-compressor:comp-attack': [{ nodeIndex: 0, property: 'attack' }],
-    'builtin-compressor:comp-release': [{ nodeIndex: 0, property: 'release' }],
-    'builtin-compressor:comp-makeup': [{ nodeIndex: 1, property: 'gain' }],
+    'builtin-compressor:comp-attack': [{ nodeIndex: 0, property: 'attack', scale: 1 / 1000 }],
+    'builtin-compressor:comp-release': [{ nodeIndex: 0, property: 'release', scale: 1 / 1000 }],
+    'builtin-compressor:comp-makeup': [{ nodeIndex: 1, property: 'gain', transform: dbToGain }],
     'builtin-reverb:rev-mix': [{ nodeIndex: 2, property: 'gain' }],
     'builtin-delay:delay-time': [{ nodeIndex: 3, property: 'delayTime', scale: 1 / 1000 }],
     'builtin-delay:delay-feedback': [{ nodeIndex: 4, property: 'gain' }],
@@ -55,10 +59,10 @@ const paramTargetMap: Record<string, readonly DeviceParamTargetDefinition[]> = {
         { nodeIndex: 2, property: 'gain' },
         { nodeIndex: 1, property: 'gain', scale: -1, offset: 1 },
     ],
-    'builtin-gain:gain-level': [{ nodeIndex: 0, property: 'gain' }],
+    'builtin-gain:gain-level': [{ nodeIndex: 0, property: 'gain', transform: dbToGain }],
     'builtin-limiter:lim-threshold': [{ nodeIndex: 0, property: 'threshold' }],
-    'builtin-limiter:lim-release': [{ nodeIndex: 0, property: 'release' }],
-    'builtin-limiter:lim-ceiling': [{ nodeIndex: 1, property: 'gain' }],
+    'builtin-limiter:lim-release': [{ nodeIndex: 0, property: 'release', scale: 1 / 1000 }],
+    'builtin-limiter:lim-ceiling': [{ nodeIndex: 1, property: 'gain', transform: dbToGain }],
     'builtin-filter:filter-cutoff': [{ nodeName: 'filter', property: 'frequency' }],
     'builtin-filter:filter-resonance': [{ nodeName: 'filter', property: 'Q' }],
     'builtin-distortion:dist-mix': [
@@ -114,11 +118,15 @@ export function resolveDeviceParamTargets(
         const targetNode = resolveTargetNode(node, definition);
         const candidate: unknown = targetNode ? Reflect.get(targetNode, definition.property) : null;
         if (isAudioParam(candidate)) {
-            targets.push({
+            const target: ResolvedDeviceParamTarget = {
                 audioParam: candidate,
                 scale: definition.scale ?? 1,
                 offset: definition.offset ?? 0,
-            });
+            };
+            if (definition.transform) {
+                target.transform = definition.transform;
+            }
+            targets.push(target);
         }
     }
     return targets;

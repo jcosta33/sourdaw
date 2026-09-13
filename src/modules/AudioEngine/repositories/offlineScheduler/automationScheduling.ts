@@ -396,7 +396,7 @@ export function scheduleTrackAutomation({
                 binding.apply(segments);
                 continue;
             }
-            for (const { audioParam, scale, offset } of binding.targets) {
+            for (const { audioParam, scale, offset, transform } of binding.targets) {
                 // Compose linkScale with the device binding's unit scale/offset as
                 // one affine post-transform: paramValue = interpolate(source) *
                 // (linkScale * scale) + offset — evaluated on the unscaled source
@@ -420,6 +420,18 @@ export function scheduleTrackAutomation({
                     scale === 0
                         ? undefined
                         : (scaled: number): number => quantiseEmit((scaled - offset) / scale) * scale + offset;
+                const paramOptions = {
+                    // Same order as the segments binding above: the lane's
+                    // declared range on the unscaled source curve, before
+                    // the binding's affine and before the slew's device-law
+                    // clamp (#2538).
+                    ...boundOptions,
+                    slew: { ...deviceSlewGrid, clampStep: clampScaledStep, quantiseEmit: quantiseScaledEmit },
+                    activeWindowSeconds,
+                    valueScale: laneScale * scale,
+                    valueOffset: offset,
+                    valueTransform: transform,
+                };
                 scheduleAutomationOnParam(
                     audioParam,
                     points,
@@ -429,17 +441,7 @@ export function scheduleTrackAutomation({
                     regionStartSeconds,
                     projectBeatToSeconds,
                     compensationDelaySec,
-                    {
-                        // Same order as the segments binding above: the lane's
-                        // declared range on the unscaled source curve, before
-                        // the binding's affine and before the slew's device-law
-                        // clamp (#2538).
-                        ...boundOptions,
-                        slew: { ...deviceSlewGrid, clampStep: clampScaledStep, quantiseEmit: quantiseScaledEmit },
-                        activeWindowSeconds,
-                        valueScale: laneScale * scale,
-                        valueOffset: offset,
-                    }
+                    paramOptions
                 );
             }
         }
