@@ -250,15 +250,17 @@ issue by default; campaign slices use `lane:publish --relates` to keep the umbre
 your lane.
 
 Publish a stack parent first. `lane:publish` validates the child descriptor as untrusted data and
-targets the exact open parent head, or `main` after the recorded parent PR has merged and the child
-contains its landed commit. A moved, missing, ambiguous, closed-unmerged, or racing parent blocks
-publication. `pnpm lane:sync-parent --lane <absolute-child-lane>` merges the verified current parent
-head, or merges `main` after the parent lands, into only that clean owned child. Resolve conflicts in
-the child and commit normally. Never rebase, reset, force-push, cascade to siblings, or silently adopt
-a replacement parent. Deliver remains bottom-up and main-only; after a parent squash lands, sync the
-child so its final history contains the landed parent instead of the pre-squash parent branch, then
-publish and obtain fresh Gate, review, and acceptance. Keep earlier slices related with `--relates`
-until closure is warranted, and verify the original end-to-end outcome on the final combined head.
+targets the exact open parent head, or `main` after the recorded parent PR has merged. Landed-child
+publication and approval require both the verified final parent head and its landed commit in the
+child history. A moved, missing, ambiguous, closed-unmerged, or racing parent blocks publication.
+`pnpm lane:sync-parent --lane <absolute-child-lane>` merges the verified current parent head into
+only that clean owned child. After the parent squash lands, it merges the verified final parent head
+first, then landed `main`, preserving both histories and the original child history. Resolve a
+conflict at either merge in the child, commit normally, and rerun synchronization. Never rebase,
+reset, force-push, cascade to siblings, or silently adopt a replacement parent. Deliver remains
+bottom-up and main-only; sync the child, then publish and obtain fresh Gate, review, and acceptance.
+Keep earlier slices related with `--relates` until closure is warranted, and verify the original
+end-to-end outcome on the final combined head.
 
 Lanes isolate only working trees. Stash, process table, disk, and author lock are shared;
 global or destructive operations from any lane affect all lanes.

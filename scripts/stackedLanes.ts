@@ -237,6 +237,7 @@ export function assertLandedStackParent(
         !shaPattern.test(parent.mergeCommit) ||
         !port.isAncestor(parent.mergeCommit, mainHead) ||
         !port.isAncestor(parent.mergeCommit, childHead) ||
+        !port.isAncestor(parent.headSha, childHead) ||
         !port.isAncestor(descriptor.forkHead, childHead)
     ) {
         fail('stack child requires landed parent reconciliation before approval');

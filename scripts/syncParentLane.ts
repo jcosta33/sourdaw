@@ -27,6 +27,7 @@ import {
     writeLaneStack,
     type LaneStack,
     type StackReadPort,
+    type StackParent,
 } from './stackedLanes.ts';
 
 export const SYNC_PARENT_USAGE = 'usage: pnpm lane:sync-parent --lane <absolute-child-lane>';
@@ -41,38 +42,14 @@ export type SyncParentPort = StackReadPort & {
     save: (descriptor: LaneStack) => void;
 };
 
-export function syncParentLane(descriptor: LaneStack, port: SyncParentPort): string {
-    if (!port.clean()) {
-        fail('stack child has uncommitted changes; resolve and commit before synchronizing');
-    }
-    const previousHead = port.head();
-    if (!port.isAncestor(descriptor.forkHead, previousHead)) {
-        fail('stack child no longer contains its fork head');
-    }
-    const parents = port.parents(descriptor.parentBranch);
-    for (const candidate of stackParentCandidates(descriptor, parents)) {
-        port.fetchParent(candidate.branch, candidate.headSha);
-    }
-    const parent = resolveStackParent(descriptor, { ...port, parents: () => parents });
-    const pinned = { ...descriptor, parentPullRequest: parent.number };
-    // Persist the PR identity before a possible conflict so a retry cannot adopt a reused branch.
-    port.save(pinned);
-    let target: string;
-    if (parent.state === 'OPEN') {
-        target = parent.headSha;
-    } else {
-        target = port.main();
-        if (parent.mergeCommit === undefined || !port.isAncestor(parent.mergeCommit, target)) {
-            fail('stack parent landed commit is not on main');
-        }
-    }
-    const currentParent = resolveStackParent(pinned, port);
+function assertParentUnchanged(descriptor: LaneStack, parent: StackParent, port: StackReadPort): void {
+    const currentParent = resolveStackParent(descriptor, port);
     if (JSON.stringify(currentParent) !== JSON.stringify(parent)) {
         fail('stack parent changed during synchronization');
     }
-    if (port.head() !== previousHead || !port.clean()) {
-        fail('stack child changed before synchronization');
-    }
+}
+
+function mergeStackTarget(target: string, previousHead: string, port: SyncParentPort): string {
     try {
         if (!port.isAncestor(target, previousHead)) {
             port.merge(target);
@@ -90,6 +67,44 @@ export function syncParentLane(descriptor: LaneStack, port: SyncParentPort): str
     if (!port.isAncestor(previousHead, head) || !port.isAncestor(target, head) || !port.clean()) {
         fail('stack synchronization did not preserve the child and parent histories');
     }
+    return head;
+}
+
+export function syncParentLane(descriptor: LaneStack, port: SyncParentPort): string {
+    if (!port.clean()) {
+        fail('stack child has uncommitted changes; resolve and commit before synchronizing');
+    }
+    const previousHead = port.head();
+    if (!port.isAncestor(descriptor.forkHead, previousHead)) {
+        fail('stack child no longer contains its fork head');
+    }
+    const parents = port.parents(descriptor.parentBranch);
+    for (const candidate of stackParentCandidates(descriptor, parents)) {
+        port.fetchParent(candidate.branch, candidate.headSha);
+    }
+    const parent = resolveStackParent(descriptor, { ...port, parents: () => parents });
+    const pinned = { ...descriptor, parentPullRequest: parent.number };
+    // Persist the PR identity before a possible conflict so a retry cannot adopt a reused branch.
+    port.save(pinned);
+    const targets = [parent.headSha];
+    if (parent.state === 'MERGED') {
+        const main = port.main();
+        if (parent.mergeCommit === undefined || !port.isAncestor(parent.mergeCommit, main)) {
+            fail('stack parent landed commit is not on main');
+        }
+        // A squash omits parent ancestry: merge its final history first so later parent deletions
+        // and reversions cannot survive as apparent child changes when main is merged.
+        targets.push(main);
+    }
+    let head = previousHead;
+    for (const target of targets) {
+        assertParentUnchanged(pinned, parent, port);
+        if (port.head() !== head || !port.clean()) {
+            fail('stack child changed before synchronization');
+        }
+        head = mergeStackTarget(target, head, port);
+    }
+    assertParentUnchanged(pinned, parent, port);
     port.save({ ...pinned, parentHead: parent.headSha });
     return head;
 }

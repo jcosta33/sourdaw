@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -193,6 +193,127 @@ function fixture() {
 }
 
 describe('ordinary merge stack synchronization', () => {
+    it.each(['delete', 'revert'])('preserves the final parent %s when it squash-lands before child sync', (change) => {
+        const f = fixture();
+        let stack = f.stack;
+        if (change === 'revert') {
+            git(f.root, 'checkout', 'agent/parent');
+            writeFileSync(join(f.root, 'base'), 'temporary parent change\n');
+            git(f.root, 'add', '.');
+            git(f.root, 'commit', '-m', 'feat: temporary parent change');
+            const initialParent = git(f.root, 'rev-parse', 'HEAD');
+            git(f.root, 'checkout', 'agent/child');
+            git(f.root, 'merge', '--no-ff', '--no-edit', initialParent);
+            stack = { ...stack, forkHead: initialParent, parentHead: initialParent };
+        }
+        const oldChild = git(f.root, 'rev-parse', 'HEAD');
+        git(f.root, 'checkout', 'agent/parent');
+        if (change === 'delete') {
+            git(f.root, 'rm', 'parent');
+        } else {
+            writeFileSync(join(f.root, 'base'), 'base\n');
+        }
+        writeFileSync(join(f.root, 'retained'), 'retained parent feature\n');
+        git(f.root, 'add', '.');
+        git(f.root, 'commit', '-m', 'fix: finalize parent');
+        const finalParent = git(f.root, 'rev-parse', 'HEAD');
+        git(f.root, 'checkout', 'main');
+        git(f.root, 'merge', '--squash', 'agent/parent');
+        git(f.root, 'commit', '-m', 'feat: landed parent');
+        const landedParent = git(f.root, 'rev-parse', 'HEAD');
+        f.setParent({ ...parent, headSha: finalParent, state: 'MERGED', mergeCommit: landedParent });
+        git(f.root, 'checkout', 'agent/child');
+        const result = syncParentLane(stack, f.port);
+        expect(git(f.root, 'diff', '--name-only', 'main...HEAD')).toBe('child');
+        expect(f.port.isAncestor(oldChild, result)).toBe(true);
+        expect(f.port.isAncestor(finalParent, result)).toBe(true);
+        expect(f.port.isAncestor(landedParent, result)).toBe(true);
+        if (change === 'delete') {
+            expect(existsSync(join(f.root, 'parent'))).toBe(false);
+        } else {
+            expect(readFileSync(join(f.root, 'base'), 'utf8')).toBe('base\n');
+        }
+        expect(stackPublicationBase(f.saved(), result, landedParent, f.port).branch).toBe('main');
+        expect(assertLandedStackParent(f.saved(), result, landedParent, f.port).number).toBe(12);
+    });
+
+    it('rejects publication and approval after manually merging only landed main without final parent history', () => {
+        const f = fixture();
+        git(f.root, 'checkout', 'agent/parent');
+        git(f.root, 'rm', 'parent');
+        writeFileSync(join(f.root, 'retained'), 'retained\n');
+        git(f.root, 'add', '.');
+        git(f.root, 'commit', '-m', 'fix: remove obsolete parent');
+        const finalParent = git(f.root, 'rev-parse', 'HEAD');
+        git(f.root, 'checkout', 'main');
+        git(f.root, 'merge', '--squash', 'agent/parent');
+        git(f.root, 'commit', '-m', 'feat: landed parent');
+        const landedParent = git(f.root, 'rev-parse', 'HEAD');
+        f.setParent({ ...parent, headSha: finalParent, state: 'MERGED', mergeCommit: landedParent });
+        git(f.root, 'checkout', 'agent/child');
+        git(f.root, 'merge', '--no-ff', '--no-edit', landedParent);
+        const childHead = f.port.head();
+        expect(f.port.isAncestor(landedParent, childHead)).toBe(true);
+        expect(f.port.isAncestor(finalParent, childHead)).toBe(false);
+        expect(() => stackPublicationBase(f.stack, childHead, landedParent, f.port)).toThrow(/reconciliation/);
+        expect(() => assertLandedStackParent(f.stack, childHead, landedParent, f.port)).toThrow(/reconciliation/);
+    });
+
+    it.each(['parent', 'main'])(
+        'stops at a %s merge conflict and resumes both histories after author resolution',
+        (stage) => {
+            const f = fixture();
+            const conflictPath = stage === 'parent' ? 'parent' : 'base';
+            writeFileSync(join(f.root, conflictPath), 'child edit\n');
+            git(f.root, 'add', '.');
+            git(f.root, 'commit', '-m', 'feat: child edit');
+            const oldChild = f.port.head();
+            git(f.root, 'checkout', 'agent/parent');
+            git(f.root, 'rm', 'parent');
+            writeFileSync(join(f.root, 'retained'), 'retained\n');
+            git(f.root, 'add', '.');
+            git(f.root, 'commit', '-m', 'fix: finalize parent');
+            const finalParent = git(f.root, 'rev-parse', 'HEAD');
+            git(f.root, 'checkout', 'main');
+            git(f.root, 'merge', '--squash', 'agent/parent');
+            git(f.root, 'commit', '-m', 'feat: landed parent');
+            const landedParent = git(f.root, 'rev-parse', 'HEAD');
+            if (stage === 'main') {
+                writeFileSync(join(f.root, 'base'), 'main edit\n');
+                git(f.root, 'add', '.');
+                git(f.root, 'commit', '-m', 'feat: main edit');
+            }
+            const mainHead = git(f.root, 'rev-parse', 'HEAD');
+            f.setParent({ ...parent, headSha: finalParent, state: 'MERGED', mergeCommit: landedParent });
+            git(f.root, 'checkout', 'agent/child');
+            const merged: string[] = [];
+            const merge = f.port.merge;
+            f.port.merge = (target) => {
+                merged.push(target);
+                merge(target);
+            };
+            expect(() => syncParentLane(f.stack, f.port)).toThrow(new RegExp(`conflict[\\s\\S]*${conflictPath}`));
+            expect(merged).toEqual(stage === 'parent' ? [finalParent] : [finalParent, mainHead]);
+            expect(f.saved().parentHead).toBe(f.stack.parentHead);
+            expect(git(f.root, 'rev-parse', 'agent/parent')).toBe(finalParent);
+            if (stage === 'parent') {
+                git(f.root, 'rm', 'parent');
+            } else {
+                writeFileSync(join(f.root, 'base'), 'resolved\n');
+                git(f.root, 'add', 'base');
+            }
+            git(f.root, 'commit', '-m', 'fix: resolve stack conflict');
+            const resolvedHead = f.port.head();
+            const result = syncParentLane(f.saved(), f.port);
+            expect(f.port.isAncestor(oldChild, result)).toBe(true);
+            expect(f.port.isAncestor(resolvedHead, result)).toBe(true);
+            expect(f.port.isAncestor(finalParent, result)).toBe(true);
+            expect(f.port.isAncestor(mainHead, result)).toBe(true);
+            expect(f.saved().parentHead).toBe(finalParent);
+            expect(merged).toEqual([finalParent, mainHead]);
+        }
+    );
+
     it('fetches a published parent head absent from the child object database before checking ancestry', () => {
         const f = fixture();
         const remote = mkdtempSync(join(tmpdir(), 'sourdaw-stack-remote-'));
