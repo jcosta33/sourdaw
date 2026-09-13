@@ -53,9 +53,13 @@ are orchestrator defects. Derive the concise PR what/why from the bounded outcom
 check, or dispatch inventories into it, and do not require another plan file or issue for work the
 session owns. Require back only status, changed paths, decisive evidence, and blockers.
 
-Split outcomes that can land safely apart. When they cannot, name the invariant or dependency that
-requires joint landing; a feature name or changed-line target is insufficient. If a review repair
-introduces a new mechanism or outcome, reassess the PR scope before dispatching more author work.
+Default to one PR for a cohesive change; keep its implementation, required caller changes, and tests
+together. Split distinct outcomes when separate review materially helps, provided each slice can land
+safely and final integration stays coherent. Stack only separately useful slices with a real dependency.
+A size report alone never requires a split, and no numeric threshold decides one. When distinct
+outcomes must land together, name the invariant or dependency that requires joint landing; a feature
+name or changed-line target is insufficient. If a review repair introduces a new mechanism or outcome,
+reassess the PR scope before dispatching more author work.
 
 Run agents in parallel only on write-disjoint work. Sequence shared contracts, generated artifacts,
 and overlapping files.
@@ -534,8 +538,9 @@ children. `deliver` remains main-only and refuses any other base; reconcile a la
 `lane:sync-parent`, republish the child against main, and obtain fresh review before delivery. Do not
 merge any other way.
 
-Keep batches small, live lanes few, and merges prompt. Authors must split diffs reviewers cannot
-attack whole. Drain before filling: open no lane while a finished head waits only on review or merge.
+Keep batches small, live lanes few, and merges prompt. If reviewers cannot attack a diff whole,
+reassess its scope under Delegation before review. Drain before filling: open no lane while a finished
+head waits only on review or merge.
 A finished change waits only on its GitHub review. Enable hooks: `git config core.hooksPath .githooks`.
 
 ## Safety
