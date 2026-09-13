@@ -193,10 +193,17 @@ impl AdsrEnvelope {
         } else {
             0.0
         };
-        // A reconfiguration mid-Decay keeps falling the gap it already had;
-        // before Decay is ever entered this holds the distance a fresh attack
-        // will fall, so entering Decay needs no special first step.
-        self.decay_gap = (1.0 - self.sustain_level).max(0.0);
+        // A reconfiguration mid-Decay recomputes the gap from the falling
+        // level against the new sustain, so the fall continues from where the
+        // voice is; an unconditional `1 - sustain` reset here would snap a
+        // falling voice back toward full scale. Before Decay is ever entered
+        // the other branch holds the distance a fresh attack will fall, so
+        // entering Decay needs no special first step.
+        self.decay_gap = if self.stage == EnvelopeStage::Decay {
+            (self.level - self.sustain_level).max(0.0)
+        } else {
+            (1.0 - self.sustain_level).max(0.0)
+        };
     }
 
     pub fn trigger(&mut self) {
@@ -1988,6 +1995,107 @@ mod tests {
             );
             env.tick();
             ticks += 1;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Reconfiguring mid-Decay must keep the fall continuous, not re-seed it
+    // -----------------------------------------------------------------------
+
+    /// An Attack/Release macro drag re-runs `configure` on every sounding
+    /// voice through `set_envelope_scaling`. The macro never touches sustain,
+    /// so nothing about the fall's targets changes — yet the old unconditional
+    /// `decay_gap = 1 - sustain` reset sent a voice falling through 0.7
+    /// straight back toward 1.0 on the next tick, an upward jump the player
+    /// hears as a re-attack. The gap must be recomputed from the falling
+    /// level, so the next tick continues from where the voice is.
+    #[test]
+    fn a_macro_reconfiguration_mid_decay_keeps_falling_from_the_current_level() {
+        let (pool, mut zone) = silent_headed_sample(0, 44_100);
+        zone.amp_env = AdsrParams {
+            attack: 0.0,
+            decay: 2.0,
+            sustain: 0.5,
+            release: 0.2,
+        };
+        let mut voice = LevainVoice::new(SAMPLE_RATE);
+        voice.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
+
+        // Instant attack; drive the envelope alone into mid-Decay so the
+        // reading is the envelope's own state, not the rendered gain.
+        voice.amp_env.tick();
+        while voice.amp_env.current_level() > 0.7 {
+            voice.amp_env.tick();
+        }
+        let pre = voice.amp_env.current_level();
+        assert!(
+            (0.6..=0.7).contains(&pre),
+            "helper must reach mid-Decay below the peak, got level {pre}"
+        );
+        assert_eq!(voice.amp_env.stage, EnvelopeStage::Decay);
+
+        voice.set_envelope_scaling(EnvelopeScaling {
+            attack: 1.0,
+            release: 4.0,
+        });
+
+        let after = voice.amp_env.tick();
+        assert!(
+            (after - pre).abs() < 1e-3,
+            "a reconfiguration mid-Decay must continue the fall from {pre}, next tick read {after}"
+        );
+        assert!(
+            after < 0.9,
+            "the envelope must not snap back toward full scale, tick read {after}"
+        );
+    }
+
+    /// Raising the sustain above the level a Decay is already at clamps the
+    /// recomputed gap to zero: the voice settles onto the new sustain and
+    /// holds there, rather than restarting its fall from full scale.
+    #[test]
+    fn raising_sustain_above_a_falling_level_clamps_the_gap_and_holds() {
+        let mut env = AdsrEnvelope::new(SAMPLE_RATE);
+        env.configure(&AdsrParams {
+            attack: 0.0,
+            decay: 2.0,
+            sustain: 0.5,
+            release: 0.2,
+        });
+        env.trigger();
+        env.tick(); // instant attack lands at 1.0 and enters Decay
+        while env.current_level() > 0.7 {
+            env.tick();
+        }
+        let pre = env.current_level();
+        assert!(
+            (0.6..=0.7).contains(&pre),
+            "helper must reach mid-Decay below the peak, got level {pre}"
+        );
+
+        env.configure(&AdsrParams {
+            attack: 0.0,
+            decay: 2.0,
+            sustain: 0.8,
+            release: 0.2,
+        });
+
+        let after = env.tick();
+        assert_eq!(
+            env.stage,
+            EnvelopeStage::Sustain,
+            "a clamped-to-zero gap must settle the stage on the next tick"
+        );
+        assert!(
+            (after - 0.8).abs() < 1e-4,
+            "the voice must settle onto the raised sustain, tick read {after}"
+        );
+        for _ in 0..1000 {
+            let held = env.tick();
+            assert!(
+                (held - 0.8).abs() < 1e-4,
+                "the raised sustain must hold, tick read {held}"
+            );
         }
     }
 }

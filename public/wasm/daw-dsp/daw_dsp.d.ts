@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:4239dbd67edac9c90afc575680fd77f99e92ae5970274415e42d581a81357c8f
+// @wasm-bindgen-dts crate-source: sha256:d69f4dc3a3e09cb8f920aa64ca727b8cd00a5dc5409fea89631396d5ffa35438
 /* tslint:disable */
 /* eslint-disable */
 
@@ -858,47 +858,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_crustinstance_free: (a: number, b: number) => void;
-    readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
-    readonly crustinstance_get_gr_db: (a: number) => number;
-    readonly crustinstance_get_input_db: (a: number) => number;
-    readonly crustinstance_get_input_left_ptr: (a: number) => number;
-    readonly crustinstance_get_input_right_ptr: (a: number) => number;
-    readonly crustinstance_get_latency_samples: (a: number) => number;
-    readonly crustinstance_get_lra: (a: number) => number;
-    readonly crustinstance_get_lufs_integrated: (a: number) => number;
-    readonly crustinstance_get_lufs_momentary: (a: number) => number;
-    readonly crustinstance_get_lufs_short_term: (a: number) => number;
-    readonly crustinstance_get_nan_flush_count: (a: number) => number;
-    readonly crustinstance_get_output_db: (a: number) => number;
-    readonly crustinstance_get_right_ptr: (a: number) => number;
-    readonly crustinstance_get_true_peak_exceeded: (a: number) => number;
-    readonly crustinstance_get_true_peak_max: (a: number) => number;
-    readonly crustinstance_new: (a: number) => number;
-    readonly crustinstance_process: (a: number, b: number) => number;
-    readonly crustinstance_reset_true_peak: (a: number) => void;
-    readonly crustinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly grinderinstance_get_automation_values_ptr: (a: number) => number;
-    readonly grinderinstance_get_gate_envelope_db: (a: number) => number;
-    readonly grinderinstance_get_gate_open: (a: number) => number;
-    readonly grinderinstance_get_input_db: (a: number) => number;
-    readonly grinderinstance_get_input_left_ptr: (a: number) => number;
-    readonly grinderinstance_get_input_right_ptr: (a: number) => number;
-    readonly grinderinstance_get_latency_samples: (a: number) => number;
-    readonly grinderinstance_get_nan_flush_count: (a: number) => number;
-    readonly grinderinstance_get_neural_cpu_percent: (a: number) => number;
-    readonly grinderinstance_get_neural_warmup_progress: (a: number) => number;
-    readonly grinderinstance_get_output_db: (a: number) => number;
-    readonly grinderinstance_get_output_left_ptr: (a: number) => number;
-    readonly grinderinstance_get_power_amp_db: (a: number) => number;
-    readonly grinderinstance_get_preamp_db: (a: number) => number;
-    readonly grinderinstance_get_right_ptr: (a: number) => number;
-    readonly grinderinstance_get_sag_voltage: (a: number) => number;
-    readonly grinderinstance_new: (a: number) => number;
-    readonly grinderinstance_process: (a: number, b: number) => number;
-    readonly grinderinstance_process_automated: (a: number, b: number) => number;
-    readonly grinderinstance_reset: (a: number) => void;
-    readonly grinderinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly __wbg_crumbsinstance_free: (a: number, b: number) => void;
     readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
     readonly __wbg_levaininstance_free: (a: number, b: number) => void;
@@ -994,7 +953,47 @@ export interface InitOutput {
     readonly toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
     readonly toasterinstance_get_nan_flush_count: (a: number) => number;
-    readonly init_panic_hook: () => void;
+    readonly __wbg_crustinstance_free: (a: number, b: number) => void;
+    readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
+    readonly crustinstance_get_gr_db: (a: number) => number;
+    readonly crustinstance_get_input_db: (a: number) => number;
+    readonly crustinstance_get_input_left_ptr: (a: number) => number;
+    readonly crustinstance_get_input_right_ptr: (a: number) => number;
+    readonly crustinstance_get_latency_samples: (a: number) => number;
+    readonly crustinstance_get_lra: (a: number) => number;
+    readonly crustinstance_get_lufs_integrated: (a: number) => number;
+    readonly crustinstance_get_lufs_momentary: (a: number) => number;
+    readonly crustinstance_get_lufs_short_term: (a: number) => number;
+    readonly crustinstance_get_nan_flush_count: (a: number) => number;
+    readonly crustinstance_get_output_db: (a: number) => number;
+    readonly crustinstance_get_right_ptr: (a: number) => number;
+    readonly crustinstance_get_true_peak_exceeded: (a: number) => number;
+    readonly crustinstance_get_true_peak_max: (a: number) => number;
+    readonly crustinstance_new: (a: number) => number;
+    readonly crustinstance_process: (a: number, b: number) => number;
+    readonly crustinstance_reset_true_peak: (a: number) => void;
+    readonly crustinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly grinderinstance_get_automation_values_ptr: (a: number) => number;
+    readonly grinderinstance_get_gate_envelope_db: (a: number) => number;
+    readonly grinderinstance_get_gate_open: (a: number) => number;
+    readonly grinderinstance_get_input_db: (a: number) => number;
+    readonly grinderinstance_get_input_left_ptr: (a: number) => number;
+    readonly grinderinstance_get_input_right_ptr: (a: number) => number;
+    readonly grinderinstance_get_latency_samples: (a: number) => number;
+    readonly grinderinstance_get_nan_flush_count: (a: number) => number;
+    readonly grinderinstance_get_neural_cpu_percent: (a: number) => number;
+    readonly grinderinstance_get_neural_warmup_progress: (a: number) => number;
+    readonly grinderinstance_get_output_db: (a: number) => number;
+    readonly grinderinstance_get_output_left_ptr: (a: number) => number;
+    readonly grinderinstance_get_power_amp_db: (a: number) => number;
+    readonly grinderinstance_get_preamp_db: (a: number) => number;
+    readonly grinderinstance_get_right_ptr: (a: number) => number;
+    readonly grinderinstance_get_sag_voltage: (a: number) => number;
+    readonly grinderinstance_new: (a: number) => number;
+    readonly grinderinstance_process: (a: number, b: number) => number;
+    readonly grinderinstance_process_automated: (a: number, b: number) => number;
+    readonly grinderinstance_reset: (a: number) => void;
+    readonly grinderinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly __wbg_fermenterinstance_free: (a: number, b: number) => void;
     readonly __wbg_grandbouleinstance_free: (a: number, b: number) => void;
     readonly analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
@@ -1051,6 +1050,7 @@ export interface InitOutput {
     readonly bacteriainstance_process: (a: number, b: number) => number;
     readonly bacteriainstance_reset: (a: number) => void;
     readonly bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly init_panic_hook: () => void;
     readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
     readonly kneadinstance_get_f0: (a: number) => number;
     readonly kneadinstance_get_input_left_ptr: (a: number) => number;

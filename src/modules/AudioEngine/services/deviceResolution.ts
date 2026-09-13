@@ -121,9 +121,10 @@ const paramTargetMap: Record<string, readonly DeviceParamTargetDefinition[]> = {
     'builtin-gain:gain-level': [{ nodeIndex: 0, property: 'gain', convert: dbToGain }],
     'builtin-limiter:lim-threshold': [{ nodeName: 'comp', property: 'threshold' }],
     'builtin-limiter:lim-release': [{ nodeName: 'comp', property: 'release', scale: 1 / 1000 }],
-    // The ceiling gain carries the knob's value in linear form; the clipper's
-    // curve (the hard cap itself) has no AudioParam and tracks static writes.
-    'builtin-limiter:lim-ceiling': [{ nodeName: 'ceiling', property: 'gain', convert: dbToGain }],
+    // lim-ceiling binds nothing: the advertised cap lives in the clipper's
+    // WaveShaper curve, which only static writes rebuild — automating the
+    // ceiling gain alone left the factory curve in place and rendered peaks
+    // past the knob's ceiling. The census carries the reasoned exemption.
     'builtin-filter:filter-cutoff': [{ nodeName: 'filter', property: 'frequency' }],
     'builtin-filter:filter-resonance': [{ nodeName: 'filter', property: 'Q' }],
     // dist-drive regenerates the WaveShaper curve (no AudioParam).
@@ -140,7 +141,12 @@ const paramTargetMap: Record<string, readonly DeviceParamTargetDefinition[]> = {
         { nodeIndex: 2, property: 'gain' },
         { nodeIndex: 1, property: 'gain', scale: -1, offset: 1 },
     ],
-    'builtin-deesser:deess-threshold': [{ nodeName: 'comp', property: 'threshold' }],
+    // The threshold enters the sidechain as a linear subtractor: the envelope
+    // sum carries −10^(threshold/20) (see createDeEsser), so automation must
+    // convert exactly the way the static applier writes.
+    'builtin-deesser:deess-threshold': [
+        { nodeName: 'threshLin', property: 'offset', convert: (value) => -dbToGain(value) },
+    ],
     'builtin-deesser:deess-freq': [{ nodeName: 'bandpass', property: 'frequency' }],
     // Both band taps carry 10^(range/20): the reduction limit and the
     // cancellation weight are the same law (see createDeEsser).

@@ -173,20 +173,6 @@ describe('offline device automation applies the static parameter law (#3738)', (
         expect(audioParamOf(entry, 1, 'gain').setValueAtTime).toHaveBeenCalledWith(dbToGain(6), 0);
     });
 
-    it('schedules a limiter ceiling lane in linear gain', () => {
-        const entry = webAudioEntry('device-1', 'builtin-limiter');
-        scheduleDeviceLane(
-            entry,
-            makeLane({
-                parameterId: 'device-1:lim-ceiling',
-                minValue: -3,
-                maxValue: 0,
-                points: [{ beat: 128, value: -0.3, curve: 'linear', tension: 0 }],
-            })
-        );
-        expect(audioParamOf(entry, 1, 'gain').setValueAtTime).toHaveBeenCalledWith(dbToGain(-0.3), 0);
-    });
-
     it('schedules a de-esser Range lane through the band-tap cancellation law', () => {
         const entry = webAudioEntry('device-1', 'builtin-deesser');
         scheduleDeviceLane(

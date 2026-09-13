@@ -5,13 +5,16 @@ import { type OfflineDeviceNode } from '../types';
 export function applyDeEsserParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
     const nn = dn.namedNodes;
     const bandpassDE = (nn?.bandpass ?? dn.nodes[1]) as BiquadFilterNode;
-    const compDE = (nn?.comp ?? dn.nodes[2]) as DynamicsCompressorNode;
     const wetDE = (nn?.wet ?? dn.nodes[3]) as GainNode;
     const cancelDE = (nn?.cancel ?? dn.nodes[4]) as GainNode;
     const listenDE = (nn?.listen ?? dn.nodes[5]) as GainNode;
     const inputGainDE = (nn?.inputGain ?? dn.nodes[6]) as GainNode;
+    const threshLinDE = (nn?.threshLin ?? dn.nodes[10]) as ConstantSourceNode;
     if (params['deess-threshold'] !== undefined) {
-        compDE.threshold.value = params['deess-threshold'];
+        // The threshold enters the reduction law as a linear subtractor: the
+        // envelope sum is `envelope − 10^(threshold/20)`, so the constant
+        // source carries the negated linear gain (see createDeEsser).
+        threshLinDE.offset.value = -dbToGain(params['deess-threshold']);
     }
     if (params['deess-freq'] !== undefined) {
         bandpassDE.frequency.value = params['deess-freq'];

@@ -172,7 +172,7 @@ describe('builtin device automation units reproduction (#3738)', () => {
         expect(makeup.gain.setValueAtTime).toHaveBeenCalledWith(expect.closeTo(dbToGain(6), 5), 0);
     });
 
-    it('schedules limiter release in seconds and ceiling in linear gain', () => {
+    it('schedules limiter release in seconds and exempts the ceiling lane', () => {
         const context = createMockAudioContext();
         const deviceNode = createOfflineDeviceNode({
             context: asBaseAudioContext(context),
@@ -206,7 +206,9 @@ describe('builtin device automation units reproduction (#3738)', () => {
 
         expect(comp.release.setValueAtTime).toHaveBeenCalledWith(0.1, 0);
 
-        // Ceiling -0.3 dB should schedule dbToGain(-0.3) ≈ 0.96605, not -0.3
+        // The ceiling is a census exemption (#3739): the advertised cap lives
+        // in the clipper's rebuilt WaveShaper curve, so its lane must schedule
+        // nothing rather than move the gain alone and render past the knob.
         scheduleTrackAutomationFixture({
             lanes: [
                 makeLane({
@@ -225,7 +227,7 @@ describe('builtin device automation units reproduction (#3738)', () => {
             changes: [],
         });
 
-        expect(ceiling.gain.setValueAtTime).toHaveBeenCalledWith(expect.closeTo(dbToGain(-0.3), 5), 0);
+        expect(ceiling.gain.setValueAtTime).not.toHaveBeenCalled();
     });
 
     it('resolves targets with correct scale and convert definitions', () => {
@@ -261,8 +263,8 @@ describe('builtin device automation units reproduction (#3738)', () => {
         const limReleaseTargets = resolveDeviceParamTargets('builtin-limiter', 'lim-release', limNode);
         expect(limReleaseTargets[0]?.scale).toBe(1 / 1000);
 
-        const limCeilingTargets = resolveDeviceParamTargets('builtin-limiter', 'lim-ceiling', limNode);
-        expect(limCeilingTargets[0]?.convert).toBeDefined();
-        expect(limCeilingTargets[0]?.convert?.(0)).toBe(1.0);
+        // The ceiling is a reasoned census exemption, not a bound target: the
+        // cap is the clipper's rebuilt WaveShaper curve.
+        expect(resolveDeviceParamTargets('builtin-limiter', 'lim-ceiling', limNode)).toHaveLength(0);
     });
 });
