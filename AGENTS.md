@@ -258,7 +258,11 @@ family name without deployment prefixes or date suffixes. `lane:publish` labels 
 `model:<family>` and carries the milestone and project membership of the bound issue;
 `--milestone`/`--project` override those values by open title on any lane — left empty rather than
 forced. Project membership is applied when the author App can access the owner's projects;
-otherwise it is left to the operator backfill.
+otherwise it is left to the operator backfill. The PR also carries the repository's descriptive
+labels: the bound issue's labels minus the `priority:` and `status:` namespaces, or on an issueless
+lane one type label derived from the conventional subject (`feat` → `enhancement`,
+`fix` → `bug`, `docs` → `documentation`); `--label <name>` adds more by live canonical name, and
+descriptive labels are never created on demand — only `model:<family>` is.
 
 Publish a stack parent first. `lane:publish` validates the child descriptor as untrusted data and
 targets the exact open parent head, or `main` after the recorded parent PR has merged. Landed-child
@@ -323,22 +327,22 @@ break review anchors and can strand lanes.
 Use `branch:prune` for remote deletion; it defaults to dry run and deletes only branches whose every
 PR is merged or closed. Read-only `gh` is unrestricted; use it for live tracker state.
 
-| Need                         | Command                                                                                                                                                                       |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Open a lane                  | `pnpm lane:open [issue] [slug] [--model <family>] [--stack-on <absolute-parent-lane>]`                                                                                        |
-| Sync a dependent lane        | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                          |
-| Push; open or update the PR  | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"] [--model <family>] [--milestone <title>] [--project <title>]` |
-| Write the review bundle      | `pnpm review:prepare <pr>`                                                                                                                                                    |
-| Post `review.json`           | `pnpm review:publish <pr>`                                                                                                                                                    |
-| Post final `acceptance.json` | `pnpm review:accept <pr>`                                                                                                                                                     |
-| Reply `Done` and resolve     | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                                                                                         |
-| Squash-merge                 | `pnpm deliver <pr>`                                                                                                                                                           |
-| Recover a crashed delivery   | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                              |
-| Close a superseded PR        | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                                                                                                             |
-| Prune spent remote branches  | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                   |
-| Remove a spent lane          | `pnpm lane:remove <path>`                                                                                                                                                     |
-| Strand an abandoned lane     | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                   |
-| Prune lane artifacts         | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                      |
+| Need                         | Command                                                                                                                                                                                        |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Open a lane                  | `pnpm lane:open [issue] [slug] [--model <family>] [--stack-on <absolute-parent-lane>]`                                                                                                         |
+| Sync a dependent lane        | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                           |
+| Push; open or update the PR  | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"] [--model <family>] [--milestone <title>] [--project <title>] [--label <name>]` |
+| Write the review bundle      | `pnpm review:prepare <pr>`                                                                                                                                                                     |
+| Post `review.json`           | `pnpm review:publish <pr>`                                                                                                                                                                     |
+| Post final `acceptance.json` | `pnpm review:accept <pr>`                                                                                                                                                                      |
+| Reply `Done` and resolve     | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                                                                                                          |
+| Squash-merge                 | `pnpm deliver <pr>`                                                                                                                                                                            |
+| Recover a crashed delivery   | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                               |
+| Close a superseded PR        | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                                                                                                                              |
+| Prune spent remote branches  | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                    |
+| Remove a spent lane          | `pnpm lane:remove <path>`                                                                                                                                                                      |
+| Strand an abandoned lane     | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                    |
+| Prune lane artifacts         | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                       |
 
 Gitignored `.env.sourdaw-author` and `.env.sourdaw-reviewer` live at the primary root (parent of
 `git rev-parse --git-common-dir`). Each script loads its own role's file; never load the other role's
