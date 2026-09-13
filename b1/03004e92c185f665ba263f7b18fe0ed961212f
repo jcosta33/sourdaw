@@ -1,0 +1,26 @@
+src/modules/BrowserAi/workers/__tests__/onnxInferenceWorker.spec.ts
+  s_87ab0a2f60ccf8::t_9646a8d5febe44 433-439,441-443,464,474-479,493-494
+  s_87ab0a2f60ccf8::t_d3b55a6ce80e28 416-418,420-429,432,444-460,463,465-473,480-492,495-528
+  s_87ab0a2f60ccf8::t_2e13c9ff55125d 419,430-431,440,461-462
+.agents/skills/state-and-write-paths/SKILL.md
+  s_87ab0a2f60ccf8::t_9646a8d5febe44 94-99
+src/modules/BrowserAi/workers/onnxInferenceWorker.ts
+  s_87ab0a2f60ccf8::t_008f6a7a2b71b5 738-742
+  s_87ab0a2f60ccf8::t_71abdde8fe9617 65-69,76,221-224,286,288-292,294-315,318,321,324,326-330,631-633,640-641,644-646,658-660,667-668,670,672-674,686-688
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b103004e92c185f665ba263f7b18fe0ed961212f",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": null
+    }
+  }
+}
