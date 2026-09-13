@@ -255,8 +255,9 @@ contains its landed commit. A moved, missing, ambiguous, closed-unmerged, or rac
 publication. `pnpm lane:sync-parent --lane <absolute-child-lane>` merges the verified current parent
 head, or merges `main` after the parent lands, into only that clean owned child. Resolve conflicts in
 the child and commit normally. Never rebase, reset, force-push, cascade to siblings, or silently adopt
-a replacement parent. Deliver remains bottom-up and main-only; after a parent lands, sync and publish
-the child and obtain fresh Gate, review, and acceptance. Keep earlier slices related with `--relates`
+a replacement parent. Deliver remains bottom-up and main-only; after a parent squash lands, sync the
+child so its final history contains the landed parent instead of the pre-squash parent branch, then
+publish and obtain fresh Gate, review, and acceptance. Keep earlier slices related with `--relates`
 until closure is warranted, and verify the original end-to-end outcome on the final combined head.
 
 Lanes isolate only working trees. Stash, process table, disk, and author lock are shared;

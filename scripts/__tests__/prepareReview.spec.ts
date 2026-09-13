@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,10 +11,23 @@ import {
     parsePrepareReviewArgs,
     prepareReview,
     reviewBundlePath,
+    shellPort,
     sweepStaleBundleSiblings,
     type PrepareReviewPort,
     type ReviewPullRequest,
 } from '../prepareReview.ts';
+
+import type { GhSession } from '../githubAppIdentity.ts';
+
+function git(root: string, ...args: string[]): string {
+    return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+}
+
+function commitAll(root: string, message: string): string {
+    git(root, 'add', '.');
+    git(root, 'commit', '-m', message);
+    return git(root, 'rev-parse', 'HEAD');
+}
 
 function pullRequest(overrides: Partial<ReviewPullRequest> = {}): ReviewPullRequest {
     return {
@@ -152,6 +166,43 @@ describe('review prepare', () => {
             expect(files['contracts/.agents/decisions/0026-ownership-by-exception.md']).toBe(
                 'base .agents/decisions/0026-ownership-by-exception.md\n'
             );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('summarizes only the child diff from the real base/head merge-base after main advances', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-git-'));
+        try {
+            git(root, 'init', '-b', 'main');
+            git(root, 'config', 'user.email', 'review-test@example.com');
+            git(root, 'config', 'user.name', 'Review Test');
+            writeFileSync(join(root, 'base.txt'), 'base\n');
+            commitAll(root, 'base');
+
+            git(root, 'switch', '-c', 'child');
+            writeFileSync(join(root, 'child.ts'), 'child one\nchild two\n');
+            const childHead = commitAll(root, 'child');
+
+            git(root, 'switch', 'main');
+            writeFileSync(join(root, 'main-only.ts'), 'main one\nmain two\nmain three\n');
+            const advancedMain = commitAll(root, 'advance main');
+
+            const session: GhSession = { configDir: join(root, '.gh'), env: process.env, dispose: () => undefined };
+            const actualShell = shellPort(session, root);
+            const { port, files } = fakePort(root);
+            port.pullRequest = () => pullRequest({ baseRefOid: advancedMain, headRefOid: childHead });
+            port.mergeBase = actualShell.mergeBase;
+            port.numstat = actualShell.numstat;
+
+            prepareReview(42, port);
+
+            expect(JSON.parse(files['review-size.json'] ?? '{}')).toMatchObject({
+                files: 1,
+                added: 2,
+                deleted: 0,
+                groups: { handwritten: { files: 1, added: 2, deleted: 0 } },
+            });
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
