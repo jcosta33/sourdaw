@@ -1,0 +1,22 @@
+AGENTS.md
+  h_1228e573df1f42 258-261,326-341
+scripts/__tests__/githubAppIdentity.spec.ts
+  h_1228e573df1f42 18-19,382,398-400,510,527,534,537,549-551,558-581,585,605
+scripts/__tests__/publishLane.spec.ts
+  h_1228e573df1f42 25,28,30-31,146-147,225-227,582,1452-1454,1823-1853,1940-1943,1946,1949,2142-2246
+scripts/githubAppIdentity.ts
+  h_1228e573df1f42 67-72,74-78,446-448
+scripts/publishLane.ts
+  h_1228e573df1f42 85,255-262,265,268-270,273,834-836,846-847,849,851,855,871-873,883-935
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5f7e9ff64c58e61deaded74593b3299a5ff522f5",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
