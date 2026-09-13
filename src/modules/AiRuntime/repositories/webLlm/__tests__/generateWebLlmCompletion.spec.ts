@@ -19,6 +19,18 @@ vi.mock('#/infra/logger/appLogger', () => ({
 
 function ignoreRejection(_reason: unknown): void {}
 
+type Outcome<T> = { status: 'fulfilled'; value: T } | { status: 'rejected'; reason: unknown };
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (reason: unknown) => void } {
+    let resolve: (value: T) => void = () => undefined;
+    let reject: (reason: unknown) => void = ignoreRejection;
+    const promise = new Promise<T>((promiseResolve, promiseReject) => {
+        resolve = promiseResolve;
+        reject = promiseReject;
+    });
+    return { promise, resolve, reject };
+}
+
 describe('generateWebLlmCompletion', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -99,5 +111,65 @@ describe('generateWebLlmCompletion', () => {
 
         await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
         expect(mocks.interruptGenerate).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not interrupt active inference when a queued caller aborts', async () => {
+        const activeCompletion = deferred<unknown>();
+        const queuedCompletion = deferred<unknown>();
+        let rejectActive: (reason: unknown) => void = ignoreRejection;
+        let completionCount = 0;
+        mocks.createCompletion.mockImplementation(() => {
+            completionCount += 1;
+            if (completionCount === 1) {
+                return new Promise((_resolve, reject) => {
+                    rejectActive = reject;
+                    activeCompletion.promise.then(_resolve, reject);
+                });
+            }
+            return queuedCompletion.promise;
+        });
+        mocks.interruptGenerate.mockImplementation(() => {
+            rejectActive(new DOMException('Aborted', 'AbortError'));
+        });
+
+        const active = generateWebLlmCompletion('system', 'active');
+        const queuedController = new AbortController();
+        const queuedAddEventListener = vi.spyOn(queuedController.signal, 'addEventListener');
+        const queued = generateWebLlmCompletion('system', 'queued', { signal: queuedController.signal });
+        const activeOutcome: Promise<Outcome<string>> = active.then(
+            (value): Outcome<string> => ({ status: 'fulfilled', value }),
+            (reason: unknown): Outcome<string> => ({ status: 'rejected', reason })
+        );
+        const queuedOutcome: Promise<Outcome<string>> = queued.then(
+            (value): Outcome<string> => ({ status: 'fulfilled', value }),
+            (reason: unknown): Outcome<string> => ({ status: 'rejected', reason })
+        );
+
+        try {
+            await vi.waitFor(() => expect(mocks.createCompletion).toHaveBeenCalled());
+            await vi.waitFor(() =>
+                expect(queuedAddEventListener).toHaveBeenCalledWith('abort', expect.any(Function), { once: true })
+            );
+
+            queuedController.abort();
+            activeCompletion.resolve({
+                choices: [{ finish_reason: 'stop', message: { content: '<think>work</think>active answer' } }],
+            });
+            queuedCompletion.resolve({
+                choices: [{ finish_reason: 'stop', message: { content: 'queued answer' } }],
+            });
+
+            await expect(activeOutcome).resolves.toEqual({ status: 'fulfilled', value: 'active answer' });
+            await expect(queuedOutcome).resolves.toMatchObject({ status: 'rejected', reason: { name: 'AbortError' } });
+            expect(mocks.interruptGenerate).not.toHaveBeenCalled();
+        } finally {
+            activeCompletion.resolve({
+                choices: [{ finish_reason: 'stop', message: { content: 'active answer' } }],
+            });
+            queuedCompletion.resolve({
+                choices: [{ finish_reason: 'stop', message: { content: 'queued answer' } }],
+            });
+            queuedAddEventListener.mockRestore();
+        }
     });
 });
