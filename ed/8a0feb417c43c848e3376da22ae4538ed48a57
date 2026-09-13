@@ -1,0 +1,19 @@
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_a8f6f15ead5a48::t_0ec74a1a188626 20-21,120,146-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ed8a0feb417c43c848e3376da22ae4538ed48a57",
+  "prompts": {},
+  "sessions": {
+    "s_a8f6f15ead5a48": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09b44-61dd-7762-afdf-271994a579d3",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
