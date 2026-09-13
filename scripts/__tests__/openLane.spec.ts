@@ -227,7 +227,10 @@ describe('real Git stack creation reservation', () => {
 
     it('reserves then registers then creates the exact locked stack head', () => {
         const f = creationFixture();
+        const parentMarker = f.git('config', '--get', '--default', '', 'branch.agent/parent.sourdaw-stack-fork');
         const lane = openLane(undefined, 'child', f.port, f.parentPath);
+        expect(f.git('config', '--get', '--default', '', 'branch.agent/child.sourdaw-stack-fork')).toBe(f.head);
+        expect(f.git('config', '--get', '--default', '', 'branch.agent/parent.sourdaw-stack-fork')).toBe(parentMarker);
         const reserve = f.writes.findIndex((args) => args[0] === 'branch');
         const marker = f.writes.findIndex((args) => args[0] === 'config');
         const add = f.writes.findIndex((args) => args[0] === 'worktree' && args[1] === 'add');
