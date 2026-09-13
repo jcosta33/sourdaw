@@ -19,6 +19,7 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
+import { formatReviewDiffSummary, summarizeReviewDiff } from './reviewDiffSummary.ts';
 
 export type ReviewPullRequest = {
     number: number;
@@ -36,6 +37,7 @@ export type PrepareReviewPort = {
     fetchShas: (baseSha: string, headSha: string) => void;
     mergeBase: (baseSha: string, headSha: string) => string;
     diff: (baseSha: string, headSha: string) => string;
+    numstat: (baseSha: string, headSha: string) => Buffer;
     showFile: (sha: string, path: string) => string;
     listDecisionFiles: (sha: string) => string[];
     installBundle: (destination: string, files: Record<string, string>) => void;
@@ -60,6 +62,67 @@ export function reviewBundlePath(primaryRoot: string, pr: number, headSha: strin
     return join(primaryRoot, '.agents', 'review-bundles', `${pr}-${headSha}`);
 }
 
+export type ReviewBundleContext = {
+    pr: number;
+    baseRefName: string;
+    baseSha: string;
+    headSha: string;
+};
+
+export function parseReviewBundleContext(contents: string, label: string): ReviewBundleContext {
+    let value: unknown;
+    try {
+        value = JSON.parse(contents);
+    } catch {
+        fail(`${label}: invalid review bundle manifest`);
+    }
+    if (typeof value !== 'object' || value === null) {
+        fail(`${label}: invalid review bundle context`);
+    }
+    const manifest = value as Partial<ReviewBundleContext>;
+    if (
+        typeof manifest.pr !== 'number' ||
+        !Number.isSafeInteger(manifest.pr) ||
+        typeof manifest.baseRefName !== 'string' ||
+        manifest.baseRefName === '' ||
+        typeof manifest.baseSha !== 'string' ||
+        manifest.baseSha === '' ||
+        typeof manifest.headSha !== 'string' ||
+        manifest.headSha === ''
+    ) {
+        fail(`${label}: invalid review bundle context`);
+    }
+    return manifest as ReviewBundleContext;
+}
+
+export function readReviewBundleContext(destination: string): ReviewBundleContext {
+    return parseReviewBundleContext(readFileSync(join(destination, 'manifest.json'), 'utf8'), destination);
+}
+
+function hasCallerReviewDocuments(destination: string): boolean {
+    return ['review.json', 'discarded.json', 'acceptance.json'].some((name) => existsSync(join(destination, name)));
+}
+
+function assertReusableBundleContext(destination: string, expected: ReviewBundleContext): void {
+    if (!existsSync(destination) || !hasCallerReviewDocuments(destination)) {
+        return;
+    }
+    let current: ReviewBundleContext;
+    try {
+        current = readReviewBundleContext(destination);
+    } catch {
+        fail(`review bundle context changed for ${destination}`);
+    }
+    if (
+        current.pr !== expected.pr ||
+        current.baseRefName !== expected.baseRefName ||
+        current.baseSha !== expected.baseSha ||
+        current.headSha !== expected.headSha
+    ) {
+        fail(`review bundle context changed for ${destination}`);
+    }
+}
+
 export function prepareReview(number: number, port: PrepareReviewPort): string {
     const pullRequest = port.pullRequest(number);
     port.fetchShas(pullRequest.baseRefOid, pullRequest.headRefOid);
@@ -69,6 +132,9 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
     const decisionFiles = port.listDecisionFiles(baseSha);
     const files: Record<string, string> = {
         'diff.patch': port.diff(baseSha, pullRequest.headRefOid),
+        'review-size.json': `${formatReviewDiffSummary(
+            summarizeReviewDiff(port.primaryRoot(), port.numstat(baseSha, pullRequest.headRefOid))
+        )}\n`,
         'pr.md': `# ${pullRequest.title}\n\n${pullRequest.body ?? ''}\n`,
         'contracts/AGENTS.md': agents,
         'contracts/CLAUDE.md': claude,
@@ -82,6 +148,7 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
     files['manifest.json'] = `${JSON.stringify(
         {
             pr: pullRequest.number,
+            baseRefName: pullRequest.baseRefName,
             baseSha,
             headSha: pullRequest.headRefOid,
             generated,
@@ -90,6 +157,12 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
         4
     )}\n`;
     const destination = reviewBundlePath(port.primaryRoot(), pullRequest.number, pullRequest.headRefOid);
+    assertReusableBundleContext(destination, {
+        pr: pullRequest.number,
+        baseRefName: pullRequest.baseRefName,
+        baseSha,
+        headSha: pullRequest.headRefOid,
+    });
     port.installBundle(destination, files);
     port.log(destination);
     return destination;
@@ -278,6 +351,14 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prep
                 env: session.env,
                 trim: false,
             }),
+        numstat: (baseSha, headSha) =>
+            Buffer.from(
+                spawnCapture('git', ['diff', '--numstat', '-z', `${baseSha}...${headSha}`], {
+                    cwd: primaryRoot,
+                    env: session.env,
+                    trim: false,
+                })
+            ),
         showFile: (sha, path) =>
             spawnCapture('git', ['show', `${sha}:${path}`], { cwd: primaryRoot, env: session.env, trim: false }),
         listDecisionFiles: (sha) => {

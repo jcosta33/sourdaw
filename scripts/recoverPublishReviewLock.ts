@@ -17,6 +17,7 @@ import { reviewBundlePath } from './prepareReview.ts';
 import {
     parseReviewDocument,
     parseAcceptanceDocument,
+    renderReviewDocumentBody,
     reviewPublicationPayload,
     reviewPublicationPayloadDigest,
     type PublishReviewAuthentication,
@@ -408,7 +409,7 @@ function readRecoveryBundleDocument(
     ) {
         fail('legacy review-publication recovery bundle does not match the trusted incident receipt');
     }
-    return document;
+    return { ...document, body: renderReviewDocumentBody(document) };
 }
 
 function requireMatchingRecoveryDigest(

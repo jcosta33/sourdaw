@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,6 +16,7 @@ import {
     defaultPublishReviewCoordinatorDependencies,
     parsePublishReviewArgs,
     parseReviewDocument,
+    renderReviewDocumentBody,
     publishPreparedReview,
     publishReview,
     reviewPublicationPayload,
@@ -64,8 +66,14 @@ function approvalEvidence(headSha = 'headsha') {
     };
 }
 
+function approvalContext(headSha = 'headsha', pr = 42) {
+    return { pr, baseRefName: 'main', baseSha: 'base', headSha };
+}
+
 function approvalBody(headSha = 'headsha', summary = 'ok') {
-    return `${summary}\n\nVerification for ${headSha}\n\nExpected: Missing evidence prevents posting\nCheck: pnpm test:run scripts/__tests__/publishReview.spec.ts\nObserved: Missing evidence: no POST and no journal`;
+    return `${summary}\n\nEvidence SHA-256: ${createHash('sha256')
+        .update(JSON.stringify(approvalEvidence(headSha)))
+        .digest('hex')}`;
 }
 
 function removeTemporaryDirectory(root: string): void {
@@ -132,6 +140,7 @@ function fakePort(
     let state = input.state ?? 'OPEN';
     const port: PublishReviewPort = {
         primaryRoot: () => '/repo',
+        assertApprovalContext: (number, head) => approvalContext(head, number),
         pullRequest: () => {
             const current = head;
             const currentState = state;
@@ -148,7 +157,15 @@ function fakePort(
             if (input.missing === true) {
                 throw new Error('ENOENT');
             }
-            return input.json ?? { event: 'APPROVE', body: 'ok', comments: [], evidence: approvalEvidence(input.head) };
+            return (
+                input.json ?? {
+                    format: 'compact-v1',
+                    event: 'APPROVE',
+                    body: 'ok',
+                    comments: [],
+                    evidence: approvalEvidence(input.head),
+                }
+            );
         },
         readBundleDiff: () =>
             input.diff ??
@@ -240,8 +257,18 @@ async function runFailingReviewPublication(root: string, number: number, head: s
     const bundle = join(root, '.agents', 'review-bundles', `${number}-${head}`);
     mkdirSync(bundle, { recursive: true });
     writeFileSync(
+        join(bundle, 'manifest.json'),
+        JSON.stringify({ ...approvalContext(head, number), baseSha: 'b'.repeat(40) })
+    );
+    writeFileSync(
         join(bundle, 'review.json'),
-        JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [], evidence: approvalEvidence(head) })
+        JSON.stringify({
+            format: 'compact-v1',
+            event: 'APPROVE',
+            body: 'Attacked; held.',
+            comments: [],
+            evidence: approvalEvidence(head),
+        })
     );
     writeFileSync(join(bundle, 'diff.patch'), '');
     const session: GhSession = { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined };
@@ -259,7 +286,23 @@ async function runFailingReviewPublication(root: string, number: number, head: s
                         return `${root}/.git`;
                     }
                     if (command === 'gh' && args[0] === 'pr') {
-                        return JSON.stringify({ state: 'OPEN', headRefOid: head });
+                        return JSON.stringify({
+                            number,
+                            state: 'OPEN',
+                            headRefOid: head,
+                            headRefName: 'agent/test',
+                            baseRefName: 'main',
+                            baseRefOid: 'b'.repeat(40),
+                        });
+                    }
+                    if (command === 'git' && args.includes('fetch')) {
+                        return '';
+                    }
+                    if (command === 'git' && args[0] === 'config') {
+                        return '';
+                    }
+                    if (command === 'git' && args[0] === 'merge-base') {
+                        return 'b'.repeat(40);
                     }
                     if (command === 'gh' && args[0] === 'api') {
                         throw new Error(failureMessage);
@@ -364,6 +407,222 @@ function recoveryDependencies(
 }
 
 describe('review publish', () => {
+    it('refuses fresh approval when the publication context reader is absent', () => {
+        const fixture = fakePort();
+        expect(() => publishReview(42, { ...fixture.port, assertApprovalContext: undefined })).toThrow(
+            /approval context/
+        );
+        expect(fixture.posted.review).toBeUndefined();
+    });
+
+    it('refuses exported prepared approval without its original context', () => {
+        const fixture = fakePort();
+        const document = parseReviewDocument({
+            format: 'compact-v1',
+            event: 'APPROVE',
+            body: 'ok',
+            evidence: approvalEvidence(),
+        });
+        expect(() =>
+            publishPreparedReview(42, { head: 'headsha', document, payloadDigest: 'unused' }, fixture.port)
+        ).toThrow(/approval context/);
+        expect(fixture.posted.review).toBeUndefined();
+    });
+
+    it.each(['baseSha', 'baseRefName', 'headSha', 'pr'] as const)(
+        'refuses approval context %s drift inside the publication fence',
+        (field) => {
+            const fixture = fakePort();
+            const initial = approvalContext();
+            const changed = { ...initial, [field]: field === 'pr' ? 43 : 'changed' };
+            const read = vi.fn().mockReturnValueOnce(initial).mockReturnValue(changed);
+            const journal = vi.fn();
+            expect(() =>
+                publishReview(
+                    42,
+                    { ...fixture.port, assertApprovalContext: read },
+                    {
+                        ownerOid: 'owner',
+                        journalReviewPublication: journal,
+                        markRemoteMutationAttempt: vi.fn(),
+                        markDefinitiveNoMutationHttpStatus: vi.fn(),
+                        registerSuccessfulCompletion: vi.fn(),
+                    }
+                )
+            ).toThrow(/approval context/);
+            expect(read).toHaveBeenCalledTimes(2);
+            expect(journal).not.toHaveBeenCalled();
+            expect(fixture.posted.review).toBeUndefined();
+        }
+    );
+
+    it('allows REQUEST_CHANGES without approval context on a dependent base', () => {
+        const fixture = fakePort({
+            json: { event: 'REQUEST_CHANGES', body: 'Fix the defect.', comments: [validComment] },
+        });
+        publishReview(42, { ...fixture.port, assertApprovalContext: undefined });
+        expect(fixture.posted.review?.event).toBe('REQUEST_CHANGES');
+    });
+    it('compact approval publishes only the conclusion and canonical evidence digest', () => {
+        const evidence = approvalEvidence();
+        const { port, posted } = fakePort({
+            json: { format: 'compact-v1', event: 'APPROVE', body: 'Attacked; held.', comments: [], evidence },
+        });
+        publishReview(42, port);
+        const digest = createHash('sha256').update(JSON.stringify(evidence)).digest('hex');
+        expect(posted.review?.body).toBe(`Attacked; held.\n\nEvidence SHA-256: ${digest}`);
+    });
+
+    it.each(['reviewer', 'acceptance'])('preserves legacy %s payload bytes with and without evidence', (role) => {
+        for (const evidence of [undefined, approvalEvidence()]) {
+            const raw = {
+                event: 'APPROVE',
+                body: 'Historical summary.\n',
+                comments: [],
+                ...(evidence === undefined ? {} : { evidence }),
+            };
+            const document = role === 'acceptance' ? parseAcceptanceDocument(raw) : parseReviewDocument(raw);
+            const attribution = role === 'acceptance' ? 'Orchestrator acceptance on behalf of jcosta33\n\n' : '';
+            const appendix =
+                evidence === undefined
+                    ? ''
+                    : '\n\nVerification for headsha\n\nExpected: Missing evidence prevents posting\nCheck: pnpm test:run scripts/__tests__/publishReview.spec.ts\nObserved: Missing evidence: no POST and no journal';
+            const expectedBody = `${attribution}Historical summary.\n${appendix}`;
+            const expectedPayload = JSON.stringify({
+                commit_id: 'headsha',
+                event: 'APPROVE',
+                body: expectedBody,
+                comments: [],
+            });
+            expect(renderReviewDocumentBody(document)).toBe(expectedBody);
+            expect(reviewPublicationPayload({ commitId: 'headsha', ...document })).toBe(expectedPayload);
+            expect(reviewPublicationPayloadDigest(expectedPayload)).toBe(
+                createHash('sha256').update(expectedPayload).digest('hex')
+            );
+            expect(role === 'acceptance' ? parseAcceptanceDocument(document) : parseReviewDocument(document)).toEqual(
+                document
+            );
+        }
+    });
+
+    it.each([undefined, 'future-v2', null])(
+        'refuses noncompact fresh approval format %s through both routes',
+        (format) => {
+            const raw = {
+                ...(format === undefined ? {} : { format }),
+                event: 'APPROVE' as const,
+                body: 'ok',
+                comments: [],
+                evidence: approvalEvidence(),
+            };
+            const fixture = fakePort({ json: raw });
+            const journal = vi.fn();
+            const boundary = {
+                ownerOid: 'owner',
+                journalReviewPublication: journal,
+                markRemoteMutationAttempt: vi.fn(),
+                markDefinitiveNoMutationHttpStatus: vi.fn(),
+                registerSuccessfulCompletion: vi.fn(),
+            };
+            expect(() => publishReview(42, fixture.port, boundary)).toThrow(/format/);
+            if (format === undefined) {
+                expect(() =>
+                    publishPreparedReview(
+                        42,
+                        { head: 'headsha', document: parseReviewDocument(raw), payloadDigest: 'unused' },
+                        fixture.port,
+                        boundary
+                    )
+                ).toThrow(/format/);
+            } else {
+                expect(() => parseReviewDocument(raw)).toThrow(/format/);
+            }
+            expect(journal).not.toHaveBeenCalled();
+            expect(fixture.posted.review).toBeUndefined();
+        }
+    );
+
+    it.each([600, 601])(
+        'enforces the complete compact public body at %i Unicode code points on both routes',
+        (length) => {
+            const suffixLength = [...approvalBody('headsha', '')].length;
+            const document = parseReviewDocument({
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: '🎵'.repeat(length - suffixLength),
+                evidence: approvalEvidence(),
+            });
+            for (const prepared of [false, true]) {
+                const fixture = fakePort({ json: document });
+                const journal = vi.fn();
+                const boundary = {
+                    ownerOid: 'owner',
+                    journalReviewPublication: journal,
+                    markRemoteMutationAttempt: vi.fn(),
+                    markDefinitiveNoMutationHttpStatus: vi.fn(),
+                    registerSuccessfulCompletion: vi.fn(),
+                };
+                const body = approvalBody('headsha', document.body);
+                const publish = () => {
+                    if (prepared) {
+                        return publishPreparedReview(
+                            42,
+                            {
+                                head: 'headsha',
+                                approvalContext: approvalContext(),
+                                document,
+                                payloadDigest: reviewPublicationPayloadDigest(
+                                    reviewPublicationPayload({ commitId: 'headsha', ...document, body })
+                                ),
+                            },
+                            fixture.port,
+                            boundary
+                        );
+                    }
+                    return publishReview(42, fixture.port, boundary);
+                };
+                if (length === 600) {
+                    publish();
+                    expect(fixture.posted.review?.body).toBe(body);
+                    expect([...body]).toHaveLength(600);
+                } else {
+                    expect(publish).toThrow('601 Unicode code points; maximum is 600');
+                    expect(journal).not.toHaveBeenCalled();
+                    expect(fixture.posted.review).toBeUndefined();
+                }
+            }
+        }
+    );
+
+    it('canonicalizes evidence keys while preserving claim order', () => {
+        const claim = approvalEvidence().claims[0];
+        if (claim === undefined) {
+            throw new Error('missing claim');
+        }
+        const raw = {
+            format: 'compact-v1',
+            event: 'APPROVE',
+            body: 'ok',
+            evidence: {
+                claims: [
+                    {
+                        observed: claim.observed,
+                        verification: claim.verification,
+                        observable: claim.observable,
+                        ignored: 'extra',
+                    },
+                ],
+                headSha: 'headsha',
+                ignored: 'extra',
+            },
+        };
+        expect(renderReviewDocumentBody(parseReviewDocument(raw))).toBe(approvalBody());
+        const second = { observable: 'Other risk', verification: 'Other check', observed: 'Held' };
+        const firstOrder = parseReviewDocument({ ...raw, evidence: { headSha: 'headsha', claims: [claim, second] } });
+        const reverseOrder = parseReviewDocument({ ...raw, evidence: { headSha: 'headsha', claims: [second, claim] } });
+        expect(renderReviewDocumentBody(firstOrder)).not.toBe(renderReviewDocumentBody(reverseOrder));
+    });
+
     it.each([
         undefined,
         null,
@@ -374,7 +633,7 @@ describe('review publish', () => {
         { headSha: 'headsha', claims: [{ observable: 'expected', verification: 'check\nnext', observed: 'result' }] },
         { headSha: 'headsha', claims: [{ observable: 'expected', verification: 'check', observed: 1 }] },
     ])('approval evidence rejects invalid or stale record %j before mutation', (evidence) => {
-        const { port, posted } = fakePort({ json: { event: 'APPROVE', body: 'ok', evidence } });
+        const { port, posted } = fakePort({ json: { format: 'compact-v1', event: 'APPROVE', body: 'ok', evidence } });
         const journal = vi.fn();
         const boundary = {
             ownerOid: 'owner',
@@ -401,7 +660,7 @@ describe('review publish', () => {
     });
 
     it('approval evidence renders into the journaled payload and reparses without duplication', () => {
-        const raw = { event: 'APPROVE', body: 'ok', evidence: approvalEvidence() };
+        const raw = { format: 'compact-v1', event: 'APPROVE', body: 'ok', evidence: approvalEvidence() };
         const { port, posted } = fakePort({ json: raw });
         const journal = vi.fn();
         publishReview(42, port, {
@@ -424,30 +683,43 @@ describe('review publish', () => {
         expect(parseReviewDocument(parsed)).toEqual(parsed);
     });
 
-    it('approval evidence cannot be altered after preparation before journaling', () => {
-        const document = parseReviewDocument({ event: 'APPROVE', body: 'ok', evidence: approvalEvidence() });
-        const payloadDigest = reviewPublicationPayloadDigest(
-            reviewPublicationPayload({ commitId: 'headsha', ...document })
-        );
-        const claim = document.evidence?.claims[0];
-        if (claim === undefined) {
-            throw new Error('missing evidence claim');
+    it.each(['observable', 'verification', 'observed'] as const)(
+        'approval evidence %s cannot be altered after preparation before journaling',
+        (field) => {
+            const document = parseReviewDocument({
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'ok',
+                evidence: approvalEvidence(),
+            });
+            const payloadDigest = reviewPublicationPayloadDigest(
+                reviewPublicationPayload({ commitId: 'headsha', ...document, body: renderReviewDocumentBody(document) })
+            );
+            const claim = document.evidence?.claims[0];
+            if (claim === undefined) {
+                throw new Error('missing evidence claim');
+            }
+            claim[field] = 'Altered after preparation';
+            const { port, posted } = fakePort();
+            const journal = vi.fn();
+            expect(() =>
+                publishPreparedReview(
+                    42,
+                    { head: 'headsha', document, payloadDigest, approvalContext: approvalContext() },
+                    port,
+                    {
+                        ownerOid: 'owner',
+                        journalReviewPublication: journal,
+                        markRemoteMutationAttempt: vi.fn(),
+                        markDefinitiveNoMutationHttpStatus: vi.fn(),
+                        registerSuccessfulCompletion: vi.fn(),
+                    }
+                )
+            ).toThrow(/prepared digest/);
+            expect(journal).not.toHaveBeenCalled();
+            expect(posted.review).toBeUndefined();
         }
-        claim.observed = 'Altered after preparation';
-        const { port, posted } = fakePort();
-        const journal = vi.fn();
-        expect(() =>
-            publishPreparedReview(42, { head: 'headsha', document, payloadDigest }, port, {
-                ownerOid: 'owner',
-                journalReviewPublication: journal,
-                markRemoteMutationAttempt: vi.fn(),
-                markDefinitiveNoMutationHttpStatus: vi.fn(),
-                registerSuccessfulCompletion: vi.fn(),
-            })
-        ).toThrow(/prepared digest/);
-        expect(journal).not.toHaveBeenCalled();
-        expect(posted.review).toBeUndefined();
-    });
+    );
 
     it('approval evidence preserves legacy parse bytes and rejects blocker assertions', () => {
         const legacy = { event: 'APPROVE', body: 'Historical summary.\n', comments: [] };
@@ -462,7 +734,7 @@ describe('review publish', () => {
         ).toThrow(/evidence/);
     });
 
-    it.each([false, true])(
+    it.each([undefined, 'observable', 'verification', 'observed'] as const)(
         'approval evidence recovery checks actual publication digest, altered=%s',
         async (altered) => {
             const root = mkdtempSync(join(tmpdir(), 'sourdaw-approval-evidence-recovery-'));
@@ -482,10 +754,16 @@ describe('review publish', () => {
                     if (claim === undefined) {
                         throw new Error('missing evidence claim');
                     }
-                    claim.observed = 'Changed result';
+                    claim[altered] = 'Changed result';
                     writeFileSync(
                         join(root, '.agents', 'review-bundles', `${number}-${head}`, 'review.json'),
-                        JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [], evidence })
+                        JSON.stringify({
+                            format: 'compact-v1',
+                            event: 'APPROVE',
+                            body: 'Attacked; held.',
+                            comments: [],
+                            evidence,
+                        })
                     );
                 }
                 const inspect = vi.fn(() => ({
@@ -704,8 +982,10 @@ describe('review publish', () => {
                 repositoryName: () => 'jcosta33/sourdaw',
                 reviewPort: (_session, _primaryRoot, markRemoteMutationAttempt) => ({
                     primaryRoot: () => root,
+                    assertApprovalContext: (number, head) => approvalContext(head, number),
                     pullRequest: () => ({ state: 'OPEN', head: 'a'.repeat(40) }),
                     readReviewJson: () => ({
+                        format: 'compact-v1',
                         event: 'APPROVE',
                         body: 'Attacked; held.',
                         comments: [],
@@ -1638,6 +1918,7 @@ describe('review publish', () => {
     it('posts an APPROVE document with evidence and no comments', () => {
         const { port, calls } = fakePort({
             json: {
+                format: 'compact-v1',
                 event: 'APPROVE',
                 body: 'Attacked the merge gate; it held.',
                 comments: [],
@@ -3719,7 +4000,12 @@ describe('orchestrator acceptance', () => {
         const fake = fakePort({
             actorNodeId: input.postedActor ?? ORCHESTRATOR_USER_NODE_ID,
             laterHead: input.laterHead,
-            json: { event: 'APPROVE', body: 'Final contract held.', evidence: approvalEvidence(input.evidenceHead) },
+            json: {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'Final contract held.',
+                evidence: approvalEvidence(input.evidenceHead),
+            },
         });
         const journal = vi.fn();
         const serialize = vi.fn();
@@ -3762,12 +4048,11 @@ describe('orchestrator acceptance', () => {
         return { ...fake, dependencies, journal, serialize };
     }
 
-    it('posts attributed acceptance.json with user actor journal after reviewer verification', async () => {
+    it('posts compact acceptance.json with user actor journal after reviewer verification', async () => {
         const fixture = acceptanceFixture();
         await coordinateAcceptReview(42, fixture.dependencies);
         expect(fixture.calls[0]).toContain('/acceptance.json');
-        expect(fixture.posted.review?.body).toContain('Orchestrator acceptance on behalf of jcosta33');
-        expect(fixture.posted.review?.body).toContain('Verification for headsha');
+        expect(fixture.posted.review?.body).toBe(approvalBody('headsha', 'Final contract held.'));
         expect(fixture.journal).toHaveBeenCalledWith(
             expect.objectContaining({ expectedHead: 'headsha', reviewerActorNodeId: ORCHESTRATOR_USER_NODE_ID })
         );
@@ -3803,17 +4088,29 @@ describe('orchestrator acceptance', () => {
         ).toThrow('must APPROVE');
     });
 
-    it.each([false, true])('recovers an exact acceptance publication, altered=%s', async (altered) => {
+    it.each(
+        [
+            { format: undefined, altered: false, evidence: false },
+            { format: undefined, altered: true, evidence: false },
+            { format: undefined, altered: false, evidence: true },
+            { format: undefined, altered: true, evidence: true },
+            { format: 'compact-v1', altered: false, evidence: true },
+            { format: 'compact-v1', altered: true, evidence: true },
+        ].flatMap((input) => [true, false].map((acceptance) => ({ ...input, acceptance })))
+    )('recovers an exact role publication, %j', async ({ format, altered, evidence, acceptance }) => {
         const fixture = createJournaledRecoveryFixture();
         try {
             const bundle = join(fixture.root, '.agents', 'review-bundles', `${fixture.number}-${fixture.head}`);
-            const document = parseAcceptanceDocument({
+            const actorNodeId = acceptance ? ORCHESTRATOR_USER_NODE_ID : REVIEWER_BOT_NODE_ID;
+            const raw = {
+                ...(format === undefined ? {} : { format }),
                 event: 'APPROVE',
                 body: 'Final contract held.',
-                evidence: approvalEvidence(fixture.head),
-            });
+                ...(evidence ? { evidence: approvalEvidence(fixture.head) } : {}),
+            };
+            const document = acceptance ? parseAcceptanceDocument(raw) : parseReviewDocument(raw);
             writeFileSync(
-                join(bundle, 'acceptance.json'),
+                join(bundle, acceptance ? 'acceptance.json' : 'review.json'),
                 JSON.stringify(altered ? { ...document, body: 'altered' } : document)
             );
             const owner = readPullRequestMutationLockOwner(fixture.root, fixture.ownerOid, fixture.number);
@@ -3824,9 +4121,13 @@ describe('orchestrator acceptance', () => {
                 fixture.root,
                 {
                     ...owner,
-                    reviewerActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    reviewerActorNodeId: actorNodeId,
                     payloadDigest: reviewPublicationPayloadDigest(
-                        reviewPublicationPayload({ commitId: fixture.head, ...document })
+                        reviewPublicationPayload({
+                            commitId: fixture.head,
+                            ...document,
+                            body: renderReviewDocumentBody(document),
+                        })
                     ),
                 },
                 fixture.number
@@ -3844,21 +4145,24 @@ describe('orchestrator acceptance', () => {
                     {
                         id: 99,
                         state: 'APPROVED',
-                        body: document.body,
+                        body: renderReviewDocumentBody(document),
                         commitId: fixture.head,
-                        actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                        actorNodeId,
                         comments: [],
                     },
                 ],
             }));
             const dependencies = {
                 ...recoveryDependencies(fixture.root, inspect),
-                authenticateReviewer: async () => expect.fail('acceptance recovery must not mint reviewer'),
                 authenticateOrchestrator: async () => ({
                     minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
                     session: { configDir: '/tmp/user', env: {}, dispose: () => undefined },
                 }),
             };
+            if (acceptance) {
+                dependencies.authenticateReviewer = async () =>
+                    expect.fail('acceptance recovery must not mint reviewer');
+            }
             const recovery = runRecoverPublishReviewLockCli(
                 [String(fixture.number), '--owner', ownerOid],
                 dependencies

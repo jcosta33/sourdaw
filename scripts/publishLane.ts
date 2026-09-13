@@ -39,6 +39,16 @@ import {
     type GuardFailureReceipt,
     type IssueRelationship,
 } from './prContract.ts';
+import { formatReviewDiffSummary, summarizeReviewDiff } from './reviewDiffSummary.ts';
+import {
+    assertStackAcyclic,
+    parseStackParents,
+    readLaneStack,
+    readRegisteredLaneStack,
+    stackParentQuery,
+    stackPublicationBase,
+    writeLaneStack,
+} from './stackedLanes.ts';
 
 export { canonicalPath, containsPath };
 
@@ -49,7 +59,20 @@ export type PublishWorktree = {
     lockReason?: string;
 };
 
-export type ExistingPullRequest = { number: number; title: unknown; body: unknown };
+export type ExistingPullRequest = {
+    number: number;
+    title: unknown;
+    body: unknown;
+    baseRefName?: string;
+    headRefOid?: string;
+};
+export type StackPublicationContext = {
+    branch: string;
+    head: string;
+    parentNumber: number;
+    parentState: string;
+    parentHead: string;
+};
 
 export const PUBLISH_LANE_USAGE =
     'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>]';
@@ -68,7 +91,7 @@ type TrustedPublishRuntime = {
     originCommit: string;
 };
 
-function trustedPublishRuntime(env: NodeJS.ProcessEnv = process.env): TrustedPublishRuntime {
+export function trustedPublishRuntime(env: NodeJS.ProcessEnv = process.env): TrustedPublishRuntime {
     const primaryRoot = env[TRUSTED_PRIMARY_ROOT_ENV];
     const commonDir = env[TRUSTED_COMMON_DIR_ENV];
     const gitPath = env[TRUSTED_GIT_PATH_ENV];
@@ -104,7 +127,10 @@ export type PublishLanePort = {
     isAncestor: (ancestorSha: string, descendantSha: string, lane: string) => boolean;
     push: (lane: string, branch: string, headSha: string) => void;
     existingOpenPullRequest: (branch: string) => ExistingPullRequest | undefined;
-    createPullRequest: (input: { branch: string; title: string; body: string }) => number;
+    stackBase?: (lane: string, branch: string, head: string, main: string) => StackPublicationContext | undefined;
+    pinStackParent?: (branch: string, number: number) => void;
+    reportDiff?: (lane: string, base: string, head: string) => void;
+    createPullRequest: (input: { branch: string; title: string; body: string; base?: string }) => number;
     updatePullRequest: (number: number, input: { body: string }) => void;
     log: (message: string) => void;
     guardFailure: (laneName: string) => GuardFailureReceipt | undefined;
@@ -474,11 +500,48 @@ export function publishLane(
     if (port.dirty(lane.path)) {
         fail(`${lane.branch} ${DIRTY_LANE_FAILURE}`);
     }
-    const { ahead } = port.aheadBehind(lane.path, baseSha, headSha);
+    const stack = port.stackBase?.(lane.path, lane.branch, headSha, baseSha);
+    const comparisonHead = stack?.head ?? baseSha;
+    const { ahead } = port.aheadBehind(lane.path, comparisonHead, headSha);
     if (ahead < 1) {
         fail('lane must be ahead of origin/main');
     }
-    const write = pullRequestWrite(laneIssue, lane, baseSha, headSha, port, relationship, testInstructions, summary);
+    const write = pullRequestWrite(
+        laneIssue,
+        lane,
+        comparisonHead,
+        headSha,
+        port,
+        relationship,
+        testInstructions,
+        summary
+    );
+    port.reportDiff?.(lane.path, comparisonHead, headSha);
+    if (stack !== undefined) {
+        port.pinStackParent?.(lane.branch, stack.parentNumber);
+    }
+    const assertStackContext = () => {
+        if (stack === undefined) {
+            return;
+        }
+        const current = port.stackBase?.(lane.path, lane.branch, headSha, baseSha);
+        if (JSON.stringify(current) !== JSON.stringify(stack)) {
+            fail('stack parent changed during publication; reconcile and retry');
+        }
+        const existing = port.existingOpenPullRequest(lane.branch);
+        if (existing?.baseRefName !== undefined && existing.baseRefName !== stack.branch) {
+            fail('stack child pull-request base changed unexpectedly');
+        }
+        if (existing !== undefined && existing.baseRefName === undefined) {
+            fail('stack child pull-request base is unreadable');
+        }
+        if (existing?.number !== write?.existing?.number) {
+            fail('stack child pull request changed during publication');
+        }
+        if (port.headSha(lane.path) !== headSha || port.dirty(lane.path)) {
+            fail('stack child changed during publication');
+        }
+    };
     const remoteSha = port.remoteBranchSha(lane.branch);
     if (remoteSha !== undefined && !port.isAncestor(remoteSha, headSha, lane.path)) {
         fail(`refusing non-fast-forward push of ${lane.branch}`);
@@ -486,11 +549,25 @@ export function publishLane(
     if (port.baseSha() !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
     }
+    assertStackContext();
     port.push(lane.path, lane.branch, headSha);
     if (port.baseSha() !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
     }
-    const number = pullRequestNumber(lane, write, port);
+    assertStackContext();
+    const number = pullRequestNumber(lane, write, port, stack?.branch);
+    if (stack !== undefined) {
+        const after = port.stackBase?.(lane.path, lane.branch, headSha, baseSha);
+        const published = port.existingOpenPullRequest(lane.branch);
+        if (
+            JSON.stringify(after) !== JSON.stringify(stack) ||
+            published?.number !== number ||
+            published.baseRefName !== stack.branch ||
+            published.headRefOid !== headSha
+        ) {
+            fail('stack publication changed during mutation; publication may be partial, reconcile before retrying');
+        }
+    }
     port.log(String(number));
     return number;
 }
@@ -501,13 +578,23 @@ export function publishLane(
  * A legacy lane never reached that lookup, so its number comes from a second, post-push one — which
  * is also what re-proves the pull request that authorized the push is still open.
  */
-function pullRequestNumber(lane: ResolvedLane, write: PullRequestWrite | undefined, port: PublishLanePort): number {
+function pullRequestNumber(
+    lane: ResolvedLane,
+    write: PullRequestWrite | undefined,
+    port: PublishLanePort,
+    base?: string
+): number {
     if (write === undefined) {
         return legacyPullRequestNumber(lane, port.existingOpenPullRequest(lane.branch));
     }
     const { existing, ...content } = write;
     if (existing === undefined) {
-        return port.createPullRequest({ branch: lane.branch, title: content.title, body: content.body });
+        return port.createPullRequest({
+            branch: lane.branch,
+            title: content.title,
+            body: content.body,
+            ...(base === undefined ? {} : { base }),
+        });
     }
     port.updatePullRequest(existing.number, { body: content.body });
     return existing.number;
@@ -757,14 +844,58 @@ export function shellPort(
             );
             return matchingOpenPullRequest(rows, branch);
         },
-        createPullRequest: ({ branch, title, body }) => {
+        stackBase: (lane, branch, head, main) => {
+            const marker = spawnCapture(
+                executables.git,
+                ['config', '--get', '--default', '', `branch.${branch}.sourdaw-stack-fork`],
+                { cwd: primaryRoot, env: session.env }
+            );
+            const descriptor = readRegisteredLaneStack(primaryRoot, branch, marker);
+            if (descriptor === undefined) {
+                return undefined;
+            }
+            assertStackAcyclic(descriptor, (parentBranch) => readLaneStack(primaryRoot, parentBranch));
+            const context = stackPublicationBase(descriptor, head, main, {
+                parents: (parentBranch) => parseStackParents(gh(stackParentQuery(parentBranch))),
+                isAncestor: (ancestor, descendant) =>
+                    isAncestorCommit(lane, ancestor, descendant, session.env, executables.git),
+            });
+            return {
+                branch: context.branch,
+                head: context.head,
+                parentNumber: context.parent.number,
+                parentState: context.parent.state,
+                parentHead: context.parent.headSha,
+            };
+        },
+        pinStackParent: (branch, number) => {
+            const descriptor = readLaneStack(primaryRoot, branch);
+            if (descriptor === undefined) {
+                fail('stack descriptor disappeared before publication');
+            }
+            writeLaneStack(primaryRoot, { ...descriptor, parentPullRequest: number });
+        },
+        reportDiff: (lane, base, head) => {
+            const result = spawnSync(executables.git, ['diff', '--numstat', '-z', `${base}...${head}`], {
+                cwd: lane,
+                env: session.env,
+            });
+            if (result.error !== undefined) {
+                throw result.error;
+            }
+            if (result.status !== 0) {
+                fail(result.stderr.toString('utf8') || 'cannot measure publication diff');
+            }
+            console.log(formatReviewDiffSummary(summarizeReviewDiff(lane, result.stdout)));
+        },
+        createPullRequest: ({ branch, title, body, base }) => {
             const url = gh([
                 'pr',
                 'create',
                 '--repo',
                 REQUIRED_REPOSITORY,
                 '--base',
-                REQUIRED_BASE_BRANCH,
+                base ?? REQUIRED_BASE_BRANCH,
                 '--head',
                 branch,
                 '--title',
@@ -788,7 +919,7 @@ export function shellPort(
     };
 }
 
-function isAncestorCommit(
+export function isAncestorCommit(
     lane: string,
     ancestorSha: string,
     descendantSha: string,
@@ -854,7 +985,7 @@ export function existingOpenPullRequestArgs(branch: string): string[] {
         '--state',
         'open',
         '--json',
-        'number,headRefName,isCrossRepository,title,body',
+        'number,headRefName,isCrossRepository,title,body,baseRefName,headRefOid',
     ];
 }
 
@@ -868,6 +999,8 @@ export type OpenPullRequestRow = {
     isCrossRepository: boolean;
     title: unknown;
     body: unknown;
+    baseRefName?: string;
+    headRefOid?: string;
 };
 
 /**

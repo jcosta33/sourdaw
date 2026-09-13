@@ -189,6 +189,148 @@ function fakePort(input: FakeInput = {}) {
     return { port, calls, logs, bodies };
 }
 
+describe('stack publication fencing', () => {
+    it('updates an existing reconciled child retargeted to main without creating a replacement', () => {
+        const f = fakePort({ existing: 41 });
+        f.port.stackBase = () => ({
+            branch: 'main',
+            head: 'base',
+            parentNumber: 12,
+            parentState: 'MERGED',
+            parentHead: 'parent',
+        });
+        const read = f.port.existingOpenPullRequest;
+        f.port.existingOpenPullRequest = (branch) => {
+            const current = read(branch);
+            return current === undefined ? undefined : { ...current, baseRefName: 'main', headRefOid: 'abc' };
+        };
+        expect(publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(41);
+        expect(f.calls).toContain('edit:41');
+        expect(f.calls.some((call) => call.startsWith('create:'))).toBe(false);
+    });
+
+    it('stops after a pushed head when the parent merges during the push', () => {
+        const f = fakePort();
+        let pushed = false;
+        f.port.stackBase = () => ({
+            branch: pushed ? 'main' : 'agent/parent',
+            head: 'parent',
+            parentNumber: 12,
+            parentState: pushed ? 'MERGED' : 'OPEN',
+            parentHead: 'parent',
+        });
+        f.port.push = () => {
+            pushed = true;
+            f.calls.push('push');
+        };
+        expect(() => publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(/parent changed/);
+        expect(f.calls).toContain('push');
+        expect(f.calls.some((call) => call.startsWith('create:') || call.startsWith('edit:'))).toBe(false);
+    });
+
+    it.each(['parent', 'base', 'head'])('reports partial publication when %s changes during create', (change) => {
+        const f = fakePort();
+        let created = false;
+        f.port.stackBase = () => ({
+            branch: created && change === 'parent' ? 'main' : 'agent/parent',
+            head: 'parent',
+            parentNumber: 12,
+            parentState: 'OPEN',
+            parentHead: 'parent',
+        });
+        f.port.existingOpenPullRequest = () =>
+            created
+                ? {
+                      number: 88,
+                      title: DEFAULT_SUBJECT,
+                      body: '',
+                      baseRefName: change === 'base' ? 'agent/other' : 'agent/parent',
+                      headRefOid: change === 'head' ? 'other' : 'abc',
+                  }
+                : undefined;
+        f.port.createPullRequest = () => {
+            created = true;
+            f.calls.push('create');
+            return 88;
+        };
+        expect(() => publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(
+            /publication may be partial/
+        );
+        expect(f.calls).toContain('push:agent/12/work');
+        expect(f.calls).toContain('create');
+    });
+
+    it.each(['agent/parent', 'main'])(
+        'publishes against admitted %s while permission comparison remains main',
+        (base) => {
+            const { port, calls } = fakePort();
+            let created = false;
+            const comparison = base === 'main' ? 'base' : 'parent-head';
+            port.stackBase = (_lane, _branch, _head, main) => {
+                expect(main).toBe('base');
+                return {
+                    branch: base,
+                    head: comparison,
+                    parentNumber: 12,
+                    parentState: base === 'main' ? 'MERGED' : 'OPEN',
+                    parentHead: 'parent-head',
+                };
+            };
+            port.laneSubject = (_lane, actual) => {
+                expect(actual).toBe(comparison);
+                return DEFAULT_SUBJECT;
+            };
+            port.reportDiff = (_lane, actual) => {
+                expect(actual).toBe(comparison);
+                calls.push('size');
+            };
+            port.existingOpenPullRequest = () =>
+                created
+                    ? { number: 88, title: DEFAULT_SUBJECT, body: '', baseRefName: base, headRefOid: 'abc' }
+                    : undefined;
+            port.createPullRequest = (input) => {
+                expect(input.base).toBe(base);
+                created = true;
+                calls.push('create');
+                return 88;
+            };
+            expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+            expect(calls.indexOf('size')).toBeLessThan(calls.indexOf('push:agent/12/work'));
+        }
+    );
+
+    it('refuses parent transition before push and unexpected child retargets', () => {
+        const f = fakePort();
+        let reads = 0;
+        f.port.stackBase = () => ({
+            branch: reads++ === 0 ? 'agent/parent' : 'main',
+            head: 'parent',
+            parentNumber: 12,
+            parentState: 'OPEN',
+            parentHead: 'parent',
+        });
+        expect(() => publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(/parent changed/);
+        expect(f.calls.some((call) => call.startsWith('push:'))).toBe(false);
+        const retarget = fakePort({ existing: 41 });
+        retarget.port.stackBase = () => ({
+            branch: 'main',
+            head: 'base',
+            parentNumber: 12,
+            parentState: 'MERGED',
+            parentHead: 'parent',
+        });
+        const original = retarget.port.existingOpenPullRequest;
+        retarget.port.existingOpenPullRequest = (branch) => {
+            const pr = original(branch);
+            return pr === undefined ? undefined : { ...pr, baseRefName: 'agent/other' };
+        };
+        expect(() => publishLane(12, retarget.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(
+            /base changed/
+        );
+        expect(retarget.calls.some((call) => call.startsWith('push:'))).toBe(false);
+    });
+});
+
 /**
  * The whole text of a refusal, so a test can assert what it must *not* say. `toThrow` can only
  * assert presence, and the defect these tests pin is an extra sentence, not a missing one.
@@ -250,6 +392,11 @@ describe('lane publish', () => {
                 'publishLane.ts',
                 'githubAppIdentity.ts',
                 'prContract.ts',
+                'stackedLanes.ts',
+                'reviewDiffSummary.ts',
+                'wasm-artifacts.ts',
+                'wasmToolchainPins.ts',
+                'workspaceManifestFingerprint.ts',
             ]) {
                 const fixtureSource = readFileSync(join(import.meta.dirname, '..', file), 'utf8');
                 const fetchFixture =
@@ -1277,7 +1424,7 @@ describe('lane publish', () => {
             '--state',
             'open',
             '--json',
-            'number,headRefName,isCrossRepository,title,body',
+            'number,headRefName,isCrossRepository,title,body,baseRefName,headRefOid',
         ]);
         expect(existingOpenPullRequestArgs('agent/12/work').join(' ')).not.toContain('jcosta33:agent');
     });
