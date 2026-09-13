@@ -404,6 +404,7 @@ describe('hosted quantum measurement workflow contract', () => {
                 'src/modules/AudioEngine/wasm/scoring.js',
                 '.github/workflows/quantum-measurements.yml',
                 'scripts/hostedQuantumMeasurementWorkflowContract.ts',
+                'scripts/quantumMeasurementCalibration.ts',
             ])
         );
     });

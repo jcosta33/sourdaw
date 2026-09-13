@@ -50,6 +50,18 @@ the probe that would have caught it. Keep each lesson short enough to paste into
 
 ## Lessons from escapes
 
+### 2026-09-09 — filtered calibration values lost their producer keys (escaped via PR #974)
+
+The quantum measurement runner filtered invalid segment rates but kept sample indices from the
+producer's original segment array, so a gap renumbered every later sample onto the wrong rate.
+
+Blind spot: review checked the filtered values without preserving the producer key that identified
+which calibration segment owned each sample.
+
+Probe that would have caught it: when filtering keyed measurements, preserve producer keys and test
+an invalid middle calibration plus a missing referenced tail through actual conversion and admission;
+require a filter-or-clamp mutation to fail.
+
 ### 2026-09-05 — output selection recorded the requested sink after the browser refused it
 
 The output-device use case wrote the requested ID into its selection store after `setSinkId` rejected or was unavailable, so the picker claimed hardware that was not applied. Its existing spec blessed that mirror by asserting the requested ID after a rejection.
