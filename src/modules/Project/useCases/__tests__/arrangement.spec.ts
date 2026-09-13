@@ -17,7 +17,8 @@ const { cancelPreparedBuffers, prepareCachedAudioBuffersFromIdb, publishPrepared
 
 // switchArrangement imports getAudioContext and prepareCachedAudioBuffersFromIdb;
 // runProjectLoadTransaction.activate imports cancelPendingAudioBufferImport.
-vi.mock('#/modules/AudioEngine/useCases', () => ({    stopTrackInputMonitoring: vi.fn(),
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
 
     startFaustNote: vi.fn(),
     writeNativeBuiltinParameters: vi.fn(),
@@ -112,11 +113,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({    stopTrackInputMonitoring: 
 
 // switchArrangement imports stopPlayback; loadSnapshot imports restoreTimelineMapSnapshot.
 vi.mock('#/modules/Transport/useCases', async () => {
-    stopTrackInputMonitoring: vi.fn(),
     const actual = await vi.importActual<typeof import('#/modules/Transport/useCases')>('#/modules/Transport/useCases');
     return {
         stopPlayback: vi.fn(),
         restoreTimelineMapSnapshot: actual.restoreTimelineMapSnapshot,
+        stopTrackInputMonitoring: vi.fn(),
     };
 });
 vi.mock('../projectPersistence/saveProject/markDirty', () => ({ markDirty: vi.fn() }));
@@ -137,13 +138,13 @@ vi.mock('#/modules/Command/useCases', async () => {
 });
 // loadSnapshot imports restoreTrackSnapshot and restoreArrangementMetadataSnapshot.
 vi.mock('#/modules/Arrangement/useCases', async () => {
-    setClipAudioAssetStager: vi.fn(),
-    stageAudioBufferAsset: vi.fn(),
     const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
         '#/modules/Arrangement/useCases'
     );
     return {
         acceptsExternalPluginAutomationParameter: vi.fn(),
+        setClipAudioAssetStager: vi.fn(),
+        stageAudioBufferAsset: vi.fn(),
         addTake: vi.fn(),
         addTakeLane: vi.fn(),
         applySoloLogic: vi.fn(),
