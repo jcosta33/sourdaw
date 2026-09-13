@@ -28,13 +28,20 @@ describe('WebLLM request coordinator', () => {
             signal: queuedAborter.signal,
             execute: async () => 'cancelled',
         });
-        const next = webLlmRequestCoordinator.run(engine, { execute: async () => 'next' });
+        let nextStarted = false;
+        const next = webLlmRequestCoordinator.run(engine, {
+            execute: async () => {
+                nextStarted = true;
+                return 'next';
+            },
+        });
 
         queuedAborter.abort(new DOMException('Cancelled', 'AbortError'));
         firstChunk.resolve({ done: false, value: 'first' });
         await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' });
         expect(interruptGenerate).not.toHaveBeenCalled();
         expect(create).not.toHaveBeenCalled();
+        expect(nextStarted).toBe(false);
 
         done.resolve({ done: true, value: undefined });
         await expect(active).resolves.toBeUndefined();
