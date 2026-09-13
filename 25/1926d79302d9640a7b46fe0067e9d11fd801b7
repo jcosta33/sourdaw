@@ -1,0 +1,145 @@
+src/modules/Collaboration/handlers/collaboration/handleLeaveCollabSession.ts
+  s_87ab0a2f60ccf8::t_d0688d4b65415f 6-7,11-14
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_87ab0a2f60ccf8::t_4d77de7b4811f5 672-674,760-763
+  s_87ab0a2f60ccf8::t_b02b68b339377f 139-170,602-606,609-618,622-631,633,635,638,642-650,652,655,658,666-667,675,679,682-688,690-699,701-722,724-726,728,731-737,739-740,742-745,748-751,756,759,764-771,806,818-832
+  s_87ab0a2f60ccf8::t_29193a3e76c31d 656,665,671,757-758
+  s_87ab0a2f60ccf8::t_7c3854bac83319 752-755
+  s_87ab0a2f60ccf8::t_cb5470c6e9b1a1 833-834
+src/modules/Collaboration/useCases/collaboration/__tests__/leaveSession.spec.ts
+  s_87ab0a2f60ccf8::t_a0195d23979355 18-22,121,128,146,164-165,168,173-178,181
+  s_87ab0a2f60ccf8::t_56b71187042dc1 71-72,84,97-98
+  s_87ab0a2f60ccf8::t_30e63364fb515e 166,182-184
+  s_87ab0a2f60ccf8::t_09764a215d14ec 120,167,169-172,179-180
+  s_87ab0a2f60ccf8::t_790a10cc35a370 54,58,62,70,104
+src/modules/CrdtDocument/useCases/crdtPersistenceQueueCoordinator.ts
+  s_87ab0a2f60ccf8::t_aca2e39463b32b 114,673-678,680-681,690,697,706,732,738,743-747,751,760,781-787,796-802,805,819,823,844-846,917,947-949
+  s_87ab0a2f60ccf8::t_e0ca41eafcdfe8 141-161,163,166-187,194-204,210,212,246,248-249,286,298,300
+  s_87ab0a2f60ccf8::t_4d77de7b4811f5 188-193,213-245,247,250-262
+src/modules/Collaboration/useCases/collaboration/__tests__/createSession.spec.ts
+  s_87ab0a2f60ccf8::t_09764a215d14ec 127,129-132,135
+  s_87ab0a2f60ccf8::t_54521cd28047cf 15,17-18,47-48,51-52,58,61,64-65,73-74,79-80,96,101,104,107,117-119,125-126,128,133-134,136-140
+  s_87ab0a2f60ccf8::t_764d483b077209 141
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_87ab0a2f60ccf8::t_58e3b43fbb4d8e 84,97-101,222,259-261,267-270,273,532-533,544,592,667,708,726,756,784,831,891,948,999-1000,1005,1038,1063-1064,1080-1081,1092-1093,1102,1108-1109,1119-1120,1123,1133,1136,1156-1157,1164-1165,1172-1173,1180-1181,1188-1189,1196-1197,1211-1212,1240-1241,1256-1257,1267-1268,1285-1286,1308-1309,1325-1326,1349-1350,1359-1360,1368-1369,1377-1378,1398-1399,1414,1419,1424,1442-1443,1455-1456,1471-1472,1483-1484,1503-1504,1522-1523,1535-1536,1552-1553,1572-1573,1593-1594,1612-1613,1621,1623,1637-1638,1654,1656,1671,1673,1688,1702,1729,1749,1774,1776,1791,1793,1802,1804,1822,1825,1843,1850,1934,1944,1959,1972,1985,2002,2018,2031,2043,2075,2131-2132,2142,2144,2156,2158,2166,2168,2183,2195,2210,2230,2243,2252,2263,2277,2304,2332,2347,2360,2377,2396,2398,2408,2410,2420,2422,2440,2442,2454,2456
+  s_87ab0a2f60ccf8::t_306208ae022e8c 862,2083-2084,2087,2093,2096,2107,2111-2113,2118,2124-2126,2128-2129
+  s_87ab0a2f60ccf8::t_55b159415e9558 959,961-971,973-974,976-978,981-998
+  s_87ab0a2f60ccf8::t_0cb18192e01cf7 1821
+  s_87ab0a2f60ccf8::t_9b3193934a547b 2108,2114,2127
+  s_87ab0a2f60ccf8::t_d12095fc220379 1687,1704,1731,1751
+  s_87ab0a2f60ccf8::t_a3bb6f9400604a 2063
+  s_87ab0a2f60ccf8::t_26dd686429d43e 1,129,294,466,480-491,495,506-514
+  s_87ab0a2f60ccf8::t_0cd71826faf1bd 783,819-823
+  s_87ab0a2f60ccf8::t_cd3c9c5b2358df 522,528,906-908,912-913,925-945,952-958
+  s_87ab0a2f60ccf8::t_40c7fbdce72df7 262-266,492-494,496-505,524-526
+  s_87ab0a2f60ccf8::t_e3b442a432a828 873-889
+  s_87ab0a2f60ccf8::t_6a1dcb4e987fea 960
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  s_87ab0a2f60ccf8::t_f7e3e522090b45 64-88,423-501,1728-1910
+  s_87ab0a2f60ccf8::t_3ec9fcb8583e70 1911
+src/modules/Collaboration/handlers/collaboration/__tests__/handleCreateCollabSession.spec.ts
+  s_87ab0a2f60ccf8::t_f52aa8dcbf2913 12,15-16,21,24,29-42
+  s_87ab0a2f60ccf8::t_3b7c611a3e12e3 43-44
+src/modules/Collaboration/useCases/collaboration/joinSession.ts
+  s_87ab0a2f60ccf8::t_cbd09aab96718e 161-163
+  s_87ab0a2f60ccf8::t_a52e5492894a4b 56-61
+  s_87ab0a2f60ccf8::t_aad31a275b1bc8 62-64,69
+  s_87ab0a2f60ccf8::t_a4d1e4ba626ddc 11-34,49-52,55,71-77,79-101,103-104,106-112,134-135,137-140,146-160
+  s_87ab0a2f60ccf8::t_363bbe922772ae 70,113
+  s_87ab0a2f60ccf8::t_4d77de7b4811f5 141-143
+src/modules/Collaboration/useCases/collaboration/__tests__/joinSession.spec.ts
+  s_87ab0a2f60ccf8::t_09764a215d14ec 213,216-219,222
+  s_87ab0a2f60ccf8::t_9ebf77c722e84e 18
+  s_87ab0a2f60ccf8::t_c296145293dbaf 24,36-37,86,95,193,202-204,212,214-215,220-221,223-227
+  s_87ab0a2f60ccf8::t_e79e1c8ca941a6 228-229
+src/modules/Collaboration/handlers/collaboration/__tests__/handleJoinCollabSession.spec.ts
+  s_87ab0a2f60ccf8::t_f52aa8dcbf2913 14-27
+src/modules/Collaboration/presentations/views/__tests__/CollaborationPanel.spec.tsx
+  s_87ab0a2f60ccf8::t_6dbfd42a505efe 77-79,295-297,304-321,373,380,383,389-414
+.agents/skills/crdt-collaboration/SKILL.md
+  s_87ab0a2f60ccf8::t_3670c776f05347 143-151
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_87ab0a2f60ccf8::t_64c9e375b7386a 526-557
+  s_87ab0a2f60ccf8::t_54d62417c330c9 76,78-84,88,99-108,110
+  s_87ab0a2f60ccf8::t_1906abf5cd69b8 1241-1283
+  s_87ab0a2f60ccf8::t_c66f8a4996b70f 1199-1240
+  s_87ab0a2f60ccf8::t_89193bc769bbc5 1284-1390
+  s_87ab0a2f60ccf8::t_40c7fbdce72df7 85-87,89-98,109
+  s_87ab0a2f60ccf8::t_4ed073029e6c3e 365,367-371,391
+src/modules/Collaboration/useCases/__tests__/getCollaborationHandlers.spec.ts
+  s_87ab0a2f60ccf8::t_279596d88d6ad7 29-31
+  s_87ab0a2f60ccf8::t_90ad85bcc178d5 1-9,14,21,25-28,57-69,85-104,110,115,121-137,148-149,151-153,155-157,159,161-170
+  s_87ab0a2f60ccf8::t_40c7fbdce72df7 15-20,105-109,111-112,114,116-120,138-147
+  s_87ab0a2f60ccf8::t_cbd09aab96718e 33-34
+  s_87ab0a2f60ccf8::t_1e1f6753cf66d5 41-55,113,150,154,158,160
+  s_87ab0a2f60ccf8::t_fda89cc90265ef 32
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_87ab0a2f60ccf8::t_60f818f325429d 606,609,722
+  s_87ab0a2f60ccf8::t_b3e2b124402f49 725
+  s_87ab0a2f60ccf8::t_cbd09aab96718e 724,726,805,808
+  s_87ab0a2f60ccf8::t_d6b45df5332e16 856,860
+  s_87ab0a2f60ccf8::t_6a241ec6b12a26 863
+  s_87ab0a2f60ccf8::t_1e4387e6098c2b 54,59-78,146,317,713,720,735-736,751,768,771-781,794-804,806-807,809-824,830,838-839,864-891,1359-1361
+  s_87ab0a2f60ccf8::t_1b4aea61de0633 825-829
+  s_87ab0a2f60ccf8::t_6c2bf12e3b41e8 857-859,861
+  s_87ab0a2f60ccf8::t_4d77de7b4811f5 845
+  s_87ab0a2f60ccf8::t_81669d60b56d18 1-2,14,831-837,840-844,846-855,862
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_87ab0a2f60ccf8::t_5e93dd3beb8a99 214-226,308,311,379-383,394,396-399,402-419,421-422,431-432,438-439,443,445-455,486-487,494-502,507-512,517-518,529-530,542-543,545-546,773
+  s_87ab0a2f60ccf8::t_05ede9e064353b 384-393,395
+  s_87ab0a2f60ccf8::t_e2b4c783b02875 456,465,470,478-480,482-483,488-493,503-506,513-516,544
+  s_87ab0a2f60ccf8::t_c22d20c878be60 792,845,879,892,903,907,945,948-951,989-992,1010-1012
+  s_87ab0a2f60ccf8::t_59a3e6d229f45e 358-359,361-362,364-378,400-401
+  s_87ab0a2f60ccf8::t_0be92b43f03f59 531,848,882,895,898,944,1030-1032
+  s_87ab0a2f60ccf8::t_7ccab1673c0ef8 919-922,924,926,934-937,939,941,958,970,985,995-998,1000,1003,1016-1019
+  s_87ab0a2f60ccf8::t_f5e98c2a8756d6 961-969,971-972
+  s_87ab0a2f60ccf8::t_faaeefdd91c549 774-779,781-783,789-791,831-836,838-840,842-844,846,865-878,880-881,883-885,887-891,893-894,896-897,899-902,904-906,908-917,927,931-932,942-943,946-947,952-956,959-960,973-983,986-988,993,1001,1004-1009,1013-1014,1020-1029
+  s_87ab0a2f60ccf8::t_ddcf7ce627fbbe 886,925,940,957,984,1002,1015
+  s_87ab0a2f60ccf8::t_4d77de7b4811f5 186,232-235,310,420,433-437,440-442,444,547-548,918,923,928-930,933,938,994,999
+  s_87ab0a2f60ccf8::t_395eab6fef3e71 227-231,309,423-430
+  s_87ab0a2f60ccf8::t_f8fe0e2fdb418e 457-464,466-469,471-477,484-485,519-528,532-541,858,861
+  s_87ab0a2f60ccf8::t_7349053338d12c 772,829-830
+src/modules/Collaboration/useCases/__tests__/automergeSyncReceiveProgress.spec.ts
+  s_87ab0a2f60ccf8::t_54d62417c330c9 109-136
+src/modules/Collaboration/handlers/collaboration/handleJoinCollabSession.ts
+  s_87ab0a2f60ccf8::t_d0688d4b65415f 11-14
+src/modules/Collaboration/useCases/collaboration/leaveSession.ts
+  s_87ab0a2f60ccf8::t_8423f707d5e73d 8-36,38-43,45-55
+  s_87ab0a2f60ccf8::t_2ad9db5c2e4a93 56-57
+src/modules/Collaboration/handlers/collaboration/__tests__/handleLeaveCollabSession.spec.ts
+  s_87ab0a2f60ccf8::t_f52aa8dcbf2913 14-17,19-20,27-34
+  s_87ab0a2f60ccf8::t_52e4c3be750db2 35
+src/modules/CrdtDocument/useCases/runCrdtPersistenceBarrier.ts
+  s_87ab0a2f60ccf8::t_e0ca41eafcdfe8 4,8-10
+src/modules/CrdtDocument/useCases/__tests__/crdtPersistenceConcurrency.spec.ts
+  s_87ab0a2f60ccf8::t_9e475b220a1a1b 26,43-44,52,219-232,234-262,267-270
+  s_87ab0a2f60ccf8::t_84fd91e21af0c0 276-280,288-289,295
+  s_87ab0a2f60ccf8::t_4d77de7b4811f5 233,263-266
+  s_87ab0a2f60ccf8::t_4f31316e281096 273-275,281-287,290-294,296-317
+  s_87ab0a2f60ccf8::t_1771c8f8f2abff 271-272
+src/modules/Collaboration/handlers/collaboration/handleCreateCollabSession.ts
+  s_87ab0a2f60ccf8::t_d0688d4b65415f 6-7,11-14
+src/modules/Collaboration/presentations/views/CollaborationPanel.tsx
+  s_87ab0a2f60ccf8::t_849fbb9c67d138 52,54,80-88,133-143,335-343,359-367
+src/modules/Collaboration/useCases/collaboration/createSession.ts
+  s_87ab0a2f60ccf8::t_cbd09aab96718e 36,38
+  s_87ab0a2f60ccf8::t_8423f707d5e73d 9-15,17-22,24,26-31,33-35,39-40,43-54,56-57
+  s_87ab0a2f60ccf8::t_aad31a275b1bc8 32
+  s_87ab0a2f60ccf8::t_b3e2b124402f49 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "251926d79302d9640a7b46fe0067e9d11fd801b7",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
