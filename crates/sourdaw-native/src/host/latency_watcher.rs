@@ -6,22 +6,30 @@
 //! re-entrantly, so they cannot do the work themselves — they only wake this
 //! watcher.
 //!
-//! The watcher is a dedicated non-RT thread that blocks in `recv()` until a
-//! plugin actually flags, then performs the deactivate / reactivate / re-query
-//! through the `SharedHostedPlugin` control seam, emits `plugin-latency-changed`
-//! to the webview and aims the graph's compensation at the new figure. Nothing
-//! polls: an idle session does no work at all, and a plugin that changes latency
-//! mid-session reaches both the frontend and the mix without the UI having to
-//! ask.
+//! The two asks wake it differently, because CLAP annotates their threads
+//! differently. `changed()` is `[main-thread]`, so its callback fires the
+//! channel wake, which allocates. `request_restart()` is `[thread-safe]` — a
+//! plugin may call it from inside `process()` — so its callback raises a
+//! wait-free hint and records only the instance's own dirty flag; sending on
+//! the channel from there was the #3745 allocation. This thread services both:
+//! the channel through `recv`, and the hint by an idle-interval sweep that
+//! visits every engine-owned instance and lets each answer whether it was the
+//! one that flagged.
+//!
+//! The watcher is a dedicated non-RT thread that performs the deactivate /
+//! reactivate / re-query through the `SharedHostedPlugin` control seam, emits
+//! `plugin-latency-changed` to the webview and aims the graph's compensation at
+//! the new figure.
 
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::native_bridge::LatencyChange;
-use crate::host::runtime_for_instance;
+use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
 use crate::state::EnginePluginInstanceData;
 use daw_engine::EngineHandle;
+use daw_plugin_host::take_pending_latency_requery_signal;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -31,6 +39,20 @@ pub const PLUGIN_LATENCY_CHANGED_EVENT: &str = "plugin-latency-changed";
 /// How long a latency re-query may wait for the RT path to release the plugin.
 /// Matches the timeout every other control-path command uses.
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// How long a hint-driven sweep's visit may hold one instance. Sized for the
+/// audio thread holding the seam for the length of a block, not for a plugin
+/// command of unbounded duration — the same reasoning as the editor-resize and
+/// flush legs of the drain tick: the sweep walks every instance, so one
+/// instance mid-`open_gui` must not hold it. An instance this could not get
+/// into raises the hint again for the next sweep instead.
+const SWEEP_CONTROL_TIMEOUT: Duration = Duration::from_millis(50);
+
+/// How long the watcher waits on its channel before checking the restart hint.
+/// The channel wake answers instantly whatever this is, so the interval bounds
+/// only how long a `[thread-safe]` restart may wait for its re-query — a
+/// plugin that asked to restart is owed a latency correction, not a deadline.
+const IDLE_HINT_POLL: Duration = Duration::from_millis(100);
 
 /// Payload of `plugin-latency-changed`. snake_case on the wire, matching the
 /// other plugin DTOs (`PluginInstance`).
@@ -150,6 +172,80 @@ fn publish_compensation(engine: &Engine, instance_id: &str, compensation: Latenc
     }
 }
 
+/// Re-query one woken instance, and report what it answered.
+///
+/// The channel wake's body: the poll deactivates and reactivates through the
+/// control seam, a real change becomes the `plugin-latency-changed` event, and
+/// the graph's compensation is aimed at the fresh figure. The event precedes
+/// the compensation because the frontend's own latency read is what a user
+/// waits on, and the graph command is a push onto a ring the audio thread
+/// drains on its own schedule anyway.
+fn serve_channel_wake(
+    instance_id: &str,
+    runtime: &crate::host::native_bridge::SharedHostedPlugin,
+    engine_plugins: &EnginePlugins,
+    engine: &Engine,
+    events: &dyn EventSink,
+) {
+    let refreshed = runtime.poll_latency_change(CONTROL_TIMEOUT);
+    if let Some(payload) = latency_change_payload(instance_id, &refreshed) {
+        events.emit(PLUGIN_LATENCY_CHANGED_EVENT, payload);
+    }
+    let compensation =
+        latency_compensation(engine_plugin_id(engine_plugins, instance_id), &refreshed);
+    if let Some(compensation) = compensation {
+        publish_compensation(engine, instance_id, compensation);
+    }
+}
+
+/// Sweep every engine-owned instance for a restart a `[thread-safe]` callback
+/// recorded.
+///
+/// The hint names no instance — it cannot, because `request_restart` may be
+/// raised from the audio thread where copying an id would allocate — so this
+/// visits every engine-owned instance and lets each answer for itself: each
+/// visit polls that instance through its bounded slice of the seam, the flag
+/// is read-and-clear, and an instance with nothing flagged answers `None` and
+/// costs one short try. A visit that could not get into raises the hint again
+/// for the next sweep, only while the instance still accepts public control —
+/// the same retry rule the drain tick's own hint legs follow. The event and
+/// the compensation are the channel wake's own, through the same payload and
+/// compensation rules, so one ask cannot be answered two ways.
+fn service_pending_restarts(
+    engine_plugins: &EnginePlugins,
+    engine: &Engine,
+    events: &dyn EventSink,
+) {
+    for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "latency requery") {
+        let refreshed = runtime.try_with_control(
+            SWEEP_CONTROL_TIMEOUT,
+            crate::host::native_bridge::SharedHostedPlugin::refresh_latency_change,
+        );
+
+        match &refreshed {
+            Ok(_) => {
+                if let Some(payload) = latency_change_payload(&instance_id, &refreshed) {
+                    events.emit(PLUGIN_LATENCY_CHANGED_EVENT, payload);
+                }
+                let compensation = latency_compensation(
+                    engine_plugin_id(engine_plugins, &instance_id),
+                    &refreshed,
+                );
+                if let Some(compensation) = compensation {
+                    publish_compensation(engine, &instance_id, compensation);
+                }
+            }
+            Err(error) => retry_unreached_instance(
+                &runtime,
+                &instance_id,
+                "latency requery",
+                error,
+                daw_plugin_host::signal_pending_latency_requery,
+            ),
+        }
+    }
+}
+
 /// Start the watcher thread. Idempotent: a second call is ignored, so the sender
 /// installed by the first `start` stays the one the host callbacks reach.
 pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins, engine: Engine) {
@@ -161,29 +257,7 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins, engine: 
     let spawned = std::thread::Builder::new()
         .name("clap-latency-watcher".to_string())
         .spawn(move || {
-            // Blocks until a plugin flags. The static sender is never dropped, so
-            // this loop lives for the process.
-            while let Ok(instance_id) = receiver.recv() {
-                let Some(runtime) = runtime_for_instance(&engine_plugins, &instance_id, "latency")
-                else {
-                    // Unloaded between the plugin's callback and this wake.
-                    continue;
-                };
-                let refreshed = runtime.poll_latency_change(CONTROL_TIMEOUT);
-                if let Some(payload) = latency_change_payload(&instance_id, &refreshed) {
-                    events.emit(PLUGIN_LATENCY_CHANGED_EVENT, payload);
-                }
-                // After the event: the frontend's own latency read is what a
-                // user waits on, and the graph command is a push onto a ring
-                // the audio thread drains on its own schedule anyway.
-                let compensation = latency_compensation(
-                    engine_plugin_id(&engine_plugins, &instance_id),
-                    &refreshed,
-                );
-                if let Some(compensation) = compensation {
-                    publish_compensation(&engine, &instance_id, compensation);
-                }
-            }
+            serve_wakes_and_hints(receiver, &engine_plugins, &engine, &*events);
         });
 
     if let Err(error) = spawned {
@@ -191,6 +265,40 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins, engine: 
             "[Plugin] failed to start the CLAP latency watcher: {}",
             error
         );
+    }
+}
+
+/// The watcher thread's whole loop, split out so the wake rule is testable
+/// without a live watcher thread.
+///
+/// A channel wake names its instance and is served directly. An idle interval
+/// is the one chance the `[thread-safe]` restart path gets to be heard: its
+/// hint carries no id, so the sweep visits every engine-owned instance. The
+/// static sender is never dropped, so the disconnected arm never runs and the
+/// loop lives for the process.
+fn serve_wakes_and_hints(
+    receiver: Receiver<String>,
+    engine_plugins: &EnginePlugins,
+    engine: &Engine,
+    events: &dyn EventSink,
+) {
+    loop {
+        match receiver.recv_timeout(IDLE_HINT_POLL) {
+            Ok(instance_id) => {
+                let Some(runtime) = runtime_for_instance(engine_plugins, &instance_id, "latency")
+                else {
+                    // Unloaded between the plugin's callback and this wake.
+                    continue;
+                };
+                serve_channel_wake(&instance_id, &runtime, engine_plugins, engine, events);
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                if take_pending_latency_requery_signal() {
+                    service_pending_restarts(engine_plugins, engine, events);
+                }
+            }
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
     }
 }
 
@@ -346,5 +454,187 @@ mod tests {
         // The sender is only installed by `start`, which no unit test runs; this
         // asserts a plugin loaded in a headless build cannot panic on its wake.
         notify_latency_change("never-started");
+    }
+
+    // ── Servicing the wait-free restart hint (#3745) ───────────────────────
+    //
+    // A `request_restart` raised from the audio thread costs no channel send,
+    // so something on the control path must eventually act on the flag it
+    // leaves behind. The sweep is that something; these tests fail if the
+    // hint is raised and nothing services it.
+
+    #[derive(Default)]
+    struct RecordingEventSink {
+        events: Mutex<Vec<(String, serde_json::Value)>>,
+    }
+
+    impl EventSink for RecordingEventSink {
+        fn emit_json(&self, event: &str, payload: serde_json::Value) {
+            self.events
+                .lock()
+                .expect("event log")
+                .push((event.to_string(), payload));
+        }
+    }
+
+    /// One engine-owned instance holding a fixture that declares
+    /// `staged_latency` frames and has flagged a restart if `flagged`.
+    fn sweep_fixture(
+        staged_latency: u32,
+        flagged: bool,
+    ) -> (
+        EnginePlugins,
+        Arc<crate::host::native_bridge::SharedHostedPlugin>,
+    ) {
+        use crate::state::EnginePluginInstanceData;
+        use daw_engine::timeline::DeviceKind;
+        use daw_plugin_host::ClapWrapper;
+        use std::collections::HashMap;
+
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Sweep Fixture", vec![], false);
+        wrapper.set_engine_owned_command_fixture_latency_samples(staged_latency);
+        if flagged {
+            // The flag the [thread-safe] callback leaves, without the
+            // process-wide hint: the sweep is called directly here, the way
+            // the watcher's loop calls it after taking the hint itself.
+            wrapper
+                .engine_owned_command_fixture_host_state()
+                .mark_latency_dirty();
+        }
+
+        let runtime: Arc<crate::host::native_bridge::SharedHostedPlugin> = Arc::new(
+            crate::host::native_bridge::SharedHostedPlugin::new(wrapper.into()),
+        );
+        let mut map = HashMap::new();
+        map.insert(
+            "inst-1".to_string(),
+            EnginePluginInstanceData {
+                engine_plugin_id: 11,
+                runtime: Arc::clone(&runtime),
+                name: "Sweep Fixture".to_string(),
+                parameters: Vec::new(),
+                has_gui: false,
+                chain_kind: DeviceKind::Effect,
+                parameter_events: None,
+            },
+        );
+
+        (Arc::new(Mutex::new(map)), runtime)
+    }
+
+    /// The flagged instance is re-queried: the change becomes the event, the
+    /// flag is consumed, and the graph is told where to aim compensation. The
+    /// figures travel together exactly as a channel wake's do — the fixture's
+    /// activation rate is unknown, so its millisecond figure is 0 and the
+    /// frames are what the fixture declared.
+    #[test]
+    fn a_sweep_services_a_flagged_instance_and_aims_the_compensation() {
+        let (engine_plugins, _runtime) = sweep_fixture(441, true);
+        let sink = RecordingEventSink::default();
+        let (handle, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        let engine: Engine = Arc::new(Mutex::new(Some(handle)));
+
+        service_pending_restarts(&engine_plugins, &engine, &sink);
+
+        assert_eq!(
+            sink.events.lock().expect("event log").as_slice(),
+            [(
+                PLUGIN_LATENCY_CHANGED_EVENT.to_string(),
+                serde_json::json!({ "instance_id": "inst-1", "latency_ms": 0.0 }),
+            )],
+            "the sweep publishes the change the restart flag recorded"
+        );
+
+        let mut published = Vec::new();
+        while let Ok(command) = command_rx.pop() {
+            if let daw_engine::scheduler::GraphCommand::SetEffectLatency {
+                effect_id,
+                latency_frames,
+                dry_delay,
+            } = command
+            {
+                published.push((effect_id, latency_frames, dry_delay.is_some()));
+            }
+        }
+        assert_eq!(
+            published,
+            vec![(11, 441, true)],
+            "the sweep compensates the instance's effect at the frames the plugin declared"
+        );
+    }
+
+    /// The sweep is hint-driven, and its per-instance poll is read-and-clear:
+    /// a second sweep over a serviced instance finds nothing and publishes
+    /// nothing, so one restart cannot loop.
+    #[test]
+    fn a_second_sweep_over_a_serviced_instance_publishes_nothing() {
+        let (engine_plugins, _runtime) = sweep_fixture(441, true);
+        let sink = RecordingEventSink::default();
+        let engine: Engine = Arc::new(Mutex::new(None));
+
+        service_pending_restarts(&engine_plugins, &engine, &sink);
+        assert_eq!(sink.events.lock().expect("event log").len(), 1);
+
+        service_pending_restarts(&engine_plugins, &engine, &sink);
+        assert_eq!(
+            sink.events.lock().expect("event log").len(),
+            1,
+            "the flag was consumed by the first sweep"
+        );
+    }
+
+    /// An instance with nothing flagged costs one visit and answers nothing:
+    /// the sweep over an idle session must not fabricate a change.
+    #[test]
+    fn a_sweep_over_an_unflagged_instance_publishes_nothing() {
+        let (engine_plugins, _runtime) = sweep_fixture(441, false);
+        let sink = RecordingEventSink::default();
+        let engine: Engine = Arc::new(Mutex::new(None));
+
+        service_pending_restarts(&engine_plugins, &engine, &sink);
+
+        assert!(sink.events.lock().expect("event log").is_empty());
+    }
+
+    /// The retry rule: an instance the sweep could not get into raises the
+    /// hint again only while it still accepts control. An unloading instance
+    /// refuses every future attempt, so re-raising for it would spin the sweep
+    /// forever — the flag dies with the instance instead.
+    #[test]
+    fn a_sweep_does_not_reraise_the_hint_for_an_instance_that_refuses_control() {
+        let (engine_plugins, runtime) = sweep_fixture(441, true);
+        runtime.begin_unload();
+        let sink = RecordingEventSink::default();
+        let engine: Engine = Arc::new(Mutex::new(None));
+        take_pending_latency_requery_signal();
+
+        service_pending_restarts(&engine_plugins, &engine, &sink);
+
+        assert!(
+            !take_pending_latency_requery_signal(),
+            "an unloading instance must not keep the hint alive"
+        );
+    }
+
+    /// An instance that is merely busy right now — the audio thread inside a
+    /// block — keeps the hint alive for the next sweep, because its flag is
+    /// still standing and nothing else will read it.
+    #[test]
+    fn a_sweep_reraises_the_hint_for_a_live_instance_it_could_not_reach() {
+        let (engine_plugins, runtime) = sweep_fixture(441, true);
+        let sink = RecordingEventSink::default();
+        let engine: Engine = Arc::new(Mutex::new(None));
+        take_pending_latency_requery_signal();
+
+        // Non-RT control holds the instance's gate for the whole visit.
+        let _control_guard = runtime.try_claim_control().expect("a free control gate");
+        service_pending_restarts(&engine_plugins, &engine, &sink);
+
+        assert!(
+            take_pending_latency_requery_signal(),
+            "a live instance whose flag is still standing re-raises the hint"
+        );
     }
 }

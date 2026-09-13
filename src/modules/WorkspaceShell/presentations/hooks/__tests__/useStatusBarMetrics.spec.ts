@@ -9,12 +9,17 @@ import {
     getEngineHealth,
     getEngineState,
     getMasterPeakLevel,
+    readNativeEngineStatus,
     readNativeOutputLatency,
     refreshEngineRtDiagnostics,
 } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 import { useStatusBarMetrics, type StatusBarMetricRefs } from '../useStatusBarMetrics';
+
+// The native diagnostics shape derives from the barrel's own contract rather
+// than a cross-module model import.
+type EngineRtDiagnostics = Exclude<Awaited<ReturnType<typeof refreshEngineRtDiagnostics>>, null>;
 
 type TickFn = () => void;
 
@@ -23,6 +28,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getEngineHealth: vi.fn(),
     getEngineState: vi.fn(),
     getMasterPeakLevel: vi.fn(),
+    readNativeEngineStatus: vi.fn(() => ({ audibleCarrier: false, diagnostics: null })),
     readNativeOutputLatency: vi.fn(() => null),
     refreshEngineRtDiagnostics: vi.fn(() => Promise.resolve()),
 }));
@@ -126,6 +132,49 @@ function makeEngineHealth(detectedUnderrunBlocks = 0): ReturnType<typeof getEngi
     };
 }
 
+function makeNativeDiagnostics(overrides: Partial<EngineRtDiagnostics> = {}): EngineRtDiagnostics {
+    return {
+        running: true,
+        schedulerEventBufferOverflows: 0,
+        arpeggiatorActiveNoteExhaustions: 0,
+        effectIdCollisions: 0,
+        unsupportedEffectAdditions: 0,
+        unmappedSetParamCalls: 0,
+        captureConsumerRefusals: 0,
+        captureBlocksDropped: 0,
+        captureInputUnderruns: 0,
+        inputLatencyFrames: 0,
+        sampleRate: 96_000,
+        outputBufferFrames: 0,
+        outputPathFrames: 0,
+        outputStreamFault: null,
+        events: [],
+        ...overrides,
+    };
+}
+
+type IdleCallbackFixture = (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void;
+
+/**
+ * Installs a controllable `requestIdleCallback`. The hook re-arms inside its
+ * callback, so each `dispatchIdle` call hands it the next frame's idle
+ * observation; a frame the test does not dispatch for is a frame in which the
+ * browser found no idle time.
+ */
+function stubIdleLoop(): { dispatchIdle: (timeRemainingMs: number) => void } {
+    let callback: IdleCallbackFixture | null = null;
+    vi.stubGlobal('requestIdleCallback', (cb: IdleCallbackFixture) => {
+        callback = cb;
+        return 1;
+    });
+    vi.stubGlobal('cancelIdleCallback', vi.fn());
+    return {
+        dispatchIdle: (timeRemainingMs: number) => {
+            callback?.({ didTimeout: false, timeRemaining: () => timeRemainingMs });
+        },
+    };
+}
+
 describe('useStatusBarMetrics', () => {
     const originalRequestIdle = globalThis.requestIdleCallback;
     const originalCancelIdle = globalThis.cancelIdleCallback;
@@ -141,6 +190,7 @@ describe('useStatusBarMetrics', () => {
         capturedId = null;
         vi.mocked(getEngineDiagnostics).mockReturnValue(makeEngineDiagnostics());
         vi.mocked(getEngineHealth).mockReturnValue(makeEngineHealth());
+        vi.mocked(readNativeEngineStatus).mockReturnValue({ audibleCarrier: false, diagnostics: null });
     });
 
     afterEach(() => {
@@ -272,6 +322,10 @@ describe('useStatusBarMetrics', () => {
             outputLatency: OUTPUT_LATENCY_SECONDS,
         });
         vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+        vi.mocked(readNativeEngineStatus).mockReturnValue({
+            audibleCarrier: true,
+            diagnostics: makeNativeDiagnostics(),
+        });
         vi.mocked(readNativeOutputLatency).mockReturnValue({
             contextSeconds: 256 / 48_000,
             deviceSeconds: 528 / 48_000,
@@ -316,6 +370,201 @@ describe('useStatusBarMetrics', () => {
             'Output latency 16.0 ms = context 5.3 ms + device 10.7 ms.' +
                 ' Hardware output path only — excludes plug-in delay compensation.'
         );
+    });
+
+    it('labels the Web Audio rate readout as the context while Web Audio is the carrier', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.005,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!();
+
+        expect(refs.sampleRate.current!.textContent).toBe('48kHz');
+        expect(refs.sampleRate.current!.title).toBe('Web Audio context sample rate');
+    });
+
+    // ── Native carrier provenance (#3706) ────────────────────────────────
+    // While the native session is the audible carrier, Web Audio's context
+    // rate/latency/state describe a path nobody hears. The readouts must name
+    // their source, follow the carrier, and say n/a when the carrier has
+    // published nothing — never substitute the other engine's number.
+    it('shows the native output-stream rate, named as such, once the native session carries the monitor', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.005,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+        vi.mocked(readNativeEngineStatus).mockReturnValue({
+            audibleCarrier: true,
+            diagnostics: makeNativeDiagnostics({ sampleRate: 96_000 }),
+        });
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!();
+
+        expect(refs.sampleRate.current!.textContent).toBe('96kHz');
+        expect(refs.sampleRate.current!.title).toBe('Native engine output stream rate');
+    });
+
+    it('shows n/a — never the Web Audio context rate — when the native carrier has published no rate', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.005,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+        vi.mocked(readNativeEngineStatus).mockReturnValue({ audibleCarrier: true, diagnostics: null });
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!();
+
+        expect(refs.sampleRate.current!.textContent).toBe('n/a');
+        expect(refs.sampleRate.current!.title).toBe('Native engine output stream rate');
+    });
+
+    it('shows n/a rather than the Web Audio latency while the native carrier has published no figure', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: BASE_LATENCY_SECONDS,
+            outputLatency: OUTPUT_LATENCY_SECONDS,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+        vi.mocked(readNativeEngineStatus).mockReturnValue({ audibleCarrier: true, diagnostics: null });
+        vi.mocked(readNativeOutputLatency).mockReturnValue(null);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!();
+
+        expect(refs.latency.current!.textContent).toBe('n/a');
+        expect(refs.latency.current!.title).toContain('Native engine is the audible output');
+        // The context figures would have read 16.0ms; they must not appear.
+        expect(refs.latency.current!.title).not.toContain('context 5.3 ms');
+    });
+
+    it('reads the engine dot from the native engine while it is the audible carrier', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.005,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+        vi.mocked(readNativeEngineStatus).mockReturnValue({
+            audibleCarrier: true,
+            diagnostics: makeNativeDiagnostics(),
+        });
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!();
+
+        expect(refs.engineState.current!.className).toContain(getDawStatusDotClassName({ tone: 'success' }));
+        expect(refs.engineState.current!.title).toContain('Engine: native running · Web Audio: running');
+    });
+
+    it('marks the dot warning while the native output stream reports a fault', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.005,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+        vi.mocked(readNativeEngineStatus).mockReturnValue({
+            audibleCarrier: true,
+            diagnostics: makeNativeDiagnostics({ outputStreamFault: 'deviceChanged' }),
+        });
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!();
+
+        expect(refs.engineState.current!.className).toContain(getDawStatusDotClassName({ tone: 'warning' }));
+        expect(refs.engineState.current!.title).toContain('native output stream fault: deviceChanged');
+    });
+
+    it('marks the dot danger when the native carrier stopped rendering', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.005,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+        vi.mocked(readNativeEngineStatus).mockReturnValue({
+            audibleCarrier: true,
+            diagnostics: makeNativeDiagnostics({ running: false }),
+        });
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!();
+
+        expect(refs.engineState.current!.className).toContain(getDawStatusDotClassName({ tone: 'danger' }));
+        expect(refs.engineState.current!.title).toContain('Engine: native stopped');
+    });
+
+    it('keeps the dot muted — not failed — before any native diagnostics reading has landed', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.005,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+        vi.mocked(readNativeEngineStatus).mockReturnValue({ audibleCarrier: true, diagnostics: null });
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!();
+
+        expect(refs.engineState.current!.className).toContain(getDawStatusDotClassName({ tone: 'muted' }));
+        expect(refs.engineState.current!.title).toContain('Engine: native (no reading yet)');
     });
 
     it('leaves the latency tooltip alone while the latency is unchanged', () => {
@@ -551,8 +800,10 @@ describe('useStatusBarMetrics', () => {
 
         const expectedClass = getDawStatusDotClassName({ tone: 'success' });
         expect(refs.engineState.current!.className).toContain(expectedClass);
+        // While Web Audio is the audible engine the dot answers for Web Audio,
+        // and the tooltip names it (#3706).
         expect(refs.engineState.current!.title).toBe(
-            'Engine: running · audio track strips: 43 · bus strips: 8 · sends: 12 · sidechains: 2 · ready device instances: 24 (fermenter: 14) · pending device instances: 1 · failed device instances: 2 · device audio nodes: 31 · strip meter worklets: 39 · master meter worklets: 1 · adjustment-layer buses: 0 · tracked AudioScheduledSources: 0 · missed render deadlines: 0 (0.0 ms) · engine-detected dropouts: 0'
+            'Engine: Web Audio running · audio track strips: 43 · bus strips: 8 · sends: 12 · sidechains: 2 · ready device instances: 24 (fermenter: 14) · pending device instances: 1 · failed device instances: 2 · device audio nodes: 31 · strip meter worklets: 39 · master meter worklets: 1 · adjustment-layer buses: 0 · tracked AudioScheduledSources: 0 · missed render deadlines: 0 (0.0 ms) · engine-detected dropouts: 0'
         );
     });
 
@@ -576,7 +827,7 @@ describe('useStatusBarMetrics', () => {
         const expectedClass = getDawStatusDotClassName({ tone: 'muted' });
         expect(refs.engineState.current!.className).toContain(expectedClass);
         expect(refs.engineState.current!.title).toBe(
-            'Engine: suspended · audio track strips: 43 · bus strips: 8 · sends: 12 · sidechains: 2 · ready device instances: 24 (fermenter: 14) · pending device instances: 1 · failed device instances: 2 · device audio nodes: 31 · strip meter worklets: 39 · master meter worklets: 1 · adjustment-layer buses: 0 · tracked AudioScheduledSources: 0 · missed render deadlines: 0 (0.0 ms) · engine-detected dropouts: 0'
+            'Engine: Web Audio suspended · audio track strips: 43 · bus strips: 8 · sends: 12 · sidechains: 2 · ready device instances: 24 (fermenter: 14) · pending device instances: 1 · failed device instances: 2 · device audio nodes: 31 · strip meter worklets: 39 · master meter worklets: 1 · adjustment-layer buses: 0 · tracked AudioScheduledSources: 0 · missed render deadlines: 0 (0.0 ms) · engine-detected dropouts: 0'
         );
     });
 
@@ -750,6 +1001,109 @@ describe('useStatusBarMetrics', () => {
         expect(refs.cpuText.current!.textContent).toMatch(/^\d+%$/);
         // Low CPU → success color class is present.
         expect(refs.cpuBar.current!.classList.contains('bg-[var(--color-state-success)]')).toBe(true);
+    });
+
+    // ── Main-thread load estimate (#3705) ────────────────────────────────
+    // The readout is a main-thread busyness estimate. Its inputs are
+    // cadence-normalized: equivalent idle/work fractions must read the same
+    // at 30, 60, and 120 Hz — the old fixed 50 ms idle budget and fixed
+    // 60 Hz overrun budget classified an almost-idle UI as heavily loaded
+    // purely from display cadence. These specs fail against that formula.
+    function driveFrames(
+        frameCount: number,
+        intervalMs: number,
+        idleMs: number | null,
+        dispatchIdle: (timeRemainingMs: number) => void
+    ): void {
+        for (let frame = 0; frame < frameCount; frame++) {
+            drivenNowMs += intervalMs;
+            if (idleMs !== null) {
+                // The browser found idle time this frame and dispatched the
+                // callback with that much of it left.
+                dispatchIdle(idleMs);
+            }
+            capturedTick!();
+        }
+    }
+
+    let drivenNowMs = 0;
+
+    function renderHookWithClock(): { refs: StatusBarMetricRefs; dispatchIdle: (timeRemainingMs: number) => void } {
+        drivenNowMs = 0;
+        vi.stubGlobal('performance', { now: () => drivenNowMs });
+        // Install the idle loop before mounting: the hook schedules its first
+        // idle callback inside the effect.
+        const idle = stubIdleLoop();
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 44100,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.01,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        return { refs, dispatchIdle: idle.dispatchIdle };
+    }
+
+    const readPercent = (refs: StatusBarMetricRefs): number => {
+        const text = refs.cpuText.current?.textContent ?? '';
+        return Number(text.replace('%', ''));
+    };
+
+    it.each([
+        ['60 Hz', 1000 / 60, 15],
+        ['120 Hz', 1000 / 120, 7],
+        ['30 Hz', 1000 / 30, 30],
+    ])(
+        'reads equivalent mostly-idle frames at %s as the same low load, not a cadence artifact',
+        (_label, intervalMs, idleMs) => {
+            const { refs, dispatchIdle } = renderHookWithClock();
+            driveFrames(60, intervalMs, idleMs, dispatchIdle);
+
+            const percent = readPercent(refs);
+            expect(percent).toBeLessThanOrEqual(20);
+            expect(refs.cpuBar.current!.classList.contains('bg-[var(--color-state-success)]')).toBe(true);
+            expect(refs.cpuBar.current!.classList.contains('bg-[var(--color-state-danger)]')).toBe(false);
+        }
+    );
+
+    it('reads sustained frames with no dispatched idle time as high scheduling pressure', () => {
+        const { refs, dispatchIdle } = renderHookWithClock();
+        // One serviced idle sample proves the idle loop is live; afterwards
+        // the main thread saturates while rAF keeps its cadence — no idle
+        // callback is dispatched again.
+        driveFrames(1, 1000 / 60, 15, dispatchIdle);
+        driveFrames(40, 1000 / 60, null, dispatchIdle);
+
+        const percent = readPercent(refs);
+        expect(percent).toBeGreaterThanOrEqual(80);
+        expect(refs.cpuBar.current!.classList.contains('bg-[var(--color-state-danger)]')).toBe(true);
+    });
+
+    it('does not read full pressure before the idle loop has proven it is serviced', () => {
+        const { refs, dispatchIdle } = renderHookWithClock();
+        // No idle callback ever dispatched: with no idle observation at all,
+        // missing idle says nothing about busyness.
+        driveFrames(40, 1000 / 60, null, dispatchIdle);
+
+        expect(readPercent(refs)).toBeLessThanOrEqual(5);
+    });
+
+    it('reads a frame that overruns the display cadence as load even while its idle window was generous', () => {
+        const { refs, dispatchIdle } = renderHookWithClock();
+        driveFrames(30, 1000 / 60, 15, dispatchIdle); // establish the 60 Hz cadence
+        // Acute jank: frames ~4x the display cadence, but almost entirely
+        // idle — only the overrun term can see this as pressure.
+        driveFrames(25, 1000 / 15, 63, dispatchIdle);
+
+        const percent = readPercent(refs);
+        expect(percent).toBeGreaterThanOrEqual(50);
+        expect(refs.cpuBar.current!.classList.contains('bg-[var(--color-state-success)]')).toBe(false);
     });
 
     it('unregisters the animation tick on unmount', () => {

@@ -3910,12 +3910,32 @@ describe('compileArbitraryCommandList', () => {
             arguments_: {},
             protectedTargetIds: [],
             expectedReason: 'Bulk selector sidechain-bass resolved 2 targets, not its exact quantity.',
+            expectedDetail: {
+                kind: 'ambiguous-target',
+                itemId: 'sidechain-bass',
+                resolvedCount: 2,
+                expectedCount: 1,
+                candidateIds: ['device-bass-compressor-a', 'device-bass-compressor-b'],
+            },
         },
-    ])('rejects a $name sidechain selector', ({ devices, arguments_, protectedTargetIds, expectedReason }) => {
-        const result = compileSidechainDeviceSelector({ devices, arguments_, protectedTargetIds });
+    ])(
+        'rejects a $name sidechain selector',
+        ({ devices, arguments_, protectedTargetIds, expectedReason, expectedDetail }) => {
+            const result = compileSidechainDeviceSelector({ devices, arguments_, protectedTargetIds });
 
-        expect(result).toEqual({ status: 'rejected', reason: expectedReason });
-    });
+            // Selector failures carry structured target evidence so the bounded
+            // correction can distinguish a missing target from an ambiguous one.
+            expect(result).toEqual(
+                expectedDetail === undefined
+                    ? { status: 'rejected', reason: expectedReason }
+                    : {
+                          status: 'rejected',
+                          reason: expectedReason,
+                          detail: { ...expectedDetail, entity: 'device' },
+                      }
+            );
+        }
+    );
 
     it.each([
         {

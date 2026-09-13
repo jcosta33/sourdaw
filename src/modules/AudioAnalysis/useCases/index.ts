@@ -21,7 +21,7 @@ export { detectDominantPitch } from './pitchDetection';
 
 export { polyphonicAudioToMidi } from './polyphonicAudioToMidi';
 
-export { analyzeMix as analyzeMixFromTrackLayout } from './referenceMixComparison/analyzeMix/analyzeMix';
+export { analyzeMix as analyzeCurrentMix } from './referenceMixComparison/analyzeMix/analyzeMix';
 
 export { compareToReference } from './referenceMixComparison/compareToReference';
 

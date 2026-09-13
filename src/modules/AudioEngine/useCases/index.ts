@@ -16,6 +16,7 @@ export { startAudioRecording } from './audioRecorder/startAudioRecording';
 export { startInputMonitoring } from './audioRecorder/startInputMonitoring';
 export { stopAudioRecording } from './audioRecorder/stopAudioRecording';
 export { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
+export { stopTrackInputMonitoring } from './audioRecorder/stopTrackInputMonitoring';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export { playAuditionNote } from './audition';
@@ -81,6 +82,7 @@ export { getEngineHealth } from './engineAccess/getEngineHealth';
 export { isEngineAudioAvailable } from './engineAccess/isEngineAudioAvailable';
 export { refreshEngineRtDiagnostics } from './engineAccess/refreshEngineRtDiagnostics';
 export { readNativeOutputLatency } from './engineAccess/readNativeOutputLatency';
+export { readNativeEngineStatus } from './engineAccess/readNativeEngineStatus';
 export { getDeviceReadinessDiagnostics } from './engineAccess/getDeviceReadinessDiagnostics';
 export { resetEnginePlaybackLatencyStats } from './engineAccess/resetEnginePlaybackLatencyStats';
 export { resumeEngine } from './engineAccess/resumeEngine';

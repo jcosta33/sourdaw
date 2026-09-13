@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useTransition } from 'react';
+import { type ReactElement, useEffect, useState, useTransition } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -6,6 +6,7 @@ import { DawSearchInput } from '#/components/daw/DawSearchInput';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { type BacteriaPatch } from '../../models/BacteriaPatch';
 import {
@@ -23,6 +24,7 @@ import { loadBacteriaPatchWithAudio } from '../../useCases/bacteriaParamBridge/l
 import { setBacteriaBandParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio';
 import { setBacteriaParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaParamWithAudio';
 import { BACTERIA_PRESETS } from '../../useCases/bacteriaPresets';
+import { hydrateBacteriaPatchFromProject } from '../../useCases/hydrateBacteriaPatchFromProject';
 import { BandStrip } from '../components/BandStrip';
 import { BezierLfoEditor } from '../components/BezierLfoEditor';
 import { CrossoverDisplay } from '../components/CrossoverDisplay';
@@ -1770,9 +1772,24 @@ function renderDeck(deviceId: string, state: BacteriaState): ReactElement {
     return <LabDeck deviceId={deviceId} state={state} />;
 }
 
+const defaultTrackState = { tracks: [], selectedTrackId: null, ghostClips: [] };
+
 export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const allInstances = useStore(bacteriaStore, {});
     const state: BacteriaState = allInstances?.[deviceId] ?? getBacteriaState(deviceId);
+    // Project hydration follows the Fermenter/Gluten pattern (#3673): the store
+    // slice is re-projected from the device's persisted parameterValues on
+    // mount and on every relevant project change, so commands, undo, and
+    // collaborator writes that bypass this panel's setter still arrive.
+    const trackState = useStore(trackStore, defaultTrackState);
+    const projectParameterValues = trackState.tracks
+        .flatMap((track) => track.devices)
+        .find((device) => device.id === deviceId)?.parameterValues;
+
+    useEffect(() => {
+        hydrateBacteriaPatchFromProject(deviceId);
+    }, [deviceId, projectParameterValues]);
+
     const [presetQuery, setPresetQuery] = useState('');
     const [presetCategory, setPresetCategory] = useState('All');
     const [, startFilterTransition] = useTransition();
