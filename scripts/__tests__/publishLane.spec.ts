@@ -2263,6 +2263,49 @@ describe('lane publish', () => {
             expect(calls.some((call) => call.startsWith('issueView:'))).toBe(false);
         });
 
+        it("applies a canonical --project on an issueless lane when the App can list the owner's projects", () => {
+            // The flags half of the probe trigger: nothing is inherited on this lane, so the
+            // project piece of the edit can only come from the flag through the probe. If the
+            // probe's guard ignored flags, the edit would carry no project piece at all.
+            const { port, calls } = fakePort({
+                trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+                cwd: CLEANUP_LANE,
+                knownProjects: ['Roadmap'],
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            expect(
+                publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
+                    model: 'glm-5.3',
+                    projects: ['ROADMAP'],
+                })
+            ).toBe(88);
+
+            expect(calls).toContain('projectList');
+            expect(calls.some((call) => call.startsWith('issueView:'))).toBe(false);
+            expect(calls).toContain('metaEdit:88:model:glm-5.3:-:Roadmap');
+        });
+
+        it("fails an explicit --project on an issueless lane when the App cannot list the owner's projects", () => {
+            const { port, calls } = fakePort({
+                trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+                cwd: CLEANUP_LANE,
+                projectListError: 'gh: Must have admin rights',
+            });
+
+            expect(() =>
+                publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
+                    model: 'glm-5.3',
+                    projects: ['Roadmap'],
+                })
+            ).toThrow(/installation tokens cannot access user-owned Projects v2.*operator backfill/);
+            expect(calls).toContain('projectList');
+            expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('metaEdit:'))).toBe(false);
+        });
+
         it("applies inherited projects when the App can list the owner's projects", () => {
             const { port, calls } = fakePort({
                 issueTracker: { milestone: null, projectItems: [{ title: 'Roadmap' }] },
