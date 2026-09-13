@@ -25,11 +25,13 @@ const DEFAULT_LANE_SLUG = 'work';
 export type OpenLanePort = {
     primaryRoot: () => string;
     pathExists: (path: string) => boolean;
+    assertUnusedStackNamespace: (branch: string) => void;
     ensureWorktreeParent: (path: string) => void;
     fetchMain: () => void;
-    worktreeAdd: (path: string, branch: string, start?: string) => void;
+    worktreeAdd: (path: string, branch: string, reservedBranch?: boolean) => void;
     stackParent?: (path: string, childBranch: string) => LaneStack;
     saveStack?: (descriptor: LaneStack) => void;
+    reserveStackBranch?: (branch: string, head: string) => void;
     /** Realpath of the lane's node_modules when it is a symlink; undefined when absent or a real directory. */
     nodeModulesLinkTarget: (lanePath: string) => string | undefined;
     lock: (path: string) => void;
@@ -84,23 +86,41 @@ export function laneDirectoryName(issue: number | undefined, slug: string): stri
     return issue === undefined ? `agent--${slug}` : `agent-${issue}-${slug}`;
 }
 
+function createStackWorktree(stack: LaneStack, lanePath: string, port: OpenLanePort): void {
+    if (port.reserveStackBranch === undefined || port.saveStack === undefined) {
+        fail('stack creation unavailable');
+    }
+    // Git's non-force branch creation is the ownership boundary; a preflight ref read cannot reserve it.
+    port.reserveStackBranch(stack.childBranch, stack.forkHead);
+    try {
+        port.saveStack(stack);
+        port.worktreeAdd(lanePath, stack.childBranch, true);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        fail(
+            `stack creation failed; reserved branch ${stack.childBranch} remains at ${stack.forkHead}; preserve its evidence and choose a new slug: ${message}`
+        );
+    }
+}
+
 export function openLane(issue: number | undefined, slug: string, port: OpenLanePort, stackOn?: string): string {
     const branch = laneBranchName(issue, slug);
     const lanePath = join(port.primaryRoot(), '.agents', 'worktrees', laneDirectoryName(issue, slug));
     if (port.pathExists(lanePath)) {
         fail(`lane already exists: ${lanePath}`);
     }
+    port.assertUnusedStackNamespace(branch);
     port.ensureWorktreeParent(lanePath);
     port.fetchMain();
     const stack = stackOn === undefined ? undefined : port.stackParent?.(stackOn, branch);
     if (stackOn !== undefined && (stack === undefined || port.saveStack === undefined)) {
         fail('stack creation unavailable');
     }
-    // Write intent first: an interrupted worktree creation must never leave an unregistered child.
     if (stack !== undefined) {
-        port.saveStack?.(stack);
+        createStackWorktree(stack, lanePath, port);
+    } else {
+        port.worktreeAdd(lanePath, branch);
     }
-    port.worktreeAdd(lanePath, branch, stack?.forkHead);
     // Issue #4118: a lane node_modules that symlinks into another checkout makes every pnpm run
     // through it rewrite that checkout's install metadata, which later aborts every trusted
     // delivery script. Refusing before the lock leaves the created worktree unlocked, so the fix
@@ -134,14 +154,34 @@ export function shellPort(
     return {
         primaryRoot: () => primaryRoot,
         pathExists: (path) => existsSync(path),
+        assertUnusedStackNamespace: (branch) => {
+            const refusal = `${branch} has retained stack evidence; preserve it and choose a new slug`;
+            let descriptor: LaneStack | undefined;
+            try {
+                descriptor = readLaneStack(primaryRoot, branch);
+            } catch {
+                fail(refusal);
+            }
+            const keys = capture('git', ['config', '--name-only', '--list'], { cwd: primaryRoot }).split('\n');
+            if (descriptor !== undefined || keys.includes(`branch.${branch}.sourdaw-stack-fork`)) {
+                fail(refusal);
+            }
+        },
         ensureWorktreeParent: (path) => {
             mkdirSync(join(path, '..'), { recursive: true });
         },
         fetchMain: () => {
             run('git', ['fetch', 'origin', 'main'], { cwd: primaryRoot });
         },
-        worktreeAdd: (path, branch, start) => {
-            run('git', ['worktree', 'add', '-b', branch, path, start ?? 'origin/main'], { cwd: primaryRoot });
+        worktreeAdd: (path, branch, reservedBranch = false) => {
+            if (reservedBranch) {
+                run('git', ['worktree', 'add', path, branch], { cwd: primaryRoot });
+            } else {
+                run('git', ['worktree', 'add', '-b', branch, path, 'origin/main'], { cwd: primaryRoot });
+            }
+        },
+        reserveStackBranch: (branch, head) => {
+            run('git', ['branch', branch, head], { cwd: primaryRoot });
         },
         stackParent: (path, childBranch) => {
             if (!isAbsolute(path)) {

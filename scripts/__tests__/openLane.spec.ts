@@ -1,6 +1,9 @@
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     laneDirectoryName,
@@ -13,6 +16,7 @@ import {
     type OpenLanePort,
 } from '../openLane.ts';
 import { laneBranchName } from '../prContract.ts';
+import { readLaneStack, writeLaneStack } from '../stackedLanes.ts';
 
 /**
  * `lane:open` is the one delivery script that must never touch GitHub: it runs before the issue
@@ -91,15 +95,175 @@ function fakePort(exists = false, nodeModulesLinkTarget?: (lanePath: string) => 
     const port: OpenLanePort = {
         primaryRoot: () => '/repo',
         pathExists: () => exists,
+        assertUnusedStackNamespace: () => undefined,
         ensureWorktreeParent: (path) => calls.push(`mkdir:${path}`),
         fetchMain: () => calls.push('fetch'),
         worktreeAdd: (path, branch) => calls.push(`add:${path}:${branch}`),
+        reserveStackBranch: (branch, head) => {
+            calls.push(`reserve:${branch}:${head}`);
+        },
         nodeModulesLinkTarget: nodeModulesLinkTarget ?? (() => undefined),
         lock: (path) => calls.push(`lock:${path}`),
         log: (message) => logs.push(message),
     };
     return { port, calls, logs };
 }
+
+const scratchRoots: string[] = [];
+afterEach(() => {
+    for (const root of scratchRoots.splice(0)) {
+        rmSync(root, { recursive: true, force: true });
+    }
+});
+
+function creationFixture(beforeRun: (args: string[], git: (...args: string[]) => string) => void = () => undefined) {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-stack-open-')));
+    scratchRoots.push(root);
+    const gitAt = (cwd: string, args: string[]) =>
+        execFileSync('git', args, {
+            cwd,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                GIT_CONFIG_GLOBAL: '/dev/null',
+                GIT_CONFIG_NOSYSTEM: '1',
+                GIT_AUTHOR_NAME: 'Fixture',
+                GIT_AUTHOR_EMAIL: 'fixture@example.test',
+                GIT_COMMITTER_NAME: 'Fixture',
+                GIT_COMMITTER_EMAIL: 'fixture@example.test',
+            },
+        }).trim();
+    const git = (...args: string[]) => gitAt(root, args);
+    git('init', '-b', 'main');
+    writeFileSync(join(root, '.gitignore'), '.agents/\n');
+    git('add', '.');
+    git('commit', '-m', 'chore: base');
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    const parentPath = join(root, '.agents', 'worktrees', 'parent');
+    git('worktree', 'add', '-b', 'agent/parent', parentPath);
+    writeFileSync(join(parentPath, 'parent'), 'parent\n');
+    gitAt(parentPath, ['add', '.']);
+    gitAt(parentPath, ['commit', '-m', 'feat: parent']);
+    git('worktree', 'lock', '--reason', 'active:sourdaw-author', parentPath);
+    const head = gitAt(parentPath, ['rev-parse', 'HEAD']);
+    const writes: string[][] = [];
+    const port = shellPort(
+        (_command, args, options) => gitAt(options?.cwd ?? root, args),
+        (_command, args, options) => {
+            writes.push(args);
+            beforeRun(args, git);
+            if (args[0] !== 'fetch') {
+                gitAt(options?.cwd ?? root, args);
+            }
+        },
+        root
+    );
+    port.log = () => undefined;
+    return { root, git, parentPath, head, port, writes };
+}
+
+describe('real Git stack creation reservation', () => {
+    it('leaves an existing foreign branch and its metadata untouched', () => {
+        const f = creationFixture();
+        const foreign = join(f.root, '.agents', 'worktrees', 'foreign');
+        f.git('worktree', 'add', '-b', 'agent/collision', foreign, 'main');
+        f.git('worktree', 'lock', '--reason', 'active:sourdaw-author', foreign);
+        const config = readFileSync(join(f.root, '.git', 'config'));
+        const oldHead = f.git('rev-parse', 'agent/collision');
+        expect(() => openLane(undefined, 'collision', f.port, f.parentPath)).toThrow();
+        expect(readLaneStack(f.root, 'agent/collision')).toBeUndefined();
+        expect(readFileSync(join(f.root, '.git', 'config'))).toEqual(config);
+        expect(f.git('rev-parse', 'agent/collision')).toBe(oldHead);
+    });
+
+    it.each(['descriptor', 'marker'])('refuses retained %s evidence for ordinary and stacked opens', (kind) => {
+        for (const stacked of [false, true]) {
+            const f = creationFixture();
+            if (kind === 'descriptor') {
+                writeLaneStack(f.root, {
+                    version: 1,
+                    childBranch: 'agent/retired',
+                    parentBranch: 'agent/parent',
+                    forkHead: f.head,
+                    parentHead: f.head,
+                });
+            } else {
+                f.git('config', 'branch.agent/retired.sourdaw-stack-fork', f.head);
+            }
+            const config = readFileSync(join(f.root, '.git', 'config'));
+            const previous = readLaneStack(f.root, 'agent/retired');
+            const directory = join(f.root, '.agents', 'lane-stacks');
+            const readEvidence = () => {
+                if (!existsSync(directory)) {
+                    return [];
+                }
+                return readdirSync(directory).map((file) => readFileSync(join(directory, file)));
+            };
+            const bytes = readEvidence();
+            expect(() => openLane(undefined, 'retired', f.port, stacked ? f.parentPath : undefined)).toThrow(
+                /choose a new slug/
+            );
+            expect(f.writes).toEqual([]);
+            expect(readFileSync(join(f.root, '.git', 'config'))).toEqual(config);
+            expect(readLaneStack(f.root, 'agent/retired')).toEqual(previous);
+            expect(readEvidence()).toEqual(bytes);
+            expect(
+                spawnSync('git', ['rev-parse', '--verify', 'refs/heads/agent/retired'], { cwd: f.root }).status
+            ).not.toBe(0);
+        }
+    });
+
+    it('refuses a branch that appears at reservation without registering it', () => {
+        const f = creationFixture((args, git) => {
+            if (args[0] === 'branch' && args[1] === 'agent/race') {
+                git('branch', 'agent/race', 'main');
+            }
+        });
+        expect(() => openLane(undefined, 'race', f.port, f.parentPath)).toThrow();
+        expect(readLaneStack(f.root, 'agent/race')).toBeUndefined();
+        expect(f.git('config', '--get', '--default', '', 'branch.agent/race.sourdaw-stack-fork')).toBe('');
+        expect(f.git('rev-parse', 'agent/race')).toBe(f.git('rev-parse', 'main'));
+    });
+
+    it('reserves then registers then creates the exact locked stack head', () => {
+        const f = creationFixture();
+        const lane = openLane(undefined, 'child', f.port, f.parentPath);
+        const reserve = f.writes.findIndex((args) => args[0] === 'branch');
+        const marker = f.writes.findIndex((args) => args[0] === 'config');
+        const add = f.writes.findIndex((args) => args[0] === 'worktree' && args[1] === 'add');
+        expect(reserve).toBeGreaterThanOrEqual(0);
+        expect(reserve).toBeLessThan(marker);
+        expect(marker).toBeLessThan(add);
+        expect(f.writes[add]).toEqual(['worktree', 'add', lane, 'agent/child']);
+        expect(f.git('rev-parse', 'agent/child')).toBe(f.head);
+        expect(readLaneStack(f.root, 'agent/child')?.forkHead).toBe(f.head);
+        const created = f
+            .git('worktree', 'list', '--porcelain', '-z')
+            .split('\0\0')
+            .find((record) => record.startsWith(`worktree ${lane}\0`));
+        expect(created).toContain('branch refs/heads/agent/child');
+        expect(created).toContain('locked active:sourdaw-author');
+    });
+
+    it.each(['save', 'worktree'])('retains an explicit reserved branch after %s failure', (stage) => {
+        const f = creationFixture((args) => {
+            if (stage === 'worktree' && args[0] === 'worktree' && args[1] === 'add') {
+                throw new Error('fixture worktree failure');
+            }
+        });
+        if (stage === 'save') {
+            f.port.saveStack = () => {
+                throw new Error('fixture save failure');
+            };
+        }
+        expect(() => openLane(undefined, 'partial', f.port, f.parentPath)).toThrow(/reserved branch agent\/partial/);
+        expect(f.git('rev-parse', 'agent/partial')).toBe(f.head);
+        expect(existsSync(join(f.root, '.agents', 'worktrees', 'agent--partial'))).toBe(false);
+        if (stage === 'worktree') {
+            expect(readLaneStack(f.root, 'agent/partial')?.forkHead).toBe(f.head);
+        }
+    });
+});
 
 describe('lane open', () => {
     it('accepts an explicit absolute parent selector without treating it as a slug', () => {
@@ -121,11 +285,12 @@ describe('lane open', () => {
         port.saveStack = () => {
             calls.push('descriptor');
         };
-        port.worktreeAdd = (_path, _branch, start) => {
-            calls.push(`start:${start}`);
+        port.worktreeAdd = (_path, _branch, reservedBranch) => {
+            calls.push(`reserved:${reservedBranch}`);
         };
         openLane(undefined, 'child', port, '/repo/parent');
-        expect(calls.indexOf('descriptor')).toBeLessThan(calls.indexOf(`start:${head}`));
+        expect(calls).toContain(`reserve:agent/child:${head}`);
+        expect(calls.indexOf('descriptor')).toBeLessThan(calls.indexOf('reserved:true'));
         expect(calls.at(-1)).toBe('lock:/repo/.agents/worktrees/agent--child');
     });
 
