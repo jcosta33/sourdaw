@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
@@ -43,6 +43,25 @@ async function paintOneNote(page: Page): Promise<void> {
     await expect(noteCount).toHaveText('1 note');
 }
 
+async function readAdvancedBarsBeatsTicks(playhead: Locator): Promise<string | undefined> {
+    const [label, bar, firstSeparator, beat, secondSeparator, tick] = await playhead
+        .locator(':scope > span')
+        .allTextContents();
+    if (
+        label !== 'Bars' ||
+        firstSeparator !== '.' ||
+        secondSeparator !== '.' ||
+        !/^[1-9]\d*$/.test(bar ?? '') ||
+        !/^[1-9]\d*$/.test(beat ?? '') ||
+        !/^\d{3}$/.test(tick ?? '')
+    ) {
+        return undefined;
+    }
+
+    const position = `${bar}.${beat}.${tick}`;
+    return position === '1.1.000' ? undefined : position;
+}
+
 test.describe('MIDI piano-roll editing and playback on a new clip', () => {
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120_000);
@@ -75,7 +94,22 @@ test.describe('MIDI piano-roll editing and playback on a new clip', () => {
 
         await paintOneNote(page);
         await play.click();
-        await expect.poll(async () => (await playhead.innerText()).trim()).not.toMatch(/1\.1\.000/);
+        let firstPosition = '';
+        await expect
+            .poll(async () => {
+                const position = await readAdvancedBarsBeatsTicks(playhead);
+                if (position !== undefined) {
+                    firstPosition = position;
+                }
+                return position;
+            })
+            .not.toBeUndefined();
+        await expect
+            .poll(async () => {
+                const position = await readAdvancedBarsBeatsTicks(playhead);
+                return position === firstPosition ? undefined : position;
+            })
+            .not.toBeUndefined();
 
         await stop.click();
         await expect(playhead).toHaveText(/1\.1\.000/);
