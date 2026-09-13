@@ -106,8 +106,34 @@ async function createEndpoint({
         getCrdtDocIds: () => [],
         persistCrdtProject: persistCurrentProject,
         runCrdtPersistenceBarrier: async (
-            operation: (input: { persistCurrentProject: () => Promise<void> }) => Promise<void>
-        ) => operation({ persistCurrentProject }),
+            operation: (input: {
+                persistCurrentProject: (expectedRootHeads?: readonly string[]) => Promise<unknown>;
+            }) => Promise<void>
+        ) => {
+            let invoked = false;
+            let result: unknown;
+            await operation({
+                persistCurrentProject: async (expectedRootHeads) => {
+                    invoked = true;
+                    try {
+                        await persistCurrentProject();
+                        result = {
+                            status: 'settled',
+                            mode: expectedRootHeads ? 'exact' : 'ordinary',
+                            ...(expectedRootHeads ? { expectedRootHeads: [...expectedRootHeads] } : {}),
+                            durable: {
+                                write: 'noop',
+                                authority: { epoch: 'test', revision: 1, rootLineage: 'main' },
+                            },
+                        };
+                    } catch (error) {
+                        result = { status: 'failed', durable: { write: 'none' }, error };
+                    }
+                    return result;
+                },
+            });
+            return invoked ? result : { status: 'skipped', reason: 'operation-declined', durable: { write: 'none' } };
+        },
         sanitizeIncomingCrdtDocument: (incoming: Doc<ProjectDocument>) => incoming,
         waitForCrdtDocumentTransition: () => null,
         DOC_PREFIX_ROOT: ROOT_DOCUMENT_ID,

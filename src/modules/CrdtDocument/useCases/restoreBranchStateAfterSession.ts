@@ -6,10 +6,11 @@ import { restoreBranchStateFromSessionBackup, type BranchStateRestoreOutcome } f
  *
  * Reports rather than throws. Callers run this during teardown, where the steps
  * after it — closing peer connections, stopping the sync — must happen
- * regardless. The two failure outcomes are not interchangeable and the caller
- * has to tell them apart: one means the branch list is live but not durable,
- * the other means it is durable but a stale backup survived and will be
- * re-applied. See `BranchStateRestoreOutcome`.
+ * regardless. The failure outcomes are not interchangeable and the caller has
+ * to tell them apart: one means the branch list is live but not durable, one
+ * means it is durable but a stale backup survived and will be re-applied, and
+ * one means storage could not be read so neither claim is available. See
+ * `BranchStateRestoreOutcome`.
  */
 export function restoreBranchStateAfterSession(): BranchStateRestoreOutcome {
     return restoreBranchStateFromSessionBackup();

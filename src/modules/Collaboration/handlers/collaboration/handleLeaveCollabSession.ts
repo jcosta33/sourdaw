@@ -3,12 +3,13 @@ import { createHandler } from '#/utils/createHandler';
 import { leaveSession } from '../../useCases/collaboration/leaveSession';
 
 export const handleLeaveCollabSession = createHandler<'leaveCollabSession'>({
-    execute: () => {
-        // leaveSession is async (it flushes the buffered peer-leave before
-        // tearing channels down); this handler is fire-and-forget, so cleanup
-        // proceeds without awaiting the flush.
-        void leaveSession();
+    execute: async () => {
+        await leaveSession();
     },
     describe: () => ({ label: 'Leave collaboration session' }),
     undoable: false,
+    executionKind: 'runtime',
+    previewExecution: 'unsupported-external',
+    requiresAbortCompensation: false,
+    batchExecution: 'singleton',
 });

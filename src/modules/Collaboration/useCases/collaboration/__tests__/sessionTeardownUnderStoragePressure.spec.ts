@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { branchStore, MAIN_BRANCH_ID } from '#/modules/CrdtDocument/stores';
+import { createCrdtDoc, hasCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 import { collaborationStore } from '../../../stores/collaborationStore';
+import { createSession } from '../createSession';
 import { leaveSession } from '../leaveSession';
 import { sessionRuntimePrimitives } from '../sessionManagement';
 
@@ -19,6 +21,15 @@ const runtimeIoMock = vi.hoisted(() => ({
     }>,
 }));
 
+const crdtPersistenceMock = vi.hoisted(() => ({
+    runCrdtPersistenceBarrier: vi.fn(),
+}));
+
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+    runCrdtPersistenceBarrier: crdtPersistenceMock.runCrdtPersistenceBarrier,
+}));
+
 vi.mock('../../../repositories/peerConnection', () => ({
     PeerConnectionManager: vi.fn().mockImplementation(function () {
         const manager = {
@@ -31,11 +42,16 @@ vi.mock('../../../repositories/peerConnection', () => ({
     }),
 }));
 
+vi.mock('../getCollaborationAssetOwnerId', () => ({
+    collaborationAssetOwnership: { getOwnerId: () => 'project-owner-1' },
+}));
+
 vi.mock('../../automergeSync', () => ({
     AutomergeSync: vi.fn().mockImplementation(function () {
         return {
             start: vi.fn(),
             stop: vi.fn(),
+            settleDurableTeardown: vi.fn().mockResolvedValue(undefined),
         };
     }),
 }));
@@ -88,10 +104,34 @@ function latestPeerManager(): (typeof runtimeIoMock.peerManagers)[number] {
 }
 
 describe('collaboration teardown when localStorage refuses the write', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         notifyUserMock.mockReset();
         runtimeIoMock.peerManagers.length = 0;
         window.localStorage.clear();
+        crdtPersistenceMock.runCrdtPersistenceBarrier.mockImplementation(
+            async (
+                operation: (input: {
+                    persistCurrentProject: (expectedRootHeads?: readonly string[]) => Promise<unknown>;
+                }) => Promise<void>
+            ) => {
+                let result: unknown = { status: 'skipped', reason: 'operation-declined', durable: { write: 'none' } };
+                await operation({
+                    persistCurrentProject: async (expectedRootHeads) => {
+                        result = {
+                            status: 'settled',
+                            mode: expectedRootHeads ? 'exact' : 'ordinary',
+                            expectedRootHeads: expectedRootHeads ? [...expectedRootHeads] : undefined,
+                            durable: {
+                                write: 'noop',
+                                authority: { epoch: 'test', revision: 1, rootLineage: 'main' },
+                            },
+                        };
+                        return result;
+                    },
+                });
+                return result;
+            }
+        );
         collaborationStore.set({
             isEnabled: true,
             sessionId: 'session-1',
@@ -105,13 +145,16 @@ describe('collaboration teardown when localStorage refuses the write', () => {
             quarantinedPeerIds: [],
         });
         branchStore.set({ branches: [mainBranch, localOnlyBranch], activeBranchId: MAIN_BRANCH_ID });
+        if (!hasCrdtDoc('root')) {
+            createCrdtDoc('root');
+        }
 
-        sessionRuntimePrimitives.initialize('project-owner-1');
+        await sessionRuntimePrimitives.initialize('project-owner-1');
         sessionRuntimePrimitives.startBranchSync(false);
         branchStore.set({ branches: [mainBranch], activeBranchId: MAIN_BRANCH_ID });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         try {
             sessionRuntimePrimitives.cleanup();
         } catch {
@@ -119,10 +162,73 @@ describe('collaboration teardown when localStorage refuses the write', () => {
             // all runtime resources have already been removed.
         }
         vi.restoreAllMocks();
+        await sessionRuntimePrimitives.settleRetainedTeardown().catch(() => undefined);
         window.localStorage.clear();
     });
 
-    it('closes every peer even when the pre-session branch list cannot be persisted', () => {
+    it('retires replacement resources and retries after durable reads recover', async () => {
+        const refusal = new DOMException('The operation is insecure.', 'SecurityError');
+        const { closeAll } = latestPeerManager();
+        const refusedRead = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+            throw refusal;
+        });
+        let failure: unknown;
+
+        try {
+            await createSession('Replacement');
+        } catch (error) {
+            failure = error;
+        }
+        refusedRead.mockRestore();
+
+        expect(closeAll).toHaveBeenCalledTimes(1);
+        expect(sessionRuntimePrimitives.state.peerManager).toBeNull();
+        expect(sessionRuntimePrimitives.state.automergeSync).toBeNull();
+        expect(sessionRuntimePrimitives.state.assetTransfer).toBeNull();
+        expect(sessionRuntimePrimitives.state.cleanupProjectionBridge).toBeNull();
+        expect(failure).toEqual(expect.objectContaining({ message: 'Pre-session branch state could not be read' }));
+        expect(notifyUserMock.mock.calls[0]?.[0]).toContain('branch storage could not be read');
+        expect(window.localStorage.getItem('sourdaw-branch-session-backup')).not.toBeNull();
+
+        await expect(createSession('Replacement')).resolves.toEqual(expect.any(String));
+        expect(branchStore.value?.branches.map((branch) => branch.branchId)).toEqual([
+            MAIN_BRANCH_ID,
+            localOnlyBranch.branchId,
+        ]);
+    });
+
+    it('closes leave transport, clears runtime state, and retries after durable reads recover', async () => {
+        const refusal = new DOMException('The operation is insecure.', 'SecurityError');
+        const { closeAll } = latestPeerManager();
+        const refusedRead = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+            throw refusal;
+        });
+        let failure: unknown;
+
+        try {
+            await leaveSession();
+        } catch (error) {
+            failure = error;
+        }
+        refusedRead.mockRestore();
+
+        expect(closeAll).toHaveBeenCalledTimes(1);
+        expect(sessionRuntimePrimitives.state.peerManager).toBeNull();
+        expect(sessionRuntimePrimitives.state.automergeSync).toBeNull();
+        expect(sessionRuntimePrimitives.state.assetTransfer).toBeNull();
+        expect(sessionRuntimePrimitives.state.cleanupProjectionBridge).toBeNull();
+        expect(failure).toEqual(expect.objectContaining({ message: 'Pre-session branch state could not be read' }));
+        expect(window.localStorage.getItem('sourdaw-branch-session-backup')).not.toBeNull();
+
+        await expect(leaveSession()).resolves.toBeUndefined();
+        expect(branchStore.value?.branches.map((branch) => branch.branchId)).toEqual([
+            MAIN_BRANCH_ID,
+            localOnlyBranch.branchId,
+        ]);
+        expect(window.localStorage.getItem('sourdaw-branch-session-backup')).toBeNull();
+    });
+
+    it('closes every peer even when the pre-session branch list cannot be persisted', async () => {
         const { closeAll } = latestPeerManager();
         blockEveryDurableWrite();
 
@@ -130,9 +236,12 @@ describe('collaboration teardown when localStorage refuses the write', () => {
 
         expect(closeAll).toHaveBeenCalledTimes(1);
         expect(sessionRuntimePrimitives.state.peerManager).toBeNull();
+        await expect(sessionRuntimePrimitives.settleRetainedTeardown()).rejects.toThrow(
+            'Pre-session branch state could not be persisted'
+        );
     });
 
-    it('restores the local branch list into the session even when it cannot be persisted', () => {
+    it('restores the local branch list into the session even when it cannot be persisted', async () => {
         blockEveryDurableWrite();
 
         sessionRuntimePrimitives.cleanup();
@@ -141,6 +250,9 @@ describe('collaboration teardown when localStorage refuses the write', () => {
             MAIN_BRANCH_ID,
             localOnlyBranch.branchId,
         ]);
+        await expect(sessionRuntimePrimitives.settleRetainedTeardown()).rejects.toThrow(
+            'Pre-session branch state could not be persisted'
+        );
     });
 
     /**
@@ -157,7 +269,7 @@ describe('collaboration teardown when localStorage refuses the write', () => {
         it('tells the user the branch list was not saved, and the message survives teardown', async () => {
             blockEveryDurableWrite();
 
-            await leaveSession();
+            await expect(leaveSession()).rejects.toThrow('Pre-session branch state could not be persisted');
 
             expect(notifyUserMock).toHaveBeenCalledTimes(1);
             const [message, level] = notifyUserMock.mock.calls[0] ?? [];
@@ -169,13 +281,20 @@ describe('collaboration teardown when localStorage refuses the write', () => {
         });
 
         it('tells the user a leftover backup survived, with its own message', async () => {
-            vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+            const blockedRemoval = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
                 throw new DOMException('The operation is insecure.', 'SecurityError');
             });
 
-            await leaveSession();
+            await expect(leaveSession()).rejects.toThrow('Pre-session branch backup could not be cleared');
 
             expect(notifyUserMock.mock.calls[0]?.[0]).toContain('leftover session backup');
+            expect(window.localStorage.getItem('sourdaw-branch-session-backup')).not.toBeNull();
+
+            blockedRemoval.mockRestore();
+
+            await expect(leaveSession()).resolves.toBeUndefined();
+            expect(window.localStorage.getItem('sourdaw-branch-session-backup')).toBeNull();
+            expect(notifyUserMock).toHaveBeenCalledTimes(1);
         });
 
         it('says nothing when the restore lands', async () => {
@@ -201,7 +320,7 @@ describe('collaboration teardown when localStorage refuses the write', () => {
                 throw new TypeError('eventBus.emit is not a function');
             });
 
-            await expect(leaveSession()).rejects.toThrow('eventBus.emit is not a function');
+            await expect(leaveSession()).rejects.toThrow('Pre-session branch state could not be persisted');
 
             expect(notifyUserMock).toHaveBeenCalledTimes(1);
             expect(closeAll).toHaveBeenCalledTimes(1);
@@ -210,8 +329,9 @@ describe('collaboration teardown when localStorage refuses the write', () => {
         });
     });
 
-    it('reports no error and consumes the backup when the write lands', () => {
+    it('reports no error and consumes the backup when the write lands', async () => {
         sessionRuntimePrimitives.cleanup();
+        await expect(sessionRuntimePrimitives.settleRetainedTeardown()).resolves.toBeUndefined();
 
         expect(branchStore.value?.branches.map((branch) => branch.branchId)).toEqual([
             MAIN_BRANCH_ID,

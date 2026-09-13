@@ -1,3 +1,5 @@
+import { getHeads } from '@automerge/automerge';
+
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { cacheAudioBuffer, getAudioContext, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
@@ -9,7 +11,7 @@ import {
     createCrdtDoc,
     removeCrdtDoc,
     mutateCrdtDoc,
-    persistCrdtProject,
+    runCrdtPersistenceBarrier,
     hasCrdtDoc,
     DOC_BRANCHES,
     preserveBranchStateForSession,
@@ -49,18 +51,30 @@ type InstalledSessionOwner = {
     automergeSync: AutomergeSync | null;
     assetTransfer: AssetTransfer | null;
     cleanupProjectionBridge: (() => void) | null;
-    synchronizeAssetOwner:
-        | ((nextOwnerId: string) => Promise<
-              | {
-                    commit: () => Promise<void>;
-                    abort: () => Promise<void>;
-                }
-              | undefined
-          >)
-        | null;
+    synchronizeAssetOwner: ((nextOwnerId: string) => ReturnType<AssetTransfer['prepareDurableOwnerRebind']>) | null;
 };
 
 let installedSessionOwner: InstalledSessionOwner | null = null;
+
+type RetainedSessionTeardown = {
+    owner: InstalledSessionOwner;
+    automergeSync: AutomergeSync | null;
+    assetTransfer: AssetTransfer | null;
+    branchRestoreOutcome: ReturnType<typeof restoreBranchStateAfterSession> | null;
+    settlement: Promise<void> | null;
+};
+
+let retainedSessionTeardown: RetainedSessionTeardown | null = null;
+let lifecycleTail: Promise<void> = Promise.resolve();
+
+function runSessionLifecycle<Result>(operation: () => Promise<Result>): Promise<Result> {
+    const result = lifecycleTail.then(operation);
+    lifecycleTail = result.then(
+        () => undefined,
+        () => undefined
+    );
+    return result;
+}
 
 function captureInstalledSessionOwner(): InstalledSessionOwner | null {
     return installedSessionOwner;
@@ -129,15 +143,7 @@ const sessionState: {
      * the store's error text.
      */
     sessionEndedByHostDeparture: boolean;
-    synchronizeAssetOwner:
-        | ((nextOwnerId: string) => Promise<
-              | {
-                    commit: () => Promise<void>;
-                    abort: () => Promise<void>;
-                }
-              | undefined
-          >)
-        | null;
+    synchronizeAssetOwner: ((nextOwnerId: string) => ReturnType<AssetTransfer['prepareDurableOwnerRebind']>) | null;
     assetOwnershipTask: Promise<void>;
 } = {
     peerManager: null,
@@ -308,7 +314,7 @@ function startBranchSync(isHost: boolean): void {
  * Stop branch sync and restore the pre-session branchStore state.
  * Removes the `__branches__` Automerge doc so it isn't included in future saves.
  */
-function stopBranchSync(requestWitness: number): ReturnType<typeof restoreBranchStateAfterSession> | null {
+function stopBranchSync(): ReturnType<typeof restoreBranchStateAfterSession> | null {
     if (sessionState.unsubscribeBranchStore) {
         sessionState.unsubscribeBranchStore();
         sessionState.unsubscribeBranchStore = null;
@@ -337,14 +343,6 @@ function stopBranchSync(requestWitness: number): ReturnType<typeof restoreBranch
     }
     sessionState.lastProjectedBranchesJson = null;
 
-    // Persist without the __branches__ doc so IDB stays clean.
-    persistCrdtProject().catch((error) => {
-        logger.warn('[Collaboration] Failed to persist after branch sync cleanup:', error);
-        if (joinAttemptAuthority.isCurrent(requestWitness)) {
-            setCollaborationError('Failed to save project locally after leaving the session.');
-        }
-    });
-
     // Handed back rather than reported here. Reporting is the last thing
     // teardown does, after the peers are closed — see `cleanupSubsystems`.
     return restoreOutcome;
@@ -360,9 +358,9 @@ function stopBranchSync(requestWitness: number): ReturnType<typeof restoreBranch
  * synchronously before it can be rendered. That field is for errors raised
  * while a session is live; this one outlives the session by definition.
  *
- * The two failures are not the same failure and must not share a message: one
- * loses the branch list on reload, the other keeps it now and reverts to it
- * later. Both name the cause and an action. See #1557.
+ * The failures are not interchangeable: one loses the branch list on reload,
+ * one keeps it now and reverts to it later, and one cannot establish either
+ * durable fact. Each names the cause and an action. See #1557.
  */
 function reportBranchRestoreOutcome(outcome: ReturnType<typeof restoreBranchStateAfterSession> | null): void {
     if (outcome === 'state-not-persisted') {
@@ -376,6 +374,14 @@ function reportBranchRestoreOutcome(outcome: ReturnType<typeof restoreBranchStat
     if (outcome === 'backup-not-cleared') {
         notifyUser(
             'Left the session, but a leftover session backup could not be cleared — your branch list may revert when you reopen the project. Free up storage space and try again.',
+            'error'
+        );
+        return;
+    }
+
+    if (outcome === 'storage-unavailable') {
+        notifyUser(
+            'Left the session, but branch storage could not be read — your local branch list is still protected by its session backup. Restore storage access and try again.',
             'error'
         );
     }
@@ -605,10 +611,10 @@ type InitializeSessionRuntimeOptions = {
     rebindToSynchronizedOwner?: boolean;
 };
 
-function initializeSessionRuntime(
+async function initializeSessionRuntime(
     assetOwnerId: string,
     options: InitializeSessionRuntimeOptions = {}
-): PeerConnectionManager {
+): Promise<PeerConnectionManager> {
     const owner: InstalledSessionOwner = {
         retired: false,
         peerManager: null,
@@ -712,33 +718,20 @@ function initializeSessionRuntime(
                     if (prepared.status === 'failed') {
                         throw new Error(`Durable asset owner handoff preparation failed: ${prepared.reason}`);
                     }
-                    return {
-                        commit: async () => {
-                            let failureReason = 'unknown';
-                            for (let attempt = 0; attempt < 3; attempt += 1) {
-                                try {
-                                    await prepared.commit();
-                                    return;
-                                } catch (error) {
-                                    failureReason = error instanceof Error ? error.message : 'unexpected failure';
-                                }
-                                await Promise.resolve();
-                            }
-                            throw new Error(`Durable asset owner rebind failed after retry: ${failureReason}`);
-                        },
-                        abort: prepared.abort,
-                    };
+                    return prepared;
                 });
             sessionState.synchronizeAssetOwner = owner.synchronizeAssetOwner;
         }
 
         return peerManager;
     } catch (error) {
-        retireSessionOwner(owner);
+        cleanupSubsystems(owner);
         try {
-            cleanupSubsystems(owner);
+            await settleRetainedSessionTeardown();
         } catch (cleanupError) {
-            logger.warn('[Collaboration] Failed to clean up partial session initialization:', cleanupError);
+            throw new AggregateError([error, cleanupError], 'Collaboration setup and durable cleanup both failed', {
+                cause: cleanupError,
+            });
         }
         throw error;
     }
@@ -747,7 +740,8 @@ function initializeSessionRuntime(
 /** Tear down all subsystems without changing store state. */
 function cleanupSubsystems(
     owner?: InstalledSessionOwner | null,
-    requestWitness = joinAttemptAuthority.capture()
+    _requestWitness = joinAttemptAuthority.capture(),
+    options: { closeTransport?: boolean } = {}
 ): boolean {
     const targetOwner = arguments.length === 0 ? installedSessionOwner : (owner ?? null);
     if (targetOwner !== installedSessionOwner) {
@@ -762,7 +756,7 @@ function cleanupSubsystems(
     sessionState.sessionSecret = null;
     sessionState.sessionEndedByHostDeparture = false;
     stopPlayheadBroadcast();
-    const branchRestoreOutcome = stopBranchSync(requestWitness);
+    const branchRestoreOutcome = stopBranchSync();
     for (const timer of peerCleanupTimers.values()) {
         clearTimeout(timer);
     }
@@ -779,14 +773,20 @@ function cleanupSubsystems(
     // torn-down session.
     sessionState.assetTransfer?.dispose();
     sessionState.assetTransfer = null;
-    if (sessionState.peerManager) {
+    if (sessionState.peerManager && options.closeTransport !== false) {
         sessionState.peerManager.closeAll();
-        sessionState.peerManager = null;
     }
-    targetOwner.cleanupProjectionBridge = null;
-    targetOwner.assetTransfer = null;
-    targetOwner.peerManager = null;
-    installedSessionOwner = null;
+    sessionState.peerManager = null;
+    if (installedSessionOwner === targetOwner) {
+        installedSessionOwner = null;
+    }
+    retainedSessionTeardown = {
+        owner: targetOwner,
+        automergeSync: targetOwner.automergeSync,
+        assetTransfer: targetOwner.assetTransfer,
+        branchRestoreOutcome,
+        settlement: null,
+    };
     // `presenceListeners` is deliberately NOT cleared here: it holds
     // app-lifetime observers owned by their subscribers, not session state.
 
@@ -796,8 +796,108 @@ function cleanupSubsystems(
     // hit Leave, saw nothing, and stayed connected to live peers — the exact
     // failure the branch-restore report exists to prevent. Nothing that only
     // talks to the user runs before the session is actually torn down.
-    reportBranchRestoreOutcome(branchRestoreOutcome);
     return true;
+}
+
+function closeCapturedSessionTransport(owner: InstalledSessionOwner | null): void {
+    owner?.peerManager?.closeAll();
+}
+
+function branchRestoreError(outcome: Exclude<ReturnType<typeof restoreBranchStateAfterSession>, 'restored'>): Error {
+    if (outcome === 'state-not-persisted') {
+        return new Error('Pre-session branch state could not be persisted');
+    }
+    if (outcome === 'backup-not-cleared') {
+        return new Error('Pre-session branch backup could not be cleared');
+    }
+    return new Error('Pre-session branch state could not be read');
+}
+
+function settleRetainedSessionTeardown(): Promise<void> {
+    const retained = retainedSessionTeardown;
+    if (!retained) {
+        return Promise.resolve();
+    }
+    if (retained.settlement) {
+        return retained.settlement;
+    }
+
+    const settlement = (async () => {
+        const failures: unknown[] = [];
+        const recordFailure = (error: unknown) => {
+            if (!failures.includes(error)) {
+                failures.push(error);
+            }
+        };
+        if (retained.branchRestoreOutcome && retained.branchRestoreOutcome !== 'restored') {
+            retained.branchRestoreOutcome = restoreBranchStateAfterSession();
+        }
+        if (retained.branchRestoreOutcome && retained.branchRestoreOutcome !== 'restored') {
+            try {
+                reportBranchRestoreOutcome(retained.branchRestoreOutcome);
+            } catch (error) {
+                logger.warn('[Collaboration] Failed to report branch restoration failure:', error);
+            }
+            recordFailure(branchRestoreError(retained.branchRestoreOutcome));
+        }
+        if (failures.length === 0) {
+            try {
+                await retained.automergeSync?.settleDurableTeardown();
+            } catch (error) {
+                recordFailure(error);
+            }
+        }
+
+        if (failures.length === 0) {
+            const root = getCrdtDoc<Record<string, unknown>>(DOC_PREFIX_ROOT);
+            if (!root) {
+                recordFailure(new Error('Current project root is unavailable for collaboration teardown'));
+            } else {
+                const expectedRootHeads = getHeads(root).map(String).toSorted();
+                const persistence = await runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
+                    await persistCurrentProject(expectedRootHeads);
+                });
+                if (persistence.status === 'failed') {
+                    logger.warn('[Collaboration] Failed to persist after branch sync cleanup:', persistence.error);
+                    recordFailure(persistence.error);
+                } else if (persistence.status === 'superseded') {
+                    recordFailure(new Error('Collaboration teardown persistence was superseded'));
+                } else if (persistence.status === 'skipped') {
+                    recordFailure(new Error('Collaboration teardown persistence was declined'));
+                } else if (
+                    persistence.mode !== 'exact' ||
+                    persistence.expectedRootHeads.length !== expectedRootHeads.length ||
+                    persistence.expectedRootHeads.some((head, index) => head !== expectedRootHeads[index])
+                ) {
+                    recordFailure(new Error('Collaboration teardown did not reserve the outgoing project root'));
+                }
+            }
+        }
+
+        if (failures.length === 1) {
+            throw failures[0];
+        }
+        if (failures.length > 1) {
+            throw new AggregateError(failures, 'Collaboration teardown has multiple retryable failures');
+        }
+        if (retainedSessionTeardown === retained) {
+            retainedSessionTeardown = null;
+        }
+    })();
+    retained.settlement = settlement;
+    void settlement.then(
+        () => {
+            if (retained.settlement === settlement) {
+                retained.settlement = null;
+            }
+        },
+        () => {
+            if (retained.settlement === settlement) {
+                retained.settlement = null;
+            }
+        }
+    );
+    return settlement;
 }
 
 // -- Asset resolution --
@@ -1267,6 +1367,9 @@ export const sessionRuntimePrimitives = {
     canWrite: canSessionOwnerWrite,
     retire: retireSessionOwner,
     cleanup: cleanupSubsystems,
+    closeTransport: closeCapturedSessionTransport,
+    settleRetainedTeardown: settleRetainedSessionTeardown,
+    runLifecycle: runSessionLifecycle,
     startBranchSync,
     startPlayheadBroadcast,
     generatePeerId,

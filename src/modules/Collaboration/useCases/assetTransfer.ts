@@ -19,6 +19,7 @@ import { durableAssetOwnerResolution } from '../repositories/durableAssetOwnerRe
 import {
     createDurableAssetRepository,
     DEFAULT_STAGE_RECOVERY_PREFIX,
+    type DurableAssetFailure,
     type DurableAssetRepository,
     type DurableAssetCommitProof,
     type DurableAssetRecoveryFence,
@@ -134,6 +135,38 @@ function rebindLiveStageRecoveries(previousOwnerId: string, nextOwnerId: string)
 type AssetTransferDurabilityOptions = {
     durableStagingReady?: boolean;
     handoffSourceOwnerIds?: readonly string[];
+};
+
+type DurableOwnerHandoffSourceProgress = {
+    previousOwnerId: string;
+    status: 'pending' | 'committed';
+    reboundHashes: string[];
+};
+
+type DurableOwnerHandoffProgress = {
+    targetOwnerId: string;
+    sources: DurableOwnerHandoffSourceProgress[];
+};
+
+type DurableOwnerHandoffSettlement =
+    | { status: 'committed'; phase: 'commit'; progress: DurableOwnerHandoffProgress }
+    | { status: 'aborted'; phase: 'abort'; progress: DurableOwnerHandoffProgress }
+    | {
+          status: 'retry-required';
+          phase: 'commit' | 'abort';
+          error: unknown;
+          progress: DurableOwnerHandoffProgress;
+      };
+
+type PreparedDurableOwnerHandoff = {
+    status: 'prepared' | 'retry-required';
+    phase: 'pending' | 'abort';
+    previousOwnerId: string;
+    ownerId: string;
+    progress: DurableOwnerHandoffProgress;
+    error?: unknown;
+    commit: () => Promise<DurableOwnerHandoffSettlement>;
+    abort: () => Promise<DurableOwnerHandoffSettlement>;
 };
 
 type DurableOwnerRecoveryAuthority = {
@@ -567,81 +600,180 @@ export class AssetTransfer {
     /** Journal the exact provisional-to-project handoff before CRDT persistence begins. */
     async prepareDurableOwnerRebind(nextOwnerId: string) {
         return this.runOwnerOperation(async (durableAssets) => {
-            const createdRepositories: DurableAssetRepository[] = [];
+            const sources: Array<{
+                repository: DurableAssetRepository;
+                created: boolean;
+                abortSettled: boolean;
+                progress: DurableOwnerHandoffSourceProgress;
+            }> = [];
             const prepare = async (repository: DurableAssetRepository) => {
                 const prepared = await repository.prepareOwnerRebind(nextOwnerId);
-                if (prepared.status !== 'failed' && prepared.created) {
-                    createdRepositories.push(repository);
+                if (prepared.status !== 'failed') {
+                    sources.push({
+                        repository,
+                        created: prepared.created,
+                        abortSettled: false,
+                        progress: {
+                            previousOwnerId: prepared.previousOwnerId,
+                            status: prepared.previousOwnerId === nextOwnerId ? 'committed' : 'pending',
+                            reboundHashes: [],
+                        },
+                    });
                 }
                 return prepared;
             };
-            const rollbackCreated = async () => {
-                const failures: string[] = [];
-                for (const repository of createdRepositories.toReversed()) {
+            const copyProgress = (): DurableOwnerHandoffProgress => ({
+                targetOwnerId: nextOwnerId,
+                sources: sources.map(({ progress }) => ({ ...progress, reboundHashes: [...progress.reboundHashes] })),
+            });
+            const rollbackCreated = async (): Promise<DurableOwnerHandoffSettlement> => {
+                const failures: unknown[] = [];
+                for (const source of sources.toReversed()) {
+                    if (!source.created || source.abortSettled || source.progress.status === 'committed') {
+                        continue;
+                    }
                     try {
-                        const aborted = await repository.abortOwnerRebind(nextOwnerId);
+                        const aborted = await source.repository.abortOwnerRebind(nextOwnerId);
                         if (aborted.status === 'failed') {
-                            failures.push(aborted.reason);
+                            failures.push(new Error(`Durable asset owner handoff abort failed: ${aborted.reason}`));
+                        } else {
+                            source.abortSettled = true;
                         }
                     } catch (error) {
-                        failures.push(error instanceof Error ? error.message : String(error));
+                        failures.push(error);
                     }
                 }
                 if (failures.length > 0) {
-                    throw new Error(`Durable asset owner handoff rollback failed: ${failures.join('; ')}`);
+                    return {
+                        status: 'retry-required',
+                        phase: 'abort',
+                        error:
+                            failures.length === 1
+                                ? failures[0]
+                                : new AggregateError(failures, 'Durable asset owner handoff rollback failed'),
+                        progress: copyProgress(),
+                    };
                 }
+                return { status: 'aborted', phase: 'abort', progress: copyProgress() };
             };
 
-            let current: Awaited<ReturnType<DurableAssetRepository['prepareOwnerRebind']>>;
+            let preparationError: unknown = null;
+            let preparationFailureReason: DurableAssetFailure['reason'] | null = null;
             try {
-                current = await prepare(durableAssets);
+                const current = await prepare(durableAssets);
                 if (current.status === 'failed') {
                     return current;
                 }
                 for (const source of this.durableOwnerHandoffSources.values()) {
                     const incoming = await source.resumeOwnerRebinds(undefined, rebindLiveStageRecoveries);
                     if (incoming.status === 'failed') {
-                        await rollbackCreated();
-                        return incoming;
+                        preparationFailureReason = 'owner-handoff-conflict';
+                        preparationError = new Error(`Durable asset owner handoff recovery failed: ${incoming.reason}`);
+                        break;
                     }
                     const prepared = await prepare(source);
                     if (prepared.status === 'failed') {
-                        await rollbackCreated();
-                        return prepared;
+                        preparationFailureReason = prepared.reason;
+                        preparationError = new Error(
+                            `Durable asset owner handoff preparation failed: ${prepared.reason}`
+                        );
+                        break;
                     }
                 }
             } catch (error) {
-                await rollbackCreated();
-                throw error;
+                preparationError = error;
             }
 
-            let settled: 'pending' | 'committing' | 'committed' | 'aborted' = 'pending';
-            return {
-                ...current,
-                commit: async () => {
-                    if (settled === 'aborted') {
-                        throw new Error('Durable asset owner handoff was already aborted');
-                    }
-                    if (settled === 'committed') {
-                        return;
-                    }
-                    settled = 'committing';
-                    const committed = await this.commitDurableOwnerRebindTransaction(nextOwnerId, true);
-                    if (committed.status === 'failed') {
-                        throw new Error(`Durable asset owner rebind failed: ${committed.reason}`);
-                    }
-                    settled = 'committed';
-                },
+            let phase: 'pending' | 'committing' | 'committed' | 'aborting' | 'aborted' = 'pending';
+            const handoff: PreparedDurableOwnerHandoff = {
+                status: 'prepared',
+                phase: 'pending',
+                previousOwnerId: this.ownerId,
+                ownerId: nextOwnerId,
+                progress: copyProgress(),
+                commit: () =>
+                    runDurableOwnerOperation(async () => {
+                        if (phase === 'aborted' || phase === 'aborting') {
+                            return {
+                                status: 'retry-required',
+                                phase: 'abort',
+                                error: new Error('Durable asset owner handoff was already aborted'),
+                                progress: copyProgress(),
+                            };
+                        }
+                        if (phase === 'committed') {
+                            return { status: 'committed', phase: 'commit', progress: copyProgress() };
+                        }
+                        phase = 'committing';
+                        for (const source of sources) {
+                            if (source.progress.status === 'committed') {
+                                continue;
+                            }
+                            let committed: RebindDurableAssetOwnerResult;
+                            try {
+                                committed = await source.repository.commitOwnerRebind(nextOwnerId);
+                            } catch (error) {
+                                return { status: 'retry-required', phase: 'commit', error, progress: copyProgress() };
+                            }
+                            if (committed.status === 'failed') {
+                                return {
+                                    status: 'retry-required',
+                                    phase: 'commit',
+                                    error: new Error(`Durable asset owner rebind failed: ${committed.reason}`),
+                                    progress: copyProgress(),
+                                };
+                            }
+                            source.progress.status = 'committed';
+                            source.progress.reboundHashes = [...committed.reboundHashes];
+                            rebindLiveStageRecoveries(committed.previousOwnerId, nextOwnerId);
+                        }
+                        phase = 'committed';
+                        if (!this.disposed) {
+                            this.installReboundDurableOwner(nextOwnerId);
+                        }
+                        return { status: 'committed', phase: 'commit', progress: copyProgress() };
+                    }),
                 abort: async () => {
-                    if (settled === 'committing' || settled === 'committed') {
-                        throw new Error('Durable asset owner handoff commit already started');
+                    if (phase === 'committing' || phase === 'committed') {
+                        return {
+                            status: 'retry-required',
+                            phase: 'commit',
+                            error: new Error('Durable asset owner handoff commit already started'),
+                            progress: copyProgress(),
+                        };
                     }
-                    if (settled === 'aborted') {
-                        return;
+                    if (phase === 'aborted') {
+                        return { status: 'aborted', phase: 'abort', progress: copyProgress() };
                     }
-                    await runDurableOwnerOperation(rollbackCreated);
-                    settled = 'aborted';
+                    phase = 'aborting';
+                    const result = await runDurableOwnerOperation(rollbackCreated);
+                    phase = result.status === 'aborted' ? 'aborted' : 'aborting';
+                    return result;
                 },
+            };
+
+            if (preparationError === null) {
+                return handoff;
+            }
+            // Preparation already runs under this transfer's durable-owner
+            // serialization. Re-entering the global owner operation here
+            // would wait on itself and strand rollback forever.
+            const rollback = await rollbackCreated();
+            if (rollback.status === 'aborted') {
+                if (preparationFailureReason) {
+                    return { status: 'failed' as const, reason: preparationFailureReason };
+                }
+                if (preparationError instanceof Error) {
+                    throw preparationError;
+                }
+                throw new Error(describeError(preparationError));
+            }
+            return {
+                ...handoff,
+                status: 'retry-required' as const,
+                phase: 'abort' as const,
+                error: preparationError,
+                progress: rollback.progress,
             };
         });
     }
@@ -677,20 +809,7 @@ export class AssetTransfer {
                         reboundHashes: [...reboundHashes],
                     };
                 }
-                this.unsubscribeInvalidation?.();
-                this.ownerId = nextOwnerId;
-                this.durableAssets = createDurableAssetRepository(nextOwnerId);
-                this.durableOwnerHandoffSources.clear();
-                this.ownerRecoveryPending = true;
-                this.durableStagingReady = true;
-                this.unsubscribeInvalidation = this.durableAssets.subscribeInvalidation((event) => {
-                    if (this.disposed) {
-                        return;
-                    }
-                    if (event.ownerId === undefined || event.ownerId === this.ownerId) {
-                        this.durableAssetCache.delete(event.hash);
-                    }
-                });
+                this.installReboundDurableOwner(nextOwnerId);
                 return {
                     status: 'rebound',
                     previousOwnerId,
@@ -700,6 +819,23 @@ export class AssetTransfer {
             },
             { allowDisposed }
         );
+    }
+
+    private installReboundDurableOwner(nextOwnerId: string): void {
+        this.unsubscribeInvalidation?.();
+        this.ownerId = nextOwnerId;
+        this.durableAssets = createDurableAssetRepository(nextOwnerId);
+        this.durableOwnerHandoffSources.clear();
+        this.ownerRecoveryPending = true;
+        this.durableStagingReady = true;
+        this.unsubscribeInvalidation = this.durableAssets.subscribeInvalidation((event) => {
+            if (this.disposed) {
+                return;
+            }
+            if (event.ownerId === undefined || event.ownerId === this.ownerId) {
+                this.durableAssetCache.delete(event.hash);
+            }
+        });
     }
 
     /** Resume target-keyed owner handoffs only while the exact persisted project load stays authoritative. */

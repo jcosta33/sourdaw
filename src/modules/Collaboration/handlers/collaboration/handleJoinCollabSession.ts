@@ -8,4 +8,8 @@ export const handleJoinCollabSession = createHandler<'joinCollabSession'>({
     },
     describe: () => ({ label: 'Join collaboration session' }),
     undoable: false,
+    executionKind: 'runtime',
+    previewExecution: 'unsupported-external',
+    requiresAbortCompensation: false,
+    batchExecution: 'singleton',
 });

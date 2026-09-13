@@ -99,7 +99,7 @@ const SANITATION_ATTEMPTS_PER_DELIVERY = 2;
  */
 const MAX_SANITATION_FAILURES = 3;
 
-function haveSameHeads(left: Heads, right: Heads): boolean {
+function haveSameHeads(left: readonly string[], right: readonly string[]): boolean {
     if (left.length !== right.length) {
         return false;
     }
@@ -183,10 +183,7 @@ export type AutomergeSyncHooks = {
         projectId?: string;
         rootHeads: readonly string[];
         senderIsHost: boolean;
-    }) =>
-        | Promise<{ commit: () => Promise<void>; abort: () => Promise<void> } | undefined>
-        | { commit: () => Promise<void>; abort: () => Promise<void> }
-        | undefined;
+    }) => Promise<SyncPersistencePreparation | undefined> | SyncPersistencePreparation | undefined;
     /** Called when a prepared side effect fails after document persistence. */
     onPostPersistError?: (error: unknown) => void;
     /** Called when an async persist after a received sync fails. */
@@ -213,6 +210,75 @@ export type AutomergeSyncHooks = {
      */
     onSyncQuarantineLifted?: (input: { peerId: PeerId }) => void;
 };
+
+type SyncTransitionSettlement =
+    | void
+    | { status: 'committed' | 'aborted'; phase: 'commit' | 'abort' }
+    | { status: 'retry-required'; phase: 'commit' | 'abort'; error: unknown };
+
+type SyncPersistenceTransition = {
+    status?: 'prepared' | 'retry-required';
+    phase?: 'pending' | 'abort';
+    error?: unknown;
+    commit: () => Promise<SyncTransitionSettlement>;
+    abort: () => Promise<SyncTransitionSettlement>;
+};
+
+type SyncPersistencePreparation = SyncPersistenceTransition | { status: 'failed'; reason: string };
+
+type RootPersistenceRequest = {
+    peerId: PeerId;
+    docId: string;
+    projectId?: string;
+    rootHeads: readonly string[];
+    generation: number;
+    senderIsHost: boolean;
+    validateBeforePublication: () => boolean;
+    publish: () => void;
+    publishBeforePersistence: boolean;
+    documentChanged: boolean;
+    failureLabel: string;
+    retryAgainstNewerRoot?: () => void;
+};
+
+type RootPersistencePreparationResult =
+    | { status: 'ready'; transition?: SyncPersistenceTransition }
+    | { status: 'declined'; retryAgainstNewerRoot: boolean }
+    | {
+          status: 'failed';
+          error: Error;
+          transition?: SyncPersistenceTransition;
+          retainAbort: boolean;
+      };
+
+type RootPersistenceExecutionEvidence = {
+    transition?: SyncPersistenceTransition;
+    publicationStarted: boolean;
+    persistenceStarted: boolean;
+    retryAgainstNewerRoot: boolean;
+    failureStage: 'persist' | 'post-persist';
+};
+
+type RootPersistenceExecutionResult = RootPersistenceExecutionEvidence &
+    ({ status: 'settled' | 'declined' } | { status: 'failed'; error: Error });
+
+type RootPersistenceExecutionHolder = { value?: RootPersistenceExecutionResult };
+type PersistenceBarrierResult = Awaited<ReturnType<typeof runCrdtPersistenceBarrier>>;
+type PersistCurrentProject = (expectedRootHeads?: readonly string[]) => Promise<PersistenceBarrierResult>;
+
+type TransitionSettlementResult = { status: 'settled' } | { status: 'failed'; error: Error };
+type ExactRootPersistenceResult =
+    | { status: 'settled'; durable: PersistenceBarrierResult['durable'] }
+    | { status: 'failed'; error: Error; durable: PersistenceBarrierResult['durable'] };
+
+type RetainedSyncTransition = {
+    projectId: string;
+    settlement: 'abort' | 'commit';
+};
+
+function toError(error: unknown): Error {
+    return error instanceof Error ? error : new Error(String(error));
+}
 
 function protectProjectIdentity(document: Doc<unknown>, identity: SettledProjectIdentity | undefined): Doc<unknown> {
     if (!identity) {
@@ -286,6 +352,10 @@ export class AutomergeSync {
     private persistenceTail = Promise.resolve();
     private persistenceBarrierCount = 0;
     private lifecycleGeneration = 0;
+    private pendingPersistenceTasks = new Set<Promise<void>>();
+    private retainedTransitions = new Map<SyncPersistenceTransition, RetainedSyncTransition>();
+    private lastPersistenceFailure: { error: Error; durable: unknown } | null = null;
+    private teardownSettlement: Promise<void> | null = null;
 
     constructor(peerManager: PeerSyncTransport, hooks: AutomergeSyncHooks = {}) {
         this.peerManager = peerManager;
@@ -332,15 +402,197 @@ export class AutomergeSync {
         this.sanitationFailures.clear();
     }
 
-    /** Wait for every received document persistence and prepared post-persist handoff. */
-    async flushPersistence(): Promise<void> {
+    /** Wait for every received persistence attempt and report its durable outcome. */
+    async flushPersistence(): Promise<{ status: 'settled' } | { status: 'retry-required'; error: unknown }> {
         for (;;) {
-            const tail = this.persistenceTail;
-            await tail;
+            const tasks = [...this.pendingPersistenceTasks];
+            await Promise.all(tasks.map((task) => task.catch(() => undefined)));
             await Promise.resolve();
-            if (tail === this.persistenceTail && this.persistenceBarrierCount === 0) {
-                return;
+            if (this.pendingPersistenceTasks.size === 0) {
+                break;
             }
+        }
+        if (this.lastPersistenceFailure || this.retainedTransitions.size > 0) {
+            return {
+                status: 'retry-required',
+                error: this.lastPersistenceFailure?.error ?? new Error('Durable collaboration handoff requires retry'),
+            };
+        }
+        return { status: 'settled' };
+    }
+
+    /** Retry unresolved persistence and handoff work against the current outgoing root. */
+    settleDurableTeardown(): Promise<void> {
+        if (this.teardownSettlement) {
+            return this.teardownSettlement;
+        }
+        const settlement = this.settlePersistenceForTeardown();
+        this.teardownSettlement = settlement;
+        void settlement.then(
+            () => {
+                if (this.teardownSettlement === settlement) {
+                    this.teardownSettlement = null;
+                }
+            },
+            () => {
+                if (this.teardownSettlement === settlement) {
+                    this.teardownSettlement = null;
+                }
+            }
+        );
+        return settlement;
+    }
+
+    private async settlePersistenceForTeardown(): Promise<void> {
+        const drained = await this.flushPersistence();
+        if (drained.status === 'settled') {
+            return;
+        }
+        await this.retryDurableObligations();
+    }
+
+    private trackPersistenceTask(task: Promise<void>): void {
+        this.pendingPersistenceTasks.add(task);
+        void task.then(
+            () => this.pendingPersistenceTasks.delete(task),
+            () => this.pendingPersistenceTasks.delete(task)
+        );
+        this.persistenceTail = task.then(
+            () => undefined,
+            () => undefined
+        );
+    }
+
+    private retainPersistenceFailure(error: unknown, durable: unknown): void {
+        this.lastPersistenceFailure = { error: toError(error), durable };
+    }
+
+    private retainTransition(
+        transition: SyncPersistenceTransition,
+        projectId: string,
+        settlement: RetainedSyncTransition['settlement']
+    ): void {
+        if (!this.retainedTransitions.has(transition)) {
+            this.retainedTransitions.set(transition, { projectId, settlement });
+        }
+    }
+
+    private static getTransitionFailure(result: SyncTransitionSettlement): Error | null {
+        if (!result || result.status !== 'retry-required') {
+            return null;
+        }
+        return toError(result.error);
+    }
+
+    private static getPersistenceFailure(result: Awaited<ReturnType<typeof runCrdtPersistenceBarrier>>): Error | null {
+        if (result.status === 'failed') {
+            return toError(result.error);
+        }
+        if (result.status === 'superseded') {
+            return new Error('CRDT persistence was superseded before durable teardown completed');
+        }
+        if (result.status === 'skipped') {
+            return new Error('CRDT persistence was declined before durable teardown completed');
+        }
+        return null;
+    }
+
+    private async retryDurableObligations(): Promise<void> {
+        const failures: unknown[] = [];
+        for (const [transition, retained] of [...this.retainedTransitions]) {
+            if (retained.settlement !== 'abort') {
+                continue;
+            }
+            try {
+                const result = await transition.abort();
+                const failure = AutomergeSync.getTransitionFailure(result);
+                if (failure) {
+                    failures.push(failure);
+                    continue;
+                }
+                this.retainedTransitions.delete(transition);
+            } catch (error) {
+                failures.push(error);
+            }
+        }
+
+        const commitTransitions = [...this.retainedTransitions].filter(
+            ([, retained]) => retained.settlement === 'commit'
+        );
+        if (commitTransitions.length === 0 && !this.lastPersistenceFailure) {
+            if (failures.length === 1) {
+                throw failures[0];
+            }
+            if (failures.length > 1) {
+                throw new AggregateError(failures, 'Durable collaboration handoff rollback failed');
+            }
+            return;
+        }
+        const root = getCrdtDoc<Record<string, unknown>>(DOC_PREFIX_ROOT);
+        if (!root) {
+            failures.push(
+                this.lastPersistenceFailure?.error ?? new Error('Current project root is unavailable for teardown')
+            );
+            throw failures.length === 1
+                ? failures[0]
+                : new AggregateError(failures, 'Durable collaboration teardown failed');
+        }
+        const expectedRootHeads = [...getHeads(root)].map(String).toSorted();
+        const projectId = readSettledProjectId(root.projectMeta);
+        const persistence = await runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
+            await persistCurrentProject(expectedRootHeads);
+        });
+        const persistenceFailure = AutomergeSync.getPersistenceFailure(persistence);
+        if (persistenceFailure) {
+            this.retainPersistenceFailure(persistenceFailure, persistence.durable);
+            failures.push(persistenceFailure);
+            throw failures.length === 1
+                ? failures[0]
+                : new AggregateError(failures, 'Durable collaboration teardown failed');
+        }
+        if (
+            persistence.status !== 'settled' ||
+            persistence.mode !== 'exact' ||
+            !haveSameHeads(persistence.expectedRootHeads, expectedRootHeads)
+        ) {
+            failures.push(new Error('Exact CRDT persistence did not reserve the outgoing project root'));
+            throw failures.length === 1
+                ? failures[0]
+                : new AggregateError(failures, 'Durable collaboration teardown failed');
+        }
+
+        for (const [transition, retained] of commitTransitions) {
+            const currentRoot = getCrdtDoc<Record<string, unknown>>(DOC_PREFIX_ROOT);
+            const currentProjectId = currentRoot ? readSettledProjectId(currentRoot.projectMeta) : undefined;
+            if (
+                !projectId ||
+                retained.projectId !== projectId ||
+                currentProjectId !== projectId ||
+                !currentRoot ||
+                !haveSameHeads(expectedRootHeads, getHeads(currentRoot))
+            ) {
+                failures.push(new Error('Prepared asset owner handoff no longer matches the outgoing project owner'));
+                continue;
+            }
+            try {
+                const result = await transition.commit();
+                const failure = AutomergeSync.getTransitionFailure(result);
+                if (failure) {
+                    failures.push(failure);
+                    continue;
+                }
+                this.retainedTransitions.delete(transition);
+            } catch (error) {
+                failures.push(error);
+            }
+        }
+        this.lastPersistenceFailure = null;
+        if (failures.length > 0) {
+            const error =
+                failures.length === 1
+                    ? failures[0]
+                    : new AggregateError(failures, 'Durable collaboration handoff failed');
+            throw error;
         }
     }
 
@@ -564,59 +816,27 @@ export class AutomergeSync {
             acceptance.senderIsHost &&
             this.hooks.prepareSyncPersistence !== undefined
         ) {
-            this.persistenceBarrierCount += 1;
-            const persistence = runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
-                if (generation !== this.lifecycleGeneration) {
-                    return;
-                }
-                let transition: { commit: () => Promise<void>; abort: () => Promise<void> } | undefined;
-                let exactPersistenceStarted = false;
-                let exactPersistenceCompleted = false;
-                try {
-                    transition = await this.hooks.prepareSyncPersistence?.({
-                        peerId,
-                        docId,
-                        projectId,
-                        rootHeads,
-                        senderIsHost: acceptance.senderIsHost,
-                    });
-                    if (generation !== this.lifecycleGeneration) {
-                        await transition?.abort();
-                        return;
-                    }
+            this.queueRootPersistence({
+                peerId,
+                docId,
+                projectId,
+                rootHeads,
+                generation,
+                senderIsHost: acceptance.senderIsHost,
+                validateBeforePublication: () => {
                     const currentRoot = getCrdtDoc(DOC_PREFIX_ROOT);
-                    if (!currentRoot || !haveSameHeads(rootHeads, getHeads(currentRoot))) {
-                        await transition?.abort();
-                        return;
-                    }
-                    exactPersistenceStarted = true;
-                    await persistCurrentProject(rootHeads);
-                    exactPersistenceCompleted = true;
+                    return Boolean(currentRoot && haveSameHeads(rootHeads, getHeads(currentRoot)));
+                },
+                publish: () => {
                     peerStates.set(docId, newSyncState);
                     this.syncStates.set(peerId, peerStates);
                     if (converged) {
                         this.hooks.onSyncConverged?.({ peerId, docId });
                     }
-                    await transition?.commit();
-                    this.scheduleAcceptedSyncProgress({ peerId, docId, documentChanged, generation });
-                } catch (error) {
-                    // Once exact persistence has started, the root may already
-                    // be durable even if the operation reports a late failure.
-                    // Retain the prepared handoff for the next exact retry,
-                    // matching the changed-root publication barrier below.
-                    if (!exactPersistenceStarted) {
-                        await transition?.abort();
-                    }
-                    logger.warn('[AutomergeSync] No-op root owner adoption failed:', error);
-                    if (exactPersistenceStarted && !exactPersistenceCompleted) {
-                        this.hooks.onPersistError?.(error);
-                    } else {
-                        this.hooks.onPostPersistError?.(error);
-                    }
-                }
-            });
-            this.persistenceTail = persistence.finally(() => {
-                this.persistenceBarrierCount -= 1;
+                },
+                publishBeforePersistence: false,
+                documentChanged,
+                failureLabel: '[AutomergeSync] No-op root owner adoption failed:',
             });
             return;
         }
@@ -653,59 +873,26 @@ export class AutomergeSync {
         const holdsRootPersistenceBarrier =
             docId === DOC_PREFIX_ROOT && this.hooks.prepareSyncPersistence !== undefined;
         if (holdsRootPersistenceBarrier) {
-            this.persistenceBarrierCount += 1;
-            let retryAgainstNewerLocalRoot = false;
-            const persistence = runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
-                if (generation !== this.lifecycleGeneration) {
-                    return;
-                }
-                let transition: { commit: () => Promise<void>; abort: () => Promise<void> } | undefined;
-                let publicationStarted = false;
-                try {
-                    transition = await this.hooks.prepareSyncPersistence?.({
-                        peerId,
-                        docId,
-                        projectId,
-                        rootHeads,
-                        senderIsHost: acceptance.senderIsHost,
-                    });
-                    if (generation !== this.lifecycleGeneration) {
-                        await transition?.abort();
-                        return;
-                    }
+            this.queueRootPersistence({
+                peerId,
+                docId,
+                projectId,
+                rootHeads,
+                generation,
+                senderIsHost: acceptance.senderIsHost,
+                validateBeforePublication: () => {
                     const currentHeads = getCrdtDoc(DOC_PREFIX_ROOT);
-                    if (!currentHeads || !haveSameHeads(before_heads, getHeads(currentHeads))) {
-                        retryAgainstNewerLocalRoot = true;
-                        await transition?.abort();
-                        return;
-                    }
-                    publicationStarted = true;
+                    return Boolean(currentHeads && haveSameHeads(before_heads, getHeads(currentHeads)));
+                },
+                publish: () => {
                     publish();
-                    await persistCurrentProject(rootHeads);
-                } catch (error) {
-                    if (!publicationStarted) {
-                        await transition?.abort();
-                    }
-                    logger.warn('[AutomergeSync] Failed to persist after receiving sync:', error);
-                    this.hooks.onPersistError?.(error);
-                    return;
-                }
-                if (transition) {
-                    try {
-                        await transition.commit();
-                    } catch (error) {
-                        logger.warn('[AutomergeSync] Post-persist synchronization failed:', error);
-                        this.hooks.onPostPersistError?.(error);
-                        return;
-                    }
-                }
-                this.scheduleAcceptedSyncProgress({ peerId, docId, documentChanged, generation });
-            });
-            this.persistenceTail = persistence.finally(() => {
-                this.persistenceBarrierCount -= 1;
-                if (retryAgainstNewerLocalRoot && generation === this.lifecycleGeneration) {
+                },
+                publishBeforePersistence: true,
+                documentChanged,
+                failureLabel: '[AutomergeSync] Failed to persist after receiving sync:',
+                retryAgainstNewerRoot: () => {
                     this.receiveAcceptedSync({ peerId, docId, syncMessageBase64, generation, acceptance });
-                }
+                },
             });
             return;
         }
@@ -715,12 +902,288 @@ export class AutomergeSync {
         const persistence = this.persistenceTail.then(async () => {
             try {
                 await persistCrdtProject(docId === DOC_PREFIX_ROOT ? rootHeads : undefined);
+                this.lastPersistenceFailure = null;
             } catch (error) {
                 logger.warn('[AutomergeSync] Failed to persist after receiving sync:', error);
+                this.retainPersistenceFailure(error, { write: 'none' });
                 this.hooks.onPersistError?.(error);
             }
         });
-        this.persistenceTail = persistence;
+        this.trackPersistenceTask(persistence);
+    }
+
+    private async settleTransitionAbort(
+        transition: SyncPersistenceTransition | undefined
+    ): Promise<TransitionSettlementResult> {
+        if (!transition) {
+            return { status: 'settled' };
+        }
+        try {
+            const failure = AutomergeSync.getTransitionFailure(await transition.abort());
+            return failure ? { status: 'failed', error: failure } : { status: 'settled' };
+        } catch (error) {
+            return { status: 'failed', error: toError(error) };
+        }
+    }
+
+    private async prepareRootPersistence(request: RootPersistenceRequest): Promise<RootPersistencePreparationResult> {
+        if (request.generation !== this.lifecycleGeneration) {
+            return { status: 'declined', retryAgainstNewerRoot: false };
+        }
+        let prepared: SyncPersistencePreparation | undefined;
+        try {
+            prepared = await this.hooks.prepareSyncPersistence?.({
+                peerId: request.peerId,
+                docId: request.docId,
+                projectId: request.projectId,
+                rootHeads: request.rootHeads,
+                senderIsHost: request.senderIsHost,
+            });
+        } catch (error) {
+            return { status: 'failed', error: toError(error), retainAbort: false };
+        }
+        if (prepared?.status === 'failed') {
+            return {
+                status: 'failed',
+                error: new Error(`Durable asset owner handoff preparation failed: ${prepared.reason}`),
+                retainAbort: false,
+            };
+        }
+        const transition = prepared;
+        if (transition?.status === 'retry-required' && transition.phase === 'abort') {
+            const abort = await this.settleTransitionAbort(transition);
+            return {
+                status: 'failed',
+                error: toError(
+                    transition.error ??
+                        (abort.status === 'failed' ? abort.error : undefined) ??
+                        new Error('Durable asset owner handoff preparation failed')
+                ),
+                transition,
+                retainAbort: abort.status === 'failed',
+            };
+        }
+        if (request.generation === this.lifecycleGeneration && request.validateBeforePublication()) {
+            return { status: 'ready', transition };
+        }
+        const abort = await this.settleTransitionAbort(transition);
+        if (abort.status === 'failed') {
+            return { status: 'failed', error: abort.error, transition, retainAbort: true };
+        }
+        return {
+            status: 'declined',
+            retryAgainstNewerRoot: request.generation === this.lifecycleGeneration,
+        };
+    }
+
+    private async persistExactRoot(
+        request: RootPersistenceRequest,
+        persistCurrentProject: PersistCurrentProject
+    ): Promise<ExactRootPersistenceResult> {
+        const persisted = await persistCurrentProject(request.rootHeads);
+        const failure = AutomergeSync.getPersistenceFailure(persisted);
+        if (failure) {
+            return { status: 'failed', error: failure, durable: persisted.durable };
+        }
+        if (
+            persisted.status !== 'settled' ||
+            persisted.mode !== 'exact' ||
+            !haveSameHeads(persisted.expectedRootHeads, request.rootHeads)
+        ) {
+            return {
+                status: 'failed',
+                error: new Error('Exact CRDT persistence did not reserve the synchronized project root'),
+                durable: persisted.durable,
+            };
+        }
+        const currentRoot = getCrdtDoc<Record<string, unknown>>(DOC_PREFIX_ROOT);
+        const currentProjectId = currentRoot ? readSettledProjectId(currentRoot.projectMeta) : undefined;
+        if (
+            request.generation !== this.lifecycleGeneration ||
+            !currentRoot ||
+            !haveSameHeads(request.rootHeads, getHeads(currentRoot)) ||
+            currentProjectId !== request.projectId
+        ) {
+            return {
+                status: 'failed',
+                error: new Error('Collaboration root persistence was superseded before owner handoff'),
+                durable: persisted.durable,
+            };
+        }
+        return { status: 'settled', durable: persisted.durable };
+    }
+
+    private async settleTransitionCommit(
+        transition: SyncPersistenceTransition | undefined
+    ): Promise<TransitionSettlementResult> {
+        if (!transition) {
+            return { status: 'settled' };
+        }
+        try {
+            const failure = AutomergeSync.getTransitionFailure(await transition.commit());
+            return failure ? { status: 'failed', error: failure } : { status: 'settled' };
+        } catch (error) {
+            return { status: 'failed', error: toError(error) };
+        }
+    }
+
+    private async executeRootPersistence(
+        request: RootPersistenceRequest,
+        persistCurrentProject: PersistCurrentProject
+    ): Promise<RootPersistenceExecutionResult> {
+        const preparation = await this.prepareRootPersistence(request);
+        if (preparation.status === 'declined') {
+            return {
+                status: 'declined',
+                publicationStarted: false,
+                persistenceStarted: false,
+                retryAgainstNewerRoot: preparation.retryAgainstNewerRoot,
+                failureStage: 'persist',
+            };
+        }
+        if (preparation.status === 'failed') {
+            if (preparation.transition && preparation.retainAbort && request.projectId) {
+                this.retainTransition(preparation.transition, request.projectId, 'abort');
+            }
+            return {
+                status: 'failed',
+                error: preparation.error,
+                transition: preparation.transition,
+                publicationStarted: false,
+                persistenceStarted: false,
+                retryAgainstNewerRoot: false,
+                failureStage: 'persist',
+            };
+        }
+        const transition = preparation.transition;
+        let publicationStarted = false;
+        let persistenceStarted = false;
+        try {
+            if (request.publishBeforePersistence) {
+                request.publish();
+                publicationStarted = true;
+            }
+            persistenceStarted = true;
+            const persistence = await this.persistExactRoot(request, persistCurrentProject);
+            if (persistence.status === 'failed') {
+                this.retainPersistenceFailure(persistence.error, persistence.durable);
+                if (transition && request.projectId) {
+                    this.retainTransition(transition, request.projectId, 'commit');
+                }
+                return {
+                    status: 'failed',
+                    error: persistence.error,
+                    transition,
+                    publicationStarted,
+                    persistenceStarted,
+                    retryAgainstNewerRoot: false,
+                    failureStage: 'persist',
+                };
+            }
+            if (!request.publishBeforePersistence) {
+                request.publish();
+                publicationStarted = true;
+            }
+            const commit = await this.settleTransitionCommit(transition);
+            if (commit.status === 'failed') {
+                if (transition && request.projectId) {
+                    this.retainTransition(transition, request.projectId, 'commit');
+                }
+                return {
+                    status: 'failed',
+                    error: commit.error,
+                    transition,
+                    publicationStarted,
+                    persistenceStarted,
+                    retryAgainstNewerRoot: false,
+                    failureStage: 'post-persist',
+                };
+            }
+            this.lastPersistenceFailure = null;
+            this.scheduleAcceptedSyncProgress({
+                peerId: request.peerId,
+                docId: request.docId,
+                documentChanged: request.documentChanged,
+                generation: request.generation,
+            });
+            return {
+                status: 'settled',
+                transition,
+                publicationStarted,
+                persistenceStarted,
+                retryAgainstNewerRoot: false,
+                failureStage: 'post-persist',
+            };
+        } catch (error) {
+            if (transition && request.projectId && (publicationStarted || persistenceStarted)) {
+                this.retainTransition(transition, request.projectId, 'commit');
+            }
+            return {
+                status: 'failed',
+                error: toError(error),
+                transition,
+                publicationStarted,
+                persistenceStarted,
+                retryAgainstNewerRoot: false,
+                failureStage: 'persist',
+            };
+        }
+    }
+
+    private reportRootPersistenceResult(
+        request: RootPersistenceRequest,
+        barrier: PersistenceBarrierResult,
+        execution: RootPersistenceExecutionResult | undefined
+    ): void {
+        if (barrier.status === 'skipped' && execution?.status === 'declined') {
+            return;
+        }
+        const failure = AutomergeSync.getPersistenceFailure(barrier);
+        if (!failure) {
+            return;
+        }
+        if (
+            execution?.transition &&
+            request.projectId &&
+            (execution.publicationStarted || execution.persistenceStarted)
+        ) {
+            this.retainTransition(execution.transition, request.projectId, 'commit');
+        }
+        if (barrier.status === 'superseded' || (barrier.status === 'skipped' && execution?.status !== 'declined')) {
+            this.retainPersistenceFailure(failure, barrier.durable);
+        }
+        logger.warn(request.failureLabel, failure);
+        if (execution?.failureStage === 'post-persist') {
+            this.hooks.onPostPersistError?.(failure);
+        } else {
+            this.hooks.onPersistError?.(failure);
+        }
+    }
+
+    private async runRootPersistence(
+        request: RootPersistenceRequest,
+        execution: RootPersistenceExecutionHolder
+    ): Promise<void> {
+        const barrier = await runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
+            const result = await this.executeRootPersistence(request, persistCurrentProject);
+            execution.value = result;
+            if (result.status === 'failed') {
+                throw result.error;
+            }
+        });
+        this.reportRootPersistenceResult(request, barrier, execution.value);
+    }
+
+    private queueRootPersistence(request: RootPersistenceRequest): void {
+        this.persistenceBarrierCount += 1;
+        const execution: RootPersistenceExecutionHolder = {};
+        const task = this.runRootPersistence(request, execution).finally(() => {
+            this.persistenceBarrierCount -= 1;
+            if (execution.value?.retryAgainstNewerRoot && request.generation === this.lifecycleGeneration) {
+                request.retryAgainstNewerRoot?.();
+            }
+        });
+        this.trackPersistenceTask(task);
     }
 
     /**

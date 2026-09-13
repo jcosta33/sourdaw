@@ -38,6 +38,16 @@ export function initBranchState(): void {
         return;
     }
 
+    if (outcome === 'storage-unavailable') {
+        logger.error(
+            new Error(
+                'Branch state could not be recovered because durable storage could not be read; ' +
+                    'the live branch list was left unchanged and the session backup remains retryable.'
+            )
+        );
+        return;
+    }
+
     logger.error(
         new Error(
             'Branch state recovered from the session backup was persisted, but the backup itself ' +

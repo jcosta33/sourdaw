@@ -5,49 +5,55 @@ import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
 export async function leaveSession(): Promise<void> {
-    const owner = runtime.captureOwner();
-    const state = collaborationStore.value;
-    if (!owner && !state?.isEnabled) {
-        return;
-    }
-    if (!owner || runtime.canWrite(owner)) {
-        joinAttemptAuthority.invalidate();
-    }
-    const requestWitness = joinAttemptAuthority.capture();
-    const peerManager = runtime.state.peerManager;
-    runtime.retire(owner);
-    if (peerManager) {
-        const leaveMessage: PeerMessage = {
-            type: 'peer-leave',
-            peerId: collaborationStore.value?.localPeerId ?? '',
-        };
-        // Drain the send buffer to each connected peer before closing so the
-        // leave isn't discarded mid-flight by closeAll().
-        await Promise.all(
-            peerManager.getConnectedPeerIds().map((peerId) =>
-                peerManager.sendCrdtSyncBuffered({ peerId, message: leaveMessage }).catch(() => {
-                    // A peer that errors/closes during flush is being torn down
-                    // anyway; ignore so the remaining peers still get the leave.
-                })
-            )
-        );
-    }
+    return runtime.runLifecycle(async () => {
+        const owner = runtime.captureOwner();
+        const state = collaborationStore.value;
+        if (!owner && !state?.isEnabled) {
+            await runtime.settleRetainedTeardown();
+            return;
+        }
+        if (!owner || runtime.canWrite(owner)) {
+            joinAttemptAuthority.invalidate();
+        }
+        const requestWitness = joinAttemptAuthority.capture();
+        const peerManager = owner?.peerManager ?? null;
+        const localPeerId = state?.localPeerId ?? '';
+        runtime.retire(owner);
+        if (peerManager) {
+            const leaveMessage: PeerMessage = {
+                type: 'peer-leave',
+                peerId: localPeerId,
+            };
+            // Drain only the sends captured for this outgoing runtime. The
+            // transport closes before durable storage settlement begins.
+            await Promise.all(
+                peerManager
+                    .getConnectedPeerIds()
+                    .map((peerId) =>
+                        peerManager.sendCrdtSyncBuffered({ peerId, message: leaveMessage }).catch(() => undefined)
+                    )
+            );
+        }
 
-    const removedCurrentRuntime = runtime.cleanup(owner, requestWitness);
-    if (!removedCurrentRuntime) {
-        return;
-    }
+        runtime.closeTransport(owner);
+        const removedCurrentRuntime = runtime.cleanup(owner, requestWitness, { closeTransport: false });
+        if (!removedCurrentRuntime) {
+            await runtime.settleRetainedTeardown();
+            return;
+        }
 
-    collaborationStore.set({
-        isEnabled: false,
-        sessionId: null,
-        localPeerId: null,
-        localName: '',
-        localColor: '',
-        isHost: false,
-        peers: [],
-        connectionStatus: 'disconnected',
-        error: null,
-        quarantinedPeerIds: [],
+        collaborationStore.set({
+            isEnabled: false,
+            sessionId: null,
+            localPeerId: null,
+            localName: '',
+            localColor: '',
+            isHost: false,
+            peers: [],
+            connectionStatus: 'disconnected',
+            error: null,
+            quarantinedPeerIds: [],
+        });
+        await runtime.settleRetainedTeardown();
     });
 }

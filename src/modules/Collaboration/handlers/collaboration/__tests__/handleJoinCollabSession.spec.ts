@@ -11,7 +11,20 @@ vi.mock('../../../useCases/collaboration/joinSession', () => ({
 }));
 
 describe('handleJoinCollabSession', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.joinSession.mockResolvedValue('answer');
+    });
+
+    it('uses the runtime singleton execution contract', () => {
+        expect(handleJoinCollabSession).toMatchObject({
+            executionKind: 'runtime',
+            previewExecution: 'unsupported-external',
+            requiresAbortCompensation: false,
+            batchExecution: 'singleton',
+            undoable: false,
+        });
+    });
 
     it('delegates to joinSession use case', async () => {
         await handleJoinCollabSession.execute({
