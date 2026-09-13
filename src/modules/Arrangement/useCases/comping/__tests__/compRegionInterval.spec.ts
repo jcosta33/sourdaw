@@ -247,6 +247,13 @@ describe('compRegionInterval', () => {
                 ...restoredLane,
                 takes: [{ ...restoredLane.takes[0], sourceOffsetBeats: -1 }, ...restoredLane.takes.slice(1)],
             },
+            {
+                ...restoredLane,
+                activeCompRegions: [
+                    { ...restoredLane.activeCompRegions[0], takeId: 'missing-take' },
+                    ...restoredLane.activeCompRegions.slice(1),
+                ],
+            },
         ];
         for (const invalidLane of invalidLanes) {
             expect(
