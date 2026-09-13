@@ -75,8 +75,8 @@ function makeRampLane(): AutomationLane {
         id: 'lane-1',
         trackId: 'track-1',
         clipId: undefined,
-        parameterId: 'device-1:gain-level',
-        parameterName: 'Gain Level',
+        parameterId: 'device-1:trem-depth',
+        parameterName: 'Tremolo Depth',
         points: [
             { beat: 128, value: 0, curve: 'linear', tension: 0 },
             { beat: 132, value: 1, curve: 'linear', tension: 0 },
@@ -123,7 +123,8 @@ function renderDeviceLaneAtGrain(scheduleGrainMs: number, lane: AutomationLane =
     const deviceNode: OfflineDeviceNode = {
         inputNode: {} as AudioNode,
         outputNode: {} as AudioNode,
-        nodes: [{ gain: deviceParam } as unknown as AudioNode],
+        namedNodes: { lfoDepth: { gain: deviceParam } as unknown as AudioNode },
+        nodes: [],
     };
 
     scheduleTrackAutomationFixture({
@@ -134,8 +135,8 @@ function renderDeviceLaneAtGrain(scheduleGrainMs: number, lane: AutomationLane =
         deviceEntries: [
             {
                 deviceId: 'device-1',
-                deviceType: 'builtin-gain',
-                strategy: new WebAudioDeviceStrategy(deviceNode, 'builtin-gain'),
+                deviceType: 'builtin-tremolo',
+                strategy: new WebAudioDeviceStrategy(deviceNode, 'builtin-tremolo'),
             },
         ],
         durationSeconds: DURATION_SECONDS,
