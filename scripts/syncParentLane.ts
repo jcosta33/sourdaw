@@ -94,7 +94,8 @@ export function syncParentLane(descriptor: LaneStack, port: SyncParentPort): str
         }
         // A squash omits parent ancestry: merge its final history first so later parent deletions
         // and reversions cannot survive as apparent child changes when main is merged.
-        targets.push(main);
+        // Establish the squash baseline before later main edits or reversions are applied.
+        targets.push(parent.mergeCommit, main);
     }
     let head = previousHead;
     for (const target of targets) {

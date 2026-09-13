@@ -139,7 +139,7 @@ function git(root: string, ...args: string[]): string {
     }).trim();
 }
 
-function fixture() {
+function fixture(pinned = true) {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-stack-git-'));
     roots.push(root);
     git(root, 'init', '-b', 'main');
@@ -156,7 +156,10 @@ function fixture() {
     git(root, 'add', '.');
     git(root, 'commit', '-m', 'feat: child');
     const childHead = git(root, 'rev-parse', 'HEAD');
-    const stack = { ...descriptor, forkHead, parentHead: forkHead, parentPullRequest: 12 };
+    const stack: LaneStack = { ...descriptor, forkHead, parentHead: forkHead };
+    if (pinned) {
+        stack.parentPullRequest = 12;
+    }
     let remote: StackParent = { ...parent, headSha: forkHead };
     let saved = stack;
     const port: SyncParentPort = {
@@ -177,7 +180,7 @@ function fixture() {
         },
         conflicts: () => git(root, 'diff', '--name-only', '--diff-filter=U').split('\n').filter(Boolean),
         save: (next) => {
-            saved = { ...next, parentPullRequest: next.parentPullRequest ?? 12 };
+            saved = next;
         },
     };
     return {
@@ -193,6 +196,38 @@ function fixture() {
 }
 
 describe('ordinary merge stack synchronization', () => {
+    it.each(['delete', 'revert', 'edit'])('preserves a later main %s after the parent squash lands', (change) => {
+        const f = fixture();
+        git(f.root, 'checkout', 'main');
+        git(f.root, 'merge', '--squash', 'agent/parent');
+        git(f.root, 'commit', '-m', 'feat: landed parent');
+        const landedParent = git(f.root, 'rev-parse', 'HEAD');
+        if (change === 'delete') {
+            git(f.root, 'rm', 'parent');
+            git(f.root, 'commit', '-m', 'fix: remove obsolete feature from main');
+        } else if (change === 'revert') {
+            git(f.root, 'revert', '--no-edit', landedParent);
+        } else {
+            writeFileSync(join(f.root, 'parent'), 'updated on main\n');
+            git(f.root, 'add', 'parent');
+            git(f.root, 'commit', '-m', 'fix: update feature on main');
+        }
+        const mainHead = git(f.root, 'rev-parse', 'HEAD');
+        f.setParent({ ...parent, headSha: f.stack.parentHead, state: 'MERGED', mergeCommit: landedParent });
+        git(f.root, 'checkout', 'agent/child');
+        const result = syncParentLane(f.stack, f.port);
+        expect(git(f.root, 'diff', '--name-only', 'main...HEAD')).toBe('child');
+        if (change === 'edit') {
+            expect(readFileSync(join(f.root, 'parent'), 'utf8')).toBe('updated on main\n');
+        } else {
+            expect(existsSync(join(f.root, 'parent'))).toBe(false);
+        }
+        for (const head of [f.childHead, f.stack.parentHead, landedParent, mainHead]) {
+            expect(f.port.isAncestor(head, result)).toBe(true);
+        }
+        expect(stackPublicationBase(f.saved(), result, mainHead, f.port).branch).toBe('main');
+        expect(assertLandedStackParent(f.saved(), result, mainHead, f.port).number).toBe(12);
+    });
     it.each(['delete', 'revert'])('preserves the final parent %s when it squash-lands before child sync', (change) => {
         const f = fixture();
         let stack = f.stack;
@@ -259,10 +294,11 @@ describe('ordinary merge stack synchronization', () => {
         expect(() => assertLandedStackParent(f.stack, childHead, landedParent, f.port)).toThrow(/reconciliation/);
     });
 
-    it.each(['parent', 'main'])(
+    it.each(['parent', 'landed', 'main'])(
         'stops at a %s merge conflict and resumes both histories after author resolution',
         (stage) => {
-            const f = fixture();
+            const f = fixture(false);
+            expect(f.stack.parentPullRequest).toBeUndefined();
             const conflictPath = stage === 'parent' ? 'parent' : 'base';
             writeFileSync(join(f.root, conflictPath), 'child edit\n');
             git(f.root, 'add', '.');
@@ -275,6 +311,11 @@ describe('ordinary merge stack synchronization', () => {
             git(f.root, 'commit', '-m', 'fix: finalize parent');
             const finalParent = git(f.root, 'rev-parse', 'HEAD');
             git(f.root, 'checkout', 'main');
+            if (stage === 'landed') {
+                writeFileSync(join(f.root, 'base'), 'main edit before landing\n');
+                git(f.root, 'add', '.');
+                git(f.root, 'commit', '-m', 'feat: main change before parent landing');
+            }
             git(f.root, 'merge', '--squash', 'agent/parent');
             git(f.root, 'commit', '-m', 'feat: landed parent');
             const landedParent = git(f.root, 'rev-parse', 'HEAD');
@@ -293,7 +334,12 @@ describe('ordinary merge stack synchronization', () => {
                 merge(target);
             };
             expect(() => syncParentLane(f.stack, f.port)).toThrow(new RegExp(`conflict[\\s\\S]*${conflictPath}`));
-            expect(merged).toEqual(stage === 'parent' ? [finalParent] : [finalParent, mainHead]);
+            const expectedMerges = [finalParent, landedParent];
+            if (mainHead !== landedParent) {
+                expectedMerges.push(mainHead);
+            }
+            expect(merged).toEqual(stage === 'parent' ? [finalParent] : expectedMerges);
+            expect(f.saved().parentPullRequest).toBe(12);
             expect(f.saved().parentHead).toBe(f.stack.parentHead);
             expect(git(f.root, 'rev-parse', 'agent/parent')).toBe(finalParent);
             if (stage === 'parent') {
@@ -304,13 +350,17 @@ describe('ordinary merge stack synchronization', () => {
             }
             git(f.root, 'commit', '-m', 'fix: resolve stack conflict');
             const resolvedHead = f.port.head();
+            f.setParent({ ...parent, number: 13, headSha: finalParent, state: 'MERGED', mergeCommit: landedParent });
+            expect(() => syncParentLane(f.saved(), f.port)).toThrow(/exactly one/);
+            expect(f.saved().parentPullRequest).toBe(12);
+            f.setParent({ ...parent, headSha: finalParent, state: 'MERGED', mergeCommit: landedParent });
             const result = syncParentLane(f.saved(), f.port);
             expect(f.port.isAncestor(oldChild, result)).toBe(true);
             expect(f.port.isAncestor(resolvedHead, result)).toBe(true);
             expect(f.port.isAncestor(finalParent, result)).toBe(true);
             expect(f.port.isAncestor(mainHead, result)).toBe(true);
             expect(f.saved().parentHead).toBe(finalParent);
-            expect(merged).toEqual([finalParent, mainHead]);
+            expect(merged).toEqual(expectedMerges);
         }
     );
 

@@ -255,8 +255,9 @@ publication and approval require both the verified final parent head and its lan
 child history. A moved, missing, ambiguous, closed-unmerged, or racing parent blocks publication.
 `pnpm lane:sync-parent --lane <absolute-child-lane>` merges the verified current parent head into
 only that clean owned child. After the parent squash lands, it merges the verified final parent head
-first, then landed `main`, preserving both histories and the original child history. Resolve a
-conflict at either merge in the child, commit normally, and rerun synchronization. Never rebase,
+first, then the exact parent squash commit, then fetched current `main`, preserving all parent and
+child history while retaining later main edits and reversions. Resolve a conflict at any merge in
+the child, commit normally, and rerun synchronization. Never rebase,
 reset, force-push, cascade to siblings, or silently adopt a replacement parent. Deliver remains
 bottom-up and main-only; sync the child, then publish and obtain fresh Gate, review, and acceptance.
 Keep earlier slices related with `--relates` until closure is warranted, and verify the original
