@@ -1,0 +1,25 @@
+scripts/syncParentLane.ts
+  s_e440ffdc6997b7::t_2cf4b97d154b4f 97-98
+AGENTS.md
+  s_e440ffdc6997b7::t_2cf4b97d154b4f 258-260
+scripts/__tests__/stackedLanes.spec.ts
+  s_e440ffdc6997b7::t_9510d00b7364a0 142,159-162,183,200-207,209,214-219,225-230,297,300-301,314-318,337-342,353-354
+  s_e440ffdc6997b7::t_34d43edebc753e 199,208,210-213,220-224
+  s_e440ffdc6997b7::t_85206ac779639e 355-356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4d7dce8c8c40eb4b05dfa2279c53d895121bc5ff",
+  "prompts": {},
+  "sessions": {
+    "s_e440ffdc6997b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080b9-9340-7d60-8bb4-ece48d01fa39",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
