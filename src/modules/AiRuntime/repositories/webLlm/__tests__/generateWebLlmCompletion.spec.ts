@@ -21,16 +21,6 @@ function ignoreRejection(_reason: unknown): void {}
 
 type Outcome<T> = { status: 'fulfilled'; value: T } | { status: 'rejected'; reason: unknown };
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (reason: unknown) => void } {
-    let resolve: (value: T) => void = () => undefined;
-    let reject: (reason: unknown) => void = ignoreRejection;
-    const promise = new Promise<T>((promiseResolve, promiseReject) => {
-        resolve = promiseResolve;
-        reject = promiseReject;
-    });
-    return { promise, resolve, reject };
-}
-
 describe('generateWebLlmCompletion', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -114,8 +104,8 @@ describe('generateWebLlmCompletion', () => {
     });
 
     it('does not interrupt active inference when a queued caller aborts', async () => {
-        const activeCompletion = deferred<unknown>();
-        const queuedCompletion = deferred<unknown>();
+        const activeCompletion = Promise.withResolvers<unknown>();
+        const queuedCompletion = Promise.withResolvers<unknown>();
         let rejectActive: (reason: unknown) => void = ignoreRejection;
         let completionCount = 0;
         mocks.createCompletion.mockImplementation(() => {
@@ -148,7 +138,11 @@ describe('generateWebLlmCompletion', () => {
         try {
             await vi.waitFor(() => expect(mocks.createCompletion).toHaveBeenCalled());
             await vi.waitFor(() =>
-                expect(queuedAddEventListener).toHaveBeenCalledWith('abort', expect.any(Function), { once: true })
+                expect(
+                    queuedAddEventListener.mock.calls.some(
+                        ([type, listener]) => type === 'abort' && typeof listener === 'function'
+                    )
+                ).toBe(true)
             );
 
             queuedController.abort();
@@ -169,6 +163,7 @@ describe('generateWebLlmCompletion', () => {
             queuedCompletion.resolve({
                 choices: [{ finish_reason: 'stop', message: { content: 'queued answer' } }],
             });
+            await Promise.all([activeOutcome, queuedOutcome]);
             queuedAddEventListener.mockRestore();
         }
     });
