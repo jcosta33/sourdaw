@@ -95,12 +95,10 @@ export type CompileAutomationEventsOptions = {
     valueScale?: number;
     valueOffset?: number;
     /**
-     * Non-affine post-transform applied AFTER `valueScale`/`valueOffset` and
-     * before the slew — for laws the affine pair cannot express, notably the
-     * fader's dB→linear conversion and its `FADER_MAX_GAIN` ceiling. That
-     * ceiling is the fader's `+6 dB` of headroom, not unity: it is the bound on
-     * what the strip may reach, and it is a different question from the lane
-     * bound `valueBound` applies, which is what the lane's own points declare.
+     * Non-affine post-transform applied AFTER `valueScale`/`valueOffset` (and
+     * after slew for slewed parameters, matching the live order where the
+     * control filter runs in parameter units and the node write converts to linear gain)
+     * — for laws the affine pair cannot express, notably dB→linear conversions.
      * Keep it pure; it runs once per compiled event.
      */
     valueTransform?: (value: number) => number;
@@ -428,12 +426,12 @@ export function compileAutomationEvents(
     const valueScale = options?.valueScale ?? 1;
     const valueOffset = options?.valueOffset ?? 0;
     const valueTransform = options?.valueTransform;
-    if (valueScale !== 1 || valueOffset !== 0 || valueTransform) {
+    if (valueScale !== 1 || valueOffset !== 0 || (valueTransform && !options?.slew)) {
         for (const event of events) {
             // The lane range already ran, per segment, as each value was
             // compiled. Then the affine, then the law — the live order.
             const scaled = event.value * valueScale + valueOffset;
-            event.value = valueTransform ? valueTransform(scaled) : scaled;
+            event.value = valueTransform && !options?.slew ? valueTransform(scaled) : scaled;
         }
     }
     const emitted = options?.slew ? slewEvents(events, options.slew, windowEnd - regionStartSeconds) : events;

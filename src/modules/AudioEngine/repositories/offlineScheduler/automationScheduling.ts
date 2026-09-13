@@ -449,6 +449,18 @@ export function scheduleTrackAutomation({
                     scale === 0
                         ? undefined
                         : (scaled: number): number => quantiseEmit((scaled - offset) / scale) * scale + offset;
+                const paramOptions = {
+                    // Same order as the segments binding above: the lane's
+                    // declared range on the unscaled source curve, before
+                    // the binding's affine and before the slew's device-law
+                    // clamp (#2538).
+                    ...boundOptions,
+                    slew: { ...deviceSlewGrid, clampStep: clampScaledStep, quantiseEmit: quantiseScaledEmit },
+                    activeWindowSeconds,
+                    valueScale: laneScale * scale,
+                    valueOffset: offset,
+
+                };
                 scheduleAutomationOnParam(
                     audioParam,
                     points,
@@ -458,17 +470,7 @@ export function scheduleTrackAutomation({
                     regionStartSeconds,
                     projectBeatToSeconds,
                     compensationDelaySec,
-                    {
-                        // Same order as the segments binding above: the lane's
-                        // declared range on the unscaled source curve, before
-                        // the binding's affine and before the slew's device-law
-                        // clamp (#2538).
-                        ...boundOptions,
-                        slew: { ...deviceSlewGrid, clampStep: clampScaledStep, quantiseEmit: quantiseScaledEmit },
-                        activeWindowSeconds,
-                        valueScale: laneScale * scale,
-                        valueOffset: offset,
-                    }
+                    paramOptions
                 );
             }
         }

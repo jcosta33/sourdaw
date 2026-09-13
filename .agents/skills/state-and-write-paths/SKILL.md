@@ -76,6 +76,13 @@ Never persist a derivative as truth. Selectors stay read-only — no write side 
 
 For a normalized project-state command, test the authoritative terminal projection through the public command entry: raw document, owning store projection, visible control state, and engine projection must agree on the same committed value. #4082 (commit `418906`, merged as `dcb995a`) showed that a Loop control could update a visible flag while leaving an invalid loop region that the document decoder rejected. A direct use-case or static-prop fixture cannot prove this agreement.
 
+### Identity-scoped replay must prove owner and empty-state recovery
+
+Attack undo and redo after replacing an aggregate with a new owner that reuses the same track and child identities, and
+exercise a forward write whose prior state is empty. Persistence evidence must create history through the real producer,
+persist and reload the document, hydrate that saved history, then replay it; an injected undo entry proves neither the
+producer nor the saved contract.
+
 ### 8. Async fetch/cache is not editable business state
 
 Edit project truth through domain writes, then invalidate or refetch. The query cache is never a mutable document.

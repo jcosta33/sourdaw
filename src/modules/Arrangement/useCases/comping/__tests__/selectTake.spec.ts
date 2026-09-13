@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -13,6 +16,7 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureDurableDocumentWitness,
     createCrdtDoc,
     getCrdtDoc,
     registerCrdtStorageRuntime,
@@ -94,18 +98,25 @@ function take0IdOf(lane: TakeLane): string {
  *  comp regions — the interleaved state the old whole-store snapshot replay
  *  erased. Written straight to the store, mirroring how lane mutations land
  *  without routing through this action's own undo entry. */
-function editOtherLane(other: TakeLane): void {
+function editOtherLane(
+    other: TakeLane,
+    edit: { takeName: string; compStartBeat: number; compEndBeat: number; addedTakeName: string }
+): TakeLane {
+    const addedTake = createTake(`clip-${edit.addedTakeName}`, edit.addedTakeName, 8, 12);
     takeLaneStore.set({
         lanes: takeLaneStore.value!.lanes.map((lane) =>
             lane.trackId === other.trackId
                 ? {
                       ...lane,
-                      takes: lane.takes.map((take) => ({ ...take, name: 'Renamed after selection' })),
-                      activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: take0IdOf(lane) }],
+                      takes: [...lane.takes.map((take) => ({ ...take, name: edit.takeName })), addedTake],
+                      activeCompRegions: [
+                          { startBeat: edit.compStartBeat, endBeat: edit.compEndBeat, takeId: take0IdOf(lane) },
+                      ],
                   }
                 : lane
         ),
     });
+    return getLane(other.trackId);
 }
 
 describe('selectTake undo preservation (#4072)', () => {
@@ -151,20 +162,104 @@ describe('selectTake undo preservation (#4072)', () => {
             getLane('track-1').takes
         );
 
-        editOtherLane(other);
+        const beforeUndoOtherLane = editOtherLane(other, {
+            takeName: 'Renamed before undo',
+            compStartBeat: 1,
+            compEndBeat: 3,
+            addedTakeName: 'Added before undo',
+        });
+        flushAutomergeStorageWrites();
+        const beforeUndoRaw = structuredClone(rawTakeLanes());
 
         await expect(undo()).resolves.toEqual({ headConsumed: true });
         expect(selectedTakeIdOf('track-1')).toBe(takeA);
-        expect(getLane('track-2').takes[0]!.name).toBe('Renamed after selection');
-        expect(getLane('track-2').activeCompRegions).toEqual([
-            { startBeat: 0, endBeat: 4, takeId: take0IdOf(getLane('track-2')) },
-        ]);
+        expect(getLane('track-2')).toEqual(beforeUndoOtherLane);
+        expect(rawTakeLanes().lanes.find((lane) => lane.trackId === 'track-2')).toEqual(beforeUndoOtherLane);
+        expect(rawTakeLanes().lanes.find((lane) => lane.trackId === 'track-2')).toEqual(
+            beforeUndoRaw.lanes.find((lane) => lane.trackId === 'track-2')
+        );
+
+        const beforeRedoOtherLane = editOtherLane(getLane('track-2'), {
+            takeName: 'Renamed again before redo',
+            compStartBeat: 2,
+            compEndBeat: 4,
+            addedTakeName: 'Added before redo',
+        });
+        flushAutomergeStorageWrites();
+        const beforeRedoRaw = structuredClone(rawTakeLanes());
 
         await redo();
         expect(selectedTakeIdOf('track-1')).toBe(takeB);
-        expect(getLane('track-2').takes[0]!.name).toBe('Renamed after selection');
-        expect(getLane('track-2').activeCompRegions).toHaveLength(1);
+        expect(getLane('track-2')).toEqual(beforeRedoOtherLane);
+        expect(rawTakeLanes().lanes.find((lane) => lane.trackId === 'track-2')).toEqual(beforeRedoOtherLane);
+        expect(rawTakeLanes().lanes.find((lane) => lane.trackId === 'track-2')).toEqual(
+            beforeRedoRaw.lanes.find((lane) => lane.trackId === 'track-2')
+        );
         expect(rawTakeLanes().lanes).toEqual(takeLaneStore.value?.lanes);
+    });
+
+    it('restores an initially empty selection and redoes the selected take with history movement', async () => {
+        const takeA = createTake('clip-a', 'A', 0, 4);
+        const takeB = createTake('clip-b', 'B', 4, 8);
+        takeLaneStore.set({
+            lanes: [{ ...createTakeLane('track-1'), takes: [takeA, takeB] }],
+        });
+
+        await selectTake('track-1', takeA.id);
+        expect(selectedTakeIdOf('track-1')).toBe(takeA.id);
+        expect(undoHistoryStore.value).toMatchObject({ past: [expect.any(Object)], future: [] });
+
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        expect(selectedTakeIdOf('track-1')).toBeNull();
+        expect(rawTakeLanes().lanes).toEqual(takeLaneStore.value?.lanes);
+        expect(undoHistoryStore.value).toMatchObject({ past: [], future: [expect.any(Object)] });
+
+        await redo();
+        expect(selectedTakeIdOf('track-1')).toBe(takeA.id);
+        expect(rawTakeLanes().lanes).toEqual(takeLaneStore.value?.lanes);
+        expect(undoHistoryStore.value).toMatchObject({ past: [expect.any(Object)], future: [] });
+    });
+
+    it('refuses undo after same-track lane owner replacement without state or history movement', async () => {
+        const { target, takeB } = seedTakeLanes();
+        await selectTake(target.trackId, takeB);
+        const replacement = { ...getLane(target.trackId), id: 'replacement-lane' };
+        takeLaneStore.set({
+            lanes: takeLaneStore.value!.lanes.map((lane) => (lane.id === target.id ? replacement : lane)),
+        });
+        flushAutomergeStorageWrites();
+        const beforeRaw = structuredClone(rawTakeLanes());
+        const beforeProjection = structuredClone(takeLaneStore.value);
+        const beforeWitness = captureDurableDocumentWitness();
+
+        await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+        expect(rawTakeLanes()).toEqual(beforeRaw);
+        expect(takeLaneStore.value).toEqual(beforeProjection);
+        expect(captureDurableDocumentWitness()).toBe(beforeWitness);
+        expect(undoHistoryStore.value).toMatchObject({ past: [expect.any(Object)], future: [] });
+    });
+
+    it('refuses redo after same-track lane owner replacement without state or history movement', async () => {
+        const { target, takeA, takeB } = seedTakeLanes();
+        await selectTake(target.trackId, takeB);
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        expect(selectedTakeIdOf(target.trackId)).toBe(takeA);
+        const replacement = { ...getLane(target.trackId), id: 'replacement-lane' };
+        takeLaneStore.set({
+            lanes: takeLaneStore.value!.lanes.map((lane) => (lane.id === target.id ? replacement : lane)),
+        });
+        flushAutomergeStorageWrites();
+        const beforeRaw = structuredClone(rawTakeLanes());
+        const beforeProjection = structuredClone(takeLaneStore.value);
+        const beforeWitness = captureDurableDocumentWitness();
+
+        await redo();
+
+        expect(rawTakeLanes()).toEqual(beforeRaw);
+        expect(takeLaneStore.value).toEqual(beforeProjection);
+        expect(captureDurableDocumentWitness()).toBe(beforeWitness);
+        expect(undoHistoryStore.value).toMatchObject({ past: [], future: [expect.any(Object)] });
     });
 
     it('records one undo entry labeled Select take with a self-inverse', async () => {
@@ -183,6 +278,7 @@ describe('selectTake undo preservation (#4072)', () => {
             payload: {
                 trackId: 'track-1',
                 takeId: getLane('track-1').takes[0]!.id,
+                expectedLaneId: getLane('track-1').id,
                 expectedSelectedTakeId: getLane('track-1').takes[1]!.id,
             },
         });
