@@ -132,10 +132,10 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
             postCommitEffect: { kind: 'external-effect', remediation: 'manual-repair' },
         };
     },
-    describe: (alpha) => {
+    describe: (alpha, context) => {
         // Snapshot everything that removeTrack will delete, so the inverse
         // action (`restoreTrack`) can replay it. Runs pre-execute.
-        const snapshot = captureTrackRemovalSnapshot(alpha.payload.trackId);
+        const snapshot = captureTrackRemovalSnapshot(alpha.payload.trackId, context);
         if (!snapshot) {
             return { label: 'Remove track' };
         }

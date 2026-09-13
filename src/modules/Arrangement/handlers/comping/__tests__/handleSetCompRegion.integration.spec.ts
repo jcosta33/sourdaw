@@ -9,7 +9,7 @@ import {
     flushAutomergeStorageWrites,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     commandBatchPreflightPort,
@@ -60,6 +60,10 @@ import { compRegionInterval } from '../../../useCases/comping/compRegionInterval
 import { removeCompRegion } from '../../../useCases/comping/removeCompRegion';
 import { setCompRegion } from '../../../useCases/comping/setCompRegion';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+
+import type { TrackAddedPayload } from '../../../events/TrackAddedEvent';
+import type { TrackRemovedPayload } from '../../../events/TrackRemovedEvent';
+import type { TrackSelectionChangedPayload } from '../../../events/TrackSelectionChangedEvent';
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -1184,31 +1188,138 @@ describe('setCompRegion command integration', () => {
         ).toEqual(expected);
     });
 
-    it('does not resurrect a lane when a later action in the same batch removes its track', async () => {
-        setArrangementEventBus(createEventBus());
-        trackStore.set({ tracks: [TrackDummy.create({ id: 'track-1' })], selectedTrackId: 'track-1', ghostClips: [] });
-        flushAutomergeStorageWrites();
+    it.each([
+        { conflict: 'different lane ID on the removed track', peerLaneId: 'peer-lane', peerTrackId: 'track-1' },
+        { conflict: 'the restored lane ID on a peer track', peerLaneId: 'lane-1', peerTrackId: 'track-2' },
+    ])(
+        'undoes and redoes a comp followed by track removal and refuses $conflict',
+        async ({ peerLaneId, peerTrackId }) => {
+            const arrangementEvents = createEventBus<{
+                'track.added': TrackAddedPayload;
+                'track.removed': TrackRemovedPayload;
+                'track.selectionChanged': TrackSelectionChangedPayload;
+            }>();
+            const addedEvents: TrackAddedPayload[] = [];
+            const removedEvents: TrackRemovedPayload[] = [];
+            arrangementEvents.on('track.added', (event) => {
+                addedEvents.push(event);
+            });
+            arrangementEvents.on('track.removed', (event) => {
+                removedEvents.push(event);
+            });
+            setArrangementEventBus(arrangementEvents);
+            const track1 = TrackDummy.create({ id: 'track-1', name: 'Comped vocal' });
+            const track2 = TrackDummy.create({ id: 'track-2', name: 'Peer track' });
+            trackStore.set({ tracks: [track1, track2], selectedTrackId: 'track-1', ghostClips: [] });
+            flushAutomergeStorageWrites();
+            const expectedCompLane = {
+                ...lane,
+                activeCompRegions: [
+                    { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+                    { startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                    { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+                ],
+            };
 
-        const result = await executeAppActionBatch(
-            [
-                {
-                    type: 'setCompRegion',
-                    payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+            const result = await executeAppActionBatch(
+                [
+                    {
+                        type: 'setCompRegion',
+                        payload: { trackId: 'track-1', startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                    },
+                    { type: 'removeTrack', payload: { trackId: 'track-1' } },
+                ],
+                { groupId: 'comp-then-remove-track', groupLabel: 'Comp then remove' }
+            );
+
+            expect(result).toMatchObject({ status: expect.stringMatching(/^committed/) });
+            expect(undoHistoryStore.value?.past).toHaveLength(2);
+            expect(
+                undoHistoryStore.value?.past.map((entry) => ({ groupId: entry.groupId, groupLabel: entry.groupLabel }))
+            ).toEqual([
+                { groupId: 'comp-then-remove-track', groupLabel: 'Comp then remove' },
+                { groupId: 'comp-then-remove-track', groupLabel: 'Comp then remove' },
+            ]);
+            expect(undoHistoryStore.value?.past[1]).toMatchObject({
+                kind: 'action',
+                action: { type: 'removeTrack' },
+                inverseAction: {
+                    type: 'restoreTrack',
+                    payload: { takeLaneSnapshots: [expectedCompLane] },
                 },
-                { type: 'removeTrack', payload: { trackId: 'track-1' } },
-            ],
-            { groupId: 'comp-then-remove-track' }
-        );
+            });
+            expect(trackStore.value?.tracks).toEqual([track2]);
+            expect(takeLaneStore.value?.lanes.map((candidate) => candidate.id)).toEqual(['lane-2']);
+            expect(getCrdtDoc<{ tracks: { tracks: (typeof track1)[] } }>('root')?.tracks.tracks).toEqual([track2]);
+            expect(getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes).toEqual([otherLane]);
+            expect(removedEvents).toEqual([{ trackId: 'track-1' }]);
+            expect(addedEvents).toEqual([]);
 
-        expect(result).toMatchObject({ status: expect.stringMatching(/^committed/) });
-        expect(trackStore.value?.tracks).toEqual([]);
-        expect(takeLaneStore.value?.lanes.map((candidate) => candidate.id)).toEqual(['lane-2']);
-        expect(
-            getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes.map(
-                (candidate) => candidate.id
-            )
-        ).toEqual(['lane-2']);
-    });
+            expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: true });
+            expect(trackStore.value?.tracks).toEqual([track1, track2]);
+            expect(takeLaneStore.value?.lanes).toEqual([otherLane, lane]);
+            expect(getCrdtDoc<{ tracks: { tracks: (typeof track1)[] } }>('root')?.tracks.tracks).toEqual([
+                track1,
+                track2,
+            ]);
+            expect(getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes).toEqual([
+                otherLane,
+                lane,
+            ]);
+            expect(undoHistoryStore.value?.past).toEqual([]);
+            expect(undoHistoryStore.value?.future).toHaveLength(2);
+            expect(
+                undoHistoryStore.value?.future.map((entry) => ({
+                    groupId: entry.groupId,
+                    groupLabel: entry.groupLabel,
+                }))
+            ).toEqual([
+                { groupId: 'comp-then-remove-track', groupLabel: 'Comp then remove' },
+                { groupId: 'comp-then-remove-track', groupLabel: 'Comp then remove' },
+            ]);
+            expect(addedEvents).toEqual([{ trackId: 'track-1', name: 'Comped vocal', kind: 'audio' }]);
+            expect(removedEvents).toEqual([{ trackId: 'track-1' }]);
+            expect(notifications).toEqual([]);
+
+            await redo();
+            expect(trackStore.value?.tracks).toEqual([track2]);
+            expect(takeLaneStore.value?.lanes).toEqual([otherLane]);
+            expect(getCrdtDoc<{ tracks: { tracks: (typeof track1)[] } }>('root')?.tracks.tracks).toEqual([track2]);
+            expect(getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes).toEqual([otherLane]);
+            expect(undoHistoryStore.value?.past).toHaveLength(2);
+            expect(undoHistoryStore.value?.future).toEqual([]);
+            expect(addedEvents).toHaveLength(1);
+            expect(removedEvents).toEqual([{ trackId: 'track-1' }, { trackId: 'track-1' }]);
+            expect(notifications).toEqual([]);
+
+            const peerLane = { ...structuredClone(lane), id: peerLaneId, trackId: peerTrackId };
+            mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
+                id: 'root',
+                changeFn: (document) => {
+                    document.takeLanes.lanes.push(peerLane);
+                },
+            });
+            takeLaneStore.hydrate();
+            const historyBeforeConflict = structuredClone(undoHistoryStore.value);
+            const revisionBeforeConflict = captureProjectRevision();
+
+            expect(await undo({ stepOverConflicts: false })).toEqual({ headConsumed: false });
+            expect(captureProjectRevision()).toBe(revisionBeforeConflict);
+            expect(undoHistoryStore.value).toEqual(historyBeforeConflict);
+            expect(trackStore.value?.tracks).toEqual([track2]);
+            expect(takeLaneStore.value?.lanes).toEqual([otherLane, peerLane]);
+            expect(getCrdtDoc<{ tracks: { tracks: (typeof track1)[] } }>('root')?.tracks.tracks).toEqual([track2]);
+            expect(getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes).toEqual([
+                otherLane,
+                peerLane,
+            ]);
+            expect(addedEvents).toHaveLength(1);
+            expect(removedEvents).toHaveLength(2);
+            expect(notifications).toEqual([
+                { message: 'Cannot undo "Comp then remove": project state has changed', level: 'warning' },
+            ]);
+        }
+    );
 
     it('refuses overlapping siblings atomically when their admitted interval changes', async () => {
         const insideEdit = [

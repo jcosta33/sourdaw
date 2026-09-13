@@ -1,13 +1,14 @@
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
-import { type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
+import { type HandlerMaterializationContext, type RestoreTrackPayloadSnapshot } from '#/utils/handlerContract';
 
 import { collectTrackClipIds } from '../services/collectTrackClipIds';
 import { reconcileRoutingAfterRemoval } from '../services/reconcileRoutingAfterRemoval';
 import { readClipSatelliteEntry } from '../stores/clipSatelliteState';
 import { takeLaneStore } from '../stores/takeLaneStore';
 
+import { compRegionInterval } from './comping/compRegionInterval';
 import { getTrackStoreState } from './getTrackStoreState';
 
 // Local structural shapes (AGENTS.md model isolation). These match the minimum
@@ -16,12 +17,41 @@ type MidiNoteEntry = { readonly id: string };
 type MidiCcEntry = { readonly id: string };
 type MidiPitchBendEntry = { readonly id: string };
 
+function captureTakeLaneSnapshots(
+    trackId: string,
+    context?: HandlerMaterializationContext
+): RestoreTrackPayloadSnapshot['takeLaneSnapshots'] {
+    const state = takeLaneStore.value;
+    if (!state) {
+        const hasProjectedPrefix = context?.actions
+            .slice(0, context.actionIndex)
+            .some(
+                (action) =>
+                    action.type === 'setCompRegion' ||
+                    action.type === 'restoreCompRegionInterval' ||
+                    action.type === 'restoreTrack'
+            );
+        if (hasProjectedPrefix) {
+            throw new Error('Could not project prior comp actions for track removal snapshot');
+        }
+        return [];
+    }
+    const projected = compRegionInterval.projectTakeLaneStateThroughMaterializedCompPrefix(state, context);
+    if (!projected) {
+        throw new Error('Could not project prior comp actions for track removal snapshot');
+    }
+    return structuredClone(projected.lanes.filter((lane) => lane.trackId === trackId));
+}
+
 /**
  * Snapshot everything `removeTrack` deletes for one track, so the inverse action
  * (`restoreTrack`) can replay it. Must run pre-execute, before the track is removed.
  * Returns `null` when the track does not exist.
  */
-export function captureTrackRemovalSnapshot(trackId: string): RestoreTrackPayloadSnapshot | null {
+export function captureTrackRemovalSnapshot(
+    trackId: string,
+    context?: HandlerMaterializationContext
+): RestoreTrackPayloadSnapshot | null {
     const trackState = getTrackStoreState();
     const trackIndex = trackState?.tracks.findIndex((track) => track.id === trackId) ?? -1;
     const track = trackIndex >= 0 ? trackState?.tracks[trackIndex] : undefined;
@@ -85,9 +115,7 @@ export function captureTrackRemovalSnapshot(trackId: string): RestoreTrackPayloa
         .map((clipId) => readClipSatelliteEntry(clipId))
         .filter((entry) => entry.gainEnvelope !== null || entry.warpState !== null);
 
-    const takeLaneState = takeLaneStore.value;
-    const takeLanes = takeLaneState ? takeLaneState.lanes.filter((lane) => lane.trackId === trackId) : [];
-    const takeLaneSnapshots = structuredClone(takeLanes);
+    const takeLaneSnapshots = captureTakeLaneSnapshots(trackId, context);
     const sidechainRouteSnapshots = structuredClone(
         getAllSidechainRoutes().filter((route) => route.sourceTrackId === trackId || route.targetTrackId === trackId)
     );
