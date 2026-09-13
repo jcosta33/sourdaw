@@ -83,6 +83,16 @@ exercise a forward write whose prior state is empty. Persistence evidence must c
 persist and reload the document, hydrate that saved history, then replay it; an injected undo entry proves neither the
 producer nor the saved contract.
 
+### Grouped inverse capture must read the owning action prefix
+
+`executeAppActionBatch` describes every member before any member executes. When a handler's description captures an
+inverse from project state, project the earlier siblings through the owning domain before reading that state, then use
+the same projection for batch validation. PR #4083 introduced guarded take-selection replay with green single-handler
+coverage but captured each grouped inverse from the same live pre-batch selection; PR #4073 added projected validation
+for heterogeneous grouped replay without closing that description-time capture route. Prove prefix-dependent capture
+through real grouped undo and redo, inspecting both raw CRDT authority and the owning store projection; independently
+green handler tests do not establish sibling-state capture.
+
 ### 8. Async fetch/cache is not editable business state
 
 Edit project truth through domain writes, then invalidate or refetch. The query cache is never a mutable document.

@@ -1321,6 +1321,79 @@ describe('setCompRegion command integration', () => {
         }
     );
 
+    it('captures a grouped take selection in the following track-removal restore snapshot', async () => {
+        const arrangementEvents = createEventBus<{
+            'track.added': TrackAddedPayload;
+            'track.removed': TrackRemovedPayload;
+            'track.selectionChanged': TrackSelectionChangedPayload;
+        }>();
+        const addedEvents: TrackAddedPayload[] = [];
+        const removedEvents: TrackRemovedPayload[] = [];
+        arrangementEvents.on('track.added', (event) => {
+            addedEvents.push(event);
+        });
+        arrangementEvents.on('track.removed', (event) => {
+            removedEvents.push(event);
+        });
+        setArrangementEventBus(arrangementEvents);
+        const track1 = TrackDummy.create({ id: 'track-1', name: 'Selected vocal' });
+        const track2 = TrackDummy.create({ id: 'track-2', name: 'Peer track' });
+        trackStore.set({ tracks: [track1, track2], selectedTrackId: 'track-1', ghostClips: [] });
+        flushAutomergeStorageWrites();
+        const selectedLane = {
+            ...lane,
+            takes: lane.takes.map((take) => ({ ...take, selected: take.id === 'take-b' })),
+        };
+
+        await expect(
+            executeAppActionBatch(
+                [
+                    { type: 'selectTake', payload: { trackId: 'track-1', takeId: 'take-b' } },
+                    { type: 'removeTrack', payload: { trackId: 'track-1' } },
+                ],
+                { groupId: 'select-then-remove-track', groupLabel: 'Select then remove' }
+            )
+        ).resolves.toMatchObject({ status: expect.stringMatching(/^committed/) });
+        expect(undoHistoryStore.value?.past[1]).toMatchObject({
+            kind: 'action',
+            action: { type: 'removeTrack' },
+            inverseAction: {
+                type: 'restoreTrack',
+                payload: { takeLaneSnapshots: [selectedLane] },
+            },
+        });
+        expect(trackStore.value?.tracks).toEqual([track2]);
+        expect(takeLaneStore.value?.lanes).toEqual([otherLane]);
+        flushAutomergeStorageWrites();
+        expect(getCrdtDoc<{ tracks: { tracks: (typeof track1)[] } }>('root')?.tracks.tracks).toEqual([track2]);
+        expect(getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes).toEqual([otherLane]);
+        expect(removedEvents).toEqual([{ trackId: 'track-1' }]);
+
+        await expect(undo({ stepOverConflicts: false })).resolves.toEqual({ headConsumed: true });
+        expect(trackStore.value?.tracks).toEqual([track1, track2]);
+        expect(takeLaneStore.value?.lanes).toEqual([otherLane, lane]);
+        flushAutomergeStorageWrites();
+        expect(getCrdtDoc<{ tracks: { tracks: (typeof track1)[] } }>('root')?.tracks.tracks).toEqual([track1, track2]);
+        expect(getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes).toEqual([
+            otherLane,
+            lane,
+        ]);
+        expect(undoHistoryStore.value?.past).toEqual([]);
+        expect(undoHistoryStore.value?.future).toHaveLength(2);
+        expect(addedEvents).toEqual([{ trackId: 'track-1', name: 'Selected vocal', kind: 'audio' }]);
+        expect(notifications).toEqual([]);
+
+        await redo();
+        expect(trackStore.value?.tracks).toEqual([track2]);
+        expect(takeLaneStore.value?.lanes).toEqual([otherLane]);
+        flushAutomergeStorageWrites();
+        expect(getCrdtDoc<{ tracks: { tracks: (typeof track1)[] } }>('root')?.tracks.tracks).toEqual([track2]);
+        expect(getCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>('root')?.takeLanes.lanes).toEqual([otherLane]);
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+        expect(undoHistoryStore.value?.future).toEqual([]);
+        expect(removedEvents).toEqual([{ trackId: 'track-1' }, { trackId: 'track-1' }]);
+    });
+
     it('refuses overlapping siblings atomically when their admitted interval changes', async () => {
         const insideEdit = [
             { startBeat: 0, endBeat: 2, takeId: 'take-a' },

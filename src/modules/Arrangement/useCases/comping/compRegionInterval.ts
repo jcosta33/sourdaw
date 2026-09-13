@@ -13,6 +13,8 @@ import {
     type TakeLaneStoreValue,
 } from '../../stores/takeLaneWriteJournal';
 
+import { takeLaneSelection } from './takeLaneSelection';
+
 export type CompRegionIntervalPatch = TakeLaneCompRegionPatch;
 
 function isValidInterval(startBeat: number, endBeat: number): boolean {
@@ -163,22 +165,24 @@ function isCompleteRestoreCompRegionIntervalPayload(value: unknown): value is Co
     return isCompleteCompRegionIntervalPatch(value) && Object.keys(value).length === 6;
 }
 
-type CompPrefixContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'> | HandlerMaterializationContext;
+type TakeLanePrefixContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'> | HandlerMaterializationContext;
 
 function canAppendRestoredLanes(state: TakeLaneStoreValue, restoredLanes: TakeLaneStoreValue['lanes']): boolean {
     const laneIds = new Set(state.lanes.map((lane) => lane.id));
+    const trackIds = new Set(state.lanes.map((lane) => lane.trackId));
     for (const lane of restoredLanes) {
-        if (laneIds.has(lane.id)) {
+        if (laneIds.has(lane.id) || trackIds.has(lane.trackId)) {
             return false;
         }
         laneIds.add(lane.id);
+        trackIds.add(lane.trackId);
     }
     return true;
 }
 
-function projectCompRegionPrefix(
+function projectTakeLaneStateThroughActionPrefix(
     initialState: TakeLaneStoreValue,
-    context: CompPrefixContext | undefined,
+    context: TakeLanePrefixContext | undefined,
     mode: 'capture' | 'validate'
 ): TakeLaneStoreValue | null {
     if (!context) {
@@ -186,6 +190,27 @@ function projectCompRegionPrefix(
     }
     let state = structuredClone(initialState);
     for (const action of context.actions.slice(0, context.actionIndex)) {
+        if (action.type === 'selectTake') {
+            const selected = takeLaneSelection.apply(state, action);
+            if (!selected) {
+                return null;
+            }
+            state = selected;
+            continue;
+        }
+        if (action.type === 'removeTrack') {
+            state = { lanes: state.lanes.filter((lane) => lane.trackId !== action.payload.trackId) };
+            continue;
+        }
+        if (action.type === 'restoreTrack') {
+            const restoredLanes = decodeExactTakeLaneSnapshots(action.payload.takeLaneSnapshots);
+            if (!restoredLanes || !canAppendRestoredLanes(state, restoredLanes)) {
+                return null;
+            }
+            state = { lanes: [...state.lanes, ...restoredLanes] };
+            continue;
+        }
+
         let patch: CompRegionIntervalPatch | null;
         if (action.type === 'setCompRegion') {
             if (mode === 'capture') {
@@ -201,13 +226,6 @@ function projectCompRegionPrefix(
                 return null;
             }
             patch = action.payload;
-        } else if (action.type === 'restoreTrack') {
-            const restoredLanes = decodeExactTakeLaneSnapshots(action.payload.takeLaneSnapshots);
-            if (!restoredLanes || !canAppendRestoredLanes(state, restoredLanes)) {
-                return null;
-            }
-            state = { lanes: [...state.lanes, ...restoredLanes] };
-            continue;
         } else {
             continue;
         }
@@ -231,15 +249,15 @@ function captureCompRegionIntervalPatchAfterPrefix(
     if (!state) {
         return null;
     }
-    const projected = projectCompRegionPrefix(state, context, 'capture');
+    const projected = projectTakeLaneStateThroughActionPrefix(state, context, 'capture');
     return projected ? captureCompRegionIntervalPatchFromState(projected, input) : null;
 }
 
-function projectStateThroughMaterializedCompPrefix(
+function projectStateThroughMaterializedActionPrefix(
     state: TakeLaneStoreValue,
-    context?: CompPrefixContext
+    context?: TakeLanePrefixContext
 ): TakeLaneStoreValue | null {
-    return projectCompRegionPrefix(state, context, 'validate');
+    return projectTakeLaneStateThroughActionPrefix(state, context, 'validate');
 }
 
 function compRegionIntervalPatchApplies(patch: CompRegionIntervalPatch, context?: HandlerValidationContext): boolean {
@@ -247,7 +265,7 @@ function compRegionIntervalPatchApplies(patch: CompRegionIntervalPatch, context?
     if (!authority || !hasValidSnapshot(patch.expected, patch.startBeat, patch.endBeat)) {
         return false;
     }
-    const state = projectCompRegionPrefix(authority, context, 'validate');
+    const state = projectTakeLaneStateThroughActionPrefix(authority, context, 'validate');
     return state !== null && applyTakeLaneCompRegionPatch(state, patch) !== null;
 }
 
@@ -281,5 +299,5 @@ export const compRegionInterval = {
     isCompleteSetPayload: isCompleteSetCompRegionPayload,
     patchApplies: compRegionIntervalPatchApplies,
     patchIsNoop: compRegionIntervalPatchIsNoop,
-    projectTakeLaneStateThroughMaterializedCompPrefix: projectStateThroughMaterializedCompPrefix,
+    projectTakeLaneStateThroughMaterializedActionPrefix: projectStateThroughMaterializedActionPrefix,
 };
