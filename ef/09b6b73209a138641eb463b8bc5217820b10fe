@@ -1,0 +1,27 @@
+scripts/pruneRemoteBranches.ts
+  s_e440ffdc6997b7::t_04cdcdac882982 30,126-149,295-306,335-348,445-454,487-502,545
+scripts/__tests__/pruneRemoteBranches.spec.ts
+  s_e440ffdc6997b7::t_6de94368e41757 144,172-175,211-239,261-300
+  s_e440ffdc6997b7::t_1e03cc0a522819 240-260
+scripts/reviewDiffSummary.ts
+  s_e440ffdc6997b7::t_04cdcdac882982 1-86,91-146
+  s_e440ffdc6997b7::t_5028a70284d165 87-90
+scripts/__tests__/reviewDiffSummary.spec.ts
+  s_e440ffdc6997b7::t_6de94368e41757 1-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ef09b6b73209a138641eb463b8bc5217820b10fe",
+  "prompts": {},
+  "sessions": {
+    "s_e440ffdc6997b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080b9-9340-7d60-8bb4-ece48d01fa39",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
