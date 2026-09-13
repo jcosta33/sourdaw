@@ -66,6 +66,10 @@ function approvalEvidence(headSha = 'headsha') {
     };
 }
 
+function approvalContext(headSha = 'headsha', pr = 42) {
+    return { pr, baseRefName: 'main', baseSha: 'base', headSha };
+}
+
 function approvalBody(headSha = 'headsha', summary = 'ok') {
     return `${summary}\n\nEvidence SHA-256: ${createHash('sha256')
         .update(JSON.stringify(approvalEvidence(headSha)))
@@ -136,6 +140,7 @@ function fakePort(
     let state = input.state ?? 'OPEN';
     const port: PublishReviewPort = {
         primaryRoot: () => '/repo',
+        assertApprovalContext: (number, head) => approvalContext(head, number),
         pullRequest: () => {
             const current = head;
             const currentState = state;
@@ -252,6 +257,10 @@ async function runFailingReviewPublication(root: string, number: number, head: s
     const bundle = join(root, '.agents', 'review-bundles', `${number}-${head}`);
     mkdirSync(bundle, { recursive: true });
     writeFileSync(
+        join(bundle, 'manifest.json'),
+        JSON.stringify({ ...approvalContext(head, number), baseSha: 'b'.repeat(40) })
+    );
+    writeFileSync(
         join(bundle, 'review.json'),
         JSON.stringify({
             format: 'compact-v1',
@@ -277,7 +286,23 @@ async function runFailingReviewPublication(root: string, number: number, head: s
                         return `${root}/.git`;
                     }
                     if (command === 'gh' && args[0] === 'pr') {
-                        return JSON.stringify({ state: 'OPEN', headRefOid: head });
+                        return JSON.stringify({
+                            number,
+                            state: 'OPEN',
+                            headRefOid: head,
+                            headRefName: 'agent/test',
+                            baseRefName: 'main',
+                            baseRefOid: 'b'.repeat(40),
+                        });
+                    }
+                    if (command === 'git' && args.includes('fetch')) {
+                        return '';
+                    }
+                    if (command === 'git' && args[0] === 'config') {
+                        return '';
+                    }
+                    if (command === 'git' && args[0] === 'merge-base') {
+                        return 'b'.repeat(40);
                     }
                     if (command === 'gh' && args[0] === 'api') {
                         throw new Error(failureMessage);
@@ -382,6 +407,62 @@ function recoveryDependencies(
 }
 
 describe('review publish', () => {
+    it('refuses fresh approval when the publication context reader is absent', () => {
+        const fixture = fakePort();
+        expect(() => publishReview(42, { ...fixture.port, assertApprovalContext: undefined })).toThrow(
+            /approval context/
+        );
+        expect(fixture.posted.review).toBeUndefined();
+    });
+
+    it('refuses exported prepared approval without its original context', () => {
+        const fixture = fakePort();
+        const document = parseReviewDocument({
+            format: 'compact-v1',
+            event: 'APPROVE',
+            body: 'ok',
+            evidence: approvalEvidence(),
+        });
+        expect(() =>
+            publishPreparedReview(42, { head: 'headsha', document, payloadDigest: 'unused' }, fixture.port)
+        ).toThrow(/approval context/);
+        expect(fixture.posted.review).toBeUndefined();
+    });
+
+    it.each(['baseSha', 'baseRefName', 'headSha', 'pr'] as const)(
+        'refuses approval context %s drift inside the publication fence',
+        (field) => {
+            const fixture = fakePort();
+            const initial = approvalContext();
+            const changed = { ...initial, [field]: field === 'pr' ? 43 : 'changed' };
+            const read = vi.fn().mockReturnValueOnce(initial).mockReturnValue(changed);
+            const journal = vi.fn();
+            expect(() =>
+                publishReview(
+                    42,
+                    { ...fixture.port, assertApprovalContext: read },
+                    {
+                        ownerOid: 'owner',
+                        journalReviewPublication: journal,
+                        markRemoteMutationAttempt: vi.fn(),
+                        markDefinitiveNoMutationHttpStatus: vi.fn(),
+                        registerSuccessfulCompletion: vi.fn(),
+                    }
+                )
+            ).toThrow(/approval context/);
+            expect(read).toHaveBeenCalledTimes(2);
+            expect(journal).not.toHaveBeenCalled();
+            expect(fixture.posted.review).toBeUndefined();
+        }
+    );
+
+    it('allows REQUEST_CHANGES without approval context on a dependent base', () => {
+        const fixture = fakePort({
+            json: { event: 'REQUEST_CHANGES', body: 'Fix the defect.', comments: [validComment] },
+        });
+        publishReview(42, { ...fixture.port, assertApprovalContext: undefined });
+        expect(fixture.posted.review?.event).toBe('REQUEST_CHANGES');
+    });
     it('compact approval publishes only the conclusion and canonical evidence digest', () => {
         const evidence = approvalEvidence();
         const { port, posted } = fakePort({
@@ -488,6 +569,7 @@ describe('review publish', () => {
                             42,
                             {
                                 head: 'headsha',
+                                approvalContext: approvalContext(),
                                 document,
                                 payloadDigest: reviewPublicationPayloadDigest(
                                     reviewPublicationPayload({ commitId: 'headsha', ...document, body })
@@ -621,13 +703,18 @@ describe('review publish', () => {
             const { port, posted } = fakePort();
             const journal = vi.fn();
             expect(() =>
-                publishPreparedReview(42, { head: 'headsha', document, payloadDigest }, port, {
-                    ownerOid: 'owner',
-                    journalReviewPublication: journal,
-                    markRemoteMutationAttempt: vi.fn(),
-                    markDefinitiveNoMutationHttpStatus: vi.fn(),
-                    registerSuccessfulCompletion: vi.fn(),
-                })
+                publishPreparedReview(
+                    42,
+                    { head: 'headsha', document, payloadDigest, approvalContext: approvalContext() },
+                    port,
+                    {
+                        ownerOid: 'owner',
+                        journalReviewPublication: journal,
+                        markRemoteMutationAttempt: vi.fn(),
+                        markDefinitiveNoMutationHttpStatus: vi.fn(),
+                        registerSuccessfulCompletion: vi.fn(),
+                    }
+                )
             ).toThrow(/prepared digest/);
             expect(journal).not.toHaveBeenCalled();
             expect(posted.review).toBeUndefined();
@@ -895,6 +982,7 @@ describe('review publish', () => {
                 repositoryName: () => 'jcosta33/sourdaw',
                 reviewPort: (_session, _primaryRoot, markRemoteMutationAttempt) => ({
                     primaryRoot: () => root,
+                    assertApprovalContext: (number, head) => approvalContext(head, number),
                     pullRequest: () => ({ state: 'OPEN', head: 'a'.repeat(40) }),
                     readReviewJson: () => ({
                         format: 'compact-v1',

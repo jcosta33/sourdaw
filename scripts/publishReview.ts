@@ -15,7 +15,7 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { composeReviewCommentBody, fail, type ReviewCommentContent } from './prContract.ts';
-import { reviewBundlePath } from './prepareReview.ts';
+import { reviewBundlePath, type ReviewBundleContext } from './prepareReview.ts';
 import {
     type PullRequestRemoteMutationBoundary,
     type PullRequestReviewPublicationMutationBoundary,
@@ -32,6 +32,11 @@ import {
     assertIndependentReviewerApproval,
     type ReviewState,
 } from './pullRequestReviewState.ts';
+import {
+    assertSameApprovalContext,
+    publicationApprovalContext,
+    readLiveApprovalContext,
+} from './reviewApprovalContext.ts';
 import {
     assertReviewDocumentFormat,
     parseApprovalEvidence,
@@ -84,6 +89,7 @@ export type PublishReviewPort = {
     pullRequest: (number: number) => { state: string; head: string };
     readReviewJson: (path: string) => unknown;
     readBundleDiff: (path: string) => string;
+    assertApprovalContext?: (number: number, head: string, bundle: string) => ReviewBundleContext;
     reviewState?: (number: number, expectedHead: string) => ReviewState;
     postReview: (input: {
         number: number;
@@ -217,6 +223,7 @@ export type PreparedReviewPublication = {
     head: string;
     document: ReviewDocument;
     payloadDigest: string;
+    approvalContext?: ReviewBundleContext;
 };
 
 function prepareReviewPublication(
@@ -236,10 +243,12 @@ function prepareReviewPublication(
     const document =
         actorNodeId === ORCHESTRATOR_USER_NODE_ID ? parseAcceptanceDocument(parsed) : parseReviewDocument(parsed);
     assertPublicationEvidence(document, head);
+    const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
     return {
         head,
         document,
+        approvalContext,
         payloadDigest: reviewPublicationPayloadDigest(
             reviewPublicationPayload({
                 commitId: head,
@@ -273,6 +282,10 @@ function publishPreparedReviewForActor(
         assertAcceptancePreconditions(number, prepared.head, port);
     }
     assertPublicationEvidence(document, pullRequest.head);
+    const context = publicationApprovalContext(number, prepared.head, document, port);
+    if (context !== undefined) {
+        assertSameApprovalContext(prepared.approvalContext, context);
+    }
     const body = renderReviewDocumentBody(document);
     const payloadDigest = reviewPublicationPayloadDigest(
         reviewPublicationPayload({
@@ -386,6 +399,8 @@ export function shellPort(
         reviewState: (number, head) => readPullRequestReviewState(number, head, REQUIRED_REPOSITORY, gh),
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
         readBundleDiff: (path) => readFileSync(path, 'utf8'),
+        assertApprovalContext: (number, head, bundle) =>
+            readLiveApprovalContext(primaryRoot, number, head, bundle, session, capture),
         postReview: ({ number, commitId, event, body, comments }) => {
             const input = reviewPublicationPayload({ commitId, event, body, comments });
             markRemoteMutationAttempt();

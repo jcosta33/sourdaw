@@ -18,6 +18,7 @@ export type TrustedGithubWriteCommand =
     | 'deliver'
     | 'issue:reconcile'
     | 'lane:publish'
+    | 'lane:sync-parent'
     | 'review:accept'
     | 'review:publish'
     | 'review:publish:recover'
@@ -163,6 +164,23 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/publishLane.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
+        'scripts/stackedLanes.ts',
+        'scripts/reviewDiffSummary.ts',
+        'scripts/wasm-artifacts.ts',
+        'scripts/wasmToolchainPins.ts',
+        'scripts/workspaceManifestFingerprint.ts',
+    ],
+    'lane:sync-parent': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/syncParentLane.ts',
+        'scripts/publishLane.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+        'scripts/stackedLanes.ts',
+        'scripts/reviewDiffSummary.ts',
+        'scripts/wasm-artifacts.ts',
+        'scripts/wasmToolchainPins.ts',
+        'scripts/workspaceManifestFingerprint.ts',
     ],
     'review:accept': [
         'scripts/trustedGithubWriteBootstrap.ts',
@@ -174,6 +192,13 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
+        'scripts/reviewApprovalFormat.ts',
+        'scripts/reviewApprovalContext.ts',
+        'scripts/stackedLanes.ts',
+        'scripts/reviewDiffSummary.ts',
+        'scripts/wasm-artifacts.ts',
+        'scripts/wasmToolchainPins.ts',
+        'scripts/workspaceManifestFingerprint.ts',
     ],
     'review:publish': [
         'scripts/trustedGithubWriteBootstrap.ts',
@@ -184,6 +209,13 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
+        'scripts/reviewApprovalFormat.ts',
+        'scripts/reviewApprovalContext.ts',
+        'scripts/stackedLanes.ts',
+        'scripts/reviewDiffSummary.ts',
+        'scripts/wasm-artifacts.ts',
+        'scripts/wasmToolchainPins.ts',
+        'scripts/workspaceManifestFingerprint.ts',
     ],
     'review:publish:recover': [
         'scripts/trustedGithubWriteBootstrap.ts',
@@ -198,6 +230,13 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
+        'scripts/reviewApprovalFormat.ts',
+        'scripts/reviewApprovalContext.ts',
+        'scripts/stackedLanes.ts',
+        'scripts/reviewDiffSummary.ts',
+        'scripts/wasm-artifacts.ts',
+        'scripts/wasmToolchainPins.ts',
+        'scripts/workspaceManifestFingerprint.ts',
     ],
     'review:resolve': [
         'scripts/trustedGithubWriteBootstrap.ts',
@@ -211,6 +250,7 @@ const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: 
     deliver: { path: 'scripts/deliverPullRequest.ts', runner: 'runDeliverCli' },
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
     'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
+    'lane:sync-parent': { path: 'scripts/syncParentLane.ts', runner: 'runSyncParentCli' },
     'review:accept': { path: 'scripts/acceptReview.ts', runner: 'runAcceptReviewCli' },
     'review:publish': { path: 'scripts/publishReview.ts', runner: 'runPublishReviewCli' },
     'review:publish:recover': { path: 'scripts/recoverPublishReviewLock.ts', runner: 'runRecoverPublishReviewLockCli' },
@@ -1288,6 +1328,7 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         value === 'deliver' ||
         value === 'issue:reconcile' ||
         value === 'lane:publish' ||
+        value === 'lane:sync-parent' ||
         value === 'review:accept' ||
         value === 'review:publish' ||
         value === 'review:publish:recover' ||

@@ -69,6 +69,15 @@ import type {
 import type { ReconcileTrackerIssuePort } from '../trackerIssueReconciliation.ts';
 import type { Readable, Writable } from 'node:stream';
 
+const stackSummarySources = [
+    'scripts/stackedLanes.ts',
+    'scripts/reviewDiffSummary.ts',
+    'scripts/wasm-artifacts.ts',
+    'scripts/wasmToolchainPins.ts',
+    'scripts/workspaceManifestFingerprint.ts',
+];
+const approvalSources = ['scripts/reviewApprovalFormat.ts', 'scripts/reviewApprovalContext.ts', ...stackSummarySources];
+
 function removeTemporaryDirectory(root: string): void {
     rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
 }
@@ -403,7 +412,10 @@ function runPackageRoute(repository: string, args: string[]): string {
     if (!pnpmCli) {
         throw new Error('The package-route fixture requires the active pnpm CLI path');
     }
-    return execFileSync(process.execPath, [pnpmCli, ...args], {
+    const javascriptCli = /\.(?:c|m)?js$/u.test(pnpmCli);
+    const executable = javascriptCli ? process.execPath : pnpmCli;
+    const cliArgs = javascriptCli ? [pnpmCli, ...args] : args;
+    return execFileSync(executable, cliArgs, {
         cwd: repository,
         env: process.env,
         encoding: 'utf8',
@@ -433,6 +445,9 @@ function trustedPublishFixture(root: string, policy: string): void {
     );
     writeFileSync(join(root, 'scripts/githubAppIdentity.ts'), 'export const publishingPermission = "ordinary";\n');
     writeFileSync(join(root, 'scripts/prContract.ts'), 'export {};\n');
+    for (const path of stackSummarySources) {
+        writeFileSync(join(root, path), 'export {};\n');
+    }
     runGit(root, ['init', '-b', 'main']);
     runGit(root, ['config', 'user.name', 'Fixture']);
     runGit(root, ['config', 'user.email', 'fixture@example.com']);
@@ -522,6 +537,7 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
         'reviewPublicationRecoveryReceipt.ts',
         'reviewPublicationRemoteInspection.ts',
         'pullRequestReviewState.ts',
+        ...approvalSources.map((path) => path.slice('scripts/'.length)),
     ]) {
         writeFileSync(join(root, 'scripts', path), 'export {};\n');
     }
@@ -835,6 +851,7 @@ describe('package scripts and gitignore', () => {
         };
         expect(pkg.scripts['lane:open']).toBe('node scripts/openLane.ts');
         expect(pkg.scripts['lane:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts lane:publish');
+        expect(pkg.scripts['lane:sync-parent']).toBe('node scripts/trustedGithubWriteBootstrap.ts lane:sync-parent');
         expect(pkg.scripts['review:prepare']).toBe('node scripts/prepareReview.ts');
         expect(pkg.scripts['review:accept']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:accept');
         expect(pkg.scripts['review:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:publish');
@@ -928,11 +945,11 @@ describe('package scripts and gitignore', () => {
      * `lane:publish` opens the pull request and `deliver` merges it, and a base the two disagree
      * about is a squash onto a branch nobody reviewed against. Neither may carry its own literal.
      */
-    it('opens and merges every pull request against the one trunk constant', () => {
+    it('defaults publication and requires delivery against the one trunk constant', () => {
         const identity = readFileSync(join(import.meta.dirname, '../githubAppIdentity.ts'), 'utf8');
         expect(identity).toMatch(/export const REQUIRED_BASE_BRANCH = 'main';/);
         const publish = readFileSync(join(import.meta.dirname, '../publishLane.ts'), 'utf8');
-        expect(publish).toMatch(/'--base',\s+REQUIRED_BASE_BRANCH,/);
+        expect(publish).toMatch(/'--base',\s+base \?\? REQUIRED_BASE_BRANCH,/);
         const deliver = readFileSync(join(import.meta.dirname, '../deliverPullRequest.ts'), 'utf8');
         expect(deliver).toMatch(/baseRefName !== REQUIRED_BASE_BRANCH/);
     });
@@ -1007,6 +1024,7 @@ describe('package scripts and gitignore', () => {
             'scripts/pullRequestMutationLock.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
+            ...approvalSources,
         ]);
         // A lane holding a different copy of any executed script — mutated, or
         // simply older than main — still delivers, and still runs main's code.
@@ -1112,6 +1130,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
+                    ...approvalSources,
                 ],
             },
             {
@@ -1127,6 +1146,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
+                    ...approvalSources,
                 ],
             },
             {
@@ -1146,6 +1166,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
+                    ...approvalSources,
                 ],
             },
             {
@@ -1157,6 +1178,19 @@ describe('package scripts and gitignore', () => {
                     'scripts/resolveThread.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
+                ],
+            },
+            {
+                command: 'lane:sync-parent' as const,
+                entry: 'scripts/syncParentLane.ts',
+                required: 'scripts/stackedLanes.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/syncParentLane.ts',
+                    'scripts/publishLane.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                    ...stackSummarySources,
                 ],
             },
         ];
@@ -1263,6 +1297,7 @@ describe('package scripts and gitignore', () => {
             'scripts/publishLane.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
+            ...stackSummarySources,
         ]);
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-package-'));
         const checkout = join(fixtureRoot, 'checkout');
@@ -2142,6 +2177,7 @@ describe('package scripts and gitignore', () => {
         writeFileSync(
             join(bundle, 'review.json'),
             JSON.stringify({
+                format: 'compact-v1',
                 event: 'APPROVE',
                 body: 'Attacked; held.',
                 comments: [],
@@ -2184,6 +2220,7 @@ describe('package scripts and gitignore', () => {
             repositoryName: () => REQUIRED_REPOSITORY,
             reviewPort: () => ({
                 primaryRoot: () => root,
+                assertApprovalContext: () => ({ pr: 2495, headSha: head, baseRefName: 'main', baseSha: 'base' }),
                 pullRequest: () => ({ state: 'OPEN', head }),
                 readReviewJson: (path: string) => JSON.parse(readFileSync(path, 'utf8')),
                 readBundleDiff: (path: string) => readFileSync(path, 'utf8'),
