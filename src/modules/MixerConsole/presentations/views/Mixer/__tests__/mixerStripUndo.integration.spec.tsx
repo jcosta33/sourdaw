@@ -79,6 +79,9 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         '#/modules/Arrangement/useCases'
     );
     return {
+        ...actual,
+        setClipAudioAssetStager: vi.fn(),
+        stageAudioBufferAsset: vi.fn(),
         acceptsExternalPluginAutomationParameter: vi.fn(),
         addMidiFx: actual.addMidiFx,
         addTake: vi.fn(),
@@ -233,6 +236,7 @@ vi.mock('#/modules/Knead/useCases', async () => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
     startFaustNote: vi.fn(),
     writeNativeBuiltinParameters: vi.fn(),
     claimNativeSessionRearm: vi.fn(() => null),

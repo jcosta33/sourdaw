@@ -47,7 +47,8 @@ vi.mock('#/modules/Routing/useCases', () => ({
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
 }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({    stopTrackInputMonitoring: vi.fn(),
+
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),

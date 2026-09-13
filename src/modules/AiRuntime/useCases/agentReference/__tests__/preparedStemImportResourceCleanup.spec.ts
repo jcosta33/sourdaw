@@ -27,7 +27,8 @@ const mocks = vi.hoisted(() => ({
     getVersionedCommandBatchIdempotentReplay: vi.fn<typeof getVersionedCommandBatchIdempotentReplay>(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({    stopTrackInputMonitoring: vi.fn(),
+
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),

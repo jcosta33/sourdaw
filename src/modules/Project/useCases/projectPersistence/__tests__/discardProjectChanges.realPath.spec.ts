@@ -31,7 +31,8 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 // Discard/reset assertions spy through cancelPendingAudioBufferImport, getAudioContext,
 // importCachedAudioBuffers, prepareCachedAudioBuffersFromIdb, and resetAudioGraph; every other
 // AudioEngine key in this factory is an unread graph-coverage stub (`vi.fn()` and `audioEngine: {}`).
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({    stopTrackInputMonitoring: vi.fn(),
+
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
@@ -141,7 +142,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     hasUnresolvedExternalPluginRestoreFailure: vi.fn(() => false),
     restorePluginState: vi.fn(),
 }));
-vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), stopPlayback: vi.fn() }));
+vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), stopPlayback: vi.fn(), stopTrackInputMonitoring: vi.fn() }));
 vi.mock('../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
 vi.mock('../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: vi.fn() }));
 vi.mock('../helpers/hydrateModuleStoresFromProjectData', () => ({ hydrateModuleStoresFromProjectData: vi.fn() }));
