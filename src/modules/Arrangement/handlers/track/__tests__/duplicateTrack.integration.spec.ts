@@ -9,7 +9,8 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 // removal effects; jsdom's stubbed AudioContext cannot build one. The subject
 // here is what project truth holds after undo, so the engine seam is stubbed
 // rather than exercised.
-vi.mock('#/modules/AudioEngine/useCases', () => ({    stopTrackInputMonitoring: vi.fn(),
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
 
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),

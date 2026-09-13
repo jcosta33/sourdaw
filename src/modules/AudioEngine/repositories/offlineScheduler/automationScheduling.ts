@@ -459,7 +459,6 @@ export function scheduleTrackAutomation({
                     activeWindowSeconds,
                     valueScale: laneScale * scale,
                     valueOffset: offset,
-
                 };
                 scheduleAutomationOnParam(
                     audioParam,

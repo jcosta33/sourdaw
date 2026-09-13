@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { clampDeviceParameterValue, quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
-import { gainToDb } from '#/utils/audioLevelLaw';
 import { evaluateAutomationCurve } from '#/utils/automationCurve';
 
 import { asBaseAudioContext, createMockAudioContext } from '../../../../../helpers/__tests__/audioContext.mock';
@@ -770,18 +769,15 @@ describe('scheduleTrackAutomation', () => {
         });
 
         const ramps = deviceParam.linearRampToValueAtTime.mock.calls.map((call) => call[0] as number);
-        // `gain-level` now carries the applier's dB→linear conversion (#3738),
-        // so the emitted values are the device-space recurrence viewed through
-        // `dbToGain`. Map back with the shared inverse; the recurrence itself
-        // is unchanged and is what this case observes.
-        const deviceSpace = ramps.map((value) => gainToDb(value));
-        const postStep = deviceSpace.filter((value) => value > 0);
+        // `trem-depth` binds to `lfoDepth.gain` with an identity device→AudioParam
+        // law (no `convert`), so the emitted values ARE the device-space recurrence.
+        const postStep = ramps.filter((value) => value > 0);
         // The slew produces the exact IIR sequence y[n]=y[n-1]+0.4*(1-y[n-1]):
         // 0.4, 0.64, 0.784, ... and settles exactly on the target.
-        expect(postStep[0]).toBeCloseTo(0.4, 6);
-        expect(postStep[1]).toBeCloseTo(0.64, 6);
-        expect(postStep[2]).toBeCloseTo(0.784, 6);
-        expect(deviceSpace.at(-1)).toBeCloseTo(1, 6);
+        expect(postStep[0]).toBeCloseTo(0.4, 10);
+        expect(postStep[1]).toBeCloseTo(0.64, 10);
+        expect(postStep[2]).toBeCloseTo(0.784, 10);
+        expect(ramps.at(-1)).toBe(1);
         expect(postStep.length).toBeGreaterThan(5);
     });
 
@@ -831,18 +827,18 @@ describe('scheduleTrackAutomation', () => {
             regionStartSeconds: 64,
         });
 
-        // `gain-level` converts at write time now (#3738); map the emitted
-        // linear values back to device space, where the clamp and the
-        // recurrence this case observes actually run.
-        const deviceSpace = deviceParam.linearRampToValueAtTime.mock.calls
-            .map((call) => gainToDb(call[0] as number))
+        // `trem-depth` binds with an identity device→AudioParam law (no
+        // `convert`), so the emitted values are already device space, where the
+        // clamp and the recurrence this case observes run.
+        const postStep = deviceParam.linearRampToValueAtTime.mock.calls
+            .map((call) => call[0] as number)
             .filter((value) => value > 0);
         // Clamped-after-slew: y1 = clamp(0 + 0.4·2) = 0.8, y2 = clamp(0.8 +
         // 0.4·1.2) = 1, settled. Clamping the target would have produced the
         // 0.4, 0.64, 0.784, … sequence of a chase toward 1 instead.
-        expect(deviceSpace).toHaveLength(2);
-        expect(deviceSpace[0]).toBeCloseTo(0.8, 6);
-        expect(deviceSpace[1]).toBeCloseTo(1, 6);
+        expect(postStep).toHaveLength(2);
+        expect(postStep[0]).toBeCloseTo(0.8, 10);
+        expect(postStep[1]).toBeCloseTo(1, 10);
     });
 
     // These link tests carry the lane on `pan`, not `gain`. What they assert is

@@ -41,7 +41,8 @@ vi.mock('#/infra/store/useStore', () => ({
 // Preset undo assertions read Arrangement store truth, not live engine writes.
 // `updateDeviceParam` is the wired stub; every other AudioEngine key in this
 // factory is an unread graph-coverage stub (`vi.fn()` and `audioEngine: {}`).
-vi.mock('#/modules/AudioEngine/useCases', () => ({    stopTrackInputMonitoring: vi.fn(),
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
 
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
