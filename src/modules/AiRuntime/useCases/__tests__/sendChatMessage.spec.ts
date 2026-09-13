@@ -16,6 +16,8 @@ import {
     type CloudChatCompletionOutcome,
     type streamCloudChatCompletion,
 } from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
+import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
+import { webLlmRequestCoordinator } from '../../repositories/webLlm/webLlmRequestCoordinator';
 import { agentRunStore } from '../../stores/agentRunStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { getAgentPlanProposalIdentity } from '../../transformers/normalizeAgentPlanProposal';
@@ -152,6 +154,7 @@ const mocks = vi.hoisted(() => ({
     getActiveModelId: vi.fn(),
     getCloudProviderInfo: vi.fn(),
     getLlmEngine: vi.fn(),
+    initWebLlmEngine: vi.fn(),
     isCloudAvailable: vi.fn(),
     parseVersionedCommandBatchEnvelope: vi.fn(),
     planPromptActions: vi.fn(),
@@ -216,6 +219,10 @@ vi.mock('../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion', 
 
 vi.mock('../../repositories/webLlm/getLlmEngine', () => ({
     getLlmEngine: mocks.getLlmEngine,
+}));
+
+vi.mock('../../repositories/webLlm/initWebLlmEngine', () => ({
+    initWebLlmEngine: mocks.initWebLlmEngine,
 }));
 
 vi.mock('../../repositories/webLlm/getActiveModelId', () => ({
@@ -1020,6 +1027,168 @@ describe('sendChatMessage retained-provider selection', () => {
             expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
         } finally {
             settleWorkLease.mockRestore();
+        }
+    });
+
+    it('keeps a cancelled queued completion from interrupting an active chat stream before admitting the next completion', async () => {
+        const streamPaused = Promise.withResolvers<void>();
+        const releaseStream = Promise.withResolvers<void>();
+        const engineFinishedStream = Promise.withResolvers<void>();
+        const events: string[] = [];
+        const pending: Promise<unknown>[] = [];
+        async function* activeStream() {
+            yield { choices: [{ delta: { content: 'The active answer starts. ' } }] };
+            streamPaused.resolve();
+            await releaseStream.promise;
+            yield { choices: [{ delta: { content: 'The active answer finishes.' }, finish_reason: 'stop' }] };
+            events.push('active-stream-finished');
+            engineFinishedStream.resolve();
+        }
+        const create = vi.fn(async (params: Record<string, unknown>) => {
+            if (params.stream === true) {
+                events.push('active-stream-created');
+                return activeStream();
+            }
+            events.push('queued-completion-created');
+            return { choices: [{ finish_reason: 'stop', message: { content: 'The next completion.' } }] };
+        });
+        const engine = { interruptGenerate: vi.fn(), chat: { completions: { create } } };
+        const runAdmission = vi.spyOn(webLlmRequestCoordinator, 'run');
+        const cancelled = new AbortController();
+        mocks.getLlmEngine.mockReturnValue(engine);
+        mocks.initWebLlmEngine.mockResolvedValue(engine);
+
+        try {
+            const activeChat = sendChatMessage('Keep streaming this answer.', { mode: 'explain' });
+            pending.push(activeChat);
+            await streamPaused.promise;
+
+            const cancelledCompletion = generateWebLlmCompletion('system', 'cancel me', { signal: cancelled.signal });
+            pending.push(cancelledCompletion);
+            await vi.waitFor(() =>
+                expect(runAdmission).toHaveBeenCalledWith(engine, expect.objectContaining({ signal: cancelled.signal }))
+            );
+            expect(create).toHaveBeenCalledOnce();
+
+            cancelled.abort(new DOMException('Cancelled while queued.', 'AbortError'));
+            await expect(cancelledCompletion).rejects.toMatchObject({ name: 'AbortError' });
+            expect(engine.interruptGenerate).not.toHaveBeenCalled();
+
+            const nextCompletion = generateWebLlmCompletion('system', 'run after the stream');
+            pending.push(nextCompletion);
+            await vi.waitFor(() => expect(runAdmission).toHaveBeenCalledTimes(2));
+            expect(create).toHaveBeenCalledOnce();
+
+            releaseStream.resolve();
+            await engineFinishedStream.promise;
+            await expect(activeChat).resolves.toBeUndefined();
+            await expect(nextCompletion).resolves.toBe('The next completion.');
+
+            expect(events).toEqual(['active-stream-created', 'active-stream-finished', 'queued-completion-created']);
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    content: 'The active answer starts. The active answer finishes.',
+                })
+            );
+            expect(engine.interruptGenerate).not.toHaveBeenCalled();
+        } finally {
+            releaseStream.resolve();
+            await Promise.allSettled(pending);
+            runAdmission.mockRestore();
+        }
+    });
+
+    it('keeps an active completion intact when a queued explain chat is cancelled before the next completion starts', async () => {
+        const completionResponse = Promise.withResolvers<unknown>();
+        const completionStarted = Promise.withResolvers<void>();
+        const events: string[] = [];
+        const pending: Promise<unknown>[] = [];
+        let completionCount = 0;
+        async function* cancelledChatStream() {
+            yield { choices: [{ delta: { content: 'Cancelled chat content.' }, finish_reason: 'stop' }] };
+        }
+        const create = vi.fn((params: Record<string, unknown>) => {
+            if (params.stream === true) {
+                events.push('queued-chat-created');
+                return Promise.resolve(cancelledChatStream());
+            }
+            completionCount += 1;
+            if (completionCount === 1) {
+                events.push('active-completion-created');
+                completionStarted.resolve();
+                return completionResponse.promise.then((response) => {
+                    events.push('active-completion-finished');
+                    return response;
+                });
+            }
+            events.push('next-completion-created');
+            return Promise.resolve({ choices: [{ finish_reason: 'stop', message: { content: 'Next completion.' } }] });
+        });
+        const engine = { interruptGenerate: vi.fn(), chat: { completions: { create } } };
+        const runAdmission = vi.spyOn(webLlmRequestCoordinator, 'run');
+        const streamAdmission = vi.spyOn(webLlmRequestCoordinator, 'stream');
+        mocks.getLlmEngine.mockReturnValue(engine);
+        mocks.initWebLlmEngine.mockResolvedValue(engine);
+
+        try {
+            const activeCompletion = generateWebLlmCompletion('system', 'finish this answer');
+            pending.push(activeCompletion);
+            await completionStarted.promise;
+            await vi.waitFor(() => expect(runAdmission).toHaveBeenCalledTimes(1));
+
+            const queuedChat = sendChatMessage('Cancel this queued chat.', { mode: 'explain' });
+            pending.push(queuedChat);
+            await vi.waitFor(() => expect(mocks.setActiveAborter).toHaveBeenCalledWith(expect.any(AbortController)));
+            const activeAborter = mocks.setActiveAborter.mock.calls.find(
+                ([value]) => value instanceof AbortController
+            )?.[0];
+            if (!(activeAborter instanceof AbortController)) {
+                throw new Error('Expected the queued explain chat to expose its active abort controller.');
+            }
+            await vi.waitFor(() =>
+                expect(streamAdmission).toHaveBeenCalledWith(
+                    engine,
+                    expect.objectContaining({ signal: activeAborter.signal })
+                )
+            );
+            expect(create).toHaveBeenCalledOnce();
+
+            activeAborter.abort(new DOMException('Cancelled while queued.', 'AbortError'));
+            await expect(queuedChat).resolves.toBeUndefined();
+            expect(engine.interruptGenerate).not.toHaveBeenCalled();
+            expect(agentRunLifecycle.get(getMostRecentlyAdmittedRunId())).toMatchObject({
+                phase: 'cancelled',
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'cancelled' })],
+            });
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ isStreaming: false, content: '' })
+            );
+
+            const nextCompletion = generateWebLlmCompletion('system', 'run after the active completion');
+            pending.push(nextCompletion);
+            await vi.waitFor(() => expect(runAdmission).toHaveBeenCalledTimes(2));
+            expect(create).toHaveBeenCalledOnce();
+
+            completionResponse.resolve({
+                choices: [{ finish_reason: 'stop', message: { content: '<think>hidden</think>Active completion.' } }],
+            });
+            await expect(activeCompletion).resolves.toBe('Active completion.');
+            await expect(nextCompletion).resolves.toBe('Next completion.');
+
+            expect(events).toEqual([
+                'active-completion-created',
+                'active-completion-finished',
+                'next-completion-created',
+            ]);
+            expect(engine.interruptGenerate).not.toHaveBeenCalled();
+        } finally {
+            completionResponse.resolve({ choices: [{ finish_reason: 'stop', message: { content: 'Released.' } }] });
+            await Promise.allSettled(pending);
+            runAdmission.mockRestore();
+            streamAdmission.mockRestore();
         }
     });
 
