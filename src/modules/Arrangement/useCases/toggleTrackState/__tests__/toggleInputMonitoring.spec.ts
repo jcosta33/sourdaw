@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     updateTrack: vi.fn(),
     startInputMonitoring: vi.fn(),
     stopInputMonitoring: vi.fn(),
+    stopTrackInputMonitoring: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/getTrackById', () => ({
@@ -22,6 +23,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     startInputMonitoring: mocks.startInputMonitoring,
     stopInputMonitoring: mocks.stopInputMonitoring,
+    stopTrackInputMonitoring: mocks.stopTrackInputMonitoring,
 }));
 
 describe('toggleInputMonitoring', () => {
@@ -34,7 +36,7 @@ describe('toggleInputMonitoring', () => {
 
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
-        expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.stopTrackInputMonitoring).not.toHaveBeenCalled();
     });
 
     it('exposes the canonical auto → on → off → auto cycle', () => {
@@ -58,18 +60,21 @@ describe('toggleInputMonitoring', () => {
         expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
     });
 
-    it('advances on → off and stops the engine path', () => {
+    it('advances on → off and stops that track’s listening edge only', () => {
         expect(advance('on')).toBe('off');
-        expect(mocks.stopInputMonitoring).toHaveBeenCalledTimes(1);
+        expect(mocks.stopTrackInputMonitoring).toHaveBeenCalledTimes(1);
+        expect(mocks.stopTrackInputMonitoring).toHaveBeenCalledWith('t1');
         expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
     });
 
-    it('advances off → auto (does not skip auto) and stops the engine path', () => {
+    it('advances off → auto (does not skip auto) and stops that track’s listening edge only', () => {
         // Previously this toggled off → on, skipping auto and diverging from the
         // TrackHeader button. Now it matches the shared cycle.
         expect(advance('off')).toBe('auto');
-        expect(mocks.stopInputMonitoring).toHaveBeenCalledTimes(1);
-        expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.stopTrackInputMonitoring).toHaveBeenCalledTimes(1);
+        expect(mocks.stopTrackInputMonitoring).toHaveBeenCalledWith('t1');
+        expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
     });
 
     it('rejects a dormant VCA toggle without writing or stopping another monitoring session', () => {
@@ -89,6 +94,6 @@ describe('toggleInputMonitoring', () => {
 
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
-        expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.stopTrackInputMonitoring).not.toHaveBeenCalled();
     });
 });

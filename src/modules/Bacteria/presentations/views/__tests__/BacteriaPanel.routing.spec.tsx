@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_PATCH, type BacteriaPatch } from '../../../models/BacteriaPatch';
-import { type BacteriaState } from '../../../stores/bacteriaStore';
+import { bacteriaStore, type BacteriaState } from '../../../stores/bacteriaStore';
 import { BacteriaPanel } from '../BacteriaPanel';
 
 /**
@@ -46,10 +46,12 @@ vi.mock('#/components/daw/RotaryKnob', () => ({
     ),
 }));
 
-// Drive the store: return a fixed state for the panel's deviceId.
-let stateForTest: BacteriaState;
+// The panel reads two stores (bacteria instances and the project track state
+// its hydration follows). Honour each call's own store default, and drive the
+// bacteria instance through the real store — the panel falls back to
+// `getBacteriaState(deviceId)`, which reads it directly.
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: () => ({ 'dev-1': stateForTest }),
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => defaultValue),
 }));
 
 function makeState(overrides: Partial<BacteriaState>): BacteriaState {
@@ -95,7 +97,7 @@ describe('BacteriaPanel K-knob write routing', () => {
     });
 
     it('routes a global knob (Play-mode Input) to the global write and never the band write', () => {
-        stateForTest = makeState({ uiLevel: 1 });
+        bacteriaStore.set({ 'dev-1': makeState({ uiLevel: 1 }) });
         render(<BacteriaPanel deviceId="dev-1" />);
 
         clickKnobByLabel('Input');
@@ -105,7 +107,7 @@ describe('BacteriaPanel K-knob write routing', () => {
     });
 
     it('routes a band knob (Shape-mode Drive) to the band write and never the global write', () => {
-        stateForTest = makeState({ uiLevel: 2, activeBand: 0, activeModule: 'distortion' });
+        bacteriaStore.set({ 'dev-1': makeState({ uiLevel: 2, activeBand: 0, activeModule: 'distortion' }) });
         render(<BacteriaPanel deviceId="dev-1" />);
 
         clickKnobByLabel('Drive');
@@ -115,7 +117,7 @@ describe('BacteriaPanel K-knob write routing', () => {
     });
 
     it('routes the band knob to the currently active band index', () => {
-        stateForTest = makeState({ uiLevel: 2, activeBand: 2, activeModule: 'distortion' });
+        bacteriaStore.set({ 'dev-1': makeState({ uiLevel: 2, activeBand: 2, activeModule: 'distortion' }) });
         render(<BacteriaPanel deviceId="dev-1" />);
 
         clickKnobByLabel('Drive');

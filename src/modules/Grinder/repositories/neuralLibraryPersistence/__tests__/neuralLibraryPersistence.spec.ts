@@ -142,6 +142,7 @@ describe('neuralLibraryPersistence', () => {
             vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
             const anchor = document.createElement('a');
             const click = vi.spyOn(anchor, 'click').mockImplementation(() => {});
+            // @ts-expect-error the Electron DOM augmentation adds a createElement("webview") overload this mock does not satisfy
             vi.spyOn(document, 'createElement').mockReturnValue(anchor);
 
             downloadGrinderNeuralModelFile({ file_name: 'capture.nam', file_text: '{"name":"x"}' });

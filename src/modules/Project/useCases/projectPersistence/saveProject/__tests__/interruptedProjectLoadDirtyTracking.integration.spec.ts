@@ -103,6 +103,8 @@ vi.mock('#/infra/store/createStore', async (importOriginal) => {
 });
 // Four hoisted bindings stay live; newly listed names are unread graph-coverage stubs.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
+
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
@@ -214,6 +216,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     restorePluginState: vi.fn(),
 }));
 vi.mock('#/modules/Transport/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
     ensureTrackStrips: mockEnsureTrackStrips,
     stopPlayback: mockStopPlayback,
     defaultTransportState: { masterGain: 75, isPlaying: false },

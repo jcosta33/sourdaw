@@ -29,6 +29,21 @@ fn db_to_linear(db: f32) -> f32 {
     10f32.powf(db / 20.0)
 }
 
+/// Source frames consumed per output frame: the sample's decoded rate over the
+/// engine's output rate. One source frame per output frame is correct only when
+/// the two rates match; a 44.1 kHz recording answered one frame at a time by a
+/// 48 kHz engine finishes in 0.91875x its authored time and plays ~8.8% sharp.
+/// A missing or degenerate rate pair falls back to 1.0 — the identity that
+/// keeps a voice silent-free rather than inventing a ratio nothing measured.
+#[inline]
+fn playback_rate_ratio(source_rate: f32, output_rate: f32) -> f64 {
+    if source_rate > 0.0 && output_rate > 0.0 {
+        f64::from(source_rate) / f64::from(output_rate)
+    } else {
+        1.0
+    }
+}
+
 // ---------------------------------------------------------------------------
 // One-pole smoother
 // ---------------------------------------------------------------------------
@@ -89,9 +104,62 @@ pub struct AdsrEnvelope {
     level: f32,
     attack_rate: f32,
     decay_rate: f32,
+    /// Distance still to fall in the Decay stage, multiplied in isolation.
+    ///
+    /// Computing the decay as `sustain + (level - sustain) * rate` rounds the
+    /// sum at the *sustain's* magnitude, so once the gap's own step
+    /// `gap * (1 - rate)` drops under half an ULP of that sum — around gap
+    /// 0.25 for a 0.5 sustain — the level freezes above sustain and the stage
+    /// never reaches Sustain. Multiplying the gap alone rounds at the gap's
+    /// own magnitude, where a sub-1.0 multiplier always progresses (the same
+    /// property the capped Release multiplier relies on), so any finite
+    /// authored decay falls the whole way to the settle threshold (#1891).
+    decay_gap: f32,
     sustain_level: f32,
     release_rate: f32,
     sample_rate: f32,
+}
+
+/// Per-sample increment for the envelope's linear Attack ramp.
+///
+/// The floor is the whole point and mirrors [`crossfade_rate_for`] exactly
+/// (#1891, same arithmetic fault #1863 fixed for the legato ramp): `tick`
+/// accumulates this into an `f32` `level`, and an `f32` add is a no-op once
+/// the addend falls below half the accumulator's ULP — 2.98e-8 near 1.0. The
+/// raw `1 / (attack * sample_rate)` crosses that line past ~700 s at 48 kHz,
+/// and the Attack macro multiplies the authored time by up to four, so a
+/// 175 s authored attack can already produce a stalled ramp. A stalled Attack
+/// never reaches 1.0, so the stage never advances, the voice is held, and the
+/// note stays inaudible for as long as the stream plays. Nothing reclaims the
+/// voice — the sample is still playing, unlike the stalled-Release case where
+/// the stream runs dry.
+///
+/// `f32::EPSILON` caps the ramp at ~175 s at 48 kHz, the same deliberately
+/// round tradeoff `crossfade_rate_for` records: only a value the arithmetic
+/// cannot express at all is bent, and it is bent to the longest attack that
+/// still completes rather than rejected.
+///
+/// Audio-thread safe: arithmetic only.
+#[inline]
+fn attack_rate_for(attack_secs: f32, sample_rate: f32) -> f32 {
+    let samples = (attack_secs * sample_rate).max(1.0);
+    (1.0 / samples).max(f32::EPSILON)
+}
+
+/// Per-sample multiplier for the exponential Decay and Release stages.
+///
+/// `(-1/(time*sample_rate)).exp()` rounds to exactly `1.0` in `f32` once the
+/// exponent falls below half an ULP — past ~700 s — and `level *= 1.0` then
+/// never moves: a Release stage that rings forever, or a Decay that never
+/// reaches its sustain. Capping at one ULP below 1.0 keeps the stage falling
+/// geometrically for any finite authored time, so both always terminate; the
+/// cap only engages where the honest value is indistinguishable from 1.0.
+///
+/// Audio-thread safe: arithmetic only.
+#[inline]
+fn exponential_rate_for(time_secs: f32, sample_rate: f32) -> f32 {
+    let exact = (-1.0 / (time_secs * sample_rate).max(1.0)).exp();
+    exact.min(1.0 - f32::EPSILON)
 }
 
 impl AdsrEnvelope {
@@ -101,6 +169,7 @@ impl AdsrEnvelope {
             level: 0.0,
             attack_rate: 0.0,
             decay_rate: 0.0,
+            decay_gap: 0.0,
             sustain_level: 1.0,
             release_rate: 0.0,
             sample_rate,
@@ -109,20 +178,31 @@ impl AdsrEnvelope {
 
     pub fn configure(&mut self, params: &AdsrParams) {
         self.attack_rate = if params.attack > 0.001 {
-            1.0 / (params.attack * self.sample_rate)
+            attack_rate_for(params.attack, self.sample_rate)
         } else {
             1.0 // instant
         };
         self.decay_rate = if params.decay > 0.001 {
-            (-1.0 / (params.decay * self.sample_rate)).exp()
+            exponential_rate_for(params.decay, self.sample_rate)
         } else {
             0.0
         };
         self.sustain_level = params.sustain;
         self.release_rate = if params.release > 0.001 {
-            (-1.0 / (params.release * self.sample_rate)).exp()
+            exponential_rate_for(params.release, self.sample_rate)
         } else {
             0.0
+        };
+        // A reconfiguration mid-Decay recomputes the gap from the falling
+        // level against the new sustain, so the fall continues from where the
+        // voice is; an unconditional `1 - sustain` reset here would snap a
+        // falling voice back toward full scale. Before Decay is ever entered
+        // the other branch holds the distance a fresh attack will fall, so
+        // entering Decay needs no special first step.
+        self.decay_gap = if self.stage == EnvelopeStage::Decay {
+            (self.level - self.sustain_level).max(0.0)
+        } else {
+            (1.0 - self.sustain_level).max(0.0)
         };
     }
 
@@ -150,11 +230,15 @@ impl AdsrEnvelope {
                 self.level
             }
             EnvelopeStage::Decay => {
-                self.level =
-                    self.sustain_level + (self.level - self.sustain_level) * self.decay_rate;
-                if (self.level - self.sustain_level).abs() < 0.001 {
+                // The gap falls in isolation — see `decay_gap` for why the
+                // gap must not be re-summed against the sustain per step.
+                self.decay_gap *= self.decay_rate;
+                if self.decay_gap.abs() < 0.001 {
+                    self.decay_gap = 0.0;
                     self.level = self.sustain_level;
                     self.stage = EnvelopeStage::Sustain;
+                } else {
+                    self.level = self.sustain_level + self.decay_gap;
                 }
                 self.level
             }
@@ -247,12 +331,16 @@ impl SamplePlayback {
 
     /// Configure playback from a zone's sample ref for a given MIDI note.
     /// If `pool` is provided, resolves end=0 to the actual sample frame count.
+    /// `output_rate` is the engine's output rate; the speed folds in the
+    /// sample's own decoded rate against it so pitch and duration survive a
+    /// rate change (issue #3715).
     pub fn configure_with_pool(
         &mut self,
         sample: &SampleRef,
         midi_note: u8,
         gain: f32,
         pool: &SamplePool,
+        output_rate: f32,
     ) {
         self.sample_id = sample.sample_id;
         self.root_key = sample.root_key;
@@ -274,31 +362,18 @@ impl SamplePlayback {
         self.gain = gain;
         self.active = true;
 
-        // Compute playback speed for pitch correction.
+        // Compute playback speed for pitch correction, times the rate
+        // conversion. Every stream — primary, legato crossfade, dynamic
+        // layer — configures through here, so the ratio cannot be routed
+        // around.
+        let source_rate = pool
+            .get(sample.sample_id)
+            .map(|e| e.sample_rate)
+            .unwrap_or(output_rate);
         let semitone_diff =
             midi_note as f64 - sample.root_key as f64 + sample.tune_cents as f64 / 100.0;
-        self.base_speed = (semitone_diff / 12.0).exp2();
-        self.speed = self.base_speed;
-    }
-
-    /// Configure playback from a zone's sample ref for a given MIDI note (no pool lookup).
-    pub fn configure(&mut self, sample: &SampleRef, midi_note: u8, gain: f32) {
-        self.sample_id = sample.sample_id;
-        self.root_key = sample.root_key;
-        self.tune_cents = sample.tune_cents;
-        self.start = sample.start;
-        self.end = sample.end;
-        self.loop_mode = sample.loop_mode;
-        self.loop_start = sample.loop_start;
-        self.loop_end = sample.loop_end;
-        self.loop_crossfade = sample.loop_crossfade;
-        self.position = sample.start as f64;
-        self.gain = gain;
-        self.active = true;
-
-        let semitone_diff =
-            midi_note as f64 - sample.root_key as f64 + sample.tune_cents as f64 / 100.0;
-        self.base_speed = (semitone_diff / 12.0).exp2();
+        self.base_speed =
+            (semitone_diff / 12.0).exp2() * playback_rate_ratio(source_rate, output_rate);
         self.speed = self.base_speed;
     }
 
@@ -727,8 +802,13 @@ impl LevainVoice {
         self.mic = zone.mic;
         self.samples_since_on = 0;
 
-        self.playback
-            .configure_with_pool(&zone.sample, note, db_to_linear(zone.gain_db), pool);
+        self.playback.configure_with_pool(
+            &zone.sample,
+            note,
+            db_to_linear(zone.gain_db),
+            pool,
+            self.sample_rate,
+        );
         self.layer_active = false;
         self.layer_gain_primary = 1.0;
         self.layer_gain_secondary = 0.0;
@@ -810,6 +890,7 @@ impl LevainVoice {
             note,
             db_to_linear(new_zone.gain_db),
             pool,
+            self.sample_rate,
         );
         self.playback.seek_to(target_start_position);
 
@@ -836,8 +917,13 @@ impl LevainVoice {
         sample_rate: f32,
         pool: &SamplePool,
     ) {
-        self.crossfade_playback
-            .configure_with_pool(transition_sample, note, 1.0, pool);
+        self.crossfade_playback.configure_with_pool(
+            transition_sample,
+            note,
+            1.0,
+            pool,
+            sample_rate,
+        );
         self.crossfade_amount = 0.0;
         self.crossfade_rate = crossfade_rate_for(crossfade_time_secs, sample_rate);
         self.crossfading = true;
@@ -853,6 +939,7 @@ impl LevainVoice {
             note,
             db_to_linear(zone.gain_db),
             pool,
+            self.sample_rate,
         );
         self.layer_active = true;
     }
@@ -1545,6 +1632,470 @@ mod tests {
                 "transition samples must change smoothly: step was {delta} between {prev} and {curr}"
             );
             prev = curr;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Source-rate vs output-rate playback (issue #3715)
+    // -----------------------------------------------------------------------
+
+    /// A one-shot sine sample decoded at `source_rate`, plus a zone whose root
+    /// is `root_key`: the shape every rate-family probe below plays.
+    fn tonal_sample(source_rate: f32, seconds: f32, freq: f32, root_key: u8) -> (SamplePool, Zone) {
+        let frames = (seconds * source_rate).round() as u32;
+        let data: Vec<f32> = (0..frames)
+            .map(|frame| ((frame as f32 / source_rate) * freq * std::f32::consts::TAU).sin())
+            .collect();
+        let mut pool = SamplePool::new();
+        let sample_id = pool
+            .add(data, frames, 1, source_rate)
+            .expect("test sample should fit the pool");
+        let zone = Zone {
+            id: 0,
+            key: KeyRange { lo: 0, hi: 127 },
+            vel: VelRange { lo: 0, hi: 127 },
+            articulation: 0,
+            rr_pos: 0,
+            rr_len: 1,
+            mic: 0,
+            is_release: false,
+            sample: SampleRef {
+                sample_id,
+                root_key,
+                tune_cents: 0,
+                start: 0,
+                end: frames,
+                loop_mode: LoopMode::NoLoop,
+                loop_start: 0,
+                loop_end: frames,
+                loop_crossfade: 0,
+            },
+            amp_env: AdsrParams {
+                attack: 0.001,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 0.001,
+            },
+            gain_db: 0.0,
+        };
+        (pool, zone)
+    }
+
+    /// Output frames a voice spends consuming its whole source — the issue's
+    /// source-frame probe read backwards. Renders every frame and returns
+    /// them, so the same pass measures the pitch a listener hears. The count
+    /// stops when the playhead, not the release tail, is spent.
+    fn render_until_playback_spent(
+        voice: &mut LevainVoice,
+        pool: &SamplePool,
+        cap: usize,
+    ) -> Vec<f32> {
+        let mut out = Vec::with_capacity(cap);
+        while voice.playback.active {
+            out.push(voice.tick(pool));
+            assert!(out.len() <= cap, "playback never ended within {cap} frames");
+        }
+        out
+    }
+
+    /// Rising crossings per output second over a rendered window — the pitch a
+    /// listener measures, floored so interpolation ripple cannot count.
+    fn rendered_hz(samples: &[f32], output_rate: f32) -> f32 {
+        let peak = samples.iter().fold(0.0_f32, |acc, s| acc.max(s.abs()));
+        assert!(
+            peak > 1e-3,
+            "render was silent (peak {peak}); nothing to measure"
+        );
+        let floor = peak * 0.25;
+        let mut crossings = 0;
+        let mut armed = false;
+        for sample in samples {
+            if *sample < -floor {
+                armed = true;
+            } else if *sample > floor && armed {
+                crossings += 1;
+                armed = false;
+            }
+        }
+        crossings as f32 * output_rate / samples.len() as f32
+    }
+
+    /// The audit's own probe: a half-second 440 Hz recording decoded at
+    /// 44.1 kHz must spend 22,050 output frames at a 44.1 kHz engine, 24,000
+    /// at 48 kHz and 48,000 at 96 kHz — and measure 440 Hz at all three. The
+    /// pre-fix voice advanced one source frame per output frame, so the 48 kHz
+    /// render ended after 22,050 frames at ~479 Hz.
+    #[test]
+    fn half_second_source_spends_half_a_second_of_output_at_every_engine_rate() {
+        for (output_rate, expected_frames) in [
+            (44_100.0_f32, 22_050_usize),
+            (48_000.0, 24_000),
+            (96_000.0, 48_000),
+        ] {
+            let (pool, zone) = tonal_sample(44_100.0, 0.5, 440.0, 69);
+            let mut voice = LevainVoice::new(output_rate);
+            voice.trigger(69, 0, 100, &zone, 0, 1.0, &pool);
+
+            let rendered = render_until_playback_spent(&mut voice, &pool, expected_frames * 2);
+            // One frame of slack: the playhead crosses `end` mid-frame, and the
+            // speed's f32 rounding can move that crossing by one tick. The
+            // pre-fix bug misses by 1,950 or 26,000 frames, not by one.
+            assert!(
+                (rendered.len() as i64 - expected_frames as i64).abs() <= 1,
+                "at {output_rate} Hz output the 22,050-frame source must take ~{expected_frames} output frames, took {}",
+                rendered.len()
+            );
+
+            let hz = rendered_hz(&rendered, output_rate);
+            assert!(
+                (hz - 440.0).abs() < 440.0 * 0.05,
+                "at {output_rate} Hz output the root-key render measured {hz:.1} Hz, not 440"
+            );
+        }
+    }
+
+    /// The rate ratio composes with the note-to-root transposition instead of
+    /// being replaced by it: +3 semitones must render ~523.25 Hz and last
+    /// source_frames / (2^(3/12) · 44100/48000) output frames at 48 kHz.
+    #[test]
+    fn transposition_composes_with_the_rate_ratio() {
+        let (pool, zone) = tonal_sample(44_100.0, 0.5, 440.0, 69);
+        let output_rate = 48_000.0;
+        let mut voice = LevainVoice::new(output_rate);
+        voice.trigger(72, 0, 100, &zone, 0, 1.0, &pool);
+
+        let expected_speed = 2.0_f64.powf(3.0 / 12.0) * f64::from(44_100.0 / 48_000.0);
+        assert!(
+            (voice.playback.base_speed - expected_speed).abs() < 1e-9,
+            "base speed {} must be the transposition times the rate ratio {expected_speed}",
+            voice.playback.base_speed
+        );
+
+        let expected_frames = 22_050.0 / expected_speed;
+        let rendered = render_until_playback_spent(&mut voice, &pool, 100_000);
+        // Half a frame of drift each way: the crossing tick rounds, the bug
+        // does not. Pre-fix this render ran 22,050 frames — 8% short.
+        assert!(
+            (rendered.len() as f64 - expected_frames).abs() <= 1.0,
+            "a +3-semitone note must shorten by the transposition alone: expected ~{expected_frames} output frames, took {}",
+            rendered.len()
+        );
+    }
+
+    /// A forward loop wraps once per source loop length divided by the total
+    /// speed: with the ratio folded in, a 44.1 kHz loop on a 48 kHz engine
+    /// takes 24,000 output frames per pass, not 22,050.
+    #[test]
+    fn loop_period_stretches_with_the_rate_ratio() {
+        let (pool, mut zone) = tonal_sample(44_100.0, 0.5, 220.0, 69);
+        zone.sample.loop_mode = LoopMode::Forward;
+        zone.sample.loop_start = 0;
+        zone.sample.loop_end = 22_050;
+        let output_rate = 48_000.0;
+        let mut voice = LevainVoice::new(output_rate);
+        voice.trigger(69, 0, 100, &zone, 0, 1.0, &pool);
+
+        let ratio = f64::from(44_100.0) / f64::from(48_000.0);
+        // Halfway through one loop pass: 12,000 output frames have consumed
+        // exactly 11,025 source frames.
+        for _ in 0..12_000 {
+            voice.tick(&pool);
+        }
+        assert!(
+            (voice.playback.position - 11_025.0).abs() < 0.01,
+            "after 12,000 output frames the playhead must sit at source frame 11,025, got {}",
+            voice.playback.position
+        );
+        // One full pass: 24,000 output frames wrap onto the loop start.
+        for _ in 0..12_000 {
+            voice.tick(&pool);
+        }
+        assert!(
+            voice.playback.position < ratio * 2.0,
+            "after 24,000 output frames the loop must have wrapped, playhead at {}",
+            voice.playback.position
+        );
+    }
+
+    /// Every secondary stream configures through the same route as the
+    /// primary, so the legato crossfade, the true-legato transition and the
+    /// CC1 dynamic layer all carry the ratio. Pre-fix, a legato slur at 48 kHz
+    /// slurred sharp even when the primary note was correct.
+    #[test]
+    fn secondary_streams_inherit_the_rate_ratio() {
+        let (pool, zone) = tonal_sample(44_100.0, 0.5, 440.0, 69);
+        let (_pool_alt, zone_alt) = tonal_sample(44_100.0, 0.5, 440.0, 71);
+        let output_rate = 48_000.0;
+        let ratio = f64::from(44_100.0) / f64::from(48_000.0);
+
+        // Crossfade legato: the incoming primary reconfigures against the pool.
+        let mut voice = LevainVoice::new(output_rate);
+        voice.trigger(69, 0, 100, &zone, 0, 1.0, &pool);
+        voice.start_crossfade(&zone_alt, 71, 0.05, output_rate, &pool, 0.0);
+        // zone_alt's root is 71 and the slur targets note 71: pitch-neutral, so
+        // the ratio is the whole base speed.
+        let expected = ratio;
+        assert!(
+            (voice.playback.base_speed - expected).abs() < 1e-9,
+            "crossfade-legato primary base speed {} missing the ratio",
+            voice.playback.base_speed
+        );
+
+        // True-legato transition sample in the secondary stream.
+        let mut voice = LevainVoice::new(output_rate);
+        voice.trigger(69, 0, 100, &zone, 0, 1.0, &pool);
+        voice.start_legato_transition(&zone_alt.sample, 71, 0.05, output_rate, &pool);
+        assert!(
+            (voice.crossfade_playback.base_speed - expected).abs() < 1e-9,
+            "true-legato transition base speed {} missing the ratio",
+            voice.crossfade_playback.base_speed
+        );
+
+        // CC1 dynamic layer stream.
+        let mut voice = LevainVoice::new(output_rate);
+        voice.trigger(69, 0, 100, &zone, 0, 1.0, &pool);
+        voice.set_dynamic_layer(&zone_alt, 71, &pool);
+        assert!(
+            (voice.layer_secondary.base_speed - expected).abs() < 1e-9,
+            "dynamic-layer base speed {} missing the ratio",
+            voice.layer_secondary.base_speed
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Envelope stages must complete for any finite authored time (issue #1891)
+    // -----------------------------------------------------------------------
+
+    /// 1e9 s of attack is far past the point where the raw `1/(attack*sr)`
+    /// increment falls under half an ULP of the accumulator near 1.0 — the
+    /// ramp used to freeze a few hundred nanoseconds above zero and the held
+    /// note never became audible. The floored increment must still carry the
+    /// stage to full level, in `1/EPSILON` samples.
+    #[test]
+    fn an_absurd_authored_attack_still_reaches_full_level() {
+        let mut env = AdsrEnvelope::new(SAMPLE_RATE);
+        env.configure(&AdsrParams {
+            attack: 1.0e9,
+            decay: 0.0,
+            sustain: 1.0,
+            release: 0.2,
+        });
+        env.trigger();
+
+        let bound = (1.0 / f32::EPSILON) as u64 + SAMPLE_RATE as u64;
+        let mut ticks = 0_u64;
+        while env.current_level() < 1.0 {
+            assert!(
+                ticks < bound,
+                "attack never reached full level: stuck at {} after {ticks} ticks",
+                env.current_level()
+            );
+            env.tick();
+            ticks += 1;
+        }
+        assert!(
+            ticks <= bound,
+            "floored attack took {ticks} ticks, past the 1/EPSILON bound"
+        );
+    }
+
+    /// The floor must only engage where the arithmetic cannot express the
+    /// authored rate: a plain 1 s attack still completes in its own
+    /// 44,100 samples, not at the 175 s floor.
+    #[test]
+    fn attacks_under_the_f32_limit_keep_their_authored_length() {
+        let mut env = AdsrEnvelope::new(SAMPLE_RATE);
+        let attack = 1.0_f32;
+        env.configure(&AdsrParams {
+            attack,
+            decay: 0.0,
+            sustain: 1.0,
+            release: 0.2,
+        });
+        env.trigger();
+
+        let expected = (attack * SAMPLE_RATE) as u64;
+        // The f32 sum drifts, so "authored length" means within a percent —
+        // the stall it must not be is eight million ticks away.
+        let slack = (expected as f64 * 0.01) as i64;
+        let mut ticks = 0_u64;
+        while env.current_level() < 1.0 {
+            ticks += 1;
+            env.tick();
+            assert!(
+                ticks as i64 <= expected as i64 + slack,
+                "1 s attack exceeded its authored {expected} samples"
+            );
+        }
+        assert!(
+            (ticks as i64 - expected as i64).abs() <= slack,
+            "1 s attack completed in {ticks} ticks, expected ~{expected}"
+        );
+    }
+
+    /// `exp(-1/(release*sr))` rounds to exactly `1.0` in f32 past ~700 s, so
+    /// the old Release stage multiplied by 1.0 forever and the note rang
+    /// until something else reclaimed the voice. The capped multiplier has to
+    /// carry the stage down to its 1e-5 idle threshold in bounded time.
+    #[test]
+    fn an_absurd_authored_release_still_reaches_idle() {
+        let mut env = AdsrEnvelope::new(SAMPLE_RATE);
+        env.configure(&AdsrParams {
+            attack: 0.0,
+            decay: 0.0,
+            sustain: 1.0,
+            release: 1000.0,
+        });
+        env.trigger();
+        while env.current_level() < 1.0 {
+            env.tick();
+        }
+        env.release();
+
+        // From 1.0 to the 1e-5 idle threshold at the capped rate is
+        // ln(1e5)/EPSILON samples; the bound allows slack over that.
+        let bound = (1.3 * (100_000.0_f32).ln() / f32::EPSILON) as u64;
+        let mut ticks = 0_u64;
+        while env.stage != EnvelopeStage::Idle {
+            assert!(
+                ticks < bound,
+                "release never reached idle: stuck at {} after {ticks} ticks",
+                env.current_level()
+            );
+            env.tick();
+            ticks += 1;
+        }
+    }
+
+    /// The Decay stage shares the Release arithmetic: past ~700 s its
+    /// multiplier rounded to 1.0 and the level sat above sustain forever,
+    /// never reaching Sustain. It must fall to the sustain in bounded time.
+    #[test]
+    fn an_absurd_authored_decay_still_reaches_sustain() {
+        let mut env = AdsrEnvelope::new(SAMPLE_RATE);
+        env.configure(&AdsrParams {
+            attack: 0.0,
+            decay: 1000.0,
+            sustain: 0.5,
+            release: 0.2,
+        });
+        env.trigger();
+        while env.current_level() < 1.0 {
+            env.tick();
+        }
+
+        // From 1.0 to within 0.001 of the 0.5 sustain is a 500:1 fall.
+        let bound = (2.0 * (500.0_f32).ln() / f32::EPSILON) as u64;
+        let mut ticks = 0_u64;
+        while env.stage != EnvelopeStage::Sustain {
+            assert!(
+                ticks < bound,
+                "decay never reached sustain: stuck at {} after {ticks} ticks",
+                env.current_level()
+            );
+            env.tick();
+            ticks += 1;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Reconfiguring mid-Decay must keep the fall continuous, not re-seed it
+    // -----------------------------------------------------------------------
+
+    /// An Attack/Release macro drag re-runs `configure` on every sounding
+    /// voice through `set_envelope_scaling`. The macro never touches sustain,
+    /// so nothing about the fall's targets changes — yet the old unconditional
+    /// `decay_gap = 1 - sustain` reset sent a voice falling through 0.7
+    /// straight back toward 1.0 on the next tick, an upward jump the player
+    /// hears as a re-attack. The gap must be recomputed from the falling
+    /// level, so the next tick continues from where the voice is.
+    #[test]
+    fn a_macro_reconfiguration_mid_decay_keeps_falling_from_the_current_level() {
+        let (pool, mut zone) = silent_headed_sample(0, 44_100);
+        zone.amp_env = AdsrParams {
+            attack: 0.0,
+            decay: 2.0,
+            sustain: 0.5,
+            release: 0.2,
+        };
+        let mut voice = LevainVoice::new(SAMPLE_RATE);
+        voice.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
+
+        // Instant attack; drive the envelope alone into mid-Decay so the
+        // reading is the envelope's own state, not the rendered gain.
+        voice.amp_env.tick();
+        while voice.amp_env.current_level() > 0.7 {
+            voice.amp_env.tick();
+        }
+        let pre = voice.amp_env.current_level();
+        assert!(
+            (0.6..=0.7).contains(&pre),
+            "helper must reach mid-Decay below the peak, got level {pre}"
+        );
+        assert_eq!(voice.amp_env.stage, EnvelopeStage::Decay);
+
+        voice.set_envelope_scaling(EnvelopeScaling {
+            attack: 1.0,
+            release: 4.0,
+        });
+
+        let after = voice.amp_env.tick();
+        assert!(
+            (after - pre).abs() < 1e-3,
+            "a reconfiguration mid-Decay must continue the fall from {pre}, next tick read {after}"
+        );
+        assert!(
+            after < 0.9,
+            "the envelope must not snap back toward full scale, tick read {after}"
+        );
+    }
+
+    /// Raising the sustain above the level a Decay is already at clamps the
+    /// recomputed gap to zero: the voice settles onto the new sustain and
+    /// holds there, rather than restarting its fall from full scale.
+    #[test]
+    fn raising_sustain_above_a_falling_level_clamps_the_gap_and_holds() {
+        let mut env = AdsrEnvelope::new(SAMPLE_RATE);
+        env.configure(&AdsrParams {
+            attack: 0.0,
+            decay: 2.0,
+            sustain: 0.5,
+            release: 0.2,
+        });
+        env.trigger();
+        env.tick(); // instant attack lands at 1.0 and enters Decay
+        while env.current_level() > 0.7 {
+            env.tick();
+        }
+        let pre = env.current_level();
+        assert!(
+            (0.6..=0.7).contains(&pre),
+            "helper must reach mid-Decay below the peak, got level {pre}"
+        );
+
+        env.configure(&AdsrParams {
+            attack: 0.0,
+            decay: 2.0,
+            sustain: 0.8,
+            release: 0.2,
+        });
+
+        let after = env.tick();
+        assert_eq!(
+            env.stage,
+            EnvelopeStage::Sustain,
+            "a clamped-to-zero gap must settle the stage on the next tick"
+        );
+        assert!(
+            (after - 0.8).abs() < 1e-4,
+            "the voice must settle onto the raised sustain, tick read {after}"
+        );
+        for _ in 0..1000 {
+            let held = env.tick();
+            assert!(
+                (held - 0.8).abs() < 1e-4,
+                "the raised sustain must hold, tick read {held}"
+            );
         }
     }
 }

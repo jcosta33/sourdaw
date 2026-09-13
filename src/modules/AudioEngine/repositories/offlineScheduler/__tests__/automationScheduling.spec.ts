@@ -769,6 +769,8 @@ describe('scheduleTrackAutomation', () => {
         });
 
         const ramps = deviceParam.linearRampToValueAtTime.mock.calls.map((call) => call[0] as number);
+        // `trem-depth` binds to `lfoDepth.gain` with an identity device→AudioParam
+        // law (no `convert`), so the emitted values ARE the device-space recurrence.
         const postStep = ramps.filter((value) => value > 0);
         // The slew produces the exact IIR sequence y[n]=y[n-1]+0.4*(1-y[n-1]):
         // 0.4, 0.64, 0.784, ... and settles exactly on the target.
@@ -825,6 +827,9 @@ describe('scheduleTrackAutomation', () => {
             regionStartSeconds: 64,
         });
 
+        // `trem-depth` binds with an identity device→AudioParam law (no
+        // `convert`), so the emitted values are already device space, where the
+        // clamp and the recurrence this case observes run.
         const postStep = deviceParam.linearRampToValueAtTime.mock.calls
             .map((call) => call[0] as number)
             .filter((value) => value > 0);

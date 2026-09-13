@@ -141,6 +141,19 @@ describe('startAudioRecording', () => {
         });
     });
 
+    it('connects the capture source only to the recording worklet, never to the audible strip', async () => {
+        const source = make_media_stream_source();
+        vi.mocked(audioEngine.context.createMediaStreamSource).mockReturnValue(source);
+
+        await expect(startAudioRecording('track-capture-only', vi.fn())).resolves.toBe(true);
+
+        // The session source's only edge is the capture edge into the worklet.
+        // The strip is not touched at all: listening edges belong to the
+        // input-monitoring repository, which respects the monitoring mode.
+        expect(vi.mocked(source.connect).mock.calls.map((call) => call[0])).toEqual([worklet_nodes[0]]);
+        expect(audioEngine.ensureTrackStrip).not.toHaveBeenCalled();
+    });
+
     it('should release the shared stream when start fails after microphone acquisition', async () => {
         vi.mocked(audioEngine.context.createMediaStreamSource).mockImplementationOnce(() => {
             throw new Error('source creation failed');

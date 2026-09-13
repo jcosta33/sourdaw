@@ -1154,4 +1154,66 @@ mod tests {
             );
         }
     }
+
+    /// Issue #3710 through the Layer: the same note-on at one fixed MIDI note
+    /// must hold its pitch and its one-shot length at every output rate. The
+    /// pre-fix engine advanced one source frame per output sample, so the
+    /// sampler read 48000/44100 sharp and short at 48 kHz.
+    #[test]
+    fn sampler_note_on_holds_pitch_and_length_across_output_rates() {
+        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
+            let mut layer = Layer::new(sample_rate, MAX_STEAL_TAILS_PER_LAYER);
+            layer.set_param("engine", 6.0);
+            layer.note_on(60, 100, note_frequency(60));
+
+            const BLOCK: usize = 128;
+            let mut rendered: Vec<f32> = Vec::new();
+            for _ in 0..((2.0 * sample_rate) as usize / BLOCK) {
+                let mut left = vec![0.0_f32; BLOCK];
+                let mut right = vec![0.0_f32; BLOCK];
+                layer.render(&mut left, &mut right, &[], sample_rate);
+                let sounding = rendered.iter().any(|s| s.abs() > 1.0e-4);
+                rendered.extend_from_slice(&left);
+                if sounding && left.iter().all(|s| s.abs() < 1.0e-4) {
+                    break; // the one-shot spent its buffer and went silent
+                }
+            }
+
+            let duration_secs = rendered.len() as f32 / sample_rate;
+            assert!(
+                (duration_secs - 1.0).abs() < 0.05,
+                "at {sample_rate} Hz the one-shot note lasted {duration_secs:.3} s, not 1.0"
+            );
+
+            // Pitch from the crossings in the loud head of the decaying burst.
+            let peak = rendered.iter().fold(0.0_f32, |acc, s| acc.max(s.abs()));
+            assert!(
+                peak > 0.05,
+                "at {sample_rate} Hz the layer rendered silence"
+            );
+            let floor = peak * 0.25;
+            let mut first: Option<usize> = None;
+            let mut last = 0;
+            let mut crossings = 0;
+            let mut armed = false;
+            for (index, &sample) in rendered.iter().enumerate() {
+                if sample < -floor {
+                    armed = true;
+                } else if sample > floor && armed {
+                    crossings += 1;
+                    armed = false;
+                    if first.is_none() {
+                        first = Some(index);
+                    }
+                    last = index;
+                }
+            }
+            let span = (last - first.expect("at least one crossing")) as f32 / sample_rate;
+            let hz = (crossings as f32 - 1.0) / span;
+            assert!(
+                (hz - 440.0).abs() < 440.0 * 0.05,
+                "at {sample_rate} Hz the note measured {hz:.1} Hz against the source's own 440 Hz"
+            );
+        }
+    }
 }

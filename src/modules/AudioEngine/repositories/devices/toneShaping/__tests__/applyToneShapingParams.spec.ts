@@ -46,28 +46,41 @@ describe('applyDistortionParams', () => {
 });
 
 describe('applyDeEsserParams', () => {
-    it('applies threshold, freq and range (abs/2 clamped to >=1)', () => {
+    // Split-band graph (issue #3735): nodes are
+    // [input, bandpass, controlGain, wet, cancel, listen, inputGain, output,
+    //  absShaper, envFilter, threshLin, envSum, kneeShaper].
+    it('applies threshold and detector frequency, and Range as a dB reduction limit', () => {
         const ctx = createMockAudioContext();
         const device = createDeEsser(asBaseAudioContext(ctx));
-        applyDeEsserParams(device, { 'deess-threshold': -30, 'deess-freq': 7200, 'deess-range': 10 });
-        expect(param(device.nodes[4], 'threshold').value).toBe(-30);
-        expect(param(device.nodes[3], 'frequency').value).toBe(7200);
-        expect(param(device.nodes[4], 'ratio').value).toBe(Math.max(1, Math.abs(10) / 2));
+        applyDeEsserParams(device, { 'deess-threshold': -30, 'deess-freq': 7200, 'deess-range': -12 });
+        // The threshold knob lands as the negated linear subtractor on the
+        // envelope sum's constant source (see createDeEsser).
+        expect(param(device.nodes[10], 'offset').value).toBeCloseTo(-(10 ** (-30 / 20)), 12);
+        expect(param(device.nodes[1], 'frequency').value).toBe(7200);
+        // Both band taps carry 10^(range/20): the reduction limit and the
+        // cancellation weight are one law (see createDeEsser).
+        expect(param(device.nodes[3], 'gain').value).toBeCloseTo(10 ** (-12 / 20), 12);
+        expect(param(device.nodes[4], 'gain').value).toBeCloseTo(-(10 ** (-12 / 20)), 12);
     });
 
-    it('clamps ratio to a minimum of 1 for sub-zero range magnitudes', () => {
+    it('does not let Range touch the threshold subtractor or the reduction curve', () => {
         const ctx = createMockAudioContext();
         const device = createDeEsser(asBaseAudioContext(ctx));
-        applyDeEsserParams(device, { 'deess-range': -1 }); // |−1|/2 = 0.5 → clamped to 1
-        expect(param(device.nodes[4], 'ratio').value).toBe(1);
+        const curveBefore = (device.nodes[12] as unknown as { curve: Float32Array }).curve;
+        const offsetBefore = param(device.nodes[10], 'offset').value;
+        applyDeEsserParams(device, { 'deess-range': -20 });
+        // Range lives only on the two band taps; the reduction law above them
+        // — the threshold subtractor and the reduction curve — must not move.
+        expect(param(device.nodes[10], 'offset').value).toBe(offsetBefore);
+        expect((device.nodes[12] as unknown as { curve: Float32Array }).curve).toBe(curveBefore);
     });
 
     it('leaves values untouched when params object is empty', () => {
         const ctx = createMockAudioContext();
         const device = createDeEsser(asBaseAudioContext(ctx));
-        const before = param(device.nodes[4], 'threshold').value;
+        const before = param(device.nodes[10], 'offset').value;
         applyDeEsserParams(device, {});
-        expect(param(device.nodes[4], 'threshold').value).toBe(before);
+        expect(param(device.nodes[10], 'offset').value).toBe(before);
     });
 });
 

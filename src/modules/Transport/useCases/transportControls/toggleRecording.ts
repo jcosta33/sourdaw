@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { getTrackEligibility } from '#/modules/Arrangement/stores';
 import { getTrackStoreState, updateClip, startRecording } from '#/modules/Arrangement/useCases';
 import {
     resumeEngine,
@@ -235,6 +236,23 @@ export function toggleRecording(): void {
         if (!state.isPlaying) {
             void startPlayback();
         }
+        return;
+    }
+
+    // Record needs a take target. `startRecording` opens take clips on armed,
+    // recording-eligible tracks; with none armed it creates nothing, yet the
+    // transport below would present an engaged recording and roll playback
+    // under its name — a record button that captures nothing and says so only
+    // in its tooltip. Refuse with the arm guidance instead (#3679). The same
+    // admission governs the count-in branch below: counting in for a take
+    // that cannot exist is the same defect one count earlier. The punch arm
+    // above stays open — it engages no recording, and the scheduler owns the
+    // window it arms.
+    const hasArmedTakeTarget =
+        getTrackStoreState()?.tracks.some((track) => track.armed && getTrackEligibility(track.kind).acceptsRecording) ??
+        false;
+    if (!hasArmedTakeTarget) {
+        notifyUser('No track is armed for recording. Arm a track, then press Record.', 'warning');
         return;
     }
 

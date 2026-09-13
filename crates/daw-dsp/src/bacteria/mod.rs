@@ -134,7 +134,10 @@ impl BacteriaInstance {
     /// Source IDs: 0=LFO1, 1=LFO2, 2=envelope follower, 3=Lorenz X, 4=Lorenz Z,
     /// 5=step sequencer, 6-13=macros 0-7.
     ///
-    /// Target param IDs: 0=global mix, 1-6=band 0-5 gain (linear offset).
+    /// Target param IDs: 0=global mix, 1-6=band 0-5 gain (linear offset), and
+    /// `16 + band*16 + slot` for one band's module parameters — slot 0 = drive,
+    /// slot 1 = filter cutoff, in each knob's own units (additive offsets).
+    /// Anything at or past `16 + 6*16` names nothing and is rejected.
     pub fn add_mod_assignment(&mut self, source_id: u8, target_param: u16, amount: f32) {
         self.engine
             .add_mod_assignment(source_id, target_param, amount);

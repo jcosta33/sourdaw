@@ -293,6 +293,8 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    setClipAudioAssetStager: noop,
+    stageAudioBufferAsset: noop,
     acceptsExternalPluginAutomationParameter: noop,
     clampDeviceParameterValue: noop,
     clampExternalPluginAutomationValue: noop,
@@ -356,6 +358,8 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
 }));
 
 vi.mock('#/modules/AudioRendering/useCases', () => ({
+    stageAudioBufferAsset: vi.fn(),
+
     getAudioRenderingHandlers: sentinelHandlers('AudioRendering'),
 }));
 

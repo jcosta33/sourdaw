@@ -1,7 +1,7 @@
 import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { readBeatAtSamples, readSecondsAtBeat, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../../models/Track';
@@ -9,8 +9,15 @@ import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
 import { collectTracksClipBufferIds } from '../timeOperations/collectTracksClipBufferIds';
 
+import { commitMixerAutomation, type CommittedMixerAutomation } from './commitMixerAutomation';
 import { detectSilentBake } from './detectSilentBake';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
+import { resolveBouncedClipEndBeat } from './resolveBouncedClipEndBeat';
+
+/** Fader position of a track whose mixer moves now live in its bounced samples. */
+const COMMITTED_FADER_GAIN = 1;
+/** Pan position of a track whose mixer moves now live in its bounced samples. */
+const COMMITTED_PAN = 0;
 
 /**
  * Re-enters an open storage transaction. Structural twin of the type in
@@ -144,12 +151,28 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     const audioBufferId = `bounce-${trackId}-${Date.now()}`;
     cacheAudioBuffer({ buffer: renderedBuffer, bufferId: audioBufferId });
 
+    // An auto-tail render captures and keeps the decay past the source clips,
+    // so the clip must span the buffer's own duration mapped back through the
+    // tempo map — writing the musical end would leave the tail cached but
+    // unplayed. Manual tail already expresses its extension in beats, and tail
+    // off renders exactly the musical span, so both keep `finalEndBeat`.
+    let bouncedEndBeat = finalEndBeat;
+    if (options.tailHandling === 'auto') {
+        bouncedEndBeat = resolveBouncedClipEndBeat({
+            startBeat,
+            musicalEndBeat: endBeat,
+            renderedBuffer,
+            timelineSecondsAtBeat: (beat) => readSecondsAtBeat({ beat }),
+            projectSampleToBeat: readBeatAtSamples,
+        });
+    }
+
     const bouncedClip: Clip = {
         id: `bounced-clip-${crypto.randomUUID()}`,
         trackId: options.destination === 'replace' ? trackId : `track-bounce-${crypto.randomUUID()}`,
         name: `${track.name} (bounced)`,
         startBeat,
-        endBeat: finalEndBeat,
+        endBeat: bouncedEndBeat,
         type: 'audio',
         audioBufferId,
         fadeInBeats: 0,
@@ -168,6 +191,25 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     // Snapshot for undo
     const tracksBefore = structuredClone(freshState.tracks);
 
+    // "Include Automation" bakes the target's fader and pan — and the moves of
+    // its gain/pan automation lanes — into the samples (`projectStripTrack`
+    // seeds the strip from them). The destination replays those samples through
+    // a strip of its own, so per the bake's own law the committed state there
+    // is the identity: the movements live in the audio now, and retaining the
+    // source values would apply every mixer move a second time (source gain
+    // 0.5 auditions as 0.25). The same reasoning retires the target's sends on
+    // Replace when the bounce captured the returns — New Track already writes
+    // `[]` — or the baked wet and the live send would both apply.
+    //
+    // The mixer commit is gated on this bounce owning its undo entry because
+    // the one caller that suppresses it (consolidateAllTracks) inverts the
+    // write through a track-clip-state restore that does not carry gain/pan;
+    // committing there would write a level undo cannot put back. That path
+    // keeps its previous behavior, and only a bounce whose undo covers the
+    // write may retire automation lanes, restoring them on undo.
+    const commitsMixer = options.includeAutomation && options.recordUndoEntry !== false;
+    let committedMixerAutomation: CommittedMixerAutomation | null = null;
+
     if (options.destination === 'replace') {
         scope(() => {
             trackStore.set({
@@ -180,10 +222,16 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
                         ...time,
                         clips: [bouncedClip],
                         devices: options.includeInserts ? [] : time.devices,
+                        sends: options.includeSends ? [] : time.sends,
+                        gain: commitsMixer ? COMMITTED_FADER_GAIN : time.gain,
+                        pan: commitsMixer ? COMMITTED_PAN : time.pan,
                     };
                 }),
             });
         });
+        if (commitsMixer) {
+            committedMixerAutomation = commitMixerAutomation(trackId);
+        }
     } else {
         const altId = `alt-bounce-${crypto.randomUUID().slice(0, 8)}`;
         const newTrack: Track = {
@@ -194,6 +242,8 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
             clips: [bouncedClip],
             devices: options.includeInserts ? [] : track.devices,
             sends: options.includeSends ? [] : track.sends,
+            gain: commitsMixer ? COMMITTED_FADER_GAIN : track.gain,
+            pan: commitsMixer ? COMMITTED_PAN : track.pan,
             frozen: false,
             freezeState: { status: 'unfrozen' },
             alternatives: [{ id: altId, name: 'Bounced', clips: [bouncedClip] }],
@@ -229,12 +279,14 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
                 if (state1) {
                     trackStore.set({ ...state1, tracks: tracksBefore });
                 }
+                committedMixerAutomation?.restore();
             },
             () => {
                 const state1 = trackStore.value;
                 if (state1) {
                     trackStore.set({ ...state1, tracks: tracksAfter });
                 }
+                committedMixerAutomation?.retire();
             },
             { restoresBufferIds }
         );

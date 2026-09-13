@@ -1,31 +1,36 @@
 //! Push path for the asks a hosted plugin makes from inside its own callbacks.
 //!
 //! A plugin reports that its own state changed by calling
-//! `clap_host_state.mark_dirty()` and announces that its parameter contract
-//! moved by calling `clap_host_params.rescan()`. Inside either the host may
-//! touch neither the project nor re-enter the plugin, so the backend records
-//! the ask and wakes this watcher.
+//! `clap_host_state.mark_dirty()`, announces that its parameter contract
+//! moved by calling `clap_host_params.rescan()`, and asks the host to call
+//! `on_main_thread` on it via `clap_host.request_callback()`. Inside any of
+//! them the host may touch neither the project nor re-enter the plugin, so
+//! the backend records the ask and wakes this watcher.
 //!
 //! The watcher is a dedicated non-RT thread that blocks in `recv()` until a
 //! plugin actually asks, then carries the follow-up out through the
 //! `SharedHostedPlugin` control seam: a recorded state change becomes a
-//! `plugin-state-dirty` event the project's dirty tracking listens for, and a
+//! `plugin-state-dirty` event the project's dirty tracking listens for, a
 //! rescan re-enumerates the parameter contract and becomes
-//! `plugin-parameters-rescanned`. Same shape as the latency watcher, and for
-//! the same reason — nothing polls, so an idle session does no work at all.
+//! `plugin-parameters-rescanned`, and a main-thread callback request becomes
+//! the `on_main_thread` plugin call itself. Same shape as the latency watcher,
+//! and for the same reason — nothing polls, so an idle session does no work at
+//! all.
 //!
 //! ## What may be routed through this wake
 //!
 //! The wake allocates: it copies the instance id and takes a channel node. So an
 //! ask belongs here only if the thread a plugin may raise it on is one that may
 //! allocate — and CLAP does not supply that wholesale, it is a check each ask
-//! must be made against by its own annotation. `mark_dirty` and `params.rescan`
-//! are `[main-thread]` and pass it. `params.request_flush` and
-//! `gui.request_resize` are `[thread-safe]`, so a plugin may raise either from
-//! inside `process()`; both fail the check and do not come here at all, being
-//! recorded as a flag or a size slot plus a process-wide hint and answered by
-//! the parameter-event drain — see [`crate::host::plugin_parameter_events`] and
-//! [`apply_pending_editor_resizes`].
+//! must be made against by its own annotation. `mark_dirty`, `params.rescan`
+//! and `request_callback` are `[main-thread]` and pass it. `params
+//! .request_flush` and `gui.request_resize` are `[thread-safe]`, so a plugin
+//! may raise either from inside `process()`; both fail the check and do not
+//! come here at all, being recorded as a flag or a size slot plus a
+//! process-wide hint and answered by the parameter-event drain — see
+//! [`crate::host::plugin_parameter_events`] and [`apply_pending_editor_resizes`].
+//! (`request_restart` is `[thread-safe]` the same way; its hint is serviced by
+//! the latency watcher.)
 //!
 //! It serves engine-owned instances only, which is where the wake is installed.
 //! An instance the native engine never took records a state change nothing
@@ -38,7 +43,9 @@ use crate::events::{EventSink, EventSinkExt};
 use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::{all_engine_runtimes, retry_unreached_instance, runtime_for_instance};
 use crate::state::EnginePluginInstanceData;
-use daw_plugin_host::{signal_pending_editor_resize, AudioPlugin, PluginHostRequest};
+use daw_plugin_host::{
+    signal_pending_editor_resize, AudioPlugin, HostedPluginRuntime, PluginHostRequest,
+};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Sender};
@@ -318,6 +325,23 @@ fn cache_parameters(
     }
 }
 
+/// Make the `on_main_thread` call a `request_callback` ask asked for.
+///
+/// The plugin raised the request precisely so this call would happen — a worker
+/// result or editor update it parked until the host's main thread could run it
+/// — so the follow-up is the call itself rather than an event. CLAP marks
+/// `on_main_thread` `[main-thread]`, and the control path behind this seam is
+/// the host's main-thread service, the same thread convention every other
+/// `[main-thread]` plugin call here follows. The ask is a flag with no payload,
+/// so a visit that finds the plugin mid-block loses nothing by trying again
+/// later: the ask is idempotent and the plugin raises it again if its work
+/// still waits.
+fn carry_main_thread_callback(runtime: &SharedHostedPlugin) -> Result<(), String> {
+    runtime.with_control(CONTROL_TIMEOUT, |plugin| {
+        Ok(plugin.service_main_thread_callback())
+    })
+}
+
 /// Take the plugin's state-change flag and emit it, reporting whether the
 /// follow-up reached the plugin at all — which is what decides a retry, and is a
 /// different question from whether there was a flag to take.
@@ -365,6 +389,9 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
                         }
                         PluginHostRequest::ParametersRescan => {
                             rescan_parameters(&runtime, instance_id, &engine_plugins, &*events)
+                        }
+                        PluginHostRequest::MainThreadCallback => {
+                            carry_main_thread_callback(&runtime)
                         }
                     },
                     || runtime.ensure_public_control_allowed().is_ok(),
@@ -685,6 +712,40 @@ mod tests {
         .expect("payload serialises");
 
         assert_eq!(json, r#"{"instance_id":"inst-7"}"#);
+    }
+
+    /// #3746's carrying half: a recorded `request_callback` ask must reach the
+    /// plugin as an `on_main_thread` service through the control seam, not die
+    /// on a watcher that has no arm for it. The fixture has no plugin body to
+    /// call, so the observable is the ask itself: the service visit consumes
+    /// it, where a no-op arm would leave it standing for every later visit.
+    #[test]
+    fn a_main_thread_callback_ask_is_carried_to_the_plugin_and_consumed_once() {
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Callback Fixture", vec![], false);
+        // Arm the ask exactly as the plugin's own callback would.
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_main_thread_callback_requested();
+        let runtime: SharedHostedPlugin = SharedHostedPlugin::new(wrapper.into());
+
+        assert!(
+            carry_main_thread_callback(&runtime).is_ok(),
+            "the carrier reaches the plugin through the control seam"
+        );
+
+        let wrapper = match runtime.into_inner() {
+            daw_plugin_host::HostedRuntime::Clap(wrapper) => wrapper,
+            daw_plugin_host::HostedRuntime::Vst3(_) => {
+                panic!("the VST3 backend has no command fixture")
+            }
+        };
+        assert!(
+            !wrapper
+                .engine_owned_command_fixture_host_state()
+                .take_main_thread_callback_requested(),
+            "the carried ask was consumed by the service, not left pending"
+        );
     }
 
     #[test]

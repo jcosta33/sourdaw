@@ -643,18 +643,24 @@ function assertDiscoveredCommandSchemas(
  * Wraps a WebLLM fixture so the first provider turn discovers the command
  * catalog it needs and only the second turn returns the actual plan, matching
  * the two-turn contract `runApplicationOwnedToolLoop` enforces.
+ *
+ * `planningRounds` sizes the fixture for the bounded correction loop: one
+ * correction attempt repeats the two-turn contract, so a case that exercises a
+ * rejected-then-retried plan admits `planningRounds: 2` (four provider turns)
+ * instead of failing the fixture on the correction round's first turn.
  */
 function createTurnTrackedWebLlmResponder(
-    buildFinalCalls: (userMessage: string) => Array<{ name: string; arguments: Record<string, unknown> }>
+    buildFinalCalls: (userMessage: string) => Array<{ name: string; arguments: Record<string, unknown> }>,
+    { planningRounds = 1 }: { planningRounds?: number } = {}
 ): (systemPrompt: string, userMessage: string) => Promise<string> {
     let turn = 0;
     return (_systemPrompt, userMessage) => {
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two WebLLM provider turns');
+        if (turn > planningRounds * 2) {
+            throw new Error(`Expected at most ${planningRounds * 2} WebLLM provider turns`);
         }
         const finalCalls = buildFinalCalls(userMessage);
-        if (turn === 1) {
+        if (turn % 2 === 1) {
             return Promise.resolve(JSON.stringify(catalogDiscoveryPlan(finalCalls)));
         }
         assertDiscoveredCommandSchemas(userMessage, finalCalls);
@@ -3241,8 +3247,18 @@ describe('drum bus prompt workflow', () => {
     it('fails closed when an editable audio track has no application-owned role evidence', async () => {
         setMf01Project({ 'track-room': (track) => ({ ...track, name: 'Audio 1' }) });
         runtimeMocks.generateWebLlmCompletion.mockImplementation(
-            createTurnTrackedWebLlmResponder(() =>
-                withWorkflowCapabilitySelection('drum-routing', asCommandBatchProposal(mf01ProviderPlan.slice(0, 3)))
+            createTurnTrackedWebLlmResponder(
+                () =>
+                    withWorkflowCapabilitySelection(
+                        'drum-routing',
+                        asCommandBatchProposal(mf01ProviderPlan.slice(0, 3))
+                    ),
+                // The rejection is correctable now, so the app gives the provider
+                // one bounded repair round. Role evidence is application-owned:
+                // the provider cannot manufacture it, so it re-proposes the same
+                // routes and the app rejects the batch again — still failed shut,
+                // with no proposal ever reaching confirmation.
+                { planningRounds: 2 }
             )
         );
 

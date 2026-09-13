@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
 
 import { ChevronDown } from 'lucide-react';
 
@@ -13,9 +13,11 @@ import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { CRUST_OVERSAMPLE_FACTORS, type CrustPatch, type CrustStreamingPreset } from '../../models/CrustPatch';
-import { crustStore, defaultCrustState } from '../../stores/crustStore';
+import { crustStore, getCrustState } from '../../stores/crustStore';
+import { hydrateCrustPatchFromProject } from '../../useCases/crustParamBridge/hydrateCrustPatchFromProject';
 import { loadCrustPatchWithAudio } from '../../useCases/crustParamBridge/loadCrustPatchWithAudio';
 import { setCrustParamWithAudio } from '../../useCases/crustParamBridge/setCrustParamWithAudio';
 import { CRUST_PRESETS } from '../../useCases/crustPresets';
@@ -26,6 +28,7 @@ import { CrustControlZone } from '../components/CrustControlZone';
 import { CrustGainStrip } from '../components/CrustGainStrip';
 import { CrustMeteringStrip } from '../components/CrustMeteringStrip';
 import { CrustWaveformDisplay } from '../components/CrustWaveformDisplay';
+import { useCrustMeters } from '../hooks/useCrustMeters';
 
 // `satisfies` ties every row's `id` to the model's CrustStreamingPreset union at
 // compile time while preserving the literal `as const` types the menu relies on.
@@ -94,23 +97,43 @@ const MetricTile = ({ label, value, detail }: { label: string; value: string; de
     <DawPluginMetricTile className="crust-window min-w-[92px]" label={label} value={value} detail={detail} />
 );
 
+// The instances map is empty until this device's first store write; the
+// per-device accessors fall back to the default patch rather than crashing the
+// panel (§209.1).
+const defaultCrustInstances: Record<string, never> = {};
+const defaultTrackState = { tracks: [], selectedTrackId: null, ghostClips: [] };
+
 export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    // §209.1 — Use a typed default instead of the live store value. A
-    // store whose value is null at mount no longer crashes the panel.
-    const state = useStore(crustStore, defaultCrustState);
+    // Per-device patch state (#3672): the panel renders the slice keyed by its
+    // own deviceId — a second Crust instance ticking or writing elsewhere
+    // cannot move this desk. Project hydration follows the Gluten pattern: the
+    // store slice is re-projected from the device's persisted parameterValues
+    // on mount and on every relevant project change (#3673), so commands, undo,
+    // and collaborator writes that bypass this panel's setter still arrive.
+    const allInstances = useStore(crustStore, defaultCrustInstances);
+    const trackState = useStore(trackStore, defaultTrackState);
+    const { patch } = allInstances[deviceId] ?? getCrustState(deviceId);
+    const meters = useCrustMeters(deviceId);
     const [presetMenuOpen, setPresetMenuOpen] = useState(false);
     const [streamingMenuOpen, setStreamingMenuOpen] = useState(false);
 
-    const patch = state.patch;
-    const grDb = state.grDb;
-    const inputDb = state.inputDb;
-    const outputDb = state.outputDb;
-    const lufsIntegrated = state.lufsIntegrated;
-    const lufsShortTerm = state.lufsShortTerm;
-    const lufsMomentary = state.lufsMomentary;
-    const lra = state.lra;
-    const truepeakMax = state.truepeakMax;
-    const truepeakExceeded = state.truepeakExceeded;
+    const grDb = meters.grDb;
+    const inputDb = meters.inputDb;
+    const outputDb = meters.outputDb;
+    const lufsIntegrated = meters.lufsIntegrated;
+    const lufsShortTerm = meters.lufsShortTerm;
+    const lufsMomentary = meters.lufsMomentary;
+    const lra = meters.lra;
+    const truepeakMax = meters.truepeakMax;
+    const truepeakExceeded = meters.truepeakExceeded;
+
+    const projectParameterValues = trackState.tracks
+        .flatMap((track) => track.devices)
+        .find((device) => device.id === deviceId)?.parameterValues;
+
+    useEffect(() => {
+        hydrateCrustPatchFromProject(deviceId);
+    }, [deviceId, projectParameterValues]);
 
     const lufsTarget = getLufsTarget(patch.streamingPreset);
     const activeStreamingPreset = STREAMING_PRESETS.find((preset) => preset.id === patch.streamingPreset);
@@ -138,7 +161,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             active={patch.uiLevel === level}
                             tone="copper"
                             size="sm"
-                            onClick={() => setCrustPanelUiLevel(level)}
+                            onClick={() => setCrustPanelUiLevel(deviceId, level)}
                         >
                             L{level}
                         </DawPluginChip>
@@ -423,7 +446,12 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                     >
                         Delta
                     </DawPluginChip>
-                    <DawPluginChip type="button" tone="copper" size="sm" onClick={() => resetCrustPanelMeters()}>
+                    <DawPluginChip
+                        type="button"
+                        tone="copper"
+                        size="sm"
+                        onClick={() => resetCrustPanelMeters(deviceId)}
+                    >
                         Reset
                     </DawPluginChip>
                 </Row>

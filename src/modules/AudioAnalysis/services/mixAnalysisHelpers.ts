@@ -4,7 +4,27 @@
  * `AudioAnalysis ↔ AiRuntime` barrel cycle without changing behaviour.
  */
 
-const SILENCE_FLOOR_DB = -100;
+export const SILENCE_FLOOR_DB = -100;
+
+/**
+ * Where a measurement came from. The analysers are read as instantaneous
+ * snapshots; a verdict produced from one is only as good as that snapshot, so
+ * the provenance travels with every result instead of being implied.
+ */
+export type MixEvidenceProvenance = 'live-analyser-snapshot';
+
+/**
+ * Whether the snapshot carried enough program evidence to advise on. Silence is
+ * a measured state (peak and RMS land exactly on the floor), not a healthy
+ * mix, so it is reported as insufficient instead of being advised on.
+ */
+export type MixEvidenceStatus =
+    | { availability: 'measured'; provenance: MixEvidenceProvenance }
+    | {
+          availability: 'insufficient';
+          reason: 'audio-context-suspended' | 'no-signal';
+          provenance: MixEvidenceProvenance;
+      };
 
 function linearToDb(linear: number): number {
     if (linear <= 0) {
@@ -40,12 +60,12 @@ export function readLevels(analyser: AnalyserNode): LevelReading {
 }
 
 export type FrequencyBands = {
-    sub: number;
-    bass: number;
-    lowMid: number;
-    mid: number;
-    highMid: number;
-    high: number;
+    sub: number | null;
+    bass: number | null;
+    lowMid: number | null;
+    mid: number | null;
+    highMid: number | null;
+    high: number | null;
 };
 
 const BAND_RANGES: Array<{ key: keyof FrequencyBands; low: number; high: number }> = [
@@ -57,6 +77,16 @@ const BAND_RANGES: Array<{ key: keyof FrequencyBands; low: number; high: number 
     { key: 'high', low: 6000, high: 20000 },
 ];
 
+/**
+ * Aggregate one FFT frame into the advertised bands.
+ *
+ * Each bin is attributed by its center frequency to at most one band
+ * (`low <= center < high`), so a bin can never feed two bands' advice. A band
+ * with no attributable bin is unresolvable at this analyser's frequency
+ * resolution — reported as `null` (unavailable), never as a number invented
+ * from a neighboring band's bin. A band with attributable bins but no energy is
+ * measured silence and reads the finite floor.
+ */
 export function readFrequencyBalance(analyser: AnalyserNode): FrequencyBands {
     const binCount = analyser.frequencyBinCount;
     const data = new Float32Array(binCount);
@@ -65,29 +95,44 @@ export function readFrequencyBalance(analyser: AnalyserNode): FrequencyBands {
     const sampleRate = analyser.context.sampleRate;
     const binWidth = sampleRate / (binCount * 2);
 
-    const bands: FrequencyBands = {
-        sub: SILENCE_FLOOR_DB,
-        bass: SILENCE_FLOOR_DB,
-        lowMid: SILENCE_FLOOR_DB,
-        mid: SILENCE_FLOOR_DB,
-        highMid: SILENCE_FLOOR_DB,
-        high: SILENCE_FLOOR_DB,
+    const powerSums: Record<keyof FrequencyBands, number> = {
+        sub: 0,
+        bass: 0,
+        lowMid: 0,
+        mid: 0,
+        highMid: 0,
+        high: 0,
+    };
+    const binCounts: Record<keyof FrequencyBands, number> = {
+        sub: 0,
+        bass: 0,
+        lowMid: 0,
+        mid: 0,
+        highMid: 0,
+        high: 0,
     };
 
-    for (const { key, low, high } of BAND_RANGES) {
-        const startBin = Math.max(1, Math.floor(low / binWidth));
-        const endBin = Math.min(binCount - 1, Math.ceil(high / binWidth));
-
-        let sum = 0;
-        let count = 0;
-        for (let i = startBin; i <= endBin; i++) {
-            const dbVal = data[i] ?? SILENCE_FLOOR_DB;
-            sum += 10 ** (dbVal / 10);
-            count++;
+    // Bin 0 is DC and is never attributed, so a band can only speak for bins
+    // that actually lie inside its advertised range.
+    for (let i = 1; i < binCount; i++) {
+        const centerHz = i * binWidth;
+        const band = BAND_RANGES.find((range) => centerHz >= range.low && centerHz < range.high);
+        if (!band) {
+            continue;
         }
+        const dbVal = data[i] ?? SILENCE_FLOOR_DB;
+        powerSums[band.key] += Number.isFinite(dbVal) ? 10 ** (dbVal / 10) : 0;
+        binCounts[band.key] += 1;
+    }
 
-        if (count > 0) {
-            bands[key] = 10 * Math.log10(sum / count);
+    const bands = {} as FrequencyBands;
+    for (const { key } of BAND_RANGES) {
+        if (binCounts[key] === 0) {
+            bands[key] = null;
+        } else if (powerSums[key] === 0) {
+            bands[key] = SILENCE_FLOOR_DB;
+        } else {
+            bands[key] = 10 * Math.log10(powerSums[key] / binCounts[key]);
         }
     }
 
@@ -115,10 +160,23 @@ export type DetectIssuesInput = {
     masterLevels: LevelReading;
     bands: FrequencyBands;
     trackLevels: TrackLevelSummary[];
+    status: MixEvidenceStatus;
 };
 
-export function detectIssues({ masterLevels, bands, trackLevels }: DetectIssuesInput): MixIssue[] {
+export function detectIssues({ masterLevels, bands, trackLevels, status }: DetectIssuesInput): MixIssue[] {
     const issues: MixIssue[] = [];
+
+    if (status.availability === 'insufficient') {
+        issues.push({
+            severity: 'info',
+            category: 'level',
+            message:
+                status.reason === 'audio-context-suspended'
+                    ? 'The audio engine is not running — no mix evidence was measured'
+                    : 'No signal measured at the master output — playback is stopped or the section is silent',
+        });
+        return issues;
+    }
 
     for (const tl of trackLevels) {
         if (tl.isClipping) {
@@ -139,17 +197,23 @@ export function detectIssues({ masterLevels, bands, trackLevels }: DetectIssuesI
         });
     }
 
-    const lowEnergy = (bands.sub + bands.bass) / 2;
-    const highEnergy = (bands.mid + bands.high) / 2;
-    if (lowEnergy - highEnergy > 6) {
-        issues.push({
-            severity: 'warning',
-            category: 'frequency',
-            message: `Mix is muddy — low-end energy exceeds mids/highs by ${(lowEnergy - highEnergy).toFixed(1)} dB`,
-        });
+    const lowBands = [bands.sub, bands.bass];
+    const highBands = [bands.mid, bands.high];
+    // A band comparison only runs when every band it compares was resolvable;
+    // null means "not measured", and advice on unmeasured bands is invented.
+    if (lowBands.every((band) => band !== null) && highBands.every((band) => band !== null)) {
+        const lowEnergy = (bands.sub! + bands.bass!) / 2;
+        const highEnergy = (bands.mid! + bands.high!) / 2;
+        if (lowEnergy - highEnergy > 6) {
+            issues.push({
+                severity: 'warning',
+                category: 'frequency',
+                message: `Mix is muddy — low-end energy exceeds mids/highs by ${(lowEnergy - highEnergy).toFixed(1)} dB`,
+            });
+        }
     }
 
-    if (bands.highMid - bands.mid > 6) {
+    if (bands.highMid !== null && bands.mid !== null && bands.highMid - bands.mid > 6) {
         issues.push({
             severity: 'warning',
             category: 'frequency',
@@ -192,10 +256,26 @@ export type GenerateSuggestionsInput = {
     bands: FrequencyBands;
     trackLevels: TrackLevelSummary[];
     issues: MixIssue[];
+    status: MixEvidenceStatus;
 };
 
-export function generateSuggestions({ masterLevels, bands, trackLevels, issues }: GenerateSuggestionsInput): string[] {
+export function generateSuggestions({
+    masterLevels,
+    bands,
+    trackLevels,
+    issues,
+    status,
+}: GenerateSuggestionsInput): string[] {
     const suggestions: string[] = [];
+
+    if (status.availability === 'insufficient') {
+        suggestions.push(
+            status.reason === 'audio-context-suspended'
+                ? 'Start the audio engine so the analyser can measure real output before asking for mix advice'
+                : 'Start playback (or audition a loud enough section) so the analyser has program material to measure'
+        );
+        return suggestions;
+    }
 
     for (const tl of trackLevels) {
         if (tl.isClipping) {
@@ -211,16 +291,20 @@ export function generateSuggestions({ masterLevels, bands, trackLevels, issues }
         );
     }
 
-    const lowEnergy = (bands.sub + bands.bass) / 2;
-    const highEnergy = (bands.mid + bands.high) / 2;
-    if (lowEnergy - highEnergy > 6) {
-        suggestions.push('Consider applying a high-pass filter on non-bass tracks to reduce low-end buildup');
+    if (bands.sub !== null && bands.bass !== null && bands.mid !== null && bands.high !== null) {
+        const lowEnergy = (bands.sub + bands.bass) / 2;
+        const highEnergy = (bands.mid + bands.high) / 2;
+        if (lowEnergy - highEnergy > 6) {
+            suggestions.push('Consider applying a high-pass filter on non-bass tracks to reduce low-end buildup');
+        }
     }
 
-    if (bands.highMid - bands.mid > 6) {
+    if (bands.highMid !== null && bands.mid !== null && bands.highMid - bands.mid > 6) {
         suggestions.push('Consider a gentle cut around 2–6 kHz on bright tracks to tame harshness');
     }
 
+    // The healthy verdict requires measured evidence: a snapshot that found no
+    // signal, or bands this analyser could not resolve, is never "good".
     if (issues.length === 0) {
         suggestions.push('Mix has good frequency balance and healthy levels');
     }

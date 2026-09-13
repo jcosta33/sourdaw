@@ -22,13 +22,15 @@ type TestRecordingClip = {
 
 type TestTrack = {
     id: string;
-    kind: 'audio' | 'midi';
+    kind: 'audio' | 'midi' | 'vca';
     armed: boolean;
 };
 
 type TestTrackState = {
     tracks: TestTrack[];
 };
+
+const armedAudioTrack = (): TestTrack[] => [{ id: 'track-audio', kind: 'audio', armed: true }];
 
 type TestRecordingResult = { kind: 'completed'; buffer: TestRecordingBuffer } | { kind: 'failed'; reason: string };
 
@@ -177,6 +179,7 @@ describe('toggleRecording', () => {
 
     it('should count in using the resolved meter at the playhead, not the flat numerator', () => {
         // Flat numerator is 4, but a 3/4 change lands at the record point (beat 12).
+        mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
         mocks.timeSignatureMapStore.value = {
             changes: [{ id: 'ts-1', beat: 12, numerator: 3, denominator: 4 }],
         };
@@ -197,10 +200,11 @@ describe('toggleRecording', () => {
         expect(mocks.scheduleClick).toHaveBeenCalledTimes(6);
     });
 
-    it('should count in at the tempo the tempo map gives the record point, not the base tempo', () => {
+    it('should count in at the tempo the tempo map gives the record point, not the base tempo', async () => {
         // Base tempo 120, but the map halves it to 60 exactly where recording
         // begins. The count-in has to hand the musician the pulse the recording
         // will keep, so its beats are one second apart, not half a second.
+        mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
         mocks.tempoMapStore.value = {
             changes: [{ id: 'tempo-1', beat: 8, tempo: 60, curve: 'instant' }],
         };
@@ -223,14 +227,17 @@ describe('toggleRecording', () => {
         elapse(3999);
         expect(mocks.startRecording).not.toHaveBeenCalled();
         elapse(1);
-        expect(mocks.startRecording).toHaveBeenCalled();
+        // The take opens after the recorder start answers, so the assertion
+        // must wait out the microtask the await introduces.
+        await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalled());
     });
 
-    it('should count a compound meter in its own beat unit rather than in quarter notes', () => {
+    it('should count a compound meter in its own beat unit rather than in quarter notes', async () => {
         // 6/8 at 120 BPM: six eighth notes span three quarter notes, so the bar
         // lasts 1.5 s and each click is 0.25 s apart. Reading the numerator as a
         // count of quarter notes stretched the count-in to 3 s — a bar and a half
         // of the music it was counting in.
+        mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -258,12 +265,15 @@ describe('toggleRecording', () => {
         elapse(1499);
         expect(mocks.startRecording).not.toHaveBeenCalled();
         elapse(1);
-        expect(mocks.startRecording).toHaveBeenCalled();
+        // The take opens after the recorder start answers, so the assertion
+        // must wait out the microtask the await introduces.
+        await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalled());
     });
 
     it('surfaces a failed engine resume during count-in instead of swallowing it', async () => {
         // The microtask-based `.catch` needs real timers to flush.
         vi.useRealTimers();
+        mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
         mocks.resumeEngine.mockRejectedValue(new Error('resume blocked'));
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
@@ -287,6 +297,7 @@ describe('toggleRecording', () => {
     });
 
     it('should fall back to the flat numerator when there is no time-sig change at the playhead', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
         mocks.timeSignatureMapStore.value = { changes: [] };
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
@@ -795,6 +806,7 @@ describe('toggleRecording', () => {
         // A null time-sig store must fall back to an empty change list (flat meter),
         // and a null metronome volume must fall back to 0.5 — otherwise the count-in
         // would schedule nothing or click silently.
+        mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
         mocks.timeSignatureMapStore.value = null;
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
@@ -817,11 +829,12 @@ describe('toggleRecording', () => {
         }
     });
 
-    it('records even when the track store snapshot is null', async () => {
-        // A null track store must degrade to an empty armed list (?? []) rather
-        // than throwing on the optional-chain; recording still proceeds.
-        // Punch is off here: this case is about the null store, and an armed
-        // punch region now hands the record window to the scheduler (M-255).
+    it('refuses to record — without throwing — when the track store snapshot is null', async () => {
+        // A null track store degrades to "no armed take target is knowable"
+        // rather than throwing on the optional-chain; the admission guard
+        // (#3679) refuses the gesture and warns, and nothing recording-shaped
+        // starts. Punch is off here: this case is about the null store, and
+        // an armed punch region hands the record window to the scheduler (M-255).
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: true,
@@ -833,10 +846,9 @@ describe('toggleRecording', () => {
 
         toggleRecording();
 
-        await vi.waitFor(() => {
-            expect(mocks.startRecording).toHaveBeenCalledOnce();
-        });
-        expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true });
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('No track is armed'), 'warning');
+        expect(mocks.startRecording).not.toHaveBeenCalled();
+        expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
     });
 
     it('ignores a recorder callback that fires before the record clip is assigned', async () => {
@@ -921,11 +933,97 @@ describe('toggleRecording', () => {
         expect(clipUpdate(recordingClip).endBeat).toBe(14);
     });
 
+    describe('recording admission (#3679)', () => {
+        // Record with nothing armed used to engage a recording transport that
+        // had no take target: no armed tracks, no recorder, `isRecording: true`,
+        // playback rolling. The admission guard refuses the gesture with
+        // arm-a-track guidance instead.
+        it('refuses the record gesture with arm guidance when no track is armed', async () => {
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: false,
+                isRecording: false,
+                countInEnabled: false,
+                punchInEnabled: false,
+            });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+
+            toggleRecording();
+
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('No track is armed'), 'warning');
+            expect(mocks.startAudioRecording).not.toHaveBeenCalled();
+            expect(mocks.startRecording).not.toHaveBeenCalled();
+            expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+            expect(mocks.startPlayback).not.toHaveBeenCalled();
+        });
+
+        it('refuses the count-in before any click when no track is armed', () => {
+            // Counting in for a take that cannot exist is the same defect one
+            // count earlier: the admission guard runs ahead of the click
+            // scheduling.
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: false,
+                isRecording: false,
+                countInEnabled: true,
+                countInBars: 1,
+            });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+
+            toggleRecording();
+
+            expect(mocks.scheduleClick).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('No track is armed'), 'warning');
+        });
+
+        it('refuses when the only armed track cannot take a recording', () => {
+            // `startRecording` opens take clips on armed tracks whose
+            // eligibility accepts recording — a vca is never one, so an armed
+            // vca is still an empty take list.
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: false,
+                isRecording: false,
+                countInEnabled: false,
+                punchInEnabled: false,
+            });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'track-vca', kind: 'vca', armed: true }],
+            });
+
+            toggleRecording();
+
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('No track is armed'), 'warning');
+            expect(mocks.startRecording).not.toHaveBeenCalled();
+            expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+        });
+
+        it('admits recording with a single armed MIDI track — takes are not audio-only', async () => {
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: true,
+                isRecording: false,
+                countInEnabled: false,
+                punchInEnabled: false,
+            });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'track-midi', kind: 'midi', armed: true }],
+            });
+
+            toggleRecording();
+
+            await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('No track is armed'), 'warning');
+            expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true });
+        });
+    });
+
     describe('count-in recording start anchored on the audio clock', () => {
         // 1 bar of 4/4 at 120 BPM: the count-in spans 2 s of audio time. Armed
         // with the clock at 10 s, the boundary sits at 12 s on that clock and
         // the take must open on the playhead beat the count-in led to (8).
         function armOneBarCountIn(): void {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
             vi.mocked(getTransportState).mockReturnValue({
                 ...defaultTransportState,
                 isPlaying: false,
@@ -1042,6 +1140,7 @@ describe('toggleRecording', () => {
         });
 
         it('starts the take immediately at the store playhead when count-in is off', async () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
             vi.mocked(getTransportState).mockReturnValue({
                 ...defaultTransportState,
                 isPlaying: false,

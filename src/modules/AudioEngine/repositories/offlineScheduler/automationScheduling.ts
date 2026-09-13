@@ -396,7 +396,36 @@ export function scheduleTrackAutomation({
                 binding.apply(segments);
                 continue;
             }
-            for (const { audioParam, scale, offset, transform } of binding.targets) {
+            for (const target of binding.targets) {
+                const { audioParam, scale, offset, convert } = target;
+                if (convert) {
+                    // Non-affine device→AudioParam law (dB→linear, a delay
+                    // floor). Live slews, clamps and quantises in DEVICE units
+                    // and converts once at `updateDeviceParam`, so the slew
+                    // here must run in device units too: no affine scale or
+                    // offset, the unmapped device law, and the conversion
+                    // applied at write time by `emitTransform`. Only the link
+                    // scale composes with the device scalar, exactly as it
+                    // composes before live's parameter-family transform.
+                    scheduleAutomationOnParam(
+                        audioParam,
+                        points,
+                        durationSeconds,
+                        defaultTempo,
+                        changes,
+                        regionStartSeconds,
+                        projectBeatToSeconds,
+                        compensationDelaySec,
+                        {
+                            ...boundOptions,
+                            slew: { ...deviceSlewGrid, clampStep, quantiseEmit },
+                            activeWindowSeconds,
+                            valueScale: laneScale,
+                            emitTransform: convert,
+                        }
+                    );
+                    continue;
+                }
                 // Compose linkScale with the device binding's unit scale/offset as
                 // one affine post-transform: paramValue = interpolate(source) *
                 // (linkScale * scale) + offset — evaluated on the unscaled source
@@ -430,7 +459,6 @@ export function scheduleTrackAutomation({
                     activeWindowSeconds,
                     valueScale: laneScale * scale,
                     valueOffset: offset,
-                    valueTransform: transform,
                 };
                 scheduleAutomationOnParam(
                     audioParam,

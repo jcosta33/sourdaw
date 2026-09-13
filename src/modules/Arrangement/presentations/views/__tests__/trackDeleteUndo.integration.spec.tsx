@@ -143,6 +143,8 @@ vi.mock('#/modules/Project/useCases', () => ({
     saveProjectBeforeReplacement: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
+
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),

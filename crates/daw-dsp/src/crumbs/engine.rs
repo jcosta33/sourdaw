@@ -420,16 +420,26 @@ impl CrumbsEngine {
     }
 
     fn note_on(&mut self, note: u8, velocity: u8) {
-        let params = match self.mode_trigger_params(note, velocity) {
+        let mut params = match self.mode_trigger_params(note, velocity) {
             Some(params) => params,
             None => return,
         };
 
         // Check the sample this note actually maps to exists. In Drum mode
         // that is the pad's sample, not the engine's selection.
-        if self.sample_pool.get(params.sample_id).is_none() {
+        let source_sample_rate = self
+            .sample_pool
+            .get(params.sample_id)
+            .map(|sample| sample.meta.sample_rate as f32)
+            .unwrap_or(0.0);
+        if source_sample_rate <= 0.0 {
             return;
         }
+        // The voice needs the PCM's decoded rate to play it at its authored
+        // pitch; the admission estimate needs the same ratio so the work
+        // budget prices the kernel the voice will actually run.
+        params.source_sample_rate = source_sample_rate;
+        let rate_ratio = f64::from(source_sample_rate) / f64::from(self.sample_rate);
 
         let count = self.stack_count.max(1);
         let mut requested_work = 0_usize;
@@ -444,6 +454,7 @@ impl CrumbsEngine {
                 params.note,
                 params.root_note,
                 self.tune_cents + detune_cents,
+                rate_ratio,
                 params.loop_mode == LoopMode::Forward
                     && params.loop_crossfade > 0
                     && params.loop_start > params.start_frame

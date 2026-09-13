@@ -1,7 +1,11 @@
 import { type MixAnalysis } from '../../../models/MixComparisonTypes';
 
 /**
- * Create a reference analysis (simulating a mastered track).
+ * The built-in mastered-mix target. These constants are a deliberately
+ * specified style goal a user may aim at — they describe no measured recording,
+ * and every comparison against them is labelled `referenceKind:
+ * 'specified-target'` so target-chasing is never mistaken for matching a real
+ * reference track.
  */
 export function createReferenceAnalysis(): MixAnalysis {
     return {
