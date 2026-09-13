@@ -1,0 +1,83 @@
+src/modules/AudioEngine/repositories/devices/dynamics/makeCeilingClipCurve.ts
+  s_e440ffdc6997b7::t_3aadcd9c891610 1-27
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_e440ffdc6997b7::t_5dd36bdf1aa7f0 107-116,439-444,446
+crates/daw-engine/src/plugin_slot.rs
+  s_229a8547325a13::t_92500f124beeea 96-100,104-111
+crates/daw-engine/src/scheduler.rs
+  s_229a8547325a13::t_94afd9a350275f 4196-4215,4831,5048-5050,5139-5142,5180-5272,5327-5336,5345-5347,5769-5776,5922-5926,5928,6053-6056,6075,6301-6305,6582-6584,6606,6841-6845,6847-6855,6862-6863,6900-6901,6903-6910,6912-6917,6919-6922,6939-6961,6967-6970,6975-7000,7582-7596,17217,17261-17559
+src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts
+  s_717436d59af040::t_4f1c93a84ddbb4 13-20,25
+src/modules/AudioEngine/repositories/devices/dynamics/applyLimiterParams.ts
+  s_229a8547325a13::t_c1a100297c975b 1-2,5-6,8-11,19-23
+src/modules/AudioEngine/repositories/devices/dynamics/createLimiter.ts
+  s_f53e4514e9ccfe::t_c22e9a171302ad 1-2,5-6,9-20,29-34,36-42
+src/modules/AudioEngine/repositories/devices/modulation/applyFlangerParams.ts
+  s_229a8547325a13::t_827978379c206a 1,17
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/applyToneShapingParams.spec.ts
+  s_3fd2936080afd8::t_cccccccbab4427 49-51,54-60,63,66-67,73,75
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/createDeEsser.spec.ts
+  s_f53e4514e9ccfe::t_7c4e311e7421f2 1-113
+src/modules/AudioEngine/repositories/devices/toneShaping/createDeEsser.ts
+  s_229a8547325a13::t_ad8b49f6972cf1 1-2,7-27,30-31,33-35,42-51,54-65
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_229a8547325a13::t_605656b29a7fbd 4,772-777,780-783,832-836,841-843
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationSlewGrainParity.spec.ts
+  s_229a8547325a13::t_e6a1949e797790 5,167-170,175,177,241-242,244
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationBindingCensus.spec.ts
+  s_f53e4514e9ccfe::t_b8675b0dde3cf9 1-227
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineDeviceParamConversion.spec.ts
+  s_f53e4514e9ccfe::t_e49af3b42866c8 1-210
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_229a8547325a13::t_03d6c868c8687d 399-428
+src/modules/AudioEngine/services/deviceResolution.ts
+  s_229a8547325a13::t_e8811f24883348 1-3,30-35,38-47,54,57-63,67,73,76-112,115-116,121-126,129-131,136-141,143-153,155-157,166-191,194-198,200-202,219-229,239,245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "25684589988f916e0d5daa3892e52e9d32be14ae",
+  "prompts": {},
+  "sessions": {
+    "s_229a8547325a13": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a37-ec7c-74a0-a086-edb4bd3d0bb0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_3fd2936080afd8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a47-cad0-7f80-b25c-e0b13b40c3d1",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_717436d59af040": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a68-558b-7cc2-9a36-e96e9d677a80",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e440ffdc6997b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080b9-9340-7d60-8bb4-ece48d01fa39",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_f53e4514e9ccfe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a48-16df-7141-80ed-544231d24206",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
