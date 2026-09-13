@@ -32,7 +32,15 @@ import {
     assertIndependentReviewerApproval,
     type ReviewState,
 } from './pullRequestReviewState.ts';
+import {
+    assertReviewDocumentFormat,
+    parseApprovalEvidence,
+    renderLegacyApprovalBody,
+    renderReviewDocumentBody,
+} from './reviewApprovalFormat.ts';
 import { assertReviewCommentLinesInBundleDiff } from './reviewCommentDiffPreflight.ts';
+
+export { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
 
 export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES';
 
@@ -64,6 +72,7 @@ export type ApprovalEvidence = {
 };
 
 export type ReviewDocument = {
+    format?: 'compact-v1';
     event: ReviewEvent;
     body: string;
     comments: ReviewComment[];
@@ -132,6 +141,7 @@ export function parseReviewDocument(value: unknown): ReviewDocument {
         fail('review.json must be an object');
     }
     const record = value as Record<string, unknown>;
+    assertReviewDocumentFormat(record);
     if (record.event !== 'APPROVE' && record.event !== 'REQUEST_CHANGES') {
         fail('review.json event must be APPROVE or REQUEST_CHANGES');
     }
@@ -157,54 +167,23 @@ export function parseReviewDocument(value: unknown): ReviewDocument {
             fail('REQUEST_CHANGES must not carry approval evidence');
         }
         const evidence = parseApprovalEvidence(record.evidence);
-        const appendix = `\n\nVerification for ${evidence.headSha}\n\n${evidence.claims
-            .map((claim) => `Expected: ${claim.observable}\nCheck: ${claim.verification}\nObserved: ${claim.observed}`)
-            .join('\n\n')}`;
-        return { event: record.event, body: body.endsWith(appendix) ? body : body + appendix, comments, evidence };
+        if (record.format === 'compact-v1') {
+            return { format: record.format, event: record.event, body, comments, evidence };
+        }
+        return { event: record.event, body: renderLegacyApprovalBody(body, evidence), comments, evidence };
+    }
+    if (record.format === 'compact-v1') {
+        fail('compact-v1 requires APPROVE with evidence');
     }
     return { event: record.event, body, comments };
-}
-
-function evidenceRecord(value: unknown, label: string): Record<string, unknown> {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-        fail(`${label} must be an object`);
-    }
-    return value as Record<string, unknown>;
-}
-
-function evidenceLine(value: unknown, label: string): string {
-    if (
-        typeof value !== 'string' ||
-        value.trim() === '' ||
-        value !== value.trim() ||
-        /[\r\n\u2028\u2029]/u.test(value)
-    ) {
-        fail(`${label} must be a nonblank single-line trimmed string`);
-    }
-    return value;
-}
-
-function parseApprovalEvidence(value: unknown): ApprovalEvidence {
-    const record = evidenceRecord(value, 'review.json evidence');
-    const headSha = evidenceLine(record.headSha, 'review.json evidence.headSha');
-    if (!Array.isArray(record.claims) || record.claims.length === 0) {
-        fail('review.json evidence.claims must contain at least one claim');
-    }
-    const claims = record.claims.map((value: unknown, index: number) => {
-        const label = `review.json evidence.claims[${index}]`;
-        const claim = evidenceRecord(value, label);
-        return {
-            observable: evidenceLine(claim.observable, `${label}.observable`),
-            verification: evidenceLine(claim.verification, `${label}.verification`),
-            observed: evidenceLine(claim.observed, `${label}.observed`),
-        };
-    });
-    return { headSha, claims };
 }
 
 function assertPublicationEvidence(document: ReviewDocument, head: string): void {
     if (document.event === 'APPROVE' && document.evidence === undefined) {
         fail('new APPROVE publication requires evidence');
+    }
+    if (document.event === 'APPROVE' && document.format !== 'compact-v1') {
+        fail('new APPROVE publication requires format: compact-v1');
     }
     if (document.evidence !== undefined && document.evidence.headSha !== head) {
         fail('approval evidence.headSha does not match the pull-request head');
@@ -265,7 +244,7 @@ function prepareReviewPublication(
             reviewPublicationPayload({
                 commitId: head,
                 event: document.event,
-                body: document.body,
+                body: renderReviewDocumentBody(document),
                 comments: document.comments,
             })
         ),
@@ -294,11 +273,12 @@ function publishPreparedReviewForActor(
         assertAcceptancePreconditions(number, prepared.head, port);
     }
     assertPublicationEvidence(document, pullRequest.head);
+    const body = renderReviewDocumentBody(document);
     const payloadDigest = reviewPublicationPayloadDigest(
         reviewPublicationPayload({
             commitId: prepared.head,
             event: document.event,
-            body: document.body,
+            body,
             comments: document.comments,
         })
     );
@@ -314,7 +294,7 @@ function publishPreparedReviewForActor(
         number,
         commitId: prepared.head,
         event: document.event,
-        body: document.body,
+        body,
         comments: document.comments,
     });
     if (posted.actorNodeId !== actorNodeId) {
@@ -334,6 +314,9 @@ export function parseAcceptanceDocument(value: unknown): ReviewDocument {
     const document = parseReviewDocument(value);
     if (document.event !== 'APPROVE') {
         fail('acceptance.json must APPROVE');
+    }
+    if (document.format === 'compact-v1') {
+        return document;
     }
     const attribution = 'Orchestrator acceptance on behalf of jcosta33';
     return {
