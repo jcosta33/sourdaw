@@ -1,0 +1,22 @@
+src/modules/AiRuntime/repositories/webLlm/__tests__/generateWebLlmCompletion.spec.ts
+  s_87ab0a2f60ccf8::t_b4c1359381f28d 22-23,139-141,143-145
+  s_87ab0a2f60ccf8::t_bc0591c22708fc 149
+  s_87ab0a2f60ccf8::t_f012679b938347 24-33,115-120,128,131-138,142,146-148,150-174
+  s_87ab0a2f60ccf8::t_26c92bae59185b 121-127,129-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ba809a40c6137f0f194791341c224d18c9527eea",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
