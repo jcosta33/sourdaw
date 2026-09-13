@@ -1,0 +1,50 @@
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_87ab0a2f60ccf8::t_6e72eaf0f44f10 688
+src/modules/Arrangement/handlers/takeLane/selectTake.ts
+  s_87ab0a2f60ccf8::t_6e72eaf0f44f10 2,8-9,23-27,49-94,98,115-116,124,132,140-141,151-158,161-169,172-180
+  s_87ab0a2f60ccf8::t_d516c3cf424d1f 183
+src/modules/Arrangement/handlers/takeLane/__tests__/selectTake.spec.ts
+  s_87ab0a2f60ccf8::t_5fb00bd085f595 147-203,233,241-279
+  s_87ab0a2f60ccf8::t_8f10327708dc97 215-220,224-229
+src/modules/Arrangement/useCases/comping/__tests__/selectTake.spec.ts
+  s_87ab0a2f60ccf8::t_7f214830ebfe9a 5-8,171,188,230,252
+  s_87ab0a2f60ccf8::t_5fb00bd085f595 101-105,111-114,119,165-170,172,176-187,189,193-218,220-229,231-232,234-238,240-251,253-254,256-260,262,281
+  s_87ab0a2f60ccf8::t_a3c667a34cbdb5 19,233,239,255,261
+src/utils/handlerContract.ts
+  s_87ab0a2f60ccf8::t_6e72eaf0f44f10 1089-1091,1093,1095-1100
+.agents/skills/state-and-write-paths/SKILL.md
+  s_87ab0a2f60ccf8::t_59c8bfb26e82be 79-85
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_87ab0a2f60ccf8::t_9474d59d4160df 881-890
+  s_87ab0a2f60ccf8::t_6e72eaf0f44f10 854,856-857,859-864
+src/modules/Command/useCases/__tests__/undoWitnessPersistenceStamp.integration.spec.ts
+  s_87ab0a2f60ccf8::t_922a8f5db74de3 8-9,17,21,34,38,61-95,227-304
+  s_87ab0a2f60ccf8::t_1968a3ff1ce533 1,121-124,168-171,305
+  s_87ab0a2f60ccf8::t_d287d791b0bfdb 3,36
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_dfefad14d3cff9::t_af31f22bf576ec 921-922
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f315b68145224b3d47b0e2875cc9ecc5a6981c05",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_dfefad14d3cff9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09af7-6f5e-7d72-a4ce-fba9b4e2c6c9",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
