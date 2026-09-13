@@ -1,0 +1,61 @@
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_87ab0a2f60ccf8::t_0ce4df119a6878 98-101,429,434
+.agents/skills/state-and-write-paths/SKILL.md
+  s_a8f6f15ead5a48::t_ff6e0a438446be 79-85
+release/open-source-inventory.json
+  s_fc05586cf8fe11::t_68ece269556af2 1202
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_a8f6f15ead5a48::t_9d3e5c7f216c11 854,856-857,859-864,881-890
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_a8f6f15ead5a48::t_f50af080cb04ee 688
+src/modules/Arrangement/handlers/takeLane/__tests__/selectTake.spec.ts
+  s_a8f6f15ead5a48::t_061fed01206ed6 147-203,215-220,224-229,233,241-279
+src/modules/Arrangement/handlers/takeLane/selectTake.ts
+  s_a8f6f15ead5a48::t_a6217ac1966814 2,8-9,23-27,49-94,98,115-116,124,132,140-141,151-158,161-169,172-180,183
+src/modules/Arrangement/useCases/comping/__tests__/selectTake.spec.ts
+  s_a8f6f15ead5a48::t_eb5ed45e2a302e 5-8,19,101-105,111-114,119,165-172,176-189,193-218,220-262,281
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_a8f6f15ead5a48::t_fa476cfe29a2a9 746-747,749,755,765,793-794,807,819
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationSlewGrainParity.spec.ts
+  s_a8f6f15ead5a48::t_e3eaeb8163df0a 79-80,127-128,139-140
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_87ab0a2f60ccf8::t_0dd6add977415b 452-463,473
+src/modules/Command/useCases/__tests__/undoWitnessPersistenceStamp.integration.spec.ts
+  s_a8f6f15ead5a48::t_72b56f738c327f 1,3,8-9,17,21,34,36,38,61-119,145-148,192-195,251-411
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_a8f6f15ead5a48::t_2e4813317c7f38 921-922
+src/utils/handlerContract.ts
+  s_a8f6f15ead5a48::t_ec95be6e7557a5 1089-1091,1093,1095-1100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4c1dd7a0528ee60101e02536a58d294a3b1ce61f",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a8f6f15ead5a48": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09b44-61dd-7762-afdf-271994a579d3",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_fc05586cf8fe11": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09b5e-b8f2-7f12-9178-5028ebfa8b83",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
