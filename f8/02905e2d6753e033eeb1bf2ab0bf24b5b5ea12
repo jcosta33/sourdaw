@@ -1,0 +1,91 @@
+crates/daw-dsp/src/crumbs/engine.rs
+  s_e440ffdc6997b7::t_56a01bf4262eee 423,430-435,438-442,457
+crates/daw-dsp/src/crumbs/modes/drum.rs
+  s_e440ffdc6997b7::t_7a7f089fab9279 128
+crates/daw-dsp/src/crumbs/modes/quick.rs
+  s_e440ffdc6997b7::t_64de74d517a5f7 65-66
+crates/daw-dsp/src/crumbs/modes/slice.rs
+  s_e440ffdc6997b7::t_2634ab2eae1465 266
+crates/daw-dsp/src/bacteria/mod.rs
+  s_18993f6646ea4a::t_cfc9ca76f63c28 137-140
+crates/daw-dsp/src/crumbs/voice.rs
+  s_3fd2936080afd8::t_c62ced9c139cda 55-61,129,172,609-610,739-750,755,759,774,779,915-918,943,1651-1652,1937-2162
+crates/daw-dsp/src/fermenter/layer.rs
+  s_3fd2936080afd8::t_9fa52bd5c584ab 1157-1218
+crates/daw-dsp/src/fermenter/sampler.rs
+  s_3fd2936080afd8::t_a9c4939835f4f6 5-9,11,119-123,125,172-180,412-509
+crates/daw-dsp/tests/crumbs_sample_rate_playback.rs
+  s_3fd2936080afd8::t_df7d98850fa45a 1-157
+crates/daw-dsp/tests/fermenter_grain_pan_spread_is_audible.rs
+  s_87ab0a2f60ccf8::t_1b7bd37d45418b 79-85,525-527,541-554
+crates/daw-dsp/tests/levain_sample_rate_playback.rs
+  s_3fd2936080afd8::t_0ffbcd954f3510 1-162
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_87ab0a2f60ccf8::t_c51ed1e1cbc9b1 1,22-25,862,881-901,903,920-934,996,999-1001,1020-1038,1054-1067
+public/wasm/daw-dsp/daw_dsp.js
+  s_87ab0a2f60ccf8::t_20bd5b961f0306 34-37
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_87ab0a2f60ccf8::t_31a3787ba7fc84 1,6,25-45,47,64-78,140,143-145,164-182,198-211
+public/wasm/manifest.json
+  s_87ab0a2f60ccf8::t_dedcc1a9ad095e 12,15-18,20-21
+release/open-source-inventory.json
+  s_87ab0a2f60ccf8::t_be6a60e8045403 1335,1341,1722
+src/modules/AudioEngine/useCases/audioAnalysis/__tests__/processPitchEditWasm.spec.ts
+  s_229a8547325a13::t_41776396c9c867 1-124
+src/modules/AudioEngine/useCases/audioAnalysis/processPitchEditWasm.ts
+  s_229a8547325a13::t_a90c4a9c198382 18-49,52-53,56-58
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_87ab0a2f60ccf8::t_b7f484f0e68801 1,22-25,862,881-901,903,920-934,996,999-1001,1020-1038,1054-1067
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_87ab0a2f60ccf8::t_9d58d5bc77e907 211-214
+src/modules/Knead/useCases/__tests__/syncKneadToEngine.spec.ts
+  s_3fd2936080afd8::t_084683d3d53f26 179-232
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f802905e2d6753e033eeb1bf2ab0bf24b5b5ea12",
+  "prompts": {},
+  "sessions": {
+    "s_18993f6646ea4a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a25-fd92-76f2-903f-879c9e5aea35",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_229a8547325a13": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a37-ec7c-74a0-a086-edb4bd3d0bb0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_3fd2936080afd8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09a47-cad0-7f80-b25c-e0b13b40c3d1",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e440ffdc6997b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080b9-9340-7d60-8bb4-ece48d01fa39",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
