@@ -1,0 +1,21 @@
+release/dependency-license-proofs.json
+  s_e440ffdc6997b7::t_918ab7deb570fe 64
+release/open-source-inventory.json
+  s_e440ffdc6997b7::t_d33aff28a0771d 168,1694
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e035bd9514249bffa3a39cb4af12f4b24100f802",
+  "prompts": {},
+  "sessions": {
+    "s_e440ffdc6997b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a080b9-9340-7d60-8bb4-ece48d01fa39",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
