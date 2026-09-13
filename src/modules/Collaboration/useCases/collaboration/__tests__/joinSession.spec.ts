@@ -15,12 +15,13 @@ import { leaveSession } from '../leaveSession';
  */
 const mockRuntime = vi.hoisted(() => ({
     cleanup: vi.fn<(owner?: object | null, requestWitness?: number) => boolean>(),
+    closeTransport: vi.fn<(owner: object | null) => void>(),
     initialize:
         vi.fn<
             (
                 assetOwnerId: string,
                 options?: { handoffSourceOwnerIds?: readonly string[]; rebindToSynchronizedOwner?: boolean }
-            ) => PeerConnectionManager
+            ) => Promise<PeerConnectionManager>
         >(),
     startPlayheadBroadcast: vi.fn<() => void>(),
     startBranchSync: vi.fn<(isHost: boolean) => void>(),
@@ -32,6 +33,8 @@ const mockRuntime = vi.hoisted(() => ({
     pickPeerColor: vi.fn<(excludeColors: string[]) => string>(),
     compressInvite: vi.fn<(json: string) => Promise<string>>(),
     decompressInvite: vi.fn<(raw: string) => Promise<string>>(),
+    settleRetainedTeardown: vi.fn<() => Promise<void>>(),
+    runLifecycle: vi.fn(<T>(operation: () => Promise<T>) => operation()),
     state: { peerManager: null, sessionSecret: null as string | null },
 }));
 const loggerMock = vi.hoisted(() => ({ warn: vi.fn() }));
@@ -80,7 +83,7 @@ describe('joinSession', () => {
         mockRuntime.state.sessionSecret = null;
         acceptOffer = vi.fn().mockResolvedValue('fake-answer-sdp');
         createPeer = vi.fn().mockReturnValue({ acceptOffer });
-        mockRuntime.initialize.mockReturnValue({ createPeer } as unknown as PeerConnectionManager);
+        mockRuntime.initialize.mockResolvedValue({ createPeer } as unknown as PeerConnectionManager);
         mockRuntime.generatePeerId.mockReturnValue('local-peer-id');
         mockRuntime.pickPeerColor.mockReturnValue(PEER_COLORS[3]);
         mockRuntime.decompressInvite.mockImplementation((raw: string) => Promise.resolve(raw));
@@ -89,6 +92,7 @@ describe('joinSession', () => {
         mockRuntime.isInstalled.mockReturnValue(true);
         mockRuntime.canWrite.mockReturnValue(true);
         mockRuntime.cleanup.mockReturnValue(true);
+        mockRuntime.settleRetainedTeardown.mockResolvedValue(undefined);
     });
 
     it('cleans up any prior session runtime even before the invite is validated', async () => {
@@ -186,7 +190,7 @@ describe('joinSession', () => {
         });
     });
 
-    it('preserves the join setup error when cleaning its runtime also fails', async () => {
+    it('reports both the join setup error and its runtime cleanup failure', async () => {
         const setupError = new Error('offer rejected');
         const cleanupError = new Error('cleanup failed');
         acceptOffer.mockRejectedValueOnce(setupError);
@@ -195,13 +199,32 @@ describe('joinSession', () => {
             throw cleanupError;
         });
 
-        await expect(joinSession('invite', 'Alice')).rejects.toBe(setupError);
+        await expect(joinSession('invite', 'Alice')).rejects.toEqual(
+            expect.objectContaining({ errors: [setupError, cleanupError] })
+        );
 
-        expect(mockRuntime.retire).toHaveBeenCalledExactlyOnceWith(owner);
         expect(loggerMock.warn).toHaveBeenCalledWith(
             '[Collaboration] Failed to clean up join session setup:',
             cleanupError
         );
+    });
+
+    it('does not install the joined runtime until retained teardown settles', async () => {
+        const teardownEntered = Promise.withResolvers<void>();
+        const teardown = Promise.withResolvers<void>();
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeOffer()));
+        mockRuntime.settleRetainedTeardown.mockImplementationOnce(async () => {
+            teardownEntered.resolve();
+            await teardown.promise;
+        });
+
+        const joining = joinSession('invite', 'Alice');
+        await teardownEntered.promise;
+        expect(mockRuntime.initialize).not.toHaveBeenCalled();
+
+        teardown.resolve();
+        await joining;
+        expect(mockRuntime.initialize).toHaveBeenCalledOnce();
     });
 
     it('does not let a stale join continuation overwrite a completed leave', async () => {

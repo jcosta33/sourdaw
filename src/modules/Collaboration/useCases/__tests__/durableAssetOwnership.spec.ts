@@ -61,6 +61,31 @@ function isExactCommitProof(candidate: DurableAssetCommitProof, expected: Durabl
     );
 }
 
+async function expectRetiredZeroAssetOwnerIsFenced({
+    retiredOwnerId,
+    currentOwnerId,
+    suffix,
+}: {
+    retiredOwnerId: string;
+    currentOwnerId: string;
+    suffix: string;
+}): Promise<void> {
+    await expect(
+        createDurableAssetRepository(retiredOwnerId).stageAsset(
+            `lease:retired-zero-asset:${suffix}`,
+            new Blob([`retired-zero-asset:${suffix}`]),
+            `retired-zero-asset-${suffix}.wav`
+        )
+    ).rejects.toThrow(`owner authority moved: ${retiredOwnerId}`);
+    await expect(
+        createDurableAssetRepository(currentOwnerId).stageAsset(
+            `lease:current-zero-asset:${suffix}`,
+            new Blob([`current-zero-asset:${suffix}`]),
+            `current-zero-asset-${suffix}.wav`
+        )
+    ).resolves.toMatchObject({ leaseId: `lease:current-zero-asset:${suffix}` });
+}
+
 describe('durable asset ownership lifecycle', () => {
     let peer: PeerConnectionManager;
     let onAssetAvailable: Mock<(hash: string) => void>;
@@ -393,6 +418,85 @@ describe('durable asset ownership lifecycle', () => {
             reason: 'asset-not-owned',
         });
         recreated.dispose();
+    });
+
+    it('records a retired zero-asset handoff through a captured commit closure', async () => {
+        const provisionalOwner = 'collaboration-join:zero-asset-retired-closure';
+        const projectOwner = 'project:zero-asset-retired-closure';
+        const joining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, provisionalOwner);
+
+        const prepared = await joining.prepareDurableOwnerRebind(projectOwner);
+        if (prepared.status === 'failed') {
+            throw new Error(`Expected zero-asset handoff preparation: ${prepared.reason}`);
+        }
+        expect(durableAssetIndexedDb.countRecords('assets')).toBe(0);
+        expect(durableAssetIndexedDb.countRecords('leases')).toBe(0);
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(1);
+
+        joining.dispose();
+        await expect(prepared.commit()).resolves.toMatchObject({
+            status: 'committed',
+            phase: 'commit',
+            progress: {
+                targetOwnerId: projectOwner,
+                sources: [{ previousOwnerId: provisionalOwner, status: 'committed', reboundHashes: [] }],
+            },
+        });
+        await expect(prepared.commit()).resolves.toMatchObject({ status: 'committed', phase: 'commit' });
+
+        expect(durableAssetIndexedDb.countRecords('assets')).toBe(0);
+        expect(durableAssetIndexedDb.countRecords('leases')).toBe(0);
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(0);
+        await expect(createDurableAssetRepository(projectOwner).resumeOwnerRebinds()).resolves.toEqual({
+            status: 'resumed',
+            ownerId: projectOwner,
+            handoffCount: 0,
+            previousOwnerIds: [],
+            reboundHashes: [],
+        });
+        await expectRetiredZeroAssetOwnerIsFenced({
+            retiredOwnerId: provisionalOwner,
+            currentOwnerId: projectOwner,
+            suffix: 'retired-closure',
+        });
+    });
+
+    it('records a zero-asset closure commit that finishes after its transfer is disposed', async () => {
+        const provisionalOwner = 'collaboration-join:zero-asset-disposed-pending';
+        const projectOwner = 'project:zero-asset-disposed-pending';
+        const joining = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, provisionalOwner);
+
+        const prepared = await joining.prepareDurableOwnerRebind(projectOwner);
+        if (prepared.status === 'failed') {
+            throw new Error(`Expected zero-asset handoff preparation: ${prepared.reason}`);
+        }
+        expect(durableAssetIndexedDb.countRecords('assets')).toBe(0);
+        expect(durableAssetIndexedDb.countRecords('leases')).toBe(0);
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(1);
+
+        const commitGate = durableAssetIndexedDb.pauseNextReadwriteCommit();
+        const commit = prepared.commit();
+        await commitGate.reached;
+        joining.dispose();
+        commitGate.resume();
+
+        await expect(commit).resolves.toMatchObject({ status: 'committed', phase: 'commit' });
+        await expect(prepared.commit()).resolves.toMatchObject({ status: 'committed', phase: 'commit' });
+        expect(durableAssetIndexedDb.countRecords('assets')).toBe(0);
+        expect(durableAssetIndexedDb.countRecords('leases')).toBe(0);
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(0);
+        await expect(createDurableAssetRepository(projectOwner).resumeOwnerRebinds()).resolves.toEqual({
+            status: 'resumed',
+            ownerId: projectOwner,
+            handoffCount: 0,
+            previousOwnerIds: [],
+            reboundHashes: [],
+        });
+        await expectRetiredZeroAssetOwnerIsFenced({
+            retiredOwnerId: provisionalOwner,
+            currentOwnerId: projectOwner,
+            suffix: 'disposed-pending',
+        });
     });
 
     it('does not consume admitted owner recovery after the loaded project authority is superseded', async () => {
@@ -1619,6 +1723,190 @@ describe('durable asset ownership lifecycle', () => {
             createDurableAssetRepository(provisionalOwner).prepareOwnerRebind('project:replacement-target')
         ).resolves.toMatchObject({ status: 'prepared', created: true });
         joining.dispose();
+    });
+
+    it('records rollback of real two-source preparation when the later source conflicts', async () => {
+        const provisionalOwner = 'collaboration-join:two-source-prepare-provisional';
+        const sourceAOwner = 'project:two-source-prepare-a';
+        const sourceBOwner = 'project:two-source-prepare-b';
+        const targetOwner = 'project:two-source-prepare-target';
+        const preservedOwner = 'project:two-source-prepare-preserved';
+        const provisionalRetryOwner = 'project:two-source-prepare-provisional-retry';
+        const sourceARetryOwner = 'project:two-source-prepare-a-retry';
+
+        await expect(
+            createDurableAssetRepository(sourceBOwner).prepareOwnerRebind(preservedOwner)
+        ).resolves.toMatchObject({
+            status: 'prepared',
+            created: true,
+        });
+        const joining = new AssetTransfer(
+            peer,
+            { onAssetAvailable, onProgress, onTransferFailed },
+            provisionalOwner,
+            createDurableAssetRepository(provisionalOwner),
+            { handoffSourceOwnerIds: [sourceAOwner, sourceBOwner] }
+        );
+
+        await expect(joining.prepareDurableOwnerRebind(targetOwner)).resolves.toEqual({
+            status: 'failed',
+            reason: 'owner-handoff-conflict',
+        });
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(1);
+
+        const provisionalRetry = createDurableAssetRepository(provisionalOwner);
+        const sourceARetry = createDurableAssetRepository(sourceAOwner);
+        await expect(provisionalRetry.prepareOwnerRebind(provisionalRetryOwner)).resolves.toMatchObject({
+            status: 'prepared',
+            created: true,
+        });
+        await expect(sourceARetry.prepareOwnerRebind(sourceARetryOwner)).resolves.toMatchObject({
+            status: 'prepared',
+            created: true,
+        });
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(3);
+        await expect(provisionalRetry.abortOwnerRebind(provisionalRetryOwner)).resolves.toMatchObject({
+            status: 'aborted',
+        });
+        await expect(sourceARetry.abortOwnerRebind(sourceARetryOwner)).resolves.toMatchObject({ status: 'aborted' });
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(1);
+
+        await expect(createDurableAssetRepository(sourceBOwner).prepareOwnerRebind(targetOwner)).resolves.toEqual({
+            status: 'failed',
+            reason: 'owner-handoff-conflict',
+        });
+        await expect(createDurableAssetRepository(preservedOwner).resumeOwnerRebinds()).resolves.toMatchObject({
+            status: 'resumed',
+            ownerId: preservedOwner,
+            handoffCount: 1,
+            previousOwnerIds: [sourceBOwner],
+        });
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(0);
+        await expect(
+            createDurableAssetRepository(sourceBOwner).stageAsset(
+                'lease:two-source-prepare-retired',
+                new Blob(['two-source-prepare-retired']),
+                'two-source-prepare-retired.wav'
+            )
+        ).rejects.toThrow(`owner authority moved: ${sourceBOwner}`);
+        await expect(
+            createDurableAssetRepository(preservedOwner).stageAsset(
+                'lease:two-source-prepare-preserved',
+                new Blob(['two-source-prepare-preserved']),
+                'two-source-prepare-preserved.wav'
+            )
+        ).resolves.toMatchObject({ leaseId: 'lease:two-source-prepare-preserved' });
+        joining.dispose();
+    });
+
+    it('records a retryable partial real multi-source commit after a later transaction aborts', async () => {
+        const provisionalOwner = 'collaboration-join:two-source-commit-provisional';
+        const sourceAOwner = 'project:two-source-commit-a';
+        const sourceBOwner = 'project:two-source-commit-b';
+        const targetOwner = 'project:two-source-commit-target';
+        const joining = new AssetTransfer(
+            peer,
+            { onAssetAvailable, onProgress, onTransferFailed },
+            provisionalOwner,
+            createDurableAssetRepository(provisionalOwner),
+            { handoffSourceOwnerIds: [sourceAOwner, sourceBOwner] }
+        );
+        const sourceA = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, sourceAOwner);
+        const sourceB = new AssetTransfer(peer, { onAssetAvailable, onProgress, onTransferFailed }, sourceBOwner);
+        const provisionalAsset = await joining.stageDurableAsset(
+            new Blob(['two-source-commit-provisional']),
+            'two-source-commit-provisional.wav',
+            'lease:two-source-commit-provisional'
+        );
+        const sourceAAsset = await sourceA.stageDurableAsset(
+            new Blob(['two-source-commit-a']),
+            'two-source-commit-a.wav',
+            'lease:two-source-commit-a'
+        );
+        const sourceBAsset = await sourceB.stageDurableAsset(
+            new Blob(['two-source-commit-b']),
+            'two-source-commit-b.wav',
+            'lease:two-source-commit-b'
+        );
+        const prepared = await joining.prepareDurableOwnerRebind(targetOwner);
+        if (prepared.status === 'failed') {
+            throw new Error(`Expected two-source handoff preparation: ${prepared.reason}`);
+        }
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(3);
+
+        // AssetTransfer commits its current owner then each configured source in insertion order.
+        // The fixture permits that first commit and aborts the following source transaction.
+        durableAssetIndexedDb.failReadwriteTransactionAfter(1);
+        const commitGate = durableAssetIndexedDb.pauseNextReadwriteCommit();
+        const firstCommit = prepared.commit();
+        await commitGate.reached;
+        joining.dispose();
+        commitGate.resume();
+
+        const partial = await firstCommit;
+        expect(partial).toMatchObject({
+            status: 'retry-required',
+            phase: 'commit',
+            error: expect.objectContaining({ message: 'The transaction was aborted' }),
+            progress: {
+                targetOwnerId: targetOwner,
+                sources: [
+                    { previousOwnerId: provisionalOwner, status: 'committed' },
+                    { previousOwnerId: sourceAOwner, status: 'pending' },
+                    { previousOwnerId: sourceBOwner, status: 'pending' },
+                ],
+            },
+        });
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(2);
+        expect(durableAssetIndexedDb.countRecords('assets')).toBe(3);
+        expect(durableAssetIndexedDb.countRecords('leases')).toBe(3);
+        await expect(
+            createDurableAssetRepository(provisionalOwner).stageAsset(
+                'lease:two-source-commit-provisional-retired',
+                new Blob(['two-source-commit-provisional-retired']),
+                'two-source-commit-provisional-retired.wav'
+            )
+        ).rejects.toThrow(`owner authority moved: ${provisionalOwner}`);
+        await expect(
+            createDurableAssetRepository(targetOwner).reopenStagedAsset(provisionalAsset.leaseId, provisionalAsset.hash)
+        ).resolves.toMatchObject({ status: 'opened', hash: provisionalAsset.hash });
+        await expect(
+            createDurableAssetRepository(sourceAOwner).reopenStagedAsset(sourceAAsset.leaseId, sourceAAsset.hash)
+        ).resolves.toMatchObject({ status: 'opened', hash: sourceAAsset.hash });
+        await expect(
+            createDurableAssetRepository(targetOwner).reopenStagedAsset(sourceAAsset.leaseId, sourceAAsset.hash)
+        ).resolves.toEqual({ status: 'failed', reason: 'lease-owner-mismatch' });
+
+        await expect(prepared.commit()).resolves.toMatchObject({
+            status: 'committed',
+            phase: 'commit',
+            progress: {
+                sources: [
+                    { previousOwnerId: provisionalOwner, status: 'committed' },
+                    { previousOwnerId: sourceAOwner, status: 'committed' },
+                    { previousOwnerId: sourceBOwner, status: 'committed' },
+                ],
+            },
+        });
+        expect(durableAssetIndexedDb.countRecords('ownerHandoffs')).toBe(0);
+        const target = createDurableAssetRepository(targetOwner);
+        for (const staged of [provisionalAsset, sourceAAsset, sourceBAsset]) {
+            await expect(target.reopenStagedAsset(staged.leaseId, staged.hash)).resolves.toMatchObject({
+                status: 'opened',
+                hash: staged.hash,
+            });
+        }
+        for (const ownerId of [provisionalOwner, sourceAOwner, sourceBOwner]) {
+            await expect(
+                createDurableAssetRepository(ownerId).stageAsset(
+                    `lease:two-source-commit-retired:${ownerId}`,
+                    new Blob([`two-source-commit-retired:${ownerId}`]),
+                    `two-source-commit-retired-${ownerId}.wav`
+                )
+            ).rejects.toThrow(`owner authority moved: ${ownerId}`);
+        }
+        sourceA.dispose();
+        sourceB.dispose();
     });
 
     it('routes cleanup to the lease owner when the active project owner changed without a handoff', async () => {

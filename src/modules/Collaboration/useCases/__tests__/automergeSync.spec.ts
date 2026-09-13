@@ -73,9 +73,41 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     runCrdtPersistenceBarrier: vi.fn(
         async (
             operation: (input: {
-                persistCurrentProject: (expectedRootHeads?: readonly string[]) => Promise<void>;
+                persistCurrentProject: (expectedRootHeads?: readonly string[]) => Promise<unknown>;
             }) => Promise<void>
-        ) => operation({ persistCurrentProject: crdt_mocks.persist_project })
+        ) => {
+            let invoked = false;
+            let result: unknown;
+            const persistCurrentProject = async (expectedRootHeads?: readonly string[]) => {
+                invoked = true;
+                try {
+                    await crdt_mocks.persist_project(expectedRootHeads);
+                    const durable = {
+                        write: 'noop',
+                        authority: { epoch: 'test', revision: 1, rootLineage: 'main' },
+                    };
+                    if (expectedRootHeads) {
+                        result = {
+                            status: 'settled',
+                            mode: 'exact',
+                            expectedRootHeads: [...expectedRootHeads],
+                            durable,
+                        };
+                    } else {
+                        result = { status: 'settled', mode: 'ordinary', durable };
+                    }
+                } catch (error) {
+                    result = { status: 'failed', durable: { write: 'none' }, error };
+                }
+                return result;
+            };
+            try {
+                await operation({ persistCurrentProject });
+            } catch (error) {
+                return { status: 'failed', durable: { write: 'none' }, error };
+            }
+            return invoked ? result : { status: 'skipped', reason: 'operation-declined', durable: { write: 'none' } };
+        }
     ),
     waitForCrdtDocumentTransition: crdt_mocks.wait_for_document_transition,
     sanitizeIncomingCrdtDocument: vi.fn((document) => document),
@@ -330,9 +362,13 @@ describe('AutomergeSync', () => {
         );
         await transfer.promoteDurableStagedAsset(staged.leaseId, staged.hash);
         let sync!: AutomergeSync;
+        let firstPersistence = true;
         vi.mocked(persistCrdtProject).mockImplementation(async () => {
-            sync.stop();
-            transfer.dispose();
+            if (firstPersistence) {
+                firstPersistence = false;
+                sync.stop();
+                transfer.dispose();
+            }
         });
         sync = new AutomergeSync(makePeerManager(), {
             captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
@@ -352,7 +388,7 @@ describe('AutomergeSync', () => {
         for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
             sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
         }
-        await sync.flushPersistence();
+        await sync.settleDurableTeardown();
 
         const authoritativeOwner = new AssetTransfer(
             peer,
@@ -486,6 +522,38 @@ describe('AutomergeSync', () => {
             }
         }
     );
+
+    it('reports a terminal preparation failure without poisoning later teardown attempts', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const preparationError = new Error('owner preparation rolled back');
+        const onPersistError = vi.fn();
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence: async () => {
+                throw preparationError;
+            },
+            onPersistError,
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            draft.peerProbe = 'preparation-failed';
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await sync.flushPersistence();
+
+        expect(onPersistError).toHaveBeenCalledExactlyOnceWith(preparationError);
+        expect(persistCrdtProject).not.toHaveBeenCalled();
+        await expect(sync.settleDurableTeardown()).resolves.toBeUndefined();
+        await expect(sync.settleDurableTeardown()).resolves.toBeUndefined();
+    });
 
     it.each(['persistence', 'commit'] as const)(
         'does not reply after a no-op root owner handoff %s failure',
@@ -1126,6 +1194,198 @@ describe('AutomergeSync', () => {
         });
         replacementOwner.dispose();
         transfer.dispose();
+    });
+
+    it('retries a thrown prepublication abort without requiring the retired root', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> | undefined = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const preparationEntered = Promise.withResolvers<void>();
+        const releasePreparation = Promise.withResolvers<void>();
+        const abortFailure = new Error('owner rollback interrupted');
+        const abort = vi
+            .fn()
+            .mockRejectedValueOnce(abortFailure)
+            .mockResolvedValueOnce({ status: 'aborted', phase: 'abort' });
+        const commit = vi.fn().mockResolvedValue({ status: 'committed', phase: 'commit' });
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence: async () => {
+                preparationEntered.resolve();
+                await releasePreparation.promise;
+                return { commit, abort };
+            },
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            draft.peerProbe = 'retired-before-publication';
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await preparationEntered.promise;
+        sync.stop();
+        live = undefined;
+        releasePreparation.resolve();
+        await sync.flushPersistence();
+
+        await expect(sync.settleDurableTeardown()).resolves.toBeUndefined();
+        expect(abort).toHaveBeenCalledTimes(2);
+        expect(commit).not.toHaveBeenCalled();
+    });
+
+    it('retries a returned prepublication abort failure in the original abort direction', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> | undefined = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const preparationEntered = Promise.withResolvers<void>();
+        const releasePreparation = Promise.withResolvers<void>();
+        const abortFailure = new Error('owner rollback remains pending');
+        const abort = vi
+            .fn()
+            .mockResolvedValueOnce({ status: 'retry-required', phase: 'abort', error: abortFailure })
+            .mockResolvedValueOnce({ status: 'aborted', phase: 'abort' });
+        const commit = vi.fn().mockResolvedValue({ status: 'committed', phase: 'commit' });
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence: async () => {
+                preparationEntered.resolve();
+                await releasePreparation.promise;
+                return { status: 'prepared' as const, phase: 'pending' as const, commit, abort };
+            },
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            draft.peerProbe = 'retired-before-returned-abort';
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await preparationEntered.promise;
+        sync.stop();
+        live = undefined;
+        releasePreparation.resolve();
+        await sync.flushPersistence();
+
+        await expect(sync.settleDurableTeardown()).resolves.toBeUndefined();
+        expect(abort).toHaveBeenCalledTimes(2);
+        expect(commit).not.toHaveBeenCalled();
+        expect(persistCrdtProject).not.toHaveBeenCalled();
+    });
+
+    it('retries every returned abort failure and removes only the completed handoff', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const firstError = new Error('first rollback interrupted');
+        const secondError = new Error('second rollback interrupted');
+        const firstAbort = vi
+            .fn()
+            .mockResolvedValueOnce({ status: 'retry-required', phase: 'abort', error: firstError })
+            .mockResolvedValueOnce({ status: 'aborted', phase: 'abort' });
+        const secondAbort = vi
+            .fn()
+            .mockResolvedValueOnce({ status: 'retry-required', phase: 'abort', error: secondError })
+            .mockResolvedValueOnce({ status: 'retry-required', phase: 'abort', error: secondError })
+            .mockResolvedValueOnce({ status: 'aborted', phase: 'abort' });
+        const commit = vi.fn().mockResolvedValue({ status: 'committed', phase: 'commit' });
+        const transitions = [
+            {
+                status: 'retry-required' as const,
+                phase: 'abort' as const,
+                error: firstError,
+                commit,
+                abort: firstAbort,
+            },
+            {
+                status: 'retry-required' as const,
+                phase: 'abort' as const,
+                error: secondError,
+                commit,
+                abort: secondAbort,
+            },
+        ];
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence: vi.fn().mockImplementation(async () => transitions.shift()),
+        });
+        const firstRemote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            draft.peerProbe = 'first-preparation';
+        });
+        const secondRemote = change(clone(remoteSeed, 'cccccccccccccccc'), (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            draft.peerProbe = 'second-preparation';
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote: firstRemote, local: live })) {
+            sync.receiveSync({ peerId: 'first-host', docId: 'root', syncMessageBase64 });
+        }
+        await sync.flushPersistence();
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote: secondRemote, local: live })) {
+            sync.receiveSync({ peerId: 'second-host', docId: 'root', syncMessageBase64 });
+        }
+        await sync.flushPersistence();
+
+        await expect(sync.settleDurableTeardown()).rejects.toBe(secondError);
+        expect(firstAbort).toHaveBeenCalledTimes(2);
+        expect(secondAbort).toHaveBeenCalledTimes(2);
+        await expect(sync.settleDurableTeardown()).resolves.toBeUndefined();
+        expect(firstAbort).toHaveBeenCalledTimes(2);
+        expect(secondAbort).toHaveBeenCalledTimes(3);
+        expect(commit).not.toHaveBeenCalled();
+        expect(persistCrdtProject).not.toHaveBeenCalled();
+    });
+
+    it('keeps one commit obligation through duplicate catches until a later fresh exact save completes it', async () => {
+        const { live: initialLive, remoteSeed } = forkPeerDocs();
+        let live: Doc<unknown> = initialLive;
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
+            live = doc;
+        });
+        const handoffError = new Error('owner handoff remains pending');
+        const commit = vi
+            .fn()
+            .mockResolvedValueOnce({ status: 'retry-required', phase: 'commit', error: handoffError })
+            .mockResolvedValueOnce({ status: 'retry-required', phase: 'commit', error: handoffError })
+            .mockResolvedValueOnce({ status: 'committed', phase: 'commit' });
+        const abort = vi.fn().mockResolvedValue({ status: 'aborted', phase: 'abort' });
+        const sync = new AutomergeSync(makePeerManager(), {
+            captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+            prepareSyncPersistence: async () => ({ commit, abort }),
+        });
+        const remote = change(remoteSeed, (draft) => {
+            draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            draft.peerProbe = 'published-before-handoff';
+        });
+
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
+        }
+        await expect(sync.flushPersistence()).resolves.toMatchObject({ status: 'retry-required' });
+        expect(commit).toHaveBeenCalledOnce();
+        expect(persistCrdtProject).toHaveBeenCalledOnce();
+
+        await expect(sync.settleDurableTeardown()).rejects.toBe(handoffError);
+        expect(commit).toHaveBeenCalledTimes(2);
+        expect(persistCrdtProject).toHaveBeenCalledTimes(2);
+
+        await expect(sync.settleDurableTeardown()).resolves.toBeUndefined();
+        expect(commit).toHaveBeenCalledTimes(3);
+        expect(persistCrdtProject).toHaveBeenCalledTimes(3);
+        expect(abort).not.toHaveBeenCalled();
     });
 
     it('preserves the host project identity while applying other guest root changes', async () => {

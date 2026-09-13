@@ -74,6 +74,9 @@ describe('CollaborationPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.useStore.mockImplementation((_store, defaultValue) => defaultValue);
+        mocks.createSession.mockResolvedValue('session-id');
+        mocks.joinSession.mockResolvedValue('answer');
+        mocks.leaveSession.mockResolvedValue(undefined);
         setState();
         Object.assign(navigator, { clipboard: { writeText: mocks.clipboardWriteText } });
     });
@@ -289,13 +292,33 @@ describe('CollaborationPanel', () => {
             );
         });
 
-        it('leaves the session via the Leave Session button', () => {
+        it('keeps leave pending until durable teardown settles', async () => {
+            const teardown = Promise.withResolvers<void>();
+            mocks.leaveSession.mockReturnValueOnce(teardown.promise);
             setState({ isEnabled: true });
             render(<CollaborationPanel />);
 
             fireEvent.click(screen.getByRole('button', { name: 'Leave Session' }));
 
             expect(mocks.leaveSession).toHaveBeenCalledTimes(1);
+            expect(screen.getByRole('button', { name: 'Leaving...' })).toBeDisabled();
+
+            teardown.resolve();
+            await waitFor(() => expect(screen.getByRole('button', { name: 'Leave Session' })).toBeEnabled());
+        });
+
+        it('handles leave failure and restores the control', async () => {
+            const failure = new Error('teardown failed');
+            mocks.leaveSession.mockRejectedValueOnce(failure);
+            setState({ isEnabled: true });
+            render(<CollaborationPanel />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Leave Session' }));
+
+            await waitFor(() =>
+                expect(mocks.loggerWarn).toHaveBeenCalledWith('Failed to leave collaboration session:', failure)
+            );
+            expect(screen.getByRole('button', { name: 'Leave Session' })).toBeEnabled();
         });
 
         it('copies the generated invite text to the clipboard', async () => {
@@ -347,21 +370,48 @@ describe('CollaborationPanel', () => {
             mocks.useStore.mockReturnValue({ collaborationPanelOpen: true });
         });
 
-        it('starts a session with the entered host name', () => {
+        it('starts a session with the entered host name', async () => {
             render(<CollaborationPanel />);
 
             fireEvent.change(screen.getAllByPlaceholderText('Your name')[0]!, { target: { value: 'Host Name' } });
             fireEvent.click(screen.getByRole('button', { name: 'Start Session' }));
 
             expect(mocks.createSession).toHaveBeenCalledWith('Host Name');
+            await waitFor(() => expect(screen.getByRole('button', { name: 'Start Session' })).toBeEnabled());
         });
 
-        it('defaults the host name to "Host" when left blank', () => {
+        it('defaults the host name to "Host" when left blank', async () => {
             render(<CollaborationPanel />);
 
             fireEvent.click(screen.getByRole('button', { name: 'Start Session' }));
 
             expect(mocks.createSession).toHaveBeenCalledWith('Host');
+            await waitFor(() => expect(screen.getByRole('button', { name: 'Start Session' })).toBeEnabled());
+        });
+
+        it('keeps session creation pending until durable replacement settles', async () => {
+            const creation = Promise.withResolvers<string>();
+            mocks.createSession.mockReturnValueOnce(creation.promise);
+            render(<CollaborationPanel />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Start Session' }));
+
+            expect(screen.getByRole('button', { name: 'Starting...' })).toBeDisabled();
+            creation.resolve('session-id');
+            await waitFor(() => expect(screen.getByRole('button', { name: 'Start Session' })).toBeEnabled());
+        });
+
+        it('handles session creation failure and restores the control', async () => {
+            const failure = new Error('creation failed');
+            mocks.createSession.mockRejectedValueOnce(failure);
+            render(<CollaborationPanel />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Start Session' }));
+
+            await waitFor(() =>
+                expect(mocks.loggerWarn).toHaveBeenCalledWith('Failed to create collaboration session:', failure)
+            );
+            expect(screen.getByRole('button', { name: 'Start Session' })).toBeEnabled();
         });
 
         it('joins a session and reveals the answer to share back', async () => {

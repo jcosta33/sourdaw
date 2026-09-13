@@ -111,7 +111,7 @@ if (persistenceState.version !== CRDT_PERSISTENCE_QUEUE_STATE_VERSION) {
     const migrationGeneration = persistenceState.persistenceGeneration;
     const migrationRecovery = previousOperationTail.then(async () => {
         await reconcileMigrationPersistenceSnapshot(migrationGeneration);
-        return compactCrdtProject(migrationGeneration, true);
+        return compactCrdtProject(migrationGeneration, true, createPersistenceAttempt());
     });
     // Keep the tail usable after recovery failure. Snapshot reconciliation
     // remains required, while a failed full write retains its captured bytes.
@@ -138,40 +138,129 @@ export type LoadCrdtPersistenceOperation = (input: {
     shouldCommit: () => boolean;
 }) => Promise<LoadCrdtPersistenceOperationResult>;
 
+type CrdtPersistenceDurableDisposition =
+    | { write: 'none' }
+    | { write: 'noop'; authority: CrdtPersistenceAuthority }
+    | { write: 'committed'; authority: CrdtPersistenceAuthority };
+
+export type CrdtPersistenceBarrierResult =
+    | {
+          status: 'settled';
+          mode: 'ordinary';
+          durable: Exclude<CrdtPersistenceDurableDisposition, { write: 'none' }>;
+      }
+    | {
+          status: 'settled';
+          mode: 'exact';
+          expectedRootHeads: readonly string[];
+          durable: Exclude<CrdtPersistenceDurableDisposition, { write: 'none' }>;
+      }
+    | { status: 'skipped'; reason: 'operation-declined'; durable: { write: 'none' } }
+    | { status: 'superseded'; durable: CrdtPersistenceDurableDisposition }
+    | { status: 'failed'; durable: CrdtPersistenceDurableDisposition; error: unknown };
+
 export type CrdtPersistenceBarrierOperation = (input: {
-    persistCurrentProject: (expectedRootHeads?: readonly string[]) => Promise<void>;
+    persistCurrentProject: (expectedRootHeads?: readonly string[]) => Promise<CrdtPersistenceBarrierResult>;
 }) => Promise<void>;
+
+type PersistenceAttempt = {
+    durable: CrdtPersistenceDurableDisposition;
+};
+
+function createPersistenceAttempt(): PersistenceAttempt {
+    return { durable: { write: 'none' } };
+}
+
+function recordPersistenceNoop(attempt: PersistenceAttempt, authority: CrdtPersistenceAuthority): void {
+    if (attempt.durable.write === 'none') {
+        attempt.durable = { write: 'noop', authority };
+    }
+}
+
+function recordPersistenceCommit(attempt: PersistenceAttempt, authority: CrdtPersistenceAuthority): void {
+    attempt.durable = { write: 'committed', authority };
+}
+
+function getSuccessfulBarrierResult(
+    attempt: PersistenceAttempt,
+    expectedRootHeads?: readonly string[]
+): CrdtPersistenceBarrierResult {
+    let durable: Exclude<CrdtPersistenceDurableDisposition, { write: 'none' }>;
+    if (attempt.durable.write === 'none') {
+        durable = { write: 'noop', authority: persistenceState.authority ?? EMPTY_PERSISTENCE_AUTHORITY };
+    } else {
+        durable = attempt.durable;
+    }
+    if (expectedRootHeads) {
+        return {
+            status: 'settled',
+            mode: 'exact',
+            expectedRootHeads: [...expectedRootHeads],
+            durable,
+        };
+    }
+    return { status: 'settled', mode: 'ordinary', durable };
+}
 
 /**
  * Run a cross-store lifecycle on the same tail as autosave and explicit CRDT
  * persistence. The caller may publish one exact repository revision and then
  * persist it without an autosave entering between those two steps.
  */
-function runCrdtPersistenceBarrier(operation: CrdtPersistenceBarrierOperation): Promise<void> {
+function runCrdtPersistenceBarrier(operation: CrdtPersistenceBarrierOperation): Promise<CrdtPersistenceBarrierResult> {
     const generation = persistenceState.persistenceGeneration;
-    const run = persistenceState.operationTail.then(async () => {
-        if (generation !== persistenceState.persistenceGeneration) {
-            return;
-        }
-        await operation({
-            persistCurrentProject: async (expectedRootHeads) => {
-                if (!expectedRootHeads) {
-                    await persistIncrementalCrdtProject(generation, true);
-                    return;
-                }
-                await automergeRepository.transactSnapshot(async (snapshotTransaction) => {
-                    automergeRepository.reserveSnapshotTransactionDocuments(snapshotTransaction, [DOC_PREFIX_ROOT]);
-                    assertExpectedRootHeads(expectedRootHeads);
-                    // The caller demands the root's exact heads survive this
-                    // persist unmoved, so this call must not force this
-                    // generation's own deferred writes to land: doing so could
-                    // move the root heads the assert below re-checks.
-                    await persistIncrementalCrdtProject(generation, false);
-                    assertExpectedRootHeads(expectedRootHeads);
-                });
-            },
+    const attempt = createPersistenceAttempt();
+    const run = persistenceState.operationTail
+        .then(async () => {
+            if (generation !== persistenceState.persistenceGeneration) {
+                return { status: 'superseded', durable: attempt.durable } satisfies CrdtPersistenceBarrierResult;
+            }
+            let invoked = false;
+            let result: CrdtPersistenceBarrierResult | null = null;
+            await operation({
+                persistCurrentProject: async (expectedRootHeads) => {
+                    invoked = true;
+                    try {
+                        if (!expectedRootHeads) {
+                            await persistIncrementalCrdtProject(generation, true, attempt);
+                        } else {
+                            await automergeRepository.transactSnapshot(async (snapshotTransaction) => {
+                                automergeRepository.reserveSnapshotTransactionDocuments(snapshotTransaction, [
+                                    DOC_PREFIX_ROOT,
+                                ]);
+                                assertExpectedRootHeads(expectedRootHeads);
+                                // The caller demands the root's exact heads survive this
+                                // persist unmoved, so this call must not force this
+                                // generation's own deferred writes to land: doing so could
+                                // move the root heads the assert below re-checks.
+                                await persistIncrementalCrdtProject(generation, false, attempt);
+                                assertExpectedRootHeads(expectedRootHeads);
+                            });
+                        }
+                    } catch (error) {
+                        result = { status: 'failed', durable: attempt.durable, error };
+                        return result;
+                    }
+                    if (generation === persistenceState.persistenceGeneration) {
+                        result = getSuccessfulBarrierResult(attempt, expectedRootHeads);
+                    } else {
+                        result = { status: 'superseded', durable: attempt.durable };
+                    }
+                    return result;
+                },
+            });
+            if (!invoked) {
+                return {
+                    status: 'skipped',
+                    reason: 'operation-declined',
+                    durable: { write: 'none' },
+                } satisfies CrdtPersistenceBarrierResult;
+            }
+            return result ?? getSuccessfulBarrierResult(attempt);
+        })
+        .catch((error: unknown) => {
+            return { status: 'failed', durable: attempt.durable, error } satisfies CrdtPersistenceBarrierResult;
         });
-    });
     persistenceState.operationTail = run.then(
         () => undefined,
         () => undefined
@@ -194,6 +283,7 @@ function runCrdtPersistenceOperation(
     }
 
     const generation = persistenceState.persistenceGeneration;
+    const attempt = createPersistenceAttempt();
     const run = persistenceState.operationTail.then(async () => {
         if (generation !== persistenceState.persistenceGeneration) {
             await noOpPersistenceOperation();
@@ -205,9 +295,9 @@ function runCrdtPersistenceOperation(
         // heads the assert below re-checks.
         const settlePendingWrites = expectedRootHeads === undefined;
         if (operation === 'compact') {
-            await compactCrdtProject(generation, settlePendingWrites);
+            await compactCrdtProject(generation, settlePendingWrites, attempt);
         } else {
-            await persistIncrementalCrdtProject(generation, settlePendingWrites);
+            await persistIncrementalCrdtProject(generation, settlePendingWrites, attempt);
         }
         assertExpectedRootHeads(expectedRootHeads);
     });
@@ -580,10 +670,15 @@ function settlePendingWritesBestEffort(): void {
  * re-checks once this call returns, so it accepts whatever is already settled
  * instead.
  */
-async function persistIncrementalCrdtProject(generation: number, settlePendingWrites: boolean): Promise<void> {
-    await flushPendingFullSnapshot(generation);
+async function persistIncrementalCrdtProject(
+    generation: number,
+    settlePendingWrites: boolean,
+    attempt: PersistenceAttempt
+): Promise<void> {
+    await flushPendingFullSnapshot(generation, attempt);
     const expectedAuthority = await ensurePersistenceAuthority(generation);
-    await flushPendingChunks(generation);
+    recordPersistenceNoop(attempt, expectedAuthority);
+    await flushPendingChunks(generation, attempt);
     if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
@@ -592,14 +687,14 @@ async function persistIncrementalCrdtProject(generation: number, settlePendingWr
         persistenceState.nextRootLineage !== null &&
         persistenceState.nextRootLineage !== expectedAuthority.rootLineage
     ) {
-        await compactCrdtProject(generation, settlePendingWrites);
+        await compactCrdtProject(generation, settlePendingWrites, attempt);
         return;
     }
 
     const activeDocIds = getActiveDocIds();
     if (activeDocIds.length === 0) {
         if (persistenceState.persistedBaseDocIds.size > 0) {
-            await compactCrdtProject(generation, settlePendingWrites);
+            await compactCrdtProject(generation, settlePendingWrites, attempt);
         }
         return;
     }
@@ -608,7 +703,7 @@ async function persistIncrementalCrdtProject(generation: number, settlePendingWr
     // newly created or removed document changes the persisted shape, so write
     // one current full bundle before advancing any new incremental cursor.
     if (hasPersistedDocumentShapeChanged(activeDocIds)) {
-        await compactCrdtProject(generation, settlePendingWrites);
+        await compactCrdtProject(generation, settlePendingWrites, attempt);
         return;
     }
 
@@ -634,22 +729,26 @@ async function persistIncrementalCrdtProject(generation: number, settlePendingWr
         });
     }
 
-    await flushPendingChunks(generation);
+    await flushPendingChunks(generation, attempt);
     if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
 
     if (crdtProjectCompactionState.incrementalSaveCount >= CRDT_PROJECT_COMPACTION_THRESHOLD) {
-        await compactCrdtProject(generation, settlePendingWrites);
+        await compactCrdtProject(generation, settlePendingWrites, attempt);
     }
 }
 
 /** See `persistIncrementalCrdtProject`'s `settlePendingWrites` doc. */
-async function compactCrdtProject(generation: number, settlePendingWrites: boolean): Promise<void> {
+async function compactCrdtProject(
+    generation: number,
+    settlePendingWrites: boolean,
+    attempt: PersistenceAttempt
+): Promise<void> {
     if (settlePendingWrites) {
         settlePendingWritesBestEffort();
     }
-    await flushPendingChunks(generation);
+    await flushPendingChunks(generation, attempt);
     if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
@@ -658,7 +757,7 @@ async function compactCrdtProject(generation: number, settlePendingWrites: boole
     // retry its captured bytes before any later incremental serialization.
     const failedSnapshot =
         persistenceState.pendingFullSnapshot?.generation === generation ? persistenceState.pendingFullSnapshot : null;
-    await flushPendingFullSnapshot(generation);
+    await flushPendingFullSnapshot(generation, attempt);
     if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
@@ -679,10 +778,13 @@ async function compactCrdtProject(generation: number, settlePendingWrites: boole
             return;
         }
 
-        await persistFullSnapshot({
-            generation,
-            bundle: currentBundle,
-        });
+        await persistFullSnapshot(
+            {
+                generation,
+                bundle: currentBundle,
+            },
+            attempt
+        );
         return;
     }
 
@@ -691,13 +793,16 @@ async function compactCrdtProject(generation: number, settlePendingWrites: boole
         return;
     }
 
-    await persistFullSnapshot({
-        generation,
-        bundle,
-    });
+    await persistFullSnapshot(
+        {
+            generation,
+            bundle,
+        },
+        attempt
+    );
 }
 
-async function flushPendingFullSnapshot(generation: number): Promise<void> {
+async function flushPendingFullSnapshot(generation: number, attempt: PersistenceAttempt): Promise<void> {
     const pending = persistenceState.pendingFullSnapshot;
     if (!pending || pending.generation !== generation) {
         return;
@@ -711,11 +816,11 @@ async function flushPendingFullSnapshot(generation: number): Promise<void> {
         return;
     }
 
-    await persistFullSnapshot(pending);
+    await persistFullSnapshot(pending, attempt);
 }
 
 /** Keep a serialized full bundle pending until its replace transaction commits. */
-async function persistFullSnapshot(pending: PendingFullSnapshot): Promise<void> {
+async function persistFullSnapshot(pending: PendingFullSnapshot, attempt: PersistenceAttempt): Promise<void> {
     if (pending.generation !== persistenceState.persistenceGeneration) {
         return;
     }
@@ -736,6 +841,9 @@ async function persistFullSnapshot(pending: PendingFullSnapshot): Promise<void> 
                 nextRootLineage: persistenceState.nextRootLineage ?? expectedAuthority.rootLineage,
                 signal: generationSignal,
             });
+            if (result.status === 'committed') {
+                recordPersistenceCommit(attempt, result.authority);
+            }
             if (currentPending.generation !== persistenceState.persistenceGeneration) {
                 observeSupersededPersistenceCommit(result);
                 return;
@@ -806,7 +914,7 @@ function areDocumentBundlesEqual(left: DocumentBundle, right: DocumentBundle): b
     return true;
 }
 
-async function flushPendingChunks(generation: number): Promise<void> {
+async function flushPendingChunks(generation: number, attempt: PersistenceAttempt): Promise<void> {
     prunePendingChunks(generation);
     const chunks = persistenceState.pendingChunks.filter(
         (pending) => pending.generation === generation && !pending.inFlight
@@ -836,6 +944,9 @@ async function flushPendingChunks(generation: number): Promise<void> {
                     signal: generationSignal,
                 }
             );
+            if (result.status === 'committed') {
+                recordPersistenceCommit(attempt, result.authority);
+            }
             if (generation !== persistenceState.persistenceGeneration) {
                 observeSupersededPersistenceCommit(result);
                 return;

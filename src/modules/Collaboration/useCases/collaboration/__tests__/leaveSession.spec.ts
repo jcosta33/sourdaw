@@ -12,13 +12,14 @@ import { leaveSession } from '../leaveSession';
  * orchestration without opening a real peer connection.
  */
 const mockRuntime = vi.hoisted(() => ({
-    state: {
-        peerManager: null as PeerConnectionManager | null,
-    },
     captureOwner: vi.fn<() => object | null>(),
     canWrite: vi.fn<(owner: object | null) => boolean>(),
     retire: vi.fn<(owner: object | null) => void>(),
-    cleanup: vi.fn<(owner?: object | null, requestWitness?: number) => boolean>(),
+    cleanup:
+        vi.fn<(owner?: object | null, requestWitness?: number, options?: { closeTransport?: boolean }) => boolean>(),
+    closeTransport: vi.fn<(owner: object | null) => void>(),
+    settleRetainedTeardown: vi.fn<() => Promise<void>>(),
+    runLifecycle: vi.fn(<T>(operation: () => Promise<T>) => operation()),
 }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
@@ -50,14 +51,15 @@ const resetStoreShape: CollaborationState = {
 };
 
 describe('leaveSession', () => {
-    const owner = {};
+    let owner: { peerManager?: PeerConnectionManager };
 
     beforeEach(() => {
         vi.clearAllMocks();
-        mockRuntime.state.peerManager = null;
+        owner = {};
         mockRuntime.captureOwner.mockReturnValue(owner);
         mockRuntime.canWrite.mockReturnValue(true);
         mockRuntime.cleanup.mockReturnValue(true);
+        mockRuntime.settleRetainedTeardown.mockResolvedValue(undefined);
         collaborationStore.set({ ...baseState });
     });
 
@@ -65,7 +67,9 @@ describe('leaveSession', () => {
         mockRuntime.captureOwner.mockReturnValue(null);
         await leaveSession();
 
-        expect(mockRuntime.cleanup).toHaveBeenCalledExactlyOnceWith(null, expect.any(Number));
+        expect(mockRuntime.cleanup).toHaveBeenCalledExactlyOnceWith(null, expect.any(Number), {
+            closeTransport: false,
+        });
         expect(collaborationStore.value).toEqual(resetStoreShape);
     });
 
@@ -77,6 +81,7 @@ describe('leaveSession', () => {
 
         expect(mockRuntime.retire).not.toHaveBeenCalled();
         expect(mockRuntime.cleanup).not.toHaveBeenCalled();
+        expect(mockRuntime.settleRetainedTeardown).toHaveBeenCalledOnce();
         expect(collaborationStore.value).toEqual({ ...resetStoreShape, error: 'cleanup failed' });
     });
 
@@ -89,14 +94,14 @@ describe('leaveSession', () => {
 
         const firstWitness = mockRuntime.cleanup.mock.calls[0]?.[1];
         expect(firstWitness).toEqual(expect.any(Number));
-        expect(mockRuntime.cleanup).toHaveBeenNthCalledWith(1, owner, firstWitness);
-        expect(mockRuntime.cleanup).toHaveBeenNthCalledWith(2, owner, firstWitness);
+        expect(mockRuntime.cleanup).toHaveBeenNthCalledWith(1, owner, firstWitness, { closeTransport: false });
+        expect(mockRuntime.cleanup).toHaveBeenNthCalledWith(2, owner, firstWitness, { closeTransport: false });
     });
 
     it('broadcasts a peer-leave message to every connected peer before tearing down', async () => {
         const sendCrdtSyncBuffered = vi.fn().mockResolvedValue(undefined);
         const getConnectedPeerIds = vi.fn().mockReturnValue(['p1', 'p2']);
-        mockRuntime.state.peerManager = {
+        owner.peerManager = {
             sendCrdtSyncBuffered,
             getConnectedPeerIds,
         } as unknown as PeerConnectionManager;
@@ -112,14 +117,15 @@ describe('leaveSession', () => {
             peerId: 'p2',
             message: { type: 'peer-leave', peerId: 'me' },
         });
-        expect(mockRuntime.cleanup).toHaveBeenCalledTimes(1);
+        expect(mockRuntime.closeTransport).toHaveBeenCalledExactlyOnceWith(owner);
+        expect(mockRuntime.cleanup).toHaveBeenCalledWith(owner, expect.any(Number), { closeTransport: false });
         expect(collaborationStore.value).toEqual(resetStoreShape);
     });
 
     it('falls back to an empty peer id in the leave message when the store has no local peer', async () => {
         collaborationStore.set(null);
         const sendCrdtSyncBuffered = vi.fn().mockResolvedValue(undefined);
-        mockRuntime.state.peerManager = {
+        owner.peerManager = {
             sendCrdtSyncBuffered,
             getConnectedPeerIds: vi.fn().mockReturnValue(['p1']),
         } as unknown as PeerConnectionManager;
@@ -137,7 +143,7 @@ describe('leaveSession', () => {
             .fn()
             .mockRejectedValueOnce(new Error('channel closed'))
             .mockResolvedValueOnce(undefined);
-        mockRuntime.state.peerManager = {
+        owner.peerManager = {
             sendCrdtSyncBuffered,
             getConnectedPeerIds: vi.fn().mockReturnValue(['broken', 'ok']),
         } as unknown as PeerConnectionManager;
@@ -154,5 +160,26 @@ describe('leaveSession', () => {
         await leaveSession();
 
         expect(collaborationStore.value).toEqual(baseState);
+    });
+
+    it('closes the outgoing transport before awaiting and propagating durable teardown', async () => {
+        const teardownEntered = Promise.withResolvers<void>();
+        const teardown = Promise.withResolvers<void>();
+        mockRuntime.settleRetainedTeardown.mockImplementationOnce(async () => {
+            teardownEntered.resolve();
+            await teardown.promise;
+        });
+        owner.peerManager = {
+            sendCrdtSyncBuffered: vi.fn().mockResolvedValue(undefined),
+            getConnectedPeerIds: vi.fn().mockReturnValue(['peer']),
+        } as unknown as PeerConnectionManager;
+
+        const leaving = leaveSession();
+        await teardownEntered.promise;
+        expect(mockRuntime.closeTransport).toHaveBeenCalledExactlyOnceWith(owner);
+
+        const failure = new Error('durable teardown failed');
+        teardown.reject(failure);
+        await expect(leaving).rejects.toBe(failure);
     });
 });

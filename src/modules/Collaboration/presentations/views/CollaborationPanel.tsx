@@ -49,7 +49,9 @@ export const CollaborationPanel = (): ReactElement | null => {
     const [copiedInvite, setCopiedInvite] = useState(false);
     const [copiedAnswer, setCopiedAnswer] = useState(false);
     const [isGeneratingInvite, setIsGeneratingInvite] = useState(false);
+    const [isCreating, setIsCreating] = useState(false);
     const [isJoining, setIsJoining] = useState(false);
+    const [isLeaving, setIsLeaving] = useState(false);
     const copiedInviteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const copiedAnswerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -75,8 +77,15 @@ export const CollaborationPanel = (): ReactElement | null => {
         }
     };
 
-    const handleCreate = () => {
-        createSession(hostName.trim() || 'Host');
+    const handleCreate = async () => {
+        setIsCreating(true);
+        try {
+            await createSession(hostName.trim() || 'Host');
+        } catch (error) {
+            logger.warn('Failed to create collaboration session:', error);
+        } finally {
+            setIsCreating(false);
+        }
     };
 
     const handleGenerateInvite = async () => {
@@ -118,6 +127,17 @@ export const CollaborationPanel = (): ReactElement | null => {
             logger.warn('Failed to join session:', error);
         } finally {
             setIsJoining(false);
+        }
+    };
+
+    const handleLeave = async () => {
+        setIsLeaving(true);
+        try {
+            await leaveSession();
+        } catch (error) {
+            logger.warn('Failed to leave collaboration session:', error);
+        } finally {
+            setIsLeaving(false);
         }
     };
 
@@ -312,8 +332,15 @@ export const CollaborationPanel = (): ReactElement | null => {
                             </CollaborationBlock>
                         ) : null}
 
-                        <Button variant="outline" size="xs" onClick={leaveSession} className="w-full">
-                            Leave Session
+                        <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={handleLeave}
+                            disabled={isLeaving}
+                            className="w-full gap-1"
+                        >
+                            {isLeaving ? <Loader2 className="size-3 animate-spin" /> : null}
+                            {isLeaving ? 'Leaving...' : 'Leave Session'}
                         </Button>
                     </>
                 ) : (
@@ -329,8 +356,15 @@ export const CollaborationPanel = (): ReactElement | null => {
                                 onChange={(event) => setHostName(event.target.value)}
                                 placeholder="Your name"
                             />
-                            <Button variant="default" size="xs" onClick={handleCreate} className="w-full">
-                                Start Session
+                            <Button
+                                variant="default"
+                                size="xs"
+                                onClick={handleCreate}
+                                disabled={isCreating}
+                                className="w-full gap-1"
+                            >
+                                {isCreating ? <Loader2 className="size-3 animate-spin" /> : null}
+                                {isCreating ? 'Starting...' : 'Start Session'}
                             </Button>
                         </CollaborationBlock>
 
