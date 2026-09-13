@@ -17,7 +17,6 @@ import {
     type streamCloudChatCompletion,
 } from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
-import { webLlmRequestCoordinator } from '../../repositories/webLlm/webLlmRequestCoordinator';
 import { agentRunStore } from '../../stores/agentRunStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { getAgentPlanProposalIdentity } from '../../transformers/normalizeAgentPlanProposal';
@@ -714,6 +713,22 @@ function createFailingWebLlmEngine(content: string, error: Error) {
     };
 }
 
+function observeAbortListenerRegistration(signal: AbortSignal, expectedRegistration: number) {
+    const registered = Promise.withResolvers<void>();
+    const addEventListener = signal.addEventListener.bind(signal);
+    let registrations = 0;
+    const addAbortListener = vi.spyOn(signal, 'addEventListener').mockImplementation((type, listener, options) => {
+        if (type === 'abort') {
+            registrations += 1;
+            if (registrations === expectedRegistration) {
+                registered.resolve();
+            }
+        }
+        addEventListener(type, listener, options);
+    });
+    return { registered: registered.promise, restore: () => addAbortListener.mockRestore() };
+}
+
 describe('sendChatMessage retained-provider selection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -1034,8 +1049,11 @@ describe('sendChatMessage retained-provider selection', () => {
         const streamPaused = Promise.withResolvers<void>();
         const releaseStream = Promise.withResolvers<void>();
         const engineFinishedStream = Promise.withResolvers<void>();
+        const unexpectedCompletionCreate = Promise.withResolvers<void>();
         const events: string[] = [];
         const pending: Promise<unknown>[] = [];
+        let observeUnexpectedCompletionCreate: (() => void) | null = null;
+        let releaseNextAdmission: (() => void) | null = null;
         async function* activeStream() {
             yield { choices: [{ delta: { content: 'The active answer starts. ' } }] };
             streamPaused.resolve();
@@ -1049,34 +1067,55 @@ describe('sendChatMessage retained-provider selection', () => {
                 events.push('active-stream-created');
                 return activeStream();
             }
+            observeUnexpectedCompletionCreate?.();
             events.push('queued-completion-created');
             return { choices: [{ finish_reason: 'stop', message: { content: 'The next completion.' } }] };
         });
         const engine = { interruptGenerate: vi.fn(), chat: { completions: { create } } };
-        const runAdmission = vi.spyOn(webLlmRequestCoordinator, 'run');
         const cancelled = new AbortController();
+        const cancelledAdmission = observeAbortListenerRegistration(cancelled.signal, 1);
         mocks.getLlmEngine.mockReturnValue(engine);
         mocks.initWebLlmEngine.mockResolvedValue(engine);
 
         try {
             const activeChat = sendChatMessage('Keep streaming this answer.', { mode: 'explain' });
-            pending.push(activeChat);
+            pending.push(activeChat.catch(() => undefined));
             await streamPaused.promise;
 
+            observeUnexpectedCompletionCreate = unexpectedCompletionCreate.resolve;
             const cancelledCompletion = generateWebLlmCompletion('system', 'cancel me', { signal: cancelled.signal });
-            pending.push(cancelledCompletion);
-            await vi.waitFor(() =>
-                expect(runAdmission).toHaveBeenCalledWith(engine, expect.objectContaining({ signal: cancelled.signal }))
-            );
+            pending.push(cancelledCompletion.catch(() => undefined));
+            const cancelledAdmissionResult = await Promise.race([
+                cancelledAdmission.registered.then(() => 'listener' as const),
+                unexpectedCompletionCreate.promise.then(() => 'engine-create' as const),
+            ]);
+            if (cancelledAdmissionResult === 'engine-create') {
+                expect(create).toHaveBeenCalledTimes(1);
+            }
+            observeUnexpectedCompletionCreate = null;
             expect(create).toHaveBeenCalledOnce();
 
             cancelled.abort(new DOMException('Cancelled while queued.', 'AbortError'));
             await expect(cancelledCompletion).rejects.toMatchObject({ name: 'AbortError' });
             expect(engine.interruptGenerate).not.toHaveBeenCalled();
 
-            const nextCompletion = generateWebLlmCompletion('system', 'run after the stream');
-            pending.push(nextCompletion);
-            await vi.waitFor(() => expect(runAdmission).toHaveBeenCalledTimes(2));
+            const next = new AbortController();
+            const nextAdmission = observeAbortListenerRegistration(next.signal, 1);
+            releaseNextAdmission = nextAdmission.restore;
+            const unexpectedNextCompletionCreate = Promise.withResolvers<void>();
+            observeUnexpectedCompletionCreate = unexpectedNextCompletionCreate.resolve;
+            const nextCompletion = generateWebLlmCompletion('system', 'run after the stream', { signal: next.signal });
+            pending.push(nextCompletion.catch(() => undefined));
+            const nextAdmissionResult = await Promise.race([
+                nextAdmission.registered.then(() => 'listener' as const),
+                unexpectedNextCompletionCreate.promise.then(() => 'engine-create' as const),
+            ]);
+            if (nextAdmissionResult === 'engine-create') {
+                expect(create).toHaveBeenCalledTimes(1);
+            }
+            observeUnexpectedCompletionCreate = null;
+            releaseNextAdmission();
+            releaseNextAdmission = null;
             expect(create).toHaveBeenCalledOnce();
 
             releaseStream.resolve();
@@ -1096,21 +1135,30 @@ describe('sendChatMessage retained-provider selection', () => {
         } finally {
             releaseStream.resolve();
             await Promise.allSettled(pending);
-            runAdmission.mockRestore();
+            cancelledAdmission.restore();
+            releaseNextAdmission?.();
         }
     });
 
     it('keeps an active completion intact when a queued explain chat is cancelled before the next completion starts', async () => {
         const completionResponse = Promise.withResolvers<unknown>();
         const completionStarted = Promise.withResolvers<void>();
+        const activeAborterExposed = Promise.withResolvers<AbortController>();
+        const chatCancellationBound = Promise.withResolvers<void>();
+        const unexpectedChatCreate = Promise.withResolvers<void>();
         const events: string[] = [];
         const pending: Promise<unknown>[] = [];
         let completionCount = 0;
+        let observeUnexpectedChatCreate: (() => void) | null = null;
+        let observeUnexpectedCompletionCreate: (() => void) | null = null;
+        let releaseNextAdmission: (() => void) | null = null;
+        let queuedChatAdmission: ReturnType<typeof observeAbortListenerRegistration> | null = null;
         async function* cancelledChatStream() {
             yield { choices: [{ delta: { content: 'Cancelled chat content.' }, finish_reason: 'stop' }] };
         }
         const create = vi.fn((params: Record<string, unknown>) => {
             if (params.stream === true) {
+                observeUnexpectedChatCreate?.();
                 events.push('queued-chat-created');
                 return Promise.resolve(cancelledChatStream());
             }
@@ -1123,36 +1171,46 @@ describe('sendChatMessage retained-provider selection', () => {
                     return response;
                 });
             }
+            observeUnexpectedCompletionCreate?.();
             events.push('next-completion-created');
             return Promise.resolve({ choices: [{ finish_reason: 'stop', message: { content: 'Next completion.' } }] });
         });
         const engine = { interruptGenerate: vi.fn(), chat: { completions: { create } } };
-        const runAdmission = vi.spyOn(webLlmRequestCoordinator, 'run');
-        const streamAdmission = vi.spyOn(webLlmRequestCoordinator, 'stream');
+        const bindAbortController = agentRunCancellation.bindAbortController;
+        const bindCancellation = vi.spyOn(agentRunCancellation, 'bindAbortController').mockImplementation((input) => {
+            queuedChatAdmission = observeAbortListenerRegistration(input.controller.signal, 2);
+            chatCancellationBound.resolve();
+            return bindAbortController(input);
+        });
         mocks.getLlmEngine.mockReturnValue(engine);
         mocks.initWebLlmEngine.mockResolvedValue(engine);
+        mocks.setActiveAborter.mockImplementation((value) => {
+            if (value instanceof AbortController) {
+                activeAborterExposed.resolve(value);
+            }
+        });
 
         try {
             const activeCompletion = generateWebLlmCompletion('system', 'finish this answer');
-            pending.push(activeCompletion);
+            pending.push(activeCompletion.catch(() => undefined));
             await completionStarted.promise;
-            await vi.waitFor(() => expect(runAdmission).toHaveBeenCalledTimes(1));
 
+            observeUnexpectedChatCreate = unexpectedChatCreate.resolve;
             const queuedChat = sendChatMessage('Cancel this queued chat.', { mode: 'explain' });
-            pending.push(queuedChat);
-            await vi.waitFor(() => expect(mocks.setActiveAborter).toHaveBeenCalledWith(expect.any(AbortController)));
-            const activeAborter = mocks.setActiveAborter.mock.calls.find(
-                ([value]) => value instanceof AbortController
-            )?.[0];
-            if (!(activeAborter instanceof AbortController)) {
-                throw new Error('Expected the queued explain chat to expose its active abort controller.');
+            pending.push(queuedChat.catch(() => undefined));
+            const activeAborter = await activeAborterExposed.promise;
+            await chatCancellationBound.promise;
+            if (queuedChatAdmission === null) {
+                throw new Error('Expected the queued explain chat cancellation binding to remain observable.');
             }
-            await vi.waitFor(() =>
-                expect(streamAdmission).toHaveBeenCalledWith(
-                    engine,
-                    expect.objectContaining({ signal: activeAborter.signal })
-                )
-            );
+            const queuedChatAdmissionResult = await Promise.race([
+                queuedChatAdmission.registered.then(() => 'listener' as const),
+                unexpectedChatCreate.promise.then(() => 'engine-create' as const),
+            ]);
+            if (queuedChatAdmissionResult === 'engine-create') {
+                expect(create).toHaveBeenCalledTimes(1);
+            }
+            observeUnexpectedChatCreate = null;
             expect(create).toHaveBeenCalledOnce();
 
             activeAborter.abort(new DOMException('Cancelled while queued.', 'AbortError'));
@@ -1167,9 +1225,25 @@ describe('sendChatMessage retained-provider selection', () => {
                 expect.objectContaining({ isStreaming: false, content: '' })
             );
 
-            const nextCompletion = generateWebLlmCompletion('system', 'run after the active completion');
-            pending.push(nextCompletion);
-            await vi.waitFor(() => expect(runAdmission).toHaveBeenCalledTimes(2));
+            const next = new AbortController();
+            const nextAdmission = observeAbortListenerRegistration(next.signal, 1);
+            releaseNextAdmission = nextAdmission.restore;
+            const unexpectedNextCompletionCreate = Promise.withResolvers<void>();
+            observeUnexpectedCompletionCreate = unexpectedNextCompletionCreate.resolve;
+            const nextCompletion = generateWebLlmCompletion('system', 'run after the active completion', {
+                signal: next.signal,
+            });
+            pending.push(nextCompletion.catch(() => undefined));
+            const nextAdmissionResult = await Promise.race([
+                nextAdmission.registered.then(() => 'listener' as const),
+                unexpectedNextCompletionCreate.promise.then(() => 'engine-create' as const),
+            ]);
+            if (nextAdmissionResult === 'engine-create') {
+                expect(create).toHaveBeenCalledTimes(1);
+            }
+            observeUnexpectedCompletionCreate = null;
+            releaseNextAdmission();
+            releaseNextAdmission = null;
             expect(create).toHaveBeenCalledOnce();
 
             completionResponse.resolve({
@@ -1187,8 +1261,9 @@ describe('sendChatMessage retained-provider selection', () => {
         } finally {
             completionResponse.resolve({ choices: [{ finish_reason: 'stop', message: { content: 'Released.' } }] });
             await Promise.allSettled(pending);
-            runAdmission.mockRestore();
-            streamAdmission.mockRestore();
+            queuedChatAdmission?.restore();
+            releaseNextAdmission?.();
+            bindCancellation.mockRestore();
         }
     });
 
