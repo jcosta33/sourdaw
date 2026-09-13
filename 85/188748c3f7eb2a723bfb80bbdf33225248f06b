@@ -1,0 +1,26 @@
+src/modules/Arrangement/presentations/views/__tests__/TimelineEmptyMenu.spec.tsx
+  h_1228e573df1f42 324,361,388,414,465,504,530,555,577,629,657
+src/modules/Grinder/repositories/neuralLibraryPersistence/__tests__/neuralLibraryPersistence.spec.ts
+  h_1228e573df1f42 145
+src/modules/MIDI/repositories/__tests__/downloadFile.spec.ts
+  h_1228e573df1f42 12
+src/modules/Project/repositories/nativeFileDialog/__tests__/helpers.spec.ts
+  h_1228e573df1f42 54
+src/modules/Project/repositories/nativeFileDialog/__tests__/nativeFileDialog.spec.ts
+  h_1228e573df1f42 71
+src/modules/Project/repositories/project/__tests__/downloadProjectFile.spec.ts
+  h_1228e573df1f42 64
+src/utils/__tests__/downloadFile.spec.ts
+  h_1228e573df1f42 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "85188748c3f7eb2a723bfb80bbdf33225248f06b",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
