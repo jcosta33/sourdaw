@@ -69,21 +69,37 @@ export type RootHeaderMiddleware = (request: IncomingMessage, response: ServerRe
  * Dev-server middleware stamping the serving checkout's root on every
  * response. Installed before Vite's own middleware so served bodies carry it
  * too; the value is whatever root the server actually resolved at startup,
- * never the asking client's.
+ * never the asking client's. The root is percent-encoded because Node
+ * rejects HTTP header values above latin1 (U+00FF) with ERR_INVALID_CHAR,
+ * and a checkout path such as an accented macOS home directory in its
+ * default NFD spelling would make every e2e-mode response throw.
  */
 export function createSourdawRootHeaderMiddleware(root: string): RootHeaderMiddleware {
     return (_request, response, next) => {
-        response.setHeader(SOURDAW_E2E_ROOT_HEADER, root);
+        response.setHeader(SOURDAW_E2E_ROOT_HEADER, encodeURIComponent(root));
         next();
     };
+}
+
+/**
+ * Inverse of the stamp's percent-encoding. A malformed escape passes through
+ * verbatim: the value only feeds the identity comparison and its mismatch
+ * message, so an unparseable marker must surface there, not crash the probe.
+ */
+function decodeSourdawRoot(stamped: string): string {
+    try {
+        return decodeURIComponent(stamped);
+    } catch {
+        return stamped;
+    }
 }
 
 /** Read the serving checkout's marker, or null when the server carries none. */
 export async function readServingCheckoutRoot(origin: string): Promise<string | null> {
     const response = await fetch(origin);
-    const root = response.headers.get(SOURDAW_E2E_ROOT_HEADER);
+    const stamped = response.headers.get(SOURDAW_E2E_ROOT_HEADER);
     await response.body?.cancel();
-    return root;
+    return stamped === null ? null : decodeSourdawRoot(stamped);
 }
 
 export async function originAnswers(origin: string): Promise<boolean> {

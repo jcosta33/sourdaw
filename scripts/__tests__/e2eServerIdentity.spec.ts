@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -179,12 +179,52 @@ describe('playwright config port derivation', () => {
 });
 
 describe('serving-checkout identity', () => {
-    it('stamps the serving root on every response via the dev-server middleware', async () => {
+    it('stamps a percent-encoded, header-safe serving root on every response', async () => {
         const root = makeTempRoot('stamped');
         const origin = await startServingServer(markerHandler(root));
         const response = await fetch(origin);
+        const stamped = response.headers.get(SOURDAW_E2E_ROOT_HEADER);
         await response.body?.cancel();
-        expect(response.headers.get(SOURDAW_E2E_ROOT_HEADER)).toBe(root);
+        if (stamped === null) {
+            throw new Error('expected the middleware to stamp the marker header');
+        }
+        expect(stamped).toBe(encodeURIComponent(root));
+        expect(stamped).toMatch(/^[\x20-\x7E]*$/);
+        await expect(readServingCheckoutRoot(origin)).resolves.toBe(root);
+    });
+
+    it('round-trips a non-latin1 checkout root and still refuses a foreign root', async () => {
+        // NFD spelling as macOS writes an accented home directory: the
+        // combining acute (U+0301) sits above latin1, so a raw header value
+        // would make the response throw ERR_INVALID_CHAR.
+        const accentedRoot = `${makeTempRoot('accented')}/cafe\u0301`;
+        mkdirSync(accentedRoot);
+        const origin = await startServingServer(markerHandler(accentedRoot));
+
+        const response = await fetch(origin);
+        const stamped = response.headers.get(SOURDAW_E2E_ROOT_HEADER);
+        await response.body?.cancel();
+        if (stamped === null) {
+            throw new Error('expected the middleware to stamp the marker header');
+        }
+        expect(stamped).toMatch(/^[\x20-\x7E]*$/);
+        await expect(readServingCheckoutRoot(origin)).resolves.toBe(accentedRoot);
+        await expect(assertServingCheckoutIdentity(origin, accentedRoot)).resolves.toBeUndefined();
+
+        const expectedRoot = makeTempRoot('this-lane');
+        const failure = await assertServingCheckoutIdentity(origin, expectedRoot).then(
+            () => null,
+            (error: unknown) => error
+        );
+        if (failure === null) {
+            throw new Error('expected the identity assertion to reject on a foreign marker');
+        }
+        if (!(failure instanceof Error)) {
+            throw new Error('expected the identity assertion to reject with an Error');
+        }
+        expect(failure.message).toContain(accentedRoot);
+        expect(failure.message).toContain(expectedRoot);
+        expect(failure.message).toContain(origin);
     });
 
     it('accepts a server whose marker matches this checkout', async () => {
