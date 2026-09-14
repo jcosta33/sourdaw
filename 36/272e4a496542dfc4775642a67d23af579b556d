@@ -1,0 +1,26 @@
+.agents/ui-scripts/utils.ts
+  h_1228e573df1f42 1-2,5-13,19-28
+AGENTS.md
+  h_1228e573df1f42 282-284
+playwright.config.ts
+  h_1228e573df1f42 5-12,34,40,44-45
+scripts/__tests__/e2eServerIdentity.spec.ts
+  h_1228e573df1f42 1-248
+scripts/e2eServerIdentity.ts
+  h_1228e573df1f42 1-136
+tests/e2e/firstPaintWarmup.ts
+  h_1228e573df1f42 1-2,5-6,24-27,36-37
+vite.config.ts
+  h_1228e573df1f42 11-13,17-33,63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "36272e4a496542dfc4775642a67d23af579b556d",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
