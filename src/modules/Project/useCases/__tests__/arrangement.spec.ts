@@ -118,6 +118,7 @@ vi.mock('#/modules/Transport/useCases', async () => {
         stopPlayback: vi.fn(),
         restoreTimelineMapSnapshot: actual.restoreTimelineMapSnapshot,
         stopTrackInputMonitoring: vi.fn(),
+        removeClip: vi.fn(),
     };
 });
 vi.mock('../projectPersistence/saveProject/markDirty', () => ({ markDirty: vi.fn() }));
@@ -143,6 +144,7 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
     );
     return {
         acceptsExternalPluginAutomationParameter: vi.fn(),
+        removeClip: vi.fn(),
         setClipAudioAssetStager: vi.fn(),
         stageAudioBufferAsset: vi.fn(),
         addTake: vi.fn(),

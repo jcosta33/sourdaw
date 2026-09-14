@@ -14,7 +14,9 @@ const { executeUserAppActionMock, pushUndoEntryMock, takeLaneStoreMock } = vi.ho
     pushUndoEntryMock: vi.fn(),
     takeLaneStoreMock: {
         value: null as TakeLaneStoreState | null,
-        set: vi.fn<(value: TakeLaneStoreState | null) => void>(),
+        set: vi.fn<(value: TakeLaneStoreState | null) => void>((value) => {
+            takeLaneStoreMock.value = value;
+        }),
     },
 }));
 

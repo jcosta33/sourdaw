@@ -57,10 +57,10 @@ describe('applyDeEsserParams', () => {
         // envelope sum's constant source (see createDeEsser).
         expect(param(device.nodes[10], 'offset').value).toBeCloseTo(-(10 ** (-30 / 20)), 12);
         expect(param(device.nodes[1], 'frequency').value).toBe(7200);
-        // Both band taps carry 10^(range/20): the reduction limit and the
+        // Both band taps carry 1 − 10^(range/20): the reduction limit and the
         // cancellation weight are one law (see createDeEsser).
-        expect(param(device.nodes[3], 'gain').value).toBeCloseTo(10 ** (-12 / 20), 12);
-        expect(param(device.nodes[4], 'gain').value).toBeCloseTo(-(10 ** (-12 / 20)), 12);
+        expect(param(device.nodes[3], 'gain').value).toBeCloseTo(1 - 10 ** (-12 / 20), 12);
+        expect(param(device.nodes[4], 'gain').value).toBeCloseTo(-(1 - 10 ** (-12 / 20)), 12);
     });
 
     it('does not let Range touch the threshold subtractor or the reduction curve', () => {

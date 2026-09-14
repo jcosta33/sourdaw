@@ -92,6 +92,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    removeClip: vi.fn(),
     startRecording: vi.fn(() => []),
     stopRecording: vi.fn(),
     addTakeLane: vi.fn(),

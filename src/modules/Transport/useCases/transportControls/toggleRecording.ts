@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getTrackEligibility } from '#/modules/Arrangement/stores';
-import { getTrackStoreState, updateClip, startRecording } from '#/modules/Arrangement/useCases';
+import { getTrackStoreState, updateClip, startRecording, removeClip } from '#/modules/Arrangement/useCases';
 import {
     resumeEngine,
     getAudioContext,
@@ -59,6 +59,17 @@ async function beginActualRecording(
 
         return startAudioRecording(track.id, (result) => {
             if (result.kind === 'failed') {
+                // A capture that dies mid-take (ring overrun, worker crash, a
+                // WAV that never decoded) must not strand an empty provisional
+                // clip on the arrangement or stay silent about it (#4265).
+                notifyUser(
+                    'Recording failed — the partial take was discarded. Check your audio input and try again.',
+                    'error'
+                );
+                const failedClip = clips.find((context) => context.trackId === track.id);
+                if (failedClip) {
+                    removeClip(failedClip.id);
+                }
                 return;
             }
             const { buffer } = result;

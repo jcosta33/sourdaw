@@ -394,11 +394,7 @@ const planPromptIntent = inject({ logger })(
                 const syncopatedArpeggioScope = getSyncopatedArpeggioPromptScope(context, projectRevision);
                 const syncopatedArpeggioCapability =
                     syncopatedArpeggioScope.status === 'request' ? syncopatedArpeggioScope.capability : undefined;
-                const wholeProjectVibeMixCapability = getWholeProjectVibeMixScope(
-                    prompt,
-                    context,
-                    projectRevision
-                )?.capability;
+                const wholeProjectVibeMixCapability = getWholeProjectVibeMixScope(context, projectRevision)?.capability;
                 const creativeCatalog = prepareCreativeInterpretationCatalog({
                     prompt,
                     context,
