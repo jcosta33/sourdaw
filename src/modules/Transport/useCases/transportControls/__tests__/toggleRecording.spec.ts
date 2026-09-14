@@ -48,6 +48,7 @@ const mocks = vi.hoisted(() => {
         getAudioContext: vi.fn<() => { currentTime: number; baseLatency: number; outputLatency: number }>(),
         getTrackStoreState: vi.fn<() => TestTrackState | null>(() => ({ tracks: [] })),
         updateClip: vi.fn<(clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void>(),
+        removeClip: vi.fn<(clipId: string) => void>(),
         startRecording: vi.fn<(atBeat?: number) => TestRecordingClip[]>(() => []),
         startPlayback: vi.fn<() => Promise<void>>(),
         stopActiveRecording: vi.fn<() => Promise<void>>(),
@@ -97,6 +98,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
     updateClip: mocks.updateClip,
     startRecording: mocks.startRecording,
+    removeClip: mocks.removeClip,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
@@ -373,6 +375,10 @@ describe('toggleRecording', () => {
             startBeat: 10,
             endBeat: 14,
         });
+
+        // A delivered take is kept: no retirement and no failure notice.
+        expect(mocks.removeClip).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
     it('places a take opened from a stopped transport against the instant the transport rolled', async () => {
@@ -672,7 +678,7 @@ describe('toggleRecording', () => {
         expect(clipUpdate(recordingClip).endBeat).toBeCloseTo(5.9, 9);
     });
 
-    it('does not cache or update a clip for a failed recording result', async () => {
+    it('tells the musician and retires the provisional take when a capture fails', async () => {
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: true,
@@ -696,8 +702,41 @@ describe('toggleRecording', () => {
 
         recordingCallback({ kind: 'failed', reason: 'worker-error' });
 
+        // The failure is surfaced instead of swallowed, the empty provisional
+        // clip is retired from the arrangement, and nothing buffer-shaped is
+        // cached or written into it.
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('Recording failed'), 'error');
+        expect(mocks.removeClip).toHaveBeenCalledWith('clip-recording');
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.updateClip).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a capture failure without retiring when the take clip does not exist yet', async () => {
+        // The terminal callback can race ahead of `startRecording` populating
+        // the clip list. There is nothing to retire, but the musician is still
+        // told why the take never appeared.
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledOnce());
+        const recordingCallback = mocks.startAudioRecording.mock.calls[0]?.[1];
+        if (!recordingCallback) {
+            throw new Error('Expected recording callback to be registered');
+        }
+
+        recordingCallback({ kind: 'failed', reason: 'flush-timeout' });
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('Recording failed'), 'error');
+        expect(mocks.removeClip).not.toHaveBeenCalled();
     });
 
     it('does not create recording state when an audio recorder cannot start', async () => {

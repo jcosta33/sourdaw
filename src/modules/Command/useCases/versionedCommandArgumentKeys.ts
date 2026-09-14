@@ -3777,8 +3777,10 @@ const schemaDefinitions = [
             clipId: 0,
             segments: 446,
             contour: 336,
+            retuneSpeedMs: 1,
+            formantPreserve: 42,
         },
-        required: ['clipId', 'segments', 'contour'],
+        required: ['clipId', 'segments', 'contour', 'retuneSpeedMs', 'formantPreserve'],
         additionalProperties: false,
     },
     {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { createBacteriaNode, isBacteriaDevice } from '../BacteriaNode';
+import { createBacteriaNode, extractBacteriaModAssignments, isBacteriaDevice } from '../BacteriaNode';
 
 // Mock the worklet-init helpers so createBacteriaNode resolves without a real
 // AudioContext / worklet module / WASM fetch. The ready handshake resolves
@@ -162,6 +162,37 @@ describe('createBacteriaNode', () => {
                 scheduling: { targetFrame: 48_000, deadlineFrame: 48_128 },
             })
         );
+    });
+
+    // The worklet's assignment-table contract: one replacement message carrying
+    // the numeric table, and silence after destroy.
+    it('posts the whole assignment table as one set-mod-assignments message', async () => {
+        const node = await createBacteriaNode(makeCtx());
+        postMessage.mockClear();
+
+        node.setModAssignments([
+            { sourceId: 0, targetParam: 16, amount: 50 },
+            { sourceId: 6, targetParam: 17, amount: -300 },
+        ]);
+
+        expect(postMessage).toHaveBeenCalledTimes(1);
+        expect(postMessage).toHaveBeenCalledWith({
+            type: 'set-mod-assignments',
+            assignments: [
+                { sourceId: 0, targetParam: 16, amount: 50 },
+                { sourceId: 6, targetParam: 17, amount: -300 },
+            ],
+        });
+    });
+
+    it('stays silent about assignments after destroy', async () => {
+        const node = await createBacteriaNode(makeCtx());
+        node.destroy();
+        postMessage.mockClear();
+
+        node.setModAssignments([{ sourceId: 0, targetParam: 16, amount: 50 }]);
+
+        expect(postMessage).not.toHaveBeenCalled();
     });
 
     it('should forward setBypass as a param message named bypass', async () => {
@@ -361,5 +392,38 @@ describe('createBacteriaNode', () => {
         node.workletNode.port.onmessage?.({ data: { type: 'latency-changed', latency: 9 } } as MessageEvent);
         // outcome was 'ready', not 'other' → latency handler skipped.
         expect(cb).not.toHaveBeenCalled();
+    });
+});
+
+describe('extractBacteriaModAssignments', () => {
+    it('reads a well-formed table and passes it through untouched', () => {
+        const table = [
+            { sourceId: 0, targetParam: 16, amount: 50 },
+            { sourceId: 6, targetParam: 0, amount: -1 },
+        ];
+        expect(extractBacteriaModAssignments({ modAssignments: table })).toEqual(table);
+    });
+
+    it('returns null for records without an assignments table', () => {
+        expect(extractBacteriaModAssignments({ mix: 0.5 })).toBeNull();
+        expect(extractBacteriaModAssignments({ modAssignments: 'all rows' })).toBeNull();
+    });
+
+    it('returns null when any row is not a numeric triple (all-or-nothing)', () => {
+        expect(
+            extractBacteriaModAssignments({
+                modAssignments: [{ sourceId: 0, targetParam: 16, amount: Number.NaN }],
+            })
+        ).toBeNull();
+        expect(
+            extractBacteriaModAssignments({
+                modAssignments: [{ sourceId: 'lfo1', targetParam: 16, amount: 1 }],
+            })
+        ).toBeNull();
+        expect(extractBacteriaModAssignments({ modAssignments: [null] })).toBeNull();
+    });
+
+    it('accepts an empty table as a valid replacement', () => {
+        expect(extractBacteriaModAssignments({ modAssignments: [] })).toEqual([]);
     });
 });

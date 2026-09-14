@@ -78,7 +78,7 @@ describe('processPitchEditWasm', () => {
         const right = [0.8, -0.7, 0.6, -0.5];
         const buffer = stereoBuffer(left, right);
 
-        await processPitchEditWasm(buffer, [], CONTOUR, 'audio-pitch:out');
+        await processPitchEditWasm(buffer, [], CONTOUR, 'audio-pitch:out', 25, true);
 
         const cached = vi.mocked(audioBufferCache.set).mock.calls[0]![1];
         expect(cached.numberOfChannels).toBe(2);
@@ -89,18 +89,22 @@ describe('processPitchEditWasm', () => {
         expect(Array.from(cached.getChannelData(0))).not.toEqual(Array.from(cached.getChannelData(1)));
     });
 
-    it('renders each channel through the same edit', async () => {
+    it('renders each channel through the same edit, retune speed and formant setting included', async () => {
         const buffer = stereoBuffer([0.1, 0.2], [0.3, 0.4]);
         const segments = [{ start_time_ms: 0, end_time_ms: 100, shift_semitones: 2 }];
 
-        await processPitchEditWasm(buffer, segments, CONTOUR, 'audio-pitch:out');
+        await processPitchEditWasm(buffer, segments, CONTOUR, 'audio-pitch:out', 120, false);
 
         expect(commitPitchEditWasm).toHaveBeenCalledTimes(2);
         const calls = vi.mocked(commitPitchEditWasm).mock.calls;
         expect(Array.from(calls[0]![0] as Float32Array)).toEqual([Math.fround(0.1), Math.fround(0.2)]);
         expect(Array.from(calls[1]![0] as Float32Array)).toEqual([Math.fround(0.3), Math.fround(0.4)]);
-        // The edit, not the channel, defines the render parameters.
+        // The edit, not the channel, defines the render parameters — including
+        // the two live settings the bake must carry (#2058): dropping either
+        // argument would bake a render the user never heard.
         expect(calls[1]!.slice(1)).toEqual(calls[0]!.slice(1));
+        expect(calls[0]![4]).toBe(120);
+        expect(calls[0]![5]).toBe(false);
     });
 
     it('keeps a mono source a one-channel commit', async () => {
@@ -114,7 +118,7 @@ describe('processPitchEditWasm', () => {
             copyToChannel: () => {},
         };
 
-        await processPitchEditWasm(buffer, [], CONTOUR, 'audio-pitch:out');
+        await processPitchEditWasm(buffer, [], CONTOUR, 'audio-pitch:out', 0, true);
 
         expect(commitPitchEditWasm).toHaveBeenCalledTimes(1);
         const cached = vi.mocked(audioBufferCache.set).mock.calls[0]![1];

@@ -23,11 +23,13 @@ import { paramBatcher } from '../bacteriaParamBridge/helpers';
  */
 
 const updateDeviceParam = vi.fn();
+const updateDevicePatch = vi.fn();
 const persistDeviceParam = vi.fn();
 const resolveEligibleDeviceWriteTarget = vi.fn();
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: (...args: unknown[]) => updateDeviceParam(...args),
+    updateDevicePatch: (...args: unknown[]) => updateDevicePatch(...args),
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: null },

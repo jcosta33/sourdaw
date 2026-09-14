@@ -109,6 +109,11 @@ function getFirstClipFileId(): string | undefined {
 
 const contour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' };
 const segments = [{ start_time_ms: 0, end_time_ms: 100, shift_semitones: 1 }];
+// Distinct from the seeded `kneadState` values on purpose: the payload is what
+// the render receives, so a fix that drops the forwarding cannot pass by
+// coincidence with a store read (#2058).
+const retuneSpeedMs = 25;
+const formantPreserve = true;
 
 const storedContour: PitchContour = {
     points: [{ time_ms: 0, frequency_hz: 220, confidence: 0.9, voiced: true }],
@@ -151,7 +156,7 @@ function getFirstClipAudioBufferId(): string | undefined {
 }
 
 function commitAction(clipId: string): Extract<AppAction, { type: 'commitPitchEdit' }> {
-    return { type: 'commitPitchEdit', payload: { clipId, segments, contour } };
+    return { type: 'commitPitchEdit', payload: { clipId, segments, contour, retuneSpeedMs, formantPreserve } };
 }
 
 describe('commitPitchEdit through action dispatch', () => {
@@ -214,6 +219,11 @@ describe('commitPitchEdit through action dispatch', () => {
             audioBufferId: 'buffer-c1',
             segments,
             contour,
+            // The bake must carry the payload's live settings (#2058): the
+            // commit clears the analysis afterwards, so an omitted setting is
+            // lost, not corrected later.
+            retuneSpeedMs,
+            formantPreserve,
         });
         expect(getFirstClipFileId()).toBe('test_pitch.wav');
 
@@ -393,7 +403,7 @@ describe('commitPitchEdit storage transaction scope (audit CC-10)', () => {
 
     it('discards the rendered file pointer and the contour drop when the action aborts', async () => {
         const transaction = runWithAutomergeStorageTransaction(undefined, () =>
-            commitPitchEdit({ clipId: 'c1', segments, contour })
+            commitPitchEdit({ clipId: 'c1', segments, contour, retuneSpeedMs, formantPreserve })
         );
         if (transaction.status !== 'returned') {
             throw transaction.error;
@@ -413,7 +423,7 @@ describe('commitPitchEdit storage transaction scope (audit CC-10)', () => {
 
     it('carries both post-render writes in the action’s own single change', async () => {
         const transaction = runWithAutomergeStorageTransaction(undefined, () =>
-            commitPitchEdit({ clipId: 'c1', segments, contour })
+            commitPitchEdit({ clipId: 'c1', segments, contour, retuneSpeedMs, formantPreserve })
         );
         if (transaction.status !== 'returned') {
             throw transaction.error;

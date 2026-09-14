@@ -29,6 +29,8 @@ const FRAMES = 128;
 const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
 
 const paramCalls: Array<{ name: string; value: number }> = [];
+const modAssignmentCalls: Array<{ sourceId: number; targetParam: number; amount: number }> = [];
+let clearModAssignmentCount = 0;
 let latencySamples = 0;
 let inputDb = -12;
 let outputDb = -6;
@@ -41,6 +43,12 @@ class BacteriaInstanceMock {
         if (name === 'oversampling' && value > 0) {
             latencySamples = 256;
         }
+    }
+    add_mod_assignment(sourceId: number, targetParam: number, amount: number): void {
+        modAssignmentCalls.push({ sourceId, targetParam, amount });
+    }
+    clear_mod_assignments(): void {
+        clearModAssignmentCount += 1;
     }
     get_latency_samples(): number {
         return latencySamples;
@@ -140,6 +148,8 @@ function stereo(frames: number, fill: number): Float32Array[] {
 
 function resetRecording(): void {
     paramCalls.length = 0;
+    modAssignmentCalls.length = 0;
+    clearModAssignmentCount = 0;
     latencySamples = 0;
     inputDb = -12;
     outputDb = -6;
@@ -436,5 +446,95 @@ describe('BacteriaProcessor process & telemetry', () => {
         const callsBefore = paramCalls.length;
         send(proc, { type: 'param', name: 'threshold', value: 0.5 });
         expect(paramCalls.length).toBe(callsBefore);
+    });
+});
+
+describe('BacteriaProcessor assignment-table protocol', () => {
+    beforeEach(() => {
+        resetGrowableMemory(memory, HEAP_BYTES);
+        resetRecording();
+    });
+
+    async function readyProcessor(): Promise<BacteriaProcessorLike> {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        return proc;
+    }
+
+    function assignmentsMessage(assignments: unknown): Record<string, unknown> {
+        return { type: 'set-mod-assignments', assignments };
+    }
+
+    it('replaces the whole table: clears the engine table, then adds each row in order', async () => {
+        const proc = await readyProcessor();
+        send(
+            proc,
+            assignmentsMessage([
+                { sourceId: 0, targetParam: 16, amount: 0.5 },
+                { sourceId: 6, targetParam: 17, amount: -300 },
+            ])
+        );
+        expect(clearModAssignmentCount).toBe(1);
+        expect(modAssignmentCalls).toEqual([
+            { sourceId: 0, targetParam: 16, amount: 0.5 },
+            { sourceId: 6, targetParam: 17, amount: -300 },
+        ]);
+    });
+
+    it('accepts an empty table as a clear without adds (the remove path)', async () => {
+        const proc = await readyProcessor();
+        send(proc, assignmentsMessage([{ sourceId: 0, targetParam: 16, amount: 1 }]));
+        expect(modAssignmentCalls).toHaveLength(1);
+
+        send(proc, assignmentsMessage([]));
+        expect(clearModAssignmentCount).toBe(2);
+        expect(modAssignmentCalls).toHaveLength(1);
+    });
+
+    it('rejects an out-of-range source id without touching the table', async () => {
+        const proc = await readyProcessor();
+        send(proc, assignmentsMessage([{ sourceId: 16, targetParam: 0, amount: 1 }]));
+        expect(clearModAssignmentCount).toBe(0);
+        expect(modAssignmentCalls).toEqual([]);
+    });
+
+    it('rejects an out-of-range target id without touching the table', async () => {
+        const proc = await readyProcessor();
+        send(proc, assignmentsMessage([{ sourceId: 0, targetParam: 112, amount: 1 }]));
+        expect(clearModAssignmentCount).toBe(0);
+        expect(modAssignmentCalls).toEqual([]);
+    });
+
+    it('rejects non-integer ids, non-finite amounts, unknown keys, and oversized tables whole', async () => {
+        const proc = await readyProcessor();
+        const malformed: unknown[] = [
+            [{ sourceId: 0.5, targetParam: 0, amount: 1 }],
+            [{ sourceId: 0, targetParam: 16.5, amount: 1 }],
+            [{ sourceId: 0, targetParam: 0, amount: Number.NaN }],
+            [{ sourceId: 0, targetParam: 0, amount: 1, extra: 'key' }],
+            { sourceId: 0, targetParam: 0, amount: 1 },
+            'not-a-table',
+            Array.from({ length: 65 }, () => ({ sourceId: 0, targetParam: 0, amount: 1 })),
+        ];
+        for (const assignments of malformed) {
+            send(proc, assignmentsMessage(assignments));
+        }
+        expect(clearModAssignmentCount).toBe(0);
+        expect(modAssignmentCalls).toEqual([]);
+    });
+
+    it('drops the table when the instance is missing or faulted', async () => {
+        const unloaded = await loadProcessor();
+        send(unloaded, assignmentsMessage([{ sourceId: 0, targetParam: 0, amount: 1 }]));
+        expect(clearModAssignmentCount).toBe(0);
+        expect(modAssignmentCalls).toEqual([]);
+
+        const faulted = await readyProcessor();
+        processShouldThrow = true;
+        faulted.process([stereo(FRAMES, 0.5)], [stereo(FRAMES, 0)]);
+        processShouldThrow = false;
+        send(faulted, assignmentsMessage([{ sourceId: 0, targetParam: 0, amount: 1 }]));
+        expect(clearModAssignmentCount).toBe(0);
+        expect(modAssignmentCalls).toEqual([]);
     });
 });

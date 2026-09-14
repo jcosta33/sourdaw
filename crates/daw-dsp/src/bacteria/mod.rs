@@ -143,6 +143,15 @@ impl BacteriaInstance {
             .add_mod_assignment(source_id, target_param, amount);
     }
 
+    /// Drop every modulation assignment; macro mappings are untouched.
+    ///
+    /// Removal, undo, and a patch reload arrive from the UI as one replacement
+    /// of the whole table, spelled clear-then-re-add against the validated
+    /// [`Self::add_mod_assignment`] path. Safe to call with the table empty.
+    pub fn clear_mod_assignments(&mut self) {
+        self.engine.clear_mod_assignments();
+    }
+
     /// Add a macro mapping: macro `macro_index` (0-7) → `target_param`, remapped
     /// from the macro's 0-1 range into `[min_value, max_value]`.
     pub fn add_macro_mapping(

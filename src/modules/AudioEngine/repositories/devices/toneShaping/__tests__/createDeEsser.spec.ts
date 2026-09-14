@@ -44,13 +44,13 @@ describe('createDeEsser split-band graph (#3735)', () => {
         expect(connectionsOf(input)).not.toContain(absShaper);
     });
 
-    it('cancels the raw band against the wet band with equal, opposite Range weights', () => {
+    it('cancels the raw band against the wet band with equal, opposite reduction weights', () => {
         const device = createDeEsser(asBaseAudioContext(createMockAudioContext()));
         const wet = gainOf(device, 'wet');
         const cancel = gainOf(device, 'cancel');
-        const defaultWeight = dbToGain(DEFAULT_DEESSER_RANGE_DB);
-        expect(wet.gain.value).toBeCloseTo(defaultWeight, 12);
-        expect(cancel.gain.value).toBeCloseTo(-defaultWeight, 12);
+        const defaultReductionWeight = 1 - dbToGain(DEFAULT_DEESSER_RANGE_DB);
+        expect(wet.gain.value).toBeCloseTo(defaultReductionWeight, 12);
+        expect(cancel.gain.value).toBeCloseTo(-defaultReductionWeight, 12);
         // Idle control → wet and cancel carry the same band and sum to
         // nothing; the device is unity until the band actually compresses.
         expect(wet.gain.value + cancel.gain.value).toBeCloseTo(0, 12);
@@ -133,17 +133,18 @@ describe('applyDeEsserParams (#3735)', () => {
         expect(threshLin.offset.value).toBeCloseTo(-dbToGain(-30), 12);
     });
 
-    it('scales the reduction limit by deess-range in dB instead of halving it into a ratio', () => {
+    it('converts deess-range into the 1 − 10^(range/20) band-tap weight the limit law needs', () => {
         const device = createDeEsser(asBaseAudioContext(createMockAudioContext()));
         const wet = gainOf(device, 'wet');
         const cancel = gainOf(device, 'cancel');
         applyDeEsserParams(device, { 'deess-range': -6 });
-        // Both taps carry 10^(range/20): with the reduction fully engaged the
-        // band is attenuated by exactly −range dB — the declared limit — and
-        // never more, whatever the control curve does.
-        expect(wet.gain.value).toBeCloseTo(dbToGain(-6), 12);
-        expect(cancel.gain.value).toBeCloseTo(-dbToGain(-6), 12);
-        expect(gainToDb(1 / Math.abs(wet.gain.value))).toBeCloseTo(6, 9);
+        // The output subtracts the tap weight from unity, so full engagement
+        // lands on gain 10^(range/20): attenuated by exactly −range dB — the
+        // declared limit — and never more, whatever the control curve does.
+        const reductionWeight = 1 - dbToGain(-6);
+        expect(wet.gain.value).toBeCloseTo(reductionWeight, 12);
+        expect(cancel.gain.value).toBeCloseTo(-reductionWeight, 12);
+        expect(gainToDb(1 - Math.abs(wet.gain.value))).toBeCloseTo(-6, 9);
     });
 
     it('isolates the selected band while Listen is on and restores the path after', () => {
@@ -183,6 +184,11 @@ const FRAMES = RENDER_SECONDS * SAMPLE_RATE;
  * so a misaligned summation shows up large instead of cancelling by chance.
  */
 const TONE_HZ = 6_300;
+/**
+ * The detector band's own centre: the band tap meets this tone at the
+ * bandpass's unity point, so the Range pins read the reduction law directly.
+ */
+const CENTER_TONE_HZ = 6_000;
 /** −26 dBFS peak: 6 dB under the −20 dB threshold, so no reduction triggers. */
 const IDLE_AMPLITUDE = 0.05;
 /** ≈ −0.9 dBFS peak: deep into the reduction law. */
@@ -195,9 +201,14 @@ type RenderPaths = { input: AudioNode; output: AudioNode };
 
 type PageDeEsserFactory = {
     createDeEsser: (ctx: BaseAudioContext) => { inputNode: AudioNode; outputNode: AudioNode };
+    applyDeEsserParams: (device: object, params: Record<string, number>) => void;
 };
 
 type RenderResult = { device: number[]; control: number[] };
+
+type RangeRenderResult = { control: number[]; band: number[]; device: number[] };
+
+type ComplexBin = { real: number; imaginary: number };
 
 let browserPromise: Promise<Browser | null> | null = null;
 let pagePromise: Promise<Page | null> | null = null;
@@ -225,32 +236,33 @@ function launchOnce(): Promise<Browser | null> {
 }
 
 /**
- * Bundle the production factory with esbuild in a child Node process —
- * in-process esbuild refuses to run under vitest's module transform — and
- * return the IIFE script. The render therefore executes the real
- * `createDeEsser` source with the `#/` alias resolved, not a hand-copied graph.
+ * Bundle the production factory and parameter applier with esbuild in a child
+ * Node process — in-process esbuild refuses to run under vitest's module
+ * transform — and return the IIFE script exposing both. The render therefore
+ * executes the real `createDeEsser` and `applyDeEsserParams` sources with the
+ * `#/` alias resolved, not a hand-copied graph.
  */
-function bundleFactorySource(): string {
+function bundleDeviceSources(): string {
     // Vitest does not hand spec modules a file:// `import.meta.url`, so paths
     // resolve from the runner's cwd: the repository root (`pnpm test:run`).
     const fromRepositoryRoot = (...segments: string[]): string => resolve(process.cwd(), ...segments);
-    const entryPoint = fromRepositoryRoot(
-        'src',
-        'modules',
-        'AudioEngine',
-        'repositories',
-        'devices',
-        'toneShaping',
-        'createDeEsser.ts'
-    );
+    const toneShapingRoot = ['src', 'modules', 'AudioEngine', 'repositories', 'devices', 'toneShaping'];
+    const factoryEntry = fromRepositoryRoot(...toneShapingRoot, 'createDeEsser.ts');
+    const paramsEntry = fromRepositoryRoot(...toneShapingRoot, 'applyDeEsserParams.ts');
     const srcRoot = fromRepositoryRoot('src');
     const script = `
         const { build } = await import('esbuild');
         // Under --eval there is no script-name argv slot: the first user
         // argument sits at process.argv[1].
-        const [entryPoint, aliasRoot] = process.argv.slice(1);
+        const [factoryEntry, paramsEntry, aliasRoot] = process.argv.slice(1);
         const bundled = await build({
-            entryPoints: [entryPoint],
+            stdin: {
+                contents:
+                    'export { createDeEsser } from ' + JSON.stringify(factoryEntry) + ';\\n' +
+                    'export { applyDeEsserParams } from ' + JSON.stringify(paramsEntry) + ';',
+                resolveDir: aliasRoot,
+                loader: 'ts',
+            },
             bundle: true,
             write: false,
             format: 'iife',
@@ -262,7 +274,7 @@ function bundleFactorySource(): string {
         process.stdout.write(JSON.stringify(bundled.outputFiles[0].text));
     `;
     return JSON.parse(
-        execFileSync(process.execPath, ['--input-type=module', '--eval', script, entryPoint, srcRoot], {
+        execFileSync(process.execPath, ['--input-type=module', '--eval', script, factoryEntry, paramsEntry, srcRoot], {
             // The child resolves its bare `esbuild` import from the cwd.
             cwd: process.cwd(),
             encoding: 'utf8',
@@ -281,7 +293,7 @@ function pageOnce(): Promise<Page | null> {
             return null;
         }
         const page = await browser.newPage();
-        const bundled = bundleFactorySource();
+        const bundled = bundleDeviceSources();
         await page.goto('about:blank');
         await page.addScriptTag({ content: bundled });
         return page;
@@ -289,13 +301,13 @@ function pageOnce(): Promise<Page | null> {
     return pagePromise;
 }
 
-async function renderThroughDevice(toneHz: number, amplitude: number): Promise<RenderResult> {
+async function renderThroughDevice(toneHz: number, amplitude: number, rangeDb?: number): Promise<RenderResult> {
     const page = await pageOnce();
     if (!page) {
         throw new Error(launchFailure ?? 'Chromium page unavailable');
     }
     return page.evaluate(
-        async ({ toneHz, amplitude, sampleRate, frames }) => {
+        async ({ toneHz, amplitude, rangeDb, sampleRate, frames }) => {
             const factory = (globalThis as unknown as { __sourdawDeEsser: PageDeEsserFactory }).__sourdawDeEsser;
             async function renderPath(build: (ctx: BaseAudioContext) => RenderPaths): Promise<number[]> {
                 const ctx = new OfflineAudioContext(1, frames, sampleRate);
@@ -319,11 +331,68 @@ async function renderThroughDevice(toneHz: number, amplitude: number): Promise<R
             });
             const device = await renderPath((ctx) => {
                 const built = factory.createDeEsser(ctx);
+                if (rangeDb !== undefined) {
+                    factory.applyDeEsserParams(built, { 'deess-range': rangeDb });
+                }
                 return { input: built.inputNode, output: built.outputNode };
             });
             return { device, control };
         },
-        { toneHz, amplitude, sampleRate: SAMPLE_RATE, frames: FRAMES }
+        { toneHz, amplitude, rangeDb, sampleRate: SAMPLE_RATE, frames: FRAMES }
+    );
+}
+
+/**
+ * One render triple for a Range setting: the unity-wire reference, the raw
+ * detector band (Listen isolation with the Range taps stilled), and the
+ * device itself with that Range applied — all on the band's own centre
+ * frequency, so the taps meet the tone at the bandpass's unity point.
+ */
+async function renderRangeProof(toneHz: number, rangeDb: number): Promise<RangeRenderResult> {
+    const page = await pageOnce();
+    if (!page) {
+        throw new Error(launchFailure ?? 'Chromium page unavailable');
+    }
+    return page.evaluate(
+        async ({ toneHz, amplitude, rangeDb, sampleRate, frames }) => {
+            const factory = (globalThis as unknown as { __sourdawDeEsser: PageDeEsserFactory }).__sourdawDeEsser;
+            async function renderPath(build: (ctx: BaseAudioContext) => RenderPaths): Promise<number[]> {
+                const ctx = new OfflineAudioContext(1, frames, sampleRate);
+                const paths = build(ctx);
+                const source = ctx.createOscillator();
+                source.type = 'sine';
+                source.frequency.value = toneHz;
+                const level = ctx.createGain();
+                level.gain.value = amplitude;
+                source.connect(level);
+                level.connect(paths.input);
+                paths.output.connect(ctx.destination);
+                source.start(0);
+                const rendered = await ctx.startRendering();
+                return Array.from(rendered.getChannelData(0));
+            }
+            const control = await renderPath((ctx) => {
+                const wire = ctx.createGain();
+                wire.gain.value = 1;
+                return { input: wire, output: wire };
+            });
+            const band = await renderPath((ctx) => {
+                const built = factory.createDeEsser(ctx);
+                // Listen isolates the band, but the engaged band taps still sum
+                // against it — audibly the *processed* band. Zeroing Range here
+                // stills the taps, so this render captures the raw bandpass
+                // output the device under test itself subtracts.
+                factory.applyDeEsserParams(built, { 'deess-listen': 1, 'deess-range': 0 });
+                return { input: built.inputNode, output: built.outputNode };
+            });
+            const device = await renderPath((ctx) => {
+                const built = factory.createDeEsser(ctx);
+                factory.applyDeEsserParams(built, { 'deess-range': rangeDb });
+                return { input: built.inputNode, output: built.outputNode };
+            });
+            return { control, band, device };
+        },
+        { toneHz, amplitude: HOT_AMPLITUDE, rangeDb, sampleRate: SAMPLE_RATE, frames: FRAMES }
     );
 }
 
@@ -335,8 +404,8 @@ function maxAbsoluteDifference(a: readonly number[], b: readonly number[]): numb
     return max;
 }
 
-/** Normalised single-bin DFT magnitude over `[from, to)`; a sine reads its peak. */
-function binMagnitude(signal: readonly number[], frequency: number, from: number, to: number): number {
+/** Single-bin DFT over `[from, to)`; a sine at an exact bin reads its peak. */
+function complexBin(signal: readonly number[], frequency: number, from: number, to: number): ComplexBin {
     let real = 0;
     let imaginary = 0;
     for (let index = from; index < to; index++) {
@@ -344,7 +413,16 @@ function binMagnitude(signal: readonly number[], frequency: number, from: number
         real += signal[index]! * Math.cos(angle);
         imaginary -= signal[index]! * Math.sin(angle);
     }
-    return Math.hypot(real, imaginary) / (to - from);
+    return { real: real / (to - from), imaginary: imaginary / (to - from) };
+}
+
+function magnitudeOf(bin: ComplexBin): number {
+    return Math.hypot(bin.real, bin.imaginary);
+}
+
+/** Normalised single-bin DFT magnitude over `[from, to)`; a sine reads its peak. */
+function binMagnitude(signal: readonly number[], frequency: number, from: number, to: number): number {
+    return magnitudeOf(complexBin(signal, frequency, from, to));
 }
 
 /** The recorded skip reason when no Chromium can be launched here. */
@@ -380,5 +458,57 @@ describe('createDeEsser real OfflineAudioContext renders', () => {
         // declared limit: reduction is negative and no deeper than Range.
         expect(attenuationDb).toBeLessThan(-0.2);
         expect(attenuationDb).toBeGreaterThanOrEqual(DEFAULT_DEESSER_RANGE_DB);
+    }, 30_000);
+
+    it('stays transparent at Range 0 however hard the band is driven', async (ctx) => {
+        const page = await pageOnce();
+        if (!page) {
+            skipWithoutRenderProof(ctx);
+        }
+        // Range 0 declares zero reduction: the taps weigh nothing and the hot
+        // tone must pass untouched, exactly as a below-threshold tone does.
+        const { device, control } = await renderThroughDevice(CENTER_TONE_HZ, HOT_AMPLITUDE, 0);
+        expect(maxAbsoluteDifference(device, control)).toBeLessThan(UNITY_TOLERANCE);
+    }, 30_000);
+
+    it('reduces a fully engaged band by exactly the declared Range at −12', async (ctx) => {
+        const page = await pageOnce();
+        if (!page) {
+            skipWithoutRenderProof(ctx);
+        }
+        const { control, band, device } = await renderRangeProof(CENTER_TONE_HZ, -12);
+        const inputBin = complexBin(control, CENTER_TONE_HZ, SETTLE_FRAMES, FRAMES);
+        const bandBin = complexBin(band, CENTER_TONE_HZ, SETTLE_FRAMES, FRAMES);
+        const outputBin = complexBin(device, CENTER_TONE_HZ, SETTLE_FRAMES, FRAMES);
+        // The hot tone saturates the engagement knee, so the law demands
+        // output = input − (1 − w)·band with w = 10^(range/20) — the band
+        // taps carry the reduction weight and the dry path stays unity.
+        const weight = 1 - dbToGain(-12);
+        const expectedReal = inputBin.real - weight * bandBin.real;
+        const expectedImaginary = inputBin.imaginary - weight * bandBin.imaginary;
+        const residual = Math.hypot(outputBin.real - expectedReal, outputBin.imaginary - expectedImaginary);
+        expect(residual / magnitudeOf(inputBin)).toBeLessThan(0.01);
+        // And the musician's reading of it: the band-centred tone drops by
+        // exactly the declared 12 dB (a reduction reads as a negative gain).
+        const attenuationDb = gainToDb(magnitudeOf(outputBin) / magnitudeOf(inputBin));
+        expect(attenuationDb).toBeCloseTo(-12, 1);
+    }, 30_000);
+
+    it('reduces a fully engaged band by exactly the declared Range at −30', async (ctx) => {
+        const page = await pageOnce();
+        if (!page) {
+            skipWithoutRenderProof(ctx);
+        }
+        const { control, band, device } = await renderRangeProof(CENTER_TONE_HZ, -30);
+        const inputBin = complexBin(control, CENTER_TONE_HZ, SETTLE_FRAMES, FRAMES);
+        const bandBin = complexBin(band, CENTER_TONE_HZ, SETTLE_FRAMES, FRAMES);
+        const outputBin = complexBin(device, CENTER_TONE_HZ, SETTLE_FRAMES, FRAMES);
+        const weight = 1 - dbToGain(-30);
+        const expectedReal = inputBin.real - weight * bandBin.real;
+        const expectedImaginary = inputBin.imaginary - weight * bandBin.imaginary;
+        const residual = Math.hypot(outputBin.real - expectedReal, outputBin.imaginary - expectedImaginary);
+        expect(residual / magnitudeOf(inputBin)).toBeLessThan(0.01);
+        const attenuationDb = gainToDb(magnitudeOf(outputBin) / magnitudeOf(inputBin));
+        expect(attenuationDb).toBeCloseTo(-30, 1);
     }, 30_000);
 });

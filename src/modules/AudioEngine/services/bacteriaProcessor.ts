@@ -58,8 +58,17 @@ type ScheduledControl = {
     deadlineFrame: number;
     controlSequence: number;
 };
+type WorkletModAssignment = { sourceId: number; targetParam: number; amount: number };
 const MAX_PENDING_FALLBACK_CONTROLS = 32;
 const MAX_ID_LENGTH = 128;
+/**
+ * The assignment-table bounds the wasm instance itself enforces, mirrored here
+ * so an out-of-range table is rejected whole at the message boundary instead of
+ * being half-applied by `add_mod_assignment`'s per-entry rejections.
+ */
+const MOD_SOURCE_COUNT = 16;
+const MOD_TARGET_COUNT = 112;
+const MAX_MOD_ASSIGNMENTS = 64;
 function isRecord(value: unknown): value is UnknownRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -75,6 +84,38 @@ function isPositiveSafeInteger(value: unknown): value is number {
 }
 function isNonNegativeSafeInteger(value: unknown): value is number {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+/**
+ * Parse one whole replacement table for the engine's modulation matrix, or
+ * `null` when anything is out of shape. All-or-nothing: a table that is
+ * replaced by clear-then-re-add must never leave a caller's mistake half
+ * applied, and `add_mod_assignment` silently drops only the entries it
+ * rejects.
+ */
+function parseModAssignments(value: unknown): WorkletModAssignment[] | null {
+    if (!Array.isArray(value) || value.length > MAX_MOD_ASSIGNMENTS) {
+        return null;
+    }
+    const assignments: WorkletModAssignment[] = [];
+    for (const entry of value) {
+        if (!isRecord(entry) || !hasOnlyKeys(entry, ['sourceId', 'targetParam', 'amount'])) {
+            return null;
+        }
+        const { sourceId, targetParam, amount } = entry;
+        if (
+            !isNonNegativeSafeInteger(sourceId) ||
+            sourceId >= MOD_SOURCE_COUNT ||
+            !isNonNegativeSafeInteger(targetParam) ||
+            targetParam >= MOD_TARGET_COUNT ||
+            typeof amount !== 'number' ||
+            !Number.isFinite(amount)
+        ) {
+            return null;
+        }
+        assignments.push({ sourceId, targetParam, amount });
+    }
+    return assignments;
 }
 
 class BacteriaProcessor extends AudioWorkletProcessor {
@@ -135,6 +176,8 @@ class BacteriaProcessor extends AudioWorkletProcessor {
                 ) {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                     this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
+                } else if (msg.type === 'set-mod-assignments') {
+                    this._setModAssignments(msg);
                 } else if (this._initializeFallbackControl(msg)) {
                     return;
                 } else {
@@ -322,6 +365,28 @@ class BacteriaProcessor extends AudioWorkletProcessor {
         this._instance = new BacteriaInstance(sampleRate);
         this._ready = true;
         this.port.postMessage({ type: 'ready', latency: this._instance.get_latency_samples() });
+    }
+
+    /**
+     * Replace the engine's whole modulation-assignment table.
+     *
+     * The table behind `add_mod_assignment` has no per-entry removal, so every
+     * UI gesture that changes the routing — add, remove, undo, a patch load —
+     * arrives as one replacement: clear, then re-add. An unparseable payload is
+     * dropped whole, leaving the previous table sounding.
+     */
+    _setModAssignments(message: UnknownRecord): void {
+        if (!this._instance || this._faulted) {
+            return;
+        }
+        const assignments = parseModAssignments(message.assignments);
+        if (!assignments) {
+            return;
+        }
+        this._instance.clear_mod_assignments();
+        for (const { sourceId, targetParam, amount } of assignments) {
+            this._instance.add_mod_assignment(sourceId, targetParam, amount);
+        }
     }
 
     _passthrough(input: Float32Array[], output: Float32Array[]): void {

@@ -28,6 +28,7 @@ function makeDeps(parameterValues: Record<string, number> = {}) {
             .fn()
             .mockReturnValue([{ id: TRACK_ID, devices: [{ id: DEVICE_ID, type: 'bacteria', parameterValues }] }]),
         updateDeviceParam: vi.fn(),
+        updateDevicePatch: vi.fn(),
         persistDeviceParam: vi.fn(),
         resolveEligibleDeviceWriteTarget: vi.fn().mockReturnValue({
             status: 'eligible',
@@ -164,12 +165,12 @@ describe('loadBacteriaPatchWithAudio — engine sync', () => {
         expect(pushedParams(deps)).toContainEqual(['band1_drive', 77]);
     });
 
-    it('never pushes the non-scalar metadata keys (name / modAssignments / snapshots / convolutionIr)', () => {
+    it('never pushes the non-scalar metadata keys as scalar params (name / modAssignments / snapshots / convolutionIr)', () => {
         const deps = makeDeps();
         const patch: BacteriaPatch = {
             ...DEFAULT_PATCH,
             name: 'My Preset',
-            modAssignments: [{ sourceId: 'lfo1', targetParam: 'drive', amount: 0.5, bipolar: true }],
+            modAssignments: [{ sourceId: 'lfo1', targetParam: 'band0_drive', amount: 0.5, bipolar: true }],
             bands: [{ ...DEFAULT_BAND, convolutionIr: 'hall-a' }, ...DEFAULT_PATCH.bands.slice(1)],
         };
 
@@ -180,6 +181,34 @@ describe('loadBacteriaPatchWithAudio — engine sync', () => {
         expect(pushedKeys).not.toContain('modAssignments');
         expect(pushedKeys).not.toContain('snapshots');
         expect(pushedKeys).not.toContain('band0_convolutionIr');
+    });
+
+    it('pushes the assignment table through the patch door as a wholesale replacement', () => {
+        const deps = makeDeps();
+        const patch: BacteriaPatch = {
+            ...DEFAULT_PATCH,
+            modAssignments: [
+                { sourceId: 'lfo1', targetParam: 'band0_drive', amount: 0.5, bipolar: true },
+                { sourceId: 'macro2', targetParam: 'mix', amount: 1, bipolar: false },
+            ],
+        };
+
+        loadBacteriaPatchWithAudio(deps as never)(DEVICE_ID, patch);
+
+        expect(deps.updateDevicePatch).toHaveBeenCalledTimes(1);
+        expect(deps.updateDevicePatch).toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, {
+            modAssignments: [
+                { sourceId: 0, targetParam: 16, amount: 50 },
+                { sourceId: 7, targetParam: 0, amount: 1 },
+            ],
+        });
+    });
+
+    it('pushes an empty assignment table so a load drops the previous patch routings', () => {
+        const deps = makeDeps();
+        loadBacteriaPatchWithAudio(deps as never)(DEVICE_ID, { ...DEFAULT_PATCH });
+
+        expect(deps.updateDevicePatch).toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, { modAssignments: [] });
     });
 
     it('still updates the store on load', () => {

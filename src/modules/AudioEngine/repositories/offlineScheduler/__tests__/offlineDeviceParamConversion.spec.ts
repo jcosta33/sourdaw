@@ -190,7 +190,9 @@ describe('offline device automation applies the static parameter law (#3738)', (
         }
         const wet = (named.wet as GainNode).gain;
         const cancel = (named.cancel as GainNode).gain;
-        expect(wet.setValueAtTime).toHaveBeenCalledWith(dbToGain(-12), 0);
-        expect(cancel.setValueAtTime).toHaveBeenCalledWith(-dbToGain(-12), 0);
+        // The taps carry 1 − 10^(range/20): a fully engaged band lands exactly
+        // on the declared reduction (see createDeEsser).
+        expect(wet.setValueAtTime).toHaveBeenCalledWith(1 - dbToGain(-12), 0);
+        expect(cancel.setValueAtTime).toHaveBeenCalledWith(dbToGain(-12) - 1, 0);
     });
 });

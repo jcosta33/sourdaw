@@ -2146,6 +2146,8 @@ export type AppAction =
               clipId: string;
               segments: PitchEditSegmentSnapshot[];
               contour: PitchContourSnapshot;
+              retuneSpeedMs?: number;
+              formantPreserve?: boolean;
           };
       }
     | {

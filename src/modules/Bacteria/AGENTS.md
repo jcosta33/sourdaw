@@ -18,7 +18,7 @@ Multiband creative multi-effects framework (crossover filtering, multi-model dis
 
 ## Invariants & Traps
 
-- `modAssignments` and `snapshots` are UI and persistence metadata only. They are deliberately excluded from scalar engine parameter pushes in `loadBacteriaPatchWithAudio` because the engine bridge only transmits scalar `(paramId, value)` pairs.
+- `modAssignments` are structured routing rows, never scalar engine parameters: the scalar bridge only transmits `(paramId, value)` pairs. The whole table reaches the engine as one replacement through the patch door (`updateDevicePatch` → the worklet's `set-mod-assignments`), from `loadBacteriaPatchWithAudio` and from `setBacteriaModAssignmentsWithAudio`. The engine table has no per-entry removal — removal, undo, and reload are clear-then-re-add. `snapshots` remain UI/persistence metadata with no engine push.
 - Crossover slope is index-encoded (0=12 dB/oct, 1=24 dB/oct, 2=36 dB/oct, 3=48 dB/oct).
 - DSP engine lives in `crates/daw-dsp/src/bacteria/` compiled to WASM; render path is strictly non-allocating.
 

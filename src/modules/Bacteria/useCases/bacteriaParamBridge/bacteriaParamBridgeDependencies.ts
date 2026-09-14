@@ -4,7 +4,7 @@ import {
     persistDeviceParam,
     resolveEligibleDeviceWriteTarget,
 } from '#/modules/Arrangement/stores';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
 
 function getAllTracks(): Track[] {
     return trackStore.value?.tracks ?? [];
@@ -13,6 +13,7 @@ function getAllTracks(): Track[] {
 export const bacteriaParamBridgeDependencies = {
     getAllTracks,
     updateDeviceParam,
+    updateDevicePatch,
     persistDeviceParam,
     resolveEligibleDeviceWriteTarget,
 } as const;

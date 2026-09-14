@@ -20,16 +20,6 @@ function normalizeText(value: string): string {
         .trim();
 }
 
-function isExactSecondChorusImpactRequest(prompt: string): boolean {
-    const normalized = normalizeText(prompt);
-    return (
-        normalized.includes('make the second chorus hit harder') &&
-        normalized.includes('without changing any lead vocal state') &&
-        normalized.includes('the tempo map') &&
-        normalized.includes('the master chain')
-    );
-}
-
 function hasRoleWords(track: ProjectContextTrack, words: readonly string[]): boolean {
     const normalizedName = ` ${normalizeText(track.name)} `;
     return words.every((word) => normalizedName.includes(` ${word} `));
@@ -57,15 +47,18 @@ function toSectionSummary(section: ProjectContextSection) {
     };
 }
 
+/**
+ * Derives the whole-project vibe-mix workflow scope from project truth alone
+ * (#2002): the provider's typed selection of the `automateTrackGainRange`
+ * capability is the admission authority, and every target, protected object,
+ * constraint, and action is derived here from the current project context.
+ * No user-provided text participates — a paraphrase reaches the same scope,
+ * and unrelated text cannot enlarge it.
+ */
 export function getWholeProjectVibeMixScope(
-    prompt: string,
     context: ProjectContext,
     baseRevision = 'unbound'
 ): WholeProjectVibeMixScope | null {
-    if (!isExactSecondChorusImpactRequest(prompt)) {
-        return null;
-    }
-
     const orderedSections = [...(context.sections ?? [])].sort(
         (left, right) =>
             left.startBeat - right.startBeat || left.endBeat - right.endBeat || left.id.localeCompare(right.id)

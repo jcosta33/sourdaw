@@ -294,7 +294,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         await discardStemImportScope();
     }
 
-    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(input.prompt, context, projectRevision);
+    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(context, projectRevision);
     const wholeProjectVibeMixAction = result.actions.find((action) => action.type === 'automateTrackGainRange');
     if (wholeProjectVibeMixScope && wholeProjectVibeMixAction) {
         result.wholeProjectVibeMixPlan = {
