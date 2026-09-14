@@ -216,6 +216,11 @@ pub struct ArticulationState {
     momentary_held: bool,
     /// Current CC value for the switch CC.
     switch_cc_value: u8,
+    /// Whether `current` was chosen by an explicit gesture — a keyswitch, a
+    /// velocity split, a CC split, a per-note articulation id, or the
+    /// `current_articulation` parameter. While set, the auto-articulation
+    /// detector defers: an authored choice outranks a statistical guess.
+    pub explicit: bool,
     /// The articulation map (switching configuration).
     pub map: ArticulationMap,
 }
@@ -227,6 +232,7 @@ impl ArticulationState {
             previous: 0,
             momentary_held: false,
             switch_cc_value: 0,
+            explicit: false,
             map: ArticulationMap::new(),
         }
     }
@@ -242,6 +248,7 @@ impl ArticulationState {
                     self.momentary_held = true;
                 }
                 self.current = art;
+                self.explicit = true;
                 return true;
             }
         }
@@ -249,6 +256,7 @@ impl ArticulationState {
         // Check velocity split (only if velocity splits are configured).
         if let Some(art) = self.map.find_velocity_split(velocity) {
             self.current = art;
+            self.explicit = true;
         }
 
         false
@@ -272,6 +280,7 @@ impl ArticulationState {
             self.switch_cc_value = value;
             if let Some(art) = self.map.find_cc_split(value) {
                 self.current = art;
+                self.explicit = true;
             }
         }
     }
@@ -279,5 +288,6 @@ impl ArticulationState {
     /// Set articulation directly (from articulation ID metadata on note).
     pub fn set_articulation_id(&mut self, artid: u8) {
         self.current = self.map.map_artid(artid);
+        self.explicit = true;
     }
 }

@@ -147,11 +147,33 @@ impl MicMixer {
         (left, right)
     }
 
-    /// Mix a single mono sample (from one mic, index 0) into stereo.
-    /// Convenience for single-mic instruments.
+    /// Mix one mono stream — the layer the engine is currently rendering —
+    /// through `layer`'s own position processing: its delay, phase, volume,
+    /// and pan. A disabled layer contributes silence. This is the per-mic
+    /// selection path: the engine renders the first enabled layer's zones and
+    /// voices them through that position, rather than mixing several layers
+    /// simultaneously (simultaneous per-layer mixing would need per-layer
+    /// realism/tone instances; deliberate difference, documented at
+    /// `LevainEngine::refresh_mic_layer`).
     #[inline]
-    pub fn mix_mono(&mut self, sample: f32) -> (f32, f32) {
-        self.mix(&[sample])
+    pub fn mix_layer(&mut self, layer: usize, sample: f32) -> (f32, f32) {
+        if layer >= self.num_mics {
+            return (0.0, 0.0);
+        }
+        let pos = &self.positions[layer];
+        if !pos.enabled {
+            return (0.0, 0.0);
+        }
+        let delayed = self.delay_lines[layer].process(sample);
+        let phased = if pos.phase_invert { -delayed } else { delayed };
+        let gained = phased * pos.volume;
+        (gained * pos.cached_pan_l, gained * pos.cached_pan_r)
+    }
+
+    /// Whether a mic position is enabled.
+    #[inline]
+    pub fn is_enabled(&self, index: usize) -> bool {
+        index < self.num_mics && self.positions[index].enabled
     }
 
     pub fn num_mics(&self) -> usize {

@@ -7,6 +7,7 @@ export { getSchedulerTimingDiagnostics } from './getSchedulerTimingDiagnostics';
 export { reconcileVcaGroupRuntimeGain } from './scheduling/applyAutomation/reconcileVcaGroupRuntimeGain';
 export { reconcileVcaRuntimeGain } from './scheduling/applyAutomation/reconcileVcaRuntimeGain';
 export { setStopPlaybackCallback } from './playheadScheduler/setStopPlaybackCallback';
+export { readNativeEngineCursorBeats } from './playheadScheduler/readNativeEngineCursorBeats';
 
 export { disableLooping } from './setLooping';
 

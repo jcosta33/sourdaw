@@ -1,6 +1,6 @@
 import { setTrackPan as engineSetTrackPan, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { recordAutomationValue } from '#/modules/Automation/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { captureGestureBeat, transportStore } from '#/modules/Transport/stores';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -53,7 +53,12 @@ export function setTrackPan(
     }
 
     maybeRecordAutomation(
-        { getTransportValue: () => transportStore.value, getTrackById, recordAutomationValue },
+        {
+            getTransportValue: () => transportStore.value,
+            getGestureBeat: captureGestureBeat,
+            getTrackById,
+            recordAutomationValue,
+        },
         trackId,
         'pan',
         clamped / PAN_FIELD_FULL_SCALE,

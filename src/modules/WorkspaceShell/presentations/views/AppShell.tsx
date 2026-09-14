@@ -68,20 +68,8 @@ import { clamp } from '#/utils/Math/clamp';
 
 import { alphaNoticeStore } from '../../stores/alphaNoticeStore';
 import { dismissAlphaNotice } from '../../useCases/dismissAlphaNotice';
-import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
-import { showBacteriaPanel } from '../../useCases/panels/devicePanels/showBacteriaPanel';
-import { showCrumbsPanel } from '../../useCases/panels/devicePanels/showCrumbsPanel';
-import { showCrustPanel } from '../../useCases/panels/devicePanels/showCrustPanel';
+import { onShowDevicePanel } from '../../useCases/panels/devicePanels/onShowDevicePanel';
 import { showDevicePanel } from '../../useCases/panels/devicePanels/showDevicePanel';
-import { showDutchOvenPanel } from '../../useCases/panels/devicePanels/showDutchOvenPanel';
-import { showFermenterPanel } from '../../useCases/panels/devicePanels/showFermenterPanel';
-import { showGlutenPanel } from '../../useCases/panels/devicePanels/showGlutenPanel';
-import { showGrandBoulePanel } from '../../useCases/panels/devicePanels/showGrandBoulePanel';
-import { showLevainPanel } from '../../useCases/panels/devicePanels/showLevainPanel';
-import { showProofPanel } from '../../useCases/panels/devicePanels/showProofPanel';
-import { showScoringPanel } from '../../useCases/panels/devicePanels/showScoringPanel';
-import { showToasterPanel } from '../../useCases/panels/devicePanels/showToasterPanel';
-import { showYeastPanel } from '../../useCases/panels/devicePanels/showYeastPanel';
 import { closeBranchManager } from '../../useCases/togglePanel/panelToggles/closeBranchManager';
 import { openMixer } from '../../useCases/togglePanel/panelToggles/openMixer';
 import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
@@ -115,20 +103,22 @@ import { VirtualKeyboard } from './VirtualKeyboard';
 // Device-panel emitters injected into the ContentBrowser Sidebar. The panel
 // system is owned by Workspace; the browser only triggers it, so these stable
 // singletons are passed in as callbacks (module-level — no per-render alloc).
+// Each callback rides the single generic `panel.showDevice` event, naming the
+// device type the browser button stands for.
 const SIDEBAR_PANEL_ACTIONS: SidebarPanelActions = {
-    showBacteria: showBacteriaPanel,
-    showCrust: showCrustPanel,
+    showBacteria: (deviceId) => showDevicePanel('bacteria', deviceId),
+    showCrust: (deviceId) => showDevicePanel('crust', deviceId),
     showDevice: showDevicePanel,
-    showDutchOven: showDutchOvenPanel,
-    showGluten: showGlutenPanel,
-    showProof: showProofPanel,
-    showScoring: showScoringPanel,
-    showYeast: showYeastPanel,
-    showCrumbs: showCrumbsPanel,
-    showFermenter: showFermenterPanel,
-    showGrandBoule: showGrandBoulePanel,
-    showLevain: showLevainPanel,
-    showToaster: showToasterPanel,
+    showDutchOven: (deviceId) => showDevicePanel('dutch-oven', deviceId),
+    showGluten: (deviceId) => showDevicePanel('gluten', deviceId),
+    showProof: (deviceId) => showDevicePanel('proof', deviceId),
+    showScoring: (deviceId) => showDevicePanel('native-scoring', deviceId),
+    showYeast: (deviceId) => showDevicePanel('yeast', deviceId),
+    showCrumbs: (deviceId) => showDevicePanel('builtin-crumbs', deviceId),
+    showFermenter: (deviceId) => showDevicePanel('fermenter', deviceId),
+    showGrandBoule: (deviceId) => showDevicePanel('grand-boule', deviceId),
+    showLevain: (deviceId) => showDevicePanel('levain', deviceId),
+    showToaster: (deviceId) => showDevicePanel('toaster', deviceId),
 };
 const CollaborationPanelLazy = lazy(() =>
     import('#/modules/Collaboration/presentations/views').then((m) => ({
@@ -364,9 +354,14 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         }
     }, [selectedClipId]);
 
-    // Listen for automation tab activation (from 'A' key)
+    // Listen for automation tab activation (from 'A' key). Automation is not a
+    // device panel — it rides the same generic `panel.showDevice` event, and
+    // this subscriber is the only consumer of its `automation` device type.
     useEffect(() => {
-        return onPanelShowAutomation(() => {
+        return onShowDevicePanel(({ deviceType }) => {
+            if (deviceType !== 'automation') {
+                return;
+            }
             setBottomTabState({ value: 'automation', selectedClipId });
             if (!mixerOpen) {
                 openMixer();

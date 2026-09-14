@@ -9,7 +9,7 @@ export { resetDisplayScaleForStartup } from './resetDisplayScaleForStartup';
 
 export { getScratchPadHandlers } from './getScratchPadHandlers';
 
-export { showAutomationPanel } from './panels/devicePanels/showAutomationPanel';
+export { showDevicePanel } from './panels/devicePanels/showDevicePanel';
 export { showDevicePanelForType } from './panels/devicePanels/showDevicePanelForType';
 
 // ── Editing Tool ──────────────────────────────────────────────────────────────

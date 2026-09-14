@@ -5,6 +5,7 @@
 //! optional loop crossfading. Voice stealing prioritizes: release tails
 //! past audibility → lowest energy → oldest.
 
+use super::humanize::NoteHumanization;
 use super::types::*;
 use super::zone::SamplePool;
 
@@ -694,6 +695,17 @@ pub struct LevainVoice {
     /// "machine vibrato" lock-step a section of voices would otherwise
     /// produce.
     pub vibrato_rate_scale: f32,
+    /// Per-voice vibrato depth scale (around 1.0), from the per-note
+    /// humanization: players dig into vibrato differently.
+    pub vibrato_depth_scale: f32,
+    /// Per-note humanized tuning offset in semitones, applied through the
+    /// same pitch-modulation slot as vibrato and MPE bend so the three sum
+    /// instead of fighting over `speed`.
+    humanize_tune_semitones: f32,
+    /// Samples to hold this voice silent before its attack begins — the
+    /// humanized timing offset. A stolen predecessor's de-click fade still
+    /// runs while the count drains (see `tick`).
+    pending_samples: u32,
 
     // MPE per-note expression (audit MD-2). Held for the note's lifetime and
     // read at block rate (bend, pressure) or per sample (slide tilt). Neutral
@@ -747,6 +759,9 @@ impl LevainVoice {
             samples_since_on: 0,
             vibrato_phase: 0.0,
             vibrato_rate_scale: 1.0,
+            vibrato_depth_scale: 1.0,
+            humanize_tune_semitones: 0.0,
+            pending_samples: 0,
             expr_bend_semitones: 0.0,
             expr_pressure: 0.0,
             expr_slide: 0.0,
@@ -826,6 +841,26 @@ impl LevainVoice {
         self.tilt_lp = 0.0;
         self.base_gain = gain;
         self.gain.snap(gain);
+    }
+
+    /// Apply the per-note humanization the engine generated for this
+    /// trigger. Every field the `Humanize` knob scales is consumed here or at
+    /// the engine's gain/vibrato-phase sites: the timing offset holds the
+    /// voice silent, the tuning offset rides the pitch-modulation slot, the
+    /// vibrato depth scale narrows or widens this player's vibrato, and the
+    /// start offset skips a few frames into the recording so round-robin
+    /// repeats don't re-attack on the identical waveform frame.
+    pub fn apply_note_humanization(&mut self, humanize: &NoteHumanization, sample_rate: f32) {
+        self.pending_samples = if humanize.timing_offset > 0.0 && sample_rate > 0.0 {
+            (humanize.timing_offset * sample_rate).round() as u32
+        } else {
+            0
+        };
+        self.humanize_tune_semitones = humanize.tuning_cents / 100.0;
+        self.vibrato_depth_scale = humanize.vibrato_depth_scale;
+        // Bounded by construction (`generate` caps it at 64 frames); read past
+        // the recording's end simply ends the stream, same as any overrun.
+        self.playback.position += humanize.start_offset as f64;
     }
 
     /// Point this voice at a new Attack/Release macro scaling. A sounding voice
@@ -978,10 +1013,10 @@ impl LevainVoice {
         // MPE per-note bend rides the same pitch-modulation slot as vibrato
         // (audit MD-2), so a bent note still vibratos and a vibrato-less patch
         // still bends.
+        let humanized_bend = self.expr_bend_semitones + self.humanize_tune_semitones;
         if depth_cents < 0.1 || base_rate_hz <= 0.0 {
-            self.playback.apply_pitch_mod(self.expr_bend_semitones);
-            self.crossfade_playback
-                .apply_pitch_mod(self.expr_bend_semitones);
+            self.playback.apply_pitch_mod(humanized_bend);
+            self.crossfade_playback.apply_pitch_mod(humanized_bend);
             return;
         }
 
@@ -1002,7 +1037,8 @@ impl LevainVoice {
         }
 
         let lfo = (self.vibrato_phase * std::f32::consts::TAU).sin();
-        let semitones = (depth_cents / 100.0) * onset_gain * lfo + self.expr_bend_semitones;
+        let effective_depth = depth_cents * self.vibrato_depth_scale;
+        let semitones = (effective_depth / 100.0) * onset_gain * lfo + humanized_bend;
 
         self.playback.apply_pitch_mod(semitones);
         // The crossfade-in playback (active during legato transitions)
@@ -1017,6 +1053,18 @@ impl LevainVoice {
     #[inline]
     pub fn tick(&mut self, pool: &SamplePool) -> f32 {
         if !self.active {
+            return 0.0;
+        }
+
+        // Humanized timing: hold the note's attack until its offset elapses.
+        // A steal de-click still in flight is served first — its window is
+        // ~1 ms against typical offsets of tens of ms, and letting the fade
+        // finish matters more than sub-millisecond offset accuracy in the one
+        // case where the incoming note took a sounding voice's slot.
+        if self.pending_samples > 0 && !self.crossfading {
+            self.pending_samples -= 1;
+            self.age = self.age.saturating_add(1);
+            self.samples_since_on = self.samples_since_on.saturating_add(1);
             return 0.0;
         }
 

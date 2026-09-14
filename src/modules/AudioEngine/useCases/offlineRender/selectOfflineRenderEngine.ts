@@ -22,6 +22,9 @@
  *     Toaster routing, which are all devices.
  *   - **MIDI programme** — instruments render web-side; a native render of a
  *     MIDI clip would be a rest that reads as a correct file.
+ *   - **Clip gain envelopes** — the native wire has no envelope vocabulary
+ *     (#2865), so a clip carrying one bounces through the Web Audio renderer
+ *     that schedules the drawn curve.
  *   - **Bus-source sends** are not a gate: live and offline native producers
  *     drop a send whose source strip is a bus (the same drop as a send naming
  *     no built bus), so native export runs minus that send's contribution.
@@ -42,7 +45,7 @@
  * wrong `native/offline` answer costs a failed or unfaithful export.
  */
 
-import { type Track } from '#/modules/Arrangement/stores';
+import { clipHasActiveGainEnvelope, type Track } from '#/modules/Arrangement/stores';
 
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
@@ -87,6 +90,15 @@ function contentGateReason(input: SelectOfflineRenderEngineInput): string | null
             }
             if (clip.type === 'midi') {
                 return `track "${track.name}" plays MIDI programme`;
+            }
+            // #2865 — the native wire has no envelope vocabulary, so a bounce
+            // through it would print an envelope-carrying clip with no curve
+            // in it. The Web Audio render applies it, so the project degrades
+            // to that renderer with this reason instead. Clip ids survive
+            // comping unchanged (the resolver spreads the source clip), so
+            // this raw-clips walk cannot miss a comped take's envelope.
+            if (clip.type === 'audio' && clipHasActiveGainEnvelope(clip.id)) {
+                return `track "${track.name}" plays a clip gain envelope the native render does not apply`;
             }
         }
     }

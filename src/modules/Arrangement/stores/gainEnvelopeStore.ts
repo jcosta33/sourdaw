@@ -60,6 +60,134 @@ export function setAllEnvelopes(envelopes: Record<string, ClipGainEnvelope>): vo
     gainEnvelopeStore.set({ envelopes });
 }
 
+// ── Curve reads ─────────────────────────────────────────────────────────
+//
+// The curve law lives here rather than beside `sampleGainEnvelopePoints`
+// because both audio carriers must read it: the live Web Audio scheduler
+// (Transport) reaches this store through the Arrangement stores barrel, and
+// the offline renderer (AudioEngine) may not import the Arrangement useCases
+// barrel at all — that edge is the one that closes the module cycle
+// `scheduleTrackClips` documents. `sampleGainEnvelopePoints` delegates to this
+// walk so there is one law, not two that agree today.
+
+/** One breakpoint of an envelope curve: where it sits, and what it holds. */
+export type GainEnvelopeSeriesPoint = Readonly<{
+    /** Relative to clip start, on the same axis as {@link GainEnvelopePoint.beatOffset}. */
+    beatOffset: number;
+    gainDb: number;
+}>;
+
+/**
+ * The envelope's value at one beat, on the same law the curve reads anywhere:
+ * constant at the edge values outside the point range, linear in dB between
+ * adjacent points.
+ *
+ * Points arrive ascending in `beatOffset` — every write path keeps them sorted
+ * (`addGainEnvelopePoint` inserts in order, `moveGainEnvelopePoint` re-sorts) —
+ * and the segment scan walks them in array order, exactly as
+ * `sampleGainEnvelopePoints` always has.
+ */
+function sampleGainEnvelopeAtBeat(points: readonly GainEnvelopePoint[], beatOffset: number): number {
+    if (beatOffset <= points[0]!.beatOffset) {
+        return points[0]!.gainDb;
+    }
+
+    const lastPoint = points[points.length - 1]!;
+    if (beatOffset >= lastPoint.beatOffset) {
+        return lastPoint.gainDb;
+    }
+
+    for (let index = 0; index < points.length - 1; index++) {
+        const alpha = points[index]!;
+        const beta = points[index + 1]!;
+        if (beatOffset >= alpha.beatOffset && beatOffset <= beta.beatOffset) {
+            const span = beta.beatOffset - alpha.beatOffset;
+            const time = (beatOffset - alpha.beatOffset) / span;
+            return alpha.gainDb + time * (beta.gainDb - alpha.gainDb);
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * The envelope curve over one span, as the breakpoints a ramp series needs:
+ * the sampled value at the span's start, every point strictly inside it, and
+ * the sampled value at its end. A renderer maps these beats onto its own clock
+ * and ramps between them, so what it plays is the curve the inspector drew
+ * rather than one sample of it.
+ *
+ * `sampleGainEnvelopePoints` is this at a zero-width span — the law is stated
+ * once, here, and the two are pinned together by spec.
+ */
+export function sampleGainEnvelopeSeries(
+    points: readonly GainEnvelopePoint[],
+    spanStartBeats: number,
+    spanEndBeats: number
+): readonly GainEnvelopeSeriesPoint[] {
+    const startGainDb = sampleGainEnvelopeAtBeat(points, spanStartBeats);
+    const series: GainEnvelopeSeriesPoint[] = [{ beatOffset: spanStartBeats, gainDb: startGainDb }];
+
+    for (const point of points) {
+        if (point.beatOffset > spanStartBeats && point.beatOffset < spanEndBeats) {
+            series.push({ beatOffset: point.beatOffset, gainDb: point.gainDb });
+        }
+    }
+
+    if (spanEndBeats > spanStartBeats) {
+        series.push({ beatOffset: spanEndBeats, gainDb: sampleGainEnvelopeAtBeat(points, spanEndBeats) });
+    }
+
+    return series;
+}
+
+/**
+ * The envelope a renderer should schedule, or `undefined` when the clip
+ * carries none that changes what it sounds like.
+ *
+ * An envelope that is absent, disabled, or whose every point holds `0 dB` is
+ * provably a no-op — the curve is the constant-edge interpolation of its
+ * points, so all-zero points can only read zero.
+ */
+function activeEnvelopeFor(clipId: string): ClipGainEnvelope | undefined {
+    const envelope = getEnvelope(clipId);
+    if (!envelope || !envelope.enabled) {
+        return undefined;
+    }
+    return envelope.points.some((point) => point.gainDb !== 0) ? envelope : undefined;
+}
+
+/**
+ * Whether a clip carries an envelope that changes what it sounds like.
+ *
+ * Callers use this both to skip scheduling a gain node nothing will move and
+ * to keep an envelope-carrying clip off a carrier that cannot apply the
+ * curve (#2865).
+ */
+export function clipHasActiveGainEnvelope(clipId: string): boolean {
+    return activeEnvelopeFor(clipId) !== undefined;
+}
+
+/**
+ * The enabled envelope's curve over one beat span, or `undefined` when the
+ * clip carries no envelope that changes what it sounds like over that span.
+ *
+ * The span is iteration-relative, exactly the axis the scheduler samples on:
+ * envelope offsets are clip-relative beats, so iteration `n` of a looped clip
+ * reads the range `[n * loopLength, … + iterationLength]`.
+ */
+export function getGainEnvelopeSeries(
+    clipId: string,
+    spanStartBeats: number,
+    spanEndBeats: number
+): readonly GainEnvelopeSeriesPoint[] | undefined {
+    const envelope = activeEnvelopeFor(clipId);
+    if (!envelope) {
+        return undefined;
+    }
+    return sampleGainEnvelopeSeries(envelope.points, spanStartBeats, spanEndBeats);
+}
+
 function isGainEnvelopePoint(value: unknown): value is GainEnvelopePoint {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         return false;

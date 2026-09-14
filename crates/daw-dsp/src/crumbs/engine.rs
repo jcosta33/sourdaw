@@ -25,6 +25,11 @@ pub struct CrumbsMetering {
     /// is still making sound.
     pub active_voice_count: AtomicU16,
     pub playback_position: AtomicU64,
+    /// Sample writes the pool refused because their id fell past
+    /// `MAX_POOL_SAMPLES` — mirrored from `SamplePool::dropped_write_count`
+    /// every block. Non-zero means new samples stopped landing; the host
+    /// surfaces it as a warning rather than letting the failure stay silent.
+    pub dropped_sample_writes: AtomicU32,
 }
 
 impl Default for CrumbsMetering {
@@ -34,6 +39,7 @@ impl Default for CrumbsMetering {
             peak_right: AtomicU32::new(0),
             active_voice_count: AtomicU16::new(0),
             playback_position: AtomicU64::new(0),
+            dropped_sample_writes: AtomicU32::new(0),
         }
     }
 }
@@ -130,6 +136,9 @@ pub struct CrumbsEngine {
     stack_count: u8,
     detune_spread: f32,
     stack_spread: f32,
+    /// Engine-wide pan from `CrumbsParam::Pan` (-1..1). The base position
+    /// every new voice opens on; the stack spread offsets around it.
+    pan: f32,
 
     // Recording (SP-404 style threshold-triggered capture)
     // Buffers are pre-allocated at engine init to the maximum recording
@@ -190,6 +199,7 @@ impl CrumbsEngine {
             stack_count: 1,
             detune_spread: 0.0,
             stack_spread: 0.0,
+            pan: 0.0,
             record_state: RecordState::Idle,
             record_buffer_left: {
                 let max = (60.0 * sample_rate) as usize;
@@ -528,12 +538,11 @@ impl CrumbsEngine {
             // trigger at stack count 1. One unconditional write closes both.
             self.voices[voice_index].set_tune(self.tune_cents + detune_cents);
 
-            // Stack pan stays conditional. Unlike tune there is no engine-wide
-            // pan behind it — `CrumbsParam::Pan` is a separate matter — so this
-            // is only the spread across a stack and means nothing at count 1.
-            if count > 1 {
-                self.voices[voice_index].set_pan(stack_pan);
-            }
+            // Pan is the engine-wide base plus the stack spread around it.
+            // Unconditional, for the same reason as tune above: `trigger` does
+            // not reset `pan_smoother`, so a conditional write would let a
+            // voice carry the last note's position into its next trigger.
+            self.voices[voice_index].set_pan(self.pan + stack_pan);
         }
     }
 
@@ -917,8 +926,10 @@ impl CrumbsEngine {
                 }
             }
             CrumbsParam::Pan => {
-                // Pan is set per-voice; this sets the default for new voices.
-                // Existing voices are not affected.
+                // The base pan for new voices; a stack spreads around it and
+                // `set_pan` clamps the sum into -1..1. Sounding voices keep
+                // their position until they end, matching how tune behaves.
+                self.pan = value.clamp(-1.0, 1.0);
             }
             CrumbsParam::StackCount => {
                 self.stack_count = (value as u8).clamp(1, MAX_STACK_VOICES);
@@ -1113,6 +1124,9 @@ impl CrumbsEngine {
         self.metering
             .active_voice_count
             .store(voice_count, Ordering::Relaxed);
+        self.metering
+            .dropped_sample_writes
+            .store(self.sample_pool.dropped_write_count(), Ordering::Relaxed);
     }
 
     // ── Metering Accessors (read from UI/management thread) ────────────
@@ -1138,6 +1152,12 @@ impl CrumbsEngine {
     /// silence wants this.
     pub fn read_active_voice_count(&self) -> u16 {
         self.metering.active_voice_count.load(Ordering::Relaxed)
+    }
+
+    /// Sample writes the pool refused since the instance was created, read
+    /// from the metering the process loop refreshes every block.
+    pub fn read_dropped_sample_writes(&self) -> u32 {
+        self.metering.dropped_sample_writes.load(Ordering::Relaxed)
     }
 
     /// Playable slots currently sounding, read straight from the pool rather

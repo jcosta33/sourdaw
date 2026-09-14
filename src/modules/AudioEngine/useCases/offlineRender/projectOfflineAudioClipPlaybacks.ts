@@ -1,9 +1,14 @@
-import { type Track } from '#/modules/Arrangement/stores';
+import { type GainEnvelopeSeriesPoint, type Track } from '#/modules/Arrangement/stores';
 // Not `#/modules/Arrangement/useCases` — same cycle law as `scheduleTrackClips`.
+import { envelopeGainDbToLinear } from '#/utils/clipGainEnvelopeSchedule';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
-import { type OfflineClipFadeIn, type OfflineClipFadeOut } from './scheduleOfflineClipSource';
+import {
+    type OfflineClipEnvelopeAnchor,
+    type OfflineClipFadeIn,
+    type OfflineClipFadeOut,
+} from './scheduleOfflineClipSource';
 
 /**
  * The clip fields the audio projection reads. A comped clip (`ResolvedClip` in
@@ -12,6 +17,7 @@ import { type OfflineClipFadeIn, type OfflineClipFadeOut } from './scheduleOffli
  */
 export type OfflineProjectableAudioClip = Pick<
     Track['clips'][number],
+    | 'id'
     | 'startBeat'
     | 'endBeat'
     | 'loopLength'
@@ -46,6 +52,18 @@ export type ProjectOfflineAudioClipPlaybacksInput = Readonly<{
      * at, so a tempo change inside the offset span must not move it.
      */
     resolveTempoAtBeat: (beat: number) => number;
+    /**
+     * Reads a clip's enabled gain-envelope series over an iteration's beat
+     * span (#2865). Supplied by the Web Audio scheduler, whose render applies
+     * the curve; deliberately absent from the native producers, whose wire
+     * cannot carry it — they gate envelope-carrying clips out before they
+     * project, so a playback this projection emits for them never holds one.
+     */
+    readGainEnvelopeSeries?: (
+        clipId: string,
+        spanStartBeats: number,
+        spanEndBeats: number
+    ) => readonly GainEnvelopeSeriesPoint[] | undefined;
 }>;
 
 /**
@@ -65,6 +83,13 @@ export type OfflineAudioClipPlaybackProjection = Readonly<{
     playbackRate: number;
     /** The clip's own level, as a linear amplitude. */
     clipGainValue: number;
+    /**
+     * The clip's gain-envelope curve over this playback, folded to where the
+     * sound begins (#2865). Absent when the clip carries no envelope this
+     * render applies — including on the native producers, which pass no
+     * reader and gate envelope-carrying clips out instead.
+     */
+    envelope?: readonly OfflineClipEnvelopeAnchor[];
     fadeIn?: OfflineClipFadeIn;
     fadeOut?: OfflineClipFadeOut;
     /**
@@ -96,6 +121,7 @@ export function projectOfflineAudioClipPlaybacks(
         compensationDelay,
         projectBeatToSeconds,
         resolveTempoAtBeat,
+        readGainEnvelopeSeries,
     } = input;
 
     const clipVisualLength = clip.endBeat - clip.startBeat;
@@ -230,12 +256,33 @@ export function projectOfflineAudioClipPlaybacks(
               }
             : undefined;
 
+        // #2865 — the envelope curve's breakpoints on the destination
+        // timeline, on the same law the fade times above use: beat → seconds
+        // through the caller's map, plus the compensation and the region
+        // origin. Unfolded on purpose — the consumer folds the series to
+        // where this playback's sound begins, the same fold the live
+        // scheduler makes, so a region-trimmed or pre-rolled iteration
+        // enters mid-curve on both paths rather than stepping to the next
+        // breakpoint.
+        const envelopeSeries = readGainEnvelopeSeries?.(
+            clip.id,
+            iterStartBeat - clip.startBeat,
+            iterEndBeat - clip.startBeat
+        );
+        const envelope = envelopeSeries
+            ? envelopeSeries.map((point) => ({
+                  timeSec: projectBeatToSeconds(clip.startBeat + point.beatOffset) + compensationDelay - regionStartSec,
+                  gain: envelopeGainDbToLinear(point.gainDb),
+              }))
+            : undefined;
+
         playbacks.push({
             startSec,
             bufferOffsetSec,
             playDuration,
             playbackRate: safeStretchRatio,
             clipGainValue,
+            ...(envelope ? { envelope } : {}),
             ...(fadeIn ? { fadeIn } : {}),
             ...(fadeOut ? { fadeOut } : {}),
             rawIterEndSec,

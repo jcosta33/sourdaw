@@ -555,6 +555,35 @@ describe('serializeAudioGraphCommandBatch', () => {
         // took before banks existed.
         expect(Object.keys(inserted.device)).toEqual(['id', 'name', 'type', 'bypassed', 'parameterValues']);
     });
+
+    /// #2865 — the native wire has no envelope vocabulary. A playback that
+    /// carries one reaching this seam means a producer defect (the native
+    /// producers gate envelope-carrying clips back onto Web Audio), and the
+    /// honest answer is a refusal the caller can read, never a silently
+    /// dropped curve that prints the clip flat.
+    it('refuses a schedule-clip carrying a gain envelope rather than dropping it', () => {
+        expect(() =>
+            serializeAudioGraphCommandBatch({
+                schemaVersion: 1,
+                commands: [
+                    {
+                        kind: 'schedule-clip',
+                        playback: {
+                            trackId: 'track-1',
+                            source: { sourceId: 'take-1' },
+                            startTime: 0,
+                            sourceOffsetSeconds: 0,
+                            durationSeconds: 0.5,
+                            playbackRate: 1,
+                            gain: 1,
+                            envelope: [{ timeSec: 0, gain: 10 ** (-12 / 20) }],
+                            fade: { microFadeSeconds: 0 },
+                        },
+                    },
+                ],
+            })
+        ).toThrow('gain envelope cannot cross the native wire');
+    });
 });
 
 describe('collectBufferedClipSources', () => {

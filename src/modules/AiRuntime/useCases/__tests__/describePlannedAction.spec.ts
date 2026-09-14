@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    getGainEnvelopeSeries: vi.fn(),
+    clipHasActiveGainEnvelope: vi.fn(),
     markerStore: {
         get value() {
             return mocks.markerStoreValue.value;

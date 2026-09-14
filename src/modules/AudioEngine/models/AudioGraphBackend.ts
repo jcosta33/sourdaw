@@ -340,8 +340,29 @@ export type AudioGraphClipPlayback = Readonly<{
     playbackRate: number;
     /** The clip's own level, as a linear amplitude. */
     gain: number;
+    /**
+     * The clip's gain-envelope curve, in destination seconds (#2865). Absent
+     * when the clip carries no envelope — or when the producer addresses a
+     * backend that cannot apply one: the native wire has no envelope
+     * vocabulary, its serializer **refuses** a playback that carries this
+     * field rather than silently printing the clip without its curve, and the
+     * native producers gate envelope-carrying clips back onto the Web Audio
+     * carrier instead of sending them at all.
+     */
+    envelope?: readonly AudioGraphClipEnvelopeAnchor[];
     /** Per-clip fades, and the anti-click floor both of them are held to. */
     fade: AudioGraphClipFade;
+}>;
+
+/**
+ * One anchor of a clip's gain-envelope curve: when the curve reaches this
+ * level, as a linear amplitude. Unfolded — a backend folds the series to its
+ * own audible start, exactly as the Web Audio scheduler does at
+ * `max(soundStartTime, now)`.
+ */
+export type AudioGraphClipEnvelopeAnchor = Readonly<{
+    timeSec: number;
+    gain: number;
 }>;
 
 /**

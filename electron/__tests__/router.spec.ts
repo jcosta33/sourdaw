@@ -14,6 +14,7 @@ import {
     registerCommandRouter,
     senderFrameUrl,
     toNativeArguments,
+    type CommandSettlement,
     type CommandStream,
     type IpcMainLike,
     type SenderFrameCarrier,
@@ -42,9 +43,16 @@ type SetupInput = {
     readonly commands?: readonly string[];
     readonly createStream?: (streamId: string) => CommandStream;
     readonly acceptsCommand?: (command: string) => boolean;
+    readonly observeSettlement?: (command: string, settlement: CommandSettlement) => void;
 };
 
-const setup = ({ host, commands = ['load_plugin'], createStream = nullStream, acceptsCommand }: SetupInput) => {
+const setup = ({
+    host,
+    commands = ['load_plugin'],
+    createStream = nullStream,
+    acceptsCommand,
+    observeSettlement,
+}: SetupInput) => {
     const { ipcMain, handlers } = collectingIpc();
     registerCommandRouter({
         ipcMain,
@@ -53,6 +61,7 @@ const setup = ({ host, commands = ['load_plugin'], createStream = nullStream, ac
         createStream,
         commands,
         acceptsCommand,
+        observeSettlement,
     });
     return handlers;
 };
@@ -264,5 +273,74 @@ describe('streaming commands', () => {
         await expect(handlers.get(commandChannel('provider_gateway_request'))?.(APP_FRAME, [], 7)).rejects.toThrow(
             /non-string stream id/u
         );
+    });
+});
+
+describe('settlement observation', () => {
+    it('reports the command name with fulfilled when the addon answers', async () => {
+        const observed: [string, CommandSettlement][] = [];
+        const handlers = setup({
+            host: hostWith({ loadPlugin: () => 'loaded' }),
+            observeSettlement: (command, settlement) => observed.push([command, settlement]),
+        });
+
+        await handlers.get(commandChannel('load_plugin'))?.(APP_FRAME, []);
+
+        expect(observed).toEqual([['load_plugin', 'fulfilled']]);
+    });
+
+    it('reports rejected when the addon throws', async () => {
+        const observed: [string, CommandSettlement][] = [];
+        const handlers = setup({
+            host: hostWith({
+                loadPlugin: () => {
+                    throw new Error('no such plugin');
+                },
+            }),
+            observeSettlement: (command, settlement) => observed.push([command, settlement]),
+        });
+
+        await expect(handlers.get(commandChannel('load_plugin'))?.(APP_FRAME, [])).rejects.toThrow(/no such plugin/u);
+
+        expect(observed).toEqual([['load_plugin', 'rejected']]);
+    });
+
+    it('reports rejected when there is no native host to route to', async () => {
+        const observed: [string, CommandSettlement][] = [];
+        const handlers = setup({
+            host: undefined,
+            observeSettlement: (command, settlement) => observed.push([command, settlement]),
+        });
+
+        await expect(handlers.get(commandChannel('load_plugin'))?.(APP_FRAME, [])).rejects.toThrow(
+            /native host is not available/u
+        );
+
+        expect(observed).toEqual([['load_plugin', 'rejected']]);
+    });
+
+    it('observes nothing for a frame the origin guard refused', async () => {
+        const observed: [string, CommandSettlement][] = [];
+        const handlers = setup({
+            host: hostWith({ loadPlugin: vi.fn() }),
+            observeSettlement: (command, settlement) => observed.push([command, settlement]),
+        });
+
+        expect(() => handlers.get(commandChannel('load_plugin'))?.(FOREIGN_FRAME, [])).toThrow(/not the application/u);
+
+        expect(observed).toEqual([]);
+    });
+
+    it('keeps the command answering when the observation itself throws', async () => {
+        const handlers = setup({
+            host: hostWith({ loadPlugin: () => 'loaded' }),
+            observeSettlement: () => {
+                throw new Error('observer defect');
+            },
+        });
+
+        // Policy observation is never load-bearing for the command: a broken
+        // observer must not turn a settled command into a rejected one.
+        await expect(handlers.get(commandChannel('load_plugin'))?.(APP_FRAME, [])).resolves.toBe('loaded');
     });
 });

@@ -4,6 +4,9 @@
 export { playheadPositionRef } from './playheadPositionRef';
 export { tempoProjectRevisionStore } from './tempoProjectRevisionStore';
 
+export { captureGestureBeat } from './captureGestureBeat';
+export { setGestureClockSource, type GestureClockSource } from './gestureClockSource';
+
 export type { TempoMapStoreState } from './tempoMapStore';
 export { tempoMapStore, MIN_TEMPO_MAP_TEMPO } from './tempoMapStore';
 

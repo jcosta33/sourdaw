@@ -35,6 +35,8 @@ test.describe('Recording Workflow', () => {
 
     test('Record arm toggle works', async ({ page }) => {
         const record = page.getByTestId('transport-record');
+        // Arm the first track so Record has an eligible target (#3679).
+        await page.locator('[data-testid^="track-arm-"]').first().click();
         const pressed_before = await record.getAttribute('aria-pressed');
         await record.click();
         await page.waitForTimeout(300);

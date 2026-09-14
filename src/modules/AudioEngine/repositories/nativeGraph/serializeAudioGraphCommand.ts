@@ -194,6 +194,15 @@ function serializeFade(fade: AudioGraphClipFade): AudioGraphClipFade {
 }
 
 function serializePlayback(playback: AudioGraphClipPlayback): NativeGraphWireClipPlayback {
+    if (playback.envelope !== undefined) {
+        // The native wire has no envelope vocabulary, and a dropped curve is a
+        // clip that prints without the fade the musician drew — the exact
+        // defect #2865 fixed on the Web Audio path. The native producers gate
+        // envelope-carrying clips back onto that carrier, so one reaching here
+        // is a producer defect, and refusing it is how it surfaces instead of
+        // laundering into a silently flat file.
+        throw new Error('a schedule-clip carrying a gain envelope cannot cross the native wire');
+    }
     return {
         trackId: playback.trackId,
         // The one deliberate omission in this file: the buffer stays behind.
