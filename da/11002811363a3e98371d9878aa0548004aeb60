@@ -1,0 +1,16 @@
+.github/workflows/validation.yml
+  h_1228e573df1f42 542,623
+crates/daw-dsp/src/crumbs/voice.rs
+  h_1228e573df1f42 1470,1484,1489
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "da11002811363a3e98371d9878aa0548004aeb60",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
