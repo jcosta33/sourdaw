@@ -974,8 +974,10 @@ function resolvePublishMetadata(
     }
     return {
         model,
-        // Deduped at construction: the model label is this list's head, and nothing in
-        // `descriptive` may repeat it.
+        // The Set is structural defense-in-depth, not an independently observable fence: with the
+        // inheritance filter and the flag refusal above, no descriptive source can produce a
+        // `model:` name, so this dedupe backs those two fences rather than gating anything a test
+        // could reach on its own — which is why no dedicated test pins it.
         labels: [...new Set([modelLabelName(model), ...descriptive])],
         ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
         projectTitles,
@@ -1011,7 +1013,10 @@ function resolveDescriptiveLabels(
         return [...new Set(carried)];
     }
     for (const name of flaggedLabels) {
-        if (name.startsWith('model:')) {
+        // Lowercased like the canonicalizer below resolves names: a case-variant spelling of the
+        // namespace must refuse here, or it would canonicalize into the reserved label and put a
+        // second, contradictory authorship marker on the pull request.
+        if (name.toLowerCase().startsWith('model:')) {
             fail(
                 `--label "${name}" uses the reserved model: namespace; the authoring model is set with ` +
                     '--model <family>, never --label'

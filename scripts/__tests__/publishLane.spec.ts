@@ -2372,17 +2372,22 @@ describe('lane publish', () => {
         });
 
         it('refuses a --label value from the reserved model namespace before any write', () => {
-            const { port, calls } = fakePort();
+            // Every casing must refuse: the fence lowercases like the canonicalizer, so a
+            // case-variant spelling cannot slip past here and canonicalize into the reserved
+            // label next to a different recorded model.
+            for (const spelling of ['model:glm-5.3', 'MODEL:glm-5.3', 'Model:glm-5.3']) {
+                const { port, calls } = fakePort();
 
-            expect(() =>
-                publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
-                    labels: ['model:glm-5.3'],
-                })
-            ).toThrow(/reserved model: namespace; the authoring model is set with --model/);
-            expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
-            expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
-            expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
-            expect(calls.some((call) => call.startsWith('metaEdit:'))).toBe(false);
+                expect(() =>
+                    publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
+                        labels: [spelling],
+                    })
+                ).toThrow(/reserved model: namespace; the authoring model is set with --model/);
+                expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+                expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+                expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
+                expect(calls.some((call) => call.startsWith('metaEdit:'))).toBe(false);
+            }
         });
 
         it('refuses an unknown --label before writing anything, naming the live list', () => {
