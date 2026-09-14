@@ -974,6 +974,7 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         ['crates/daw-dsp/benches/wasm/deviceRecipes.js', 'export const grandBoule = 1;'],
         ['crates/daw-dsp/benches/wasm/quantumCostProcessor.js', 'export const processor = 1;'],
         ['crates/daw-dsp/benches/wasm/run.mjs', 'export const runner = 1;'],
+        ['scripts/quantumMeasurementCalibration.ts', 'export const calibration = 1;'],
         ['crates/daw-dsp/benches/wasm/measurementCensus.mjs', 'export const census = 1;'],
         [
             'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
@@ -2701,6 +2702,7 @@ describe('release inventory', () => {
                 'crates/daw-dsp/benches/wasm/deviceRecipes.js',
                 'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
                 'crates/daw-dsp/benches/wasm/run.mjs',
+                'scripts/quantumMeasurementCalibration.ts',
                 'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
                 'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
                 'crates/daw-dsp/benches/wasm/renderTable.mjs',
@@ -3211,6 +3213,7 @@ describe('release inventory', () => {
             'crates/daw-dsp/benches/quantum.rs',
             'crates/daw-dsp/benches/wasm/deviceRecipes.js',
             'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+            'scripts/quantumMeasurementCalibration.ts',
             'crates/daw-dsp/src/lib.rs',
             'crates/daw-dsp/Cargo.toml',
             'rust-toolchain.toml',
@@ -3242,6 +3245,7 @@ describe('release inventory', () => {
         for (const modulePath of [
             'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
             'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
+            'scripts/quantumMeasurementCalibration.ts',
         ]) {
             expect(releaseProof?.paths).toContain(modulePath);
             expect(releaseProof?.gitPathspecs).toContain(modulePath);
