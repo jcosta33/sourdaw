@@ -1,0 +1,14 @@
+crates/daw-dsp/benches/quantum-cost-table.json
+  h_1228e573df1f42 12,17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2f7e1178b06faa965f82c7b34b0795cb1c52364a",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
