@@ -11762,7 +11762,13 @@ describe('delivery shell boundary', () => {
         expect(runs).toEqual([
             {
                 command: 'git',
-                args: ['fetch', '--prune', 'origin', '+refs/notes/ai:refs/notes/ai'],
+                args: [
+                    'fetch',
+                    '--prune',
+                    'origin',
+                    '+refs/heads/*:refs/remotes/origin/*',
+                    '+refs/notes/ai:refs/notes/ai',
+                ],
             },
         ]);
     });
@@ -11800,6 +11806,7 @@ describe('delivery shell boundary', () => {
                     '--head-sha',
                     'head-sha-456',
                     '--skip-fetch',
+                    '--skip-push',
                 ],
             },
             {
@@ -11848,6 +11855,7 @@ describe('delivery shell boundary', () => {
                     '--head-sha',
                     'head-sha-456',
                     '--skip-fetch',
+                    '--skip-push',
                 ],
             });
             expect(runs[1]?.command).toBe('git');

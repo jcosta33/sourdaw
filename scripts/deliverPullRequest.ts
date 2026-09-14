@@ -3540,7 +3540,13 @@ export function shellPort(
                 );
                 return;
             }
-            shell.run('git', ['fetch', '--prune', 'origin', '+refs/notes/ai:refs/notes/ai']);
+            shell.run('git', [
+                'fetch',
+                '--prune',
+                'origin',
+                '+refs/heads/*:refs/remotes/origin/*',
+                '+refs/notes/ai:refs/notes/ai',
+            ]);
         },
         pullRequest: (number) => {
             const snapshot = toPullRequestSnapshot(
@@ -3699,6 +3705,7 @@ export function shellPort(
                     '--head-sha',
                     headSha,
                     '--skip-fetch',
+                    '--skip-push',
                 ]);
                 if (options.gitToken) {
                     const helperDir =
