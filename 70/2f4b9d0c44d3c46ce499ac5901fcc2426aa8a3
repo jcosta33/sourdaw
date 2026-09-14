@@ -1,0 +1,258 @@
+crates/daw-dsp/src/crumbs/allocator.rs
+  h_1228e573df1f42 121
+crates/daw-dsp/src/crumbs/engine.rs
+  h_1228e573df1f42 28-32,42,139-141,202,541-545,929-932,1127-1129,1157-1162
+crates/daw-dsp/src/crumbs/mod.rs
+  h_1228e573df1f42 102,170-176
+crates/daw-dsp/src/crumbs/sample.rs
+  h_1228e573df1f42 138-153
+crates/daw-dsp/src/levain/articulation.rs
+  h_1228e573df1f42 219-223,235,251,259,283,291
+crates/daw-dsp/src/levain/engine.rs
+  h_1228e573df1f42 131-140,162,175-176,283,322-352,403,428-452,487,499,540,575,784-787,876-879,884-899,911,1007-1009,1045-1047,1120-1122,1728-1733,1735,1743
+crates/daw-dsp/src/levain/mic.rs
+  h_1228e573df1f42 150-157,159-176
+crates/daw-dsp/src/levain/mod.rs
+  h_1228e573df1f42 293-313
+crates/daw-dsp/src/levain/performance.rs
+  h_1228e573df1f42 195
+crates/daw-dsp/src/levain/voice.rs
+  h_1228e573df1f42 8,698-708,762-764,846-865,1016,1018-1019,1040-1041,1059-1070
+crates/daw-dsp/tests/crumbs_dropped_sample_writes_surface.rs
+  h_1228e573df1f42 1-50
+crates/daw-dsp/tests/crumbs_pan_is_audible.rs
+  h_1228e573df1f42 1-83
+crates/daw-dsp/tests/levain_auto_articulation_suggests_runs.rs
+  h_1228e573df1f42 1-139
+crates/daw-dsp/tests/levain_humanization_is_audible.rs
+  h_1228e573df1f42 1-188
+crates/daw-dsp/tests/levain_keyswitch_selects_articulation.rs
+  h_1228e573df1f42 1-161
+crates/daw-dsp/tests/levain_mic_selection_is_audible.rs
+  h_1228e573df1f42 1-144
+crates/sourdaw-native/src/addon/mod.rs
+  h_1228e573df1f42 1317-1327
+crates/sourdaw-native/src/commands/crumbs.rs
+  h_1228e573df1f42 1115-1135
+electron/__tests__/powerSave.spec.ts
+  h_1228e573df1f42 1-270
+electron/__tests__/router.spec.ts
+  h_1228e573df1f42 17,46,49-55,64,278-346
+electron/main.ts
+  h_1228e573df1f42 23,68,573-578,590,708-727
+electron/powerSave.ts
+  h_1228e573df1f42 1-71
+electron/router.ts
+  h_1228e573df1f42 140-142,155-163,173,182-192,194,199,204,210-217,220,232,234-236
+electron/shutdown.ts
+  h_1228e573df1f42 143-144,155-156,159-163,167,175
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_1228e573df1f42 1,138-143,176,619-630,887-944,946-949,969,981,1042-1096
+public/wasm/daw-dsp/daw_dsp.js
+  h_1228e573df1f42 236-245,309,1358-1376
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_1228e573df1f42 1,5-62,64-67,87,99,160-214
+public/wasm/manifest.json
+  h_1228e573df1f42 12,15-18,20-21
+release/open-source-inventory.json
+  h_1228e573df1f42 1335,1341,1722
+scripts/__tests__/desktopLatencyReadings.spec.ts
+  h_1228e573df1f42 15,136-169
+scripts/desktopLatencyConnect.ts
+  h_1228e573df1f42 33,541
+scripts/desktopLatencyReadings.ts
+  h_1228e573df1f42 210-226
+src/app/__tests__/bootstrap.spec.ts
+  h_1228e573df1f42 597
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  h_1228e573df1f42 33-34
+src/app/bootstrap.ts
+  h_1228e573df1f42 164,172,410-418
+src/app/registerDependencies.ts
+  h_1228e573df1f42 33
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  h_1228e573df1f42 13-14
+src/modules/Arrangement/stores/__tests__/gainEnvelopeSeries.spec.ts
+  h_1228e573df1f42 1-130
+src/modules/Arrangement/stores/gainEnvelopeStore.ts
+  h_1228e573df1f42 63-190
+src/modules/Arrangement/stores/index.ts
+  h_1228e573df1f42 74-75
+src/modules/Arrangement/useCases/clipGainEnvelope/sampleGainEnvelopePoints.ts
+  h_1228e573df1f42 1,14-17,24-25
+src/modules/Arrangement/useCases/device/setDeviceParameter/__tests__/setDeviceParameter.spec.ts
+  h_1228e573df1f42 22,53-55,78,161,165-166,168,172,293,302
+src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts
+  h_1228e573df1f42 3,94-98,106
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/helpers.spec.ts
+  h_1228e573df1f42 108,113-116,124-126,128,133
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/maybeRecordAutomation.spec.ts
+  h_1228e573df1f42 3-35,38-44,46,49-55,57,60-67,69,72-78,80,83-84,86
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setTrackGain.spec.ts
+  h_1228e573df1f42 19,48-50,63,89,91-92,94,98,111,117
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setTrackPan.spec.ts
+  h_1228e573df1f42 15,44-46,59,90,92-93,95,99,123,129
+src/modules/Arrangement/useCases/setTrackGainPan/maybeRecordAutomation.ts
+  h_1228e573df1f42 13-20,54-57
+src/modules/Arrangement/useCases/setTrackGainPan/setTrackGain.ts
+  h_1228e573df1f42 3,52-57
+src/modules/Arrangement/useCases/setTrackGainPan/setTrackPan.ts
+  h_1228e573df1f42 3,56-61
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  h_1228e573df1f42 343-352,357-367
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/serializeAudioGraphCommandBatch.spec.ts
+  h_1228e573df1f42 558-586
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  h_1228e573df1f42 197-205
+src/modules/AudioEngine/services/__tests__/crumbsProcessor.spec.ts
+  h_1228e573df1f42 31,59-62,112,133-162
+src/modules/AudioEngine/services/crumbsProcessor.ts
+  h_1228e573df1f42 184-191
+src/modules/AudioEngine/useCases/audioDeviceSelection/__tests__/setOutputDevice.spec.ts
+  h_1228e573df1f42 33-34,51-65,72-73,170-220
+src/modules/AudioEngine/useCases/audioDeviceSelection/setOutputDevice.ts
+  h_1228e573df1f42 6-7,15-28,35-54
+src/modules/AudioEngine/useCases/faustScheduler/__tests__/scheduleFaustNote.spec.ts
+  h_1228e573df1f42 3-14,20-31,34-35,37-41,43-54
+src/modules/AudioEngine/useCases/faustScheduler/__tests__/startFaustNote.spec.ts
+  h_1228e573df1f42 1-12,14-28,30-38,40-49
+src/modules/AudioEngine/useCases/faustScheduler/scheduleFaustNote.ts
+  h_1228e573df1f42 1-2,5-6,8-18,29-30
+src/modules/AudioEngine/useCases/faustScheduler/startFaustNote.ts
+  h_1228e573df1f42 1-2,6-13,23,26
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgramme.spec.ts
+  h_1228e573df1f42 21,23,139-142,209-249
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphProgramme.ts
+  h_1228e573df1f42 66,279-288
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleOfflineClipSourceGainEnvelope.spec.ts
+  h_1228e573df1f42 1-168
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts
+  h_1228e573df1f42 310-312,316-317
+src/modules/AudioEngine/useCases/offlineRender/__tests__/selectOfflineRenderEngine.spec.ts
+  h_1228e573df1f42 25-30,147-152,157,295-315,372-387
+src/modules/AudioEngine/useCases/offlineRender/__tests__/stretchRatioBoundConformance.spec.ts
+  h_1228e573df1f42 31,104
+src/modules/AudioEngine/useCases/offlineRender/createWebAudioOfflineBackend.ts
+  h_1228e573df1f42 235
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineAudioClipPlaybacks.ts
+  h_1228e573df1f42 1,3,7-11,20,55-66,86-92,124,259-278,285
+src/modules/AudioEngine/useCases/offlineRender/scheduleOfflineClipSource.ts
+  h_1228e573df1f42 16-20,39-47,74-82,103,115-118,120-122,125-136
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  h_1228e573df1f42 1,793-795,805,818
+src/modules/AudioEngine/useCases/offlineRender/selectOfflineRenderEngine.ts
+  h_1228e573df1f42 25-27,48,94-102
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_1228e573df1f42 1,138-143,176,619-630,887-944,946-949,969,981,1042-1096
+src/modules/AudioEngine/wasm/daw_dsp.js
+  h_1228e573df1f42 413-422,486,1535-1553
+src/modules/Automation/useCases/automationRecording/__tests__/heldBoundaryCommit.spec.ts
+  h_1228e573df1f42 1-311
+src/modules/Automation/useCases/automationRecording/commitRecordedPass.ts
+  h_1228e573df1f42 5,8-12,18-20,23-35,39,45-46,55-92,94-95
+src/modules/Automation/useCases/automationRecording/latencyCompensatedBeat.ts
+  h_1228e573df1f42 1-21
+src/modules/Automation/useCases/automationRecording/recordAutomationValue.ts
+  h_1228e573df1f42 8,52,61-64,67-71,73-74,84-90
+src/modules/Automation/useCases/automationRecording/recordingSessionState.ts
+  h_1228e573df1f42 40-47
+src/modules/Automation/useCases/automationRecording/stopAutomationRecording.ts
+  h_1228e573df1f42 52-64,80-86
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineSteppedQuantisation.spec.ts
+  h_1228e573df1f42 41-42
+src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts
+  h_1228e573df1f42 49
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  h_1228e573df1f42 28,145,664
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  h_1228e573df1f42 27,335
+src/modules/Crumbs/repositories/crumbsBridge/getCrumbsDroppedSampleWrites.ts
+  h_1228e573df1f42 1-14
+src/modules/Crumbs/useCases/loadSample.ts
+  h_1228e573df1f42 9,107-126
+src/modules/Crumbs/useCases/prepareCrumbsEngine.ts
+  h_1228e573df1f42 60-70
+src/modules/Grinder/repositories/neuralLibraryPersistence/__tests__/neuralLibraryPersistence.spec.ts
+  h_1228e573df1f42 5,178-180,182
+src/modules/Grinder/repositories/neuralLibraryPersistence/persistGrinderNeuralLibrary.ts
+  h_1228e573df1f42 10-11,15-27,29
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  h_1228e573df1f42 37-38
+src/modules/PluginHost/useCases/faustEngine/__tests__/faustPolyVoiceDispatchDspBehavior.spec.ts
+  h_1228e573df1f42 1-73,77,79-83,85-92,94-96,98-101,103,106-110,112-120,122-220
+src/modules/PluginHost/useCases/faustEngine/__tests__/stereoFaustInsertDspBehavior.spec.ts
+  h_1228e573df1f42 1-100,104,106-116,119-122,124-128,131-134,137-144,147-148,150-153,155,158-161,163,165-250
+src/modules/PluginHost/useCases/faustEngine/dsp/pro-parametric-eq.dsp
+  h_1228e573df1f42 2-7,11
+src/modules/PluginHost/useCases/faustEngine/dsp/spring-reverb.dsp
+  h_1228e573df1f42 2-8,20-21
+src/modules/PluginHost/useCases/faustEngine/dsp/tape-delay.dsp
+  h_1228e573df1f42 29-37
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  h_1228e573df1f42 69-70
+src/modules/Transport/stores/__tests__/captureGestureBeat.spec.ts
+  h_1228e573df1f42 1-131
+src/modules/Transport/stores/captureGestureBeat.ts
+  h_1228e573df1f42 1-81
+src/modules/Transport/stores/gestureClockSource.ts
+  h_1228e573df1f42 1-31
+src/modules/Transport/stores/index.ts
+  h_1228e573df1f42 7-9
+src/modules/Transport/stores/playheadClockRef.ts
+  h_1228e573df1f42 1-21
+src/modules/Transport/stores/playheadPositionRef.ts
+  h_1228e573df1f42 9-24
+src/modules/Transport/useCases/index.ts
+  h_1228e573df1f42 10
+src/modules/Transport/useCases/playheadScheduler/disposePlayheadScheduler.ts
+  h_1228e573df1f42 3,40-41
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  h_1228e573df1f42 27,162-163,402-408
+src/modules/Transport/useCases/playheadScheduler/stopPlayheadScheduler.ts
+  h_1228e573df1f42 11-12,20-26,47-48
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  h_1228e573df1f42 3-4,37,56,168,672-677,681-685,691,693-756,918,920,1342
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  h_1228e573df1f42 1-2,18-22,250-261,416-435
+src/modules/WorkspaceShell/AGENTS.md
+  h_1228e573df1f42 16
+src/modules/WorkspaceShell/events/WorkspaceEvents.ts
+  h_1228e573df1f42 1
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useActiveDevicePanel.spec.ts
+  h_1228e573df1f42 6,12-17,19,21-27,41,98,112,117,128,141,161-162,164,170-189,194,209,224,249,265
+src/modules/WorkspaceShell/presentations/hooks/useActiveDevicePanel.ts
+  h_1228e573df1f42 104-122,124-135,137
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  h_1228e573df1f42 71,106-107,109-110,112-121,357-359,361-364
+src/modules/WorkspaceShell/useCases/index.ts
+  h_1228e573df1f42 12
+src/modules/WorkspaceShell/useCases/panels/__tests__/devicePanels.spec.ts
+  h_1228e573df1f42 5,20,24-25,27-30,33-34,36-39,42,51-52,54-55,57,61-62,64
+src/modules/WorkspaceShell/useCases/panels/devicePanels/showDevicePanelForType.ts
+  h_1228e573df1f42 5,7-21,26-27,32
+src/modules/WorkspaceShell/useCases/togglePanel/__tests__/zoomOperations.spec.ts
+  h_1228e573df1f42 51,54-57
+src/modules/WorkspaceShell/useCases/togglePanel/zoomOperations/cycleAutomationVisibility.ts
+  h_1228e573df1f42 8
+src/utils/clipGainEnvelopeSchedule.ts
+  h_1228e573df1f42 1-101
+src/utils/sourdawCommandArguments.ts
+  h_1228e573df1f42 55
+tests/e2e/recording.spec.ts
+  h_1228e573df1f42 15-20
+tests/e2e/transportAndWorkspaceDeep.spec.ts
+  h_1228e573df1f42 38-39
+tests/e2e/transportTemplateTestId.spec.ts
+  h_1228e573df1f42 63-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "702f4b9d0c44d3c46ce499ac5901fcc2426aa8a3",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
