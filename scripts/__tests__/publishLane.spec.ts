@@ -27,11 +27,16 @@ import { composePublishBody, type GuardFailureReceipt } from '../prContract.ts';
 import {
     AUTHOR_MODEL_PATTERN,
     applyPullRequestMetadataArgs,
+    canonicalLabelName,
     canonicalMilestoneTitle,
     canonicalProjectTitle,
+    derivedLabelFromSubject,
+    descriptiveLabelNames,
     ensureModelLabelArgs,
     existingOpenPullRequestArgs,
     issueTrackerMetadataArgs,
+    labelListArgs,
+    labelNamesFromRows,
     metadataEditPlan,
     modelLabelName,
     openMilestoneTitlesArgs,
@@ -139,12 +144,14 @@ type FakeInput = {
     guardFailure?: (laneName: string) => GuardFailureReceipt | undefined;
     /** `branch.<branch>.sourdaw-author-model` as publish reads it back; `null` records no model. */
     authorModel?: string | null;
-    /** Raw `gh issue view --json milestone,projectItems` row for the lane issue; routed through the real extraction. */
-    issueTracker?: { milestone?: { title?: unknown } | null; projectItems?: unknown[] };
+    /** Raw `gh issue view --json labels,milestone,projectItems` row; routed through the real extraction. */
+    issueTracker?: { labels?: unknown[]; milestone?: { title?: unknown } | null; projectItems?: unknown[] };
     openMilestoneTitles?: string[];
     knownProjects?: string[];
     /** When set, `gh project list` fails under the App, as it does for user-owned Projects v2. */
     projectListError?: string;
+    /** The repository label list `gh label list --limit 200 --json name` would answer. */
+    repositoryLabels?: string[];
     /** Current pull-request metadata `gh pr view` would answer; defaults to a complete state. */
     currentMetadata?: { labels: string[]; milestoneTitle?: string; projectTitles: string[] };
 };
@@ -227,13 +234,17 @@ function fakePort(input: FakeInput = {}) {
             }
             return input.knownProjects ?? [];
         },
+        knownLabelNames: () => {
+            calls.push('labelList');
+            return input.repositoryLabels ?? [];
+        },
         readPullRequestMetadata: (number) => {
             calls.push(`prMeta:${number}`);
             return input.currentMetadata ?? { labels: [modelLabelName('glm-5.3')], projectTitles: [] };
         },
-        applyPullRequestMetadata: (number, label, plan) => {
+        applyPullRequestMetadata: (number, plan) => {
             calls.push(
-                `metaEdit:${number}:${plan.addLabel ? label : '-'}:${plan.milestoneTitle ?? '-'}:${
+                `metaEdit:${number}:${plan.addLabels.join(',') || '-'}:${plan.milestoneTitle ?? '-'}:${
                     plan.addProjectTitles.join(',') || '-'
                 }`
             );
@@ -1430,6 +1441,12 @@ describe('lane publish', () => {
             projects: ['Roadmap'],
             help: false,
         });
+        expect(parsePublishLaneArgs(['12', '--label', 'bug', '--label', 'ENHANCEMENT', '--label', 'bug'])).toEqual({
+            issue: 12,
+            labels: ['bug', 'ENHANCEMENT'],
+            help: false,
+        });
+        expect(() => parsePublishLaneArgs(['12', '--label'])).toThrow(/usage/);
         expect(parsePublishLaneArgs([])).toEqual({ help: false });
         expect(parsePublishLaneArgs(['--help'])).toEqual({ help: true });
         expect(() => parsePublishLaneArgs(['12', '13'])).toThrow(/usage/);
@@ -1822,8 +1839,8 @@ describe('lane publish', () => {
 
         it('refuses metadata flags on a legacy lane without --model instead of dropping them', () => {
             // A parsed-then-silently-dropped flag is the worst outcome: the operator believes the
-            // milestone or project was applied and the publish exits 0. Without --model the whole
-            // mechanism is opted out for this lane, so the flags must refuse loudly.
+            // milestone, project, or label was applied and the publish exits 0. Without --model the
+            // whole mechanism is opted out for this lane, so the flags must refuse loudly.
             const milestone = fakePort({
                 trees: [...otherAuthorLanes(), legacyWorktree()],
                 cwd: LEGACY_LANE,
@@ -1849,6 +1866,19 @@ describe('lane publish', () => {
                 })
             ).toThrow(/metadata flags require --model on a legacy lane/);
             expect(project.calls.some((call) => call.startsWith('push:'))).toBe(false);
+
+            const label = fakePort({
+                trees: [...otherAuthorLanes(), legacyWorktree()],
+                cwd: LEGACY_LANE,
+                existing: 2275,
+            });
+
+            expect(() =>
+                publishLane(undefined, label.port, undefined, undefined, undefined, undefined, {
+                    labels: ['bug'],
+                })
+            ).toThrow(/metadata flags require --model on a legacy lane/);
+            expect(label.calls.some((call) => call.startsWith('push:'))).toBe(false);
         });
 
         it('publishes a legacy lane whose only commits above origin/main are merges', () => {
@@ -1968,10 +1998,12 @@ describe('lane publish', () => {
                 '--repo',
                 'jcosta33/sourdaw',
                 '--json',
-                'milestone,projectItems',
+                'labels,milestone,projectItems',
             ]);
             expect(openMilestoneTitlesArgs()).toEqual(['api', 'repos/jcosta33/sourdaw/milestones?state=open']);
             expect(projectListArgs('jcosta33')).toEqual(['project', 'list', '--owner', 'jcosta33', '--format', 'json']);
+            // gh's default page is 30; the limit keeps a growing label set from being truncated.
+            expect(labelListArgs()).toEqual(['label', 'list', '--limit', '200', '--json', 'name']);
             expect(pullRequestMetadataArgs(41)).toEqual([
                 'pr',
                 'view',
@@ -1983,20 +2015,27 @@ describe('lane publish', () => {
             ]);
         });
 
-        it('parses tracker, milestone, project, and pull-request rows defensively', () => {
+        it('parses tracker, milestone, project, label, and pull-request rows defensively', () => {
             expect(
                 trackerMetadataFromIssueRow({
+                    labels: [{ name: 'bug' }, 'enhancement', {}, 7],
                     milestone: { title: 'v1.2' },
                     projectItems: [{ title: 'Roadmap' }, { title: 'Roadmap' }, {}, { title: 3 }],
                 })
-            ).toEqual({ milestoneTitle: 'v1.2', projectTitles: ['Roadmap'] });
+            ).toEqual({ milestoneTitle: 'v1.2', projectTitles: ['Roadmap'], labelNames: ['bug', 'enhancement'] });
             expect(trackerMetadataFromIssueRow({ milestone: null, projectItems: undefined })).toEqual({
                 projectTitles: [],
+                labelNames: [],
             });
             expect(openMilestoneTitlesFromRows([{ title: 'v1.2' }, { title: 3 }, 'bare'])).toEqual(['v1.2']);
             expect(() => openMilestoneTitlesFromRows({})).toThrow(/malformed/);
             expect(projectTitlesFromListing({ projects: [{ title: 'Roadmap' }], totalCount: 1 })).toEqual(['Roadmap']);
             expect(() => projectTitlesFromListing([{ title: 'Roadmap' }])).toThrow(/malformed/);
+            expect(labelNamesFromRows([{ name: 'bug' }, { name: 3 }, 'enhancement', {}])).toEqual([
+                'bug',
+                'enhancement',
+            ]);
+            expect(() => labelNamesFromRows({})).toThrow(/malformed/);
             expect(
                 pullRequestMetadataFromRow({
                     labels: [{ name: 'model:glm-5.3' }, 'bug', {}],
@@ -2009,28 +2048,57 @@ describe('lane publish', () => {
             );
         });
 
+        it('drops the issue-workflow and model namespaces from inherited labels', () => {
+            expect(
+                descriptiveLabelNames(['bug', 'priority:P2', 'status:ready', 'model:kimi-k2.5', 'enhancement'])
+            ).toEqual(['bug', 'enhancement']);
+            expect(descriptiveLabelNames([])).toEqual([]);
+        });
+
+        it('derives one type label from the conventional subject and nothing beyond the map', () => {
+            expect(derivedLabelFromSubject('feat(vcs): add identities')).toBe('enhancement');
+            expect(derivedLabelFromSubject('fix(audio): repair dropout')).toBe('bug');
+            expect(derivedLabelFromSubject('docs: explain lanes')).toBe('documentation');
+            // TITLE_PATTERN's breaking-change marker derives like the plain type.
+            expect(derivedLabelFromSubject('feat!: change the storage format')).toBe('enhancement');
+            expect(derivedLabelFromSubject('fix(ui)!: urgent regression')).toBe('bug');
+            expect(derivedLabelFromSubject('chore(build): bump')).toBeUndefined();
+            expect(derivedLabelFromSubject('test(delivery): cover publish')).toBeUndefined();
+            expect(derivedLabelFromSubject('refactor: simplify')).toBeUndefined();
+            expect(derivedLabelFromSubject('Knob polishing pass')).toBeUndefined();
+        });
+
+        it('resolves --label values to the canonical live spelling', () => {
+            expect(canonicalLabelName('ENHANCEMENT', ['bug', 'enhancement'])).toBe('enhancement');
+            expect(() => canonicalLabelName('Nope', ['bug', 'enhancement'])).toThrow(
+                /--label "Nope" matches no label in gh label list/
+            );
+        });
+
         it('edits only the metadata pieces the pull request is missing', () => {
             const target = {
                 model: 'glm-5.3',
-                label: 'model:glm-5.3',
+                labels: ['model:glm-5.3', 'bug'],
                 milestoneTitle: 'v1.2',
                 projectTitles: ['Roadmap', 'Triage'],
             };
             const plan = metadataEditPlan(target, {
-                labels: ['model:glm-5.3'],
+                labels: ['model:glm-5.3', 'enhancement'],
                 milestoneTitle: 'v1.0',
                 projectTitles: ['Triage'],
             });
-            expect(plan).toEqual({ addLabel: false, milestoneTitle: 'v1.2', addProjectTitles: ['Roadmap'] });
+            expect(plan).toEqual({ addLabels: ['bug'], milestoneTitle: 'v1.2', addProjectTitles: ['Roadmap'] });
             if (plan === undefined) {
                 throw new Error('expected a metadata edit plan');
             }
-            expect(applyPullRequestMetadataArgs(41, 'model:glm-5.3', plan)).toEqual([
+            expect(applyPullRequestMetadataArgs(41, plan)).toEqual([
                 'pr',
                 'edit',
                 '41',
                 '--repo',
                 'jcosta33/sourdaw',
+                '--add-label',
+                'bug',
                 '--milestone',
                 'v1.2',
                 '--add-project',
@@ -2038,10 +2106,38 @@ describe('lane publish', () => {
             ]);
         });
 
+        it('composes one edit carrying every missing label', () => {
+            const plan = metadataEditPlan(
+                { model: 'glm-5.3', labels: ['model:glm-5.3', 'bug', 'security'], projectTitles: [] },
+                { labels: [], projectTitles: [] }
+            );
+            if (plan === undefined) {
+                throw new Error('expected a metadata edit plan');
+            }
+            expect(applyPullRequestMetadataArgs(88, plan)).toEqual([
+                'pr',
+                'edit',
+                '88',
+                '--repo',
+                'jcosta33/sourdaw',
+                '--add-label',
+                'model:glm-5.3',
+                '--add-label',
+                'bug',
+                '--add-label',
+                'security',
+            ]);
+        });
+
         it('issues no metadata edit when the pull request already carries the target', () => {
             const complete = metadataEditPlan(
-                { model: 'glm-5.3', label: 'model:glm-5.3', milestoneTitle: 'v1.2', projectTitles: ['Roadmap'] },
-                { labels: ['model:glm-5.3'], milestoneTitle: 'v1.2', projectTitles: ['Roadmap'] }
+                {
+                    model: 'glm-5.3',
+                    labels: ['model:glm-5.3', 'bug'],
+                    milestoneTitle: 'v1.2',
+                    projectTitles: ['Roadmap'],
+                },
+                { labels: ['bug', 'model:glm-5.3'], milestoneTitle: 'v1.2', projectTitles: ['Roadmap'] }
             );
             expect(complete).toBeUndefined();
         });
@@ -2201,6 +2297,153 @@ describe('lane publish', () => {
             expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
         });
 
+        it('inherits the bound issue labels minus the issue-workflow and model namespaces', () => {
+            const { port, calls } = fakePort({
+                issueTracker: {
+                    labels: [
+                        { name: 'bug' },
+                        { name: 'priority:P2' },
+                        { name: 'status:ready' },
+                        { name: 'model:kimi-k2.5' },
+                        { name: 'model:glm-5.3' },
+                    ],
+                    milestone: null,
+                    projectItems: [],
+                },
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            // Exactly bug joins the model label — once: the boards' namespaces stay on the issue,
+            // and the model namespace is this lane's own record, never inherited, so the issue's
+            // spellings of it contribute nothing and the head of the list is not duplicated.
+            expect(calls).toContain('metaEdit:88:model:glm-5.3,bug:-:-');
+            expect(calls.some((call) => call.includes('priority:'))).toBe(false);
+            expect(calls.some((call) => call.includes('status:'))).toBe(false);
+            expect(calls.some((call) => call.includes('kimi'))).toBe(false);
+        });
+
+        it('derives the type label from the lane subject on an issueless lane without flags', () => {
+            const { port, calls } = fakePort({
+                trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+                cwd: CLEANUP_LANE,
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            expect(calls.some((call) => call.startsWith('issueView:'))).toBe(false);
+            expect(calls).toContain('metaEdit:88:model:glm-5.3,enhancement:-:-');
+        });
+
+        it('derives from the frozen existing title on a republish, not the newest subject', () => {
+            // lane:publish never retitles: the PR keeps the feat title it opened with, so a
+            // fix-typed follow-up commit must not smuggle bug in next to enhancement.
+            const { port, calls } = fakePort({
+                trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+                cwd: CLEANUP_LANE,
+                existing: 41,
+                existingTitle: 'feat(foo): add knob',
+                existingBody: composePublishBody(undefined, 'feat(foo): add knob', DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
+                subject: 'fix(foo): tighten knob',
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            expect(publishLane(undefined, port)).toBe(41);
+
+            expect(calls).toContain('metaEdit:41:model:glm-5.3,enhancement:-:-');
+            expect(calls.some((call) => call.includes('bug'))).toBe(false);
+        });
+
+        it('derives nothing from a manually retitled pull request', () => {
+            const { port, calls } = fakePort({
+                trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+                cwd: CLEANUP_LANE,
+                existing: 41,
+                existingTitle: 'Knob polishing pass',
+                existingBody: composePublishBody(undefined, 'Knob polishing pass', DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            expect(publishLane(undefined, port)).toBe(41);
+
+            expect(calls).toContain('metaEdit:41:model:glm-5.3:-:-');
+        });
+
+        it('refuses a --label value from the reserved model namespace before any write', () => {
+            // Every casing must refuse: the fence lowercases like the canonicalizer, so a
+            // case-variant spelling cannot slip past here and canonicalize into the reserved
+            // label next to a different recorded model.
+            for (const spelling of ['model:glm-5.3', 'MODEL:glm-5.3', 'Model:glm-5.3']) {
+                const { port, calls } = fakePort();
+
+                expect(() =>
+                    publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
+                        labels: [spelling],
+                    })
+                ).toThrow(/reserved model: namespace; the authoring model is set with --model/);
+                expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+                expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+                expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
+                expect(calls.some((call) => call.startsWith('metaEdit:'))).toBe(false);
+            }
+        });
+
+        it('refuses an unknown --label before writing anything, naming the live list', () => {
+            const { port, calls } = fakePort({ repositoryLabels: ['bug', 'enhancement'] });
+
+            expect(() =>
+                publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
+                    model: 'kimi-k2.5',
+                    labels: ['Nope'],
+                })
+            ).toThrow(/--label "Nope" matches no label in gh label list for jcosta33\/sourdaw/);
+            expect(calls).toContain('labelList');
+            expect(calls.some((call) => call.startsWith('saveModel:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('metaEdit:'))).toBe(false);
+        });
+
+        it('unions canonical --label flags with inheritance, deduped, in one edit', () => {
+            const { port, calls } = fakePort({
+                issueTracker: {
+                    labels: [{ name: 'bug' }, { name: 'enhancement' }],
+                    milestone: null,
+                    projectItems: [],
+                },
+                repositoryLabels: ['bug', 'enhancement', 'security'],
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
+                labels: ['ENHANCEMENT', 'security'],
+            });
+
+            expect(calls).toContain('labelList');
+            // bug is inherited, enhancement arrives as a case-variant flag and dedupes against the
+            // inherited spelling, security comes from the flag: all missing labels in ONE edit.
+            expect(calls).toContain('metaEdit:88:model:glm-5.3,bug,enhancement,security:-:-');
+            expect(calls.filter((call) => call.startsWith('metaEdit:'))).toHaveLength(1);
+        });
+
+        it('issues no metadata edit when the pull request already carries every label', () => {
+            const { port, calls } = fakePort({
+                issueTracker: {
+                    labels: [{ name: 'bug' }],
+                    milestone: null,
+                    projectItems: [],
+                },
+                currentMetadata: { labels: ['model:glm-5.3', 'bug'], projectTitles: [] },
+            });
+
+            expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            expect(calls).toContain('prMeta:88');
+            expect(calls.some((call) => call.startsWith('metaEdit:'))).toBe(false);
+        });
+
         it("fails an explicit --project when the App cannot list the owner's projects", () => {
             const { port, calls } = fakePort({ projectListError: 'gh: Must have admin rights' });
 
@@ -2283,7 +2526,9 @@ describe('lane publish', () => {
 
             expect(calls).toContain('projectList');
             expect(calls.some((call) => call.startsWith('issueView:'))).toBe(false);
-            expect(calls).toContain('metaEdit:88:model:glm-5.3:-:Roadmap');
+            // The default fixture subject is feat(...), so the derived enhancement label rides in
+            // the same single edit as the model label and the canonicalized project.
+            expect(calls).toContain('metaEdit:88:model:glm-5.3,enhancement:-:Roadmap');
         });
 
         it("fails an explicit --project on an issueless lane when the App cannot list the owner's projects", () => {
