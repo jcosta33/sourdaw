@@ -6,7 +6,7 @@ import { audioRecordingStore } from '../../../stores/audioRecordingStore';
 import { audioEngine } from '../../createWebAudioEngine';
 import { cleanupNodesForRecordingSession } from '../cleanupNodesForRecordingSession';
 import { startAudioRecording } from '../recording';
-import { activeSessions, sharedStreamState } from '../recordingSession';
+import { activeSessions, sharedStreamState, type RecordingResult } from '../recordingSession';
 import { stopAudioRecording } from '../stopAudioRecording';
 import { terminateRecordingWorker } from '../terminateRecordingWorker';
 
@@ -197,8 +197,13 @@ describe('stopAudioRecording', () => {
         vi.mocked(audioEngine.context.decodeAudioData).mockReturnValue(decodePending);
         const decodedBuffer = make_audio_buffer();
         const deliveryOrder: string[] = [];
-        const onTerminal = vi.fn((result: { kind: string; buffer?: AudioBuffer }) => {
-            expect(result).toEqual({ kind: 'completed', buffer: decodedBuffer });
+        const onTerminal = vi.fn((result: RecordingResult) => {
+            expect(result).toEqual({
+                kind: 'completed',
+                buffer: decodedBuffer,
+                sampleZeroContextFrame: 0x1_0000_0000 + 5,
+                sampleRate: 48000,
+            });
             deliveryOrder.push('callback');
         });
         const { worker, worklet } = await startAndArm('track-flush', onTerminal);
@@ -228,7 +233,12 @@ describe('stopAudioRecording', () => {
         expect(media_track_stop).toHaveBeenCalledOnce();
 
         const wav = new ArrayBuffer(52);
-        worker.emit({ type: 'wav', buffer: wav });
+        worker.emit({
+            type: 'wav',
+            buffer: wav,
+            sampleZeroContextFrame: 0x1_0000_0000 + 5,
+            sampleRate: 48000,
+        });
         await Promise.resolve();
 
         expect(audioEngine.context.decodeAudioData).toHaveBeenCalledWith(wav);
@@ -245,7 +255,12 @@ describe('stopAudioRecording', () => {
         await stopping;
 
         expect(onTerminal).toHaveBeenCalledOnce();
-        expect(onTerminal).toHaveBeenCalledWith({ kind: 'completed', buffer: decodedBuffer });
+        expect(onTerminal).toHaveBeenCalledWith({
+            kind: 'completed',
+            buffer: decodedBuffer,
+            sampleZeroContextFrame: 0x1_0000_0000 + 5,
+            sampleRate: 48000,
+        });
         expect(deliveryOrder).toEqual(['callback', 'settled']);
         expect(settled).toBe(true);
         expect(activeSessions.get('track-flush')).toBeUndefined();
@@ -359,6 +374,26 @@ describe('stopAudioRecording', () => {
         expect(worker.terminate.mock.calls.length).toBe(calls_after_flush);
     });
 
+    it.each([
+        ['missing frame', { sampleRate: 48000 }],
+        ['negative frame', { sampleZeroContextFrame: -1, sampleRate: 48000 }],
+        ['mismatched sample rate', { sampleZeroContextFrame: 23, sampleRate: 44100 }],
+        ['non-numeric sample rate', { sampleZeroContextFrame: 23, sampleRate: '48000' }],
+    ])('rejects nonempty WAV delivery with %s metadata before decode', async (_label, metadata) => {
+        const onTerminal = vi.fn();
+        const { worker, worklet } = await startAndArm(`track-invalid-metadata-${String(_label)}`, onTerminal);
+
+        const stopping = stopAudioRecording();
+        worklet.emit({ type: 'stopped', publishedSampleCount: 2 });
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(52), ...metadata });
+        await stopping;
+
+        expect(audioEngine.context.decodeAudioData).not.toHaveBeenCalled();
+        expect(onTerminal).toHaveBeenCalledOnce();
+        expect(onTerminal).toHaveBeenCalledWith({ kind: 'failed', reason: 'invalid-capture-metadata' });
+        expect(worker.terminate).toHaveBeenCalledOnce();
+    });
+
     it('settles a decode rejection once and releases the stopped session', async () => {
         const decodeError = new Error('bad wav');
         vi.mocked(audioEngine.context.decodeAudioData).mockRejectedValueOnce(decodeError);
@@ -367,7 +402,7 @@ describe('stopAudioRecording', () => {
 
         const stopping = stopAudioRecording();
         worklet.emit({ type: 'stopped', publishedSampleCount: 2 });
-        worker.emit({ type: 'wav', buffer: new ArrayBuffer(52) });
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(52), sampleZeroContextFrame: 23, sampleRate: 48000 });
         await stopping;
 
         expect(onTerminal).toHaveBeenCalledOnce();
@@ -392,8 +427,8 @@ describe('stopAudioRecording', () => {
 
         const stopping = stopAudioRecording();
         worklet.emit({ type: 'stopped', publishedSampleCount: 2 });
-        worker.emit({ type: 'wav', buffer: new ArrayBuffer(52) });
-        worker.emit({ type: 'wav', buffer: new ArrayBuffer(60) });
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(52), sampleZeroContextFrame: 23, sampleRate: 48000 });
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(60), sampleZeroContextFrame: 23, sampleRate: 48000 });
         await Promise.resolve();
 
         expect(audioEngine.context.decodeAudioData).toHaveBeenCalledOnce();
@@ -409,7 +444,12 @@ describe('stopAudioRecording', () => {
         await stopping;
 
         expect(onTerminal).toHaveBeenCalledOnce();
-        expect(onTerminal).toHaveBeenCalledWith({ kind: 'completed', buffer: decodedBuffer });
+        expect(onTerminal).toHaveBeenCalledWith({
+            kind: 'completed',
+            buffer: decodedBuffer,
+            sampleZeroContextFrame: 23,
+            sampleRate: 48000,
+        });
         expect(worker.terminate).toHaveBeenCalledOnce();
     });
 
@@ -422,7 +462,7 @@ describe('stopAudioRecording', () => {
 
         const stopping = stopAudioRecording();
         worklet.emit({ type: 'stopped', publishedSampleCount: 2 });
-        worker.emit({ type: 'wav', buffer: new ArrayBuffer(52) });
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(52), sampleZeroContextFrame: 0, sampleRate: 48000 });
         await stopping;
 
         expect(onTerminal).toHaveBeenCalledOnce();
@@ -476,7 +516,12 @@ describe('stopAudioRecording', () => {
             originalOrder.push('settled');
         });
         original.worklet.emit({ type: 'stopped', publishedSampleCount: 2 });
-        original.worker.emit({ type: 'wav', buffer: new ArrayBuffer(52) });
+        original.worker.emit({
+            type: 'wav',
+            buffer: new ArrayBuffer(52),
+            sampleZeroContextFrame: 31,
+            sampleRate: 48000,
+        });
         await Promise.resolve();
         original.worker.onerror?.({});
         await originalStopping;

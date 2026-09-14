@@ -20,7 +20,8 @@ import { MAX_MONO_FLOAT32_RIFF_SAMPLES } from '../models/RecordingWavLimits';
  *   → { type: 'ready' }
  *   ← { type: 'start' }
  *   ← { type: 'stop'  }
- *   → { type: 'wav',   buffer: ArrayBuffer }                        (transferable)
+ *   → { type: 'wav',   buffer: ArrayBuffer,
+ *       sampleZeroContextFrame: number | null, sampleRate: number } (transferable)
  *   → { type: 'error', message: string, tempFile?: string }         (on failure)
  *
  * Integrity policy: if the producer laps the drain reader (ring overrun), the
@@ -55,6 +56,9 @@ export function buildWavHeader(totalSamples: number, sampleRate: number): ArrayB
     if (!Number.isInteger(totalSamples) || totalSamples < 0 || totalSamples > MAX_MONO_FLOAT32_RIFF_SAMPLES) {
         throw new RangeError(`WAV sample count ${String(totalSamples)} is outside the mono float32 RIFF range`);
     }
+    if (!isCaptureSampleRate(sampleRate)) {
+        throw new RangeError(`WAV sample rate ${String(sampleRate)} is invalid`);
+    }
     const header = new ArrayBuffer(WAV_HEADER_BYTES);
     const view = new DataView(header);
     const dataBytes = totalSamples * 4;
@@ -84,7 +88,12 @@ export function buildWavHeader(totalSamples: number, sampleRate: number): ArrayB
  * `currentWrite` is the head observed under the acquire fence, for diagnostics.
  */
 export type AcquiredRingChunk =
-    | { status: 'ok'; chunk: Uint8Array<ArrayBuffer>; nextReadHead: number }
+    | {
+          status: 'ok';
+          chunk: Uint8Array<ArrayBuffer>;
+          nextReadHead: number;
+          sampleZeroContextFrame: number | null;
+      }
     | { status: 'overrun'; currentWrite: number }
     | { status: 'retry' }
     | { status: 'protocol-error' };
@@ -126,7 +135,12 @@ export function acquireRingChunk(ring: Float32Array, control: Int32Array, readFr
         return { status: 'protocol-error' };
     }
     if (available === 0) {
-        return { status: 'ok', chunk: new Uint8Array(0), nextReadHead: readFrom };
+        return {
+            status: 'ok',
+            chunk: new Uint8Array(0),
+            nextReadHead: readFrom,
+            sampleZeroContextFrame: before.sampleZeroContextFrame,
+        };
     }
     // Lapped reader: sample `readFrom` was overwritten before it could be
     // drained, so the requested interval is gone. Never read it modulo
@@ -158,10 +172,19 @@ export function acquireRingChunk(ring: Float32Array, control: Int32Array, readFr
     if (afterAvailable > ring.length) {
         return { status: 'overrun', currentWrite: after.sampleCount };
     }
-    if (after.sequence !== before.sequence || after.sampleCount !== before.sampleCount) {
+    if (
+        after.sequence !== before.sequence ||
+        after.sampleCount !== before.sampleCount ||
+        after.sampleZeroContextFrame !== before.sampleZeroContextFrame
+    ) {
         return { status: 'retry' };
     }
-    return { status: 'ok', chunk: new Uint8Array(backing), nextReadHead: before.sampleCount };
+    return {
+        status: 'ok',
+        chunk: new Uint8Array(backing),
+        nextReadHead: before.sampleCount,
+        sampleZeroContextFrame: before.sampleZeroContextFrame,
+    };
 }
 
 let ring: Float32Array | null = null;
@@ -169,6 +192,7 @@ let control: Int32Array | null = null;
 let localReadHead = 0;
 let totalSamplesWritten = 0;
 let workerSampleRate = 48000;
+let sampleZeroContextFrame: number | null = null;
 let headerReserved = false;
 // Set when a ring overrun abandons the take: no further drains run and no
 // 'wav' is ever produced for the recording.
@@ -187,6 +211,9 @@ let drainInFlight: Promise<DrainResult> | null = null;
 let tmpName = '';
 
 async function initWorker(sab: SharedArrayBuffer, sampleRate: number): Promise<void> {
+    if (!isCaptureSampleRate(sampleRate)) {
+        throw new RangeError(`Recording sample rate ${String(sampleRate)} is invalid`);
+    }
     control = new Int32Array(sab, 0, RECORDING_RING_CONTROL_INTS);
     ring = new Float32Array(sab, RECORDING_RING_CONTROL_BYTES);
     localReadHead = 0;
@@ -195,6 +222,7 @@ async function initWorker(sab: SharedArrayBuffer, sampleRate: number): Promise<v
     takeAbandoned = false;
     stopRequested = false;
     workerSampleRate = sampleRate;
+    sampleZeroContextFrame = null;
     tmpName = `rec-tmp-${crypto.randomUUID()}.pcm`;
 
     const root = await navigator.storage.getDirectory();
@@ -232,7 +260,18 @@ async function drain(): Promise<DrainResult> {
         abandonTake('Recording ring protocol became invalid; take abandoned');
         return 'failed';
     }
-    const { chunk, nextReadHead } = acquired;
+    const { chunk, nextReadHead, sampleZeroContextFrame: acquiredSampleZeroContextFrame } = acquired;
+    if (acquiredSampleZeroContextFrame === null) {
+        if (chunk.length > 0 || totalSamplesWritten > 0) {
+            abandonTake('Recording sample-zero frame receipt was missing from a nonempty take; take abandoned');
+            return 'failed';
+        }
+    } else if (sampleZeroContextFrame === null) {
+        sampleZeroContextFrame = acquiredSampleZeroContextFrame;
+    } else if (sampleZeroContextFrame !== acquiredSampleZeroContextFrame) {
+        abandonTake('Recording sample-zero frame receipt changed during capture; take abandoned');
+        return 'failed';
+    }
     if (chunk.length === 0) {
         return 'empty';
     }
@@ -369,7 +408,20 @@ async function stopWorker(expectedFinalSampleCount: number): Promise<void> {
     const file = await opfsFileHandle.getFile();
     const arrayBuffer = await file.arrayBuffer();
 
-    self.postMessage({ type: 'wav', buffer: arrayBuffer }, [arrayBuffer]);
+    if (totalSamplesWritten > 0 && sampleZeroContextFrame === null) {
+        abandonTake('Recording sample-zero frame receipt was missing from a nonempty take; take abandoned');
+        return;
+    }
+
+    self.postMessage(
+        {
+            type: 'wav',
+            buffer: arrayBuffer,
+            sampleZeroContextFrame,
+            sampleRate: workerSampleRate,
+        },
+        [arrayBuffer]
+    );
 
     await discardTempFile();
 }
@@ -392,6 +444,10 @@ type WorkerMessage =
     | { type: 'init'; sab: SharedArrayBuffer; sampleRate: number }
     | { type: 'start' }
     | { type: 'stop'; expectedFinalSampleCount: number };
+
+function isCaptureSampleRate(value: number): boolean {
+    return Number.isInteger(value) && value > 0 && value <= 0x3fff_ffff;
+}
 
 self.onmessage = ({ data }: MessageEvent<WorkerMessage>): void => {
     switch (data.type) {
