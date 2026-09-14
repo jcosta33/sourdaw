@@ -335,15 +335,6 @@ export const handleWebMidiNoteOn = inject({
             // (issue #3726). It sits after the builtin devices so a track carrying
             // both keeps its existing builtin voice, and only the Faust-only track
             // is rescued from the fallback.
-            // A Faust pro-synth instrument (electric piano, FM synth, supersaw, …) voices
-            // its notes through the same live control path the piano-roll audition
-            // uses: `startFaustNote` writes freq/gain/gate on the device and hands
-            // back the release that gates it off. Without this branch the note fell
-            // through to the default-parameter builtin synth below, so monitoring
-            // played a different instrument from playback and the offline render
-            // (issue #3726). It sits after the builtin devices so a track carrying
-            // both keeps its existing builtin voice, and only the Faust-only track
-            // is rescued from the fallback.
             const faustDevice = instrumentTrack?.devices.find((device) => isFaustInstrumentModule(device.type));
             if (faustDevice) {
                 noteData.faustRelease = startFaustNote(instrumentTrackId, faustDevice.id, note, velocity, dispatchTime);
