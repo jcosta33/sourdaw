@@ -1,0 +1,18 @@
+public/wasm/manifest.json
+  h_1228e573df1f42 35
+release/open-source-inventory.json
+  h_1228e573df1f42 1341,1722
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  h_1228e573df1f42 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "aca9e36f114fa7d4fb2dde0957c9556fb68bda4e",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
