@@ -1,0 +1,20 @@
+.agents/skills/playwright-ui-bridge/SKILL.md
+  h_1228e573df1f42 33
+scripts/__tests__/e2eServerIdentity.spec.ts
+  h_1228e573df1f42 2,182,186,188-227
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  h_1228e573df1f42 1-158
+scripts/e2eServerIdentity.ts
+  h_1228e573df1f42 72-75,79,84-96,100,102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "acfc6cd139c4bcceedd3752ca5f221570e5cda68",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
