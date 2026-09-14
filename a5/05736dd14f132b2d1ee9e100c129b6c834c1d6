@@ -1,0 +1,22 @@
+crates/daw-dsp/benches/quantum-cost-table.json
+  h_1228e573df1f42 12,17,21,163,168-169,171-172,229,232-235,237-238,304,307-309,312-313,370,373-375,378-379,436,439-442,444-445,464,502,505-508,510-511,577,580-582,585-586,643,646-649,651-652,709,712-715,717-718,775,778-779,783-784,841,846-847,849,907,910-912,916,973,978,981,1105,1110-1111,1113,1171,1176-1177,1179-1180,1237,1240-1243,1245-1246,1303,1306-1308,1311-1312,1369,1372-1375,1377-1378,1435,1438-1440,1443-1444
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  h_1228e573df1f42 121,147
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  h_1228e573df1f42 101
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  h_1228e573df1f42 95
+src/modules/Transport/useCases/transportControls/__tests__/punchRecordArming.spec.ts
+  h_1228e573df1f42 87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a505736dd14f132b2d1ee9e100c129b6c834c1d6",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
