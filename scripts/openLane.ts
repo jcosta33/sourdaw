@@ -19,19 +19,20 @@ import { assertIssueNumber, assertLaneSlug, fail, isIssueArgument, laneBranchNam
 import { assertStackAcyclic, readLaneStack, writeLaneStack, type LaneStack } from './stackedLanes.ts';
 
 export const OPEN_LANE_USAGE =
-    'usage: pnpm lane:open [issue-number] [slug] --model <family> [--stack-on <absolute-parent-lane>]';
+    'usage: pnpm lane:open [issue-number] [slug] --model <model> [--stack-on <absolute-parent-lane>]';
 
 const DEFAULT_LANE_SLUG = 'work';
 
 export const AUTHOR_MODEL_PATTERN = /^[a-z0-9][a-z0-9.+-]{0,39}$/;
 
 /**
- * The family name is the durable identity of the authoring model: deployment prefixes and date
- * snapshots change under the same family, so anything coarser would make `model:<family>` labels
- * drift between pull requests that name the same author.
+ * The token names the model, not the family: capability variants within one family
+ * (glm-5.3-flash versus glm-5.3) are distinct models, and collapsing them to the family would
+ * make `model:<token>` labels misattribute pull requests. Only deployment-routing prefixes and
+ * date snapshots are dropped, because they change under the same model.
  */
 export const AUTHOR_MODEL_RULE =
-    'the lowercase public model family name, without deployment prefixes or date suffixes, e.g. glm-5.3, claude-sonnet-4.5, gpt-5.2-codex, kimi-k2.5';
+    'the lowercase public name of the model itself, keeping every qualifier that distinguishes capability or edition within the family (flash, mini, pro, air, codex, thinking) and dropping only deployment-routing prefixes and date-snapshot suffixes, e.g. glm-5.3-flash, glm-5.3, claude-sonnet-4.5, gpt-5.2-codex, kimi-k2.5';
 
 export function normalizeAuthorModel(token: string): string {
     const normalized = token.trim().toLowerCase();
@@ -82,7 +83,7 @@ export function parseOpenLaneArgs(args: string[]): {
     if (modelIndex !== -1) {
         const token = args[modelIndex + 1];
         if (token === undefined || token.startsWith('--')) {
-            fail('--model requires the authoring model family, e.g. glm-5.3');
+            fail('--model requires the authoring model, e.g. glm-5.3-flash');
         }
         const rest = [...args.slice(0, modelIndex), ...args.slice(modelIndex + 2)];
         if (rest.includes('--model')) {
@@ -186,6 +187,9 @@ export function openLane(
         }
     }
     port.lock(lanePath);
+    // The declaring session sees its own attribution; the path stays the final line because
+    // consumers parse it from the tail of the output.
+    port.log(`authoring model: ${model}`);
     port.log(lanePath);
     return lanePath;
 }
@@ -321,7 +325,7 @@ export function runCli(argv: string[], cli: OpenLaneCli = shellCli, cwd: string 
         }
         // Refused before the port exists, so a missing model can leave no worktree or branch behind.
         if (parsed.model === undefined) {
-            fail(`lane:open requires --model <family>: ${AUTHOR_MODEL_RULE}`);
+            fail(`lane:open requires --model <model>: ${AUTHOR_MODEL_RULE}`);
         }
         cli.verifyTrustedBlob(cwd);
         openLane(parsed.issue, parsed.slug, parsed.model, cli.createPort(cwd), parsed.stackOn);

@@ -75,7 +75,7 @@ export type StackPublicationContext = {
 };
 
 export const PUBLISH_LANE_USAGE =
-    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>] [--model <family>] [--milestone <title>] [--project <title>] [--label <name>]';
+    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]';
 
 /**
  * The same authoring-model rule `lane:open` enforces, mirrored here rather than imported: the
@@ -85,7 +85,7 @@ export const PUBLISH_LANE_USAGE =
 export const AUTHOR_MODEL_PATTERN = /^[a-z0-9][a-z0-9.+-]{0,39}$/;
 
 const AUTHOR_MODEL_RULE =
-    'the lowercase public model family name, without deployment prefixes or date suffixes, e.g. glm-5.3, claude-sonnet-4.5, gpt-5.2-codex, kimi-k2.5';
+    'the lowercase public name of the model itself, keeping every qualifier that distinguishes capability or edition within the family (flash, mini, pro, air, codex, thinking) and dropping only deployment-routing prefixes and date-snapshot suffixes, e.g. glm-5.3-flash, glm-5.3, claude-sonnet-4.5, gpt-5.2-codex, kimi-k2.5';
 
 function normalizeAuthorModel(token: string): string {
     const normalized = token.trim().toLowerCase();
@@ -1019,7 +1019,7 @@ function resolveDescriptiveLabels(
         if (name.toLowerCase().startsWith('model:')) {
             fail(
                 `--label "${name}" uses the reserved model: namespace; the authoring model is set with ` +
-                    '--model <family>, never --label'
+                    '--model <model>, never --label'
             );
         }
     }
@@ -1032,8 +1032,8 @@ function readRecordedAuthorModel(branch: string, port: PublishLanePort): string 
     const recorded = port.readAuthorModel(branch);
     if (recorded === undefined) {
         fail(
-            `${branch} has no authoring model on record; backfill it with pnpm lane:publish --model <family>, ` +
-                'the lowercase public model family name, e.g. glm-5.3'
+            `${branch} has no authoring model on record; backfill it with pnpm lane:publish --model <model>, ` +
+                'the lowercase public name of the model itself, e.g. glm-5.3-flash'
         );
     }
     return normalizeAuthorModel(recorded);
