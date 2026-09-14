@@ -21,12 +21,16 @@ export const DEESSER_ENVELOPE_HZ = 160;
 /** Butterworth Q — maximally flat, so the envelope never overshoots. */
 export const DEESSER_ENVELOPE_Q = Math.SQRT1_2;
 /**
- * Reduction per unit of linear overshoot past the threshold. The previous
- * graph carried the platform compressor's ratio of 8; in the linear domain
- * that slope is `1 − 1/8`, and the constant is kept so the reduction law
- * does not move with this rewrite.
+ * Linear overshoot of the smoothed envelope past the threshold at which the
+ * full Range is engaged. The previous ratio-shaped law reduced `7/8` per unit
+ * of overshoot and floored its control at `1 − 7/8`, but the envelope itself
+ * cannot pass 1, so the floor sat beyond reach: a declared 12 dB rendered
+ * about 2 dB and a declared 30 dB about 0.2 dB (#4263). A saturating knee
+ * keeps the declared limit reachable; 0.15 puts full depth at envelope 0.25
+ * on the default −20 dB threshold — a −8 dBFS sine peak, well inside sibilant
+ * levels but clear of ordinary singing.
  */
-export const DEESSER_REDUCTION_SLOPE = 1 - 1 / 8;
+export const DEESSER_ENGAGEMENT_OVERSHOOT = 0.15;
 
 /**
  * Resolution of the two static control curves. WaveShaper interpolates
@@ -40,22 +44,24 @@ const CURVE_POINTS = 4095;
  *
  *  - the band's series control gain, whose AudioParam (intrinsic 1) is driven
  *    down audio-rate by the reduction control, followed by the wet gain
- *    carrying the range weight `w` — so the band reaches the output
- *    attenuated by at most `−range` dB;
- *  - a cancellation gain at `−w`, removing the raw band from the output;
+ *    carrying the reduction weight `1 − w` — so a fully engaged band reaches
+ *    the output attenuated by exactly `−range` dB;
+ *  - a cancellation gain at `−(1 − w)`, removing the raw band from the output;
  *  - a listen gain, which isolates the detector band for auditioning.
  *
  * The reduction control is a standard-node sidechain — rectifier, envelope
  * smoother, overshoot curve — driving the control gain's AudioParam, and its
  * law is built so the device is unity whenever the band sits below threshold:
  *
- *     band gain = (1 − slope · max(0, envelope − threshold)) · w
+ *     band gain = 1 − (1 − w) · min(overshoot / K, 1),  w = 10^(range/20)
  *
  * With the envelope below threshold the curve outputs exactly zero and the
  * wet and cancel taps carry the same samples at mirrored weights, cancelling
- * to bit-exact zero; the dry path is untouched unity. Above threshold the
- * control floors at `1 − slope`, so the added attenuation never exceeds `w`
- * — range is the declared reduction **limit**, not a ratio.
+ * to bit-exact zero; the dry path is untouched unity. The engagement term
+ * saturates at one, so a fully engaged band lands on exactly `w` and no
+ * setting attenuates by more than the declared Range — at range 0 the taps
+ * weigh nothing and the device is transparent at any level. Range is the
+ * declared reduction **limit**, not a ratio.
  *
  * The graph deliberately contains no DynamicsCompressorNode. Measured on
  * Chromium (the only render target), that node delays everything through it
@@ -77,7 +83,12 @@ export function createDeEsser(ctx: BaseAudioContext): OfflineDeviceNode {
     bandpass.type = 'bandpass';
     bandpass.frequency.value = DEFAULT_DEESSER_FREQUENCY_HZ;
     bandpass.Q.value = DEESSER_BAND_Q;
-    const defaultWeight = dbToGain(DEFAULT_DEESSER_RANGE_DB);
+    // The band taps carry the reduction weight `1 − w`, not `w` itself: the
+    // engaged band must land on gain `w` (the declared Range), and the output
+    // subtracts the taps' weight from unity, so `1 − (1 − w) = w`. With
+    // `w = 10^(range/20)` a tap weight of `w` rendered `1 − w·engagement` —
+    // over-reducing shallow ranges and barely touching deep ones (#4263).
+    const defaultReductionWeight = 1 - dbToGain(DEFAULT_DEESSER_RANGE_DB);
     // The band's series gain element: intrinsic 1, driven down by the
     // reduction curve. An AudioParam sums its intrinsic value with its
     // connected inputs, which is exactly the `1 − reduction` law wanted here;
@@ -85,9 +96,9 @@ export function createDeEsser(ctx: BaseAudioContext): OfflineDeviceNode {
     const controlGain = ctx.createGain();
     controlGain.gain.value = 1;
     const wet = ctx.createGain();
-    wet.gain.value = defaultWeight;
+    wet.gain.value = defaultReductionWeight;
     const cancel = ctx.createGain();
-    cancel.gain.value = -defaultWeight;
+    cancel.gain.value = -defaultReductionWeight;
     const listen = ctx.createGain();
     listen.gain.value = 0;
     const output = ctx.createGain();
@@ -174,15 +185,16 @@ function makeAbsCurve(): Float32Array<ArrayBuffer> {
 
 /**
  * The reduction carrier: linear overshoot past the threshold onto the
- * *negative* per-unit reduction. It outputs exactly zero for every input at
- * or below zero — the sample-exact unity branch — and floors the control at
- * `1 − DEESSER_REDUCTION_SLOPE` because the envelope itself cannot exceed 1.
+ * *negative* engagement. It outputs exactly zero for every input at or below
+ * zero — the sample-exact unity branch — and saturates at −1 once the
+ * overshoot reaches `DEESSER_ENGAGEMENT_OVERSHOOT`, flooring the control at
+ * zero: full Range, exactly the declared reduction.
  */
 function makeReductionCurve(): Float32Array<ArrayBuffer> {
     const curve = new Float32Array(new ArrayBuffer(CURVE_POINTS * 4));
     for (let index = 0; index < CURVE_POINTS; index++) {
         const x = (2 * index) / (CURVE_POINTS - 1) - 1;
-        curve[index] = x > 0 ? -DEESSER_REDUCTION_SLOPE * x : 0;
+        curve[index] = x > 0 ? -Math.min(x / DEESSER_ENGAGEMENT_OVERSHOOT, 1) : 0;
     }
     return curve;
 }

@@ -27,6 +27,10 @@ export const GRAND_BOULE_MEASUREMENT_SOURCE_DIRECTORIES = [
  * Sorted repo-relative census paths: the explicit files plus every tracked
  * file under the census directories, recursing into `time_stretch`.
  */
+/**
+ * @param {string} root repository root the census paths are relative to
+ * @returns {string[]}
+ */
 export function grandBouleMeasurementSourcePaths(root) {
     const directoryFiles = execFileSync(
         'git',

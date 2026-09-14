@@ -16,6 +16,246 @@
  *   load-bearing count here cites its production call site.
  */
 
+// The type-aware pass cannot resolve JSDoc `import()` type paths from this
+// file — not even to this file's own declaration sibling — so the surfaces the
+// recipes exercise are declared structurally below. `deviceRecipes.d.ts`
+// declares the same contracts for importers, with every instance and module
+// shape imported straight from the generated `@wasm-bindgen` declarations;
+// these structural surfaces are exactly the members of those classes the
+// recipes touch. Keeping the two in sync is the same duty, and the same
+// verified-by-test surface, as the automation-loop transcription below.
+
+/**
+ * The pointer-effect surface: the input pointers a recipe fills, the render
+ * entry, and the right-output pointer the verify step reads.
+ *
+ * @typedef {object} PointerSurface
+ * @property {() => number} get_input_left_ptr
+ * @property {() => number} get_input_right_ptr
+ * @property {(blockSize: number) => number} process
+ * @property {() => number} get_right_ptr
+ */
+
+/**
+ * @typedef {object} ParamSurface
+ * @property {(name: string, value: number) => void} set_param
+ */
+
+/**
+ * An effect driven by named parameters.
+ *
+ * @typedef {PointerSurface & ParamSurface} AdjustablePointerInstance
+ */
+
+/**
+ * @typedef {object} KneadSurface
+ * @property {() => number} get_input_left_ptr
+ * @property {() => number} get_input_right_ptr
+ * @property {(frames: number) => number} process
+ * @property {() => number} get_right_ptr
+ * @property {(semitones: number) => void} set_shift_semitones
+ */
+
+/**
+ * @typedef {object} GrinderSurface
+ * @property {() => number} get_input_left_ptr
+ * @property {() => number} get_input_right_ptr
+ * @property {(blockSize: number) => number} process
+ * @property {() => number} get_right_ptr
+ * @property {(name: string, value: number) => void} set_param
+ * @property {() => number} get_output_db
+ */
+
+/**
+ * The held-instrument surface: one quantum render plus the right-output
+ * pointer the occupancy checks read.
+ *
+ * @typedef {object} HeldSurface
+ * @property {(blockSize: number) => number} process
+ * @property {() => number} get_right_ptr
+ */
+
+/**
+ * Note-on across the three arities the recipes use (Grand Boule and Levain
+ * take two arguments, Toaster takes a pad and a MIDI note).
+ *
+ * @typedef {object} VoiceSurface
+ * @property {(midiNote: number, velocity: number, channel?: number) => void} note_on
+ */
+
+/**
+ * @typedef {object} FermenterSurface
+ * @property {(blockSize: number) => number} process
+ * @property {() => number} get_right_ptr
+ * @property {(name: string, value: number) => void} set_param
+ * @property {(paramId: number, value: number) => void} set_param_by_id
+ * @property {(midiNote: number, velocity: number) => void} note_on
+ * @property {() => number} active_voices
+ */
+
+/**
+ * @typedef {object} GrandBouleSurface
+ * @property {(blockSize: number) => number} process
+ * @property {() => number} get_right_ptr
+ * @property {(name: string, value: number) => void} set_param
+ * @property {(midiNote: number, velocity: number) => void} note_on
+ * @property {() => number} active_voices
+ */
+
+/**
+ * @typedef {object} LevainSurface
+ * @property {(blockSize: number) => number} process
+ * @property {() => number} get_right_ptr
+ * @property {(name: string, value: number) => void} set_param
+ * @property {(midiNote: number, velocity: number) => void} note_on
+ * @property {() => number} active_voices
+ * @property {(data: Float32Array, frameCount: number, channels: number, sampleRate: number) => number | undefined} add_sample
+ * @property {(zoneId: number, sampleId: number, articulationId: number, rootNote: number, tuneCents: number, loKey: number, hiKey: number, loVel: number, hiVel: number, rrPos: number, rrLen: number, micId: number, isRelease: boolean, loopMode: number, loopStart: number, loopEnd: number, loopCrossfade: number, gainDb: number, attack: number, decay: number, sustain: number, release: number) => void} add_zone
+ * @property {(numArticulations: number, numMics: number) => boolean} build_zone_map
+ */
+
+/**
+ * @typedef {object} CrumbsSurface
+ * @property {(blockSize: number) => number} process
+ * @property {() => number} get_right_ptr
+ * @property {(name: string, value: number) => void} set_param
+ * @property {(midiNote: number, velocity: number) => void} note_on
+ * @property {() => number} active_voices
+ * @property {(data: Float32Array, channels: number, sampleRate: number) => number} add_sample
+ * @property {(sampleId: number) => void} set_active_sample
+ */
+
+/**
+ * @typedef {object} ToasterSurface
+ * @property {(blockSize: number) => number} process
+ * @property {() => number} get_right_ptr
+ * @property {(name: string, value: number) => void} set_param
+ * @property {(pad: number, velocity: number, midiNote: number) => void} note_on
+ */
+
+/**
+ * The initialised `daw_dsp` module namespace the worklet passes in: the module
+ * linear memory plus the `@wasm-bindgen` constructors the recipes construct.
+ *
+ * @typedef {object} DawDspModule
+ * @property {WebAssembly.Memory} memory
+ * @property {new (sampleRate: number) => AdjustablePointerInstance} BacteriaInstance
+ * @property {new (sampleRate: number) => CrumbsSurface} CrumbsInstance
+ * @property {new (sampleRate: number) => AdjustablePointerInstance} CrustInstance
+ * @property {new (sampleRate: number, maxVoices: number) => FermenterSurface} FermenterInstance
+ * @property {new (sampleRate: number) => AdjustablePointerInstance} GlutenInstance
+ * @property {new (sampleRate: number, voiceCount: number) => GrandBouleSurface} GrandBouleInstance
+ * @property {new (sampleRate: number) => GrinderSurface} GrinderInstance
+ * @property {new (sampleRate: number) => KneadSurface} KneadInstance
+ * @property {new (sampleRate: number, maxVoices: number) => LevainSurface} LevainInstance
+ * @property {new (sampleRate: number) => AdjustablePointerInstance} ProofInstance
+ * @property {new (sampleRate: number, numPads: number) => ToasterSurface} ToasterInstance
+ */
+
+/**
+ * @typedef {object} ProofChamberModule
+ * @property {WebAssembly.Memory} memory
+ * @property {new (sampleRate: number) => {
+ *   process: (leftIn: Float32Array, rightIn: Float32Array, frames: number) => number,
+ *   get_right_ptr: () => number,
+ *   set_param: (name: string, value: number) => void,
+ * }} ProofChamberInstance
+ */
+
+/**
+ * @typedef {object} ScoringModule
+ * @property {WebAssembly.Memory} memory
+ * @property {new (sampleRate: number) => {
+ *   process: (leftIn: Float32Array, rightIn: Float32Array, frames: number) => number,
+ *   get_right_ptr: () => number,
+ *   get_frequency: () => number,
+ * }} ScoringInstance
+ */
+
+/**
+ * One measured device row. `quantumCostProcessor.js` calls `feed` outside the
+ * timed region, `render` once per quantum, and `verify` after warm-up and
+ * again after the timed run; the literal it posts back is this shape.
+ *
+ * @typedef {object} BenchDevice
+ * @property {string} id
+ * @property {string} label
+ * @property {string} note
+ * @property {((frame: number) => void) | undefined} [feed]
+ * @property {() => number} render
+ * @property {() => { ok: boolean, detail: string }} verify
+ */
+
+/**
+ * One voice of a measured device, rendered alongside it for the occupancy
+ * ratio check.
+ *
+ * @typedef {object} SoloReference
+ * @property {(frame: number) => void} feed
+ * @property {() => number} rms
+ */
+
+/**
+ * @typedef {object} PointerEffectSpec
+ * @property {string} id
+ * @property {string} label
+ * @property {string} note
+ * @property {PointerSurface} instance
+ * @property {DawDspModule} module
+ */
+
+/**
+ * @typedef {object} HeldInstrumentSpec
+ * @property {string} id
+ * @property {string} label
+ * @property {string} note
+ * @property {HeldSurface} instance
+ * @property {DawDspModule} module
+ * @property {number} struck
+ * @property {number} [expectSounding]
+ * @property {() => number} [activeVoices]
+ * @property {() => void} [restrike]
+ * @property {SoloReference} [soloReference]
+ */
+
+/**
+ * @typedef {object} AutomationSegment
+ * @property {number} startFrame
+ * @property {number} endFrame
+ * @property {number} startValue
+ * @property {number} endValue
+ */
+
+/**
+ * @typedef {object} AutomationSchedule
+ * @property {number} paramId
+ * @property {AutomationSegment[]} segments
+ * @property {number} segmentIndex
+ * @property {number | undefined} lastValue
+ */
+
+/**
+ * @typedef {object} BuildDevicesSpec
+ * @property {DawDspModule} dsp
+ * @property {ProofChamberModule} chamber
+ * @property {ScoringModule} scoring
+ * @property {{
+ *   readonly GRAND_BOULE_CONTROL_HEADER_BYTES: number,
+ *   readonly GRAND_BOULE_SYNC_INT_COUNT: number,
+ *   readonly GRAND_BOULE_READ_HEAD_IDX: number,
+ *   readonly GRAND_BOULE_WRITE_HEAD_IDX: number,
+ *   readonly GRAND_BOULE_SLEEP_HEAD_IDX: number,
+ *   readonly GRAND_BOULE_RENDER_REQUEST_IDX: number,
+ *   readonly GRAND_BOULE_FLUSH_GENERATION_IDX: number,
+ *   readonly GRAND_BOULE_SYNC_READ_HEAD_IDX: number,
+ *   readonly GRAND_BOULE_CONSUMER_CLOCK_PUBLISHED_IDX: number,
+ * }} ring
+ * @property {(syncInts: Int32Array, contextFrame: number, readHead: number) => void} publishGrandBouleConsumerClock
+ * @property {(controlInts: Int32Array, leftRing: Float32Array, rightRing: Float32Array, ringFrames: number, out0: Float32Array, out1: Float32Array | undefined, frames: number) => boolean} readBlockAcquire
+ * @property {string} [only]
+ * @property {number} [quantaBudget]
+ */
+
 export const SAMPLE_RATE = 48_000;
 export const QUANTUM = 128;
 
@@ -39,6 +279,8 @@ export const BUDGET_MS = (QUANTUM / SAMPLE_RATE) * 1000;
  * now derives the population from the crate source and compares it against the
  * native bench, so the next such gap fails a test.
  */
+
+/** @type {string[]} */
 export const DEVICE_IDS = [
     'bacteria',
     'bacteria_smudge',
@@ -71,6 +313,13 @@ export const DEVICE_IDS = [
  *
  * `offline` marks a figure that exists only in an `OfflineAudioContext` render
  * — bounce and export, where there is no deadline at all.
+ */
+
+/**
+ * Looked up by row id, so a missing key is a real possibility the runner
+ * reports as `unknown`.
+ *
+ * @type {{ [deviceId: string]: 'audio-thread' | 'worker' | 'offline' | undefined }}
  */
 export const COST_SITE = {
     bacteria: 'audio-thread',
@@ -112,6 +361,12 @@ export const COST_SITE = {
  * meaningful figures are the period, the tick cost and the amortised mean, and
  * the runner reports those three instead of pretending the p95 is a tail.
  */
+
+/**
+ * Looked up by row id, so a missing key is a real possibility.
+ *
+ * @type {{ [deviceId: string]: { periodQuanta: number, source: string } | undefined }}
+ */
 export const DUTY_CYCLE = {
     knead: { periodQuanta: 16, source: 'yin_cfg.frame_size = 2048 frames / 128 = 16 quanta' },
     scoring: { periodQuanta: 12.5, source: 'hop = sample_rate / 30 = 1600 frames / 128 = 12.5 quanta' },
@@ -134,6 +389,11 @@ export const DUTY_CYCLE = {
  * index. The transient matters — gates, compressors, sag and envelope followers
  * all take different branches on a steady tone than on a struck one.
  */
+
+/**
+ * @param {number} frame
+ * @returns {[number, number]}
+ */
 export function excitation(frame) {
     const t = frame / SAMPLE_RATE;
     const fundamental = Math.sin(t * 110 * Math.PI * 2);
@@ -146,6 +406,11 @@ export function excitation(frame) {
 }
 
 /** `count` distinct MIDI notes spread across A0..C8, matching `spread_notes` in the Rust bench. */
+
+/**
+ * @param {number} count
+ * @returns {number[]}
+ */
 export function spreadNotes(count) {
     const notes = [];
     for (let index = 0; index < count; index += 1) {
@@ -164,6 +429,11 @@ export function spreadNotes(count) {
 export const RESTRIKE_INTERVAL_QUANTA = 375;
 
 /** A one-second 220 Hz loop, the sample body Levain and Crumbs are driven with. */
+
+/**
+ * @param {number} frames
+ * @returns {Float32Array}
+ */
 export function loopSample(frames) {
     const data = new Float32Array(frames);
     for (let f = 0; f < frames; f += 1) {
@@ -189,28 +459,40 @@ export function loopSample(frames) {
  * - `verify()` — `{ ok, detail }`, evaluated after warm-up and again after the
  *   timed run, so a device that fell silent halfway through cannot be reported.
  * - `note` — what the load parameter is and where production sets it.
+ *
+ * @param {BuildDevicesSpec} spec
+ * @returns {BenchDevice[]}
  */
-export function buildDevices({
-    dsp,
-    chamber,
-    scoring,
-    ring,
-    publishGrandBouleConsumerClock,
-    readBlockAcquire,
-    only,
-    quantaBudget,
-}) {
+export function buildDevices(spec) {
+    const { dsp, chamber, scoring, ring, publishGrandBouleConsumerClock, readBlockAcquire, only, quantaBudget } = spec;
+    /** @type {BenchDevice[]} */
     const devices = [];
     /**
      * Constructing a device allocates: Levain and Crumbs each load a one-second
      * sample, and Grand Boule builds 64 physical-model voices. When the worklet
      * measures one row, it builds only that row.
+     *
+     * @param {string} id
+     * @returns {boolean}
      */
     const wanted = (id) => only === undefined || only === id;
 
+    /**
+     * @param {{ memory: WebAssembly.Memory }} module
+     * @param {number} ptr
+     * @param {number} length
+     * @returns {Float32Array}
+     */
     const memoryView = (module, ptr, length) => new Float32Array(module.memory.buffer, ptr, length);
 
     /** RMS over the two output channels a pointer-returning export just wrote. */
+
+    /**
+     * @param {{ memory: WebAssembly.Memory }} module
+     * @param {number} leftPtr
+     * @param {number} rightPtr
+     * @returns {number}
+     */
     const pointerRms = (module, leftPtr, rightPtr) => {
         const left = memoryView(module, leftPtr, QUANTUM);
         const right = memoryView(module, rightPtr, QUANTUM);
@@ -222,7 +504,13 @@ export function buildDevices({
     };
 
     /** An effect whose input arrives through raw wasm pointers. */
-    const pointerEffect = ({ id, label, note, instance, module }) => {
+
+    /**
+     * @param {PointerEffectSpec} effectSpec
+     * @returns {BenchDevice}
+     */
+    const pointerEffect = (effectSpec) => {
+        const { id, label, note, instance, module } = effectSpec;
         const inLeft = instance.get_input_left_ptr();
         const inRight = instance.get_input_right_ptr();
         let lastLeftPtr = 0;
@@ -262,33 +550,31 @@ export function buildDevices({
      * finding rather than a setup bug — see the Fermenter and Levain recipes.
      * `verify` is run twice, after warm-up and after the timed run, so a pool
      * that drains mid-run cannot be reported as a steady-state cost.
+     *
+     * @param {HeldInstrumentSpec} instrumentSpec
+     * @returns {BenchDevice}
      */
-    const heldInstrument = ({
-        id,
-        label,
-        note,
-        instance,
-        module,
-        struck,
-        expectSounding,
-        activeVoices,
-        restrike,
-        soloReference,
-    }) => {
+    const heldInstrument = (instrumentSpec) => {
+        const { id, label, note, instance, module, struck, expectSounding, activeVoices, restrike, soloReference } =
+            instrumentSpec;
         let lastLeftPtr = 0;
+        /** @type {((frame: number) => void) | undefined} */
+        let feed;
+        if (restrike === undefined) {
+            feed = undefined;
+        } else {
+            feed = (frame) => {
+                if (frame % RESTRIKE_INTERVAL_QUANTA === 0) {
+                    restrike();
+                }
+                soloReference?.feed(frame);
+            };
+        }
         return {
             id,
             label,
             note,
-            feed:
-                restrike === undefined
-                    ? undefined
-                    : (frame) => {
-                          if (frame % RESTRIKE_INTERVAL_QUANTA === 0) {
-                              restrike();
-                          }
-                          soloReference?.feed(frame);
-                      },
+            feed,
             render() {
                 lastLeftPtr = instance.process(QUANTUM);
                 return lastLeftPtr;
@@ -299,7 +585,7 @@ export function buildDevices({
                     const active = activeVoices();
                     return {
                         ok: active === expectSounding && level > 1e-5,
-                        detail: `active_voices() = ${active}, expected ${expectSounding} from ${struck} note-ons, output RMS ${level.toExponential(3)}`,
+                        detail: `active_voices() = ${active}, expected ${String(expectSounding)} from ${struck} note-ons, output RMS ${level.toExponential(3)}`,
                     };
                 }
 
@@ -342,8 +628,12 @@ export function buildDevices({
      * measured instance so occupancy can be checked as a *ratio*. Outside every
      * timed region — `feed` and `rms` are only ever called from the untimed
      * paths.
+     *
+     * @param {{ instance: HeldSurface, module: DawDspModule, strike: () => void }} soloSpec
+     * @returns {SoloReference}
      */
-    const makeSoloReference = ({ instance, module, strike }) => {
+    const makeSoloReference = (soloSpec) => {
+        const { instance, module, strike } = soloSpec;
         strike();
         return {
             feed(frame) {
@@ -627,6 +917,10 @@ export function buildDevices({
      * Build `count` schedules in exactly the shape `_paramAutomation` holds,
      * covering `frames` of timeline. Built once at construction; nothing here
      * runs on the render path.
+     *
+     * @param {number} count
+     * @param {number} frames
+     * @returns {AutomationSchedule[]}
      */
     const buildAutomationSchedules = (count, frames) => {
         const schedules = [];
@@ -637,6 +931,10 @@ export function buildDevices({
             const segments = [];
             // Deterministic, non-repeating within a schedule, and different per
             // schedule, so no two entries share a value trajectory.
+            /**
+             * @param {number} k
+             * @returns {number}
+             */
             const at = (k) => lo + (hi - lo) * (0.5 + 0.5 * Math.sin((k * 0.7 + index) * 1.31));
             for (let k = 0; k < segmentCount; k += 1) {
                 segments.push({
@@ -658,6 +956,10 @@ export function buildDevices({
      * `AudioWorkletProcessor` subclass with a top-level `registerProcessor` and
      * a wasm `initSync` import; it cannot be loaded into this scope. Any edit to
      * the shipped loop must be mirrored here or this row stops describing it.
+     *
+     * @param {{ set_param_by_id: (paramId: number, value: number) => void }} instance
+     * @param {AutomationSchedule[]} schedules
+     * @param {number} frame
      */
     const applyParamAutomation = (instance, schedules, frame) => {
         for (let scheduleIndex = 0; scheduleIndex < schedules.length; scheduleIndex += 1) {
@@ -683,7 +985,12 @@ export function buildDevices({
         }
     };
 
-    const automatedFermenter = ({ id, scheduleCount }) => {
+    /**
+     * @param {{ id: string, scheduleCount: number }} automationSpec
+     * @returns {BenchDevice}
+     */
+    const automatedFermenter = (automationSpec) => {
+        const { id, scheduleCount } = automationSpec;
         const struck = 16;
         const instance = new dsp.FermenterInstance(SAMPLE_RATE, 32);
         instance.set_param('cutoff', 4000);
@@ -717,6 +1024,10 @@ export function buildDevices({
         // the derived per-schedule cost too *large*, which is how the figure is
         // published.
         const countingInstance = {
+            /**
+             * @param {number} paramId
+             * @param {number} value
+             */
             set_param_by_id(paramId, value) {
                 writes += 1;
                 instance.set_param_by_id(paramId, value);
@@ -1064,10 +1375,10 @@ export function buildDevices({
     // Two rows, because the algorithm is a user-selected cost: `plate` is the
     // shipped default (`ProofChamberState.ts:30`) and `fdn-16` is the most
     // expensive one a user can actually reach.
-    for (const [id, algorithm, label] of [
+    for (const [id, algorithm, label] of /** @type {[string, number, string][]} */ ([
         ['proof_chamber_plate', 0, 'ProofChamber (Plate — shipped default)'],
         ['proof_chamber_fdn16', 2, 'ProofChamber (FDN-16 — heaviest selectable)'],
-    ]) {
+    ])) {
         if (!wanted(id)) {
             continue;
         }

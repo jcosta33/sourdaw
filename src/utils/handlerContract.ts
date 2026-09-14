@@ -2146,6 +2146,14 @@ export type AppAction =
               clipId: string;
               segments: PitchEditSegmentSnapshot[];
               contour: PitchContourSnapshot;
+              /** The live retune speed the commit bakes (#2058): after the render
+               *  the clip's audio is replaced, so a setting the request omits is
+               *  lost, not corrected later. Rides the payload so redo re-renders
+               *  with the same settings the user approved live. */
+              retuneSpeedMs: number;
+              /** Whether the baked render keeps formants fixed while the
+               *  fundamental moves (#2058), matching the live worklet. */
+              formantPreserve: boolean;
           };
       }
     | {

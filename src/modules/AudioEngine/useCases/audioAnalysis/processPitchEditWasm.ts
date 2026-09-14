@@ -11,7 +11,9 @@ export async function processPitchEditWasm(
     originalBuffer: AudioBuffer,
     segments: PitchSegment[],
     contour: PitchContour,
-    outputAudioBufferId: string
+    outputAudioBufferId: string,
+    retuneSpeedMs: number,
+    formantPreserve: boolean
 ): Promise<void> {
     const { commit_pitch_edit_wasm, default: initDawDsp } = await import('#/modules/AudioEngine/wasm/daw_dsp.js');
     await initDawDsp();
@@ -22,11 +24,11 @@ export async function processPitchEditWasm(
     // a zero-shift commit, where the render is the only thing that happens
     // (issue #3720). Every channel renders through the same segments and
     // contour, because the edit is defined on the material, not on a channel.
+    // The retune speed and formant-preserve selection ride every channel too:
+    // they are part of the live configuration the bake must reproduce (#2058).
     const segmentsJson = JSON.stringify(segments);
     const contourJson = JSON.stringify(contour);
 
-    // Each render is a fresh `new Float32Array` — an ArrayBuffer-backed view,
-    // which is what `copyToChannel` requires further down.
     // Each render is a fresh `new Float32Array` — an ArrayBuffer-backed view,
     // which is what `copyToChannel` requires further down.
     const renderChannel = (channel: number): Float32Array<ArrayBuffer> =>
@@ -35,7 +37,9 @@ export async function processPitchEditWasm(
                 originalBuffer.getChannelData(channel),
                 originalBuffer.sampleRate,
                 segmentsJson,
-                contourJson
+                contourJson,
+                retuneSpeedMs,
+                formantPreserve
             )
         );
 

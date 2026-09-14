@@ -22,6 +22,7 @@ import { applyBacteriaMorphWithAudio } from '../../useCases/bacteriaParamBridge/
 import { captureBacteriaSnapshot } from '../../useCases/bacteriaParamBridge/captureBacteriaSnapshot';
 import { loadBacteriaPatchWithAudio } from '../../useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio';
 import { setBacteriaBandParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio';
+import { setBacteriaModAssignmentsWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaModAssignmentsWithAudio';
 import { setBacteriaParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaParamWithAudio';
 import { BACTERIA_PRESETS } from '../../useCases/bacteriaPresets';
 import { hydrateBacteriaPatchFromProject } from '../../useCases/hydrateBacteriaPatchFromProject';
@@ -1506,7 +1507,19 @@ const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                 title="Source dock"
                 description="Still compact, still visible, and less stranded than before."
             />
-            <ModulationDock patch={state.patch} modValues={[]} onAssignmentRemove={() => {}} />
+            <ModulationDock
+                patch={state.patch}
+                modValues={[]}
+                onAssignmentAdd={(assignment) =>
+                    setBacteriaModAssignmentsWithAudio(deviceId, [...state.patch.modAssignments, assignment])
+                }
+                onAssignmentRemove={(index) =>
+                    setBacteriaModAssignmentsWithAudio(
+                        deviceId,
+                        state.patch.modAssignments.filter((_, current) => current !== index)
+                    )
+                }
+            />
         </Stack>
     </Stack>
 );

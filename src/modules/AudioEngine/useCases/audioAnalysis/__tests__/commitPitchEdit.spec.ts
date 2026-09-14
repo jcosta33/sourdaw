@@ -69,13 +69,19 @@ describe('commitPitchEdit', () => {
             audioBufferId: 'buffer-c1',
             segments,
             contour,
+            retuneSpeedMs: 25,
+            formantPreserve: true,
         });
 
+        // Both live settings ride the native request (#2058): the bake must
+        // reproduce the processed configuration the user heard.
         expect(commitNativePitchEdit).toHaveBeenCalledWith({
             inputAudioPath: 'test.wav',
             outputAudioPath: 'test_pitch.wav',
             segments,
             contour,
+            retuneSpeedMs: 25,
+            formantPreserve: true,
         });
         expect(readNativeAudioFile).toHaveBeenCalledWith({ path: 'test_pitch.wav' });
         expect(decodeAudioFileBuffer).toHaveBeenCalledWith(renderedFile);
@@ -103,6 +109,8 @@ describe('commitPitchEdit', () => {
                 audioBufferId: 'buffer-c1',
                 segments: [],
                 contour: { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' },
+                retuneSpeedMs: 0,
+                formantPreserve: true,
             })
         ).rejects.toThrow('format not supported');
 
@@ -128,6 +136,8 @@ describe('commitPitchEdit', () => {
             audioBufferId: 'buffer-c1',
             segments,
             contour,
+            retuneSpeedMs: 120,
+            formantPreserve: false,
         });
 
         expect(audioBufferCache.get).toHaveBeenCalledWith('buffer-c1');
@@ -138,7 +148,10 @@ describe('commitPitchEdit', () => {
             originalBuffer,
             segments,
             contour,
-            'audio-pitch:test_pitch.wav'
+            'audio-pitch:test_pitch.wav',
+            // The WASM fallback bakes the same live settings as the native path (#2058).
+            120,
+            false
         );
         // Reported back so the caller can repoint the clip at the render.
         expect(result).toEqual({ renderedAudioBufferId: 'audio-pitch:test_pitch.wav' });
@@ -156,6 +169,8 @@ describe('commitPitchEdit', () => {
                 audioBufferId: 'buffer-c1',
                 segments: [],
                 contour: { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' },
+                retuneSpeedMs: 0,
+                formantPreserve: true,
             })
         ).rejects.toThrow('Could not get audio buffer for clip');
 

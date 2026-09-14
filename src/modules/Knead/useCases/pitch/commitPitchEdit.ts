@@ -13,6 +13,11 @@ export type CommitPitchEditInput = {
     clipId: string;
     segments: PitchEditSegmentSnapshot[];
     contour: PitchContourSnapshot;
+    /** Live retune speed and formant-preserve selection the bake must carry
+     *  (#2058): after the commit the analysis is cleared, so a setting the
+     *  render drops is gone, not corrected later. */
+    retuneSpeedMs: number;
+    formantPreserve: boolean;
 };
 
 /**
@@ -26,7 +31,13 @@ export type CommitPitchEditInput = {
  * notifies the user and rethrows, which makes `executeAppAction` skip the undo entry
  * (nothing changed, so nothing to undo).
  */
-export async function commitPitchEdit({ clipId, segments, contour }: CommitPitchEditInput): Promise<void> {
+export async function commitPitchEdit({
+    clipId,
+    segments,
+    contour,
+    retuneSpeedMs,
+    formantPreserve,
+}: CommitPitchEditInput): Promise<void> {
     const targetClip = findPitchEditClip(clipId);
 
     if (!targetClip?.fileId) {
@@ -57,6 +68,8 @@ export async function commitPitchEdit({ clipId, segments, contour }: CommitPitch
             audioBufferId: targetClip.audioBufferId,
             segments,
             contour,
+            retuneSpeedMs,
+            formantPreserve,
         });
 
         scope(() => {

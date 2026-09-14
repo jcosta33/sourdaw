@@ -9,7 +9,7 @@ import {
 
 import { type BacteriaPatch } from '../../../models/BacteriaPatch';
 import { setBacteriaParam } from '../../../stores/bacteriaStore';
-import { type PersistDeviceParamFn, type UpdateDeviceParamFn } from '../helpers';
+import { type PersistDeviceParamFn, type UpdateDeviceParamFn, type UpdateDevicePatchFn } from '../helpers';
 import { setBacteriaParamWithAudio } from '../setBacteriaParamWithAudio';
 
 type ScheduledEntry = {
@@ -55,6 +55,7 @@ vi.mock('../helpers', async (importOriginal) => {
 type BridgeDeps = {
     getAllTracks: () => Track[];
     updateDeviceParam: UpdateDeviceParamFn;
+    updateDevicePatch: UpdateDevicePatchFn;
     persistDeviceParam: PersistDeviceParamFn;
     resolveEligibleDeviceWriteTarget: typeof resolveEligibleDeviceWriteTarget;
 };
@@ -111,6 +112,9 @@ function createDeps(
             getAllTracks: vi.fn(() => [createTrackWithDevice('device-1')]),
             updateDeviceParam: vi.fn<UpdateDeviceParamFn>((trackId, deviceId, key, value) => {
                 calls.push(`update:${trackId}:${deviceId}:${key}:${value}`);
+            }),
+            updateDevicePatch: vi.fn<BridgeDeps['updateDevicePatch']>(() => {
+                calls.push('updatePatch');
             }),
             persistDeviceParam: vi.fn<PersistDeviceParamFn>((deviceId, key, value) => {
                 calls.push(`persist:${deviceId}:${key}:${value}`);

@@ -1,6 +1,6 @@
 # ADR 0037: Retire native Mistral inference
 
-- Status: Accepted
+- Status: Accepted — desktop-shell references amended 2026-09-13
 - Supersedes: the native-local portions of ADR 0013 and ADR 0036
 
 ## Context
@@ -18,3 +18,7 @@ Provider protocol, data-policy disclosure, token budgets, cancellation, and Agen
 ## Consequences
 
 The application no longer ships local-model assets, model lifecycle controls, native inference dependencies, or native inference ACL. Browser-local and hosted operation remain independently selectable and observable; Automatic mode never exports prompt data to a hosted provider.
+
+## Amendment 2026-09-13
+
+The desktop shell is now Electron over the shell-agnostic native crate — canonical ADR 0029 in `.agents/decisions/` removed the Tauri shell this ADR names. The decision stands for the Electron shell and its native command surface: neither loads, manages, or executes a local language model, and neither exposes a language-model command or permission.

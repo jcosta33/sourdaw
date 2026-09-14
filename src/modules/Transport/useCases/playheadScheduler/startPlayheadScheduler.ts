@@ -1,6 +1,13 @@
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore, takeLaneStore, activeRecordingRef } from '#/modules/Arrangement/stores';
-import { startRecording, stopRecording, addTakeLane, addTake, updateClip } from '#/modules/Arrangement/useCases';
+import {
+    startRecording,
+    stopRecording,
+    addTakeLane,
+    addTake,
+    updateClip,
+    removeClip,
+} from '#/modules/Arrangement/useCases';
 import {
     stopAllScheduled,
     startAudioRecording,
@@ -13,6 +20,7 @@ import {
     refreshSidechainAlignment,
 } from '#/modules/AudioEngine/useCases';
 import { startAutomationRecording, applyModulation, applyModulationToEngine } from '#/modules/Automation/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
@@ -484,6 +492,14 @@ export function startPlayheadScheduler(): void {
                     Promise.resolve(
                         startAudioRecording(track.id, (result) => {
                             if (result.kind === 'failed') {
+                                // A capture that dies mid-punch (ring overrun,
+                                // worker crash, a WAV that never decoded) must
+                                // not strand an empty provisional clip on the
+                                // arrangement or stay silent about it (#4265).
+                                notifyUser('Punch-in recording failed — the partial take was discarded.', 'error');
+                                if (recClip) {
+                                    removeClip(recClip.id);
+                                }
                                 return;
                             }
                             const { buffer } = result;

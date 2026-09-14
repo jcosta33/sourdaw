@@ -465,6 +465,11 @@ describe('KneadEditor', () => {
                             { start_time_ms: 600, end_time_ms: 900, shift_semitones: 0 },
                         ],
                         contour,
+                        // The authored live settings ride the payload (#2058):
+                        // the bake replaces the clip's audio, so a setting the
+                        // request omits is dropped for good.
+                        retuneSpeedMs: 25,
+                        formantPreserve: true,
                     },
                 });
             });
@@ -547,6 +552,8 @@ describe('KneadEditor', () => {
                         // applies — not NaN, and not a dropped array.
                         segments: [{ start_time_ms: 100, end_time_ms: 500, shift_semitones: 0 }],
                         contour,
+                        retuneSpeedMs: 25,
+                        formantPreserve: true,
                     },
                 });
             });

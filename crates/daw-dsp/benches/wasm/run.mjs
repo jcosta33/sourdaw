@@ -104,6 +104,111 @@ import { startServer } from './server.mjs';
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
 
+/**
+ * One row the worklet posts back through the page: the `result` message of
+ * `quantumCostProcessor.js`, with the typed arrays the page converts to plain
+ * arrays before the runner sees them.
+ *
+ * @typedef {object} QuantumRowResult
+ * @property {string} id
+ * @property {string} label
+ * @property {string} note
+ * @property {number[]} samplesTicks
+ * @property {number[]} harnessFloorTicks
+ * @property {number[]} segmentRates
+ * @property {number[]} segmentIndex
+ * @property {{ ok: boolean, detail: string } | null} warmVerify
+ * @property {{ ok: boolean, detail: string } | null} lateVerify
+ * @property {number} warmupTotalTicks
+ * @property {number} mainThreadWallMs
+ * @property {number} zeroTickSamples
+ * @property {number} timedStartedAtMs
+ * @property {number} timedFinishedAtMs
+ */
+
+/**
+ * The distribution summary one row publishes.
+ *
+ * @typedef {object} SummaryStats
+ * @property {number} n
+ * @property {number} mean
+ * @property {number} floor
+ * @property {number} median
+ * @property {number} p95
+ * @property {number} p99
+ * @property {number} p999
+ * @property {number} max
+ * @property {number} min
+ * @property {number} firstFiveHundredMean
+ * @property {number} lastFiveHundredMean
+ */
+
+/**
+ * The split of a duty-cycled row into its tick and idle modes.
+ *
+ * @typedef {object} DutyCycleSplit
+ * @property {number} periodQuanta
+ * @property {number} dutyPct
+ * @property {number} tickFloorMs
+ * @property {number} tickCostMs
+ * @property {number} idleFloorMs
+ * @property {number} idleCostMs
+ * @property {number} amortisedMeanMs
+ * @property {number} amortisedFloorMs
+ */
+
+/**
+ * One analysed row of the table, as this runner computes and prints it.
+ *
+ * @typedef {object} BenchRow
+ * @property {string} id
+ * @property {string} label
+ * @property {string} note
+ * @property {'audio-thread' | 'worker' | 'offline' | 'unknown'} costSite
+ * @property {{ ok: boolean, detail: string } | null} warmVerify
+ * @property {{ ok: boolean, detail: string } | null} lateVerify
+ * @property {SummaryStats} stats
+ * @property {SummaryStats} harnessFloor
+ * @property {DutyCycleSplit | null} dutyCycle
+ * @property {string | null} dutyCycleSource
+ * @property {{ segments: number, medianTicksPerMs: number, minTicksPerMs: number, maxTicksPerMs: number, spreadPct: number }} calibration
+ * @property {number} timedTotalMs
+ * @property {number} warmupTotalMs
+ * @property {number} mainThreadWallMs
+ * @property {number} wallRatio
+ * @property {number} driftPct
+ * @property {boolean} stationary
+ * @property {boolean} medianTrustworthy
+ * @property {number} zeroTickSamples
+ * @property {number} zeroFraction
+ * @property {boolean} floorMeasurable
+ * @property {{ samples: number, mean: number, min: number, max: number }} load
+ * @property {number[]} samplesMs
+ */
+
+/**
+ * The payload `window.runQuantumCostTable` resolves with (`index.html`),
+ * plus the browser version this runner attaches to it. Declared here, at the
+ * consuming boundary: the producer is browser-context JavaScript this file
+ * cannot import.
+ *
+ * @typedef {object} QuantumTablePayload
+ * @property {QuantumRowResult[]} results
+ * @property {boolean} pageCrossOriginIsolated
+ * @property {string} userAgent
+ * @property {string} browser
+ */
+
+/**
+ * The config `window.runQuantumCostTable` takes (`index.html`).
+ *
+ * @typedef {object} QuantumTableConfig
+ * @property {number} warmupQuanta
+ * @property {number} measureQuanta
+ * @property {number} segmentTargetMs
+ * @property {string[]} deviceIds
+ */
+
 function measurementSourceDigests() {
     return Object.fromEntries(
         grandBouleMeasurementSourcePaths(repoRoot).map((path) => [
@@ -218,6 +323,10 @@ const MAX_ZERO_TICK_FRACTION_FOR_MEDIAN = 0.4;
  */
 const WALL_RATIO_TOLERANCE = 1.15;
 
+/**
+ * @param {string[]} argv
+ * @returns {{ warmupQuanta: number, measureQuanta: number, segmentTargetMs: number, json: string | null, headed: boolean, deviceIds: string[] }}
+ */
 function parseArgs(argv) {
     const options = {
         warmupQuanta: DEFAULT_WARMUP_QUANTA,
@@ -254,6 +363,11 @@ function parseArgs(argv) {
     return options;
 }
 
+/**
+ * @param {Float64Array} sorted
+ * @param {number} fraction
+ * @returns {number}
+ */
 function quantile(sorted, fraction) {
     if (sorted.length === 0) {
         return Number.NaN;
@@ -262,8 +376,16 @@ function quantile(sorted, fraction) {
     return sorted[index];
 }
 
+/**
+ * @param {number[]} values
+ * @returns {number}
+ */
 const meanOf = (values) => values.reduce((total, value) => total + value, 0) / values.length;
 
+/**
+ * @param {number[]} samplesMs
+ * @returns {SummaryStats}
+ */
 function summarise(samplesMs) {
     const sorted = Float64Array.from(samplesMs).sort();
     return {
@@ -290,6 +412,11 @@ function summarise(samplesMs) {
  * cycle happens to sit relative to 95%, which is a fact about the percentile
  * and not about the device.
  */
+/**
+ * @param {number[]} samplesMs
+ * @param {number} periodQuanta
+ * @returns {DutyCycleSplit}
+ */
 function dutyCycleSplit(samplesMs, periodQuanta) {
     const sorted = Array.from(samplesMs).sort((a, b) => a - b);
     const tickCount = Math.max(1, Math.round(sorted.length / periodQuanta));
@@ -310,6 +437,11 @@ function dutyCycleSplit(samplesMs, periodQuanta) {
 }
 
 function machineRecord() {
+    /**
+     * @param {string} bin
+     * @param {string[]} args
+     * @returns {string}
+     */
     const read = (bin, args) => {
         try {
             return execFileSync(bin, args, { encoding: 'utf8' }).trim();
@@ -318,7 +450,7 @@ function machineRecord() {
         }
     };
     return {
-        cpu: os.cpus()[0]?.model ?? 'unknown',
+        cpu: os.cpus().at(0)?.model ?? 'unknown',
         logicalCores: os.cpus().length,
         arch: process.arch,
         platform: `${process.platform} ${os.release()}`,
@@ -346,7 +478,12 @@ function loadCeiling() {
     return os.cpus().length / 2;
 }
 
-/** Two significant figures. The mechanism does not sustain more. */
+/**
+ * Two significant figures. The mechanism does not sustain more.
+ *
+ * @param {number} value
+ * @returns {string}
+ */
 function sig2(value) {
     if (!Number.isFinite(value) || value === 0) {
         return '0';
@@ -358,7 +495,7 @@ function sig2(value) {
  * The reference project, defined here because **nothing in the repository
  * defines it**, split by where each device's cost is actually charged.
  */
-const REFERENCE_PROJECT_AUDIO_THREAD = [
+const REFERENCE_PROJECT_AUDIO_THREAD = /** @type {[string, number][]} */ ([
     ['grand_boule_ring_consumer', 1],
     ['fermenter', 1],
     ['levain', 1],
@@ -370,8 +507,8 @@ const REFERENCE_PROJECT_AUDIO_THREAD = [
     ['proof', 1],
     ['gluten', 3],
     ['proof_chamber_plate', 1],
-];
-const REFERENCE_PROJECT_WORKER = [['grand_boule', 1]];
+]);
+const REFERENCE_PROJECT_WORKER = /** @type {[string, number][]} */ ([['grand_boule', 1]]);
 
 async function main() {
     const options = parseArgs(process.argv.slice(2));
@@ -380,6 +517,7 @@ async function main() {
     // Sample the load average throughout, so every row can report the
     // contention it was actually measured under. Recorded, not gated: the
     // figures this run publishes are floors, and a floor is valid under load.
+    /** @type {{ atMs: number, load: number }[]} */
     const loadTimeline = [];
     const loadSampler = setInterval(() => {
         loadTimeline.push({ atMs: Date.now(), load: os.loadavg()[0] });
@@ -395,6 +533,7 @@ async function main() {
         args: ['--autoplay-policy=no-user-gesture-required'],
     });
 
+    /** @type {QuantumTablePayload | undefined} */
     let payload;
     try {
         const page = await browser.newPage();
@@ -419,12 +558,23 @@ async function main() {
             );
         }
 
-        payload = await page.evaluate((config) => window.runQuantumCostTable(config), {
-            warmupQuanta: options.warmupQuanta,
-            measureQuanta: options.measureQuanta,
-            segmentTargetMs: options.segmentTargetMs,
-            deviceIds: options.deviceIds,
-        });
+        payload = await page.evaluate(
+            (config) => {
+                // index.html installs this on `window`; the producer is
+                // browser-context JavaScript this file cannot import, so the
+                // contract is declared once here at the consuming boundary.
+                const runQuantumCostTable =
+                    /** @type {(config: QuantumTableConfig) => Promise<QuantumTablePayload>} */
+                    (/** @type {unknown} */ (window.runQuantumCostTable));
+                return runQuantumCostTable(config);
+            },
+            {
+                warmupQuanta: options.warmupQuanta,
+                measureQuanta: options.measureQuanta,
+                segmentTargetMs: options.segmentTargetMs,
+                deviceIds: options.deviceIds,
+            }
+        );
 
         payload.browser = browser.version();
     } finally {
@@ -436,94 +586,99 @@ async function main() {
 
     const machine = machineRecord();
     const loadAfter = os.loadavg()[0];
-    const busiestLoad = Math.max(loadBefore, loadAfter);
 
     // -- analysis ----------------------------------------------------------
-    const rows = payload.results.map((result) => {
-        const rates = result.segmentRates.filter((rate) => Number.isFinite(rate) && rate > 0);
-        const sortedRates = [...rates].sort((a, b) => a - b);
-        const medianRate = quantile(Float64Array.from(sortedRates), 0.5);
-        const rateSpreadPct =
-            sortedRates.length > 1 ? ((sortedRates[sortedRates.length - 1] - sortedRates[0]) / medianRate) * 100 : 0;
+    const rows = payload.results.map(
+        /** @returns {BenchRow} */
+        (result) => {
+            const rates = result.segmentRates.filter((rate) => Number.isFinite(rate) && rate > 0);
+            const sortedRates = [...rates].sort((a, b) => a - b);
+            const medianRate = quantile(Float64Array.from(sortedRates), 0.5);
+            let rateSpreadPct = 0;
+            if (sortedRates.length > 1) {
+                rateSpreadPct = ((sortedRates[sortedRates.length - 1] - sortedRates[0]) / medianRate) * 100;
+            }
 
-        // Each sample is converted with the rate of the segment it was taken
-        // in, not with one rate for the whole run.
-        const samplesMs = result.samplesTicks.map((ticks, index) => {
-            const rate = rates[Math.min(result.segmentIndex[index], rates.length - 1)] ?? medianRate;
-            return ticks / rate;
-        });
-        const floorMs = result.harnessFloorTicks.map((ticks) => ticks / medianRate);
+            // Each sample is converted with the rate of the segment it was taken
+            // in, not with one rate for the whole run.
+            const samplesMs = result.samplesTicks.map((ticks, index) => {
+                const rate = rates.at(Math.min(result.segmentIndex.at(index), rates.length - 1)) ?? medianRate;
+                return ticks / rate;
+            });
+            const floorMs = result.harnessFloorTicks.map((ticks) => ticks / medianRate);
 
-        const timedTotalMs = samplesMs.reduce((total, value) => total + value, 0);
-        const warmupTotalMs = result.warmupTotalTicks / medianRate;
-        const computeTotalMs = timedTotalMs + warmupTotalMs;
-        // The independent reference: `performance.now()` on the main thread
-        // around the whole render. The previous cross-check compared the timed
-        // sum against a worklet wall clock that also covered the 4000 warm-up
-        // quanta, so it tolerated ~20% overstatement and bounded understatement
-        // not at all — which is the direction a starved spinner fails in. Both
-        // directions are bounded now, against a clock the worklet cannot see.
-        const wallRatio = computeTotalMs / result.mainThreadWallMs;
+            const timedTotalMs = samplesMs.reduce((total, value) => total + value, 0);
+            const warmupTotalMs = result.warmupTotalTicks / medianRate;
+            const computeTotalMs = timedTotalMs + warmupTotalMs;
+            // The independent reference: `performance.now()` on the main thread
+            // around the whole render. The previous cross-check compared the timed
+            // sum against a worklet wall clock that also covered the 4000 warm-up
+            // quanta, so it tolerated ~20% overstatement and bounded understatement
+            // not at all — which is the direction a starved spinner fails in. Both
+            // directions are bounded now, against a clock the worklet cannot see.
+            const wallRatio = computeTotalMs / result.mainThreadWallMs;
 
-        const stats = summarise(samplesMs);
-        const driftPct = (stats.lastFiveHundredMean / stats.firstFiveHundredMean - 1) * 100;
+            const stats = summarise(samplesMs);
+            const driftPct = (stats.lastFiveHundredMean / stats.firstFiveHundredMean - 1) * 100;
 
-        // The load actually present while this row was being timed.
-        const inWindow = loadTimeline.filter(
-            (sample) => sample.atMs >= result.timedStartedAtMs && sample.atMs <= result.timedFinishedAtMs
-        );
-        const loadSamples = inWindow.length > 0 ? inWindow.map((sample) => sample.load) : [os.loadavg()[0]];
+            // The load actually present while this row was being timed.
+            const inWindow = loadTimeline.filter(
+                (sample) => sample.atMs >= result.timedStartedAtMs && sample.atMs <= result.timedFinishedAtMs
+            );
+            const loadSamples = inWindow.length > 0 ? inWindow.map((sample) => sample.load) : [os.loadavg()[0]];
 
-        return {
-            id: result.id,
-            label: result.label,
-            note: result.note,
-            costSite: COST_SITE[result.id] ?? 'unknown',
-            warmVerify: result.warmVerify,
-            lateVerify: result.lateVerify,
-            stats,
-            harnessFloor: summarise(floorMs),
-            dutyCycle: DUTY_CYCLE[result.id] ? dutyCycleSplit(samplesMs, DUTY_CYCLE[result.id].periodQuanta) : null,
-            dutyCycleSource: DUTY_CYCLE[result.id]?.source ?? null,
-            calibration: {
-                segments: rates.length,
-                medianTicksPerMs: medianRate,
-                minTicksPerMs: sortedRates[0],
-                maxTicksPerMs: sortedRates[sortedRates.length - 1],
-                spreadPct: rateSpreadPct,
-            },
-            timedTotalMs,
-            warmupTotalMs,
-            mainThreadWallMs: result.mainThreadWallMs,
-            wallRatio,
-            driftPct,
-            stationary: Math.abs(driftPct) <= STATIONARITY_TOLERANCE_PCT,
-            medianTrustworthy: rateSpreadPct <= MEDIAN_TRUSTWORTHY_SPREAD_PCT,
-            zeroTickSamples: result.zeroTickSamples,
-            zeroFraction: result.zeroTickSamples / stats.n,
-            // A floor is only a floor if the clock was awake often enough to
-            // have caught this device's cheapest render. A floor of exactly
-            // zero is by definition a stall reading and never a measurement,
-            // however few stalls the row recorded.
-            floorMeasurable: result.zeroTickSamples / stats.n <= MAX_ZERO_TICK_FRACTION && stats.floor > 0,
-            load: {
-                samples: loadSamples.length,
-                mean: meanOf(loadSamples),
-                min: Math.min(...loadSamples),
-                max: Math.max(...loadSamples),
-            },
-            samplesMs,
-        };
-    });
+            return {
+                id: result.id,
+                label: result.label,
+                note: result.note,
+                costSite: COST_SITE[result.id] ?? 'unknown',
+                warmVerify: result.warmVerify,
+                lateVerify: result.lateVerify,
+                stats,
+                harnessFloor: summarise(floorMs),
+                dutyCycle: DUTY_CYCLE[result.id] ? dutyCycleSplit(samplesMs, DUTY_CYCLE[result.id].periodQuanta) : null,
+                dutyCycleSource: DUTY_CYCLE[result.id]?.source ?? null,
+                calibration: {
+                    segments: rates.length,
+                    medianTicksPerMs: medianRate,
+                    minTicksPerMs: sortedRates[0],
+                    maxTicksPerMs: sortedRates[sortedRates.length - 1],
+                    spreadPct: rateSpreadPct,
+                },
+                timedTotalMs,
+                warmupTotalMs,
+                mainThreadWallMs: result.mainThreadWallMs,
+                wallRatio,
+                driftPct,
+                stationary: Math.abs(driftPct) <= STATIONARITY_TOLERANCE_PCT,
+                medianTrustworthy: rateSpreadPct <= MEDIAN_TRUSTWORTHY_SPREAD_PCT,
+                zeroTickSamples: result.zeroTickSamples,
+                zeroFraction: result.zeroTickSamples / stats.n,
+                // A floor is only a floor if the clock was awake often enough to
+                // have caught this device's cheapest render. A floor of exactly
+                // zero is by definition a stall reading and never a measurement,
+                // however few stalls the row recorded.
+                floorMeasurable: result.zeroTickSamples / stats.n <= MAX_ZERO_TICK_FRACTION && stats.floor > 0,
+                load: {
+                    samples: loadSamples.length,
+                    mean: meanOf(loadSamples),
+                    min: Math.min(...loadSamples),
+                    max: Math.max(...loadSamples),
+                },
+                samplesMs,
+            };
+        }
+    );
 
-    const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
+    /** @type {Record<string, BenchRow | undefined>} */
+    const byId = Object.fromEntries(rows.map((row) => /** @type {[string, BenchRow]} */ ([row.id, row])));
 
     // -- gates, all evaluated BEFORE anything is printed --------------------
     const failures = [];
     for (const row of rows) {
         if (!row.warmVerify?.ok || !row.lateVerify?.ok) {
             failures.push(
-                `${row.id}: occupancy — warm-up "${row.warmVerify?.detail}"; after run "${row.lateVerify?.detail}"`
+                `${row.id}: occupancy — warm-up "${String(row.warmVerify?.detail)}"; after run "${String(row.lateVerify?.detail)}"`
             );
         }
         if (!(row.wallRatio <= WALL_RATIO_TOLERANCE)) {
@@ -612,6 +767,10 @@ async function main() {
     console.log('holds the median to roughly +/-10% and inflates the p95 by +4% to +31% on constant work.');
     console.log('');
 
+    /**
+     * @param {string} title
+     * @param {BenchRow[]} members
+     */
     const printRows = (title, members) => {
         if (members.length === 0) {
             return;
@@ -642,7 +801,7 @@ async function main() {
         rows.filter((row) => row.costSite !== 'audio-thread')
     );
 
-    const harness = rows[0]?.harnessFloor;
+    const harness = rows.at(0)?.harnessFloor;
     if (harness) {
         console.log(
             `harness floor (two clock reads, no render): floor ${us(harness.floor)}us, median ${us(harness.median)}us`
@@ -673,7 +832,7 @@ async function main() {
                     `tick ${us(d.tickCostMs)}us (${pct(d.tickCostMs)}), idle ${us(d.idleCostMs)}us, ` +
                     `amortised mean ${us(d.amortisedMeanMs)}us (${pct(d.amortisedMeanMs)})`
             );
-            console.log(`  ${''.padEnd(10)} period from ${row.dutyCycleSource}`);
+            console.log(`  ${''.padEnd(10)} period from ${String(row.dutyCycleSource)}`);
         }
         console.log('');
     }
@@ -698,13 +857,21 @@ async function main() {
         console.log('  figures above stand on their own; the project total needs a full run.');
         console.log('');
     } else {
+        /**
+         * @param {[string, number][]} members
+         * @param {(row: BenchRow) => number} pick
+         * @returns {number}
+         */
         const sumOver = (members, pick) => members.reduce((total, [id, count]) => total + pick(byId[id]) * count, 0);
 
         // A lower bound stays a lower bound if an unmeasurable term is counted as
         // zero, so rows whose floor was withheld simply contribute nothing.
-        const audioFloor = sumOver(REFERENCE_PROJECT_AUDIO_THREAD, (row) =>
-            row.floorMeasurable ? (row.dutyCycle ? row.dutyCycle.amortisedFloorMs : row.stats.floor) : 0
-        );
+        const audioFloor = sumOver(REFERENCE_PROJECT_AUDIO_THREAD, (row) => {
+            if (!row.floorMeasurable) {
+                return 0;
+            }
+            return row.dutyCycle !== null ? row.dutyCycle.amortisedFloorMs : row.stats.floor;
+        });
         const floorRowsMissing = REFERENCE_PROJECT_AUDIO_THREAD.filter(([id]) => !byId[id].floorMeasurable).map(
             ([id]) => id
         );
@@ -718,12 +885,16 @@ async function main() {
         // largest duty-cycle spike landing in that quantum. Summing every row's p95
         // assumes every device spikes in the same quantum, which nothing makes true
         // — the duty cycles are independent and unsynchronised.
-        const worstSpikeUpper = Math.max(
-            0,
-            ...duty
-                .filter((row) => REFERENCE_PROJECT_AUDIO_THREAD.some(([id]) => id === row.id))
-                .map((row) => row.dutyCycle.tickCostMs - row.dutyCycle.idleCostMs)
-        );
+        const audioThreadSpikes = duty
+            .filter((row) => REFERENCE_PROJECT_AUDIO_THREAD.some(([id]) => id === row.id))
+            .map((row) => {
+                const cycle = row.dutyCycle;
+                if (cycle === null) {
+                    return 0;
+                }
+                return cycle.tickCostMs - cycle.idleCostMs;
+            });
+        const worstSpikeUpper = Math.max(0, ...audioThreadSpikes);
         const audioWorstUpper = audioMean + worstSpikeUpper;
 
         console.log('=== Reference project (defined in deviceRecipes.js — nothing in the repo defines it) ===');
@@ -755,15 +926,20 @@ async function main() {
             `  worst quantum <= ${sig2(audioWorstUpper)} ms  (${pct(audioWorstUpper)} of budget)   upper bound, + the largest duty spike`
         );
         console.log('');
-        const verdict =
-            audioWorstUpper < BUDGET_MS
-                ? `  DECIDED: the upper bound already fits. Even measured under load ${meanLoad.toFixed(0)}, the reference\n` +
-                  "  project's audio thread does not approach the deadline on compute. A quieter machine can only\n" +
-                  '  lower these numbers. Compute is not the obstacle.'
-                : audioFloor > BUDGET_MS
-                  ? '  DECIDED THE OTHER WAY: the lower bound already exceeds budget. No quieter machine will fix it.'
-                  : `  UNDECIDED on this machine: the bounds straddle the budget (${pct(audioFloor)} to ${pct(audioWorstUpper)}).\n` +
-                    '  A quiet-machine run would narrow it; AC-3 would answer the deadline question directly.';
+        let verdict;
+        if (audioWorstUpper < BUDGET_MS) {
+            verdict =
+                `  DECIDED: the upper bound already fits. Even measured under load ${meanLoad.toFixed(0)}, the reference\n` +
+                "  project's audio thread does not approach the deadline on compute. A quieter machine can only\n" +
+                '  lower these numbers. Compute is not the obstacle.';
+        } else if (audioFloor > BUDGET_MS) {
+            verdict =
+                '  DECIDED THE OTHER WAY: the lower bound already exceeds budget. No quieter machine will fix it.';
+        } else {
+            verdict =
+                `  UNDECIDED on this machine: the bounds straddle the budget (${pct(audioFloor)} to ${pct(audioWorstUpper)}).\n` +
+                '  A quiet-machine run would narrow it; AC-3 would answer the deadline question directly.';
+        }
         console.log(verdict);
         console.log('');
         console.log(
@@ -791,8 +967,8 @@ async function main() {
     for (const row of rows) {
         const c = row.calibration;
         console.log(`  ${row.id}  [${row.costSite}]`);
-        console.log(`      warm-up  : ${row.warmVerify?.detail}`);
-        console.log(`      after run: ${row.lateVerify?.detail}`);
+        console.log(`      warm-up  : ${String(row.warmVerify?.detail)}`);
+        console.log(`      after run: ${String(row.lateVerify?.detail)}`);
         console.log(`      load     : ${row.note}`);
         console.log(
             `      clock    : ${c.segments} in-window segments, ${sig2(c.medianTicksPerMs)} ticks/ms median, ` +

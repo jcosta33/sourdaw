@@ -1,6 +1,6 @@
 # ADR 0035: Privileged model-provider extensions
 
-- Status: Accepted
+- Status: Accepted — desktop-shell references amended 2026-09-13
 - Date: 2026-08-15
 
 ## Context
@@ -36,3 +36,7 @@ Explicit loopback HTTP remains the development-only browser adapter admitted by 
 ## Amendment 2026-09-10
 
 First-party OpenAI profiles compile the release-owned `builtin.openai.responses.v1` adapter, whose immutable contract carries the `openai-responses` protocol family and the fixed `/v1/responses` request path, while every other OpenAI-compatible endpoint keeps `builtin.openai-compatible.chat-completions.v1`. The privileged gateway binds an `openai` credential source to the responses adapter at the OpenAI origin, so a first-party credential cannot open a session for the chat-completions adapter. Both adapters pass the same provider protocol conformance suite, which is what keeps a second protocol family from weakening the stream bounds, redaction, and finish-reason vocabulary the first one established.
+
+## Amendment 2026-09-13
+
+The desktop shell is now Electron over the shell-agnostic native crate — canonical ADR 0029 in `.agents/decisions/` removed the Tauri shell this ADR names. The provider gateway itself lives in `crates/sourdaw-native/src/commands/provider_gateway.rs` and is reached through Electron IPC (`open_provider_gateway_session` and its siblings in `electron/commands.ts`). Where this ADR reads "Tauri provider gateway" and "both sides of the Tauri boundary", read that native gateway and its Electron IPC boundary; the admission contract it records is unchanged.

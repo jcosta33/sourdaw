@@ -43,6 +43,16 @@ export class BacteriaInstance {
         wasm.bacteriainstance_add_mod_assignment(this.__wbg_ptr, source_id, target_param, amount);
     }
     /**
+     * Drop every modulation assignment; macro mappings are untouched.
+     *
+     * Removal, undo, and a patch reload arrive from the UI as one replacement
+     * of the whole table, spelled clear-then-re-add against the validated
+     * [`Self::add_mod_assignment`] path. Safe to call with the table empty.
+     */
+    clear_mod_assignments() {
+        wasm.bacteriainstance_clear_mod_assignments(this.__wbg_ptr);
+    }
+    /**
      * Get per-band levels packed as: [band0_db, band1_db, ... band5_db].
      * @returns {number}
      */
@@ -1960,16 +1970,18 @@ export function analyze_pitch_wasm(samples, sample_rate) {
  * @param {number} sample_rate
  * @param {string} segments_json
  * @param {string} contour_json
+ * @param {number} retune_speed_ms
+ * @param {boolean} formant_preserve
  * @returns {Float32Array}
  */
-export function commit_pitch_edit_wasm(samples, sample_rate, segments_json, contour_json) {
+export function commit_pitch_edit_wasm(samples, sample_rate, segments_json, contour_json, retune_speed_ms, formant_preserve) {
     const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(segments_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
     const ptr2 = passStringToWasm0(contour_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.commit_pitch_edit_wasm(ptr0, len0, sample_rate, ptr1, len1, ptr2, len2);
+    const ret = wasm.commit_pitch_edit_wasm(ptr0, len0, sample_rate, ptr1, len1, ptr2, len2, retune_speed_ms, formant_preserve);
     var v4 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v4;

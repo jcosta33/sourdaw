@@ -124,7 +124,21 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         // (`handleCommitPitchEdit` describes `restoreClipFileId` as its inverse).
         // The handler notifies the user on render failure and rethrows, so swallow
         // the rejection here rather than leaving it unhandled.
-        void executeUserAppAction({ type: 'commitPitchEdit', payload: { clipId, segments, contour } }).catch(() => {});
+        //
+        // The retune speed and formant-preserve selection ride the payload
+        // (#2058): the render replaces the clip's audio and the commit clears
+        // the analysis, so a live setting the request omits is dropped for
+        // good rather than surviving as a live correction.
+        void executeUserAppAction({
+            type: 'commitPitchEdit',
+            payload: {
+                clipId,
+                segments,
+                contour,
+                retuneSpeedMs: kneadState.retuneSpeedMs,
+                formantPreserve: kneadState.formantPreserve,
+            },
+        }).catch(() => {});
     };
 
     const handleKeyChange = (root: number) => {

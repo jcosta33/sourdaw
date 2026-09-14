@@ -1,6 +1,6 @@
 # ADR 0036: Provider stream envelope
 
-- Status: Partially superseded by ADR 0037
+- Status: Partially superseded by ADR 0037 — desktop-shell references amended 2026-09-13
 
 > Historical scope: references to the retired native language-model stream are superseded by ADR 0037. The provider-neutral stream contract remains accepted.
 - Date: 2026-08-15
@@ -30,3 +30,7 @@ Provider-specific wire formats remain repository concerns. Repositories validate
 - Model provider protocol version 1 stream events are rejected rather than guessed or silently upgraded.
 - Supporting a new provider or event family requires explicit bounds, correlation, terminal mapping, and conformance tests at both its wire boundary and the provider-neutral session.
 - Unknown future event names can remain diagnosable without granting them payload or state authority.
+
+## Amendment 2026-09-13
+
+The desktop shell is now Electron over the shell-agnostic native crate — canonical ADR 0029 in `.agents/decisions/` removed the Tauri shell. The privileged-gateway stream described above is carried over Electron IPC from `crates/sourdaw-native`; where this ADR reads "Tauri provider output" and "Tauri commands", read the native crate's provider-gateway commands and the events Electron forwards from them.

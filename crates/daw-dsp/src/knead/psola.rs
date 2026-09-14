@@ -5,24 +5,6 @@ use crate::knead::utils::hann_window_inplace;
 pub struct PsolaConfig {
     pub sample_rate: f32,
     pub max_semitones_transparent: f32,
-    /// Rate at which each grain reads its source, relative to output time.
-    ///
-    /// `1.0` is textbook TD-PSOLA: the grain is copied unresampled and only
-    /// its *spacing* changes, so the spectral envelope — the formants — stays
-    /// where the singer put it while the fundamental moves. That is formant
-    /// correction ON, and it is the shape every pitch corrector ships as the
-    /// vocal default (Auto-Tune's Formant Correction, Melodyne's Formants,
-    /// Logic Flex Pitch's Formant Shift at 0).
-    ///
-    /// Setting this to the pitch ratio makes each grain read `ratio` source
-    /// samples per output sample, which scales the grain's whole spectrum by
-    /// `ratio` — formants included. Combined with the epoch respacing that
-    /// already moved the fundamental, the result is the varispeed/"chipmunk"
-    /// relation between pitch and formants, i.e. formant correction OFF.
-    ///
-    /// Level is unaffected either way: the Hann window is still applied in
-    /// output coordinates at width 2·P_t and hop P_t, so COLA still sums to 1.
-    pub grain_rate: f32,
 }
 
 impl Default for PsolaConfig {
@@ -30,10 +12,31 @@ impl Default for PsolaConfig {
         Self {
             sample_rate: 44100.0,
             max_semitones_transparent: 4.0,
-            grain_rate: 1.0,
         }
     }
 }
+
+/// Rate at which each grain reads its source, relative to output time.
+///
+/// `1.0` is textbook TD-PSOLA: the grain is copied unresampled and only
+/// its *spacing* changes, so the spectral envelope — the formants — stays
+/// where the singer put it while the fundamental moves. That is formant
+/// correction ON, and it is the shape every pitch corrector ships as the
+/// vocal default (Auto-Tune's Formant Correction, Melodyne's Formants,
+/// Logic Flex Pitch's Formant Shift at 0).
+///
+/// Setting this to the pitch ratio makes each grain read `ratio` source
+/// samples per output sample, which scales the grain's whole spectrum by
+/// `ratio` — formants included. Combined with the epoch respacing that
+/// already moved the fundamental, the result is the varispeed/"chipmunk"
+/// relation between pitch and formants, i.e. formant correction OFF.
+///
+/// Level is unaffected either way: the Hann window is still applied in
+/// output coordinates at width 2·P_t and hop P_t, so COLA still sums to 1.
+///
+/// The rate is a *curve* parallel to the input, not a config field: the RT
+/// engine fills it per frame (the ratio tracks the retune glide), and the
+/// offline commit renders one rate per position from the glided shift.
 
 /// Offline PSOLA processing over a pre-computed array of pitch marks and target f0 curve.
 /// Writes the result into the provided `out` slice.
@@ -44,10 +47,14 @@ impl Default for PsolaConfig {
 /// nearest to its output position (duration preserved ⇒ source time ==
 /// output time) with a width of ≈ 2 target periods, so the Hann overlap-add
 /// sums to ≈1 (COLA) and the level stays shift-independent.
+///
+/// `grain_rate_curve` is parallel to `input` and carries the grain source
+/// read rate at each position — see [`psola_process_span`].
 pub fn psola_process_offline_inplace(
     input: &[f32],
-    pitch_marks: &[usize],   // array of epoch indices
-    target_f0_curve: &[f32], // parallel to input length
+    pitch_marks: &[usize],    // array of epoch indices
+    target_f0_curve: &[f32],  // parallel to input length
+    grain_rate_curve: &[f32], // parallel to input length
     cfg: &PsolaConfig,
     window_scratchpad: &mut [f32], // Passed in to avoid stack/heap allocation
     out: &mut [f32],
@@ -68,6 +75,7 @@ pub fn psola_process_offline_inplace(
         input,
         pitch_marks,
         target_f0_curve,
+        grain_rate_curve,
         cfg,
         window_scratchpad,
         out,
@@ -85,9 +93,20 @@ pub fn psola_process_offline_inplace(
 /// `output coordinate + input_offset`; output buffer indices are
 /// `output coordinate + out_offset`. This lets the RT engine render a
 /// history margin (negative coordinates) so frame boundaries overlap-add
-/// seamlessly. `pitch_marks` and `target_f0_curve` are in input
-/// coordinates. Grains are written with src/dst in lockstep
+/// seamlessly. `pitch_marks`, `target_f0_curve` and `grain_rate_curve` are
+/// in input coordinates. Grains are written with src/dst in lockstep
 /// (`dst − src == center − pm`), so edge-clamped grains stay aligned.
+///
+/// `grain_rate_curve` is parallel to `input` and carries each grain's source
+/// read rate, relative to output time, at that position. `1.0` is textbook
+/// TD-PSOLA: grains copied unresampled, only their spacing changes, so the
+/// spectral envelope — the formants — stays where the singer put it while
+/// the fundamental moves (formant correction ON). The pitch ratio makes each
+/// grain read `ratio` source samples per output sample, which scales the
+/// grain's whole spectrum by `ratio` — formants included — the
+/// varispeed/"chipmunk" relation (formant correction OFF). Level is
+/// unaffected either way: the Hann window is still applied in output
+/// coordinates at width 2·P_t and hop P_t, so COLA still sums to 1.
 ///
 /// `coord_start` may be negative and should carry the synthesis phase from
 /// the previous frame so the center lattice stays continuous across frames
@@ -99,8 +118,9 @@ pub fn psola_process_offline_inplace(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn psola_process_span(
     input: &[f32],
-    pitch_marks: &[usize],   // epoch indices, input coordinates
-    target_f0_curve: &[f32], // parallel to input
+    pitch_marks: &[usize],    // epoch indices, input coordinates
+    target_f0_curve: &[f32],  // parallel to input
+    grain_rate_curve: &[f32], // parallel to input
     cfg: &PsolaConfig,
     window_scratchpad: &mut [f32],
     out: &mut [f32],
@@ -192,16 +212,20 @@ pub(crate) fn psola_process_span(
         let window = &mut window_scratchpad[..full_len];
         hann_window_inplace(window);
 
-        // Formant-tracking grain: read the source at `grain_rate` samples per
-        // output sample instead of one-for-one. Driven from the *output* offset
-        // `d` rather than the source index, because the grain's output width is
-        // still 2·P_t while the span of source it consumes is 2·P_t·rate.
+        // Formant-tracking grain: read the source at the local grain rate —
+        // samples of source per output sample — instead of one-for-one. The
+        // rate comes from the curve at this grain's source center, so the
+        // formant coupling can ride the retune glide instead of being fixed
+        // per render. Driven from the *output* offset `d` rather than the
+        // source index, because the grain's output width is still 2·P_t
+        // while the span of source it consumes is 2·P_t·rate.
         // Bounds-skipped, not clamped, so the edge behaviour matches the
         // unresampled path (a clamp would smear the first/last sample across
         // the whole overhang).
-        if cfg.grain_rate != 1.0 {
+        let grain_rate = grain_rate_curve[src_center.min(grain_rate_curve.len().saturating_sub(1))];
+        if grain_rate != 1.0 {
             for d in -half_grain..half_grain {
-                let pos = pm as f32 + d as f32 * cfg.grain_rate;
+                let pos = pm as f32 + d as f32 * grain_rate;
                 if pos < 0.0 || pos >= (input.len() - 1) as f32 {
                     continue;
                 }
@@ -292,11 +316,11 @@ mod tests {
         let cfg = PsolaConfig {
             sample_rate,
             max_semitones_transparent: 12.0,
-            grain_rate,
         };
+        let rates = vec![grain_rate; input.len()];
         let mut scratch = vec![0.0_f32; (sample_rate / 20.0) as usize * 4];
         let mut out = vec![0.0_f32; input.len()];
-        psola_process_offline_inplace(input, &marks, &curve, &cfg, &mut scratch, &mut out);
+        psola_process_offline_inplace(input, &marks, &curve, &rates, &cfg, &mut scratch, &mut out);
         out
     }
 

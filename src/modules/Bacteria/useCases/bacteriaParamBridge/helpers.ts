@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { type persistDeviceParam, type resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
-import { type updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { type updateDeviceParam, type updateDevicePatch } from '#/modules/AudioEngine/useCases';
 import { createFindDeviceRef, type DeviceRef, type GetAllTracksFn } from '#/utils/createFindDeviceRef';
 import { createRafBatcher, type RafBatcher } from '#/utils/DOM/createRafBatcher';
 
@@ -9,6 +9,7 @@ import { type BacteriaBand, type BacteriaPatch } from '../../models/BacteriaPatc
 export { createFindDeviceRef };
 export type { DeviceRef, GetAllTracksFn };
 export type UpdateDeviceParamFn = typeof updateDeviceParam;
+export type UpdateDevicePatchFn = typeof updateDevicePatch;
 export type PersistDeviceParamFn = typeof persistDeviceParam;
 export type ResolveEligibleDeviceWriteTargetFn = typeof resolveEligibleDeviceWriteTarget;
 
@@ -22,7 +23,8 @@ export const paramBatcher: RafBatcher<BacteriaBatchEntry> = createRafBatcher<Bac
  * are never pushed to the engine as a single `(paramId, value)` message:
  *   - `name`            — display label, no audio meaning
  *   - `bands`           — array; pushed per-band with a `band{i}_` prefix
- *   - `modAssignments`  — UI/persistence-only routing metadata (see BacteriaPatch.ts)
+ *   - `modAssignments`  — structured routing rows; pushed as one table through
+ *     the patch door (`updateDevicePatch`), which the scalar door cannot spell
  *   - `snapshots`       — UI/persistence-only XY-morph metadata (see BacteriaPatch.ts)
  *   - `morphX`/`morphY` — the morph pad's crosshair position. Morphing is
  *     resolved in the UI and reaches the engine through the ordinary scalar

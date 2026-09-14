@@ -5,6 +5,7 @@ import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__
 import { type BuiltinDeviceNode } from '../../models/AudioEngineState';
 import { externalLatencyRegistry } from '../../useCases/latencyCompensation/compensation/externalLatencyRegistry';
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
+import { type BacteriaNodeResult } from '../BacteriaNode';
 import { type FermenterNodeResult } from '../FermenterNode';
 import { type GrinderNodeResult } from '../GrinderNode';
 import { type ProofNodeResult } from '../ProofNode';
@@ -54,6 +55,16 @@ vi.mock('../GrinderNode', async (importOriginal) => {
     return { ...actual, createGrinderNode: grinderNodeMocks.createGrinderNode };
 });
 
+const bacteriaNodeMocks = vi.hoisted(() => ({
+    createBacteriaNode: vi.fn(),
+    setModAssignments: vi.fn(),
+}));
+
+vi.mock('../BacteriaNode', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../BacteriaNode')>();
+    return { ...actual, createBacteriaNode: bacteriaNodeMocks.createBacteriaNode };
+});
+
 const REGISTERED_WASM_DEVICE_TYPES = [
     'fermenter',
     'toaster',
@@ -82,6 +93,8 @@ describe('findWasmDescriptor', () => {
         proofNodeMocks.setParam.mockReset();
         grinderNodeMocks.createGrinderNode.mockReset();
         grinderNodeMocks.reset.mockReset();
+        bacteriaNodeMocks.createBacteriaNode.mockReset();
+        bacteriaNodeMocks.setModAssignments.mockReset();
         externalLatencyRegistry.clear();
         setAudioDeviceRuntimeSink({});
     });
@@ -311,7 +324,59 @@ describe('findWasmDescriptor', () => {
 
         expect(grinderNodeMocks.reset).toHaveBeenCalledTimes(1);
     });
+
+    // Bacteria's structured routing arrives spelled as a patch and must reach
+    // BacteriaNode.setModAssignments as one replacement; a patch carrying no
+    // table leaves the engine table alone.
+    it('routes the Bacteria assignment table through the loaded patch door', async () => {
+        const onLoaded = vi.fn();
+        bacteriaNodeMocks.createBacteriaNode.mockResolvedValue(createBacteriaNodeResult());
+
+        const desc = findWasmDescriptor('bacteria');
+        if (!desc) {
+            throw new Error('Expected bacteria descriptor to be registered');
+        }
+
+        const { loadPromise } = desc.create({
+            context: createRegistryAudioContext(),
+            deviceId: 'bacteria-1',
+            deviceType: 'bacteria',
+            onLoaded,
+        });
+
+        await loadPromise;
+
+        expect(onLoaded).toHaveBeenCalledTimes(1);
+        const loadedNode = onLoaded.mock.calls[0]![0] as BuiltinDeviceNode;
+        if (!loadedNode.controller?.setPatch) {
+            throw new Error('Expected loaded Bacteria controller to expose setPatch');
+        }
+
+        const table = [{ sourceId: 0, targetParam: 16, amount: 50 }];
+        loadedNode.controller.setPatch({ modAssignments: table });
+        expect(bacteriaNodeMocks.setModAssignments).toHaveBeenCalledWith(table);
+        expect(bacteriaNodeMocks.setModAssignments).toHaveBeenCalledTimes(1);
+
+        loadedNode.controller.setPatch({ mix: 0.5 });
+        expect(bacteriaNodeMocks.setModAssignments).toHaveBeenCalledTimes(1);
+    });
 });
+
+function createBacteriaNodeResult(): BacteriaNodeResult {
+    return {
+        connect: vi.fn(),
+        destroy: vi.fn(),
+        disconnect: vi.fn(),
+        onLatencyChanged: vi.fn(),
+        onMeterData: vi.fn(),
+        ready: Promise.resolve({ latency: 0 }),
+        reset: vi.fn(),
+        setBypass: vi.fn(),
+        setModAssignments: bacteriaNodeMocks.setModAssignments,
+        setParam: vi.fn(),
+        workletNode: createRegistryAudioWorkletNode(),
+    };
+}
 
 function createRegistryAudioContext(): AudioContext {
     return createMockAudioContext() as RegistryAudioContext;

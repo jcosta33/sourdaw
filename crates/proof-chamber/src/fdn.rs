@@ -313,6 +313,19 @@ const MAX_DELAY_MS: f32 = 80.0;
 /// end silently rides the clamp in `process` instead of modulating.
 const MODULATION_HEADROOM: usize = 8;
 
+/// How long a retune glide takes.
+///
+/// Short on purpose. During the glide the fractional read interpolates, and
+/// whatever passes through a line while its read is fractional hears a touch
+/// of that lowpass. Kept an order of magnitude under the shortest delay the
+/// tank can hold, the gliding window closes before the tank's own onset
+/// arrives, so a one-shot `size` write colors nothing a listener can point at
+/// and automation hears a soft morph per step instead of a splice. The same
+/// ramp must not be shared with `smooth_coeff`: mix has no loop to compound
+/// through, and its 30 ms ramp would stretch the colored window across dozens
+/// of feedback passes.
+const RETUNE_RAMP_SECONDS: f32 = 0.002;
+
 /// Slack above the longest requested delay, so the prime snapping in
 /// `fill_coprime_delays` has room to land above its target. Comfortably wider
 /// than the largest prime gap below the lengths in play.
@@ -372,6 +385,23 @@ pub struct FdnReverb {
     write_positions: Vec<usize>,
     delay_lengths: Vec<usize>,
 
+    /// Per-line smoothed base delay, in fractional samples.
+    ///
+    /// `size` rewrites `delay_lengths` at block rate, and following the new
+    /// length instantly jumps each read index tens to hundreds of samples in
+    /// one sample — splicing two decorrelated stretches of the ring buffer
+    /// into the feedback path, one hard discontinuity per block for the
+    /// length of the gesture. The read glides to the new length on
+    /// [`RETUNE_RAMP_SECONDS`] instead, and the fractional part of the glide
+    /// is interpolated.
+    ///
+    /// The interpolation must vanish at rest, and does: once the glide lands,
+    /// `smooth_delays` is snapped exactly onto the integer length and the read
+    /// is the shipped single tap. An interpolator that never sleeps sits in
+    /// the feedback loop, and even a fraction of a dB of extra HF loss per
+    /// pass compounds over the passes of an RT60-length tail.
+    smooth_delays: Vec<f32>,
+
     // Per-line absorptive filters
     absorptive_filters: Vec<AbsorptiveFilter>,
 
@@ -421,6 +451,9 @@ pub struct FdnReverb {
     // Parameter smoothing (30ms ramp)
     smooth_mix: f32,
     smooth_coeff: f32,
+
+    /// Per-sample glide rate of the retune smoothing.
+    retune_coeff: f32,
 }
 
 impl FdnReverb {
@@ -442,6 +475,7 @@ impl FdnReverb {
         let buffers: Vec<Vec<f32>> = (0..n).map(|_| vec![0.0; buffer_len]).collect();
 
         let write_positions = vec![0; n];
+        let smooth_delays: Vec<f32> = delay_lengths.iter().map(|&len| len as f32).collect();
 
         let absorptive_filters: Vec<AbsorptiveFilter> = delay_lengths
             .iter()
@@ -474,6 +508,7 @@ impl FdnReverb {
             buffers,
             write_positions,
             delay_lengths,
+            smooth_delays,
             absorptive_filters,
             decay_eqs,
             mix_buf: [0.0; MAX_FDN_CHANNELS],
@@ -500,6 +535,7 @@ impl FdnReverb {
             output: OutputStage::new(sample_rate),
             smooth_mix: 0.3,
             smooth_coeff: 1.0 - (-1.0 / (0.030 * sample_rate)).exp(),
+            retune_coeff: 1.0 - (-1.0 / (RETUNE_RAMP_SECONDS * sample_rate)).exp(),
         };
 
         // Make the seeding above true before anyone can render through it.
@@ -524,6 +560,9 @@ impl FdnReverb {
         let sample_rate = self.sample_rate;
 
         fill_delay_lengths(&mut self.delay_lengths, DEFAULT_SIZE, sample_rate);
+        for (smooth, &len) in self.smooth_delays.iter_mut().zip(self.delay_lengths.iter()) {
+            *smooth = len as f32;
+        }
         for buffer in self.buffers.iter_mut() {
             buffer.fill(0.0);
         }
@@ -568,6 +607,7 @@ impl FdnReverb {
 
         self.smooth_mix = 0.3;
         self.smooth_coeff = 1.0 - (-1.0 / (0.030 * sample_rate)).exp();
+        self.retune_coeff = 1.0 - (-1.0 / (RETUNE_RAMP_SECONDS * sample_rate)).exp();
 
         self.update_absorptive_filters();
     }
@@ -703,6 +743,9 @@ impl FdnReverb {
     /// derived from the *default* size, which is why everything above roughly
     /// 0.75 rendered identically. `fdn_size_automation_rt.rs` guards the first
     /// half of that and `fdn_size_tuning.rs` the second.
+    ///
+    /// The glide in `process` carries the read to the new length smoothly;
+    /// this only retunes the integer targets and the loop gains.
     fn update_delay_lengths(&mut self) {
         fill_delay_lengths(&mut self.delay_lengths, self.size, self.sample_rate);
         self.update_absorptive_filters();
@@ -730,22 +773,45 @@ impl FdnReverb {
 
             // Read from all delay lines (with modulation)
             for ch in 0..n {
-                let base_delay = self.delay_lengths[ch];
                 let buf_len = self.buffers[ch].len();
 
-                // LFO modulation
+                // LFO modulation, truncated to whole samples exactly as
+                // shipped: the offset is at most `MODULATION_HEADROOM`
+                // samples, so a step here is one sample of a modulated read,
+                // not a retune splice, and keeping the read integer whenever
+                // the base delay is keeps the interpolator out of the loop at
+                // rest.
                 let lfo = (self.lfo_phases[ch] * TAU).sin();
                 self.lfo_phases[ch] += self.lfo_freqs[ch] / self.sample_rate;
                 if self.lfo_phases[ch] >= 1.0 {
                     self.lfo_phases[ch] -= 1.0;
                 }
-
                 let mod_offset = (lfo * self.mod_depth * MODULATION_HEADROOM as f32) as isize;
-                let effective_delay =
-                    (base_delay as isize + mod_offset).clamp(1, (buf_len - 1) as isize) as usize;
 
-                let read_pos = (self.write_positions[ch] + buf_len - effective_delay) % buf_len;
-                self.mix_buf[ch] = self.buffers[ch][read_pos];
+                // The base delay glides to the length the current `size`
+                // tuned, and the fractional part of the glide is linearly
+                // interpolated. At rest the glide has snapped onto the integer
+                // length (`frac == 0.0`), so the steady-state read is the
+                // shipped single tap — an always-on interpolator would be a
+                // lowpass inside the loop, compounding per pass over the
+                // whole tail.
+                let smooth = &mut self.smooth_delays[ch];
+                *smooth += self.retune_coeff * (self.delay_lengths[ch] as f32 - *smooth);
+                if (self.delay_lengths[ch] as f32 - *smooth).abs() < 1.0e-3 {
+                    *smooth = self.delay_lengths[ch] as f32;
+                }
+                let effective_delay =
+                    (*smooth + mod_offset as f32).clamp(1.0, (buf_len - 1) as f32);
+                let whole = effective_delay as usize;
+                let frac = effective_delay - whole as f32;
+                let read_pos = (self.write_positions[ch] + buf_len - whole) % buf_len;
+                self.mix_buf[ch] = if frac == 0.0 {
+                    self.buffers[ch][read_pos]
+                } else {
+                    let held = self.buffers[ch][read_pos];
+                    let following = self.buffers[ch][(read_pos + 1) % buf_len];
+                    held + (following - held) * frac
+                };
             }
 
             // Apply absorptive filters, then the per-band decay shaping over
