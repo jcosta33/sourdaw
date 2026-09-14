@@ -1,0 +1,22 @@
+electron/__tests__/commands.spec.ts
+  h_1228e573df1f42 376
+electron/__tests__/security.spec.ts
+  h_1228e573df1f42 76-79
+electron/__tests__/singleInstanceAdmission.spec.ts
+  h_1228e573df1f42 126-129
+electron/commands.ts
+  h_1228e573df1f42 70
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  h_1228e573df1f42 32,558-568,580-584,611-617,619
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "03c177d153af06aaf9c9c9cfa84af77504119d93",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
