@@ -9,12 +9,12 @@
     "performanceCores": "8",
     "efficiencyCores": "4",
     "os": "macOS 26.6.2 (25G83)",
-    "gitSha": "ba53db74a6b50b70b3a69f4a7633bcd0d4b80e84",
+    "gitSha": "5ee9927bf2978c200af34ab8712927470afd9c42",
     "gitBase": "711ac7f30f2d59821e9b600e061b7535072954ea",
     "workingTree": "clean",
     "takenAt": "2026-09-07T18:08:05.060Z"
   },
-  "sourceRevision": "ba53db74a6b50b70b3a69f4a7633bcd0d4b80e84",
+  "sourceRevision": "5ee9927bf2978c200af34ab8712927470afd9c42",
   "sourceDigests": {
     "crates/daw-dsp/Cargo.toml": "52b7d9b8c5f92e6c23188fc98745ceca7d9ad57013df7aaf198539fc905556e2",
     "crates/daw-dsp/benches/quantum.rs": "0de57088cce2094f76dd9d3eb567552692bdc0146eddbc8b5e15c7c8d9b6b873",
