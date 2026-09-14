@@ -1,0 +1,16 @@
+crates/daw-dsp/benches/wasm/deviceRecipes.js
+  h_1228e573df1f42 193-202,225,266-277,283-291,302,346,686,1067,1070
+crates/daw-dsp/benches/wasm/run.mjs
+  h_1228e573df1f42 321,349,361,373-374,422-427,439,442-517,519,526,645,676,705-707,721-726,758-766,794-795
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1484da79e5c958799bfd01c3a51a76ec15a588bb",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
