@@ -1374,6 +1374,11 @@ export function shellPort(
         push: (lane, branch, headSha) => {
             const disabledHooksPath = join(session.configDir, 'disabled-hooks');
             mkdirSync(disabledHooksPath, { recursive: true, mode: 0o700 });
+            const hasAiNotes =
+                spawnSync(executables.git, ['rev-parse', '--verify', 'refs/notes/ai'], {
+                    cwd: lane,
+                    env: session.env,
+                }).status === 0;
             spawnRun(
                 executables.git,
                 gitAuthenticatedArgs(token, session.configDir, [
@@ -1383,6 +1388,7 @@ export function shellPort(
                     '--no-verify',
                     GITHUB_HTTPS_REMOTE,
                     `${headSha}:refs/heads/${branch}`,
+                    ...(hasAiNotes ? ['+refs/notes/ai:refs/notes/ai'] : []),
                 ]),
                 {
                     cwd: lane,
