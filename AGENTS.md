@@ -279,7 +279,9 @@ Keep earlier slices related with `--relates` until closure is warranted, and ver
 end-to-end outcome on the final combined head.
 
 Lanes isolate only working trees. Stash, process table, disk, and author lock are shared;
-global or destructive operations from any lane affect all lanes.
+global or destructive operations from any lane affect all lanes. Lanes running browser verification
+export `SOURDAW_E2E_PORT` with a lane-unique value (derive it from the lane slug), and the
+warmup and ui-scripts identity assertions refuse a dev server belonging to another checkout.
 
 Run `pnpm lane:remove <path>` outside the lane; its author lock remains until removal succeeds.
 Removal requires a clean lane holding exactly one PR's head whose work reached `main`, either
