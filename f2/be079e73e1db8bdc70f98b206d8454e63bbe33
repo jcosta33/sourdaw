@@ -1,0 +1,14 @@
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  h_1228e573df1f42 3781,3783
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f2be079e73e1db8bdc70f98b206d8454e63bbe33",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
