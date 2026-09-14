@@ -28,6 +28,11 @@ import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProvid
 import { isCloudAvailable } from '../../repositories/cloudLlm/isCloudAvailable';
 import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
 import { getLlmEngine } from '../../repositories/webLlm/getLlmEngine';
+import { retireWebLlmEngine } from '../../repositories/webLlm/retireWebLlmEngine';
+import {
+    webLlmRequestCoordinator,
+    WebLlmStreamProviderError,
+} from '../../repositories/webLlm/webLlmRequestCoordinator';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import {
     chatStore,
@@ -59,6 +64,29 @@ type StreamExplainChatResponseInput = {
     providerReceiptIdentity: string;
     providerWorkId: string;
 };
+
+type WebLlmStreamChunk = {
+    choices?: Array<{ delta: { content?: string }; finish_reason?: string | null }>;
+    type?: string;
+    usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        prompt_tokens_details?: { cached_tokens?: number };
+        completion_tokens_details?: { reasoning_tokens?: number };
+    };
+};
+
+function readWebLlmStream(value: unknown): AsyncIterable<WebLlmStreamChunk> {
+    if (
+        typeof value !== 'object' ||
+        value === null ||
+        !(Symbol.asyncIterator in value) ||
+        typeof value[Symbol.asyncIterator] !== 'function'
+    ) {
+        throw new Error('WebLLM did not return a stream');
+    }
+    return value;
+}
 
 function getBackendModelId(backend: RunnableAiBackend): string {
     return backend === 'cloud' ? (getCloudProviderInfo()?.model ?? 'cloud') : getActiveModelId();
@@ -295,48 +323,80 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
             await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
             aborter.signal.throwIfAborted();
             const engine = getLlmEngine()!;
-            function interruptWebLlm(): void {
-                engine.interruptGenerate();
-            }
-            aborter.signal.addEventListener('abort', interruptWebLlm, { once: true });
-
             try {
-                const asyncChunkGenerator = (await engine.chat.completions.create({
-                    messages: providerRequest.messages,
-                    temperature: 0.7,
-                    max_tokens: providerRequest.limits.maxOutputTokens,
-                    stream: true,
-                })) as AsyncIterable<{
-                    choices?: Array<{ delta: { content?: string }; finish_reason?: string | null }>;
-                    type?: string;
-                    usage?: {
-                        prompt_tokens?: number;
-                        completion_tokens?: number;
-                        prompt_tokens_details?: { cached_tokens?: number };
-                        completion_tokens_details?: { reasoning_tokens?: number };
-                    };
-                }>;
                 let sawTerminalReason = false;
                 let sawFinalUsage = false;
-
-                for await (const chunk of asyncChunkGenerator) {
-                    if (aborter.signal.aborted) {
-                        break;
-                    }
-                    if (sawTerminalReason && !Array.isArray(chunk.choices)) {
-                        throw new Error('WebLLM stream returned an event after completion');
-                    }
-                    if (!Array.isArray(chunk.choices)) {
-                        activeProviderStreamWriter.push({
-                            type: 'unknown',
-                            providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
-                        });
-                        continue;
-                    }
-                    const choice = chunk.choices[0];
-                    const deltaDesc = choice?.delta.content;
-                    if (sawTerminalReason) {
-                        if (chunk.choices.length === 0 && chunk.usage && !sawFinalUsage) {
+                await webLlmRequestCoordinator.stream(engine, {
+                    signal: aborter.signal,
+                    create: async () =>
+                        readWebLlmStream(
+                            await engine.chat.completions.create({
+                                messages: providerRequest.messages,
+                                temperature: 0.7,
+                                max_tokens: providerRequest.limits.maxOutputTokens,
+                                stream: true,
+                            })
+                        ),
+                    onProviderFailure: (error) => retireWebLlmEngine(engine, error),
+                    consume: (chunk) => {
+                        if (sawTerminalReason && !Array.isArray(chunk.choices)) {
+                            throw new Error('WebLLM stream returned an event after completion');
+                        }
+                        if (!Array.isArray(chunk.choices)) {
+                            activeProviderStreamWriter.push({
+                                type: 'unknown',
+                                providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
+                            });
+                            return;
+                        }
+                        const choice = chunk.choices[0];
+                        const deltaDesc = choice?.delta.content;
+                        if (sawTerminalReason) {
+                            if (chunk.choices.length === 0 && chunk.usage && !sawFinalUsage) {
+                                activeProviderStreamWriter.push({
+                                    type: 'usage',
+                                    mode: 'final',
+                                    usage: {
+                                        inputTokens: readProviderTokenCount(chunk.usage.prompt_tokens),
+                                        outputTokens: readProviderTokenCount(chunk.usage.completion_tokens),
+                                        cachedInputTokens: readProviderTokenCount(
+                                            chunk.usage.prompt_tokens_details?.cached_tokens
+                                        ),
+                                        reasoningTokens: readProviderTokenCount(
+                                            chunk.usage.completion_tokens_details?.reasoning_tokens
+                                        ),
+                                    },
+                                    provenance: 'provider-reported',
+                                });
+                                sawFinalUsage = true;
+                                return;
+                            }
+                            if (deltaDesc !== undefined) {
+                                throw new Error('WebLLM stream returned text after completion');
+                            }
+                            if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
+                                throw new Error('WebLLM stream returned duplicate completion');
+                            }
+                            throw new Error('WebLLM stream returned an event after completion');
+                        }
+                        if (chunk.choices.length === 0 && !chunk.usage) {
+                            activeProviderStreamWriter.push({
+                                type: 'unknown',
+                                providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
+                            });
+                        }
+                        if (deltaDesc !== undefined) {
+                            activeProviderStreamWriter.push({ type: 'text', mode: 'delta', text: deltaDesc });
+                            const parsed = thinkParser.push(deltaDesc);
+                            updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
+                        }
+                        if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
+                            sawTerminalReason = true;
+                            if (choice.finish_reason !== 'stop') {
+                                webLlmIncompleteReason = choice.finish_reason;
+                            }
+                        }
+                        if (chunk.usage) {
                             activeProviderStreamWriter.push({
                                 type: 'usage',
                                 mode: 'final',
@@ -353,57 +413,17 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
                                 provenance: 'provider-reported',
                             });
                             sawFinalUsage = true;
-                            continue;
                         }
-                        if (deltaDesc !== undefined) {
-                            throw new Error('WebLLM stream returned text after completion');
-                        }
-                        if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
-                            throw new Error('WebLLM stream returned duplicate completion');
-                        }
-                        throw new Error('WebLLM stream returned an event after completion');
-                    }
-                    if (chunk.choices.length === 0 && !chunk.usage) {
-                        activeProviderStreamWriter.push({
-                            type: 'unknown',
-                            providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
-                        });
-                    }
-                    if (deltaDesc !== undefined) {
-                        activeProviderStreamWriter.push({ type: 'text', mode: 'delta', text: deltaDesc });
-                        const parsed = thinkParser.push(deltaDesc);
-                        updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
-                    }
-                    if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
-                        sawTerminalReason = true;
-                        if (choice.finish_reason !== 'stop') {
-                            webLlmIncompleteReason = choice.finish_reason;
-                        }
-                    }
-                    if (chunk.usage) {
-                        activeProviderStreamWriter.push({
-                            type: 'usage',
-                            mode: 'final',
-                            usage: {
-                                inputTokens: readProviderTokenCount(chunk.usage.prompt_tokens),
-                                outputTokens: readProviderTokenCount(chunk.usage.completion_tokens),
-                                cachedInputTokens: readProviderTokenCount(
-                                    chunk.usage.prompt_tokens_details?.cached_tokens
-                                ),
-                                reasoningTokens: readProviderTokenCount(
-                                    chunk.usage.completion_tokens_details?.reasoning_tokens
-                                ),
-                            },
-                            provenance: 'provider-reported',
-                        });
-                        sawFinalUsage = true;
-                    }
-                }
+                    },
+                });
                 if (!aborter.signal.aborted && !sawTerminalReason) {
                     throw new Error('WebLLM chat stream ended unexpectedly');
                 }
-            } finally {
-                aborter.signal.removeEventListener('abort', interruptWebLlm);
+            } catch (error) {
+                if (error instanceof WebLlmStreamProviderError) {
+                    throw error.cause;
+                }
+                throw error;
             }
         }
 
