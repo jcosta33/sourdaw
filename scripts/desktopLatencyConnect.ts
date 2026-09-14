@@ -30,6 +30,7 @@ import { recoverQuarantinedHarnessPlugin } from './desktopLatencyPreferencesReco
 import {
     computeCounterDeltas,
     computeGaugeReadings,
+    isRunningEngineTitle,
     parseEngineTitle,
     parseLatencyMs,
     parseMasterLevelDb,
@@ -537,7 +538,7 @@ async function driveToPlayingProject(
         const deadline = Date.now() + STEP_TIMEOUT_MS;
         while (Date.now() < deadline) {
             const status = await readStatusBar(page);
-            if (status.masterLevelText.trim() !== 'n/a' && status.engineTitle.startsWith('Engine: running')) {
+            if (status.masterLevelText.trim() !== 'n/a' && isRunningEngineTitle(status.engineTitle)) {
                 return;
             }
             await sleep(250);

@@ -20,6 +20,7 @@ import {
     dialog,
     ipcMain,
     Menu,
+    powerSaveBlocker,
     screen,
     session,
     shell,
@@ -64,6 +65,7 @@ import { createNativeMenuProjectStateController } from './nativeMenuProjectState
 import { createPluginCommandAdmission } from './pluginCommandAdmission.js';
 import { createEditorWindow } from './pluginEditorWindow.js';
 import { registerPluginWindowHost, type EditorWindow, type PluginWindowHost } from './pluginGui.js';
+import { createPowerSaveController } from './powerSave.js';
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
 import { createRendererCrashRecovery } from './rendererCrashRecovery.js';
 import { createRendererSessionLifecycle } from './rendererSessionLifecycle.js';
@@ -568,6 +570,12 @@ let nativeHost: NativeHost | undefined;
 let scanSupervisor: ScanSupervisor | undefined;
 const pluginCommandAdmission = createPluginCommandAdmission();
 
+/**
+ * The shell's hold on the machine's wakefulness while its audio is live
+ * (#2165). See `observePowerSaveEngineLifecycle` for how activity is derived.
+ */
+const powerSave = createPowerSaveController({ blocker: powerSaveBlocker });
+
 shellComposition = createProductionShellComposition({
     isMac: process.platform === 'darwin',
     buildMenu: (template) => Menu.buildFromTemplate(template),
@@ -579,6 +587,7 @@ shellComposition = createProductionShellComposition({
     runShutdown: (): Promise<ShutdownOutcome> =>
         runBeforeQuitCascade({
             refusePluginCommands: () => pluginCommandAdmission.refusePluginCommands(),
+            releasePowerSave: powerSave.audioActivityEnded,
             disposeScanSupervisor: () => scanSupervisor?.dispose(),
             host: nativeHost,
             timers: systemTimers,
@@ -696,6 +705,26 @@ const startNativeSurface = (): void => {
         isTrustedFrameUrl: isAllowedFrameUrl,
         createStream: (streamId) => createCommandStream({ streamId, target: rendererTarget, channel: STREAM_CHANNEL }),
         acceptsCommand: pluginCommandAdmission.acceptsCommand,
+        // Power-save policy (#2165), by command name only. The engine has had
+        // no dedicated start command since #1984: `apply_graph_commands` is its
+        // lazy bootstrap, and a batch it fulfilled means a running engine with a
+        // live audio stream — playback, recording, and monitored idle all enter
+        // through it. A fulfilled `retire_native_engine` is the shell-visible
+        // moment that stream is gone. One that answered `rendering` (the engine
+        // came back between a stall reading and the command) still releases:
+        // the next fulfilled batch re-acquires, and erring toward sleep on that
+        // rare recovery path is the safe direction.
+        observeSettlement: (command, settlement) => {
+            if (settlement !== 'fulfilled') {
+                return;
+            }
+            if (command === 'apply_graph_commands') {
+                powerSave.audioActivityStarted();
+            }
+            if (command === 'retire_native_engine') {
+                powerSave.audioActivityEnded();
+            }
+        },
         // Every exposed command except the one whose backend is another
         // process. Its channel is registered by `registerScanCommand`, so the
         // renderer-visible surface is identical either way.

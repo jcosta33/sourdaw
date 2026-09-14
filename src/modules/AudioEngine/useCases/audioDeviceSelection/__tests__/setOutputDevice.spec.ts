@@ -30,6 +30,8 @@ const mocks = vi.hoisted(() => ({
     notifyUser: vi.fn(),
     context: { setSinkId: undefined as SinkIdSetter | string | undefined } satisfies FakeAudioContext,
     setSinkId: vi.fn<SinkIdSetter>(),
+    hasLiveNativeGraphSession: { current: false },
+    audibleNativeCarrier: { current: false },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -46,12 +48,29 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: mocks.notifyUser,
 }));
 
+// #3643 — the fake native backend half of the fixture: the session state the
+// use case reads to know whether an audible native carrier is sounding
+// strips. Getter-backed so a test flips one flag and the next sees it.
+vi.mock('../../livePlayback/hasLiveNativeGraphSession', () => ({
+    hasLiveNativeGraphSession: () => mocks.hasLiveNativeGraphSession.current,
+}));
+
+vi.mock('../../livePlayback/nativeLiveGraphSessionState', () => ({
+    nativeLiveGraphSession: {
+        get audibleCarrier() {
+            return mocks.audibleNativeCarrier.current;
+        },
+    },
+}));
+
 describe('setOutputDevice', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.setSinkId.mockReset();
         mocks.setSinkId.mockResolvedValue(undefined);
         mocks.context.setSinkId = mocks.setSinkId;
+        mocks.hasLiveNativeGraphSession.current = false;
+        mocks.audibleNativeCarrier.current = false;
         audioDeviceStore.set({ selectedOutputId: 'A', selectedInputId: 'input-A' });
     });
 
@@ -146,5 +165,56 @@ describe('setOutputDevice', () => {
         expect(mocks.setSinkId).toHaveBeenNthCalledWith(2, 'C');
         expect(mocks.setSinkId).toHaveBeenNthCalledWith(3, 'D');
         expect(audioDeviceStore.value).toEqual({ selectedOutputId: 'D', selectedInputId: 'input-A' });
+    });
+});
+
+/// #3643 — the audible native engine writes directly to the OS default
+/// output and offers no command to move it, so a selection made while it is
+/// sounding strips cannot be delivered to both carriers. The use case must
+/// refuse the change rather than move the browser sink alone and imply the
+/// whole mix followed — and the refusal must leave the displayed selection
+/// naming the output actually still in force.
+describe('setOutputDevice while the native carrier is audible (#3643)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.setSinkId.mockReset();
+        mocks.setSinkId.mockResolvedValue(undefined);
+        mocks.context.setSinkId = mocks.setSinkId;
+        mocks.hasLiveNativeGraphSession.current = true;
+        mocks.audibleNativeCarrier.current = true;
+        audioDeviceStore.set({ selectedOutputId: 'A', selectedInputId: 'input-A' });
+    });
+
+    it('refuses the change, leaves both carriers and the displayed selection untouched, and says why', async () => {
+        await setOutputDevice('B');
+
+        // The browser sink was never asked: half-applying the selection is the
+        // split-mix defect the refusal exists to prevent.
+        expect(mocks.setSinkId).not.toHaveBeenCalled();
+        // The displayed selection keeps naming the output in force.
+        expect(audioDeviceStore.value).toEqual({ selectedOutputId: 'A', selectedInputId: 'input-A' });
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            expect.stringContaining('native audio engine is audible'),
+            'warning'
+        );
+        expect(mocks.logger.warn).toHaveBeenCalledWith(
+            expect.stringContaining('audible native engine holds the system default output')
+        );
+    });
+
+    it('applies the same selection once the session sounds nothing, and once none is live', async () => {
+        // A live session that is parked or shadowed sounds nothing: Web Audio
+        // is the only audible carrier, so the selection applies.
+        mocks.audibleNativeCarrier.current = false;
+        await setOutputDevice('B');
+        expect(mocks.setSinkId).toHaveBeenCalledWith('B');
+        expect(audioDeviceStore.value).toEqual({ selectedOutputId: 'B', selectedInputId: 'input-A' });
+
+        // And with no session at all, the pre-existing behaviour stands.
+        mocks.hasLiveNativeGraphSession.current = false;
+        await setOutputDevice('C');
+        expect(mocks.setSinkId).toHaveBeenCalledWith('C');
+        expect(audioDeviceStore.value).toEqual({ selectedOutputId: 'C', selectedInputId: 'input-A' });
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 });

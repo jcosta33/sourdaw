@@ -1112,6 +1112,27 @@ pub async fn get_crumbs_position(instance_id: String, state: &CrumbsState) -> Re
     Ok(instance.metering.playback_position.load(Ordering::Relaxed))
 }
 
+/// Get how many sample writes the instance's pool has refused because the
+/// fixed sample budget (`MAX_POOL_SAMPLES`) was exhausted. Non-zero means
+/// sample loads are silently failing; the caller surfaces it as a warning.
+pub async fn get_crumbs_dropped_sample_writes(
+    instance_id: String,
+    state: &CrumbsState,
+) -> Result<u32, String> {
+    let instances = state
+        .instances
+        .lock()
+        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
+    let instance = instances
+        .get(&instance_id)
+        .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
+
+    Ok(instance
+        .metering
+        .dropped_sample_writes
+        .load(std::sync::atomic::Ordering::Relaxed))
+}
+
 /// Detect optimal loop points using zero-crossing analysis.
 pub async fn detect_smart_loop_points(
     instance_id: String,

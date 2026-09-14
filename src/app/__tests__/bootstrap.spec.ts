@@ -594,6 +594,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     reconcileVcaRuntimeGain: reconcileVcaRuntimeGainMock,
     stopPlayback: noop,
     repairRuntimeGraphFromProject: repairRuntimeGraphFromProjectMock,
+    readNativeEngineCursorBeats: noop,
 }));
 
 vi.mock('#/modules/Tuner/stores', () => ({ updateTunerTelemetry: updateTunerTelemetryMock }));

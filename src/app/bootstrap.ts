@@ -161,6 +161,7 @@ import {
     setToasterEventBus,
     setToasterGrooveAssignmentExecutor,
 } from '#/modules/Toaster/useCases';
+import { setGestureClockSource } from '#/modules/Transport/stores';
 import {
     getTransportState,
     createMusicalPositionProjector,
@@ -168,6 +169,7 @@ import {
     projectPpqEndpoints,
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
+    readNativeEngineCursorBeats,
     resolveTempoAtBeat,
     setStopPlaybackCallback,
     reconcileVcaRuntimeGain,
@@ -403,6 +405,15 @@ setAutomationParameterRangeResolver(getAutomationParameterRange);
 setAutomationRecordingDependencies({
     getAudioContext,
     getCompensationDelay,
+});
+
+// Gesture timestamping reads the audio clock at the event's own instant and
+// follows the native engine's cursor while that engine is the audible
+// transport; Transport's stores stay leaf modules, so the reads are injected
+// here (see `gestureClockSource.ts`).
+setGestureClockSource({
+    getAudioTimeSeconds: () => getAudioContext().currentTime,
+    readNativeCursorBeats: () => readNativeEngineCursorBeats(),
 });
 
 setPitchEditDependencies({

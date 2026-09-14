@@ -232,6 +232,7 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
             playDuration: playback.durationSeconds,
             playbackRate: playback.playbackRate,
             clipGainValue: playback.gain,
+            envelope: playback.envelope,
             // A fade with no absolute time on it is the anti-click micro-fade;
             // the scheduler reads an absent time as exactly that, so the
             // contract's optional time passes straight through.

@@ -105,11 +105,15 @@ describe('setTrackGainPan helpers', () => {
     describe('maybeRecordAutomation', () => {
         const deps = {
             getTransportValue: vi.fn(),
+            getGestureBeat: vi.fn(),
             getTrackById: vi.fn(),
             recordAutomationValue: vi.fn(),
         };
 
-        beforeEach(() => vi.clearAllMocks());
+        beforeEach(() => {
+            vi.clearAllMocks();
+            deps.getGestureBeat.mockReturnValue(0);
+        });
 
         it('bails if not playing', () => {
             deps.getTransportValue.mockReturnValue({ isPlaying: false });
@@ -117,13 +121,16 @@ describe('setTrackGainPan helpers', () => {
             expect(deps.recordAutomationValue).not.toHaveBeenCalled();
         });
 
-        it('records if playing and track is in a recording mode', () => {
+        it('records at the gesture beat if playing and track is in a recording mode', () => {
+            // The store keeps the beat playback started at (4); the transport
+            // has rolled on (6.5). The sample must land at 6.5 (#3799).
             deps.getTransportValue.mockReturnValue({ isPlaying: true, playheadPosition: 4 });
+            deps.getGestureBeat.mockReturnValue(6.5);
             deps.getTrackById.mockReturnValue({ id: 't1', automationMode: 'touch' });
 
             maybeRecordAutomation(deps, 't1', 'gain', 0.9);
 
-            expect(deps.recordAutomationValue).toHaveBeenCalledWith('t1', 'gain', 0.9, 4);
+            expect(deps.recordAutomationValue).toHaveBeenCalledWith('t1', 'gain', 0.9, 6.5);
         });
 
         it('bails if track automation mode is read', () => {

@@ -1,4 +1,4 @@
-import { type Track } from '#/modules/Arrangement/stores';
+import { getGainEnvelopeSeries, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
@@ -790,7 +790,9 @@ export async function scheduleTrackClips({
 
             // The loop, trim, stretch and fade arithmetic — extracted so the
             // native export path (#2225) maps the same projection into
-            // `schedule-clip` commands rather than a second copy of it.
+            // `schedule-clip` commands rather than a second copy of it. The
+            // envelope reader rides along here (#2865): this render applies
+            // the curve, the native one gates the clip out instead.
             const playbacks = projectOfflineAudioClipPlaybacks({
                 clip,
                 bufferDurationSeconds: buffer.duration,
@@ -800,6 +802,7 @@ export async function scheduleTrackClips({
                 compensationDelay,
                 projectBeatToSeconds,
                 resolveTempoAtBeat: resolveClipTempo,
+                readGainEnvelopeSeries: getGainEnvelopeSeries,
             });
             for (const playback of playbacks) {
                 checkCallerAbort();
@@ -812,6 +815,7 @@ export async function scheduleTrackClips({
                     playDuration: playback.playDuration,
                     playbackRate: playback.playbackRate,
                     clipGainValue: playback.clipGainValue,
+                    envelope: playback.envelope,
                     fadeIn: playback.fadeIn,
                     fadeOut: playback.fadeOut,
                     microFadeSeconds: MICRO_FADE_SECONDS,

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
         transportStoreValue,
         getTrackById: vi.fn(),
         recordAutomationValue: vi.fn(),
+        captureGestureBeat: vi.fn(),
     };
 });
 
@@ -40,6 +41,9 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
             return mocks.transportStoreValue;
         },
     },
+    // The recording beat comes from the moving playback clock, never from the
+    // transport store's discrete `playheadPosition` (#3799).
+    captureGestureBeat: mocks.captureGestureBeat,
 }));
 
 vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
@@ -52,6 +56,7 @@ describe('setTrackPan', () => {
         vi.clearAllMocks();
         mocks.getAllTracks.mockReturnValue([]);
         mocks.transportStoreValue = { isPlaying: false };
+        mocks.captureGestureBeat.mockReturnValue(0);
     });
 
     it('updates track pan and notifies engine', () => {
@@ -82,13 +87,16 @@ describe('setTrackPan', () => {
      * `TrackNode` clamps to ±1 — a hard-panned square wave with a step at the
      * zero crossing — and drew the curve 50x outside its own grid.
      */
-    it('records pan into the lane in the lane’s own -1..1 units', () => {
+    it('records pan into the lane in the lane’s own -1..1 units, at the moving playhead', () => {
         mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
+        // Playback started at 10; the transport has rolled to 13 while the
+        // store kept the start beat — the sample must land at 13 (#3799).
         mocks.transportStoreValue = { isPlaying: true, playheadPosition: 10 };
+        mocks.captureGestureBeat.mockReturnValue(13);
 
         setTrackPan('t1', -10);
 
-        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'pan', -0.2, 10);
+        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'pan', -0.2, 13);
     });
 
     it('records a full-scale sweep inside the lane bounds and round-trips through playback', () => {
@@ -112,12 +120,13 @@ describe('setTrackPan', () => {
         // with the engine call rather than with persistence.
         mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
         mocks.transportStoreValue = { isPlaying: true, playheadPosition: 10 };
+        mocks.captureGestureBeat.mockReturnValue(13);
 
         setTrackPan('t1', -10, true);
 
         expect(mocks.engineSetTrackPan).toHaveBeenCalledWith('t1', -10);
         expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'pan', -0.2, 10);
+        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'pan', -0.2, 13);
     });
 
     it('writes engine and store but records nothing when the edit suppresses the recording policy', () => {

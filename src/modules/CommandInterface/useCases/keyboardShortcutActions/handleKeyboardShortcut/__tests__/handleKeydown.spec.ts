@@ -25,7 +25,7 @@ import {
     openExportDialog,
     openPreferencesDialog,
     setEditingTool,
-    showAutomationPanel,
+    showDevicePanel,
     startToolSwap,
     toggleCommandPalette,
     toggleMixer,
@@ -142,7 +142,7 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     openExportDialog: vi.fn(),
     openPreferencesDialog: vi.fn(),
     setEditingTool: vi.fn(),
-    showAutomationPanel: vi.fn(),
+    showDevicePanel: vi.fn(),
     startToolSwap: vi.fn(),
     toggleCommandPalette: vi.fn(),
     toggleMixer: vi.fn(),
@@ -661,7 +661,7 @@ describe('handleKeydown', () => {
                 },
                 {
                     callbackId: 'showAutomationPanel',
-                    assertDispatched: () => expect(showAutomationPanel).toHaveBeenCalledTimes(1),
+                    assertDispatched: () => expect(showDevicePanel).toHaveBeenCalledTimes(1),
                 },
                 {
                     callbackId: 'openExportDialog',

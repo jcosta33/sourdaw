@@ -137,6 +137,9 @@ export type CommandStream = {
     readonly close: () => void;
 };
 
+/** How one routed command settled, for shell policy that watches by name. */
+export type CommandSettlement = 'fulfilled' | 'rejected';
+
 export type RegisterCommandRouterInput = {
     readonly ipcMain: IpcMainLike;
     /** Resolved lazily: the host is built once the app is ready, after registration. */
@@ -149,6 +152,15 @@ export type RegisterCommandRouterInput = {
     readonly commands?: readonly string[];
     /** Optional admission gate; quit closes plugin runtime commands before shutdown. */
     readonly acceptsCommand?: (command: string) => boolean;
+    /**
+     * Optional settlement observation, for main-process policy that follows
+     * command lifecycle — the power-save blocker over the native engine is the
+     * caller today. Named per command, and deliberately blind: it learns that a
+     * command settled, never its arguments or its result, so the router's
+     * opacity contract survives intact and no second definition of any
+     * command's payload grows beside the addon's.
+     */
+    readonly observeSettlement?: (command: string, settlement: CommandSettlement) => void;
 };
 
 export const registerCommandRouter = ({
@@ -158,6 +170,7 @@ export const registerCommandRouter = ({
     createStream,
     commands = EXPOSED_COMMANDS,
     acceptsCommand,
+    observeSettlement,
 }: RegisterCommandRouterInput): void => {
     for (const command of commands) {
         const method = addonMethodName(command);
@@ -166,24 +179,45 @@ export const registerCommandRouter = ({
         // frame that is not the app has no business reaching a native command,
         // whichever command it named.
         const handler = withTrustedSender(command, isTrustedFrameUrl, async (args, streamId) => {
+            // The settlement observation wraps the body rather than living in
+            // it: a frame the origin guard refuses never happened as far as
+            // shell policy is concerned, and a thrown observation must not be
+            // able to turn a settled command into a rejected one.
+            const observe = (settlement: CommandSettlement): void => {
+                try {
+                    observeSettlement?.(command, settlement);
+                } catch {
+                    // Policy observation is never load-bearing for the command.
+                }
+            };
             if (acceptsCommand !== undefined && !acceptsCommand(command)) {
+                observe('rejected');
                 throw new Error(`${command} rejected: the application is shutting down`);
             }
             const host = native();
             if (host === undefined) {
+                observe('rejected');
                 throw new Error(`${command} rejected: the native host is not available`);
             }
             const implementation = host[method];
             if (typeof implementation !== 'function') {
+                observe('rejected');
                 throw new TypeError(`The native addon does not implement ${method}`);
             }
 
             const callArguments = toNativeArguments(args);
             if (streamId === undefined) {
-                const plain: unknown = await Reflect.apply(implementation, host, callArguments);
-                return plain;
+                try {
+                    const plain: unknown = await Reflect.apply(implementation, host, callArguments);
+                    observe('fulfilled');
+                    return plain;
+                } catch (error) {
+                    observe('rejected');
+                    throw error;
+                }
             }
             if (typeof streamId !== 'string') {
+                observe('rejected');
                 throw new TypeError(`${command} was given a non-string stream id`);
             }
 
@@ -195,7 +229,11 @@ export const registerCommandRouter = ({
                 if (failure !== undefined) {
                     throw new Error(`${command} failed: ${failure}`);
                 }
+                observe('fulfilled');
                 return result;
+            } catch (error) {
+                observe('rejected');
+                throw error;
             } finally {
                 stream.close();
             }
