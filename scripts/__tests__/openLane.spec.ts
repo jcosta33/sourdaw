@@ -388,9 +388,11 @@ describe('lane open', () => {
 
         // `runCli` reports a spawn that threw as exit 1, so the recording is asserted first: it
         // names the command that got out, where the exit code only says something went wrong.
+        // Mixed-case argv is deliberate: the exact normalized echo and ledger entry catch a runCli
+        // that hands raw argv to openLane instead of the parser's normalized token.
         let code = -1;
         const spawned = spawnRecorder.record((recorded) => {
-            code = runCli(['cleanup', '--model', 'glm-5.3'], fakeCli(port), '/repo');
+            code = runCli(['cleanup', '--model', 'GLM-5.3-Flash'], fakeCli(port), '/repo');
             return recorded;
         });
 
@@ -400,10 +402,10 @@ describe('lane open', () => {
             'mkdir:/repo/.agents/worktrees/agent--cleanup',
             'fetch',
             'add:/repo/.agents/worktrees/agent--cleanup:agent/cleanup',
-            'model:agent/cleanup:glm-5.3',
+            'model:agent/cleanup:glm-5.3-flash',
             'lock:/repo/.agents/worktrees/agent--cleanup',
         ]);
-        expect(logs).toEqual(['authoring model: glm-5.3', '/repo/.agents/worktrees/agent--cleanup']);
+        expect(logs).toEqual(['authoring model: glm-5.3-flash', '/repo/.agents/worktrees/agent--cleanup']);
     });
 
     /**
