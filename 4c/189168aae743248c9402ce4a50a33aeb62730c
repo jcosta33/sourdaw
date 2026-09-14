@@ -1,0 +1,30 @@
+.agents/ui-scripts/utils.ts
+  h_1228e573df1f42 1-2,5-13,19-28
+AGENTS.md
+  h_1228e573df1f42 282-284
+playwright.config.ts
+  h_1228e573df1f42 5-12,34,40,44-45
+scripts/__tests__/e2eServerIdentity.spec.ts
+  h_1228e573df1f42 1,2,3-181,182,183-185,186,187,188-227,228-288
+scripts/e2eServerIdentity.ts
+  h_1228e573df1f42 1-71,72-75,76-78,79,80-83,84-96,97-99,100,101,102,103-152
+tests/e2e/firstPaintWarmup.ts
+  h_1228e573df1f42 1-2,5-6,24-27,36-37
+vite.config.ts
+  h_1228e573df1f42 11-13,17-33,63
+.agents/skills/playwright-ui-bridge/SKILL.md
+  h_1228e573df1f42 33
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  h_1228e573df1f42 1-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4c189168aae743248c9402ce4a50a33aeb62730c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
