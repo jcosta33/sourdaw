@@ -740,6 +740,46 @@ describe('lane publish', () => {
         }
     });
 
+    it('pushes refs/notes/ai along with branch commits when refs/notes/ai exists', () => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-lane-notes-'));
+        const primary = join(fixtureRoot, 'primary');
+        const lane = join(fixtureRoot, 'lane');
+        const remote = join(fixtureRoot, 'remote.git');
+        const systemGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+        let session: GhSession | undefined;
+
+        try {
+            mkdirSync(primary, { recursive: true });
+            fixtureGit(primary, ['init', '-b', 'main']);
+            fixtureGit(primary, ['config', 'user.name', 'Fixture']);
+            fixtureGit(primary, ['config', 'user.email', 'fixture@example.com']);
+            writeFileSync(join(primary, 'base.txt'), 'base\n');
+            fixtureGit(primary, ['add', 'base.txt']);
+            fixtureGit(primary, ['commit', '--no-gpg-sign', '-m', 'test: fixture base']);
+            fixtureGit(primary, ['worktree', 'add', '-b', 'agent/12/notes-proof', lane]);
+
+            writeFileSync(join(lane, 'note.txt'), 'notes\n');
+            fixtureGit(lane, ['add', 'note.txt']);
+            fixtureGit(lane, ['commit', '--no-gpg-sign', '-m', 'test: commit in lane']);
+
+            const headSha = fixtureGit(lane, ['rev-parse', 'HEAD']);
+            fixtureGit(lane, ['notes', '--ref=ai', 'add', '-m', 'ai authorship note', headSha]);
+            const noteSha = fixtureGit(lane, ['rev-parse', 'refs/notes/ai']);
+
+            execFileSync(systemGit, ['init', '--bare', remote], { cwd: fixtureRoot, encoding: 'utf8' });
+            fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
+            session = createGhSession('ghs_hook_marker', { PATH: process.env.PATH });
+
+            shellPort(session, lane, primary, { git: systemGit, gh: 'gh' }).push(lane, 'agent/12/notes-proof', headSha);
+
+            expect(fixtureGit(remote, ['rev-parse', 'refs/heads/agent/12/notes-proof'])).toBe(headSha);
+            expect(fixtureGit(remote, ['rev-parse', 'refs/notes/ai'])).toBe(noteSha);
+        } finally {
+            session?.dispose();
+            rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
     it('pushes without force, opens one PR, and prints the number', () => {
         const { port, calls, logs } = fakePort();
 

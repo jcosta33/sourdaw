@@ -762,6 +762,7 @@ type FakeInput = {
     persistedReceiptAuthority?: PersistedDeliveryReceiptAuthority;
     deliveryReceiptProof?: DeliveryReceiptProof;
     mergedPrimaryAfterMerge?: Partial<PullRequestSnapshot>;
+    syncAuthorshipNotes?: DeliveryPort['syncAuthorshipNotes'];
 };
 
 type DeliveryReceiptComment = {
@@ -1120,6 +1121,7 @@ function fakePort(input: FakeInput = {}) {
             persistedReceiptAuthority = undefined;
         },
         log: (message) => calls.push(message),
+        ...(input.syncAuthorshipNotes !== undefined ? { syncAuthorshipNotes: input.syncAuthorshipNotes } : {}),
     };
     const tracker: TrackerCompletionPort = {
         complete: (issueNumber: number) => {
@@ -1339,6 +1341,48 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('complete:2372');
         expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('merge:42:head'));
         expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('retarget:43:main'));
+    });
+
+    it('invokes syncAuthorshipNotes with merge commit and branch refs when mergeCommit is present on merged snapshot', () => {
+        const syncCalls: Array<{
+            mergeCommitSha: string;
+            headSha: string;
+            baseSha: string;
+            headRef: string;
+            baseRef: string;
+        }> = [];
+        const { port, tracker } = fakePort({
+            mergedPrimaryAfterMerge: {
+                mergeCommit: { oid: 'merge-commit-sha-777' },
+            },
+            syncAuthorshipNotes: (args) => {
+                syncCalls.push(args);
+            },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(syncCalls).toEqual([
+            {
+                mergeCommitSha: 'merge-commit-sha-777',
+                headSha: 'head',
+                baseSha: 'base',
+                headRef: 'feat/gate',
+                baseRef: 'main',
+            },
+        ]);
+    });
+
+    it('succeeds delivery normally when syncAuthorshipNotes is not defined on the port', () => {
+        const { port, calls, tracker } = fakePort({
+            mergedPrimaryAfterMerge: {
+                mergeCommit: { oid: 'merge-commit-sha-777' },
+            },
+        });
+        expect(port.syncAuthorshipNotes).toBeUndefined();
+
+        expect(() => deliverPullRequest(42, port, tracker)).not.toThrow();
+        expect(calls).toContain('merge:42:head');
     });
 
     it('retargets late dependents opened against the delivered branch immediately before squash merge', () => {
@@ -11698,12 +11742,148 @@ describe('delivery shell boundary', () => {
                 '--prune',
                 GITHUB_HTTPS_REMOTE,
                 '+refs/heads/*:refs/remotes/origin/*',
+                '+refs/notes/ai:refs/notes/ai',
             ]);
             expect(args.join('\0')).not.toContain('ghs_minted');
             expect(args).not.toContain('--force');
             expect(args).not.toContain('+refs/heads/main:refs/remotes/origin/main');
         } finally {
             rmSync(helperDir, { recursive: true, force: true });
+        }
+    });
+
+    it('fetches origin heads and authorship notes when unauthenticated', () => {
+        const runs: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: () => '',
+            run: (command, args) => runs.push({ command, args }),
+        });
+        port.fetch();
+        expect(runs).toEqual([
+            {
+                command: 'git',
+                args: ['fetch', '--prune', 'origin', '+refs/notes/ai:refs/notes/ai'],
+            },
+        ]);
+    });
+
+    it('syncs authorship notes unauthenticated by merging and pushing refs/notes/ai', () => {
+        const runs: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: () => '',
+            run: (command, args) => runs.push({ command, args }),
+        });
+
+        port.syncAuthorshipNotes?.({
+            mergeCommitSha: 'merge-sha-123',
+            headSha: 'head-sha-456',
+            baseSha: 'base-sha-789',
+            headRef: 'feat/test',
+            baseRef: 'main',
+        });
+
+        expect(runs).toEqual([
+            {
+                command: 'git-ai',
+                args: [
+                    'ci',
+                    'local',
+                    'merge',
+                    '--merge-commit-sha',
+                    'merge-sha-123',
+                    '--base-ref',
+                    'main',
+                    '--base-sha',
+                    'base-sha-789',
+                    '--head-ref',
+                    'feat/test',
+                    '--head-sha',
+                    'head-sha-456',
+                    '--skip-fetch',
+                ],
+            },
+            {
+                command: 'git',
+                args: ['push', 'origin', 'refs/notes/ai:refs/notes/ai'],
+            },
+        ]);
+    });
+
+    it('syncs authorship notes authenticated using credential helper', () => {
+        const helperDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-helper-'));
+        const runs: Array<{ command: string; args: string[] }> = [];
+        try {
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => '',
+                    run: (command, args) => runs.push({ command, args }),
+                },
+                { gitToken: 'ghs_notes_token', helperDir }
+            );
+
+            port.syncAuthorshipNotes?.({
+                mergeCommitSha: 'merge-sha-123',
+                headSha: 'head-sha-456',
+                baseSha: 'base-sha-789',
+                headRef: 'feat/test',
+                baseRef: 'main',
+            });
+
+            expect(runs).toHaveLength(2);
+            expect(runs[0]).toEqual({
+                command: 'git-ai',
+                args: [
+                    'ci',
+                    'local',
+                    'merge',
+                    '--merge-commit-sha',
+                    'merge-sha-123',
+                    '--base-ref',
+                    'main',
+                    '--base-sha',
+                    'base-sha-789',
+                    '--head-ref',
+                    'feat/test',
+                    '--head-sha',
+                    'head-sha-456',
+                    '--skip-fetch',
+                ],
+            });
+            expect(runs[1]?.command).toBe('git');
+            const pushArgs = runs[1]?.args ?? [];
+            expect(pushArgs.slice(4)).toEqual(['push', GITHUB_HTTPS_REMOTE, 'refs/notes/ai:refs/notes/ai']);
+            expect(pushArgs.join('\0')).not.toContain('ghs_notes_token');
+        } finally {
+            rmSync(helperDir, { recursive: true, force: true });
+        }
+    });
+
+    it('swallows errors and logs a warning when authorship note sync throws, without failing delivery', () => {
+        const warnings: string[] = [];
+        const originalWarn = console.warn;
+        console.warn = (msg: string) => warnings.push(msg);
+        try {
+            const port = shellPort('jcosta33/sourdaw', {
+                capture: () => '',
+                run: () => {
+                    throw new Error('git-ai command failed');
+                },
+            });
+
+            expect(() =>
+                port.syncAuthorshipNotes?.({
+                    mergeCommitSha: 'merge-sha-123',
+                    headSha: 'head-sha-456',
+                    baseSha: 'base-sha-789',
+                    headRef: 'feat/test',
+                    baseRef: 'main',
+                })
+            ).not.toThrow();
+
+            expect(warnings).toEqual(['warning: git-ai authorship sync skipped: git-ai command failed']);
+        } finally {
+            console.warn = originalWarn;
         }
     });
 

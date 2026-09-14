@@ -75,6 +75,7 @@ export type PullRequestSnapshot = {
     additions: number;
     deletions: number;
     mergedByActorNodeId: string | null;
+    readonly mergeCommit?: { readonly oid: string } | null;
 };
 
 export type { ReviewState } from './pullRequestReviewState.ts';
@@ -116,6 +117,13 @@ export type DeliveryPort = CheckEvidencePort & {
         expectedCurrent?: DeliveryReceiptAuthorityExpectation
     ) => void;
     clearDeliveryReceiptAuthority: (number: number, expectedCurrent?: DeliveryReceiptAuthorityExpectation) => void;
+    readonly syncAuthorshipNotes?: (input: {
+        readonly mergeCommitSha: string;
+        readonly headSha: string;
+        readonly baseSha: string;
+        readonly headRef: string;
+        readonly baseRef: string;
+    }) => void;
     log: (message: string) => void;
 };
 
@@ -2921,6 +2929,15 @@ function deliverPullRequestWithCiAdmission(
         finalDependents.map((dependent) => dependent.number)
     );
     completeIssueAfterMerge(number, finalReceiptPayload.closingIssue, tracker);
+    if (mergedSnapshot.mergeCommit?.oid) {
+        port.syncAuthorshipNotes?.({
+            mergeCommitSha: mergedSnapshot.mergeCommit.oid,
+            headSha: finalSnapshot.headRefOid,
+            baseSha: finalSnapshot.baseRefOid,
+            headRef: finalSnapshot.headRefName,
+            baseRef: finalSnapshot.baseRefName,
+        });
+    }
     persistTerminalDeliveryReceiptAuthority(
         number,
         finalReceipt,
@@ -3486,6 +3503,7 @@ export function shellPort(
         'additions',
         'deletions',
         'mergedBy',
+        'mergeCommit',
     ].join(',');
     const readRollupPage = (number: number, headRefOid: string, cursor: string | null): RollupPage =>
         parseRollupPage(
@@ -3517,11 +3535,12 @@ export function shellPort(
                         '--prune',
                         GITHUB_HTTPS_REMOTE,
                         '+refs/heads/*:refs/remotes/origin/*',
+                        '+refs/notes/ai:refs/notes/ai',
                     ])
                 );
                 return;
             }
-            shell.run('git', ['fetch', '--prune', 'origin']);
+            shell.run('git', ['fetch', '--prune', 'origin', '+refs/notes/ai:refs/notes/ai']);
         },
         pullRequest: (number) => {
             const snapshot = toPullRequestSnapshot(
@@ -3663,6 +3682,44 @@ export function shellPort(
             writeDeliveryReceiptAuthority(primaryRoot, number, authority, expectedCurrent),
         clearDeliveryReceiptAuthority: (number, expectedCurrent) =>
             clearDeliveryReceiptAuthority(primaryRoot, number, expectedCurrent),
+        syncAuthorshipNotes: ({ mergeCommitSha, headSha, baseSha, headRef, baseRef }) => {
+            try {
+                shell.run('git-ai', [
+                    'ci',
+                    'local',
+                    'merge',
+                    '--merge-commit-sha',
+                    mergeCommitSha,
+                    '--base-ref',
+                    baseRef,
+                    '--base-sha',
+                    baseSha,
+                    '--head-ref',
+                    headRef,
+                    '--head-sha',
+                    headSha,
+                    '--skip-fetch',
+                ]);
+                if (options.gitToken) {
+                    const helperDir =
+                        options.helperDir ?? fail('authenticated git push requires a credential helper directory');
+                    shell.run(
+                        'git',
+                        gitAuthenticatedArgs(options.gitToken, helperDir, [
+                            'push',
+                            GITHUB_HTTPS_REMOTE,
+                            'refs/notes/ai:refs/notes/ai',
+                        ])
+                    );
+                } else {
+                    shell.run('git', ['push', 'origin', 'refs/notes/ai:refs/notes/ai']);
+                }
+            } catch (error) {
+                console.warn(
+                    `warning: git-ai authorship sync skipped: ${error instanceof Error ? error.message : String(error)}`
+                );
+            }
+        },
         log: (message) => console.log(message),
     };
 }
