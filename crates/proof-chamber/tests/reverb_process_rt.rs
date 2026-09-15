@@ -112,8 +112,8 @@ fn guarded_run(instance: &mut ProofChamberInstance) -> Vec<f32> {
 }
 
 /// As above, but with the warm-up length under the caller's control. Reverse
-/// fills an entire buffer before it replays a sample of it, so eight blocks of
-/// warm-up leaves its wet path still empty when the guard opens.
+/// delays by one full reverse-time and then plays its grain, so the wet path
+/// needs two reverse-times of warm-up before the guarded blocks carry signal.
 fn guarded_run_after(instance: &mut ProofChamberInstance, warmup_blocks: usize) -> Vec<f32> {
     for block in 0..warmup_blocks {
         let (l, r) = block_at(block * BLOCK);
@@ -194,7 +194,7 @@ fn reverse_process_does_not_allocate() {
     let mut instance = configured(ALGORITHM_REVERSE);
     instance.set_param("mix", 1.0);
     instance.set_param("size", 0.0);
-    let out = guarded_run_after(&mut instance, 200);
+    let out = guarded_run_after(&mut instance, 400);
     assert_audible(&out, "reverse");
 }
 
@@ -203,15 +203,15 @@ fn reverse_process_does_not_allocate() {
 /// one whose allocation a 48 kHz-only guard cannot speak for.
 ///
 /// The warm-up is longer for the same reason the twin above needs one at all:
-/// the first buffer swap is `reverse_len` frames in, and at 0.5 s that is
-/// 96 000 frames here rather than 24 000, so the guarded blocks are only
-/// replaying once the warm-up has carried the instance past it.
+/// the reverse delay plus grain span is `2 × reverse_len` frames, and at
+/// 0.5 s that is 192 000 frames here rather than 48 000, so the guarded
+/// blocks are only replaying once the warm-up has carried the instance past it.
 #[test]
 fn reverse_process_does_not_allocate_at_192_khz() {
     let mut instance = configured_at(192_000.0, ALGORITHM_REVERSE);
     instance.set_param("mix", 1.0);
     instance.set_param("size", 0.0);
-    let out = guarded_run_after(&mut instance, 800);
+    let out = guarded_run_after(&mut instance, 1550);
     assert_audible(&out, "reverse at 192 kHz");
 }
 
