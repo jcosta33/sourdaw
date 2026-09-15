@@ -55,7 +55,7 @@
 import { deriveVcaMultiplier, getVcaGroupsState, type Device, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
-import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
 import { type OfflineDeviceAutomationLaw } from '../../repositories/offlineScheduler/automationScheduling';
@@ -288,7 +288,7 @@ export function readLiveAutomationWrites(input: ReadLiveAutomationWritesInput): 
         return NO_AUTOMATION;
     }
 
-    const defaultTempo = transportStore.value?.tempo ?? 120;
+    const defaultTempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
     const changes = tempoMapStore.value?.changes ?? [];
 
     const projectBeatToSeconds = (beat: number): number =>

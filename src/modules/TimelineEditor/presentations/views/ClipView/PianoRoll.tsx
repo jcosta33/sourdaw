@@ -38,6 +38,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { setProjectKeyRoot, setProjectScaleName } from '#/modules/Project/useCases';
+import { DEFAULT_NOTE_VELOCITY, HIGH_RESOLUTION_MAX, MAX_MIDI_DATA_7BIT, PITCH_BEND_CENTER } from '#/utils/midiData';
 import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
 
@@ -530,7 +531,7 @@ export const PianoRoll = ({
                                     scrollRef={expressionScrollRef}
                                     getValue={(node) => {
                                         if (activeExpressionLane === 'velocity') {
-                                            return node.velocity ?? 100;
+                                            return node.velocity ?? DEFAULT_NOTE_VELOCITY;
                                         }
                                         if (activeExpressionLane === 'pressure') {
                                             return node.pressure ?? 0;
@@ -539,7 +540,10 @@ export const PianoRoll = ({
                                             return node.slide ?? 0;
                                         }
                                         if (activeExpressionLane === 'pitchBend') {
-                                            return (((node.pitchBend ?? 0) + 8192) / 16383) * 127;
+                                            return (
+                                                (((node.pitchBend ?? 0) + PITCH_BEND_CENTER) / HIGH_RESOLUTION_MAX) *
+                                                MAX_MIDI_DATA_7BIT
+                                            );
                                         } // Scale to 0-127
                                         return 0;
                                     }}
@@ -554,7 +558,12 @@ export const PianoRoll = ({
                                             setNoteSlide(cid, nid, val);
                                         }
                                         if (activeExpressionLane === 'pitchBend') {
-                                            setNotePitchBend(cid, nid, Math.round((val / 127) * 16383) - 8192);
+                                            setNotePitchBend(
+                                                cid,
+                                                nid,
+                                                Math.round((val / MAX_MIDI_DATA_7BIT) * HIGH_RESOLUTION_MAX) -
+                                                    PITCH_BEND_CENTER
+                                            );
                                         }
                                     }}
                                     label={activeExpressionLane}

@@ -1,7 +1,7 @@
 import { samplesToBeat } from '../models/TempoMap';
 
 import { tempoMapStore } from './tempoMapStore';
-import { transportStore } from './transportStore';
+import { DEFAULT_TEMPO_BPM, transportStore } from './transportStore';
 
 type ReadBeatAtSamplesInput = {
     /** Absolute timeline samples from the start of the timeline. */
@@ -22,5 +22,10 @@ type ReadBeatAtSamplesInput = {
  * no tempo change.
  */
 export function readBeatAtSamples({ samples, sampleRate }: ReadBeatAtSamplesInput): number {
-    return samplesToBeat(tempoMapStore.value?.changes ?? [], samples, transportStore.value?.tempo ?? 120, sampleRate);
+    return samplesToBeat(
+        tempoMapStore.value?.changes ?? [],
+        samples,
+        transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM,
+        sampleRate
+    );
 }

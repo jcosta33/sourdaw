@@ -1,6 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import { getTransportState } from '../../../repositories/transport/getTransportState';
+import { DEFAULT_TEMPO_BPM } from '../../../stores/transportStore';
 
 export function estimateOnsetsFromClips(): number[] {
     const state = trackStore.value;
@@ -9,7 +10,7 @@ export function estimateOnsetsFromClips(): number[] {
     }
 
     const transport = getTransportState();
-    const currentTempo = transport?.tempo ?? 120;
+    const currentTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
     const beatDuration = 60 / currentTempo;
 
     const onsets: number[] = [];

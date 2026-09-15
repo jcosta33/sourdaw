@@ -2,7 +2,7 @@ import { detectTempo } from '#/modules/AudioAnalysis/useCases';
 import { decodeAudioFile, releasePreviewAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { pickFiles } from '#/modules/Project/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { type StemImportRole } from '#/utils/handlerContract';
 
 import { preparedStemImportCleanup } from './discardPreparedStemImportResources';
@@ -74,7 +74,7 @@ export async function prepareStemImport(
         throw new Error('The selected stem preparation exceeds the user budget.');
     }
 
-    const projectTempo = transportStore.value?.tempo ?? 120;
+    const projectTempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
     if (!Number.isFinite(projectTempo) || projectTempo < 20 || projectTempo > 999) {
         throw new Error('The current project tempo is unavailable for stem alignment.');
     }

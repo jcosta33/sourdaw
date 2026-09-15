@@ -17,7 +17,7 @@ import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
 import { getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 
 import { type PadState, withActivePatternId } from '../../models/ToasterKit';
 import {
@@ -270,7 +270,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     }
 
     function triggerPad(index: number): void {
-        const bpm = transportStore.value?.tempo ?? 120;
+        const bpm = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
         if (isRepeatActive) {
             if (is16Levels) {
                 if (sixteenLevelsTarget === 'velocity') {
@@ -699,7 +699,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                         return;
                                     }
 
-                                    startSequencer(deviceId, transportStore.value?.tempo ?? 120);
+                                    startSequencer(deviceId, transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM);
                                 }}
                             >
                                 {isPlaying ? <Square className="size-3.5" /> : <Play className="size-3.5" />}

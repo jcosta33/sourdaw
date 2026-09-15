@@ -1,4 +1,5 @@
 import { clipSelectionStore, markerStore, trackStore } from '#/modules/Arrangement/stores';
+import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
 
 import { CURRENT_PROJECT_VERSION } from '../models/ProjectData';
 import {
@@ -273,7 +274,7 @@ function createProjectSummary(snapshot: SemanticProjectIndexSnapshot, warnings: 
         kind: 'project-summary',
         name: project?.name ?? 'Untitled Project',
         revision: snapshot.revision,
-        tempo: transport?.tempo ?? 120,
+        tempo: transport?.tempo ?? DEFAULT_TEMPO_BPM,
         meter: transport?.meter ?? [4, 4],
         sections: boundedValues(
             snapshot.sections.filter((entity) => entity.kind === 'section'),

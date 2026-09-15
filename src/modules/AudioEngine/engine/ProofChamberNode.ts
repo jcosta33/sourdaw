@@ -9,6 +9,8 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '
 import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS } from '../models/ProofChamberAutomationParams';
 import proofChamberProcessorUrl from '../services/proofChamberProcessor.ts?worker&url';
 
+import { STEREO_CHANNEL_COUNT } from './constants';
+
 const DEFAULT_WASM_URL = '/wasm/proof-chamber/proof_chamber_bg.wasm';
 
 /**
@@ -64,8 +66,8 @@ export async function createProofChamberNode(
         node = new AudioWorkletNode(ctx, 'proof-chamber-processor', {
             numberOfInputs: 1,
             numberOfOutputs: 1,
-            outputChannelCount: [2],
-            channelCount: 2,
+            outputChannelCount: [STEREO_CHANNEL_COUNT],
+            channelCount: STEREO_CHANNEL_COUNT,
             channelCountMode: 'explicit',
             processorOptions: { wasmModule: wasmLease.module },
         });

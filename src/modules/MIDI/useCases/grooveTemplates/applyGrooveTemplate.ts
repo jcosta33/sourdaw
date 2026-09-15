@@ -1,3 +1,5 @@
+import { MAX_MIDI_DATA_7BIT } from '#/utils/midiData';
+
 import {
     STRAIGHT_GROOVE_TEMPLATE_ID,
     getGrooveSubdivisionSlotCount,
@@ -43,7 +45,7 @@ export function applyGrooveTemplate<Event extends GrooveProjectableEvent>({
             startBeat: event.startBeat + slot.timingOffset * stepBeats * clampedAmount,
             velocity: Math.max(
                 1,
-                Math.min(127, Math.round(event.velocity * (1 + slot.dynamicsOffset * clampedAmount)))
+                Math.min(MAX_MIDI_DATA_7BIT, Math.round(event.velocity * (1 + slot.dynamicsOffset * clampedAmount)))
             ),
         };
     });

@@ -44,6 +44,7 @@ import {
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { clampMidiData7 } from '#/utils/midiData';
 import { quantizeMidiNoteToScale } from '#/utils/Music/MusicalScale';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
@@ -1001,7 +1002,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     const copies = batchAddMidiNotes(
                         cid,
                         srcNotes.map((node) => ({
-                            pitch: Math.max(0, Math.min(127, node.pitch + preview.pitchDelta)),
+                            pitch: clampMidiData7(node.pitch + preview.pitchDelta),
                             startBeat: Math.max(0, node.startBeat + preview.beatDelta),
                             duration: node.duration,
                             velocity: node.velocity,
@@ -1049,7 +1050,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     clipId: param.clipId,
                     beat: Math.max(0, param.beat + preview.beatDelta),
                     // R-A12: snap final pitch to scale when constrain is active
-                    pitch: snapToScalePitch(Math.max(0, Math.min(127, param.pitch + preview.pitchDelta))),
+                    pitch: snapToScalePitch(clampMidiData7(param.pitch + preview.pitchDelta)),
                 }));
                 for (const param of newPositions) {
                     moveMidiNote(param.clipId, param.id, param.pitch, param.beat);
@@ -1573,11 +1574,11 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 const after = selectedWithClip.map(({ note: node, ownerClipId: oid }) => ({
                     id: node.id,
                     clipId: oid,
-                    pitch: Math.max(0, Math.min(127, node.pitch + delta)),
+                    pitch: clampMidiData7(node.pitch + delta),
                     beat: node.startBeat,
                 }));
                 for (const { note: node, ownerClipId: oid } of selectedWithClip) {
-                    moveMidiNote(oid, node.id, Math.max(0, Math.min(127, node.pitch + delta)), node.startBeat);
+                    moveMidiNote(oid, node.id, clampMidiData7(node.pitch + delta), node.startBeat);
                 }
                 pushUndoEntry(
                     `Transpose ${delta > 0 ? '+' : ''}${delta} semitone${Math.abs(delta) !== 1 ? 's' : ''}`,

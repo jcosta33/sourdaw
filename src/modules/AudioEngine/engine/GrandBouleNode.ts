@@ -39,6 +39,7 @@ import {
 import grandBouleOfflineProcessorUrl from '../worklets/grandBouleOfflineProcessor.ts?worker&url';
 import grandBouleProcessorUrl from '../worklets/grandBouleProcessor.ts?worker&url';
 
+import { STEREO_CHANNEL_COUNT } from './constants';
 import { dropoutCounters } from './dropoutCounter';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 
@@ -207,8 +208,8 @@ function createWorkerRingTransport({ ctx, wasmModule, onFault }: CreateGrandBoul
     const node = new AudioWorkletNode(ctx, 'grand-boule-processor', {
         numberOfInputs: 0,
         numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
+        outputChannelCount: [STEREO_CHANNEL_COUNT],
+        channelCount: STEREO_CHANNEL_COUNT,
         channelCountMode: 'explicit',
     });
 
@@ -382,8 +383,8 @@ function createInlineWorkletTransport({
     const node = new AudioWorkletNode(ctx, 'grand-boule-offline-processor', {
         numberOfInputs: 0,
         numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
+        outputChannelCount: [STEREO_CHANNEL_COUNT],
+        channelCount: STEREO_CHANNEL_COUNT,
         channelCountMode: 'explicit',
         processorOptions: { wasmModule },
     });

@@ -1,10 +1,5 @@
-import {
-    sanitize_tempo_map_state,
-    MIN_TEMPO_MAP_TEMPO,
-    MAX_TEMPO_MAP_TEMPO,
-    type TempoChange,
-    type TempoMapStoreState,
-} from '../../stores/tempoMapStore';
+import { MAX_TEMPO_MAP_TEMPO, MIN_TEMPO_MAP_TEMPO, type TempoChange } from '../../models/TempoMap';
+import { sanitize_tempo_map_state, type TempoMapStoreState } from '../../stores/tempoMapStore';
 import {
     sanitize_time_signature_map_state,
     type TimeSignatureChange,

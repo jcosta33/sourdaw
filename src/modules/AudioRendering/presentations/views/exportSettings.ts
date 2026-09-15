@@ -1,6 +1,9 @@
 import { createStore } from '#/infra/store/createStore';
 import { createPlainJsonLocalStorage } from '#/infra/store/storage/createPlainJsonLocalStorage';
 import { type Store } from '#/infra/store/types';
+import { R128_CEILING_DB_TP, R128_TARGET_LUFS } from '#/utils/audioLevelLaw';
+
+export { R128_CEILING_DB_TP, R128_TARGET_LUFS };
 
 export type ExportFormat = 'wav' | 'mp3' | 'flac';
 export type Mp3BitRate = 96 | 128 | 192 | 320;
@@ -22,12 +25,6 @@ export type ExportDither = 'random' | 'seeded' | 'none';
  */
 export type ExportNormalization = 'off' | 'r128';
 
-/** EBU R 128 broadcast target; also the common streaming delivery level. */
-export const R128_TARGET_LUFS = -14;
-
-/** EBU R 128 recommends -1 dBTP for lossy delivery. */
-export const R128_CEILING_DB_TP = -1;
-
 export type ExportSettings = {
     formats: ExportFormat[];
     sampleRate: number;
@@ -44,6 +41,13 @@ export type ExportSettings = {
  */
 export const MAX_MANUAL_TAIL_SECONDS = 60;
 
+/**
+ * Sample rates an export may run at. The dialog's offered list and the
+ * settings validator both read this — one list, so the dialog can never offer
+ * a rate the validator rejects.
+ */
+export const EXPORT_SAMPLE_RATES: readonly number[] = [44100, 48000, 88200, 96000];
+
 const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
 const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
     formats: ['wav'],
@@ -55,7 +59,6 @@ const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
 };
 
 const validExportFormats: readonly string[] = ['wav', 'mp3', 'flac'];
-const validSampleRates: readonly number[] = [44100, 48000, 88200, 96000];
 const validBitDepths: readonly number[] = [16, 24, 32];
 
 type ReadNumberInput = {
@@ -121,7 +124,7 @@ function sanitizeExportSettings(value: unknown): ExportSettings {
         formats: readFormats(value),
         sampleRate: readNumber({
             value: value.sampleRate,
-            allowed: validSampleRates,
+            allowed: EXPORT_SAMPLE_RATES,
             fallback: DEFAULT_EXPORT_SETTINGS.sampleRate,
         }),
         bitDepth: readNumber({

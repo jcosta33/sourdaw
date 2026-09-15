@@ -267,6 +267,15 @@ const isMut = track.status === 'muted';
 const calcFade = (d: number) => d * 1.2;
 ```
 
+### Constants
+
+- Name constants in `SCREAMING_SNAKE_CASE`, exported or private. When a value encodes a contract or a tuning decision, carry a short doc comment stating the rationale — the reason a bound exists is what stops the next reader from "fixing" it.
+- Express fixed collections as `as const` arrays or frozen objects. Compute a derived constant from the constants it derives from; never restate the arithmetic at a second site.
+- Keep module-private constants at the top of the owning file. Add a dedicated constants file only when several files of one feature must agree on the values — not for a value one file uses.
+- Cross-module constants live in a `src/utils` law file named for the rule it encodes (for example `audioLevelLaw.ts`, `midiNoteBatchLimits.ts`); UI-shared constants live in `src/components`; IPC channel names are declared only in `electron/channels.ts`.
+- Worklets stay isolated: a constant a worklet needs is restated in the worklet file with a pointer comment naming the app-side owner, and a parity spec pins the two equal. TS↔Rust wire values have no shared mechanism — each side owns one constant, each carries a lockstep comment cross-referencing the other side, and a parity spec covers the pair where feasible.
+- Never re-hardcode a literal an exported constant already owns — import the constant. If two files must agree on a value, they share one constant; a second copy is a defect even while the copies still agree.
+
 ### Component and class names
 
 - Components and classes must be `PascalCase`.
