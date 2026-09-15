@@ -29,7 +29,7 @@ ast-grep generates candidates; the repository's own checks enforce architecture.
 
 ### 2. Run mode only — rewrite modes are forbidden
 
-Every search is `pnpm exec ast-grep run --lang <ts|tsx|rust> -p '<pattern>' <paths>`. Rewrite and update-all modes are forbidden: repository policy bans bulk edits, and the Claude Code permission denies in `.claude/settings.json` already block them by name. Never pass `--rewrite` or `--update-all` to ast-grep.
+Every search is `pnpm exec ast-grep run --lang <ts|tsx|rust> -p '<pattern>' <paths>`. Rewrite and update-all modes are forbidden: repository policy bans bulk edits, and the Claude Code permission denies in `.claude/settings.json` block them for the direct and `pnpm exec`-prefixed spellings of both `ast-grep` and `sg`, long and short flags alike. Never pass `--rewrite` or `--update-all` to ast-grep.
 
 ### 3. Practical rules
 
