@@ -159,13 +159,19 @@ export type MetadataEditPlan = { addLabels: string[]; milestoneTitle?: string; a
 
 export const MODEL_LABEL_COLOR = '8250df';
 
+/**
+ * The label name is the bare model token; no name prefix marks it as authorship. The fence that
+ * keeps these labels out of inheritance and `--label` is the label description (`Authored by
+ * <model>`), not the name.
+ */
 export function modelLabelName(model: string): string {
-    return `model:${model}`;
+    return model;
 }
 
 /**
  * `--force` turns create into create-or-update, so this is the idempotent way to make sure the
- * label exists before any pull-request write references it.
+ * label exists before any pull-request write references it. The shared color keeps the bare-name
+ * authorship labels visually grouped now that no `model:` prefix does it.
  */
 export function ensureModelLabelArgs(model: string): string[] {
     return [
@@ -199,6 +205,30 @@ function labelNamesFromRow(labels: unknown[] | undefined): string[] {
     });
 }
 
+/** One repository label as the tracker reports it: its canonical name and, when present, its description. */
+export type LabelRow = { name: string; description?: string };
+
+const AUTHORED_BY_DESCRIPTION_PREFIX = 'Authored by ';
+
+/** An authorship label is exactly one whose description begins `Authored by `. */
+function isAuthorshipLabel(label: LabelRow): boolean {
+    return label.description !== undefined && label.description.startsWith(AUTHORED_BY_DESCRIPTION_PREFIX);
+}
+
+function labelRowsFromRow(labels: unknown[] | undefined): LabelRow[] {
+    return (labels ?? []).flatMap((label) => {
+        if (typeof label === 'string') {
+            return [{ name: label }];
+        }
+        if (typeof label === 'object' && label !== null && 'name' in label && typeof label.name === 'string') {
+            const description =
+                'description' in label && typeof label.description === 'string' ? label.description : undefined;
+            return [{ name: label.name, ...(description === undefined ? {} : { description }) }];
+        }
+        return [];
+    });
+}
+
 export type IssueTrackerRow = {
     labels?: unknown[];
     milestone?: { title?: unknown } | null;
@@ -208,7 +238,7 @@ export type IssueTrackerRow = {
 export function trackerMetadataFromIssueRow(row: IssueTrackerRow): {
     milestoneTitle?: string;
     projectTitles: string[];
-    labelNames: string[];
+    labels: LabelRow[];
 } {
     const milestoneTitle = titleOf(row.milestone);
     const projectTitles = (row.projectItems ?? []).flatMap((item) => {
@@ -218,7 +248,7 @@ export function trackerMetadataFromIssueRow(row: IssueTrackerRow): {
     return {
         ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
         projectTitles: [...new Set(projectTitles)],
-        labelNames: labelNamesFromRow(row.labels),
+        labels: labelRowsFromRow(row.labels),
     };
 }
 
@@ -291,25 +321,42 @@ export function canonicalProjectTitle(title: string, knownTitles: string[]): str
     return canonical;
 }
 
-export function canonicalLabelName(name: string, knownNames: string[]): string {
-    const canonical = knownNames.find((known) => known.toLowerCase() === name.toLowerCase());
+/**
+ * Resolves one `--label` value against the live label list case-insensitively, so the edit
+ * carries the canonical spelling the tracker stores. A value that resolves to an authorship
+ * label — its description begins `Authored by ` — refuses: the authorship label is `--model`'s
+ * to set, and a flag spelling of it could only contradict the recorded model.
+ */
+export function canonicalLabelName(name: string, knownLabels: LabelRow[]): string {
+    const canonical = knownLabels.find((known) => known.name.toLowerCase() === name.toLowerCase());
     if (canonical === undefined) {
         fail(`--label "${name}" matches no label in gh label list for ${REQUIRED_REPOSITORY}`);
     }
-    return canonical;
+    if (isAuthorshipLabel(canonical)) {
+        fail(
+            `--label "${name}" names an authoring model; the authoring model is set with ` +
+                '--model <model>, never --label'
+        );
+    }
+    return canonical.name;
 }
 
 /**
  * `priority:` and `status:` are issue-workflow namespaces — the boards' status follows issue
- * labels — so they never describe a pull request and are dropped from inheritance, and so is
- * `model:`, which belongs to the authoring-model mechanism alone: it is set from the recorded or
- * flagged model, never inherited from an issue. Triage labels need no exclusion: they are never
- * inherited, because they do not appear on issues.
+ * labels — so they never describe a pull request and are dropped from inheritance, and so are
+ * authorship labels: the authorship namespace is no longer a name prefix but the `Authored by `
+ * description, which `ensureModelLabel` is the only writer of, so such a label belongs to the
+ * authoring-model mechanism alone — set from the recorded or flagged model, never inherited from
+ * an issue. Triage labels need no exclusion: they are never inherited, because they do not appear
+ * on issues.
  */
-export function descriptiveLabelNames(labelNames: string[]): string[] {
-    return labelNames.filter(
-        (name) => !name.startsWith('priority:') && !name.startsWith('status:') && !name.startsWith('model:')
-    );
+export function descriptiveLabelNames(labels: LabelRow[]): string[] {
+    return labels
+        .filter(
+            (label) =>
+                !isAuthorshipLabel(label) && !label.name.startsWith('priority:') && !label.name.startsWith('status:')
+        )
+        .map((label) => label.name);
 }
 
 const SUBJECT_TYPE_LABELS: Readonly<Record<string, string>> = {
@@ -329,16 +376,19 @@ export function derivedLabelFromSubject(subject: string): string | undefined {
     return type === undefined ? undefined : SUBJECT_TYPE_LABELS[type];
 }
 
-/** gh's default page is 30; the repository's label set is far below this limit. */
+/**
+ * gh's default page is 30; the repository's label set is far below this limit. The description
+ * rides along because it is what the authorship fence reads.
+ */
 export function labelListArgs(): string[] {
-    return ['label', 'list', '--limit', '200', '--json', 'name'];
+    return ['label', 'list', '--limit', '200', '--json', 'name,description'];
 }
 
-export function labelNamesFromRows(rows: unknown): string[] {
+export function labelRowsFromListing(rows: unknown): LabelRow[] {
     if (!Array.isArray(rows)) {
         fail('repository label list returned malformed data');
     }
-    return labelNamesFromRow(rows);
+    return labelRowsFromRow(rows);
 }
 
 /**
@@ -399,11 +449,11 @@ export type PublishLanePort = {
     readIssueTrackerMetadata: (issue: number) => {
         milestoneTitle?: string;
         projectTitles: string[];
-        labelNames: string[];
+        labels: LabelRow[];
     };
     openMilestoneTitles: () => string[];
     knownProjectTitles: () => string[];
-    knownLabelNames: () => string[];
+    knownLabels: () => LabelRow[];
     readPullRequestMetadata: (number: number) => PullRequestMetadata;
     applyPullRequestMetadata: (number: number, plan: MetadataEditPlan) => void;
     log: (message: string) => void;
@@ -917,10 +967,11 @@ export function publishLane(
  * with neither fails closed rather than pushing an unattributed pull request. Milestone and
  * projects come from the lane's issue, and flag values override them per field after validation
  * against live tracker state — left empty rather than forced onto the pull request. Descriptive
- * labels come from the same issue read (minus the issue-workflow namespaces), or on an issueless
- * lane from the conventional subject, and `--label` adds more by live canonical name; unlike
- * `model:*` they are never created on demand. The model record is written only after every
- * validation here has passed, so a refused run leaves the shared git config untouched.
+ * labels come from the same issue read (minus the issue-workflow namespaces and authorship
+ * labels), or on an issueless lane from the conventional subject, and `--label` adds more by
+ * live canonical name; unlike authorship labels they are never created on demand. The model
+ * record is written only after every validation here has passed, so a refused run leaves the
+ * shared git config untouched.
  *
  * `subject` is the pull request's effective title: the title frozen on an existing pull request
  * (this script never retitles, so a follow-up commit's subject must not re-derive the label), or
@@ -968,16 +1019,17 @@ function resolvePublishMetadata(
         flags?.projects,
         port
     );
-    const descriptive = resolveDescriptiveLabels(inherited?.labelNames, subject, flags?.labels, port);
+    const descriptive = resolveDescriptiveLabels(inherited?.labels, subject, flags?.labels, port);
     if (flaggedModel !== undefined) {
         port.saveAuthorModel(lane.branch, model);
     }
     return {
         model,
         // The Set is structural defense-in-depth, not an independently observable fence: with the
-        // inheritance filter and the flag refusal above, no descriptive source can produce a
-        // `model:` name, so this dedupe backs those two fences rather than gating anything a test
-        // could reach on its own — which is why no dedicated test pins it.
+        // inheritance filter and the flag refusal above, no descriptive source can produce an
+        // authorship label (one whose description begins `Authored by `, the only spelling
+        // `ensureModelLabel` writes), so this dedupe backs those two fences rather than gating
+        // anything a test could reach on its own — which is why no dedicated test pins it.
         labels: [...new Set([modelLabelName(model), ...descriptive])],
         ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
         projectTitles,
@@ -986,23 +1038,23 @@ function resolvePublishMetadata(
 
 /**
  * Descriptive labels from three sources, unioned and deduped: the bound issue's labels minus the
- * issue-workflow and `model:` namespaces, one type label derived from the pull request's effective
- * title on an issueless lane, and canonicalized `--label` flags. Only `model:*` labels are ever
- * created on demand; descriptive labels must already exist — the live-list validation enforces it
- * for flags, and the other two sources carry names the repository already issued (the issue wears
- * its labels, and the derived three are repository staples). A `model:`-prefixed `--label` is
- * refused outright: the namespace is `--model`'s to set, and a flag spelling of it could only
- * contradict the recorded model.
+ * issue-workflow namespaces and authorship labels, one type label derived from the pull request's
+ * effective title on an issueless lane, and canonicalized `--label` flags. Only authorship labels
+ * are ever created on demand; descriptive labels must already exist — the live-list validation
+ * enforces it for flags, and the other two sources carry names the repository already issued (the
+ * issue wears its labels, and the derived three are repository staples). A `--label` that
+ * resolves to an authorship label refuses: the authorship label is `--model`'s to set, and a
+ * flag spelling of it could only contradict the recorded model.
  */
 function resolveDescriptiveLabels(
-    inheritedLabelNames: string[] | undefined,
+    inheritedLabels: LabelRow[] | undefined,
     subject: string | undefined,
     flaggedLabels: string[] | undefined,
     port: PublishLanePort
 ): string[] {
     const carried: string[] = [];
-    if (inheritedLabelNames !== undefined) {
-        carried.push(...descriptiveLabelNames(inheritedLabelNames));
+    if (inheritedLabels !== undefined) {
+        carried.push(...descriptiveLabelNames(inheritedLabels));
     } else if (subject !== undefined) {
         const derived = derivedLabelFromSubject(subject);
         if (derived !== undefined) {
@@ -1012,19 +1064,8 @@ function resolveDescriptiveLabels(
     if (flaggedLabels === undefined) {
         return [...new Set(carried)];
     }
-    for (const name of flaggedLabels) {
-        // Lowercased like the canonicalizer below resolves names: a case-variant spelling of the
-        // namespace must refuse here, or it would canonicalize into the reserved label and put a
-        // second, contradictory authorship marker on the pull request.
-        if (name.toLowerCase().startsWith('model:')) {
-            fail(
-                `--label "${name}" uses the reserved model: namespace; the authoring model is set with ` +
-                    '--model <model>, never --label'
-            );
-        }
-    }
-    const knownNames = port.knownLabelNames();
-    const canonical = flaggedLabels.map((name) => canonicalLabelName(name, knownNames));
+    const knownLabels = port.knownLabels();
+    const canonical = flaggedLabels.map((name) => canonicalLabelName(name, knownLabels));
     return [...new Set([...carried, ...canonical])];
 }
 
@@ -1496,7 +1537,7 @@ export function shellPort(
             openMilestoneTitlesFromRows(parseJson<unknown>(gh(openMilestoneTitlesArgs()), 'open milestone titles')),
         knownProjectTitles: () =>
             projectTitlesFromListing(parseJson<unknown>(gh(projectListArgs(repositoryOwner)), 'project list')),
-        knownLabelNames: () => labelNamesFromRows(parseJson<unknown>(gh(labelListArgs()), 'repository label list')),
+        knownLabels: () => labelRowsFromListing(parseJson<unknown>(gh(labelListArgs()), 'repository label list')),
         readPullRequestMetadata: (number) =>
             pullRequestMetadataFromRow(
                 parseJson<PullRequestMetadataRow>(
