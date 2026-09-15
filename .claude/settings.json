@@ -89,6 +89,8 @@
       "Bash(*ast-grep*--update-all*)",
       "Bash(*ast-grep* -U*)",
       "Bash(*ast-grep* -r*)",
+      "Bash(*ast-grep* --interactive*)",
+      "Bash(*ast-grep* -i*)",
       "Bash(sg *)",
       "Bash(pnpm sg *)",
       "Bash(pnpm exec sg *)",
