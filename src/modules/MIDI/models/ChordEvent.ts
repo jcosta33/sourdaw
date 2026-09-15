@@ -1,3 +1,5 @@
+import { NOTE_NAMES } from '#/utils/noteNames';
+
 import { type ChordType } from './ChordTypes';
 
 export type ChordEvent = {
@@ -8,7 +10,7 @@ export type ChordEvent = {
     duration: number; // in beats
 };
 
-export const ROOT_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
+export const ROOT_NAMES = NOTE_NAMES;
 
 export function formatChordName(event: ChordEvent): string {
     const rootName = ROOT_NAMES[((event.root % 12) + 12) % 12] ?? 'C';

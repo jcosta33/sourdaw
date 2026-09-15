@@ -5,6 +5,7 @@ import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { resolveDroppedSampleFile } from '#/modules/SampleLibrary/useCases';
 import { isAudioFile } from '#/utils/audioFileExtensions';
+import { AI_RENDER_DRAG_MIME_TYPE, PLUGIN_DRAG_MIME_TYPE, SAMPLE_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { trackStore } from '../../stores/trackStore';
@@ -151,7 +152,7 @@ export const useTimelineFileDrop = ({
 
         // AI-rendered audio clips already have their AudioBuffer cached — just create
         // a clip pointing at the bufferId. No file decoding needed.
-        const aiRenderData = event.dataTransfer.getData('application/x-sourdaw-ai-render');
+        const aiRenderData = event.dataTransfer.getData(AI_RENDER_DRAG_MIME_TYPE);
         if (aiRenderData) {
             let stagedAsset: ClipAudioAssetStaging | null = null;
             try {
@@ -210,7 +211,7 @@ export const useTimelineFileDrop = ({
             return;
         }
 
-        const sampleData = event.dataTransfer.getData('application/x-sourdaw-sample');
+        const sampleData = event.dataTransfer.getData(SAMPLE_DRAG_MIME_TYPE);
         if (sampleData) {
             setIsImporting(true);
             let sampleCommitted = false;
@@ -384,7 +385,7 @@ export const useTimelineFileDrop = ({
             return;
         }
 
-        const pluginData = event.dataTransfer.getData('application/x-sourdaw-plugin');
+        const pluginData = event.dataTransfer.getData(PLUGIN_DRAG_MIME_TYPE);
         if (pluginData) {
             try {
                 const plugin = parsePlugin(pluginData);

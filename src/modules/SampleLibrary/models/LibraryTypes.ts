@@ -5,6 +5,8 @@
  * derived metadata, and user tags — never duplicate audio files.
  */
 
+import { NOTE_NAMES } from '#/utils/noteNames';
+
 // ── File provider abstraction ────────────────────────────────────────────────
 
 /**
@@ -110,7 +112,7 @@ export function toBpm(value: number): Bpm | undefined {
 }
 
 /** The twelve pitch classes; the only valid roots for a musical key. */
-export const PITCH_CLASSES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
+export const PITCH_CLASSES = NOTE_NAMES;
 export type Pitch = (typeof PITCH_CLASSES)[number];
 
 /** A key is either major or minor. */

@@ -2,6 +2,16 @@ import { logger } from '#/infra/logger/appLogger';
 import { clampMidiData7, clampVelocity } from '#/utils/midiData';
 
 import { type MidiNote, type MidiCC } from '../models/MidiNote';
+import {
+    MIDI_FILE_EXTENSION,
+    MIDI_FILE_MIME_TYPE,
+    SMF_CONTROL_CHANGE_STATUS,
+    SMF_META_END_OF_TRACK,
+    SMF_META_EVENT,
+    SMF_META_TRACK_NAME,
+    SMF_NOTE_OFF_STATUS,
+    SMF_NOTE_ON_STATUS,
+} from '../models/SmfConstants';
 import { downloadBlob } from '../repositories/downloadFile';
 
 const TICKS_PER_BEAT = 480;
@@ -50,7 +60,7 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
     const nameBytes = writeString(trackName);
     events.push({
         tick: 0,
-        data: [0xff, 0x03, ...writeVarLen(nameBytes.length), ...nameBytes],
+        data: [SMF_META_EVENT, SMF_META_TRACK_NAME, ...writeVarLen(nameBytes.length), ...nameBytes],
     });
 
     for (const note of notes) {
@@ -60,15 +70,15 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
         const pitch = clampMidiData7(note.pitch);
         const channel = (note.channel ?? 0) & 0x0f;
 
-        events.push({ tick: startTick, data: [0x90 | channel, pitch, vel] });
-        events.push({ tick: endTick, data: [0x80 | channel, pitch, 0] });
+        events.push({ tick: startTick, data: [SMF_NOTE_ON_STATUS | channel, pitch, vel] });
+        events.push({ tick: endTick, data: [SMF_NOTE_OFF_STATUS | channel, pitch, 0] });
     }
 
     for (const cc of ccs) {
         const tick = Math.round((clipStartBeat + cc.beat) * TICKS_PER_BEAT);
         const controller = clampMidiData7(cc.controller);
         const value = clampMidiData7(Math.round(cc.value));
-        events.push({ tick, data: [0xb0 | ((cc.channel ?? 0) & 0x0f), controller, value] });
+        events.push({ tick, data: [SMF_CONTROL_CHANGE_STATUS | ((cc.channel ?? 0) & 0x0f), controller, value] });
     }
 
     events.sort((alpha, b) => alpha.tick - b.tick);
@@ -91,7 +101,7 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
     for (let index = 0; index < endDelta.length; index++) {
         trackBytes.push(endDelta[index]!);
     }
-    trackBytes.push(0xff, 0x2f, 0x00);
+    trackBytes.push(SMF_META_EVENT, SMF_META_END_OF_TRACK, 0x00);
 
     return trackBytes;
 }
@@ -132,5 +142,5 @@ export function downloadMidiFile({ clipName, clipStartBeat, notes, ccs }: Downlo
     bytes.set(trackData, offset);
 
     const sanitizedName = clipName.replaceAll(/[^a-zA-Z0-9_-]/g, '_').slice(0, 200);
-    downloadBlob(bytes, `${sanitizedName}.mid`, 'audio/midi');
+    downloadBlob(bytes, `${sanitizedName}${MIDI_FILE_EXTENSION}`, MIDI_FILE_MIME_TYPE);
 }
