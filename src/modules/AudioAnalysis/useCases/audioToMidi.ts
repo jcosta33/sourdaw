@@ -2,6 +2,7 @@ import { addClip, getAllTracks } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { addMidiNote } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
+import { frequencyToMidiNote } from '#/utils/pitch';
 
 import { detectOnsets, type DetectedOnset } from './detectOnsets';
 import { resolveMidiTrackId } from './resolveMidiTrackId';
@@ -69,7 +70,7 @@ function estimatePitch(data: Float32Array, start: number, length: number, sample
 }
 
 function freqToMidiPitch(freq: number): number {
-    return Math.round(69 + 12 * Math.log2(freq / 440));
+    return Math.round(frequencyToMidiNote(freq));
 }
 
 function detectPitchForOnsets(onsets: DetectedOnset[], buffer: AudioBuffer, targetPitch: number): DetectedOnset[] {

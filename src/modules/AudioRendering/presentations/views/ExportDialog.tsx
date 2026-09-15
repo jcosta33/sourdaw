@@ -50,6 +50,7 @@ import { renderToClip } from '../../useCases/renderToClip';
 
 import { deriveStemFileBaseNames } from './deriveStemFileBaseNames';
 import {
+    EXPORT_SAMPLE_RATES,
     loadExportSettings,
     MAX_MANUAL_TAIL_SECONDS,
     R128_CEILING_DB_TP,
@@ -753,7 +754,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         { value: 'flac', label: 'FLAC', desc: 'Gluten-free lossless' },
     ];
 
-    const sampleRates = [44100, 48000, 88200, 96000];
+    const sampleRates = EXPORT_SAMPLE_RATES;
     // Only depths the selected formats can actually deliver are offered (OE-8).
     const { availableBitDepths, bitDepth: effectiveBitDepth } = resolveExportBitDepths({
         formats,

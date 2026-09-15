@@ -35,6 +35,14 @@ export const MIN_TEMPO_MAP_TEMPO = 20;
 export const MAX_TEMPO_MAP_TEMPO = 999;
 
 /**
+ * Two beats closer together than this are the same beat. Every tempo- and
+ * meter-change "replace or insert at this beat?" decision compares through
+ * this epsilon so adding, updating, and removing a change at one beat all
+ * agree on what "at this beat" means.
+ */
+export const BEAT_EPSILON = 1e-6;
+
+/**
  * Beat-ordered view of a change list, keyed by the list's own identity.
  *
  * Every query below needs the changes in beat order, and the scheduler asks for

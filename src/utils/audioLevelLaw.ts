@@ -228,3 +228,14 @@ export function fromStereoPan(nodePan: number): number {
  * stores, and merging them would silently make that impossible.
  */
 export const METER_FLOOR_DB = -60;
+
+/**
+ * EBU R 128 broadcast loudness target, also the common streaming delivery
+ * level. The export normalizer aims here, the LUFS meter's over-target color
+ * fires against it, and a reference-mix analysis defaults to it — one number,
+ * so the meter does not flag a level the exporter just produced.
+ */
+export const R128_TARGET_LUFS = -14;
+
+/** EBU R 128 recommends −1 dBTP true peak for lossy delivery. */
+export const R128_CEILING_DB_TP = -1;
