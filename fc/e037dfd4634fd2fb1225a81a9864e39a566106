@@ -1,0 +1,16 @@
+crates/proof-chamber/tests/reverb_process_rt.rs
+  h_1228e573df1f42 115-116,197,206-208,214
+release/open-source-inventory.json
+  h_1228e573df1f42 1337,1341,1722
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fce037dfd4634fd2fb1225a81a9864e39a566106",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
