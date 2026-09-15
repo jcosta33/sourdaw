@@ -9,6 +9,7 @@ import { ScrollArea } from '#/components/ui/scroll-area';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { LibraryBrowser } from '#/modules/SampleLibrary/presentations/views';
+import { isAudioFile } from '#/utils/audioFileExtensions';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { loadSidebarFavorites } from '../../useCases/sidebar-favorites/load-sidebar-favorites';
@@ -105,10 +106,7 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
             return;
         }
         for (const file of Array.from(files)) {
-            const ext = file.name.toLowerCase().split('.').pop() ?? '';
-            const isAudio =
-                file.type.startsWith('audio/') ||
-                ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'aiff', 'aif', 'webm'].includes(ext);
+            const isAudio = file.type.startsWith('audio/') || isAudioFile(file.name);
             if (!isAudio) {
                 continue;
             }

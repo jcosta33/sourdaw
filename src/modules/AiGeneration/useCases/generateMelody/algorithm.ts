@@ -8,9 +8,9 @@ import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRan
 // Canonical type unions live in `AiGeneration/models/GenerationStyles`.
 // Re-export here to preserve the AiGeneration-local import paths of callers
 // that already import these types from `./algorithm`.
-import type { MelodyStyle, ScaleType } from '../../models/GenerationStyles';
+import type { MelodyScaleType, MelodyStyle } from '../../models/GenerationStyles';
 
-export type { MelodyStyle, ScaleType };
+export type { MelodyScaleType, MelodyStyle };
 
 /**
  * Runtime roster of every {@link MelodyStyle} the algorithm handles — the
@@ -43,7 +43,7 @@ function assertNever(value: never): never {
 export type GenerateMelodyOptions = {
     style: MelodyStyle;
     key: number;
-    scale: ScaleType;
+    scale: MelodyScaleType;
     octave?: number;
     bars?: number;
     density?: number;
@@ -58,7 +58,7 @@ type GeneratedNote = {
     velocity: number;
 };
 
-const SCALE_INTERVALS: Record<ScaleType, readonly number[]> = {
+const SCALE_INTERVALS: Record<MelodyScaleType, readonly number[]> = {
     major: [0, 2, 4, 5, 7, 9, 11],
     minor: [0, 2, 3, 5, 7, 8, 10],
     pentatonic: [0, 2, 4, 7, 9],
@@ -76,12 +76,12 @@ const SCALE_INTERVALS: Record<ScaleType, readonly number[]> = {
 };
 
 /**
- * Runtime roster of every {@link ScaleType} the algorithm supports, derived
+ * Runtime roster of every {@link MelodyScaleType} the algorithm supports, derived
  * from the {@link SCALE_INTERVALS} table itself so the two cannot drift.
- * `SCALE_INTERVALS` is a `Record<ScaleType, …>`, so its keys are exactly the
+ * `SCALE_INTERVALS` is a `Record<MelodyScaleType, …>`, so its keys are exactly the
  * union — the handler layer derives `VALID_SCALES` from this.
  */
-export const SCALE_TYPES = Object.keys(SCALE_INTERVALS) as ScaleType[];
+export const SCALE_TYPES = Object.keys(SCALE_INTERVALS) as MelodyScaleType[];
 
 function buildScaleNotesFromIntervals(
     intervals: readonly number[],

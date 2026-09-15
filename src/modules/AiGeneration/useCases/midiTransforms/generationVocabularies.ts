@@ -2,8 +2,8 @@ import type {
     ChordProgressionStyle,
     ChordVoicing,
     DrumPatternStyle,
+    MelodyScaleType,
     MelodyStyle,
-    ScaleType,
 } from '../../models/GenerationStyles';
 
 /**
@@ -79,4 +79,4 @@ export const MELODY_SCALES = [
     'melodic-minor',
     'whole-tone',
     'chromatic',
-] as const satisfies readonly ScaleType[];
+] as const satisfies readonly MelodyScaleType[];

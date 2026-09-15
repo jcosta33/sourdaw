@@ -209,24 +209,10 @@ export type FolderNode = {
 
 // ── Audio file extensions ────────────────────────────────────────────────────
 
-export const AUDIO_EXTENSIONS = new Set([
-    'wav',
-    'wave',
-    'mp3',
-    'ogg',
-    'flac',
-    'aiff',
-    'aif',
-    'aac',
-    'm4a',
-    'webm',
-    'opus',
-]);
-
-export function isAudioFile(filename: string): boolean {
-    const ext = filename.split('.').pop()?.toLowerCase() ?? '';
-    return AUDIO_EXTENSIONS.has(ext);
-}
+// The extension law lives in `#/utils/audioFileExtensions` so that every module
+// shares one definition; re-exported here because it belongs to this model's
+// vocabulary.
+export { AUDIO_EXTENSIONS, isAudioFile } from '#/utils/audioFileExtensions';
 
 /**
  * Extensions that `AUDIO_EXTENSIONS` accepts for indexing but that the browser's

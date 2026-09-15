@@ -1,5 +1,7 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 
 import { Sidebar } from '../Sidebar';
 
@@ -93,6 +95,14 @@ vi.mock('#/modules/SampleLibrary/presentations/views', () => ({
     LibraryBrowser: () => <div data-testid="library-browser">Library Browser</div>,
 }));
 
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    decodeAudioFile: vi.fn(async (file: File) => ({
+        id: `buffer-${file.name}`,
+        buffer: { duration: 1.5 },
+    })),
+}));
+
 describe('Sidebar', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -176,5 +186,32 @@ describe('Sidebar', () => {
         fireEvent.click(screen.getByText('toggle favorite'));
 
         expect(window.localStorage.getItem('sourdaw-favorites')).toBe('[]');
+    });
+
+    it('should import .opus and .wave files through the canonical audio-extension law', async () => {
+        render(<Sidebar />);
+        fireEvent.click(screen.getByText('Library'));
+        fireEvent.click(screen.getByText('Imported'));
+
+        const fileInput = document.querySelector('input[type="file"]');
+        if (!fileInput) {
+            throw new Error('Expected the Imported tab to render a file input');
+        }
+
+        // Non-audio MIME types on purpose: acceptance must hinge on the file
+        // extension alone, which is the branch the drifted inline list broke.
+        const opus = new File([new Uint8Array([0])], 'beat.opus', { type: 'application/octet-stream' });
+        const wave = new File([new Uint8Array([0])], 'loop.wave', { type: 'application/octet-stream' });
+        const rejected = new File([new Uint8Array([0])], 'notes.txt', { type: 'text/plain' });
+
+        await act(async () => {
+            fireEvent.change(fileInput, { target: { files: [opus, wave, rejected] } });
+        });
+
+        expect(decodeAudioFile).toHaveBeenCalledTimes(2);
+        expect(decodeAudioFile).toHaveBeenCalledWith(expect.objectContaining({ name: 'beat.opus' }));
+        expect(decodeAudioFile).toHaveBeenCalledWith(expect.objectContaining({ name: 'loop.wave' }));
+        expect(decodeAudioFile).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'notes.txt' }));
+        await waitFor(() => expect(screen.getByText('2 samples')).toBeInTheDocument());
     });
 });
