@@ -79,7 +79,7 @@ vi.mock('../undoTree/undoTreeMoveTo', () => ({
     undoTreeMoveTo: mocks.undoTreeMoveTo,
 }));
 
-vi.mock('../isProjectMutationAllowed', () => ({
+vi.mock('../getProjectMutationAdmissionFailure', () => ({
     getProjectMutationAdmissionFailure: () => mocks.admissionFailure,
 }));
 
