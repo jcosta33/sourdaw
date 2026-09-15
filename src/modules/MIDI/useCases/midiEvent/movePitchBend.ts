@@ -1,3 +1,5 @@
+import { clampPitchBend } from '#/utils/midiData';
+
 import { midiStore } from '../../stores/midiStore';
 
 /**
@@ -20,9 +22,7 @@ export function movePitchBend(clipId: string, pbId: string, newBeat: number, new
         pitchBendByClipId: {
             ...state.pitchBendByClipId,
             [clipId]: existing.map((pb) =>
-                pb.id === pbId
-                    ? { ...pb, beat: Math.max(0, newBeat), value: Math.max(-8192, Math.min(8191, newValue)) }
-                    : pb
+                pb.id === pbId ? { ...pb, beat: Math.max(0, newBeat), value: clampPitchBend(newValue) } : pb
             ),
         },
     });

@@ -7,6 +7,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
+import { clampMidiData7 } from '#/utils/midiData';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
@@ -469,7 +470,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const deltaPitch = Math.round((drag.dragStartY - y) / drag.noteHeight);
 
             const newStartBeat = snapToGrid(drag.originalStartBeat + deltaBeat);
-            const newPitch = Math.max(0, Math.min(127, drag.originalPitch + deltaPitch));
+            const newPitch = clampMidiData7(drag.originalPitch + deltaPitch);
 
             inlineMidiNotePreviewRef.current = {
                 clipId: drag.clipId,

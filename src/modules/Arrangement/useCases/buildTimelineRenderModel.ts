@@ -2,7 +2,12 @@ import { logger } from '#/infra/logger/appLogger';
 import { midiStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Preferences/useCases';
-import { transportStore, playheadPositionRef, timeSignatureMapStore } from '#/modules/Transport/stores';
+import {
+    DEFAULT_TEMPO_BPM,
+    playheadPositionRef,
+    timeSignatureMapStore,
+    transportStore,
+} from '#/modules/Transport/stores';
 import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases';
 
 import { type TimelineRenderModel, type TrackRenderModel, type ClipRenderModel } from '../models/TimelineRenderModel';
@@ -339,7 +344,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
             pixelsPerBeat,
             trackHeight,
             scrollY: viewState?.scrollY ?? 0,
-            tempo: transportState?.tempo ?? 120,
+            tempo: transportState?.tempo ?? DEFAULT_TEMPO_BPM,
             timeSignatureNumerator: numerator,
             timeSignatureDenominator: denominator,
         };

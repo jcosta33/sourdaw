@@ -1,3 +1,5 @@
+import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
+
 import {
     type DawProjectMarker,
     type DawProjectParsedClip,
@@ -61,7 +63,7 @@ function parseTransport(transport: XmlQuery | null): {
     }
     const tempoNode = transport.child('Tempo');
     const tsNode = transport.child('TimeSignature');
-    const tempo = tempoNode?.attrNumber('value', 120) ?? 120;
+    const tempo = tempoNode?.attrNumber('value', DEFAULT_TEMPO_BPM) ?? DEFAULT_TEMPO_BPM;
     const numerator = tsNode?.attrNumber('numerator', 4) ?? 4;
     const denominator = tsNode?.attrNumber('denominator', 4) ?? 4;
     return { tempo, numerator, denominator };

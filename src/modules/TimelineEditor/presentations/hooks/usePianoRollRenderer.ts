@@ -57,6 +57,7 @@ import { type RefObject, useRef, useEffect, useLayoutEffect } from 'react';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI/stores';
+import { clampMidiData7 } from '#/utils/midiData';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
@@ -699,7 +700,7 @@ function drawOpenedClipNotes(
                     displayDuration = dragPreview.durationOverride.get(note.id)!;
                 } else {
                     displayStartBeat = Math.max(0, note.startBeat + dragPreview.beatDelta);
-                    displayPitch = Math.max(0, Math.min(127, note.pitch + dragPreview.pitchDelta));
+                    displayPitch = clampMidiData7(note.pitch + dragPreview.pitchDelta);
                 }
             }
 

@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { clampMidiData7, clampVelocity } from '#/utils/midiData';
 
 import { type MidiNote, type MidiCC } from '../models/MidiNote';
 import { downloadBlob } from '../repositories/downloadFile';
@@ -55,8 +56,8 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
     for (const note of notes) {
         const startTick = Math.round((clipStartBeat + note.startBeat) * TICKS_PER_BEAT);
         const endTick = Math.round((clipStartBeat + note.startBeat + note.duration) * TICKS_PER_BEAT);
-        const vel = Math.max(1, Math.min(127, Math.round(note.velocity)));
-        const pitch = Math.max(0, Math.min(127, note.pitch));
+        const vel = clampVelocity(Math.round(note.velocity));
+        const pitch = clampMidiData7(note.pitch);
         const channel = (note.channel ?? 0) & 0x0f;
 
         events.push({ tick: startTick, data: [0x90 | channel, pitch, vel] });
@@ -65,8 +66,8 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
 
     for (const cc of ccs) {
         const tick = Math.round((clipStartBeat + cc.beat) * TICKS_PER_BEAT);
-        const controller = Math.max(0, Math.min(127, cc.controller));
-        const value = Math.max(0, Math.min(127, Math.round(cc.value)));
+        const controller = clampMidiData7(cc.controller);
+        const value = clampMidiData7(Math.round(cc.value));
         events.push({ tick, data: [0xb0 | ((cc.channel ?? 0) & 0x0f), controller, value] });
     }
 

@@ -1,6 +1,7 @@
 import { addClip, getAllTracks } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { addMidiNote } from '#/modules/MIDI/useCases';
+import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { frequencyToMidiNote } from '#/utils/pitch';
 
@@ -123,7 +124,7 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
             return false;
         }
 
-        const tempo = getTransportState()?.tempo ?? 120;
+        const tempo = getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM;
         const beatsPerSecond = tempo / 60;
         const minIntervalSec = minInterval / beatsPerSecond;
 

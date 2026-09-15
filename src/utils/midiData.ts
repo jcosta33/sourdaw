@@ -19,10 +19,42 @@ export function clampMidiData7(value: number): number {
 }
 
 /**
+ * Clamp a velocity into the quietest-strike-to-ceiling wire range: 1 through
+ * {@link MAX_MIDI_DATA_7BIT}. The floor is {@link MIN_AUDIBLE_VELOCITY}, not
+ * zero, because velocity 0 carries the note-off meaning on the wire.
+ */
+export function clampVelocity(value: number): number {
+    return Math.max(MIN_AUDIBLE_VELOCITY, Math.min(MAX_MIDI_DATA_7BIT, value));
+}
+
+/**
+ * Clamp a signed pitch-bend offset into its 14-bit span,
+ * {@link PITCH_BEND_MIN}…{@link PITCH_BEND_MAX}.
+ */
+export function clampPitchBend(value: number): number {
+    return Math.max(PITCH_BEND_MIN, Math.min(PITCH_BEND_MAX, value));
+}
+
+/**
  * Lowest velocity that still sounds. MIDI 1.0 gives velocity 0 the note-off
  * meaning, so 1 is the quietest strike a voice can receive.
  */
 export const MIN_AUDIBLE_VELOCITY = 1;
+
+/**
+ * Velocity a new note carries when nothing better is known — creation
+ * defaults, imports, AI-generated notes, and legacy callers that omit it all
+ * read this so a note placed by any path sounds the same.
+ */
+export const DEFAULT_NOTE_VELOCITY = 100;
+
+/**
+ * Probability (percent) a new note carries when nothing better is known — the
+ * humanization chance a note plays at all. Same value as
+ * {@link DEFAULT_NOTE_VELOCITY} by convention, but a distinct contract: one is
+ * a wire velocity, the other a UI percent, and they need not move together.
+ */
+export const DEFAULT_NOTE_PROBABILITY = 100;
 
 /**
  * Full-scale value of a 14-bit high-resolution controller or bend pair

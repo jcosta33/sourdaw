@@ -1,3 +1,5 @@
+import { clampVelocity } from '#/utils/midiData';
+
 import { type MidiNote } from '../../models/MidiNote';
 
 type DrumPreviewRecipe = 'ghost-note-pocket' | 'half-time-space' | 'syncopated-hats';
@@ -46,7 +48,7 @@ function projectGhostNotePocket(input: ProjectDrumPreviewCandidateNotesInput): M
     if (input.role === 'hi-hat') {
         return input.notes.map((note, index) => ({
             ...note,
-            velocity: Math.max(1, Math.min(127, note.velocity + (index % 2 === 0 ? 8 : -8))),
+            velocity: clampVelocity(note.velocity + (index % 2 === 0 ? 8 : -8)),
         }));
     }
 

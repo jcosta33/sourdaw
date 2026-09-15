@@ -1,3 +1,5 @@
+import { clampMidiData7 } from '#/utils/midiData';
+
 import { type MidiNote } from '../models/MidiNote';
 
 export function invertMidiNotes(notes: readonly MidiNote[]): MidiNote[] {
@@ -14,6 +16,6 @@ export function invertMidiNotes(notes: readonly MidiNote[]): MidiNote[] {
     const axis = minPitch + maxPitch;
     return notes.map((note) => ({
         ...note,
-        pitch: Math.max(0, Math.min(127, axis - note.pitch)),
+        pitch: clampMidiData7(axis - note.pitch),
     }));
 }
