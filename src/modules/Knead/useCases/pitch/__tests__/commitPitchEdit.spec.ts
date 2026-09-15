@@ -121,9 +121,9 @@ const storedContour: PitchContour = {
     hop_size: 256,
 };
 
-// The clip is seeded with `fileId: 'test.wav'`, so the render writes
-// `test_pitch.wav` and caches it under this id.
-const RENDERED_BUFFER_ID = 'audio-pitch:test_pitch.wav';
+// The clip is seeded with `fileId: 'test.wav'`, so the render writes into the
+// app-owned pitch-edit root for this clip and caches it under this id.
+const RENDERED_BUFFER_ID = 'audio-pitch:pitch-edits/c1/test_pitch.wav';
 
 const storedBlob: NoteBlob = {
     id: 'blob-1',
@@ -214,7 +214,7 @@ describe('commitPitchEdit through action dispatch', () => {
 
         expect(commitPitchEditMock).toHaveBeenCalledWith({
             inputAudioPath: 'test.wav',
-            outputAudioPath: 'test_pitch.wav',
+            outputAudioPath: 'pitch-edits/c1/test_pitch.wav',
             outputAudioBufferId: RENDERED_BUFFER_ID,
             audioBufferId: 'buffer-c1',
             segments,
@@ -225,7 +225,7 @@ describe('commitPitchEdit through action dispatch', () => {
             retuneSpeedMs,
             formantPreserve,
         });
-        expect(getFirstClipFileId()).toBe('test_pitch.wav');
+        expect(getFirstClipFileId()).toBe('pitch-edits/c1/test_pitch.wav');
 
         expect(undoStore.value?.past).toHaveLength(1);
         // Redo re-dispatches the forward action below, proving this is an action-kind
@@ -241,7 +241,7 @@ describe('commitPitchEdit through action dispatch', () => {
 
         await redo();
 
-        expect(getFirstClipFileId()).toBe('test_pitch.wav');
+        expect(getFirstClipFileId()).toBe('pitch-edits/c1/test_pitch.wav');
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
         // Redo re-ran the forward render, confirming action-based (not callback) undo.
@@ -259,7 +259,7 @@ describe('commitPitchEdit through action dispatch', () => {
         await executeAppAction(commitAction('c1'));
 
         expect(getFirstClipAudioBufferId()).toBe(RENDERED_BUFFER_ID);
-        expect(getFirstClipFileId()).toBe('test_pitch.wav');
+        expect(getFirstClipFileId()).toBe('pitch-edits/c1/test_pitch.wav');
     });
 
     it('clears the clip pitch contour after a successful commit so the editor gate re-opens', async () => {
@@ -435,7 +435,100 @@ describe('commitPitchEdit storage transaction scope (audit CC-10)', () => {
         // One change for the whole action: the clip swap and the contour drop
         // share it, rather than landing later on their own frame.
         expect(mutations).toBe(1);
-        expect(getFirstClipFileId()).toBe('test_pitch.wav');
+        expect(getFirstClipFileId()).toBe('pitch-edits/c1/test_pitch.wav');
         expect(kneadStore.value?.contours.c1).toBeUndefined();
+    });
+});
+
+// #3406 — the native commit writes through `resolve_writable_file_path`, which
+// checks an absolute destination against the user's grants. A desktop
+// open-file pick grants the picked file for reading only (#3404), so an output
+// derived beside the source (`<source>_pitch.wav`) was refused with
+// `Path is outside allowed native file roots` and the WASM fallback became the
+// only renderer that could succeed. The output must live in a directory the
+// app owns: a relative path is the renderer's spelling for the app's own
+// scratch root, writable without any grant.
+describe('commitPitchEdit native output path (#3406)', () => {
+    function seedClips(clips: Partial<PitchEditTestClip>[]): void {
+        trackStore.set({
+            tracks: [createTrack({ clips: clips.map((clip) => createClip(clip)) })],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        } satisfies TrackStoreState);
+    }
+
+    function receivedOutputPath(callIndex: number): string {
+        const call = commitPitchEditMock.mock.calls[callIndex]?.[0];
+        if (!call || typeof call.outputAudioPath !== 'string') {
+            throw new Error('Expected the render to receive an output path');
+        }
+        return call.outputAudioPath;
+    }
+
+    beforeEach(() => {
+        injectDependencies(notifyUser, { eventBus: mockNotificationEventBus });
+        vi.clearAllMocks();
+        configureAutomergeStoragePort(null);
+        clearHandlerRegistry();
+        registerHandlerMap(getPitchHandlers());
+        clearUndoHistory();
+        setPitchEditDependencies({ commitPitchEdit: commitPitchEditMock });
+        commitPitchEditMock.mockResolvedValue({ renderedAudioBufferId: RENDERED_BUFFER_ID });
+        kneadStore.set({ ...defaultKneadState, contours: {}, clips: {} });
+    });
+
+    afterEach(() => {
+        clearUndoHistory();
+        clearHandlerRegistry();
+        configureAutomergeStoragePort(null);
+    });
+
+    // The deciding oracle: a source picked through a desktop open-file dialog
+    // sits under a read-only single-file grant, and the old beside-source
+    // derivation produced exactly that refused absolute destination.
+    it('writes the render under the app-owned root, not beside a picked source', async () => {
+        seedClips([{ id: 'c1', type: 'audio', fileId: '/Users/x/Music/vocal.wav', audioBufferId: 'buffer-c1' }]);
+
+        await executeAppAction(commitAction('c1'));
+
+        expect(receivedOutputPath(0)).toBe('pitch-edits/c1/vocal_pitch.wav');
+        expect(getFirstClipFileId()).toBe('pitch-edits/c1/vocal_pitch.wav');
+    });
+
+    it('derives the same output for every peer replaying the action, undo and redo alike', async () => {
+        seedClips([{ id: 'c1', type: 'audio', fileId: '/Users/x/Music/vocal.wav', audioBufferId: 'buffer-c1' }]);
+
+        await executeAppAction(commitAction('c1'));
+        const firstRenderPath = receivedOutputPath(0);
+
+        await undo();
+        await redo();
+
+        expect(commitPitchEditMock).toHaveBeenCalledTimes(2);
+        expect(receivedOutputPath(1)).toBe(firstRenderPath);
+    });
+
+    it('accumulates a distinct output per successive commit on the same clip', async () => {
+        // The fileId a previous commit left behind: the next render must not
+        // reuse it, or a redo of the earlier commit would overwrite the later
+        // render's buffer.
+        seedClips([{ id: 'c1', type: 'audio', fileId: 'pitch-edits/c1/vocal_pitch.wav', audioBufferId: 'buffer-c1' }]);
+
+        await executeAppAction(commitAction('c1'));
+
+        expect(receivedOutputPath(0)).toBe('pitch-edits/c1/vocal_pitch_pitch.wav');
+    });
+
+    it('keeps same-named sources on different clips from overwriting each other', async () => {
+        seedClips([
+            { id: 'c1', type: 'audio', fileId: '/a/vocal.wav', audioBufferId: 'buffer-c1' },
+            { id: 'c2', type: 'audio', fileId: '/b/vocal.wav', audioBufferId: 'buffer-c2' },
+        ]);
+
+        await executeAppAction(commitAction('c1'));
+        await executeAppAction(commitAction('c2'));
+
+        expect(receivedOutputPath(0)).toBe('pitch-edits/c1/vocal_pitch.wav');
+        expect(receivedOutputPath(1)).toBe('pitch-edits/c2/vocal_pitch.wav');
     });
 });

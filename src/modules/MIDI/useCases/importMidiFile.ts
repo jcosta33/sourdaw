@@ -8,8 +8,24 @@ type ParsedTrack = {
     endTick: number;
 };
 
+export type ReadMidiFileResult = {
+    /** The track count the file's header declared, recovered or not. */
+    declaredTrackCount: number;
+    tracks: ParsedTrack[];
+    /** True when the parse recovered less than the header declared. */
+    truncated: boolean;
+};
+
 type WorkerResponse =
-    { type: 'parsed'; tracks: ParsedTrack[]; ticksPerBeat: number; tempo: number } | { type: 'error'; message: string };
+    | {
+          type: 'parsed';
+          tracks: ParsedTrack[];
+          ticksPerBeat: number;
+          tempo: number;
+          declaredTrackCount: number;
+          truncated: boolean;
+      }
+    | { type: 'error'; message: string };
 
 /**
  * Ceiling on a single parse. The worker is pure CPU over an in-memory buffer,
@@ -24,10 +40,10 @@ const MIDI_IMPORT_TIMEOUT_MS = 30_000;
  * after the result arrives; the parse is a one-shot so worker reuse would
  * only add lifecycle complexity.
  */
-export async function readMidiFile(file: File): Promise<ParsedTrack[]> {
+export async function readMidiFile(file: File): Promise<ReadMidiFileResult> {
     const buffer = await file.arrayBuffer();
 
-    return new Promise<ParsedTrack[]>((resolve, reject) => {
+    return new Promise<ReadMidiFileResult>((resolve, reject) => {
         const worker = new Worker(new URL('../workers/midiImportWorker.ts', import.meta.url), {
             type: 'module',
         });
@@ -51,7 +67,11 @@ export async function readMidiFile(file: File): Promise<ParsedTrack[]> {
             const msg = event.data;
             if (msg.type === 'parsed') {
                 cleanup();
-                resolve(msg.tracks);
+                resolve({
+                    declaredTrackCount: msg.declaredTrackCount,
+                    tracks: msg.tracks,
+                    truncated: msg.truncated,
+                });
             } else if (msg.type === 'error') {
                 cleanup();
                 reject(createMidiError(msg.message));

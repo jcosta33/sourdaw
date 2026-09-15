@@ -7,7 +7,7 @@ import { undoStore } from '../stores/undoStore';
 import { executeAppAction } from './executeAppAction';
 import { executeAppActionBatch } from './executeAppActionBatch';
 import { getCommandHandler } from './getCommandHandler';
-import { getProjectMutationAdmissionFailure } from './isProjectMutationAllowed';
+import { getProjectMutationAdmissionFailure } from './getProjectMutationAdmissionFailure';
 import { normalizeSingletonUndoGroups } from './normalizeSingletonUndoGroups';
 import { runUndoRedoExclusive } from './undoRedo';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
