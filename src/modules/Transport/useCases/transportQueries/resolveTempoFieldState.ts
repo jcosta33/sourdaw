@@ -1,5 +1,10 @@
-import { getGoverningTempoChange, getTempoAtBeat, type TempoChange } from '../../models/TempoMap';
-import { MIN_TEMPO_MAP_TEMPO, MAX_TEMPO_MAP_TEMPO } from '../../stores/tempoMapStore';
+import {
+    getGoverningTempoChange,
+    getTempoAtBeat,
+    MAX_TEMPO_MAP_TEMPO,
+    MIN_TEMPO_MAP_TEMPO,
+    type TempoChange,
+} from '../../models/TempoMap';
 
 /** Range of the transport's own base tempo, mirroring `transportStore`'s validator. */
 const MIN_BASE_TEMPO = 20;

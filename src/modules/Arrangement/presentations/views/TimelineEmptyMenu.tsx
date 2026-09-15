@@ -9,6 +9,7 @@ import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
+import { AUDIO_ACCEPT_ATTRIBUTE } from '#/utils/audioFileExtensions';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
@@ -94,7 +95,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
         const authority = captureProjectTransitionAuthority();
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = 'audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.aiff';
+        input.accept = AUDIO_ACCEPT_ATTRIBUTE;
         input.onchange = async () => {
             const file = input.files?.[0];
             if (!file || !authority.isCurrent()) {

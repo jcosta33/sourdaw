@@ -4,10 +4,9 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 import { MAX_TEMPO_MAP_TEMPO, MIN_TEMPO_MAP_TEMPO } from '../models/TempoMap';
 
 // The tempo-map bounds live in `models/TempoMap.ts` — a model file cannot import
-// from a store, so a bound both layers need sits a layer down. Re-exported here
-// to keep every existing store-level import path (including the
-// `#/modules/Transport/stores` barrel) compiling unchanged.
-export { MIN_TEMPO_MAP_TEMPO, MAX_TEMPO_MAP_TEMPO };
+// from a store, so a bound both layers need sits a layer down. They are
+// deliberately not re-exported: models constants never cross module boundaries
+// (docs/architecture/03-typescript-module.md §4.1).
 
 const DOC_PREFIX_ROOT = 'root';
 

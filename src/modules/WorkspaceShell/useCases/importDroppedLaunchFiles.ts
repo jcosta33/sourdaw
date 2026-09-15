@@ -2,8 +2,8 @@ import { addClip, addTrack, importMidiFile, removeTrack } from '#/modules/Arrang
 import { cacheAudioBuffer, decodeAudioFileBuffer } from '#/modules/AudioEngine/useCases';
 import { captureProjectTransitionAuthority, newProject } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
+import { isAudioFile } from '#/utils/audioFileExtensions';
 
-const AUDIO_FILE_EXTENSIONS = ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'webm', 'aiff', 'aif'];
 const MIDI_FILE_EXTENSIONS = ['mid', 'midi'];
 const DEFAULT_TEMPO = 120;
 const MINIMUM_AUDIO_CLIP_BEATS = 4;
@@ -35,17 +35,13 @@ function isMidiFile(file: File, extension: string): boolean {
     return MIDI_FILE_EXTENSIONS.includes(extension) || file.type === 'audio/midi';
 }
 
-function isAudioFile(file: File, extension: string): boolean {
-    return file.type.startsWith('audio/') || AUDIO_FILE_EXTENSIONS.includes(extension);
-}
-
 function getSupportedDroppedFiles(files: readonly File[]): SupportedDroppedFile[] {
     const supportedFiles: SupportedDroppedFile[] = [];
     for (const file of files) {
         const extension = getFileExtension(file);
         if (isMidiFile(file, extension)) {
             supportedFiles.push({ file, kind: 'midi' });
-        } else if (isAudioFile(file, extension)) {
+        } else if (file.type.startsWith('audio/') || isAudioFile(file.name)) {
             supportedFiles.push({ file, kind: 'audio' });
         }
     }

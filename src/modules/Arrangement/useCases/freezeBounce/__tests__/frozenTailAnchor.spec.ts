@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { MIN_TEMPO, MIN_TEMPO_MAP_TEMPO } from '#/modules/Transport/stores';
+import { MIN_TEMPO } from '#/modules/Transport/stores';
 import {
     LEGACY_FREEZE_MAX_TAIL_BEATS,
     LEGACY_FREEZE_MIN_TAIL_BEATS,
     UNKNOWN_FROZEN_TAIL_SECONDS,
 } from '#/utils/frozenBufferTail';
+
+// Inlined from Transport's `models/TempoMap.ts` — models constants never cross
+// module boundaries (docs/architecture/03-typescript-module.md §4.1); this spec
+// is the cross-boundary anchor proving both sides still agree on 20.
+const MIN_TEMPO_MAP_TEMPO = 20;
 
 /**
  * The unknown-baked-tail floor is a number in one file derived from mechanisms

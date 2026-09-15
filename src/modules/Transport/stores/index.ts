@@ -8,7 +8,7 @@ export { captureGestureBeat } from './captureGestureBeat';
 export { setGestureClockSource, type GestureClockSource } from './gestureClockSource';
 
 export type { TempoMapStoreState } from './tempoMapStore';
-export { tempoMapStore, MIN_TEMPO_MAP_TEMPO } from './tempoMapStore';
+export { tempoMapStore } from './tempoMapStore';
 
 export type { TimeSignatureMapStoreState } from './timeSignatureMapStore';
 export { timeSignatureMapStore } from './timeSignatureMapStore';

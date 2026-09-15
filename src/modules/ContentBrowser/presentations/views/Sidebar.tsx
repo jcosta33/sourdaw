@@ -9,7 +9,7 @@ import { ScrollArea } from '#/components/ui/scroll-area';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { LibraryBrowser } from '#/modules/SampleLibrary/presentations/views';
-import { isAudioFile } from '#/utils/audioFileExtensions';
+import { AUDIO_ACCEPT_ATTRIBUTE, isAudioFile } from '#/utils/audioFileExtensions';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { loadSidebarFavorites } from '../../useCases/sidebar-favorites/load-sidebar-favorites';
@@ -182,7 +182,7 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
                         <input
                             ref={fileInputRef}
                             type="file"
-                            accept="audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.aiff,.aif"
+                            accept={AUDIO_ACCEPT_ATTRIBUTE}
                             multiple
                             className="hidden"
                             onChange={(event) => {

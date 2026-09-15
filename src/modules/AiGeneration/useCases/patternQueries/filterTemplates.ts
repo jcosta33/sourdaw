@@ -2,7 +2,7 @@ import { filterTemplates as filterPatternTemplates } from '../../services/MidiPa
 
 import { toPublicPatternTemplate } from './toPublicPatternTemplate';
 
-import type { PatternCategory, ScaleType } from '../../models/MidiPatternType';
+import type { KeyName, PatternCategory, ScaleType } from '../../models/MidiPatternType';
 
 type FilterTemplatesInput = {
     category?: PatternCategory;
@@ -18,12 +18,7 @@ type FilterTemplatesOutput = Array<{
     genres: string[];
     tags: string[];
     description: string;
-    generate: (generation_params: {
-        key: 'C' | 'C#' | 'D' | 'D#' | 'E' | 'F' | 'F#' | 'G' | 'G#' | 'A' | 'A#' | 'B';
-        scale: ScaleType;
-        density: number;
-        complexity: number;
-    }) => Array<{
+    generate: (generation_params: { key: KeyName; scale: ScaleType; density: number; complexity: number }) => Array<{
         pitch: number;
         velocity: number;
         startBeat: number;

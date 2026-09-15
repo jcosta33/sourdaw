@@ -41,6 +41,7 @@ import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { SessionView } from '#/modules/SessionLauncher/presentations/views';
 import { transportStore } from '#/modules/Transport/stores';
 import { closeScratchPad, setSessionViewWidth, setTrackListWidth } from '#/modules/WorkspaceShell/useCases';
+import { isAudioFile } from '#/utils/audioFileExtensions';
 import {
     allocateMainFirstWidths,
     ARRANGE_RESIZE_HANDLE_WIDTH,
@@ -440,9 +441,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
                     return { kind: 'midi' as const, file };
                 }
 
-                const isAudio =
-                    file.type.startsWith('audio/') ||
-                    ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'webm', 'aiff', 'aif'].includes(ext);
+                const isAudio = file.type.startsWith('audio/') || isAudioFile(file.name);
                 if (!isAudio) {
                     return { kind: 'skip' as const };
                 }

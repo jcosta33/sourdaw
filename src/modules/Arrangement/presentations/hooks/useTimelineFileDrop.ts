@@ -4,6 +4,7 @@ import { decodeAudioFile, discardDecodedAudioFile, getCachedAudioBuffer } from '
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { resolveDroppedSampleFile } from '#/modules/SampleLibrary/useCases';
+import { isAudioFile } from '#/utils/audioFileExtensions';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { trackStore } from '../../stores/trackStore';
@@ -419,11 +420,7 @@ export const useTimelineFileDrop = ({
                     file.type === 'audio/midi' ||
                     file.type === 'audio/x-midi' ||
                     ['mid', 'midi'].includes(file.name.toLowerCase().split('.').pop() ?? '');
-                const isAudioFile =
-                    file.type.startsWith('audio/') ||
-                    ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'webm', 'aiff', 'aif'].includes(
-                        file.name.toLowerCase().split('.').pop() ?? ''
-                    );
+                const isAudio = file.type.startsWith('audio/') || isAudioFile(file.name);
 
                 if (isMidiFile) {
                     const result = await importMidiFile(file, { shouldContinue: authority.isCurrent });
@@ -433,7 +430,7 @@ export const useTimelineFileDrop = ({
                     continue;
                 }
 
-                if (!isAudioFile) {
+                if (!isAudio) {
                     continue;
                 }
 

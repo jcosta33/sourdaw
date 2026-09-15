@@ -79,9 +79,11 @@ const SCALE_INTERVALS: Record<MelodyScaleType, readonly number[]> = {
  * Runtime roster of every {@link MelodyScaleType} the algorithm supports, derived
  * from the {@link SCALE_INTERVALS} table itself so the two cannot drift.
  * `SCALE_INTERVALS` is a `Record<MelodyScaleType, …>`, so its keys are exactly the
- * union — the handler layer derives `VALID_SCALES` from this.
+ * union — the handler layer derives `VALID_SCALES` from this. Named
+ * `MELODY_SCALE_TYPES` to mirror {@link MELODY_STYLES} and stay distinct from the
+ * pattern-template `SCALE_TYPES` in `models/MidiPatternType.ts`.
  */
-export const SCALE_TYPES = Object.keys(SCALE_INTERVALS) as MelodyScaleType[];
+export const MELODY_SCALE_TYPES = Object.keys(SCALE_INTERVALS) as MelodyScaleType[];
 
 function buildScaleNotesFromIntervals(
     intervals: readonly number[],

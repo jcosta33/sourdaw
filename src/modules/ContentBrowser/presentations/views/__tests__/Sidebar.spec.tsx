@@ -198,6 +198,11 @@ describe('Sidebar', () => {
             throw new Error('Expected the Imported tab to render a file input');
         }
 
+        // The picker hint is derived from the same extension law as the import
+        // guard, so it must advertise the extensions the old hardcoded list missed.
+        expect(fileInput).toHaveAttribute('accept', expect.stringContaining('.opus'));
+        expect(fileInput).toHaveAttribute('accept', expect.stringContaining('.wave'));
+
         // Non-audio MIME types on purpose: acceptance must hinge on the file
         // extension alone, which is the branch the drifted inline list broke.
         const opus = new File([new Uint8Array([0])], 'beat.opus', { type: 'application/octet-stream' });
