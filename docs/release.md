@@ -34,7 +34,7 @@ refused outright.
 Propose the release from a lane:
 
 ```sh
-pnpm lane:open release
+pnpm lane:open release --model <model>
 cd <lane>
 pnpm release:propose
 ```

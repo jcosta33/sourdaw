@@ -1501,14 +1501,19 @@ describe('lane publish', () => {
         expect(() => parsePublishLaneArgs(['12', '--lane', CLEANUP_LANE])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['beat'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['12', '--model', 'glm 5.3'])).toThrow(
-            /--model must be the lowercase public model family name/
+            /--model must be the lowercase public name of the model itself/
         );
         expect(() => parsePublishLaneArgs(['12', '--model', 'builtin:glm-5.3'])).toThrow(
-            /without deployment prefixes or date suffixes/
+            /dropping only deployment-routing prefixes and date-snapshot suffixes/
         );
         expect(() => parsePublishLaneArgs(['12', '--model', 'glm_5.3'])).toThrow(
-            /--model must be the lowercase public model family name/
+            /--model must be the lowercase public name of the model itself/
         );
+        expect(parsePublishLaneArgs(['12', '--model', 'GLM-5.3-Flash'])).toEqual({
+            issue: 12,
+            model: 'glm-5.3-flash',
+            help: false,
+        });
         expect(() => parsePublishLaneArgs(['12', '--model'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['12', '--model', 'glm-5.3', '--model', 'kimi-k2.5'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['12', '--milestone', 'v1.2', '--milestone', 'v1.3'])).toThrow(/usage/);
@@ -2221,7 +2226,7 @@ describe('lane publish', () => {
             const { port, calls } = fakePort({ authorModel: null });
 
             expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(
-                /agent\/12\/work has no authoring model on record; backfill it with pnpm lane:publish --model <family>/
+                /agent\/12\/work has no authoring model on record; backfill it with pnpm lane:publish --model <model>, the lowercase public name of the model itself, e.g. glm-5.3-flash/
             );
             expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
             expect(calls.some((call) => call.startsWith('create:'))).toBe(false);

@@ -332,7 +332,7 @@ describe('lane open', () => {
         expect(calls).toContain('add:/repo/.agents/worktrees/agent-12-work:agent/12/work');
         expect(calls).toContain('model:agent/12/work:glm-5.3');
         expect(calls).toContain('lock:/repo/.agents/worktrees/agent-12-work');
-        expect(logs.at(-1)).toBe(path);
+        expect(logs).toEqual(['authoring model: glm-5.3', path]);
         expect(calls.some((call) => call.includes('gh'))).toBe(false);
     });
 
@@ -353,7 +353,7 @@ describe('lane open', () => {
         expect(calls).toContain('add:/repo/.agents/worktrees/agent--cleanup:agent/cleanup');
         expect(calls).toContain('model:agent/cleanup:glm-5.3');
         expect(calls).toContain('lock:/repo/.agents/worktrees/agent--cleanup');
-        expect(logs.at(-1)).toBe(path);
+        expect(logs).toEqual(['authoring model: glm-5.3', path]);
     });
 
     it('gives an issue lane and an issueless lane different directories', () => {
@@ -388,9 +388,11 @@ describe('lane open', () => {
 
         // `runCli` reports a spawn that threw as exit 1, so the recording is asserted first: it
         // names the command that got out, where the exit code only says something went wrong.
+        // Mixed-case argv is deliberate: the exact normalized echo and ledger entry catch a runCli
+        // that hands raw argv to openLane instead of the parser's normalized token.
         let code = -1;
         const spawned = spawnRecorder.record((recorded) => {
-            code = runCli(['cleanup', '--model', 'glm-5.3'], fakeCli(port), '/repo');
+            code = runCli(['cleanup', '--model', 'GLM-5.3-Flash'], fakeCli(port), '/repo');
             return recorded;
         });
 
@@ -400,10 +402,10 @@ describe('lane open', () => {
             'mkdir:/repo/.agents/worktrees/agent--cleanup',
             'fetch',
             'add:/repo/.agents/worktrees/agent--cleanup:agent/cleanup',
-            'model:agent/cleanup:glm-5.3',
+            'model:agent/cleanup:glm-5.3-flash',
             'lock:/repo/.agents/worktrees/agent--cleanup',
         ]);
-        expect(logs.at(-1)).toBe('/repo/.agents/worktrees/agent--cleanup');
+        expect(logs).toEqual(['authoring model: glm-5.3-flash', '/repo/.agents/worktrees/agent--cleanup']);
     });
 
     /**
@@ -498,6 +500,7 @@ describe('lane open', () => {
         [['--help'], { slug: 'work', help: true }],
         [['cleanup', '--model', 'glm-5.3'], { slug: 'cleanup', model: 'glm-5.3', help: false }],
         [['12', 'beat', '--model', 'GLM-5.3'], { issue: 12, slug: 'beat', model: 'glm-5.3', help: false }],
+        [['cleanup', '--model', 'GLM-5.3-Flash'], { slug: 'cleanup', model: 'glm-5.3-flash', help: false }],
         [
             ['--model', 'kimi-k2.5', 'beat', '--stack-on', '/repo/.agents/worktrees/agent--parent'],
             {
@@ -518,12 +521,15 @@ describe('lane open', () => {
         [['beat', 'extra'], /unknown option/],
         [['12', 'beat', 'extra'], /unknown option/],
         [['--help', 'beat'], /--help/],
-        [['cleanup', '--model', 'glm 5.3'], /lowercase public model family name/],
-        [['cleanup', '--model', 'builtin:glm-5.3'], /lowercase public model family name/],
-        [['cleanup', '--model', 'glm_5.3'], /lowercase public model family name/],
-        [['cleanup', '--model', '-glm'], /lowercase public model family name/],
-        [['cleanup', '--model'], /--model requires the authoring model family/],
-        [['cleanup', '--model', '--stack-on', '/repo/parent'], /--model requires the authoring model family/],
+        [['cleanup', '--model', 'glm 5.3'], /the lowercase public name of the model itself/],
+        [['cleanup', '--model', 'builtin:glm-5.3'], /the lowercase public name of the model itself/],
+        [['cleanup', '--model', 'glm_5.3'], /the lowercase public name of the model itself/],
+        [['cleanup', '--model', '-glm'], /the lowercase public name of the model itself/],
+        [['cleanup', '--model'], /--model requires the authoring model, e.g. glm-5.3-flash/],
+        [
+            ['cleanup', '--model', '--stack-on', '/repo/parent'],
+            /--model requires the authoring model, e.g. glm-5.3-flash/,
+        ],
         [['cleanup', '--model', 'glm-5.3', '--model', 'kimi-k2.5'], /usage/],
     ])('rejects argv %j before creating a worktree', (args, message) => {
         const { port, calls } = fakePort();
@@ -556,8 +562,8 @@ describe('lane open records the authoring model', () => {
             errorSpy.mockRestore();
         }
 
-        expect(errors[0]).toMatch(/lane:open requires --model <family>/);
-        expect(errors[0]).toMatch(/lowercase public model family name/);
+        expect(errors[0]).toMatch(/lane:open requires --model <model>/);
+        expect(errors[0]).toMatch(/the lowercase public name of the model itself/);
         expect(calls).toEqual([]);
     });
 
@@ -567,6 +573,15 @@ describe('lane open records the authoring model', () => {
         openLane(12, 'work', 'glm-5.3', port);
 
         expect(calls).toContain('model:agent/12/work:glm-5.3');
+    });
+
+    it('records a capability variant verbatim and echoes it, keeping the path the final line', () => {
+        const { port, calls, logs } = fakePort();
+
+        const path = openLane(undefined, 'flash', 'glm-5.3-flash', port);
+
+        expect(calls).toContain('model:agent/flash:glm-5.3-flash');
+        expect(logs).toEqual(['authoring model: glm-5.3-flash', path]);
     });
 
     it('persists branch.<branch>.sourdaw-author-model in the primary root next to stack lineage', () => {
