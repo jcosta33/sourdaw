@@ -108,9 +108,12 @@ const EXPECTED_AT_SMALLEST_SIZE: [[Character; 4]; 2] = [
             high_frequency_ratio: 0.170_458_42,
         },
         Character {
-            peak: 0.305_436_2,
-            rms: 0.011_507_511,
-            active_span_ms: 102.517,
+            // Updated for the complementary sin² overlap (#3792): the
+            // boundary fade that attenuated peaks is gone, so the render
+            // carries ~4.5% more peak level at the same settings.
+            peak: 0.319_111_705,
+            rms: 0.013_234_116,
+            active_span_ms: 111.088,
             late_energy_ratio: 0.0,
             high_frequency_ratio: 0.270_421_24,
         },
@@ -138,9 +141,9 @@ const EXPECTED_AT_SMALLEST_SIZE: [[Character; 4]; 2] = [
             high_frequency_ratio: 0.170_841_14,
         },
         Character {
-            peak: 0.303_078_23,
-            rms: 0.011_496_001,
-            active_span_ms: 102.521,
+            peak: 0.321_296_245,
+            rms: 0.013_222_702,
+            active_span_ms: 111.100,
             late_energy_ratio: 0.0,
             high_frequency_ratio: 0.248_945_88,
         },

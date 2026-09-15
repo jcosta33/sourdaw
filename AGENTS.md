@@ -258,15 +258,16 @@ your lane.
 A lane records its authoring model when opened: `--model <model>`, the lowercase public name of
 the model itself, keeping every qualifier that distinguishes capability or edition within the
 family (flash, mini, pro, air, codex, thinking) and dropping only deployment-routing prefixes and
-date-snapshot suffixes. `lane:publish` labels the PR `model:<model>` and carries the milestone and
-project membership of the bound issue;
+date-snapshot suffixes. `lane:publish` labels the PR with the model's bare name and carries the
+milestone and project membership of the bound issue;
 `--milestone`/`--project` override those values by open title on any lane — left empty rather than
 forced. Project membership is applied when the author App can access the owner's projects;
 otherwise it is left to the operator backfill. The PR also carries the repository's descriptive
 labels: the bound issue's labels minus the `priority:` and `status:` namespaces, or on an issueless
 lane one type label derived from the conventional subject (`feat` → `enhancement`,
 `fix` → `bug`, `docs` → `documentation`); `--label <name>` adds more by live canonical name, and
-descriptive labels are never created on demand — only `model:<model>` is.
+descriptive labels are never created on demand — only authorship labels are, identified by their
+`Authored by ` description.
 
 Publish a stack parent first. `lane:publish` validates the child descriptor as untrusted data and
 targets the exact open parent head, or `main` after the recorded parent PR has merged. Landed-child
