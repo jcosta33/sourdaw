@@ -414,12 +414,14 @@ procedure: [delivery-orchestration].
 Never fill approvals, acceptance, delivery summaries, or closing comments with routine
 successful-CI narration, passed-check inventories, or links repeating required-check status;
 always disclose material failed, skipped, or incomplete verification, keep discriminating checks
-in structured evidence, and report the outcome and material exceptions.
+in structured evidence, and report the outcome and material exceptions; do not add a closing
+comment that only repeats the merged state.
 
 Approvals carry no inline comments; `review:publish` rejects APPROVE documents with comments.
-Each inline comment opens a merge-blocking thread; put observations in the approval body with
-`Nit:` or `Optional:`, or file them — they belong to `CHANGES_REQUESTED` reviews and require an
-addressing new head.
+Each inline comment opens a merge-blocking thread; `review:resolve` replies `Done`, asserting a
+repair, so it cannot honestly clear a non-blocking note. Put observations in the approval body
+with `Nit:` or `Optional:`, or file them — they belong to `CHANGES_REQUESTED` reviews and
+require an addressing new head.
 
 Push fixes before `review:resolve`; resolve a thread only once the current head addresses the
 finding, then obtain a fresh review. No script writes free-form thread replies, so wrongly posted
