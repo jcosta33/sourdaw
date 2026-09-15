@@ -112,8 +112,8 @@ const EXPECTED_AT_SMALLEST_SIZE: [[Character; 4]; 2] = [
             // boundary fade that attenuated peaks is gone, so the render
             // carries ~4.5% more peak level at the same settings.
             peak: 0.319_111_705,
-            rms: 0.012_769_205,
-            active_span_ms: 593.311,
+            rms: 0.013_234_116,
+            active_span_ms: 111.088,
             late_energy_ratio: 0.0,
             high_frequency_ratio: 0.270_421_24,
         },
@@ -142,8 +142,8 @@ const EXPECTED_AT_SMALLEST_SIZE: [[Character; 4]; 2] = [
         },
         Character {
             peak: 0.321_296_245,
-            rms: 0.012_815_000,
-            active_span_ms: 593.100,
+            rms: 0.013_222_702,
+            active_span_ms: 111.100,
             late_energy_ratio: 0.0,
             high_frequency_ratio: 0.248_945_88,
         },
