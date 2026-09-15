@@ -91,6 +91,7 @@
       "Bash(*ast-grep* -r*)",
       "Bash(*ast-grep* --interactive*)",
       "Bash(*ast-grep* -i*)",
+      "Bash(*ast-grep* new *)",
       "Bash(sg *)",
       "Bash(pnpm sg *)",
       "Bash(pnpm exec sg *)",

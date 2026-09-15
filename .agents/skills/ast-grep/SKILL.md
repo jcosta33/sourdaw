@@ -29,7 +29,7 @@ ast-grep generates candidates; the repository's own checks enforce architecture.
 
 ### 2. Run mode only — rewrite modes are forbidden
 
-Every search is `pnpm exec ast-grep run --lang <ts|tsx|rust> -p '<pattern>' <paths>`. Rewrite and update-all modes are forbidden: repository policy bans bulk edits, and the Claude Code permission denies in `.claude/settings.json` block them for any space-separated command text naming `ast-grep` (wildcard rules), deny the deprecated `sg` alias outright, and deny `pnpm dlx` invocations of the package outright. Text rules cannot see whitespace-obscured (for example tab-separated) or `bash -c`-wrapped command text. Never pass `--rewrite`, `--update-all`, or `--interactive` to ast-grep.
+Every search is `pnpm exec ast-grep run --lang <ts|tsx|rust> -p '<pattern>' <paths>`. Rewrite and update-all modes are forbidden: repository policy bans bulk edits, and the Claude Code permission denies in `.claude/settings.json` block them for any space-separated command text naming `ast-grep` (wildcard rules), deny the deprecated `sg` alias outright, and deny `pnpm dlx` invocations of the package outright. Text rules cannot see whitespace-obscured (for example tab-separated) or `bash -c`-wrapped command text. Never pass `--rewrite`, `--update-all`, or `--interactive` to ast-grep, and never run its `new` subcommand: it scaffolds files, including an sgconfig.yml that would redirect rule resolution.
 
 ### 3. Practical rules
 
