@@ -1,4 +1,4 @@
-import { type RuntimeDeviceControlCompilation } from '../models/RuntimeDeviceControl';
+import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlCompilation } from '../models/RuntimeDeviceControl';
 
 const MAX_ID_LENGTH = 128;
 
@@ -44,7 +44,7 @@ export function compileRuntimeDeviceControl(
     ) {
         return invalid('Runtime device control has an unsupported schema');
     }
-    if (input.schemaVersion !== 1 || input.command !== 'set-fallback-param') {
+    if (input.schemaVersion !== 1 || input.command !== SET_FALLBACK_PARAM_COMMAND) {
         return invalid('Runtime device control schema version or command is unsupported');
     }
     if (!isRecord(input.target) || !hasOnlyKeys(input.target, ['trackId', 'deviceId', 'deviceType', 'parameterId'])) {
@@ -87,7 +87,7 @@ export function compileRuntimeDeviceControl(
         status: 'compiled',
         control: Object.freeze({
             schemaVersion: 1,
-            command: 'set-fallback-param',
+            command: SET_FALLBACK_PARAM_COMMAND,
             target: Object.freeze({
                 trackId: input.target.trackId,
                 deviceId: input.target.deviceId,

@@ -11,13 +11,15 @@
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { INIT_SAB_MESSAGE_TYPE, LATENCY_CHANGED_MESSAGE_TYPE } from '#/infra/audioWorklet/workletPortMessages';
 import { logger } from '#/infra/logger/appLogger';
 
 import { createCrustRuntimeParameterIds } from '../models/CrustRuntimeControl';
-import { type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
+import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
 import crustProcessorUrl from '../services/crustProcessor.ts?worker&url';
 
+import { STEREO_CHANNEL_COUNT } from './constants';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, createTelemetryReader, CRUST_IDX, type TelemetrySlot } from './telemetryAllocator';
 
@@ -110,8 +112,8 @@ export async function createCrustNode(
         node = new AudioWorkletNode(ctx, 'crust-processor', {
             numberOfInputs: 1,
             numberOfOutputs: 1,
-            outputChannelCount: [2],
-            channelCount: 2,
+            outputChannelCount: [STEREO_CHANNEL_COUNT],
+            channelCount: STEREO_CHANNEL_COUNT,
             channelCountMode: 'explicit',
             processorOptions: { wasmModule: wasmLease.module },
         });
@@ -155,7 +157,7 @@ export async function createCrustNode(
         const compilation = compileRuntimeDeviceControl(
             {
                 schemaVersion: 1,
-                command: 'set-fallback-param',
+                command: SET_FALLBACK_PARAM_COMMAND,
                 target: {
                     trackId: fallbackControlTarget.trackId,
                     deviceId: fallbackControlTarget.deviceId,
@@ -175,7 +177,7 @@ export async function createCrustNode(
     };
 
     if (slot) {
-        node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
+        node.port.postMessage({ type: INIT_SAB_MESSAGE_TYPE, sab: slot.sab, byteOffset: slot.byteOffset });
     }
 
     const handshake = createReadyHandshake({ pluginName: 'CrustNode' });
@@ -183,7 +185,7 @@ export async function createCrustNode(
         const outcome = handshake.onMessage(event);
         if (outcome === 'other') {
             const data: unknown = event.data;
-            if (isRecord(data) && data.type === 'latency-changed' && typeof data.latency === 'number') {
+            if (isRecord(data) && data.type === LATENCY_CHANGED_MESSAGE_TYPE && typeof data.latency === 'number') {
                 latencyCallback?.(data.latency);
             }
             return;

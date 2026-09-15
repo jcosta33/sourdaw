@@ -59,6 +59,7 @@ import { defaultTransportState, type TempoMapStoreState, transportStore } from '
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
+import { STEREO_CHANNEL_COUNT } from '../../engine/constants';
 import {
     type AudioGraphAddSendCommand,
     type AudioGraphCommand,
@@ -411,7 +412,7 @@ export async function renderOfflineWithNativeEngine(
                 right[frame] = right[frame]! * masterGainValue;
             }
         }
-        const buffer = new AudioBuffer({ length: frameCount, numberOfChannels: 2, sampleRate });
+        const buffer = new AudioBuffer({ length: frameCount, numberOfChannels: STEREO_CHANNEL_COUNT, sampleRate });
         buffer.copyToChannel(left, 0);
         buffer.copyToChannel(right, 1);
         for (const message of bufferedWarnings) {

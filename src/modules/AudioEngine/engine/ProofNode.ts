@@ -9,12 +9,14 @@
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { INIT_SAB_MESSAGE_TYPE, LATENCY_CHANGED_MESSAGE_TYPE } from '#/infra/audioWorklet/workletPortMessages';
 
 import { createProofRuntimeParameterIds } from '../models/ProofRuntimeControl';
-import { type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
+import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
 import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
 
+import { STEREO_CHANNEL_COUNT } from './constants';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, createTelemetryReader, PROOF_IDX } from './telemetryAllocator';
 
@@ -123,7 +125,7 @@ export async function createProofNode(
         node = new AudioWorkletNode(ctx, 'proof-processor', {
             numberOfInputs: 1,
             numberOfOutputs: 1,
-            outputChannelCount: [2],
+            outputChannelCount: [STEREO_CHANNEL_COUNT],
             processorOptions: { wasmModule: wasmLease.module },
         });
         wasmLease.commit();
@@ -166,7 +168,7 @@ export async function createProofNode(
         const compilation = compileRuntimeDeviceControl(
             {
                 schemaVersion: 1,
-                command: 'set-fallback-param',
+                command: SET_FALLBACK_PARAM_COMMAND,
                 target: {
                     trackId: target.trackId,
                     deviceId: target.deviceId,
@@ -190,7 +192,7 @@ export async function createProofNode(
         const data = event.data as Record<string, unknown> | null;
         const outcome = handshake.onMessage(event);
         if (outcome === 'other') {
-            if (data && data.type === 'latency-changed' && typeof data.latency === 'number') {
+            if (data && data.type === LATENCY_CHANGED_MESSAGE_TYPE && typeof data.latency === 'number') {
                 latencyCallback?.(data.latency);
             }
             return;
@@ -204,7 +206,7 @@ export async function createProofNode(
         }
         // On ready: wire up SAB telemetry polling (§90.2 — see worklet note).
         if (sabSlot) {
-            node.port.postMessage({ type: 'init-sab', sab: sabSlot.sab, byteOffset: sabSlot.byteOffset });
+            node.port.postMessage({ type: INIT_SAB_MESSAGE_TYPE, sab: sabSlot.sab, byteOffset: sabSlot.byteOffset });
             // Built once, outside the interval, since it retains the last
             // consistent snapshot to hand back on retry exhaustion (audit RT-2).
             const readMeter = createTelemetryReader({ slot: sabSlot, project: projectProofMeter });

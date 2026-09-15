@@ -7,13 +7,15 @@
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { INIT_SAB_MESSAGE_TYPE, LATENCY_CHANGED_MESSAGE_TYPE } from '#/infra/audioWorklet/workletPortMessages';
 import { logger } from '#/infra/logger/appLogger';
 
 import { createBacteriaRuntimeParameterIds } from '../models/BacteriaRuntimeControl';
-import { type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
+import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
 import bacteriaProcessorUrl from '../services/bacteriaProcessor.ts?worker&url';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
 
+import { STEREO_CHANNEL_COUNT } from './constants';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import {
     telemetryAllocator,
@@ -177,8 +179,8 @@ export async function createBacteriaNode(
         node = new AudioWorkletNode(ctx, 'bacteria-processor', {
             numberOfInputs: 1,
             numberOfOutputs: 1,
-            outputChannelCount: [2],
-            channelCount: 2,
+            outputChannelCount: [STEREO_CHANNEL_COUNT],
+            channelCount: STEREO_CHANNEL_COUNT,
             channelCountMode: 'explicit',
             processorOptions: { wasmModule: wasmLease.module },
         });
@@ -226,7 +228,7 @@ export async function createBacteriaNode(
         const result = compileRuntimeDeviceControl(
             {
                 schemaVersion: 1,
-                command: 'set-fallback-param',
+                command: SET_FALLBACK_PARAM_COMMAND,
                 target: {
                     trackId: fallbackControlTarget.trackId,
                     deviceId: fallbackControlTarget.deviceId,
@@ -246,7 +248,7 @@ export async function createBacteriaNode(
     };
 
     if (slot) {
-        node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
+        node.port.postMessage({ type: INIT_SAB_MESSAGE_TYPE, sab: slot.sab, byteOffset: slot.byteOffset });
     }
 
     const handshake = createReadyHandshake({ pluginName: 'BacteriaNode' });
@@ -254,7 +256,7 @@ export async function createBacteriaNode(
         const outcome = handshake.onMessage(event);
         if (outcome === 'other') {
             const data: unknown = event.data;
-            if (isRecord(data) && data.type === 'latency-changed' && typeof data.latency === 'number') {
+            if (isRecord(data) && data.type === LATENCY_CHANGED_MESSAGE_TYPE && typeof data.latency === 'number') {
                 reportLatencyChange(data.latency);
             }
             return;

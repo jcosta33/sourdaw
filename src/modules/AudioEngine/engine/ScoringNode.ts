@@ -6,10 +6,12 @@
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { INIT_SAB_MESSAGE_TYPE } from '#/infra/audioWorklet/workletPortMessages';
 import { NOTE_NAMES } from '#/utils/noteNames';
 
 import scoringProcessorUrl from '../services/scoringProcessor.ts?worker&url';
 
+import { STEREO_CHANNEL_COUNT } from './constants';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import {
     createTelemetryReader,
@@ -199,8 +201,8 @@ export async function createScoringNode(ctx: BaseAudioContext, signal?: AbortSig
         node = new AudioWorkletNode(ctx, 'scoring-processor', {
             numberOfInputs: 1,
             numberOfOutputs: 1,
-            outputChannelCount: [2],
-            channelCount: 2,
+            outputChannelCount: [STEREO_CHANNEL_COUNT],
+            channelCount: STEREO_CHANNEL_COUNT,
             channelCountMode: 'explicit',
             processorOptions: { wasmModule: wasmLease.module },
         });
@@ -214,7 +216,7 @@ export async function createScoringNode(ctx: BaseAudioContext, signal?: AbortSig
     let telemetryRafId: number | null = null;
 
     if (slot) {
-        node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
+        node.port.postMessage({ type: INIT_SAB_MESSAGE_TYPE, sab: slot.sab, byteOffset: slot.byteOffset });
     }
 
     const handshake = createReadyHandshake({ pluginName: 'ScoringNode' });

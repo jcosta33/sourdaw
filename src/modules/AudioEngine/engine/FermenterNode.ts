@@ -11,11 +11,13 @@
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { INIT_SAB_MESSAGE_TYPE } from '#/infra/audioWorklet/workletPortMessages';
 import { logger } from '#/infra/logger/appLogger';
 
 import { FERMENTER_AUTOMATION_PARAM_IDS } from '../models/FermenterAutomationParams';
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
 
+import { STEREO_CHANNEL_COUNT } from './constants';
 import {
     createTelemetryReader,
     createWideTelemetrySlot,
@@ -149,8 +151,8 @@ export async function createFermenterNode(
         node = new AudioWorkletNode(ctx, 'fermenter-processor', {
             numberOfInputs: 0,
             numberOfOutputs: 1,
-            outputChannelCount: [2],
-            channelCount: 2,
+            outputChannelCount: [STEREO_CHANNEL_COUNT],
+            channelCount: STEREO_CHANNEL_COUNT,
             channelCountMode: 'explicit',
             processorOptions: { wasmModule: wasmLease.module, schedulingMode },
         });
@@ -202,7 +204,7 @@ export async function createFermenterNode(
     };
 
     if (slot) {
-        node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
+        node.port.postMessage({ type: INIT_SAB_MESSAGE_TYPE, sab: slot.sab, byteOffset: slot.byteOffset });
     }
     const lifecycleReader = slot ? createTelemetryReader({ slot, project: projectFermenterLifecycle }) : null;
     let lastLifecycle: AudioProcessorLifecycleState | null = null;

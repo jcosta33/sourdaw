@@ -9,6 +9,8 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '
 
 import kneadProcessorUrl from '../services/kneadProcessor.ts?worker&url';
 
+import { STEREO_CHANNEL_COUNT } from './constants';
+
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
 export type KneadNodeResult = {
@@ -46,8 +48,8 @@ export async function createKneadNode(
         node = new AudioWorkletNode(ctx, 'knead-processor', {
             numberOfInputs: 1,
             numberOfOutputs: 1,
-            outputChannelCount: [2],
-            channelCount: 2,
+            outputChannelCount: [STEREO_CHANNEL_COUNT],
+            channelCount: STEREO_CHANNEL_COUNT,
             channelCountMode: 'explicit',
             processorOptions: { wasmModule: wasmLease.module },
         });
