@@ -436,6 +436,9 @@ const REFUSED_PUBLISH_CASES: Array<[string, FakeInput, RegExp]> = [
 ];
 
 describe('lane publish', () => {
+    // The launcher integration boots a fixture primary, four lanes, and the trusted snapshot;
+    // it holds ~13s locally but CI runners have taken 16.7s, past the 15s default. The budget
+    // is the defect, not the test's work.
     it('enforces exact issue-lane publishing boundaries through the protected primary launcher', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-routing-'));
         const primary = join(fixtureRoot, 'primary');
@@ -689,7 +692,7 @@ describe('lane publish', () => {
         } finally {
             rmSync(fixtureRoot, { recursive: true, force: true });
         }
-    }, 15_000);
+    }, 60_000);
 
     it('resolves the locked lane before requesting its diff-scoped publishing token', () => {
         const source = readFileSync(join(import.meta.dirname, '../publishLane.ts'), 'utf8');
