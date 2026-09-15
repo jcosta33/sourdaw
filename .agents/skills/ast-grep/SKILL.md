@@ -29,7 +29,7 @@ ast-grep generates candidates; the repository's own checks enforce architecture.
 
 ### 2. Run mode only — rewrite modes are forbidden
 
-Every search is `pnpm exec ast-grep run --lang <ts|tsx|rust> -p '<pattern>' <paths>`. Rewrite and update-all modes are forbidden: repository policy bans bulk edits, and the Claude Code permission denies in `.claude/settings.json` block them for the direct and `pnpm exec`-prefixed spellings of both `ast-grep` and `sg`, long and short flags alike. Never pass `--rewrite` or `--update-all` to ast-grep.
+Every search is `pnpm exec ast-grep run --lang <ts|tsx|rust> -p '<pattern>' <paths>`. Rewrite and update-all modes are forbidden: repository policy bans bulk edits, and the Claude Code permission denies in `.claude/settings.json` block them for any command text naming `ast-grep` (wildcard rules), for the enumerated `sg` launcher spellings, long and short flags alike, and they deny `pnpm dlx` invocations of the package outright. Never pass `--rewrite` or `--update-all` to ast-grep.
 
 ### 3. Practical rules
 
@@ -52,4 +52,4 @@ To count matches, append `--json=compact` and pipe through `python3 -c "import j
 ## References
 
 - [AGENTS.md](../../../AGENTS.md) — Checks section: the structural-search contract.
-- `.claude/settings.json` — pre-existing permission denies for ast-grep rewrite modes.
+- `.claude/settings.json` — permission denies covering ast-grep/sg rewrite modes across launcher spellings; this change added the launcher, short-flag, wildcard-family, and dlx coverage.
