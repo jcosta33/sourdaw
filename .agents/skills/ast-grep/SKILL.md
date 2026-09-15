@@ -29,11 +29,11 @@ ast-grep generates candidates; the repository's own checks enforce architecture.
 
 ### 2. Run mode only — rewrite modes are forbidden
 
-Every search is `pnpm exec ast-grep run --lang <ts|tsx|rust> '<pattern>' <paths>`. Rewrite and update-all modes are forbidden: repository policy bans bulk edits, and the Claude Code permission denies in `.claude/settings.json` already block them by name. Never pass `--rewrite` or `--update-all` to ast-grep.
+Every search is `pnpm exec ast-grep run --lang <ts|tsx|rust> -p '<pattern>' <paths>`. Rewrite and update-all modes are forbidden: repository policy bans bulk edits, and the Claude Code permission denies in `.claude/settings.json` already block them by name. Never pass `--rewrite` or `--update-all` to ast-grep.
 
 ### 3. Practical rules
 
-- Use the full command name `ast-grep`, never `sg`: the short alias is deprecated by the package itself and collides with another executable.
+- Use the full command name `ast-grep`, never `sg`: the alias is deprecated by the package itself (its shim prints a deprecation warning) and it collides with another executable on Linux hosts.
 - Single-quote patterns containing `$`: inside double quotes the shell expands `$$` to its PID, so `'vi.mock($$$ARGS)'` must never be double-quoted.
 - `--lang ts` scans `.ts` files only; use `--lang tsx` for `.tsx` files, because JSX does not parse as plain TypeScript.
 - A syntactic match is a candidate, not proof of semantic identity, reachability, or a defect. Read each match before claiming it means anything.
@@ -42,10 +42,10 @@ Every search is `pnpm exec ast-grep run --lang <ts|tsx|rust> '<pattern>' <paths>
 
 Counts verified guard-wrapped on 2026-09-15 at head `a081b5d3e`; they are sanity anchors, so re-run a recipe before relying on its count.
 
-- Action dispatch sites: `pnpm exec ast-grep run --lang ts 'executeAppAction($$$ARGS)' src` — 278 matches (presentation dispatch needs `--lang tsx`: 15).
-- Mock declarations: `pnpm exec ast-grep run --lang ts 'vi.mock($$$ARGS)' src scripts` — 4942 matches (`.tsx` specs need `--lang tsx`: 1640).
-- External-store binding: `pnpm exec ast-grep run --lang ts 'useSyncExternalStore($$$ARGS)' src` — 5 matches, all in `.ts` hook modules; `--lang tsx` finds 0.
-- Real-time assertion macro: `pnpm exec ast-grep run --lang rust 'debug_assert!($$$ARGS)' crates` — 19 matches.
+- Action dispatch sites: `pnpm exec ast-grep run --lang ts -p 'executeAppAction($$$ARGS)' src` — 278 matches (presentation dispatch needs `--lang tsx`: 15).
+- Mock declarations: `pnpm exec ast-grep run --lang ts -p 'vi.mock($$$ARGS)' src scripts` — 4942 matches (`.tsx` specs need `--lang tsx`: 1640).
+- External-store binding: `pnpm exec ast-grep run --lang ts -p 'useSyncExternalStore($$$ARGS)' src` — 5 matches, all in `.ts` hook modules; `--lang tsx` finds 0.
+- Real-time assertion macro: `pnpm exec ast-grep run --lang rust -p 'debug_assert!($$$ARGS)' crates` — 19 matches.
 
 To count matches, append `--json=compact` and pipe through `python3 -c "import json,sys; print(len(json.load(sys.stdin)))"`.
 
