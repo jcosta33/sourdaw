@@ -186,23 +186,31 @@ export function ensureModelLabelArgs(model: string): string[] {
     ];
 }
 
+/**
+ * `gh label create --force` updates whatever label already owns the name, so the label-creation
+ * path must first prove the model token names no label the repository maintains: overwriting a
+ * descriptive label's color and description would silently convert it into the authorship fence.
+ * Names match case-insensitively because GitHub holds them unique that way. A same-named label
+ * carrying the `Authored by ` description is the mechanism's own output, and an absent name
+ * creates fresh — both proceed.
+ */
+function assertModelLabelNameAvailable(model: string, knownLabels: LabelRow[]): void {
+    const collision = knownLabels.find(
+        (label) => label.name.toLowerCase() === model.toLowerCase() && !isAuthorshipLabel(label)
+    );
+    if (collision !== undefined) {
+        fail(
+            `the model token "${model}" collides with an existing repository label; authorship labels ` +
+                "never overwrite one; pick the model's exact public name"
+        );
+    }
+}
+
 function titleOf(value: unknown): string | undefined {
     if (typeof value === 'object' && value !== null && 'title' in value && typeof value.title === 'string') {
         return value.title;
     }
     return undefined;
-}
-
-function labelNamesFromRow(labels: unknown[] | undefined): string[] {
-    return (labels ?? []).flatMap((label) => {
-        if (typeof label === 'string') {
-            return [label];
-        }
-        if (typeof label === 'object' && label !== null && 'name' in label && typeof label.name === 'string') {
-            return [label.name];
-        }
-        return [];
-    });
 }
 
 /** One repository label as the tracker reports it: its canonical name and, when present, its description. */
@@ -215,6 +223,7 @@ function isAuthorshipLabel(label: LabelRow): boolean {
     return label.description !== undefined && label.description.startsWith(AUTHORED_BY_DESCRIPTION_PREFIX);
 }
 
+/** One parser owns the defensive row shape; name-only readers project onto it. */
 function labelRowsFromRow(labels: unknown[] | undefined): LabelRow[] {
     return (labels ?? []).flatMap((label) => {
         if (typeof label === 'string') {
@@ -227,6 +236,10 @@ function labelRowsFromRow(labels: unknown[] | undefined): LabelRow[] {
         }
         return [];
     });
+}
+
+function labelNamesFromRow(labels: unknown[] | undefined): string[] {
+    return labelRowsFromRow(labels).map((row) => row.name);
 }
 
 export type IssueTrackerRow = {
@@ -889,8 +902,9 @@ export function publishLane(
         testInstructions,
         summary
     );
-    // Resolved before the push: every refusal it can raise (no model on record, an unknown flag
-    // title or label) must land with nothing written, not even the branch push.
+    // Resolved before the push: every refusal it can raise (no model on record, a model token
+    // colliding with an existing label, an unknown flag title or label) must land with nothing
+    // written, not even the branch push.
     const metadata = resolvePublishMetadata(lane, laneIssue, write?.effectiveTitle, metadataFlags, port);
     port.reportDiff?.(lane.path, comparisonHead, headSha);
     if (stack !== undefined) {
@@ -932,7 +946,8 @@ export function publishLane(
     }
     assertStackContext();
     // The label must exist before any pull-request write can reference it; `--force` makes this
-    // create-or-update, so it is safe on every publish.
+    // create-or-update, and the collision guard in resolution has already proven any same-named
+    // label is the mechanism's own, so it is safe on every publish.
     if (metadata !== undefined) {
         port.ensureModelLabel(metadata.model);
     }
@@ -964,7 +979,9 @@ export function publishLane(
  *
  * The model resolution order is the contract: an explicit `--model` wins and is persisted for
  * later runs; otherwise the value `lane:open` recorded for the branch is used; a conforming lane
- * with neither fails closed rather than pushing an unattributed pull request. Milestone and
+ * with neither fails closed rather than pushing an unattributed pull request. The resolved
+ * model's label name is then proven free against the live label list, so the `--force` label
+ * creation can only ever create fresh or update the mechanism's own label. Milestone and
  * projects come from the lane's issue, and flag values override them per field after validation
  * against live tracker state — left empty rather than forced onto the pull request. Descriptive
  * labels come from the same issue read (minus the issue-workflow namespaces and authorship
@@ -1019,7 +1036,11 @@ function resolvePublishMetadata(
         flags?.projects,
         port
     );
-    const descriptive = resolveDescriptiveLabels(inherited?.labels, subject, flags?.labels, port);
+    // One label-list read serves both the label-creation collision guard and `--label`
+    // canonicalization; the collision guard needs it on every conforming publish, flags or not.
+    const knownLabels = port.knownLabels();
+    assertModelLabelNameAvailable(model, knownLabels);
+    const descriptive = resolveDescriptiveLabels(inherited?.labels, subject, flags?.labels, knownLabels);
     if (flaggedModel !== undefined) {
         port.saveAuthorModel(lane.branch, model);
     }
@@ -1050,7 +1071,7 @@ function resolveDescriptiveLabels(
     inheritedLabels: LabelRow[] | undefined,
     subject: string | undefined,
     flaggedLabels: string[] | undefined,
-    port: PublishLanePort
+    knownLabels: LabelRow[]
 ): string[] {
     const carried: string[] = [];
     if (inheritedLabels !== undefined) {
@@ -1064,7 +1085,6 @@ function resolveDescriptiveLabels(
     if (flaggedLabels === undefined) {
         return [...new Set(carried)];
     }
-    const knownLabels = port.knownLabels();
     const canonical = flaggedLabels.map((name) => canonicalLabelName(name, knownLabels));
     return [...new Set([...carried, ...canonical])];
 }

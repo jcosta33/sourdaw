@@ -557,6 +557,7 @@ describe('lane publish', () => {
                     "else if (args[0] === 'api') console.log('[]');\n" +
                     "else if (args[0] === 'issue' && args[1] === 'view') console.log(JSON.stringify({ milestone: null, projectItems: [] }));\n" +
                     "else if (args[0] === 'project' && args[1] === 'list') console.log(JSON.stringify({ projects: [], totalCount: 0 }));\n" +
+                    "else if (args[0] === 'label' && args[1] === 'list') console.log(JSON.stringify([{ name: 'glm-5.3', description: 'Authored by glm-5.3' }]));\n" +
                     "else if (args[0] === 'label' && args[1] === 'create') process.exit(0);\n" +
                     "else if (args[0] === 'pr' && args[1] === 'list') console.log('[]');\n" +
                     "else if (args[0] === 'pr' && args[1] === 'view') console.log(JSON.stringify({ labels: [{ name: 'glm-5.3' }], milestone: null, projectItems: [] }));\n" +
@@ -2492,6 +2493,56 @@ describe('lane publish', () => {
                 expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
                 expect(calls.some((call) => call.startsWith('metaEdit:'))).toBe(false);
             }
+        });
+
+        it('refuses a model token that collides with a repository label before any write', () => {
+            // `gh label create --force` would rewrite the color and description of whatever
+            // label already owns the name, so a token naming a descriptive label must refuse
+            // while nothing is written — in every casing, because GitHub holds label names
+            // unique case-insensitively and the update would find the descriptive label anyway.
+            for (const existing of ['security', 'Security']) {
+                const { port, calls } = fakePort({
+                    repositoryLabels: [{ name: existing, description: 'Something is not working' }],
+                });
+
+                expect(() =>
+                    publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
+                        model: 'security',
+                    })
+                ).toThrow(
+                    'the model token "security" collides with an existing repository label; ' +
+                        "authorship labels never overwrite one; pick the model's exact public name"
+                );
+                expect(calls).toContain('labelList');
+                expect(calls.some((call) => call.startsWith('saveModel:'))).toBe(false);
+                expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+                expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+                expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
+                expect(calls.some((call) => call.startsWith('metaEdit:'))).toBe(false);
+            }
+        });
+
+        it("publishes when the model's own label exists or the name is free", () => {
+            // The guard's other two outcomes: a same-named label carrying the Authored-by
+            // description is this mechanism's own output (the --force update lands on it), and a
+            // name no label holds creates fresh.
+            const own = fakePort({
+                repositoryLabels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            expect(publishLane(12, own.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+            expect(own.calls).toContain('label:glm-5.3');
+            expect(own.calls).toContain('metaEdit:88:glm-5.3:-:-');
+
+            const fresh = fakePort({
+                repositoryLabels: [{ name: 'security', description: 'Something is not working' }],
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            expect(publishLane(12, fresh.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+            expect(fresh.calls).toContain('label:glm-5.3');
+            expect(fresh.calls).toContain('metaEdit:88:glm-5.3:-:-');
         });
 
         it('refuses an unknown --label before writing anything, naming the live list', () => {
