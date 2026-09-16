@@ -7190,14 +7190,11 @@ impl AudioScheduler {
     /// player never made. The foot is the renderer's to remember and to replay
     /// onto a body the engine builds again (`liveMidiControlLatch.ts`).
     ///
-    /// The seam's [`ReleaseScope::Stored`] neither lifts a pedal nor kills the
-    /// voices one is holding: it strands a scheduled note-off and strands
-    /// nothing a player is holding, so a pedalled voice rings on exactly as the
-    /// foot asks. Silencing one is [`ReleaseScope::All`]'s answer, and it
-    /// belongs to the triggers that own it — see
-    /// [`Self::owe_all_releases`], which kills at the trigger because a kill is
-    /// a state write rather than a queued event.
-
+    /// The seam therefore neither lifts a pedal nor kills the voices one is
+    /// holding: a pedalled voice rings on exactly as the foot asks. Silencing
+    /// one is [`ReleaseScope::All`]'s answer and belongs to the triggers that
+    /// own it — see [`Self::owe_all_releases`], which kills at its own trigger
+    /// because a kill is a state write rather than a queued event.
     fn release_sounding_notes(&mut self, seam_offset: usize, scope: ReleaseScope) {
         for slot in 0..self.effects.len() {
             let frame_offset = match self.effects[slot].placement {
