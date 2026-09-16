@@ -5,6 +5,17 @@ const send_panic_to_midi_outputs = vi.hoisted(() => vi.fn());
 const get_track_strip = vi.hoisted(() => vi.fn());
 const send_native_live_midi_note = vi.hoisted(() => vi.fn(async () => true));
 const send_native_live_midi_control = vi.hoisted(() => vi.fn(async () => true));
+const grand_boule_controls = vi.hoisted(() => {
+    const calls: string[] = [];
+    return {
+        calls,
+        ready: true,
+        allNotesOff: vi.fn(() => void calls.push('allNotesOff')),
+        setSustain: vi.fn((position: number) => void calls.push(`setSustain ${position}`)),
+        setSostenuto: vi.fn((engaged: boolean) => void calls.push(`setSostenuto ${engaged}`)),
+        setUnaCorda: vi.fn((engaged: boolean) => void calls.push(`setUnaCorda ${engaged}`)),
+    };
+});
 const is_device_held_by_native_session = vi.hoisted(() =>
     vi.fn<(trackId: string, deviceId: string) => boolean>(() => false)
 );
@@ -48,6 +59,14 @@ const grand_boule_tracks = () => ({
     ],
 });
 
+/** The strip the mocked engine hands back for that track. */
+const grand_boule_strip = () => ({
+    deviceNodes: [
+        { deviceId: 'gluten-1', type: 'gluten' },
+        { deviceId: 'gb-1', type: 'grand-boule', grandBouleControls: grand_boule_controls },
+    ],
+});
+
 describe('panicLiveNotes', () => {
     beforeEach(() => {
         release_all_active_notes.mockClear();
@@ -55,6 +74,12 @@ describe('panicLiveNotes', () => {
         get_track_strip.mockReset();
         send_native_live_midi_note.mockClear();
         send_native_live_midi_control.mockClear();
+        grand_boule_controls.calls.length = 0;
+        grand_boule_controls.ready = true;
+        grand_boule_controls.allNotesOff.mockClear();
+        grand_boule_controls.setSustain.mockClear();
+        grand_boule_controls.setSostenuto.mockClear();
+        grand_boule_controls.setUnaCorda.mockClear();
         is_device_held_by_native_session.mockReset();
         is_device_held_by_native_session.mockReturnValue(false);
         track_store.value = null;
@@ -108,7 +133,10 @@ describe('panicLiveNotes', () => {
         // Note-offs alone leave a damper-held voice ringing: the engine's body
         // routes a note-off to release_key while the pedal is down, so a panic
         // needs the two channel-mode messages to reach silence and lift the
-        // pedal behind it.
+        // pedal behind it. Reset All Controllers is also what discharges the
+        // renderer's memory of that pedal, so the body the next play builds does
+        // not come up standing on it — `liveMidiControlLatch.ts` owns that half,
+        // and its own spec pins it.
         track_store.value = grand_boule_tracks();
         is_device_held_by_native_session.mockImplementation(
             (trackId: string, deviceId: string) => trackId === 'track-1' && deviceId === 'gb-1'
@@ -155,5 +183,35 @@ describe('panicLiveNotes', () => {
 
         expect(send_panic_to_midi_outputs).not.toHaveBeenCalled();
         expect(send_native_live_midi_control).toHaveBeenCalledTimes(2);
+    });
+
+    it('kills the Web Audio piano and then raises its three pedals, in that order', () => {
+        // The same reason the engine's body needs the channel-mode pair: a
+        // note-off under a held damper releases the key instead of damping it.
+        // Raising a pedal before the kill would let the strings ring out rather
+        // than stop, so the order is the behaviour, not an incidental.
+        track_store.value = grand_boule_tracks();
+        get_track_strip.mockReturnValue(grand_boule_strip());
+
+        panicLiveNotes();
+
+        expect(grand_boule_controls.calls).toEqual([
+            'allNotesOff',
+            'setSustain 0',
+            'setSostenuto false',
+            'setUnaCorda false',
+        ]);
+    });
+
+    it('sends the Web Audio piano nothing while its node is not ready', () => {
+        // Nothing has a worklet to receive any of this yet, and nothing is
+        // sounding on it to silence.
+        track_store.value = grand_boule_tracks();
+        grand_boule_controls.ready = false;
+        get_track_strip.mockReturnValue(grand_boule_strip());
+
+        panicLiveNotes();
+
+        expect(grand_boule_controls.calls).toEqual([]);
     });
 });

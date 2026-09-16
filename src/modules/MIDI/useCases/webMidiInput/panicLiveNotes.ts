@@ -6,6 +6,7 @@ import { releaseAllActiveNotes } from '../../repositories/webMidi/releaseAllActi
 import { sendPanicToMidiOutputs } from '../../repositories/webMidi/sendPanicToMidiOutputs';
 
 import { releaseNativeLiveNote } from './releaseNativeLiveNote';
+import { resolveDeviceNode } from './resolveDeviceNode';
 
 /**
  * The channel-mode messages carry a defined zero value, and a panic addresses
@@ -42,42 +43,88 @@ export function panicLiveNotes({ notifyOutputs = true }: PanicLiveNotesInput = {
         getTrackStrip: (trackId) => audioEngine.getTrackStrip(trackId),
         releaseNativeNote: releaseNativeLiveNote,
     });
-    silenceNativeGrandBouleBodies();
+    silenceGrandBouleBodies();
     if (notifyOutputs) {
         sendPanicToMidiOutputs();
     }
 }
 
 /**
- * Silence every Grand Boule body the engine holds and lift its pedals.
+ * Silence every Grand Boule the app holds a body for, on both carriers, and
+ * lift its pedals.
  *
  * The note-offs above cannot discharge a panic on this instrument. With the
- * damper down, or a sostenuto capture standing, the engine's body routes a
- * note-off to `release_key` rather than to damping, so the key goes up and the
- * strings ring on. All Sound Off kills the voices outright, and Reset All
- * Controllers lifts the pedals that made the kill necessary — otherwise the
- * very next note sounded would be caught by the same held damper.
+ * damper down, or a sostenuto capture standing, either carrier routes a
+ * note-off to a key release rather than to damping, so the key goes up and the
+ * strings ring on. Both are therefore killed outright and then have their
+ * pedals raised — otherwise the very next note sounded would be caught by the
+ * same held damper.
  *
- * Held rather than carried, and every track rather than the selected one. A
- * shadowed session sounds nothing and still builds the bodies, so a pedal can
- * be latched on one nobody hears; and a panic is addressed at the instrument,
- * not at whatever the user happens to have selected.
+ * Every track rather than the selected one: a panic is addressed at the
+ * instrument, not at whatever the user happens to have selected.
  */
-function silenceNativeGrandBouleBodies(): void {
+function silenceGrandBouleBodies(): void {
     for (const track of trackStore.value?.tracks ?? []) {
         for (const device of track.devices) {
-            if (device.type !== 'grand-boule' || !isDeviceHeldByNativeSession(track.id, device.id)) {
+            if (device.type !== 'grand-boule') {
                 continue;
             }
-            for (const controller of [CC_ALL_SOUND_OFF, CC_RESET_ALL_CONTROLLERS]) {
-                void sendNativeLiveMidiControl({
-                    trackId: track.id,
-                    deviceId: device.id,
-                    controller,
-                    value: PANIC_VALUE,
-                    channel: PANIC_CHANNEL,
-                });
-            }
+            silenceWebAudioGrandBoule(track.id, device.id);
+            silenceNativeGrandBoule(track.id, device.id);
         }
+    }
+}
+
+/**
+ * Kill the Web Audio node's voices and raise its three pedals.
+ *
+ * The kill goes first: with a pedal still engaged the node holds its voices
+ * exactly as the engine's body does, so lifting the pedals ahead of it would
+ * release the strings into a ring-out rather than into silence.
+ *
+ * A node that is not ready has no worklet to receive any of this, and there is
+ * nothing sounding on it to silence.
+ *
+ * Addressed by id alone: the caller already knows this device is a Grand Boule,
+ * and `resolveDeviceNode`'s kind arm matches the first node of that kind in
+ * strip order, so a strip hosting two pianos would silence the first one twice
+ * and the second never.
+ */
+function silenceWebAudioGrandBoule(trackId: string, deviceId: string): void {
+    const strip = audioEngine.getTrackStrip(trackId);
+    const controls = resolveDeviceNode(strip, { deviceId })?.grandBouleControls;
+    if (!controls?.ready) {
+        return;
+    }
+
+    controls.allNotesOff();
+    controls.setSustain(0);
+    controls.setSostenuto(false);
+    controls.setUnaCorda(false);
+}
+
+/**
+ * Send the engine's body the two channel-mode messages a panic is made of.
+ *
+ * All Sound Off kills the voices; Reset All Controllers lifts the pedals that
+ * made the kill necessary, and discharges the renderer's memory of them on the
+ * way through, so the body built for the next play does not come up standing on
+ * a pedal this panic just raised (`liveMidiControlLatch.ts`).
+ *
+ * Held rather than carried: a shadowed session sounds nothing and still builds
+ * the bodies, so a pedal can be latched on one nobody hears.
+ */
+function silenceNativeGrandBoule(trackId: string, deviceId: string): void {
+    if (!isDeviceHeldByNativeSession(trackId, deviceId)) {
+        return;
+    }
+    for (const controller of [CC_ALL_SOUND_OFF, CC_RESET_ALL_CONTROLLERS]) {
+        void sendNativeLiveMidiControl({
+            trackId,
+            deviceId,
+            controller,
+            value: PANIC_VALUE,
+            channel: PANIC_CHANNEL,
+        });
     }
 }

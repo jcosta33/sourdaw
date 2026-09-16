@@ -112,7 +112,6 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                         channel,
                     },
                     {
-                        isDeviceHeldByNativeSession: deps.isDeviceHeldByNativeSession,
                         sendNativeLiveMidiControl: deps.sendNativeLiveMidiControl,
                         emitPedalCc: (payload) => void deps.eventBus.emit('midi.pedalCc', payload),
                     }

@@ -25,8 +25,6 @@ export type PedalMessage = Readonly<{
 }>;
 
 export type PedalRouteDependencies = Readonly<{
-    /** Whether the engine holds a body for this device, audible or shadowed. */
-    isDeviceHeldByNativeSession: (trackId: string, deviceId: string) => boolean;
     /** The one sanctioned renderer route for a controller to a native body. */
     sendNativeLiveMidiControl: (input: {
         trackId: string;
@@ -35,7 +33,10 @@ export type PedalRouteDependencies = Readonly<{
         value: number;
         channel: number;
     }) => Promise<boolean>;
-    /** Publishes the panel's pedal indicator, whichever carrier sounded it. */
+    /**
+     * Publishes the panel's pedal indicator, which reports where the foot is —
+     * whichever body took the movement, or none did.
+     */
     emitPedalCc: (payload: { deviceId: string; cc: number; value: number | boolean }) => void;
 }>;
 
@@ -61,18 +62,21 @@ export function routePedalToBodies(pedal: PedalMessage, deps: PedalRouteDependen
 
     writePedalToWebAudioNode(pedal);
 
-    if (deps.isDeviceHeldByNativeSession(pedal.trackId, pedal.deviceId)) {
-        // The raw 7-bit value, deliberately: the engine's own body divides CC64
-        // by full scale and reads 66 and 67 against the switch threshold, so a
-        // normalized fraction sent here would latch every pedal off.
-        void deps.sendNativeLiveMidiControl({
-            trackId: pedal.trackId,
-            deviceId: pedal.deviceId,
-            controller: pedal.cc,
-            value: pedal.value,
-            channel: pedal.channel,
-        });
-    }
+    // Unconditionally, whether or not the engine holds a body for this device:
+    // that route records the movement before it decides who can be sent it, so
+    // a pedal pressed with no session open is remembered and pressed onto the
+    // body the next play builds.
+    //
+    // The raw 7-bit value, deliberately: the engine's own body divides CC64 by
+    // full scale and reads 66 and 67 against the switch threshold, so a
+    // normalized fraction sent here would latch every pedal off.
+    void deps.sendNativeLiveMidiControl({
+        trackId: pedal.trackId,
+        deviceId: pedal.deviceId,
+        controller: pedal.cc,
+        value: pedal.value,
+        channel: pedal.channel,
+    });
 
     // Once per message: the foot moved once, and the panel draws one indicator
     // however many bodies took the movement.

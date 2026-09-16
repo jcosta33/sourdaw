@@ -2,17 +2,18 @@
  * The renderer's one route for a live controller to a native-carried
  * instrument.
  *
- * Three things decide whether a pedal reaches the instrument: that the batch
- * carries the controller and its raw 7-bit position field for field, that a
- * caller with no session open is told so rather than believing the engine took
- * it, and that the message waits behind everything already queued on the
- * session. A controller that overtook the batch splicing its own strip would
- * name a device the engine does not hold yet.
+ * Four things decide what happens to a pedal: that the batch carries the
+ * controller and its raw 7-bit position field for field, that the message waits
+ * behind everything already queued on the session, that a device this engine
+ * does not hold a body for is not sent one — and that every call is remembered
+ * whatever the other three decide, because a pedal nothing could be sent to is
+ * still a pedal the player's foot is on.
  */
 
-import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { type AudioGraphApplyResult, type AudioGraphBackend } from '../../../models/AudioGraphBackend';
+import { readLatchedLiveMidiControls, type LatchedLiveMidiControl } from '../../../services/liveMidiControlLatch';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { sendNativeLiveMidiControl } from '../sendNativeLiveMidiControl';
 
@@ -34,10 +35,34 @@ function armedSession(): Mock<AudioGraphBackend['apply']> {
     return apply;
 }
 
+/** Records the engine as holding a body for the device the specs address. */
+function holdsAddressedDevice(): void {
+    nativeLiveGraphSession.nativeChainByStripId = new Map([['track-1', ['device-a']]]);
+}
+
+/** What the latch remembers for the device the specs address. */
+function latchedForAddressedDevice(): readonly LatchedLiveMidiControl[] {
+    return readLatchedLiveMidiControls().filter((control) => control.deviceId === 'device-a');
+}
+
 describe('sendNativeLiveMidiControl', () => {
+    beforeEach(() => {
+        holdsAddressedDevice();
+    });
+
     afterEach(() => {
         nativeLiveGraphSession.backend = null;
         nativeLiveGraphSession.pending = Promise.resolve();
+        nativeLiveGraphSession.nativeChainByStripId = new Map();
+        // Reset All Controllers is the message that discharges the latch, so it
+        // is also how one spec's remembered pedals are kept out of the next.
+        void sendNativeLiveMidiControl({
+            trackId: 'track-1',
+            deviceId: 'device-a',
+            controller: 121,
+            value: 0,
+            channel: 0,
+        });
     });
 
     it('sends one batch carrying the stated controller while a session is armed', async () => {
@@ -68,7 +93,7 @@ describe('sendNativeLiveMidiControl', () => {
         });
     });
 
-    it('sends nothing and answers false with no session armed', async () => {
+    it('sends nothing and answers false with no session armed, and remembers the pedal anyway', async () => {
         const apply = armedSession();
         nativeLiveGraphSession.backend = null;
 
@@ -83,6 +108,31 @@ describe('sendNativeLiveMidiControl', () => {
         ).resolves.toBe(false);
 
         expect(apply).not.toHaveBeenCalled();
+        // The foot is down whether or not anything could be told: the body the
+        // next play builds is what this record exists to reach.
+        expect(latchedForAddressedDevice()).toEqual([
+            { trackId: 'track-1', deviceId: 'device-a', controller: 64, value: 127, channel: 0 },
+        ]);
+    });
+
+    it('sends nothing to a device the session holds no body for, and remembers the pedal', async () => {
+        const apply = armedSession();
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['track-1', ['device-b']]]);
+
+        await expect(
+            sendNativeLiveMidiControl({
+                trackId: 'track-1',
+                deviceId: 'device-a',
+                controller: 66,
+                value: 127,
+                channel: 0,
+            })
+        ).resolves.toBe(false);
+
+        expect(apply).not.toHaveBeenCalled();
+        expect(latchedForAddressedDevice()).toEqual([
+            { trackId: 'track-1', deviceId: 'device-a', controller: 66, value: 127, channel: 0 },
+        ]);
     });
 
     it('carries a pedal lift as a zero rather than defaulting the position', async () => {
@@ -99,6 +149,31 @@ describe('sendNativeLiveMidiControl', () => {
         expect(apply.mock.calls[0]?.[0]).toMatchObject({
             commands: [{ kind: 'send-midi-control', controller: 66, value: 0 }],
         });
+    });
+
+    it('forgets every pedal on a device once Reset All Controllers is sent to it', async () => {
+        armedSession();
+
+        await sendNativeLiveMidiControl({
+            trackId: 'track-1',
+            deviceId: 'device-a',
+            controller: 64,
+            value: 127,
+            channel: 0,
+        });
+        expect(latchedForAddressedDevice()).toHaveLength(1);
+
+        await sendNativeLiveMidiControl({
+            trackId: 'track-1',
+            deviceId: 'device-a',
+            controller: 121,
+            value: 0,
+            channel: 0,
+        });
+
+        // The message lifts the body's pedals, so remembering them past it
+        // would press one back onto the next body built.
+        expect(latchedForAddressedDevice()).toEqual([]);
     });
 
     it('waits behind what the session already has queued', async () => {

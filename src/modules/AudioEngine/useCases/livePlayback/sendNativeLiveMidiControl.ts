@@ -14,19 +14,29 @@
  * Queued on the session's own chain rather than sent straight, so the pedal
  * lands behind the batch that built the strip carrying it and behind the stop
  * that tears it down, and behind the note it was pressed before. Whether a
- * session is armed is decided *on* the queue, for the reason
+ * session is armed, and whether it holds a body for the device, are both
+ * decided *on* the queue, for the reason
  * `forwardMasterGainToNativeLiveGraphSession` decides it there: a message that
  * raced a start would otherwise be dropped before the start it was meant to
- * follow had published its handle.
+ * follow had published its handle, and the chain it names is the one the start
+ * records.
  *
- * Answers whether a session backend took the message. Every caller today fires
- * and forgets: the carrier is decided before the send, on the same carried
- * check the note route uses, so nothing branches on this answer. It exists so a
- * spec can observe a refused send without standing up a backend.
+ * Every call is remembered before any of that (`liveMidiControlLatch.ts`),
+ * which is why the held check lives here rather than at the callers. A pedal
+ * pressed with no session open, or on a device this engine does not hold, is
+ * still a pedal the player's foot is on: dropped at the caller it would be
+ * forgotten, and the body built for the next play would come up with its pedals
+ * raised under a foot that never moved.
+ *
+ * Answers whether a session backend took the message. Callers fire and forget —
+ * the message is recorded whatever the answer — so the answer exists for specs,
+ * which can observe a refused send without standing up a backend.
  */
 
 import { type AudioGraphSendMidiControlCommand } from '../../models/AudioGraphBackend';
+import { noteLiveMidiControl } from '../../services/liveMidiControlLatch';
 
+import { isDeviceHeldByNativeSession } from './isDeviceHeldByNativeSession';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 
 export type NativeLiveMidiControl = Readonly<{
@@ -41,9 +51,10 @@ export type NativeLiveMidiControl = Readonly<{
 }>;
 
 export function sendNativeLiveMidiControl(input: NativeLiveMidiControl): Promise<boolean> {
+    noteLiveMidiControl(input);
     return queueOnNativeLiveGraphSession(async (): Promise<boolean> => {
         const backend = nativeLiveGraphSession.backend;
-        if (!backend) {
+        if (!backend || !isDeviceHeldByNativeSession(input.trackId, input.deviceId)) {
             return false;
         }
         const command: AudioGraphSendMidiControlCommand = {
