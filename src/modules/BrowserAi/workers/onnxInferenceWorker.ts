@@ -12,7 +12,7 @@
  */
 
 import { KOKORO_MODEL_ARTIFACT } from '../models/KokoroArtifactManifest';
-import { type ModelStorageTransferMessage } from '../models/ModelStorageWorkerProtocol';
+import { MODEL_STORAGE_TRANSFER_TYPE, type ModelStorageTransferMessage } from '../models/ModelStorageWorkerProtocol';
 
 import type { OnnxExecutionProvider, WorkerRequest, WorkerResponse, TensorData } from '../models/InferenceRequest';
 
@@ -314,7 +314,7 @@ function receiveModelData(port: MessagePort, signal: AbortSignal): Promise<Array
 
         port.onmessage = (event: MessageEvent<ModelStorageTransferMessage>) => {
             const message = event.data;
-            if (message.type === 'model-data') {
+            if (message.type === MODEL_STORAGE_TRANSFER_TYPE.modelData) {
                 succeed(message.modelData);
                 return;
             }

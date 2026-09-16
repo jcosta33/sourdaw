@@ -27,9 +27,14 @@ import { createProcessor } from './processorFactory';
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
+import {
+    YEAST_MIDI_EVENT_KIND,
+    YEAST_WORKER_MESSAGE_TYPE,
+    YEAST_WORKER_PROTOCOL_VERSION,
+} from '../models/YeastWorkerProtocol';
 
 type YeastProcessBlockMessage = {
-    type: 'processBlock';
+    type: typeof YEAST_WORKER_MESSAGE_TYPE.processBlock;
     requestId: number;
     captureEpoch: number;
     rackId: string;
@@ -57,7 +62,6 @@ type ParsedSetProjection = {
 
 const INVALID_EXECUTE_COMMAND_ERROR = 'Invalid executeCommand message';
 const INVALID_SET_PROJECTION_ERROR = 'Invalid setProjection message';
-const YEAST_WORKER_PROTOCOL_VERSION = 1;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -96,14 +100,14 @@ function isMidiEventKind(value: unknown): value is MidiEvent['kind'] {
         return false;
     }
     switch (value.type) {
-        case 'noteOn':
+        case YEAST_MIDI_EVENT_KIND.noteOn:
             return isMidiChannel(value.channel) && isMidiNote(value.note) && isFiniteNumber(value.velocity);
-        case 'noteOff':
+        case YEAST_MIDI_EVENT_KIND.noteOff:
             return isMidiChannel(value.channel) && isMidiNote(value.note);
-        case 'cc':
+        case YEAST_MIDI_EVENT_KIND.cc:
             return isMidiChannel(value.channel) && isMidiController(value.cc) && isFiniteNumber(value.value);
-        case 'pitchBend':
-        case 'channelPressure':
+        case YEAST_MIDI_EVENT_KIND.pitchBend:
+        case YEAST_MIDI_EVENT_KIND.channelPressure:
             return isMidiChannel(value.channel) && isFiniteNumber(value.value);
         default:
             return false;
@@ -179,7 +183,7 @@ function isTransportInfo(value: unknown): value is TransportInfo {
 function parseProcessBlock(value: unknown): YeastProcessBlockMessage | undefined {
     if (
         !isPlainObject(value) ||
-        value.type !== 'processBlock' ||
+        value.type !== YEAST_WORKER_MESSAGE_TYPE.processBlock ||
         !isCommandId(value.requestId) ||
         !isCommandId(value.captureEpoch) ||
         !isTrackId(value.rackId) ||
@@ -195,7 +199,7 @@ function parseProcessBlock(value: unknown): YeastProcessBlockMessage | undefined
         return undefined;
     }
     return {
-        type: 'processBlock',
+        type: YEAST_WORKER_MESSAGE_TYPE.processBlock,
         requestId: value.requestId,
         captureEpoch: value.captureEpoch,
         rackId: value.rackId,
@@ -250,7 +254,7 @@ function isProjectionItem(value: unknown): value is YeastProcessorProjectionItem
 }
 
 function parseSetProjection(value: unknown): ParsedSetProjection | undefined {
-    if (!isPlainObject(value) || value.type !== 'setProjection' || !isCommandId(value.projectionId)) {
+    if (!isPlainObject(value) || value.type !== YEAST_WORKER_MESSAGE_TYPE.setProjection || !isCommandId(value.projectionId)) {
         return undefined;
     }
     if (!isFiniteNumber(value.nowSamples)) {
@@ -268,7 +272,7 @@ function parseSetProjection(value: unknown): ParsedSetProjection | undefined {
 }
 
 function parseAllNotesOff(value: unknown): { panicId: number; nowSamples: number } | undefined {
-    if (!isPlainObject(value) || value.type !== 'allNotesOff' || !isCommandId(value.panicId)) {
+    if (!isPlainObject(value) || value.type !== YEAST_WORKER_MESSAGE_TYPE.allNotesOff || !isCommandId(value.panicId)) {
         return undefined;
     }
     if (!isFiniteNumber(value.nowSamples)) {
@@ -282,7 +286,7 @@ function parseReleasePreview(
 ): { rackId: string; routeId: string; trackId: string; captureEpoch: number } | undefined {
     if (
         !isPlainObject(value) ||
-        value.type !== 'releasePreview' ||
+        value.type !== YEAST_WORKER_MESSAGE_TYPE.releasePreview ||
         !isTrackId(value.rackId) ||
         !isTrackId(value.routeId) ||
         !isTrackId(value.trackId) ||
@@ -299,7 +303,7 @@ function parseReleasePreview(
 }
 
 function parseExecuteCommand(value: unknown): ParsedExecuteCommand | undefined {
-    if (!isPlainObject(value) || value.type !== 'executeCommand' || !isCommandId(value.commandId)) {
+    if (!isPlainObject(value) || value.type !== YEAST_WORKER_MESSAGE_TYPE.executeCommand || !isCommandId(value.commandId)) {
         return undefined;
     }
 
@@ -335,20 +339,20 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
     if (!isPlainObject(data)) {
         return;
     }
-    if (data.type === 'initialize') {
+    if (data.type === YEAST_WORKER_MESSAGE_TYPE.initialize) {
         if (data.protocolVersion === YEAST_WORKER_PROTOCOL_VERSION) {
-            postMessage({ type: 'ready', protocolVersion: YEAST_WORKER_PROTOCOL_VERSION });
+            postMessage({ type: YEAST_WORKER_MESSAGE_TYPE.ready, protocolVersion: YEAST_WORKER_PROTOCOL_VERSION });
         }
         return;
     }
-    if (data.type === 'executeCommand') {
+    if (data.type === YEAST_WORKER_MESSAGE_TYPE.executeCommand) {
         const parsed = parseExecuteCommand(data);
         if (!parsed) {
             return;
         }
         if (!parsed.command) {
             postMessage({
-                type: 'commandAck',
+                type: YEAST_WORKER_MESSAGE_TYPE.commandAck,
                 commandId: parsed.commandId,
                 accepted: false,
                 error: INVALID_EXECUTE_COMMAND_ERROR,
@@ -358,13 +362,13 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
         try {
             const accepted = rack.executeCommand(parsed.command);
             postMessage({
-                type: 'commandAck',
+                type: YEAST_WORKER_MESSAGE_TYPE.commandAck,
                 commandId: parsed.commandId,
                 accepted: accepted === true,
             });
         } catch (error: unknown) {
             postMessage({
-                type: 'commandAck',
+                type: YEAST_WORKER_MESSAGE_TYPE.commandAck,
                 commandId: parsed.commandId,
                 accepted: false,
                 error: error instanceof Error ? error.message : String(error),
@@ -373,14 +377,14 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
         return;
     }
 
-    if (data.type === 'setProjection') {
+    if (data.type === YEAST_WORKER_MESSAGE_TYPE.setProjection) {
         const parsed = parseSetProjection(data);
         if (!parsed) {
             return;
         }
         if (parsed.error) {
             postMessage({
-                type: 'projectionError',
+                type: YEAST_WORKER_MESSAGE_TYPE.projectionError,
                 projectionId: parsed.projectionId,
                 error: parsed.error,
             });
@@ -388,10 +392,10 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
         }
         try {
             const offs = rack.replaceProjection(parsed.processors, createProcessor, parsed.nowSamples);
-            postMessage({ type: 'projectionAck', projectionId: parsed.projectionId, events: offs });
+            postMessage({ type: YEAST_WORKER_MESSAGE_TYPE.projectionAck, projectionId: parsed.projectionId, events: offs });
         } catch (error: unknown) {
             postMessage({
-                type: 'projectionError',
+                type: YEAST_WORKER_MESSAGE_TYPE.projectionError,
                 projectionId: parsed.projectionId,
                 error: error instanceof Error ? error.message : String(error),
             });
@@ -399,7 +403,7 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
         return;
     }
 
-    if (data.type === 'allNotesOff') {
+    if (data.type === YEAST_WORKER_MESSAGE_TYPE.allNotesOff) {
         const parsed = parseAllNotesOff(data);
         if (!parsed) {
             return;
@@ -407,14 +411,14 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
         try {
             const offs = rack.allNotesOff(parsed.nowSamples);
             postMessage({
-                type: 'allNotesOffAck',
+                type: YEAST_WORKER_MESSAGE_TYPE.allNotesOffAck,
                 panicId: parsed.panicId,
                 completed: true,
                 events: offs,
             });
         } catch (error: unknown) {
             postMessage({
-                type: 'allNotesOffAck',
+                type: YEAST_WORKER_MESSAGE_TYPE.allNotesOffAck,
                 panicId: parsed.panicId,
                 completed: false,
                 error: error instanceof Error ? error.message : String(error),
@@ -423,7 +427,7 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
         return;
     }
 
-    if (data.type === 'releasePreview') {
+    if (data.type === YEAST_WORKER_MESSAGE_TYPE.releasePreview) {
         const parsed = parseReleasePreview(data);
         if (parsed) {
             rack.releasePreview(parsed.rackId, parsed.routeId, parsed.trackId, parsed.captureEpoch);
@@ -448,7 +452,7 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
             message.captureEpoch,
             message.preserveInputTrackIds
         );
-        postMessage({ type: 'processed', requestId: message.requestId, events: processed });
+        postMessage({ type: YEAST_WORKER_MESSAGE_TYPE.processed, requestId: message.requestId, events: processed });
         const page = rack.takePreviewPage();
         if (!page) {
             return;
@@ -457,7 +461,7 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
             deferPreviewDelivery(() => {
                 try {
                     postMessage({
-                        type: 'previewPage',
+                        type: YEAST_WORKER_MESSAGE_TYPE.previewPage,
                         requestId: message.requestId,
                         captureEpoch: message.captureEpoch,
                         page,
@@ -471,7 +475,7 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
         }
     } catch (error: unknown) {
         postMessage({
-            type: 'processedError',
+            type: YEAST_WORKER_MESSAGE_TYPE.processedError,
             requestId: message.requestId,
             error: error instanceof Error ? error.message : String(error),
         });
