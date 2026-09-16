@@ -1,0 +1,18 @@
+crates/daw-core/src/tuning.rs
+  h_1228e573df1f42 3-17,30-31
+crates/daw-dsp/src/crumbs/analysis/pitch.rs
+  h_1228e573df1f42 17-30,131,145,151
+crates/scoring/src/tuning.rs
+  h_1228e573df1f42 8-22,34,44,48-49,114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "85eefcb839804ac902432595315e9684c31f9d93",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
