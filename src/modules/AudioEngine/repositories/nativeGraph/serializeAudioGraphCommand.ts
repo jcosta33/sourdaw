@@ -47,9 +47,11 @@ import {
     type AudioGraphParameterWrite,
     type AudioGraphRouteTarget,
     type AudioGraphScheduleMidiCommand,
+    type AudioGraphSendMidiControlCommand,
     type AudioGraphSendMidiNoteCommand,
     type AudioGraphSendTap,
     type AudioGraphClearMidiCommand,
+    type AudioGraphSetTransportCommand,
     type AudioGraphStepWrite,
     type AudioGraphStripParameterTarget,
     type AudioGraphStripState,
@@ -155,6 +157,14 @@ export type NativeGraphWireCommand =
           channel: number;
           isNoteOn: boolean;
       }>
+    | Readonly<{
+          kind: 'send-midi-control';
+          trackId: string;
+          deviceId: string;
+          controller: number;
+          value: number;
+          channel: number;
+      }>
     | Readonly<{ kind: 'clear-midi'; trackId: string; deviceId: string; fromTime: number; toTime: number | null }>
     | Readonly<{ kind: 'set-transport'; playing: boolean; positionSeconds: number; locate?: boolean }>
     | Readonly<{ kind: 'set-monitor-shadow'; shadowed: boolean }>
@@ -236,12 +246,12 @@ function serializeMidiNote(note: AudioGraphMidiNoteEvent): NativeGraphWireMidiNo
 }
 
 /**
- * The three device-addressed MIDI commands, which share one law: the
- * contract's device target is flattened, because `graph.rs` reads the strip
- * and the device as each variant's own fields.
+ * The timeline-addressed MIDI commands, which share one law with the live
+ * pair below: the contract's device target is flattened, because `graph.rs`
+ * reads the strip and the device as each variant's own fields.
  */
 function serializeMidiCommand(
-    command: AudioGraphScheduleMidiCommand | AudioGraphSendMidiNoteCommand | AudioGraphClearMidiCommand
+    command: AudioGraphScheduleMidiCommand | AudioGraphClearMidiCommand
 ): NativeGraphWireCommand {
     switch (command.kind) {
         case 'schedule-midi':
@@ -253,16 +263,6 @@ function serializeMidiCommand(
                 // by the mirror; the roll mixes it first, so it has no default.
                 probabilitySeed: command.probabilitySeed,
                 notes: command.notes.map(serializeMidiNote),
-            };
-        case 'send-midi-note':
-            return {
-                kind: 'send-midi-note',
-                trackId: command.target.trackId,
-                deviceId: command.target.deviceId,
-                note: command.note,
-                velocity: command.velocity,
-                channel: command.channel,
-                isNoteOn: command.isNoteOn,
             };
         case 'clear-midi':
             return {
@@ -279,6 +279,53 @@ function serializeMidiCommand(
     // Unreachable while the switch covers the narrowed union.
     const unhandled: never = command;
     throw new Error(`unhandled command: ${JSON.stringify(unhandled)}`);
+}
+
+/**
+ * The two live messages, which the mirror reads on the same terms: a device
+ * named by strip and id, and nothing placing the message on the timeline.
+ *
+ * Split out of the switch below because they are the one pair of commands that
+ * share a shape rather than a field list, so stating the shared half once is
+ * what keeps a note and a controller addressing the same device.
+ */
+function serializeLiveMidi(
+    command: AudioGraphSendMidiNoteCommand | AudioGraphSendMidiControlCommand
+): NativeGraphWireCommand {
+    const target = { trackId: command.target.trackId, deviceId: command.target.deviceId };
+    if (command.kind === 'send-midi-note') {
+        return {
+            kind: 'send-midi-note',
+            ...target,
+            note: command.note,
+            velocity: command.velocity,
+            channel: command.channel,
+            isNoteOn: command.isNoteOn,
+        };
+    }
+    return {
+        kind: 'send-midi-control',
+        ...target,
+        controller: command.controller,
+        value: command.value,
+        channel: command.channel,
+    };
+}
+
+/**
+ * The transport command, whose `locate` is this file's one field that says
+ * something by being absent.
+ */
+function serializeTransport(command: AudioGraphSetTransportCommand): NativeGraphWireCommand {
+    return {
+        kind: 'set-transport',
+        playing: command.playing,
+        positionSeconds: command.positionSeconds,
+        // Absence is the contract's meaning of "this is a locate", and the
+        // native default matches it, so only the withheld locate travels — the
+        // same law `replaceTopology` follows.
+        ...(command.locate === false ? { locate: false } : {}),
+    };
 }
 
 export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGraphWireCommand {
@@ -345,19 +392,13 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
         case 'schedule-clip':
             return { kind: 'schedule-clip', playback: serializePlayback(command.playback) };
         case 'schedule-midi':
-        case 'send-midi-note':
         case 'clear-midi':
             return serializeMidiCommand(command);
+        case 'send-midi-note':
+        case 'send-midi-control':
+            return serializeLiveMidi(command);
         case 'set-transport':
-            return {
-                kind: 'set-transport',
-                playing: command.playing,
-                positionSeconds: command.positionSeconds,
-                // Absence is the contract's meaning of "this is a locate", and
-                // the native default matches it, so only the withheld locate
-                // travels — the same law `replaceTopology` follows.
-                ...(command.locate === false ? { locate: false } : {}),
-            };
+            return serializeTransport(command);
         case 'set-monitor-shadow':
             return { kind: 'set-monitor-shadow', shadowed: command.shadowed };
         case 'set-master-gain':

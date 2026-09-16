@@ -10,7 +10,11 @@ import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHan
 import { type GrandBouleState } from '../stores/grandBouleStore';
 
 type SetGrandBouleSustainInput = {
-    engine: GrandBouleEngineHandle;
+    /**
+     * Absent when the position was already delivered to the bodies by the
+     * pedal route (`routePedalToBodies.ts`); the store alone follows.
+     */
+    engine?: GrandBouleEngineHandle;
     position: number;
     store: Store<GrandBouleState>;
 };
@@ -25,5 +29,5 @@ export function setGrandBouleSustain(input: SetGrandBouleSustainInput): void {
         ...state,
         pedals: { ...state.pedals, sustain: clamped },
     });
-    input.engine.setSustain({ position: clamped });
+    input.engine?.setSustain({ position: clamped });
 }

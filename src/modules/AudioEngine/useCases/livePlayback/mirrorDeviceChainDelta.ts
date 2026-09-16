@@ -38,6 +38,7 @@ import { type Device, type Track } from '#/modules/Arrangement/stores';
 import { type AudioGraphCommand } from '../../models/AudioGraphBackend';
 
 import { isHostedPluginDevice } from './isHostedPluginDevice';
+import { latchedPedalCommands } from './latchedPedalCommands';
 import { nativeBuiltinBody } from './nativeBuiltinBodies';
 import { nativeInsertIndex } from './nativeChainIndex';
 import { nativeEnginePlayheadFeed } from './nativeEnginePlayheadFeedState';
@@ -94,6 +95,14 @@ function survivorsWereReordered(before: readonly Device[], after: readonly Devic
 }
 
 /**
+ * The remembered pedals for every device this rebuild is about to build again
+ * on this track ({@link latchedPedalCommands}).
+ */
+function latchedPedalsFor(track: Track): readonly AudioGraphCommand[] {
+    return latchedPedalCommands(track.devices.map((device) => ({ trackId: track.id, deviceId: device.id })));
+}
+
+/**
  * Take the whole chain down and build it back in project order, in one batch.
  *
  * The batch applies at a single block boundary, so the strip is never observed
@@ -105,6 +114,10 @@ function survivorsWereReordered(before: readonly Device[], after: readonly Devic
  * Indices are project positions here, and that is correct: the mapper clamps an
  * index to the chain it has, so devices it omits leave the ones behind them
  * clamped to the end, in order.
+ *
+ * The remembered pedals ride this same batch, behind every insert, for the
+ * reasons {@link latchedPedalCommands} states — a rebuilt body would otherwise
+ * render with the player's foot lifted.
  */
 function rebuildChain(track: Track, nativeChain: readonly string[]): readonly AudioGraphCommand[] {
     return [
@@ -115,6 +128,7 @@ function rebuildChain(track: Track, nativeChain: readonly string[]): readonly Au
             device: projectDeviceForNativeBody(device),
             index,
         })),
+        ...latchedPedalsFor(track),
     ];
 }
 
@@ -138,6 +152,11 @@ function editChain(input: MirrorDeviceChainDeltaInput, nativeChain: readonly str
         }
         const index = nativeInsertIndex(idsOf(after.devices), device.id, projected);
         commands.push({ kind: 'insert-device', trackId: after.id, device: projectDeviceForNativeBody(device), index });
+        // Behind the insert that builds it, for the reason a rebuild carries
+        // them behind its own: the body this edit builds comes up with its
+        // pedals raised, and an edit builds one under an id the latch already
+        // knows whenever an undo restores a removed device.
+        commands.push(...latchedPedalCommands([{ trackId: after.id, deviceId: device.id }]));
         projected = [...projected.slice(0, index), device.id, ...projected.slice(index)];
     }
     return commands;
@@ -169,6 +188,10 @@ function passWritesDevice(trackId: string, deviceId: string): boolean {
  * device` — and testing the pass rather than the device's kind is both the
  * narrower rule and the exact one, because the pass's own targets are the only
  * devices a pump can name.
+ *
+ * A replayed pedal is neither shape, and needs no third arm: it names a device
+ * an `insert-device` in the same batch has just put back, and that insert is
+ * what the rule already answers for.
  */
 function changesWhatThePassCarries(commands: readonly AudioGraphCommand[]): boolean {
     return commands.some(

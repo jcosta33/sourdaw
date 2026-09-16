@@ -660,6 +660,37 @@ export type AudioGraphSendMidiNoteCommand = Readonly<{
 }>;
 
 /**
+ * Apply one live controller message now on a device that sinks notes.
+ *
+ * The pedal route. MIDI clips carry no controller lanes, so a controller is
+ * always live: it reaches the device at the head of the first block the backend
+ * renders after this batch is applied, playing or stopped, because a pedal
+ * under the player's foot names no timeline position either.
+ *
+ * Nothing is queued. A controller is a state write on the device rather than a
+ * frame-stamped event, so it applies ahead of the notes the same block renders
+ * — which is what makes a damper pressed before a key sustain the note that key
+ * sounds.
+ *
+ * No transport edge lifts a pedal — a stop, a locate and a loop wrap all
+ * leave the player's foot exactly where it stands. A stop or a locate kills
+ * the sounding voices of an instrument a pedal is holding instead, because
+ * their note-offs cannot discharge a held key and nothing else would stop it
+ * ringing for the rest of the session. A loop wrap only strands the release
+ * its own store scheduled, so it neither lifts the pedal nor kills the voice.
+ */
+export type AudioGraphSendMidiControlCommand = Readonly<{
+    kind: 'send-midi-control';
+    target: AudioGraphDeviceTarget;
+    /** `0` through `127`. */
+    controller: number;
+    /** `0` through `127`, as the wire carries it — never a normalized fraction. */
+    value: number;
+    /** `0` through `15`. */
+    channel: number;
+}>;
+
+/**
  * Drop the device's scheduled notes between `fromTime` and `toTime`.
  *
  * Half-open, so a producer rewriting one bar clears exactly its span and the
@@ -769,6 +800,7 @@ export type AudioGraphCommand =
     | AudioGraphScheduleClipCommand
     | AudioGraphScheduleMidiCommand
     | AudioGraphSendMidiNoteCommand
+    | AudioGraphSendMidiControlCommand
     | AudioGraphClearMidiCommand
     | AudioGraphSetTransportCommand
     | AudioGraphSetMonitorShadowCommand

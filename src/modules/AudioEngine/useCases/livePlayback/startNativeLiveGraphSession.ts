@@ -115,6 +115,7 @@ import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
+import { latchedPedalCommands } from './latchedPedalCommands';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
 import {
@@ -403,6 +404,37 @@ function programmeEndSeconds(programme: LiveGraphProgramme): number {
 }
 
 /**
+ * Every device a batch builds a body for, addressed the way a controller
+ * addresses one.
+ *
+ * A topology batch states a whole chain on the command that creates its strip,
+ * and the mapper registers each of those devices as it maps that command — so
+ * a strip's chain is where a session start's bodies come from, and a bare
+ * `insert-device` is the same thing for a batch that edits a chain it already
+ * built. Both are read here so one reading serves every topology this function
+ * sends.
+ *
+ * What the batch *asked for*, not what the engine reports: the reports arrive
+ * after the batch, and a pedal has to be inside it.
+ */
+function builtDeviceAddresses(
+    commands: readonly AudioGraphCommand[]
+): readonly Readonly<{ trackId: string; deviceId: string }>[] {
+    return commands.flatMap((command) => {
+        if (command.kind === 'create-track-strip') {
+            return command.devices.map((device) => ({ trackId: command.trackId, deviceId: device.id }));
+        }
+        if (command.kind === 'create-bus-strip') {
+            return command.devices.map((device) => ({ trackId: command.busId, deviceId: device.id }));
+        }
+        if (command.kind === 'insert-device') {
+            return [{ trackId: command.trackId, deviceId: command.device.id }];
+        }
+        return [];
+    });
+}
+
+/**
  * What one whole-topology batch left behind.
  *
  * Three outcomes rather than two, because a caller with a topology already
@@ -437,18 +469,26 @@ type TopologyBatchOutcome =
  * with its own strip ids the second time; replacing also means topology the
  * engineer changed between plays actually reaches the engine, rather than only
  * the transport doing so.
+ *
+ * Every body it builds comes up with its pedals raised, so the batch carries
+ * the pedals the player is standing on behind the commands that build them
+ * ({@link latchedPedalCommands}) rather than leaving them to a send behind this
+ * task — the engine would render that round trip with the foot lifted. The
+ * material registration reads the batch as projected: it looks for sample
+ * material, and a controller carries none.
  */
 async function applyTopologyBatch(input: {
     transport: NativeGraphTransport;
     backend: ReturnType<typeof createNativeLiveGraphBackend>;
     commands: readonly AudioGraphCommand[];
 }): Promise<TopologyBatchOutcome> {
-    const { transport, backend, commands } = input;
-    const material = await registerNativeTimelineSamples({ transport, commands });
+    const { transport, backend } = input;
+    const material = await registerNativeTimelineSamples({ transport, commands: input.commands });
     if (material.outcome === 'declined') {
         // No batch was sent, so nothing in the graph moved.
         return { outcome: 'refused', reason: material.reason };
     }
+    const commands = [...input.commands, ...latchedPedalCommands(builtDeviceAddresses(input.commands))];
     const result = await backend.apply({ schemaVersion: 1, replaceTopology: true, commands });
     if (result.acceptance === 'rejected') {
         return { outcome: 'refused', reason: result.reason };

@@ -14,6 +14,33 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((_store, defaultValue) => defaultValue),
 }));
 
+// The panel's own handle, with the three pedal writes spied. `isReady` is
+// false, exactly as the disconnected handle the real resolver returns for an
+// unrendered track, so nothing but a pedal write can reach these.
+const pedalWrites = vi.hoisted(() => ({
+    setSustain: vi.fn(),
+    setSostenuto: vi.fn(),
+    setUnaCorda: vi.fn(),
+}));
+
+vi.mock('../../../useCases/resolveGrandBouleEngine', () => ({
+    resolveGrandBouleEngine: () => ({
+        noteOn: () => {},
+        noteOnMidi2: () => {},
+        noteOff: () => {},
+        setParam: () => {},
+        setSustain: pedalWrites.setSustain,
+        setUnaCorda: pedalWrites.setUnaCorda,
+        setSostenuto: pedalWrites.setSostenuto,
+        setTemperament: () => {},
+        loadAttackClip: () => {},
+        allNotesOff: () => {},
+        isReady: () => false,
+        getAnalyserNode: () => null,
+        sampleRate: () => 48_000,
+    }),
+}));
+
 /**
  * Behavioural tests for the panel's MIDI pedal-CC subscription.
  *
@@ -77,6 +104,9 @@ describe('GrandBoulePanel MIDI pedal subscription', () => {
         clearHandlers();
         setGrandBouleEventBus(testEventBus);
         resetGrandBouleStores();
+        pedalWrites.setSustain.mockClear();
+        pedalWrites.setSostenuto.mockClear();
+        pedalWrites.setUnaCorda.mockClear();
     });
 
     it('coerces a boolean CC64 value to a clamped numeric sustain position (#2)', async () => {
@@ -113,6 +143,26 @@ describe('GrandBoulePanel MIDI pedal subscription', () => {
 
         await testEventBus.emit('midi.pedalCc', { deviceId, cc: 67, value: 1 });
         expect(store.value?.pedals.unaCorda).toBe(true);
+    });
+
+    it('echoes a physical pedal into the store alone, writing no body a second time', async () => {
+        // `routePedalToBodies` already delivered this movement to both the Web
+        // Audio node and the engine body. The panel's echo exists to keep its
+        // own readout honest; writing the handle again would re-send the
+        // identical value and queue a second native controller message for
+        // every pedal movement the panel is open for.
+        const deviceId = 'panel-midi-echo';
+        render(<GrandBoulePanel deviceId={deviceId} />);
+        const store = createGrandBouleStore(deviceId);
+
+        await testEventBus.emit('midi.pedalCc', { deviceId, cc: 64, value: 1 });
+        await testEventBus.emit('midi.pedalCc', { deviceId, cc: 66, value: 1 });
+        await testEventBus.emit('midi.pedalCc', { deviceId, cc: 67, value: 1 });
+
+        expect(store.value?.pedals).toEqual({ sustain: 1, sostenuto: true, unaCorda: true });
+        expect(pedalWrites.setSustain).not.toHaveBeenCalled();
+        expect(pedalWrites.setSostenuto).not.toHaveBeenCalled();
+        expect(pedalWrites.setUnaCorda).not.toHaveBeenCalled();
     });
 
     it('re-subscribes to the new device when the deviceId prop changes (#3)', async () => {
