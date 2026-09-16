@@ -1197,7 +1197,7 @@
         "tracked-set-sha256:0f8dc0394c50a1ef88370d90b797a89c3f860218c3c2755b4ac5f1f2723b958d:grand-boule-native-rust",
         "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
         "tracked-set-sha256:2daad4fe71162dbeab4e9f716fc805e5cea1a22133f07d4550b9202718abb1de:grand-boule-discovery-catalog",
-        "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
+        "tracked-set-sha256:d7fc8b8a840827f945dd0350ed3d757004743e7bcec88ab926991268fc1124a8:grand-boule-factory-admission",
         "tracked-set-sha256:eade8b1964a5c7452e2f3446d9026fa4aa7bef90f9a4f62fcc672b3bb0568c3e:grand-boule-live-runtime",
         "tracked-set-sha256:3e1d9a5dd26c7a176dbdb7cf691d3ba92abeb3c7de80a59aadc177646f23459b:grand-boule-project-state",
         "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",

@@ -22,6 +22,7 @@ vi.mock('../../../stores/tempoMapStore', () => ({
 }));
 
 vi.mock('../../../models/TempoMap', () => ({
+    BEAT_EPSILON: 1e-6,
     createTempoChange: vi.fn((beat: number, tempo: number, curve: string) => ({
         id: `tc-${beat}`,
         beat,
