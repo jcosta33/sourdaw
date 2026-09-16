@@ -1,0 +1,23 @@
+crates/daw-dsp/src/gluten/engine.rs
+  s_ded02992829a10::t_63be049a2baee4 252-255,367,375,380
+crates/scoring/src/lib.rs
+  s_ded02992829a10::t_9e4d3df49f3f6b 20,592
+crates/scoring/src/tuning.rs
+  s_ded02992829a10::t_cabe91d33eaf1a 19,21,23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8f897293267dc197525dffb2ccf90e6b241d6616",
+  "prompts": {},
+  "sessions": {
+    "s_ded02992829a10": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ac4bb750d3384b484",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
