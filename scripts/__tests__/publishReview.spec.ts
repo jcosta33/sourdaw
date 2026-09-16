@@ -131,6 +131,7 @@ function fakePort(
         missing?: boolean;
         actorNodeId?: string;
         login?: string;
+        labels?: { name: string; description?: string }[];
     } = {}
 ) {
     const calls: string[] = [];
@@ -150,22 +151,26 @@ function fakePort(
             if (input.laterState !== undefined) {
                 state = input.laterState;
             }
-            return { state: currentState, head: current };
+            return { state: currentState, head: current, labels: input.labels };
         },
         readReviewJson: (path) => {
             calls.push(`read:${path}`);
             if (input.missing === true) {
                 throw new Error('ENOENT');
             }
-            return (
-                input.json ?? {
-                    format: 'compact-v1',
-                    event: 'APPROVE',
-                    body: 'ok',
-                    comments: [],
-                    evidence: approvalEvidence(input.head),
-                }
-            );
+            const json = input.json ?? {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'ok',
+                comments: [],
+                evidence: approvalEvidence(input.head),
+            };
+            // Every valid fixture must carry the reviewer model, as real review.json files now do;
+            // a fixture that sets the key at all (even to undefined) opts out to exercise refusal.
+            if (typeof json === 'object' && json !== null && !Array.isArray(json) && !('reviewerModel' in json)) {
+                return { ...json, reviewerModel: 'glm-5.3-flash' };
+            }
+            return json;
         },
         readBundleDiff: () =>
             input.diff ??
@@ -201,7 +206,12 @@ function createJournaledRecoveryFixture(
     mkdirSync(bundle, { recursive: true });
     writeFileSync(
         join(bundle, 'review.json'),
-        JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [] })
+        JSON.stringify({
+            event: 'APPROVE',
+            body: 'Attacked; held.',
+            comments: [],
+            reviewerModel: 'glm-5.3-flash',
+        })
     );
     writeFileSync(join(bundle, 'diff.patch'), '');
     const digest = reviewPublicationPayloadDigest(
@@ -268,6 +278,7 @@ async function runFailingReviewPublication(root: string, number: number, head: s
             body: 'Attacked; held.',
             comments: [],
             evidence: approvalEvidence(head),
+            reviewerModel: 'glm-5.3-flash',
         })
     );
     writeFileSync(join(bundle, 'diff.patch'), '');
@@ -990,6 +1001,7 @@ describe('review publish', () => {
                         body: 'Attacked; held.',
                         comments: [],
                         evidence: approvalEvidence('a'.repeat(40)),
+                        reviewerModel: 'glm-5.3-flash',
                     }),
                     readBundleDiff: () => '',
                     postReview: () => {
@@ -1172,6 +1184,54 @@ describe('review publish', () => {
         // parsed document's comments actually reached postReview — only the captured argument can.
         // This must go red if `publishReview` ever forwards an empty or substituted comments array.
         expect(posted.review?.comments).toEqual([validComment]);
+    });
+
+    it('refuses a fresh review document without reviewerModel', () => {
+        const { port, calls } = fakePort({
+            json: {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'ok',
+                comments: [],
+                evidence: approvalEvidence(),
+                reviewerModel: undefined,
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/review\.json must carry reviewerModel/u);
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('refuses a review whose reviewer model matches the PR authoring-model label', () => {
+        const { port, calls } = fakePort({
+            labels: [
+                { name: 'enhancement', description: 'New feature or request' },
+                { name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' },
+            ],
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/matches the PR's authoring model/u);
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('posts when the reviewer model differs from the PR authoring-model label', () => {
+        const { port, calls } = fakePort({
+            labels: [
+                { name: 'enhancement', description: 'New feature or request' },
+                { name: 'claude-opus-4.5', description: 'Authored by claude-opus-4.5' },
+            ],
+        });
+
+        expect(publishReview(42, port)).toBe(99);
+        expect(calls[1]).toBe(`post:headsha:APPROVE:${approvalBody()}`);
+    });
+
+    it('treats a bare label name as descriptive, never as the authoring model', () => {
+        // A descriptive label that merely shares a model's name carries no `Authored by `
+        // description fence, so it must not trigger the diversity refusal.
+        const { port } = fakePort({ labels: [{ name: 'glm-5.3-flash' }] });
+
+        expect(publishReview(42, port)).toBe(99);
     });
 
     it('refuses an inline comment outside the prepared head diff before posting', () => {
