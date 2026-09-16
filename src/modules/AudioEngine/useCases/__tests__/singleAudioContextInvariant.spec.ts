@@ -64,12 +64,15 @@ function countMatches(source: string, pattern: RegExp): number {
 
 // The opening parenthesis is required so a prose mention — e.g.
 // `workletInitShared.ts`'s "create a new AudioContext before loading" error
-// text — is not a match.
-const LIVE_CONTEXT_PATTERNS = [
-    /new\s+AudioContext\s*\(/g,
-    /new\s+window\.AudioContext\s*\(/g,
-    /new\s+webkitAudioContext\s*\(/g,
-];
+// text — is not a match. The qualifier group covers `window.`, `globalThis.`
+// and `self.` — the three global-object spellings a direct construction can
+// carry — and the optional `webkit` prefix covers the vendor-prefixed
+// constructor name, unqualified or qualified. A constructor reached through a
+// local alias (e.g. `const Ctx = window.AudioContext; new Ctx()`) is
+// deliberately out of scope: this is a literal census of direct construction
+// sites, not a data-flow analysis of every name a constructor can travel
+// through.
+const LIVE_CONTEXT_PATTERNS = [/new\s+(?:(?:window|globalThis|self)\.)?(?:webkit)?AudioContext\s*\(/g];
 
 const OFFLINE_CONTEXT_PATTERN = /new\s+OfflineAudioContext\s*\(/g;
 
