@@ -1,0 +1,71 @@
+scripts/resolveThread.ts
+  s_914af328b3988f::t_bd0804f094f018 12,115
+scripts/reviewApprovalContext.ts
+  s_914af328b3988f::t_1c6eeb9719e4e1 10,104
+scripts/stackedLanes.ts
+  s_914af328b3988f::t_e21ea4c8a4d226 145
+src/modules/AiGeneration/useCases/midiTransforms/generationVocabularies.ts
+  s_914af328b3988f::t_41ce42ac494969 1-4,36-39
+src/modules/AiRuntime/useCases/agentReference/prepareStemImport.ts
+  s_914af328b3988f::t_2aa7e7e45efe2d 6,54,79-82,130-134
+src/modules/Arrangement/useCases/freezeBounce/__tests__/frozenTailAnchor.spec.ts
+  s_914af328b3988f::t_b4ceda6161dc4e 1-4,14-16,18-20,23-30,79-82
+src/modules/AudioEngine/engine/BacteriaNode.ts
+  s_914af328b3988f::t_03b370dd61b45a 14
+src/modules/AudioEngine/engine/CrumbsNode.ts
+  s_914af328b3988f::t_e500743cdcc3c4 18
+src/modules/AudioEngine/engine/CrustNode.ts
+  s_914af328b3988f::t_048794ffd5fab5 17
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_914af328b3988f::t_7a6403f92b7400 17
+src/modules/AudioEngine/engine/GlutenNode.ts
+  s_914af328b3988f::t_17a5238eb34df7 15
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_914af328b3988f::t_c31190c7e1999f 33
+src/modules/AudioEngine/engine/GrinderNode.ts
+  s_914af328b3988f::t_76f59847f18850 10
+src/modules/AudioEngine/engine/KneadNode.ts
+  s_914af328b3988f::t_888917d3038d30 10
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_914af328b3988f::t_92c447aa388f75 13
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  s_914af328b3988f::t_ae7be3d0077bf6 9
+src/modules/AudioEngine/engine/ProofNode.ts
+  s_914af328b3988f::t_28086c3dc8b7ba 14
+src/modules/AudioEngine/engine/ScoringNode.ts
+  s_914af328b3988f::t_9c1f5ad0cd98ee 12
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_914af328b3988f::t_49ff935be68765 13
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_914af328b3988f::t_72d61ffef13a2e 68
+src/modules/AudioRendering/presentations/views/exportSettings.ts
+  s_914af328b3988f::t_911bd368486a35 49
+src/modules/TimelineEditor/presentations/hooks/useTempoEditorState.ts
+  s_914af328b3988f::t_00b32412098e2f 334-337
+src/modules/Transport/AGENTS.md
+  s_914af328b3988f::t_51955ab9ec4ef1 23
+src/modules/Transport/useCases/transportQueries/resolveTempoFieldState.ts
+  s_914af328b3988f::t_b1a968bbf29f09 8,88-89
+src/modules/WorkspaceShell/handlers/workspace/handleImportAudioFile.ts
+  s_914af328b3988f::t_686cd9f7e62bcb 3,10
+src/modules/WorkspaceShell/useCases/__tests__/importDroppedLaunchFiles.spec.ts
+  s_914af328b3988f::t_285a6344ec2ea1 53-56
+src/modules/WorkspaceShell/useCases/importDroppedLaunchFiles.ts
+  s_914af328b3988f::t_9dff79a0176e5a 4,95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5565d5e108163c530b4a4f5892707cd9a50e95d7",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
