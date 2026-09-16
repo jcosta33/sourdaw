@@ -30,6 +30,15 @@ import { FREQUENCY_RANGES, type FrequencyBand } from '../../models/MixComparison
  * of all three figures as well, because DC is a level the receipt reports on
  * its own and not a frequency.
  *
+ * The last frame ends at the render's length rather than starting where the
+ * stepped frames left off, so it overlaps the frame before it. That overlap
+ * buys a whole window over real samples: a frame padded out to length instead
+ * cuts the window at the pad boundary, and the step there leaks broadband
+ * amplitude across every bin. The band shares and the rolloff square that leak
+ * away, but the centroid weighs it linearly, so a padded frame moves the
+ * centroid of a pure tone by hundreds of hertz in proportion to how far up the
+ * window the padding begins.
+ *
  * Frames at digital silence are skipped rather than accumulated. Meyda returns
  * an all-zero spectrum for them, which contributes nothing, but skipping keeps
  * a render whose every frame is empty distinguishable from one that was
@@ -58,12 +67,6 @@ export type MeasureRenderSpectrumInput = {
     readonly sampleRate: number;
 };
 
-/** Where one analysis frame starts, and how many of the render's samples it has. */
-type FrameSpan = {
-    readonly offset: number;
-    readonly count: number;
-};
-
 /** The two weightings the readings need: amplitudes for the centroid, squares for energy. */
 type SpectrumAccumulation = {
     readonly amplitude: Float64Array;
@@ -71,48 +74,48 @@ type SpectrumAccumulation = {
 };
 
 /**
- * Whole frames over the render, then its remaining samples as one short span.
- * Dropping that remainder would leave up to one frame of the render unmeasured,
- * and no render is obliged to be a whole number of frames long.
+ * Stepped frames over the render, then one final frame ending at its length.
+ * Stepping alone reaches only a whole number of frames, leaving the samples
+ * past the last one unmeasured, and no render is obliged to be a whole number
+ * of frames long. The final frame overlaps the one before it by up to a frame
+ * less one sample, which is the same treatment the windowed loudness meters
+ * give their own trailing samples.
  */
-function frameSpans(length: number): readonly FrameSpan[] {
-    const spans: FrameSpan[] = [];
+function frameStartOffsets(length: number): readonly number[] {
+    const starts: number[] = [];
     for (let offset = 0; offset + SPECTRUM_FRAME <= length; offset += SPECTRUM_FRAME) {
-        spans.push({ offset, count: SPECTRUM_FRAME });
+        starts.push(offset);
     }
-    const remainder = length % SPECTRUM_FRAME;
-    if (remainder > 0) {
-        spans.push({ offset: length - remainder, count: remainder });
+    const finalStart = length - SPECTRUM_FRAME;
+    if (finalStart > (starts[starts.length - 1] ?? 0)) {
+        starts.push(finalStart);
     }
-    return spans;
+    return starts;
 }
 
 /**
- * The span's samples with their own mean removed, zero-padded to a whole frame.
- * The mean is taken over the real samples alone: padding is absence of audio,
- * not audio at zero, and averaging it in would leave a short span offset by the
- * very DC this removes. Writing into a fresh frame leaves the caller's channel
- * as it was.
+ * The frame's own samples with their mean removed. Writing into a fresh frame
+ * leaves the caller's channel as it was.
  */
-function frameSamples(channel: Float32Array, { offset, count }: FrameSpan): Float32Array {
+function frameSamples(channel: Float32Array, offset: number): Float32Array {
     let total = 0;
-    for (let index = 0; index < count; index++) {
+    for (let index = 0; index < SPECTRUM_FRAME; index++) {
         total += channel[offset + index] ?? 0;
     }
-    const mean = total / count;
+    const mean = total / SPECTRUM_FRAME;
 
     const frame = new Float32Array(SPECTRUM_FRAME);
-    for (let index = 0; index < count; index++) {
+    for (let index = 0; index < SPECTRUM_FRAME; index++) {
         frame[index] = (channel[offset + index] ?? 0) - mean;
     }
     return frame;
 }
 
 /** The summed amplitude spectrum of one frame, or `null` when no channel yielded one. */
-function sumChannelSpectra(channels: readonly Float32Array[], span: FrameSpan): Float64Array | null {
+function sumChannelSpectra(channels: readonly Float32Array[], offset: number): Float64Array | null {
     let summed: Float64Array | null = null;
     for (const channel of channels) {
-        const features = Meyda.extract(['amplitudeSpectrum'], frameSamples(channel, span));
+        const features = Meyda.extract(['amplitudeSpectrum'], frameSamples(channel, offset));
         const spectrum = features?.amplitudeSpectrum;
         if (!spectrum) {
             continue;
@@ -222,7 +225,7 @@ function bandEnergyProfile(energy: Float64Array, sampleRate: number): Record<Fre
  * Returns `null` when the render is shorter than one analysis frame, or when
  * every frame it does have carries nothing but a constant — a spectrum measured
  * over zero frames is not a flat spectrum, it is no measurement. Since the
- * remainder of the render is measured too, no audio is left out by length: a
+ * final frame ends at the render's length, no audio is left out by length: a
  * render at or above one frame reads null only when mean removal empties every
  * frame, which is a render with no sound in it. The caller distinguishes the
  * two cases by the render's own length.
@@ -245,8 +248,8 @@ export function measureRenderSpectrum({
     try {
         Meyda.sampleRate = sampleRate;
         Meyda.bufferSize = SPECTRUM_FRAME;
-        for (const span of frameSpans(length)) {
-            const spectrum = sumChannelSpectra(channels, span);
+        for (const offset of frameStartOffsets(length)) {
+            const spectrum = sumChannelSpectra(channels, offset);
             if (!spectrum) {
                 continue;
             }

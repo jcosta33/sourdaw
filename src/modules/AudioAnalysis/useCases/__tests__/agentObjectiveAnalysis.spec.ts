@@ -496,9 +496,10 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
         expect(entry(receipt, 'dynamicRangeEstimate')).toEqual({ status: 'unavailable', reason: 'too-short' });
     });
 
-    it('reads band energy from every whole analysis frame a short render has', () => {
-        // 4800 frames carries two 2048-frame analysis frames: enough to place a
-        // 1 kHz tone in the 500-2000 Hz band.
+    it('reads band energy from every analysis frame a short render has', () => {
+        // 4800 frames carries two stepped 2048-frame analysis frames and a
+        // third ending at the render: enough to place a 1 kHz tone in the
+        // 500-2000 Hz band.
         const fragment = sineChannel(-23, 4800);
         const receipt = analyze([fragment, fragment]);
 
@@ -507,9 +508,10 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
     });
 
     it('reads a hit that lands past the last whole analysis frame', () => {
-        // 4000 samples hold one whole 2048-sample frame, and the hit at sample
-        // 3000 lives in the 1952 that follow it. Stopping at whole frames
-        // leaves a render that plainly carries a transient with no spectrum.
+        // The one stepped 2048-sample frame 4000 samples allow is silent, and
+        // the hit at sample 3000 falls in the frame ending at the render.
+        // Stopping at stepped frames leaves a render that plainly carries a
+        // transient with no spectrum at all.
         const click = clickChannel(4000, [3000]);
         const receipt = analyze([click, click]);
 
@@ -517,15 +519,16 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
         expect(Number.isFinite(metric(receipt, 'spectralCentroid'))).toBe(true);
     });
 
-    it('weighs the trailing partial frame by the samples it actually carries', () => {
-        // One whole frame of 1 kHz then half a frame of 6 kHz, both at
-        // -6 dBFS. Half a frame passes half the window's energy, so the 1 kHz
-        // frame keeps two thirds of the render; padding the remainder out to a
-        // whole frame of tone instead would split it evenly.
+    it('carries the trailing samples in a frame that ends at the render', () => {
+        // One frame of 1 kHz then half a frame of 6 kHz, both at -6 dBFS. The
+        // final frame ends at sample 3072, so it holds 1024 samples of each
+        // tone: 1 kHz sounds over one and a half frames against the 6 kHz
+        // tone's half. Stopping at whole frames would leave the 6 kHz half out
+        // of the render altogether and report 1 kHz alone.
         const channel = toneStepChannel({ peakDbfs: -6, toneHz: TONE_HZ }, { peakDbfs: -6, toneHz: 6000 }, 2048, 3072);
         const receipt = analyze([channel, channel]);
 
-        expect(Math.abs(bandEnergy(receipt, 'mid') - 0.667)).toBeLessThan(0.05);
+        expect(Math.abs(bandEnergy(receipt, 'mid') - 0.75)).toBeLessThan(0.05);
     });
 
     it('refuses band energy for a render shorter than one analysis frame', () => {
