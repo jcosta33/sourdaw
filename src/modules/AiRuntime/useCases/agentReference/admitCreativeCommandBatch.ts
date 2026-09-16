@@ -50,12 +50,22 @@ function isBatchLocalDeviceReference(value: unknown): boolean {
     return value.startsWith('$') || value.startsWith(GENERATED_BATCH_LOCAL_ID_PREFIXES.addDevice);
 }
 
-/** The same reading for a track this batch is creating, named by binding or by stamped identity. */
-function isBatchLocalTrackReference(value: unknown): boolean {
+/**
+ * The same reading for a track this batch is creating, named by binding or by stamped identity. The
+ * stamp an earlier batch minted survives in the project document, so an id carrying that form which
+ * a track in the snapshot already holds names that existing track and not one this batch creates.
+ */
+function isBatchLocalTrackReference(context: ProjectContext, value: unknown): boolean {
     if (typeof value !== 'string') {
         return false;
     }
-    return value.startsWith('$') || value.startsWith(GENERATED_BATCH_LOCAL_ID_PREFIXES.addTrack);
+    if (value.startsWith('$')) {
+        return true;
+    }
+    return (
+        value.startsWith(GENERATED_BATCH_LOCAL_ID_PREFIXES.addTrack) &&
+        !context.tracks.some((track) => track.id === value)
+    );
 }
 
 function findDeviceOwnerTrackId(context: ProjectContext, deviceId: unknown): string | null {
@@ -207,7 +217,7 @@ function findTargetIdRejection(input: TargetIdAdmissionInput): string | null {
         if (input.index.trackIds.has(input.objectId)) {
             return null;
         }
-        return isBatchLocalTrackReference(input.objectId) && input.admitsBatchLocalTrack
+        return isBatchLocalTrackReference(input.context, input.objectId) && input.admitsBatchLocalTrack
             ? null
             : `${CREATIVE_AUTHORITY_REASON_PREFIX} does not cover the track ${input.objectId}`;
     }
@@ -339,7 +349,7 @@ function getCreationParent(
     if (trackTarget === undefined) {
         return null;
     }
-    if (isBatchLocalTrackReference(trackTarget.objectId)) {
+    if (isBatchLocalTrackReference(context, trackTarget.objectId)) {
         return { kind: 'batch-created-track' };
     }
     return { kind: 'existing', objectIds: [trackTarget.objectId] };

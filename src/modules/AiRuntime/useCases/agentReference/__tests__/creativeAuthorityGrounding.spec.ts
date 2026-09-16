@@ -5,6 +5,7 @@ import { type ProjectContext, type ProjectContextTrack } from '../../../models/P
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { compileArbitraryCommandList } from '../../compileArbitraryCommandList';
 import { bridgeGroundedLlmToolCalls } from '../bridgeGroundedLlmToolCalls';
+import { getSpentCreationBudgetReason } from '../creativeAuthorityReasons';
 
 const RADIO_PROMPT = 'make it sound like a radio';
 
@@ -336,6 +337,14 @@ const NESTED_DEVICE_SLOT = {
     budget: 4,
 } as const;
 
+/** The slot the catalog publishes for a clip hanging under a track the same batch creates. */
+const NESTED_CLIP_SLOT = {
+    objectType: 'clip',
+    parentObjectId: null,
+    parentCreatedObjectType: 'track',
+    budget: 8,
+} as const;
+
 const SYNTH_DEVICE_PARAM_ID = 'gain';
 const SYNTH_DEVICE_PARAM_VALUE = -6;
 
@@ -392,6 +401,30 @@ function radioFilterItems(count: number): Record<string, unknown>[] {
     }));
 }
 
+function synthClipItems(count: number): Record<string, unknown>[] {
+    return Array.from({ length: count }, (_entry, index) => ({
+        id: `add-clip-${String(index)}`,
+        name: 'addClip',
+        arguments: {
+            trackId: '$synth',
+            startBeat: index * 4,
+            endBeat: index * 4 + 4,
+            name: `Verse ${String(index)}`,
+        },
+        dependsOn: ['make-synth'],
+    }));
+}
+
+/** The identity an earlier accepted batch stamped on a track that is now part of the project. */
+const STAMPED_TRACK_ID = 'track-ai-11111111-1111-4111-8111-111111111111';
+
+const STAMPED_TRACK_NAME = 'Old Synth';
+
+const stampedTrackContext: ProjectContext = {
+    ...createdDeviceContext,
+    tracks: [...createdDeviceContext.tracks, { ...bassTrack, id: STAMPED_TRACK_ID, name: STAMPED_TRACK_NAME }],
+};
+
 /**
  * Compiles a proposal that creates one track and works inside it, then grounds it, so the batch the
  * bridge reads is the one the compiler produced for this authority.
@@ -399,7 +432,9 @@ function radioFilterItems(count: number): Record<string, unknown>[] {
 function bridgeSynthProposal(input: {
     creationSlots: CreativeRequestAuthority['creationSlots'];
     items: ReadonlyArray<Record<string, unknown>>;
+    projectContext?: ProjectContext;
 }) {
+    const proposalContext = input.projectContext ?? createdDeviceContext;
     const creativeAuthority = buildAuthority({
         mode: 'create',
         targets: [],
@@ -413,7 +448,7 @@ function bridgeSynthProposal(input: {
                 arguments: { plan: synthPlan, list: { schemaVersion: 1, items: [...input.items] } },
             },
         ],
-        context: createdDeviceContext,
+        context: proposalContext,
         creativeAuthority,
         revision: PROJECT_REVISION,
     });
@@ -426,7 +461,7 @@ function bridgeSynthProposal(input: {
     return bridgeGroundedLlmToolCalls({
         calls: compiled.compilerEvidence.commands,
         compilerEvidence: compiled.compilerEvidence,
-        context: createdDeviceContext,
+        context: proposalContext,
         creativeAuthority,
         projectRevision: PROJECT_REVISION,
         prompt: SYNTH_PROMPT,
@@ -1047,6 +1082,56 @@ describe('creative authority grounding in the tool-call bridge', () => {
         expect(result.actions).toEqual([]);
         expect(result.rejections).toMatchObject([
             { index: 5, name: 'addDevice', reason: 'Creative authority has spent its device creation budget of 4' },
+        ]);
+    });
+
+    it('refuses a device on a stamped track the project holds and the authority does not name', () => {
+        const result = bridgeSynthProposal({
+            creationSlots: [TRACK_CREATION_SLOT, NESTED_DEVICE_SLOT],
+            items: [
+                synthTrackItem,
+                {
+                    id: 'add-radio',
+                    name: 'addDevice',
+                    arguments: { deviceType: 'radio-filter', binding: 'radio' },
+                    selector: {
+                        targetArgument: 'trackId',
+                        entity: 'track',
+                        where: { name: STAMPED_TRACK_NAME },
+                        quantity: { unit: 'targets', exactly: 1 },
+                    },
+                },
+            ],
+            projectContext: stampedTrackContext,
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([
+            {
+                index: 1,
+                name: 'addDevice',
+                reason: `Creative authority does not cover the track ${STAMPED_TRACK_ID}`,
+            },
+        ]);
+    });
+
+    /**
+     * The nested clip slot is what bounds these clips, so the refusal it issues stands rather than
+     * being ridden past on the track slot the same batch already spent for the track holding them.
+     */
+    it('refuses the clip past the nested slot budget instead of riding the published track slot', () => {
+        const result = bridgeSynthProposal({
+            creationSlots: [TRACK_CREATION_SLOT, NESTED_CLIP_SLOT],
+            items: [synthTrackItem, ...synthClipItems(NESTED_CLIP_SLOT.budget + 1)],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([
+            {
+                index: NESTED_CLIP_SLOT.budget + 1,
+                name: 'addClip',
+                reason: getSpentCreationBudgetReason('clip', NESTED_CLIP_SLOT.budget),
+            },
         ]);
     });
 
