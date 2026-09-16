@@ -1,0 +1,21 @@
+tests/e2e/analyzePcmWav.ts
+  s_914af328b3988f::t_5fbde95315463d 1-2
+src/modules/AudioRendering/AGENTS.md
+  s_914af328b3988f::t_7b2260b9bbfd36 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dbaa10c79aabb15114e437f55da31cc895982e86",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
