@@ -8,8 +8,37 @@ import {
     type DawProjectTempoChange,
     type DawProjectTimeSignatureChange,
 } from './dawProjectTypes';
+import { DAW_PROJECT_XML_TAGS } from './dawProjectXmlTagNames';
 import { parseXml } from './parse-xml';
 import { wrap, type XmlQuery } from './xmlHelpers';
+
+const {
+    ARRANGEMENT,
+    AUDIO,
+    CHANNEL,
+    CLIP,
+    CLIPS,
+    DEVICES,
+    FILE,
+    LANES,
+    MARKER,
+    MARKERS,
+    MUTE,
+    NOTE,
+    NOTES,
+    PAN,
+    POINTS,
+    PROJECT,
+    REAL_POINT,
+    SOLO,
+    STRUCTURE,
+    TEMPO,
+    TIME_SIGNATURE,
+    TIME_SIGNATURE_POINT,
+    TRACK,
+    TRANSPORT,
+    VOLUME,
+} = DAW_PROJECT_XML_TAGS;
 
 type ParseContext = {
     /** Map from track XML id to our own stable id. */
@@ -61,8 +90,8 @@ function parseTransport(transport: XmlQuery | null): {
     if (!transport) {
         return { tempo: 120, numerator: 4, denominator: 4 };
     }
-    const tempoNode = transport.child('Tempo');
-    const tsNode = transport.child('TimeSignature');
+    const tempoNode = transport.child(TEMPO);
+    const tsNode = transport.child(TIME_SIGNATURE);
     const tempo = tempoNode?.attrNumber('value', DEFAULT_TEMPO_BPM) ?? DEFAULT_TEMPO_BPM;
     const numerator = tsNode?.attrNumber('numerator', 4) ?? 4;
     const denominator = tsNode?.attrNumber('denominator', 4) ?? 4;
@@ -89,7 +118,7 @@ function classifyTrackKind(track: XmlQuery): DawProjectParsedTrack['kind'] {
     if (loweredRole.includes('notes') || loweredRole.includes('midi')) {
         return 'midi';
     }
-    const hasChildTrack = track.children('Track').length > 0;
+    const hasChildTrack = track.children(TRACK).length > 0;
     if (hasChildTrack) {
         return 'folder';
     }
@@ -106,16 +135,16 @@ function parseChannelInfo(channel: XmlQuery | null): {
     if (!channel) {
         return { volume: 0.8, pan: 0, mute: false, solo: false, deviceTypes: [] };
     }
-    const volumeNode = channel.child('Volume');
-    const panNode = channel.child('Pan');
-    const muteNode = channel.child('Mute');
-    const soloNode = channel.child('Solo');
+    const volumeNode = channel.child(VOLUME);
+    const panNode = channel.child(PAN);
+    const muteNode = channel.child(MUTE);
+    const soloNode = channel.child(SOLO);
     const volume = volumeNode?.attrNumber('value', 0.8) ?? 0.8;
     const pan = panNode?.attrNumber('value', 0.5) ?? 0.5;
     const mute = muteNode?.attrBool('value', false) ?? false;
     const solo = soloNode?.attrBool('value', false) ?? false;
 
-    const devicesNode = channel.child('Devices');
+    const devicesNode = channel.child(DEVICES);
     const deviceTypes: string[] = [];
     if (devicesNode) {
         for (const device of devicesNode.children()) {
@@ -135,7 +164,7 @@ function parseChannelInfo(channel: XmlQuery | null): {
 
 function parseNotesNode(notes: XmlQuery, unit: 'beats' | 'seconds', tempo: number): DawProjectParsedMidiNote[] {
     const result: DawProjectParsedMidiNote[] = [];
-    for (const note of notes.children('Note')) {
+    for (const note of notes.children(NOTE)) {
         const key = note.attrNumber('key', -1);
         if (key < 0) {
             continue;
@@ -154,11 +183,13 @@ function parseNotesNode(notes: XmlQuery, unit: 'beats' | 'seconds', tempo: numbe
 }
 
 function resolveAudioAssetPath(clip: XmlQuery): string | undefined {
-    const audioNode = clip.child('Audio') ?? clip.child('Warps')?.child('Audio') ?? null;
+    // `<Warps>` is a foreign-writer variant of `<Audio>` the writer never
+    // emits, so it stays inline rather than joining the shared tag map.
+    const audioNode = clip.child(AUDIO) ?? clip.child('Warps')?.child(AUDIO) ?? null;
     if (!audioNode) {
         return undefined;
     }
-    const fileNode = audioNode.child('File');
+    const fileNode = audioNode.child(FILE);
     const path = fileNode?.attr('path') ?? audioNode.attr('file') ?? audioNode.attr('path') ?? null;
     return path ?? undefined;
 }
@@ -183,7 +214,7 @@ function parseClip(
     const name = clip.attr('name') ?? `Clip ${String(index + 1)}`;
     const id = `clip-${crypto.randomUUID()}`;
 
-    const notesNode = clip.child('Notes');
+    const notesNode = clip.child(NOTES);
     if (notesNode) {
         return {
             id,
@@ -234,7 +265,7 @@ function parseTrack(
     const stableId = `track-${crypto.randomUUID()}`;
     context.trackIdMap.set(xmlId, stableId);
 
-    const channel = track.child('Channel');
+    const channel = track.child(CHANNEL);
     if (channel) {
         const channelId = channel.attr('id');
         if (channelId) {
@@ -261,14 +292,14 @@ function parseTrack(
         deviceTypes: channelInfo.deviceTypes,
     };
 
-    return { track: parsed, children: track.children('Track') };
+    return { track: parsed, children: track.children(TRACK) };
 }
 
 function parseStructure(structure: XmlQuery, context: ParseContext): DawProjectParsedTrack[] {
     const flat: DawProjectParsedTrack[] = [];
 
     type QueueEntry = { node: XmlQuery; parentId: string | null };
-    const queue: QueueEntry[] = structure.children('Track').map((node) => ({ node, parentId: null }));
+    const queue: QueueEntry[] = structure.children(TRACK).map((node) => ({ node, parentId: null }));
 
     let index = 0;
     while (queue.length > 0) {
@@ -308,7 +339,7 @@ function parseMasterTrackAutomation(
     const tempoChanges: DawProjectTempoChange[] = [];
     const timeSignatureChanges: DawProjectTimeSignatureChange[] = [];
 
-    const lanesRoot = arrangement.child('Lanes');
+    const lanesRoot = arrangement.child(LANES);
     if (!lanesRoot) {
         return { tempoChanges, timeSignatureChanges };
     }
@@ -319,13 +350,16 @@ function parseMasterTrackAutomation(
         for (const child of node.children()) {
             const childUnit = readTimeUnit(child, unit);
             const target = child.attr('target');
-            if (child.element.tagName === 'Points' || child.element.tagName === 'Automation') {
+            // `<Automation>` is a foreign-writer sibling of `<Points>` the
+            // writer never emits, so it stays inline rather than joining the
+            // shared tag map.
+            if (child.element.tagName === POINTS || child.element.tagName === 'Automation') {
                 if (target === 'tempo') {
-                    for (const point of child.children('RealPoint')) {
+                    for (const point of child.children(REAL_POINT)) {
                         tempoChanges.push(parseTempoAutomation(point, childUnit, context.tempo));
                     }
                 } else if (target === 'timeSignature') {
-                    for (const point of child.children('TimeSignaturePoint')) {
+                    for (const point of child.children(TIME_SIGNATURE_POINT)) {
                         timeSignatureChanges.push(parseTsAutomation(point, childUnit, context.tempo));
                     }
                 }
@@ -353,7 +387,7 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
         return null;
     }
 
-    const lanesRoot = arrangement.child('Lanes');
+    const lanesRoot = arrangement.child(LANES);
     if (!lanesRoot) {
         return;
     }
@@ -363,12 +397,12 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
     function walkClips(node: XmlQuery, unit: 'beats' | 'seconds'): void {
         for (const laneOrClips of node.children()) {
             const laneUnit = readTimeUnit(laneOrClips, unit);
-            if (laneOrClips.element.tagName === 'Clips') {
+            if (laneOrClips.element.tagName === CLIPS) {
                 const targetAttr = laneOrClips.attr('track') ?? laneOrClips.attr('channel');
                 const targetTrackId = resolveTrackId(targetAttr);
                 const target = targetTrackId ? trackById.get(targetTrackId) : null;
                 if (target) {
-                    const clipNodes = laneOrClips.children('Clip');
+                    const clipNodes = laneOrClips.children(CLIP);
                     for (let index = 0; index < clipNodes.length; index++) {
                         const clipNode = clipNodes[index]!;
                         const clip = parseClip(clipNode, target.kind, laneUnit, context, index);
@@ -387,11 +421,11 @@ function parseArrangementClips(arrangement: XmlQuery, tracks: DawProjectParsedTr
 
 function parseMarkers(arrangement: XmlQuery, unit: 'beats' | 'seconds', tempo: number): DawProjectMarker[] {
     const markers: DawProjectMarker[] = [];
-    const markersNode = arrangement.child('Markers');
+    const markersNode = arrangement.child(MARKERS);
     if (!markersNode) {
         return markers;
     }
-    for (const marker of markersNode.children('Marker')) {
+    for (const marker of markersNode.children(MARKER)) {
         const beat = toBeats(marker.attrNumber('time', 0), unit, tempo);
         markers.push({ beat, name: marker.attr('name') ?? 'Marker' });
     }
@@ -401,12 +435,12 @@ function parseMarkers(arrangement: XmlQuery, unit: 'beats' | 'seconds', tempo: n
 export function parseProjectXml(xml: string): ParsedProjectXml {
     const doc = parseXml(xml);
     const rootElement = doc.documentElement;
-    if (!rootElement || rootElement.tagName !== 'Project') {
-        throw new Error(`Expected root <Project> element, got <${rootElement?.tagName ?? 'null'}>`);
+    if (!rootElement || rootElement.tagName !== PROJECT) {
+        throw new Error(`Expected root <${PROJECT}> element, got <${rootElement?.tagName ?? 'null'}>`);
     }
     const root = wrap(rootElement);
 
-    const transport = parseTransport(root.child('Transport'));
+    const transport = parseTransport(root.child(TRANSPORT));
     const context: ParseContext = {
         trackIdMap: new Map(),
         channelToTrackId: new Map(),
@@ -414,10 +448,10 @@ export function parseProjectXml(xml: string): ParsedProjectXml {
         tempo: transport.tempo,
     };
 
-    const structureNode = root.child('Structure');
+    const structureNode = root.child(STRUCTURE);
     const tracks = structureNode ? parseStructure(structureNode, context) : [];
 
-    const arrangementNode = root.child('Arrangement');
+    const arrangementNode = root.child(ARRANGEMENT);
     let tempoChanges: DawProjectTempoChange[] = [];
     let timeSignatureChanges: DawProjectTimeSignatureChange[] = [];
     let markers: DawProjectMarker[] = [];
