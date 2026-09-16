@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { audioEngine, isDeviceHeldByNativeSession, sendNativeLiveMidiControl } from '#/modules/AudioEngine/useCases';
+import { audioEngine, sendNativeLiveMidiControl } from '#/modules/AudioEngine/useCases';
 
 import { CC_ALL_SOUND_OFF, CC_RESET_ALL_CONTROLLERS } from '../../models/MidiControllerState';
 import { releaseAllActiveNotes } from '../../repositories/webMidi/releaseAllActiveNotes';
@@ -111,13 +111,14 @@ function silenceWebAudioGrandBoule(trackId: string, deviceId: string): void {
  * way through, so the body built for the next play does not come up standing on
  * a pedal this panic just raised (`liveMidiControlLatch.ts`).
  *
- * Held rather than carried: a shadowed session sounds nothing and still builds
- * the bodies, so a pedal can be latched on one nobody hears.
+ * Sent regardless of whether a session holds the device: the latch must
+ * discharge even while stopped, when a topology teardown has already left
+ * nothing native to hear it. The queued send inside `sendNativeLiveMidiControl`
+ * is what decides whether an engine actually hears this — a shadowed or absent
+ * session sounds nothing, but the latch write happens synchronously either way,
+ * so a pedal is never left remembered on a device nobody hears.
  */
 function silenceNativeGrandBoule(trackId: string, deviceId: string): void {
-    if (!isDeviceHeldByNativeSession(trackId, deviceId)) {
-        return;
-    }
     for (const controller of [CC_ALL_SOUND_OFF, CC_RESET_ALL_CONTROLLERS]) {
         void sendNativeLiveMidiControl({
             trackId,

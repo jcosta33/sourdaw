@@ -11,10 +11,13 @@
  * Every body in those chains is therefore brand new, with its pedals up. This
  * is where a session start, a rebind and a chain rebuild all land, so it is
  * where the foot the renderer remembered (`liveMidiControlLatch.ts`) is spent:
- * one controller per remembered pedal whose device the new chain holds, sent
- * after the record is written because the send reads that record to decide who
- * still has a body. Without it a damper pressed before play, or held across a
- * chain reorder, would be a pedal the engine never heard.
+ * one controller per remembered pedal whose device the new chain holds.
+ * `sendNativeLiveMidiControl` latches synchronously and defers the actual send
+ * — and its read of the chain record — onto the session queue, so by the time
+ * that read runs, this function's synchronous record write above has already
+ * happened regardless of statement order. Without this replay a damper pressed
+ * before play, or held across a chain reorder, would be a pedal the engine
+ * never heard.
  */
 
 import { type AudioGraphStripReport } from '../../models/AudioGraphBackend';

@@ -518,11 +518,11 @@ pub enum GraphCommandPayload {
     /// block-local MIDI buffer a note does — it simply applies, ahead of the
     /// notes the same block renders.
     ///
-    /// The engine lifts every controller on a stop or a locate
-    /// (`PluginCore::reset_controllers`), so a pedal whose release message
-    /// never arrives cannot hold an instrument ringing for the rest of the
-    /// session. A loop wrap does not: it leaves the player's foot where it is,
-    /// exactly as it leaves the key they are holding down.
+    /// No transport edge moves a pedal. A stop or a locate silences the voices
+    /// a pedal is holding, so a release message that never arrives cannot keep
+    /// an instrument ringing across it, but the pedal itself stays down. A loop
+    /// wrap leaves the foot where it is too, exactly as it leaves the key they
+    /// are holding down. Only Reset All Controllers (CC121) lifts the pedals.
     #[serde(rename_all = "camelCase")]
     SendMidiControl {
         track_id: String,

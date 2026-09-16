@@ -161,13 +161,31 @@ describe('panicLiveNotes', () => {
         });
     });
 
-    it('sends nothing natively when the engine holds no Grand Boule body', () => {
+    it('still discharges the latch via a stopped-transport panic when no native session holds the device', () => {
+        // A stop has already cleared the native chains, so nothing holds the
+        // device — but the panic must still reach sendNativeLiveMidiControl so
+        // the latch is cleared before the next play's replaceNativeChains
+        // replays a pedal the panic was meant to lift.
         track_store.value = grand_boule_tracks();
         is_device_held_by_native_session.mockReturnValue(false);
 
         panicLiveNotes();
 
-        expect(send_native_live_midi_control).not.toHaveBeenCalled();
+        expect(send_native_live_midi_control).toHaveBeenCalledTimes(2);
+        expect(send_native_live_midi_control).toHaveBeenNthCalledWith(1, {
+            trackId: 'track-1',
+            deviceId: 'gb-1',
+            controller: CC_ALL_SOUND_OFF,
+            value: 0,
+            channel: 0,
+        });
+        expect(send_native_live_midi_control).toHaveBeenNthCalledWith(2, {
+            trackId: 'track-1',
+            deviceId: 'gb-1',
+            controller: CC_RESET_ALL_CONTROLLERS,
+            value: 0,
+            channel: 0,
+        });
     });
 
     it('sends the native sequence even with the outbound broadcast suppressed', () => {

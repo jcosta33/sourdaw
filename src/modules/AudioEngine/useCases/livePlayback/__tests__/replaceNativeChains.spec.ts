@@ -86,9 +86,13 @@ describe('replaceNativeChains', () => {
         replaceNativeChains(reports);
         await nativeLiveGraphSession.pending;
 
-        // One send, for the one device the new chain holds. A replay running
-        // before the record was written would find no chain at all and send
-        // nothing, so the count decides the order as well as the addressee.
+        // One send, for the one device the new chain holds.
+        // `sendNativeLiveMidiControl` latches synchronously and defers the send
+        // (and its read of the chain record) onto the session queue, so by the
+        // time that read runs, the synchronous record write in
+        // `replaceNativeChains` has already happened whatever the statement
+        // order there. What this pins is that the replayed pedal reaches the
+        // device the new record names.
         expect(apply).toHaveBeenCalledTimes(1);
         expect(apply).toHaveBeenCalledWith({
             schemaVersion: 1,
