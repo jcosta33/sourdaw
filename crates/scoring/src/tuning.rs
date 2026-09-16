@@ -16,11 +16,11 @@ const NOTE_NAMES: [&str; 12] = [
 
 /// Concert-A reference frequency the 12-TET grid is anchored to. The tuner's
 /// `a4_hz` control starts here and the user may retune it (415–466 Hz).
-const STANDARD_A4_HZ: f32 = 440.0;
+pub(crate) const STANDARD_A4_HZ: f32 = 440.0;
 /// MIDI note number of concert A (the A above middle C) on that grid.
-const A4_MIDI_NOTE: f32 = 69.0;
+pub(crate) const A4_MIDI_NOTE: f32 = 69.0;
 /// Semitones per octave in twelve-tone equal temperament.
-const SEMITONES_PER_OCTAVE: f32 = 12.0;
+pub(crate) const SEMITONES_PER_OCTAVE: f32 = 12.0;
 
 pub struct TuningSystem {
     pub a4_hz: f32,

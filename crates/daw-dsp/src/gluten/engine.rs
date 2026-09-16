@@ -249,10 +249,10 @@ impl GlutenEngine {
                 let threshold = -5.0 - 35.0 * pct; // -5 to -40
                 let ratio = 2.0 + 6.0 * pct; // 2:1 to 8:1
                                              // Forward to active topology
-                self.vca.set_param("threshold", threshold);
-                self.opto.set_param("threshold", threshold);
-                self.fet.set_param("threshold", threshold);
-                self.diode.set_param("threshold", threshold);
+                self.vca.set_param(THRESHOLD, threshold);
+                self.opto.set_param(THRESHOLD, threshold);
+                self.fet.set_param(THRESHOLD, threshold);
+                self.diode.set_param(THRESHOLD, threshold);
                 self.vca.set_param("ratio", ratio);
                 self.fet.set_param("ratio", ratio);
                 self.diode.set_param("ratio", ratio.min(6.0));
@@ -364,7 +364,7 @@ impl GlutenEngine {
             }
             CompStyle::Punch => {
                 self.active_topology = Topology::Fet;
-                self.fet.set_param("threshold", -20.0);
+                self.fet.set_param(THRESHOLD, -20.0);
                 self.fet.set_param("ratio", 8.0);
                 self.fet.set_param("attack", 0.2);
                 self.fet.set_param("release", 250.0);
@@ -372,12 +372,12 @@ impl GlutenEngine {
             }
             CompStyle::Smooth => {
                 self.active_topology = Topology::Opto;
-                self.opto.set_param("threshold", -25.0);
+                self.opto.set_param(THRESHOLD, -25.0);
                 self.mix.set_target(1.0);
             }
             CompStyle::Pump => {
                 self.active_topology = Topology::Vca;
-                self.vca.set_param("threshold", -15.0);
+                self.vca.set_param(THRESHOLD, -15.0);
                 self.vca.set_param("ratio", 4.0);
                 self.vca.set_param("attack", 0.5);
                 self.vca.set_param("release", 800.0);
