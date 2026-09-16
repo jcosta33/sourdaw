@@ -1103,7 +1103,7 @@
         "99432f2bf443219b3eb77e65e1a18583faad422e"
       ],
       "digests": [
-        "sha256:f537ba6b1f49b00f2d11b2c64d4335ee73dfa697273570a43710e2cd14f92bb6:crates/daw-dsp/src/toaster/engines/kick_808.rs",
+        "sha256:fc5c55a78a47850670451df87c25effe81da940bbc13fd49ffe79d2eab3bd6f3:crates/daw-dsp/src/toaster/engines/kick_808.rs",
         "sha256:f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949:release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs",
         "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:LICENSE.txt",
         "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt",
@@ -1338,7 +1338,7 @@
         "scoring sha256:504f849118d5eb79c89dc5e91bcd4c993bb42ca3208086c8e3f02af8c45a17ce"
       ],
       "digests": [
-        "sha256:6cebcf5dbdc6730dc1e3397039f710ab173820f7bd90a3a51286f50a41a00b11:public/wasm/manifest.json"
+        "sha256:94a47fc06d176612225f1f1b97454ba6e3443186ca8498fd83c83a96fabf451e:public/wasm/manifest.json"
       ],
       "licenses": [
         "Apache-2.0",
@@ -1719,7 +1719,7 @@
     },
     {
       "path": "public/wasm/manifest.json",
-      "sha256": "6cebcf5dbdc6730dc1e3397039f710ab173820f7bd90a3a51286f50a41a00b11"
+      "sha256": "94a47fc06d176612225f1f1b97454ba6e3443186ca8498fd83c83a96fabf451e"
     }
   ],
   "externalReferences": [
