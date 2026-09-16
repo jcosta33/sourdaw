@@ -1,0 +1,19 @@
+src/modules/AudioEngine/useCases/__tests__/singleAudioContextInvariant.spec.ts
+  s_914af328b3988f::t_3d370756b6b79d 67-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "10a968decaf2d04c635d311927c1e5df108ee1fa",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
