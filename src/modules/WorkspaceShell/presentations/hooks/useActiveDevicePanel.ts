@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { trackStore } from '#/modules/Arrangement/stores';
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
 import { onShowDevicePanel } from '../../useCases/panels/devicePanels/onShowDevicePanel';
 
@@ -107,18 +108,18 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
         // `automation`, which AppShell routes to the bottom dock itself — are
         // ignored by this hook.
         const deviceTypeToPanelKind = {
-            fermenter: 'fermenter',
-            toaster: 'toaster',
-            levain: 'levain',
-            'dutch-oven': 'proofChamber',
-            gluten: 'gluten',
-            bacteria: 'bacteria',
-            grinder: 'grinder',
-            proof: 'proof',
-            'native-scoring': 'scoring',
-            crust: 'crust',
-            'builtin-crumbs': 'sampler',
-            'grand-boule': 'grandBoule',
+            [DEVICE_TYPE_IDS.fermenter]: 'fermenter',
+            [DEVICE_TYPE_IDS.toaster]: 'toaster',
+            [DEVICE_TYPE_IDS.levain]: 'levain',
+            [DEVICE_TYPE_IDS.dutchOven]: 'proofChamber',
+            [DEVICE_TYPE_IDS.gluten]: 'gluten',
+            [DEVICE_TYPE_IDS.bacteria]: 'bacteria',
+            [DEVICE_TYPE_IDS.grinder]: 'grinder',
+            [DEVICE_TYPE_IDS.proof]: 'proof',
+            [DEVICE_TYPE_IDS.nativeScoring]: 'scoring',
+            [DEVICE_TYPE_IDS.crust]: 'crust',
+            [DEVICE_TYPE_IDS.builtinCrumbs]: 'sampler',
+            [DEVICE_TYPE_IDS.grandBoule]: 'grandBoule',
         } as const satisfies Record<string, NeedsDeviceId>;
         const subs = [
             onShowDevicePanel(({ deviceType, deviceId }) => {

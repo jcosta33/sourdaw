@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { NATIVE_DSP_DEVICE_TYPES, resolveNativeDspDeviceType } from '../nativeDspDeviceTypes';
+import { DEVICE_TYPE_IDS, NATIVE_DSP_DEVICE_TYPES, resolveNativeDspDeviceType } from '../nativeDspDeviceTypes';
 
 describe('resolveNativeDspDeviceType', () => {
     it('returns each canonical type unchanged', () => {
@@ -38,5 +38,18 @@ describe('resolveNativeDspDeviceType', () => {
 describe('NATIVE_DSP_DEVICE_TYPES', () => {
     it('holds no duplicates, which would silently collapse a hydration row', () => {
         expect(new Set(NATIVE_DSP_DEVICE_TYPES).size).toBe(NATIVE_DSP_DEVICE_TYPES.length);
+    });
+});
+
+describe('DEVICE_TYPE_IDS', () => {
+    // The symbolic keys put completeness out of the type system's reach, so
+    // this is the guard: a native type added without a key here leaves
+    // comparison sites spelling a literal the map no longer owns, and an
+    // extra entry claims a wire value no factory builds.
+    it('maps exactly one entry to every native-DSP device type', () => {
+        const values = Object.values(DEVICE_TYPE_IDS);
+
+        expect(new Set(values).size).toBe(values.length);
+        expect([...values].sort()).toEqual([...NATIVE_DSP_DEVICE_TYPES].sort());
     });
 });

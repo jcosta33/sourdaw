@@ -39,6 +39,7 @@ const catalog: CreativeInterpretationCatalog = {
     creationSlots: [
         { candidateId: 'slot-1', objectType: 'track', parentCandidateId: null, budget: 4 },
         { candidateId: 'slot-2', objectType: 'clip', parentCandidateId: 'target-1', budget: 8 },
+        { candidateId: 'slot-3', objectType: 'device', parentCandidateId: 'slot-1', budget: 4 },
     ],
 };
 
@@ -181,6 +182,42 @@ describe('admitCreativeInterpretation', () => {
             status: 'rejected',
             reason: 'Creative creation slot is not attached to a selected target.',
         });
+    });
+
+    it('refuses a nested creation slot whose parent creation slot was not selected', () => {
+        expect(
+            admit(
+                createCall({
+                    modeId: 'create',
+                    targetCandidateIds: [],
+                    editDimensionCandidateIds: [],
+                    creationSlotIds: ['slot-3'],
+                })
+            )
+        ).toEqual({
+            status: 'rejected',
+            reason: 'Creative creation slot is not attached to a selected target.',
+        });
+    });
+
+    it('mints a nested creation slot hanging under the track slot the interpretation also selected', () => {
+        const admission = admit(
+            createCall({
+                modeId: 'create',
+                targetCandidateIds: [],
+                editDimensionCandidateIds: [],
+                creationSlotIds: ['slot-1', 'slot-3'],
+            })
+        );
+
+        expect(admission.status).toBe('admitted');
+        if (admission.status !== 'admitted') {
+            return;
+        }
+        expect(admission.authority.creationSlots).toEqual([
+            { objectType: 'track', parentObjectId: null, budget: 4 },
+            { objectType: 'device', parentObjectId: null, parentCreatedObjectType: 'track', budget: 4 },
+        ]);
     });
 
     it('mints an authority recording exactly what an admitted edit delegated', () => {

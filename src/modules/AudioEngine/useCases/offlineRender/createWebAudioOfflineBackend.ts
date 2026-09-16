@@ -27,7 +27,7 @@
  * not the seam's, and a native backend answers none of them.
  */
 
-import { clampFaderGain } from '#/utils/audioLevelLaw';
+import { clampFaderGain, toStereoPan } from '#/utils/audioLevelLaw';
 
 import {
     type AudioGraphApplyResult,
@@ -156,7 +156,7 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
             case 'track-pan':
                 return {
                     param: strip.panNode.pan,
-                    toNodeValue: (value) => Math.max(-1, Math.min(1, value / 50)),
+                    toNodeValue: toStereoPan,
                 };
             case 'track-mute-gate':
                 return { param: strip.postFaderGain.gain, toNodeValue: (value) => value };

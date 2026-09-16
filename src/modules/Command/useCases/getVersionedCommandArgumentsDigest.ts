@@ -1,3 +1,5 @@
+import { FNV_1A_OFFSET_BASIS, FNV_1A_PRIME } from '#/utils/canonicalDigest';
+
 function normalizeJson(value: unknown): unknown {
     if (Array.isArray(value)) {
         return value.map(normalizeJson);
@@ -14,10 +16,10 @@ function normalizeJson(value: unknown): unknown {
 
 export function getVersionedCommandArgumentsDigest(input: { operation: string; arguments: unknown }): string {
     const serialized = JSON.stringify(normalizeJson(input));
-    let hash = 0x811c9dc5;
+    let hash = FNV_1A_OFFSET_BASIS;
     for (let index = 0; index < serialized.length; index++) {
         hash ^= serialized.charCodeAt(index);
-        hash = Math.imul(hash, 0x01000193);
+        hash = Math.imul(hash, FNV_1A_PRIME);
     }
     return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }

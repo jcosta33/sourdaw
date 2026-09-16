@@ -7,7 +7,8 @@
  *
  * Usage:
  *   const slot = telemetryAllocator.allocateSlot();
- *   // send { type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset } to worklet port
+ *   // send { type: INIT_SAB_MESSAGE_TYPE, sab: slot.sab, byteOffset: slot.byteOffset }
+ *   // (from `#/infra/audioWorklet/workletPortMessages`) to the worklet port
  *   // read slot.view[GRINDER_IDX.inputDb] in your poll loop
  *   telemetryAllocator.releaseSlot(slot.byteOffset); // on device removal
  */

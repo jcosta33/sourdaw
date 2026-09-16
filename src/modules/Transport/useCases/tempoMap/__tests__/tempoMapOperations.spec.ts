@@ -13,7 +13,8 @@ vi.mock('../../../stores/tempoMapStore', () => ({
     },
 }));
 
-vi.mock('../../../models/TempoMap', () => ({
+vi.mock('../../../models/TempoMap', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../models/TempoMap')>()),
     createTempoChange: (beat: number, tempo: number, curve: string) => ({
         id: `tc-${beat}-${tempo}`,
         beat,

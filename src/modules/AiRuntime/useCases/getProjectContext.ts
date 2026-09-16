@@ -12,7 +12,7 @@ import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { projectStore } from '#/modules/Project/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
-import { transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { MIN_CLIP_LOOP_LENGTH_BEATS, projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
@@ -119,7 +119,7 @@ export function getProjectContext(): ProjectContext {
 
     const built: ProjectContext = {
         ...(projectState ? { productionBrief: structuredClone(projectState.productionBrief) } : {}),
-        tempo: transportState?.tempo ?? 120,
+        tempo: transportState?.tempo ?? DEFAULT_TEMPO_BPM,
         timeSignature: [transportState?.timeSignatureNumerator ?? 4, transportState?.timeSignatureDenominator ?? 4],
         isPlaying: transportState?.isPlaying ?? false,
         isRecording: transportState?.isRecording ?? false,

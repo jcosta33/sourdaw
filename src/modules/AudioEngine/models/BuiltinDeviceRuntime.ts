@@ -1,3 +1,5 @@
+import { FNV_1A_OFFSET_BASIS, FNV_1A_PRIME } from '#/utils/canonicalDigest';
+
 export type DeviceRuntimePorts =
     | {
           inputs: number;
@@ -113,10 +115,10 @@ function canonicalize(value: unknown): unknown {
 }
 
 function hash(value: string): string {
-    let result = 0x811c9dc5;
+    let result = FNV_1A_OFFSET_BASIS;
     for (let index = 0; index < value.length; index++) {
         result ^= value.charCodeAt(index);
-        result = Math.imul(result, 0x01000193);
+        result = Math.imul(result, FNV_1A_PRIME);
     }
     return (result >>> 0).toString(16).padStart(8, '0');
 }

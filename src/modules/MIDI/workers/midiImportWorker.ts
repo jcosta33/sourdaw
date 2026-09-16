@@ -237,6 +237,11 @@ function parseMidiFile(buffer: ArrayBuffer): {
 
                 let statusByte = reader.readUint8();
 
+                // The status bytes and meta-event ids below (0xff, 0x03, 0x51,
+                // 0x90, 0x80, 0xb0) are restated from their owner in
+                // `models/SmfConstants.ts` because this worker is a separately
+                // bundled realm; smfConstantsParity.spec pins the two spellings
+                // equal.
                 if (statusByte === 0xff) {
                     const metaType = reader.readUint8();
                     const metaLen = reader.readVarLen();

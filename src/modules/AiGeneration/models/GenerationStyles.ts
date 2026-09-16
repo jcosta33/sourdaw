@@ -7,7 +7,13 @@
 
 export type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';
 
-export type ScaleType =
+/**
+ * Scale vocabulary for the melody-generation algorithm. Distinct domain from
+ * the pattern-template `ScaleType` in `MidiPatternType.ts`: the two vocabularies
+ * describe different consumers (melody algorithm vs pattern templates) and must
+ * not be merged or cross-assigned.
+ */
+export type MelodyScaleType =
     | 'major'
     | 'minor'
     | 'pentatonic'

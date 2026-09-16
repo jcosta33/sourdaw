@@ -1,3 +1,5 @@
+import { DEFAULT_NOTE_PROBABILITY } from '#/utils/midiData';
+
 import { createMidiNote } from '../../models/MidiNote';
 import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
 
@@ -34,7 +36,13 @@ export function splitNoteAtBeat(clipId: string, selectedIds: string[], beat: num
 
             result.push({ ...note, duration: leftDuration });
             result.push({
-                ...createMidiNote(note.pitch, beat, rightDuration, note.velocity, note.probability ?? 100),
+                ...createMidiNote(
+                    note.pitch,
+                    beat,
+                    rightDuration,
+                    note.velocity,
+                    note.probability ?? DEFAULT_NOTE_PROBABILITY
+                ),
                 pressure: note.pressure,
                 slide: note.slide,
                 pitchBend: note.pitchBend,

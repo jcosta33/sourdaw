@@ -1,5 +1,5 @@
-import { measureIntegratedLoudness } from '../../src/modules/AudioRendering/repositories/audioEncoders/measureIntegratedLoudness';
-import { measureTruePeak } from '../../src/modules/AudioRendering/repositories/audioEncoders/measureTruePeak';
+import { measureIntegratedLoudness } from '../../src/utils/audioMetering/measureIntegratedLoudness';
+import { measureTruePeak } from '../../src/utils/audioMetering/measureTruePeak';
 
 const PCM24_NEGATIVE_SCALE = 0x80_0000;
 const PCM24_RANGE = 0x100_0000;

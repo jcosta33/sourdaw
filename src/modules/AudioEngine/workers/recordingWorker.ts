@@ -32,6 +32,13 @@ import { MAX_MONO_FLOAT32_RIFF_SAMPLES } from '../models/RecordingWavLimits';
 
 const POLL_MS = 50; // drain interval — plenty of margin ahead of worklet writes
 
+/**
+ * Sample rate the WAV header assumes until the `init` message supplies the
+ * context's real rate. 48 kHz is the project default, so an early header
+ * reservation (before init) sizes its estimates for that rate.
+ */
+const DEFAULT_RECORDING_SAMPLE_RATE = 48_000;
+
 /** Canonical WAV/RIFF header size, in bytes. The PCM payload begins here so the
  *  header can be patched in place on stop without clobbering the first samples. */
 export const WAV_HEADER_BYTES = 44;
@@ -168,7 +175,7 @@ let ring: Float32Array | null = null;
 let control: Int32Array | null = null;
 let localReadHead = 0;
 let totalSamplesWritten = 0;
-let workerSampleRate = 48000;
+let workerSampleRate = DEFAULT_RECORDING_SAMPLE_RATE;
 let headerReserved = false;
 // Set when a ring overrun abandons the take: no further drains run and no
 // 'wav' is ever produced for the recording.

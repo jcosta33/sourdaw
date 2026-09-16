@@ -177,11 +177,23 @@ function findSelectionRuleViolation(
         return PROTECTED_OBJECT_TARGETED;
     }
     const selectedTargetCandidateIds = new Set(targets.map((target) => target.candidateId));
+    const selectedTrackSlotCandidateIds = collectSelectedTrackSlotCandidateIds(creationSlots);
     return creationSlots.some(
-        (slot) => slot.parentCandidateId !== null && !selectedTargetCandidateIds.has(slot.parentCandidateId)
+        (slot) =>
+            slot.parentCandidateId !== null &&
+            !selectedTargetCandidateIds.has(slot.parentCandidateId) &&
+            !selectedTrackSlotCandidateIds.has(slot.parentCandidateId)
     )
         ? DETACHED_CREATION_SLOT
         : null;
+}
+
+/**
+ * The track creation slots this interpretation selected. A nested slot names one of these instead of
+ * a target, because the track it hangs under does not exist yet and carries no id to name.
+ */
+function collectSelectedTrackSlotCandidateIds(creationSlots: readonly CreativeCreationSlot[]): ReadonlySet<string> {
+    return new Set(creationSlots.filter((slot) => slot.objectType === 'track').map((slot) => slot.candidateId));
 }
 
 function toAuthorityTargets(targets: readonly CreativeTargetCandidate[]): CreativeRequestAuthority['targets'] {
@@ -201,6 +213,29 @@ function toProhibitions(constraints: readonly CreativeConstraintCandidate[]): Cr
     );
 }
 
+type AuthorityCreationSlot = CreativeRequestAuthority['creationSlots'][number];
+
+function toAuthorityCreationSlot(
+    slot: CreativeCreationSlot,
+    parentObjectIdByCandidateId: ReadonlyMap<string, string | null>,
+    selectedTrackSlotCandidateIds: ReadonlySet<string>
+): AuthorityCreationSlot {
+    if (slot.parentCandidateId !== null && selectedTrackSlotCandidateIds.has(slot.parentCandidateId)) {
+        return {
+            objectType: slot.objectType,
+            parentObjectId: null,
+            parentCreatedObjectType: 'track',
+            budget: slot.budget,
+        };
+    }
+    return {
+        objectType: slot.objectType,
+        parentObjectId:
+            slot.parentCandidateId === null ? null : (parentObjectIdByCandidateId.get(slot.parentCandidateId) ?? null),
+        budget: slot.budget,
+    };
+}
+
 function mintAuthority(input: {
     catalog: CreativeInterpretationCatalog;
     mode: Exclude<CreativeRequestMode, 'unresolved'>;
@@ -211,6 +246,7 @@ function mintAuthority(input: {
     const parentObjectIdByCandidateId = new Map(
         selections.targets.map((target) => [target.candidateId, target.objectIds[0] ?? null])
     );
+    const selectedTrackSlotCandidateIds = collectSelectedTrackSlotCandidateIds(selections.creationSlots);
     return {
         schemaVersion: 1,
         authorityId: `creative-authority-${crypto.randomUUID()}`,
@@ -222,14 +258,9 @@ function mintAuthority(input: {
         targets: toAuthorityTargets(selections.targets),
         editDimensions: selections.dimensions.map((candidate) => candidate.dimension),
         prohibitions: toProhibitions(selections.constraints),
-        creationSlots: selections.creationSlots.map((slot) => ({
-            objectType: slot.objectType,
-            parentObjectId:
-                slot.parentCandidateId === null
-                    ? null
-                    : (parentObjectIdByCandidateId.get(slot.parentCandidateId) ?? null),
-            budget: slot.budget,
-        })),
+        creationSlots: selections.creationSlots.map((slot) =>
+            toAuthorityCreationSlot(slot, parentObjectIdByCandidateId, selectedTrackSlotCandidateIds)
+        ),
         uncertainty: input.uncertainty,
     };
 }

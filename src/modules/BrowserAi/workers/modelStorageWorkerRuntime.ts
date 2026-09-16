@@ -1,6 +1,9 @@
 import { extractSingleGuardedZipEntry } from '#/infra/archive/extractSingleGuardedZipEntry';
 
 import {
+    MODEL_STORAGE_REQUEST_TYPE,
+    MODEL_STORAGE_RESPONSE_TYPE,
+    MODEL_STORAGE_TRANSFER_TYPE,
     type ModelStorageTransferMessage,
     type ModelStorageWorkerRequest,
     type ModelStorageWorkerResponse,
@@ -353,7 +356,9 @@ export function createModelStorageRequestHandler({
         }
     }
 
-    async function handleRead(request: Extract<ModelStorageWorkerRequest, { type: 'read-model' }>): Promise<void> {
+    async function handleRead(
+        request: Extract<ModelStorageWorkerRequest, { type: typeof MODEL_STORAGE_REQUEST_TYPE.readModel }>
+    ): Promise<void> {
         const { destinationPort } = request;
         try {
             await withModelLock(request, async () => {
@@ -367,22 +372,37 @@ export function createModelStorageRequestHandler({
                 if (!validDigest) {
                     await directory.removeEntry(fileName);
                     destinationPort.close();
-                    postResponse({ type: 'read-complete', requestId: request.requestId, found: false });
+                    postResponse({
+                        type: MODEL_STORAGE_RESPONSE_TYPE.readComplete,
+                        requestId: request.requestId,
+                        found: false,
+                    });
                     return;
                 }
-                const message: ModelStorageTransferMessage = { type: 'model-data', modelData };
+                const message: ModelStorageTransferMessage = { type: MODEL_STORAGE_TRANSFER_TYPE.modelData, modelData };
                 destinationPort.postMessage(message, [modelData]);
                 destinationPort.close();
-                postResponse({ type: 'read-complete', requestId: request.requestId, found: true });
+                postResponse({
+                    type: MODEL_STORAGE_RESPONSE_TYPE.readComplete,
+                    requestId: request.requestId,
+                    found: true,
+                });
             });
         } catch (error) {
             if (isNotFoundError(error)) {
                 destinationPort.close();
-                postResponse({ type: 'read-complete', requestId: request.requestId, found: false });
+                postResponse({
+                    type: MODEL_STORAGE_RESPONSE_TYPE.readComplete,
+                    requestId: request.requestId,
+                    found: false,
+                });
                 return;
             }
             const serialized = serializeError(error);
-            const message: ModelStorageTransferMessage = { type: 'model-error', ...serialized };
+            const message: ModelStorageTransferMessage = {
+                type: MODEL_STORAGE_TRANSFER_TYPE.modelError,
+                ...serialized,
+            };
             destinationPort.postMessage(message);
             destinationPort.close();
             throw error;
@@ -390,7 +410,7 @@ export function createModelStorageRequestHandler({
     }
 
     async function handleBegin(
-        request: Extract<ModelStorageWorkerRequest, { type: 'begin-model-write' }>
+        request: Extract<ModelStorageWorkerRequest, { type: typeof MODEL_STORAGE_REQUEST_TYPE.beginModelWrite }>
     ): Promise<void> {
         if (writes.has(request.writeId)) {
             throw new Error(`Model write already exists: ${request.writeId}`);
@@ -433,11 +453,11 @@ export function createModelStorageRequestHandler({
             await modelLease.release();
             throw error;
         }
-        postResponse({ type: 'write-begun', requestId: request.requestId });
+        postResponse({ type: MODEL_STORAGE_RESPONSE_TYPE.writeBegun, requestId: request.requestId });
     }
 
     async function handleChunk(
-        request: Extract<ModelStorageWorkerRequest, { type: 'write-model-chunk' }>
+        request: Extract<ModelStorageWorkerRequest, { type: typeof MODEL_STORAGE_REQUEST_TYPE.writeModelChunk }>
     ): Promise<void> {
         const session = writes.get(request.writeId);
         if (!session?.access) {
@@ -459,7 +479,11 @@ export function createModelStorageRequestHandler({
                 throw new Error(`OPFS wrote ${String(bytesWritten)} of ${String(chunk.byteLength)} model bytes`);
             }
             session.offset += bytesWritten;
-            postResponse({ type: 'chunk-written', requestId: request.requestId, bytesWritten });
+            postResponse({
+                type: MODEL_STORAGE_RESPONSE_TYPE.chunkWritten,
+                requestId: request.requestId,
+                bytesWritten,
+            });
         } catch (error) {
             await abortWrite(request.writeId);
             throw error;
@@ -467,7 +491,7 @@ export function createModelStorageRequestHandler({
     }
 
     async function handleCommit(
-        request: Extract<ModelStorageWorkerRequest, { type: 'commit-model-write' }>
+        request: Extract<ModelStorageWorkerRequest, { type: typeof MODEL_STORAGE_REQUEST_TYPE.commitModelWrite }>
     ): Promise<void> {
         const session = writes.get(request.writeId);
         if (!session) {
@@ -497,7 +521,11 @@ export function createModelStorageRequestHandler({
                     }
                 }
                 if (session.expectedSha256 !== undefined && downloadedBytes !== null) {
-                    postResponse({ type: 'write-progress', requestId: request.requestId, stage: 'verifying' });
+                    postResponse({
+                        type: MODEL_STORAGE_RESPONSE_TYPE.writeProgress,
+                        requestId: request.requestId,
+                        stage: 'verifying',
+                    });
                     const actualSha256 = await sha256(downloadedBytes);
                     throwIfAborted(session);
                     if (actualSha256 !== session.expectedSha256) {
@@ -507,7 +535,11 @@ export function createModelStorageRequestHandler({
                     }
                 }
                 if (session.archive && downloadedBytes !== null) {
-                    postResponse({ type: 'write-progress', requestId: request.requestId, stage: 'extracting' });
+                    postResponse({
+                        type: MODEL_STORAGE_RESPONSE_TYPE.writeProgress,
+                        requestId: request.requestId,
+                        stage: 'extracting',
+                    });
                     const extracted = await extractArchive({
                         bytes: new Uint8Array(downloadedBytes),
                         suffix: '.onnx',
@@ -529,7 +561,11 @@ export function createModelStorageRequestHandler({
                 }
 
                 if (session.expectedSha256 !== undefined || session.archive) {
-                    postResponse({ type: 'write-progress', requestId: request.requestId, stage: 'storing' });
+                    postResponse({
+                        type: MODEL_STORAGE_RESPONSE_TYPE.writeProgress,
+                        requestId: request.requestId,
+                        stage: 'storing',
+                    });
                 }
                 throwIfAborted(session);
                 await session.file.move(session.directory, session.fileName);
@@ -537,7 +573,7 @@ export function createModelStorageRequestHandler({
                 throwIfAborted(session);
                 await releaseWriteSession(request.writeId, session, false);
                 postResponse({
-                    type: 'write-committed',
+                    type: MODEL_STORAGE_RESPONSE_TYPE.writeCommitted,
                     requestId: request.requestId,
                     storedBytes,
                     extractedPath,
@@ -584,28 +620,28 @@ export function createModelStorageRequestHandler({
 
     return async function handleModelStorageRequest(request: ModelStorageWorkerRequest): Promise<void> {
         try {
-            if (request.type === 'read-model') {
+            if (request.type === MODEL_STORAGE_REQUEST_TYPE.readModel) {
                 await handleRead(request);
                 return;
             }
-            if (request.type === 'begin-model-write') {
+            if (request.type === MODEL_STORAGE_REQUEST_TYPE.beginModelWrite) {
                 await handleBegin(request);
                 return;
             }
-            if (request.type === 'write-model-chunk') {
+            if (request.type === MODEL_STORAGE_REQUEST_TYPE.writeModelChunk) {
                 await handleChunk(request);
                 return;
             }
-            if (request.type === 'commit-model-write') {
+            if (request.type === MODEL_STORAGE_REQUEST_TYPE.commitModelWrite) {
                 await handleCommit(request);
                 return;
             }
-            if (request.type === 'abort-model-write') {
+            if (request.type === MODEL_STORAGE_REQUEST_TYPE.abortModelWrite) {
                 await abortWrite(request.writeId);
-                postResponse({ type: 'write-aborted', requestId: request.requestId });
+                postResponse({ type: MODEL_STORAGE_RESPONSE_TYPE.writeAborted, requestId: request.requestId });
                 return;
             }
-            if (request.type === 'delete-model') {
+            if (request.type === MODEL_STORAGE_REQUEST_TYPE.deleteModel) {
                 await withModelLock(request, async () => {
                     try {
                         const root = await getRoot();
@@ -617,10 +653,10 @@ export function createModelStorageRequestHandler({
                         }
                     }
                 });
-                postResponse({ type: 'model-deleted', requestId: request.requestId });
+                postResponse({ type: MODEL_STORAGE_RESPONSE_TYPE.modelDeleted, requestId: request.requestId });
                 return;
             }
-            if (request.type === 'check-model') {
+            if (request.type === MODEL_STORAGE_REQUEST_TYPE.checkModel) {
                 let cached = true;
                 try {
                     const root = await getRoot();
@@ -632,10 +668,10 @@ export function createModelStorageRequestHandler({
                     }
                     cached = false;
                 }
-                postResponse({ type: 'model-checked', requestId: request.requestId, cached });
+                postResponse({ type: MODEL_STORAGE_RESPONSE_TYPE.modelChecked, requestId: request.requestId, cached });
                 return;
             }
-            if (request.type === 'verify-model') {
+            if (request.type === MODEL_STORAGE_REQUEST_TYPE.verifyModel) {
                 let verified = false;
                 await withModelLock(request, async () => {
                     try {
@@ -655,7 +691,11 @@ export function createModelStorageRequestHandler({
                         }
                     }
                 });
-                postResponse({ type: 'model-verified', requestId: request.requestId, verified });
+                postResponse({
+                    type: MODEL_STORAGE_RESPONSE_TYPE.modelVerified,
+                    requestId: request.requestId,
+                    verified,
+                });
                 return;
             }
 
@@ -674,9 +714,17 @@ export function createModelStorageRequestHandler({
                     }
                 }
             }
-            postResponse({ type: 'storage-measured', requestId: request.requestId, usedBytes });
+            postResponse({
+                type: MODEL_STORAGE_RESPONSE_TYPE.storageMeasured,
+                requestId: request.requestId,
+                usedBytes,
+            });
         } catch (error) {
-            postResponse({ type: 'error', requestId: request.requestId, ...serializeError(error) });
+            postResponse({
+                type: MODEL_STORAGE_RESPONSE_TYPE.error,
+                requestId: request.requestId,
+                ...serializeError(error),
+            });
         }
     };
 }

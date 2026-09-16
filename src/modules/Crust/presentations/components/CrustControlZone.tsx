@@ -20,6 +20,7 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/utils/Styles/cn';
 
+import { CRUST_PARAM_IDS } from '../../models/CrustParamIds';
 import { type CrustDither, type CrustPatch } from '../../models/CrustPatch';
 
 import { CrustSatCurve } from './CrustSatCurve';
@@ -260,7 +261,7 @@ const Level1 = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): R
                     active={active}
                     label={tile.label}
                     subtitle={tile.sub}
-                    onClick={() => setParam('style', tile.id)}
+                    onClick={() => setParam(CRUST_PARAM_IDS.style, tile.id)}
                 />
             );
         })}
@@ -279,7 +280,7 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                         active={patch.algorithm === a.id}
                         tone="steel"
                         size="xs"
-                        onClick={() => setParam('algorithm', a.id)}
+                        onClick={() => setParam(CRUST_PARAM_IDS.algorithm, a.id)}
                     >
                         {a.label}
                     </DawPluginChip>
@@ -294,7 +295,7 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
         <Row align="end" gap={3}>
             <Knob
                 value={patch.lookahead}
-                onChange={(v) => setParam('lookahead', v)}
+                onChange={(v) => setParam(CRUST_PARAM_IDS.lookahead, v)}
                 label="Lookahead"
                 min={0}
                 max={10}
@@ -304,9 +305,9 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
             />
             <AutoKnob
                 auto={patch.attackAuto}
-                onAutoChange={(auto) => setParam('attackAuto', auto)}
+                onAutoChange={(auto) => setParam(CRUST_PARAM_IDS.attackAuto, auto)}
                 value={patch.attack}
-                onChange={(v) => setParam('attack', v)}
+                onChange={(v) => setParam(CRUST_PARAM_IDS.attack, v)}
                 label="Attack"
                 min={0}
                 max={100}
@@ -316,9 +317,9 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
             />
             <AutoKnob
                 auto={patch.releaseAuto}
-                onAutoChange={(auto) => setParam('releaseAuto', auto)}
+                onAutoChange={(auto) => setParam(CRUST_PARAM_IDS.releaseAuto, auto)}
                 value={patch.release}
-                onChange={(v) => setParam('release', v)}
+                onChange={(v) => setParam(CRUST_PARAM_IDS.release, v)}
                 label="Release"
                 min={0}
                 max={1000}
@@ -333,12 +334,12 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
             <SliderRow
                 label="Link Trans"
                 value={patch.channelLinkTransient}
-                onChange={(value) => setParam('channelLinkTransient', value)}
+                onChange={(value) => setParam(CRUST_PARAM_IDS.channelLinkTransient, value)}
             />
             <SliderRow
                 label="Link Rel"
                 value={patch.channelLinkRelease}
-                onChange={(value) => setParam('channelLinkRelease', value)}
+                onChange={(value) => setParam(CRUST_PARAM_IDS.channelLinkRelease, value)}
             />
         </Stack>
     </Stack>
@@ -356,7 +357,7 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 size="xs"
                 role="switch"
                 aria-checked={patch.satEnabled}
-                onClick={() => setParam('satEnabled', !patch.satEnabled)}
+                onClick={() => setParam(CRUST_PARAM_IDS.satEnabled, !patch.satEnabled)}
             />
         }
         className="shrink-0 rounded-[14px] border border-white/8 bg-[linear-gradient(180deg,rgba(212,136,58,0.12),rgba(0,0,0,0.18))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
@@ -370,7 +371,7 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                         active={patch.satAlgorithm === a}
                         tone="amber"
                         size="xs"
-                        onClick={() => setParam('satAlgorithm', a)}
+                        onClick={() => setParam(CRUST_PARAM_IDS.satAlgorithm, a)}
                         disabled={!patch.satEnabled}
                         aria-pressed={patch.satAlgorithm === a}
                     >
@@ -390,7 +391,7 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 <Stack align="center" gap={0.5}>
                     <Knob
                         value={patch.satDrive}
-                        onChange={(v) => setParam('satDrive', v)}
+                        onChange={(v) => setParam(CRUST_PARAM_IDS.satDrive, v)}
                         label="Drive"
                         min={0}
                         max={18}
@@ -405,7 +406,7 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 </Stack>
                 <Knob
                     value={patch.satMix}
-                    onChange={(v) => setParam('satMix', v)}
+                    onChange={(v) => setParam(CRUST_PARAM_IDS.satMix, v)}
                     label="Mix"
                     min={0}
                     max={100}
@@ -430,7 +431,7 @@ const Level3Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
             offLabel="DELTA"
             role="switch"
             aria-checked={patch.deltaListen}
-            onClick={() => setParam('deltaListen', !patch.deltaListen)}
+            onClick={() => setParam(CRUST_PARAM_IDS.deltaListen, !patch.deltaListen)}
         />
         <DawPluginToggle
             id="crust-unity"
@@ -441,7 +442,7 @@ const Level3Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
             offLabel="A=B"
             role="switch"
             aria-checked={patch.unityGain}
-            onClick={() => setParam('unityGain', !patch.unityGain)}
+            onClick={() => setParam(CRUST_PARAM_IDS.unityGain, !patch.unityGain)}
         />
     </Row>
 );
@@ -459,7 +460,7 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                             active={patch.multiBand === mb}
                             tone="steel"
                             size="xs"
-                            onClick={() => setParam('multiBand', mb)}
+                            onClick={() => setParam(CRUST_PARAM_IDS.multiBand, mb)}
                         >
                             {mb === 'wideband' ? 'Wide' : mb}
                         </DawPluginChip>
@@ -477,7 +478,7 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                             active={patch.stereoMode === sm}
                             tone="steel"
                             size="xs"
-                            onClick={() => setParam('stereoMode', sm)}
+                            onClick={() => setParam(CRUST_PARAM_IDS.stereoMode, sm)}
                         >
                             {sm.toUpperCase()}
                         </DawPluginChip>
@@ -496,12 +497,12 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                         size="xs"
                         role="switch"
                         aria-checked={patch.scHpfEnabled}
-                        onClick={() => setParam('scHpfEnabled', !patch.scHpfEnabled)}
+                        onClick={() => setParam(CRUST_PARAM_IDS.scHpfEnabled, !patch.scHpfEnabled)}
                     />
                     {patch.scHpfEnabled ? (
                         <Knob
                             value={patch.scHpfFreq}
-                            onChange={(v) => setParam('scHpfFreq', v)}
+                            onChange={(v) => setParam(CRUST_PARAM_IDS.scHpfFreq, v)}
                             label="HPF"
                             min={20}
                             max={200}
@@ -521,7 +522,7 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                 value={patch.dither}
                 onChange={(e) => {
                     if (isCrustDither(e.target.value)) {
-                        setParam('dither', e.target.value);
+                        setParam(CRUST_PARAM_IDS.dither, e.target.value);
                     }
                 }}
                 size="micro"
@@ -543,7 +544,7 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
                             active={patch.outputBitDepth === bd}
                             tone="steel"
                             size="xs"
-                            onClick={() => setParam('outputBitDepth', bd)}
+                            onClick={() => setParam(CRUST_PARAM_IDS.outputBitDepth, bd)}
                         >
                             {bd}-bit
                         </DawPluginChip>

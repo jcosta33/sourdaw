@@ -13,6 +13,7 @@ import { type AgentRunWorkLease } from '../../models/AgentRun';
 import { type ChatMessage } from '../../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../../models/ChatSystemPrompt';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
+import { EXPLAIN_TEMPERATURE } from '../../models/LlmSamplingTemperatures';
 import { estimateCompiledProviderRequestTokenCeiling } from '../../models/ModelProviderBudgetEstimate';
 import {
     type ModelProviderFinish,
@@ -283,7 +284,7 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
                     updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
                 },
                 {
-                    temperature: 0.7,
+                    temperature: EXPLAIN_TEMPERATURE,
                     maxTokens: providerRequest.limits.maxOutputTokens,
                     signal: aborter.signal,
                     onUsage: (event) => activeProviderStreamWriter.push(event),
@@ -303,7 +304,7 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
             try {
                 const asyncChunkGenerator = (await engine.chat.completions.create({
                     messages: providerRequest.messages,
-                    temperature: 0.7,
+                    temperature: EXPLAIN_TEMPERATURE,
                     max_tokens: providerRequest.limits.maxOutputTokens,
                     stream: true,
                 })) as AsyncIterable<{

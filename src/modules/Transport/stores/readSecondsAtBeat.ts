@@ -1,7 +1,7 @@
 import { secondsBetweenBeats } from '../models/TempoMap';
 
 import { tempoMapStore } from './tempoMapStore';
-import { transportStore } from './transportStore';
+import { DEFAULT_TEMPO_BPM, transportStore } from './transportStore';
 
 type ReadSecondsAtBeatInput = {
     beat: number;
@@ -17,5 +17,10 @@ type ReadSecondsAtBeatInput = {
  * right only while that span holds no tempo change.
  */
 export function readSecondsAtBeat({ beat }: ReadSecondsAtBeatInput): number {
-    return secondsBetweenBeats(tempoMapStore.value?.changes ?? [], 0, beat, transportStore.value?.tempo ?? 120);
+    return secondsBetweenBeats(
+        tempoMapStore.value?.changes ?? [],
+        0,
+        beat,
+        transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM
+    );
 }

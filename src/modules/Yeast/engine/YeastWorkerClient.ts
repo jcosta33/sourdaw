@@ -22,6 +22,11 @@ import {
     YEAST_PREVIEW_REALIZED_FLAG,
     YEAST_PREVIEW_VALID_FLAGS,
 } from '../models/YeastPreviewSnapshot';
+import {
+    YEAST_MIDI_EVENT_KIND,
+    YEAST_WORKER_MESSAGE_TYPE,
+    YEAST_WORKER_PROTOCOL_VERSION,
+} from '../models/YeastWorkerProtocol';
 
 import type { YeastNoteOffIdentity, YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
@@ -41,7 +46,6 @@ import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProje
 const SCHEDULER_LOOKAHEAD_MS = 100;
 const SCHEDULER_GRAIN_MS = 10;
 export const YEAST_WORKER_DEADLINE_MS = SCHEDULER_LOOKAHEAD_MS - SCHEDULER_GRAIN_MS;
-const YEAST_WORKER_PROTOCOL_VERSION = 1;
 const STARTUP_TIMEOUT_MS = YEAST_WORKER_DEADLINE_MS;
 const PROCESS_BLOCK_TIMEOUT_MS = YEAST_WORKER_DEADLINE_MS;
 const PROJECTION_ACK_TIMEOUT_MS = YEAST_WORKER_DEADLINE_MS;
@@ -94,7 +98,11 @@ function isCommandId(value: unknown): value is number {
 }
 
 function isReadyMessage(value: unknown): boolean {
-    return isPlainObject(value) && value.type === 'ready' && value.protocolVersion === YEAST_WORKER_PROTOCOL_VERSION;
+    return (
+        isPlainObject(value) &&
+        value.type === YEAST_WORKER_MESSAGE_TYPE.ready &&
+        value.protocolVersion === YEAST_WORKER_PROTOCOL_VERSION
+    );
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -144,23 +152,23 @@ function isMidiEvent(value: unknown): value is MidiEvent {
     }
 
     const kind = value.kind;
-    if (kind.type === 'noteOn') {
+    if (kind.type === YEAST_MIDI_EVENT_KIND.noteOn) {
         return isMidiChannel(kind.channel) && isMidiNote(kind.note) && isFiniteNumber(kind.velocity);
     }
-    if (kind.type === 'noteOff') {
+    if (kind.type === YEAST_MIDI_EVENT_KIND.noteOff) {
         return isMidiChannel(kind.channel) && isMidiNote(kind.note);
     }
-    if (kind.type === 'cc') {
+    if (kind.type === YEAST_MIDI_EVENT_KIND.cc) {
         return isMidiChannel(kind.channel) && isMidiController(kind.cc) && isFiniteNumber(kind.value);
     }
-    if (kind.type === 'pitchBend' || kind.type === 'channelPressure') {
+    if (kind.type === YEAST_MIDI_EVENT_KIND.pitchBend || kind.type === YEAST_MIDI_EVENT_KIND.channelPressure) {
         return isMidiChannel(kind.channel) && isFiniteNumber(kind.value);
     }
     return false;
 }
 
 function isNoteOffEvent(value: unknown): value is MidiEvent {
-    return isMidiEvent(value) && value.kind.type === 'noteOff' && isTrackId(value.trackId);
+    return isMidiEvent(value) && value.kind.type === YEAST_MIDI_EVENT_KIND.noteOff && isTrackId(value.trackId);
 }
 
 function parseAcknowledgedNoteOffs(value: Record<string, unknown>, required: boolean): MidiEvent[] | undefined {
@@ -175,7 +183,7 @@ function parseAcknowledgedNoteOffs(value: Record<string, unknown>, required: boo
 }
 
 function parseProcessedMessage(value: Record<string, unknown>): { requestId: number; events: MidiEvent[] } | undefined {
-    if (value.type !== 'processed' || !isCommandId(value.requestId)) {
+    if (value.type !== YEAST_WORKER_MESSAGE_TYPE.processed || !isCommandId(value.requestId)) {
         return undefined;
     }
     const events = value.events;
@@ -240,7 +248,7 @@ function parsePreviewPageMessage(
     value: Record<string, unknown>
 ): { requestId: number; captureEpoch: number; page: YeastPreviewPackedPage } | undefined {
     if (
-        value.type !== 'previewPage' ||
+        value.type !== YEAST_WORKER_MESSAGE_TYPE.previewPage ||
         !isCommandId(value.requestId) ||
         !isCommandId(value.captureEpoch) ||
         !isPackedPreviewPage(value.page)
@@ -338,14 +346,22 @@ function decodePreviewPage(
 }
 
 function parseProcessedError(value: Record<string, unknown>): { requestId: number; error: string } | undefined {
-    if (value.type !== 'processedError' || !isCommandId(value.requestId) || typeof value.error !== 'string') {
+    if (
+        value.type !== YEAST_WORKER_MESSAGE_TYPE.processedError ||
+        !isCommandId(value.requestId) ||
+        typeof value.error !== 'string'
+    ) {
         return undefined;
     }
     return { requestId: value.requestId, error: value.error };
 }
 
 function parseProjectionAck(value: unknown): ParsedProjectionAck | undefined {
-    if (!isPlainObject(value) || value.type !== 'projectionAck' || !isCommandId(value.projectionId)) {
+    if (
+        !isPlainObject(value) ||
+        value.type !== YEAST_WORKER_MESSAGE_TYPE.projectionAck ||
+        !isCommandId(value.projectionId)
+    ) {
         return undefined;
     }
     const events = parseAcknowledgedNoteOffs(value, true);
@@ -356,7 +372,7 @@ function parseProjectionAck(value: unknown): ParsedProjectionAck | undefined {
 }
 
 function parseCommandAck(value: unknown): ParsedCommandAck | undefined {
-    if (!isPlainObject(value) || value.type !== 'commandAck' || !isCommandId(value.commandId)) {
+    if (!isPlainObject(value) || value.type !== YEAST_WORKER_MESSAGE_TYPE.commandAck || !isCommandId(value.commandId)) {
         return undefined;
     }
 
@@ -381,7 +397,11 @@ function parseCommandAck(value: unknown): ParsedCommandAck | undefined {
 }
 
 function parseAllNotesOffAck(value: unknown): ParsedAllNotesOffAck | undefined {
-    if (!isPlainObject(value) || value.type !== 'allNotesOffAck' || !isCommandId(value.panicId)) {
+    if (
+        !isPlainObject(value) ||
+        value.type !== YEAST_WORKER_MESSAGE_TYPE.allNotesOffAck ||
+        !isCommandId(value.panicId)
+    ) {
         return undefined;
     }
     if (typeof value.completed !== 'boolean') {
@@ -752,7 +772,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         const notesOffByTrack = new Map<string, YeastNoteOffIdentity[]>();
         const seenByTrackAndChannel = new Map<string, Map<number, Set<number>>>();
         for (const evt of events) {
-            if (evt.kind.type !== 'noteOff' || !evt.trackId) {
+            if (evt.kind.type !== YEAST_MIDI_EVENT_KIND.noteOff || !evt.trackId) {
                 continue;
             }
             const seenByChannel = seenByTrackAndChannel.get(evt.trackId) ?? new Map<number, Set<number>>();
@@ -889,7 +909,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             }
             return;
         }
-        if (event.data.type === 'previewPage') {
+        if (event.data.type === YEAST_WORKER_MESSAGE_TYPE.previewPage) {
             const parsed = parsePreviewPageMessage(event.data);
             if (!parsed) {
                 return;
@@ -909,7 +929,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             enqueuePreviewPage(route, parsed.page, parsed.captureEpoch);
             return;
         }
-        if (event.data.type === 'processedError') {
+        if (event.data.type === YEAST_WORKER_MESSAGE_TYPE.processedError) {
             const parsed = parseProcessedError(event.data);
             if (!parsed) {
                 return;
@@ -917,14 +937,14 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             settle(parsed.requestId)?.reject(new Error(parsed.error));
             return;
         }
-        if (event.data.type === 'commandAck') {
+        if (event.data.type === YEAST_WORKER_MESSAGE_TYPE.commandAck) {
             const parsed = parseCommandAck(event.data);
             if (parsed) {
                 settleCommand(parsed.commandId)?.resolve(parsed.ack);
             }
             return;
         }
-        if (event.data.type === 'allNotesOffAck') {
+        if (event.data.type === YEAST_WORKER_MESSAGE_TYPE.allNotesOffAck) {
             const parsed = parseAllNotesOffAck(event.data);
             if (!parsed) {
                 return;
@@ -941,7 +961,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             }
             return;
         }
-        if (event.data.type === 'projectionAck') {
+        if (event.data.type === YEAST_WORKER_MESSAGE_TYPE.projectionAck) {
             const parsed = parseProjectionAck(event.data);
             if (!parsed) {
                 return;
@@ -954,7 +974,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             dispatchNotesOff(parsed.events);
             return;
         }
-        if (event.data.type === 'projectionError') {
+        if (event.data.type === YEAST_WORKER_MESSAGE_TYPE.projectionError) {
             const value = event.data;
             if (!isCommandId(value.projectionId)) {
                 return;
@@ -1020,7 +1040,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             pending.set(requestId, { resolve, reject, timer, previewEnabled, captureEpoch, previewRoute });
             try {
                 worker.postMessage({
-                    type: 'processBlock',
+                    type: YEAST_WORKER_MESSAGE_TYPE.processBlock,
                     requestId,
                     events,
                     blockStart,
@@ -1053,7 +1073,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             }, COMMAND_ACK_TIMEOUT_MS);
             pendingCommands.set(commandId, { resolve, reject, timer });
             try {
-                worker.postMessage({ type: 'executeCommand', commandId, command });
+                worker.postMessage({ type: YEAST_WORKER_MESSAGE_TYPE.executeCommand, commandId, command });
             } catch (error: unknown) {
                 settleCommand(commandId)?.reject(toError(error));
             }
@@ -1075,7 +1095,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             }, ALL_NOTES_OFF_ACK_TIMEOUT_MS);
             pendingPanics.set(panicId, { resolve, reject, timer });
             try {
-                worker.postMessage({ type: 'allNotesOff', panicId, nowSamples });
+                worker.postMessage({ type: YEAST_WORKER_MESSAGE_TYPE.allNotesOff, panicId, nowSamples });
             } catch (error: unknown) {
                 settlePanic(panicId)?.reject(toError(error));
             }
@@ -1087,7 +1107,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         }
         removePreviewRoute(binding, binding.captureEpoch);
         try {
-            worker.postMessage({ type: 'releasePreview', ...binding });
+            worker.postMessage({ type: YEAST_WORKER_MESSAGE_TYPE.releasePreview, ...binding });
         } catch {
             // Preview retirement is best effort and cannot affect scheduler output.
         }
@@ -1111,7 +1131,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             pendingProjections.set(projectionId, { resolve, reject, timer });
             try {
                 worker.postMessage({
-                    type: 'setProjection',
+                    type: YEAST_WORKER_MESSAGE_TYPE.setProjection,
                     projectionId,
                     nowSamples: latestSample,
                     processors: projection.map((processor) => ({
@@ -1134,7 +1154,10 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             });
         }, STARTUP_TIMEOUT_MS);
         try {
-            worker.postMessage({ type: 'initialize', protocolVersion: YEAST_WORKER_PROTOCOL_VERSION });
+            worker.postMessage({
+                type: YEAST_WORKER_MESSAGE_TYPE.initialize,
+                protocolVersion: YEAST_WORKER_PROTOCOL_VERSION,
+            });
         } catch (error: unknown) {
             closeClient({ error: toError(error), notifyTerminalHandlers: true });
         }

@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -44,6 +44,17 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  * them. What varies between panels is not the travel but the *binding* — how the
  * element says which parameter it drives. That variance is itself a finding and
  * is enumerated in `BINDING_ATTRIBUTES` below.
+ *
+ * A bound or an id may also arrive as an **imported reference** rather than a
+ * literal: the constants-extraction campaign authored a cutoff as
+ * `min={MIN_AUDIBLE_FREQ_HZ}` / `max={MAX_AUDIBLE_FREQ_HZ}` and a gain trim as
+ * `min={GAIN_TRIM_DB.min}`, and Gluten and Crust name their ids through
+ * `param={GLUTEN_PARAM_IDS.threshold}`-style member references. Dropping the
+ * reference would drop the knob from attribution — silently, since the knob
+ * would leave `compared` without joining any other pin — so the reader follows
+ * the reference into the file it was imported from and reads the value there,
+ * as text and never through an import (Arrangement specs may not import device
+ * models; `deps:validate` forbids it). See `readImportedReferences`.
  *
  * **Leg 3 — engine clamp.** The two-sided numeric `value.clamp(a, b)` in the
  * Rust `set_param` arm, or in an explicitly mapped one-hop setter whose matching
@@ -191,6 +202,12 @@ function collectTsx(dir: string, out: string[] = []): string[] {
 
 const NUMBER = String.raw`-?\d+(?:\.\d+)?(?:e-?\d+)?`;
 const RUST_NUMBER = String.raw`-?\d(?:_?\d)*(?:\.\d(?:_?\d)*)?(?:e-?\d(?:_?\d)*)?`;
+/**
+ * A numeric literal in a constants file, where `20_000`-style digit separators
+ * are legal TypeScript (`MAX_AUDIBLE_FREQ_HZ = 20_000`). The panel-facing
+ * `NUMBER` needs none because a separated literal never appears inside a tag.
+ */
+const SEPARATED_NUMBER = String.raw`-?\d[\d_]*(?:\.[\d_]+)?(?:e-?\d+)?`;
 
 /** The value of JSX attribute `name`: a braced expression, or a quoted string. */
 function readAttribute(tag: string, name: string): string | null {
@@ -208,6 +225,131 @@ function readAttribute(tag: string, name: string): string | null {
         match = attribute.exec(tag);
     }
     return null;
+}
+
+// ── Imported references ─────────────────────────────────────────────────────
+
+type ImportedReferences = {
+    /** The id a `TABLE.member` reference names, when TABLE is an imported object of quoted ids. */
+    readonly tableMember: (base: string, member: string) => string | null;
+    /** The number an imported constant — or one member of an imported constant object — resolves to. */
+    readonly number: (expression: string) => number | null;
+};
+
+/**
+ * Follows one panel's imported references to the values their files author.
+ *
+ * Resolves only the campaign's authoring shapes: an `export const` whose value
+ * is a numeric literal, or an object literal whose member is a numeric or
+ * single-quoted string literal. Anything else — a computed value, a re-export,
+ * a function — stays unresolved, and the knob carrying it falls into
+ * `unboundKnobs`/`noKnob` where the gap is counted rather than guessed at. That
+ * refusal is the same discipline the Rust leg applies to named-constant bounds:
+ * a value this reader cannot see written down is not a value it claims.
+ */
+function readImportedReferences(importingFile: string): ImportedReferences {
+    const source = readFileSync(importingFile, 'utf8');
+
+    // Local name → import specifier. `A as B` binds `B`; plain `A` binds `A`.
+    const specifier = new Map<string, string>();
+    for (const statement of source.matchAll(/^import\s+\{([^}]*)\}\s+from\s+['"]([^'"]+)['"]/gm)) {
+        for (const clause of statement[1]!.split(',')) {
+            const name = /\bas\s+([\w$]+)\s*$/.exec(clause)?.[1] ?? clause.trim();
+            if (name !== '') {
+                specifier.set(name, statement[2]!);
+            }
+        }
+    }
+
+    /** The `#/…` alias and relative forms the panels use, resolved to a file on disk. */
+    const importedFilePath = (name: string): string | null => {
+        const from = specifier.get(name);
+        if (from === undefined) {
+            return null;
+        }
+        let rooted: string;
+        if (from.startsWith('#/')) {
+            rooted = join(REPO_ROOT, 'src', from.slice(2));
+        } else {
+            rooted = resolve(dirname(importingFile), from);
+        }
+        return [`${rooted}.ts`, `${rooted}.tsx`].find((candidate) => existsSync(candidate)) ?? null;
+    };
+
+    /** One `export const`'s literal: a scalar's text, or an object literal's balanced body. */
+    const readExportedLiteral = (path: string, name: string): { scalar: string } | { objectBody: string } | null => {
+        const file = readFileSync(path, 'utf8');
+        const anchor = new RegExp(String.raw`export const ${name}\s*=`).exec(file);
+        if (anchor === null) {
+            return null;
+        }
+        const rest = file.slice(anchor.index + anchor[0].length).trimStart();
+        if (rest.startsWith('{')) {
+            return { objectBody: readBraced(rest, 0) };
+        }
+        const end = rest.search(/[;\n]/);
+        const scalar = (end === -1 ? rest : rest.slice(0, end)).trim();
+        return scalar === '' ? null : { scalar };
+    };
+
+    const literals = new Map<string, { scalar: string } | { objectBody: string } | null>();
+    const exportedLiteral = (name: string): { scalar: string } | { objectBody: string } | null => {
+        if (!literals.has(name)) {
+            const path = importedFilePath(name);
+            literals.set(name, path === null ? null : readExportedLiteral(path, name));
+        }
+        return literals.get(name) ?? null;
+    };
+
+    const tableMember = (base: string, member: string): string | null => {
+        const literal = exportedLiteral(base);
+        if (literal === null || !('objectBody' in literal)) {
+            return null;
+        }
+        return new RegExp(String.raw`\b${member}\s*:\s*'([\w-]+)'`).exec(literal.objectBody)?.[1] ?? null;
+    };
+
+    const number = (expression: string): number | null => {
+        const bare = /^[A-Za-z_$][\w$]*$/.test(expression);
+        const member = /^([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)$/.exec(expression);
+        if (!bare && member === null) {
+            return null;
+        }
+        const literal = exportedLiteral(bare ? expression : member![1]!);
+        if (literal === null) {
+            return null;
+        }
+        if ('scalar' in literal) {
+            if (!new RegExp(`^${SEPARATED_NUMBER}$`).test(literal.scalar)) {
+                return null;
+            }
+            return Number(literal.scalar.replaceAll('_', ''));
+        }
+        if (member === null) {
+            // A bare name bound to an object names no number on its own.
+            return null;
+        }
+        const hit = new RegExp(String.raw`\b${member[2]}\s*:\s*(${SEPARATED_NUMBER})\b`).exec(literal.objectBody);
+        return hit === null ? null : Number(hit[1]!.replaceAll('_', ''));
+    };
+
+    return { tableMember, number };
+}
+
+/** One knob bound: a numeric literal, or an imported constant the panel references. */
+function readNumericBound(attribute: string | null, references: ImportedReferences): number | null {
+    if (attribute === null) {
+        return null;
+    }
+    const expression = /^\{([\S\s]*)\}$/.exec(attribute)?.[1]?.trim();
+    if (expression === undefined) {
+        // A quoted bound names no number this census can read.
+        return null;
+    }
+    if (new RegExp(`^${SEPARATED_NUMBER}$`).test(expression)) {
+        return Number(expression.replaceAll('_', ''));
+    }
+    return references.number(expression);
 }
 
 /**
@@ -237,14 +379,33 @@ function readAttribute(tag: string, name: string): string | null {
  * still resolves unambiguously; a call carrying two literals resolves to
  * nothing rather than to a coin flip, and lands in the unbound count where it
  * can be seen.
+ *
+ * ## The id may arrive as a table member, not a literal
+ *
+ * Gluten and Crust name their ids through imported id tables —
+ * `param={GLUTEN_PARAM_IDS.threshold}` (`GlutenPanel.tsx:910`) and
+ * `setParam(CRUST_PARAM_IDS.lookahead, v)` (`CrustControlZone.tsx:298`). The
+ * reference is followed into the table file (`GlutenParamIds.ts`,
+ * `CrustParamIds.ts`), the same way a numeric bound is followed into
+ * `#/utils/audioSpectrum`. The safety condition carries over unchanged: a call
+ * form resolves only when literals and table members together yield **exactly
+ * one** candidate id, and a member expression whose base is not an imported
+ * table (`patch.satDrive`, `preset.tpCeiling`) resolves to nothing at all, so a
+ * local field can never be misread as a parameter id.
  */
-function readBoundParamId(expression: string | null): string | null {
+function readBoundParamId(expression: string | null, references: ImportedReferences): string | null {
     if (expression === null) {
         return null;
     }
     const bare = /^["']([\w-]+)["']$/.exec(expression) ?? /^\{\s*["']([\w-]+)["']\s*\}$/.exec(expression);
     if (bare !== null) {
         return bare[1]!;
+    }
+
+    // A member reference into an imported id table, as a whole attribute value.
+    const memberAttribute = /^\{\s*([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\s*\}$/.exec(expression);
+    if (memberAttribute !== null) {
+        return references.tableMember(memberAttribute[1]!, memberAttribute[2]!);
     }
 
     // A `set…Param…(` / `update…Param…(` / `on…Param…(` call, or Crumbs'
@@ -255,8 +416,12 @@ function readBoundParamId(expression: string | null): string | null {
     if (callSite !== null) {
         const args = readParenthesised(expression, callSite.index + callSite[0].length - 1);
         const literals = [...args.matchAll(/(?<![\w$])['"]([\w-]+)['"]/g)].map((hit) => hit[1]!);
-        if (literals.length === 1) {
-            return literals[0]!;
+        const tableMembers = [...args.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)/g)]
+            .map((hit) => references.tableMember(hit[1]!, hit[2]!))
+            .filter((id): id is string => id !== null);
+        const candidates = [...literals, ...tableMembers];
+        if (candidates.length === 1) {
+            return candidates[0]!;
         }
     }
 
@@ -331,11 +496,16 @@ function readParenthesised(source: string, openIndex: number): string {
  * and no single way a control names its parameter. Four spellings are in use
  * across eleven hand-written panels, and all four are load-bearing today:
  *
- *   - `param="threshold"`                          Gluten (`GlutenPanel.tsx:653-660`)
- *   - `paramId="distMix"`                          Fermenter (`EffectsSection.tsx:127-137`)
- *   - `k="mix"`                                    Bacteria (`BacteriaPanel.tsx:548-553`)
- *   - `onChange={(v) => setParam('lookahead', v)}` Crumbs, Crust, ProofChamber
- *                                                  (`CrustControlZone.tsx:291-296`)
+ *   - `param={GLUTEN_PARAM_IDS.threshold}`          Gluten (`GlutenPanel.tsx:910`) —
+ *                                                  a table member since the constants
+ *                                                  campaign; read through
+ *                                                  `readImportedReferences`
+ *   - `paramId="distMix"`                          Fermenter (`EffectsSection.tsx:131`)
+ *   - `k="mix"`                                    Bacteria (`BacteriaPanel.tsx:552`)
+ *   - `onChange={(v) => setParam(CRUST_PARAM_IDS.lookahead, v)}`
+ *                                                  Crumbs, Crust, ProofChamber
+ *                                                  (`CrustControlZone.tsx:298`) — Crust's
+ *                                                  id is a table member too
  *
  * Recorded rather than normalised: normalising is a refactor of eleven panels,
  * and this census has to be able to run *before* that refactor rather than as
@@ -344,9 +514,9 @@ function readParenthesised(source: string, openIndex: number): string {
  * globally bound knobs to the wrong parameter.
  *
  * `onChange` is read last because a control can carry two writes. Crust's
- * `AutoKnob` has `onAutoChange={(auto) => setParam('attackAuto', auto)}`
- * alongside `onChange={(v) => setParam('attack', v)}`
- * (`CrustControlZone.tsx:302-306`); the toggle is not a knob and has no travel.
+ * `AutoKnob` has `onAutoChange={(auto) => setParam(CRUST_PARAM_IDS.attackAuto, auto)}`
+ * alongside `onChange={(v) => setParam(CRUST_PARAM_IDS.attack, v)}`
+ * (`CrustControlZone.tsx:308-310`); the toggle is not a knob and has no travel.
  */
 const BINDING_ATTRIBUTES = ['param', 'paramId', 'k', 'onChange'] as const;
 
@@ -474,6 +644,7 @@ function readKnobsFromFile(file: string): {
     unbound: number;
 } {
     const source = stripComments(readFileSync(file, 'utf8'));
+    const references = readImportedReferences(file);
     const bound: KnobTravel[] = [];
     let unbound = 0;
     const tagStart = /<([A-Z]\w*)/g;
@@ -481,12 +652,12 @@ function readKnobsFromFile(file: string): {
     while (match !== null) {
         const tag = readTag(source, match.index);
         if (tag !== null) {
-            const min = new RegExp(String.raw`\bmin=\{(${NUMBER})\}`).exec(tag);
-            const max = new RegExp(String.raw`\bmax=\{(${NUMBER})\}`).exec(tag);
+            const min = readNumericBound(readAttribute(tag, 'min'), references);
+            const max = readNumericBound(readAttribute(tag, 'max'), references);
             if (min !== null && max !== null) {
                 let paramId: string | null = null;
                 for (const attribute of BINDING_ATTRIBUTES) {
-                    paramId = readBoundParamId(readAttribute(tag, attribute));
+                    paramId = readBoundParamId(readAttribute(tag, attribute), references);
                     if (paramId !== null) {
                         break;
                     }
@@ -496,8 +667,8 @@ function readKnobsFromFile(file: string): {
                 } else {
                     bound.push({
                         paramId,
-                        min: Number(min[1]),
-                        max: Number(max[1]),
+                        min,
+                        max,
                         at: `${file.slice(REPO_ROOT.length + 1)}:${source.slice(0, match.index).split('\n').length}`,
                     });
                 }
@@ -2407,7 +2578,14 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         expect(perDevice).toStrictEqual({
             'builtin-crumbs': 0,
             'dutch-oven': 0,
-            'native-scoring': 0,
+            // One, and it became visible rather than appearing: the A4 field's
+            // bounds are `MIN_A4_REFERENCE_HZ`/`MAX_A4_REFERENCE_HZ`
+            // (`Tuner/models/A4Reference.ts`), which leg 2 could not read at all
+            // until it learned to follow imported references — the control used
+            // to be skipped whole rather than counted. Its id lives in the
+            // function name (`setA4Reference`), the same deliberately-unread
+            // shape as GrandBoule's, so it stays unbound rather than guessed.
+            'native-scoring': 1,
             fermenter: 8,
             // Zero, not twelve: the four kit knobs now bind. The old twelve was
             // the scanner failing, not the panel.

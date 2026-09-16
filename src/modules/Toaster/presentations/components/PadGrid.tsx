@@ -2,8 +2,9 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
-import { type PadState } from '../../models/ToasterKit';
+import { TOASTER_PAD_COUNT, type PadState } from '../../models/ToasterKit';
 
 export type SixteenLevelsTarget = 'velocity' | 'tune' | 'decay' | 'filter';
 
@@ -18,7 +19,7 @@ type PadGridProps = {
 };
 
 function getLevelText(target: SixteenLevelsTarget, index: number): string {
-    const fraction = (index + 1) / 16;
+    const fraction = (index + 1) / TOASTER_PAD_COUNT;
     switch (target) {
         case 'velocity':
             return `Vel ${Math.round(fraction * 127)}`;
@@ -27,7 +28,7 @@ function getLevelText(target: SixteenLevelsTarget, index: number): string {
         case 'decay':
             return `${Math.round(fraction * 100)}%`;
         case 'filter':
-            return `${Math.round(20 * (20000 / 20) ** fraction)}Hz`;
+            return `${Math.round(MIN_AUDIBLE_FREQ_HZ * (MAX_AUDIBLE_FREQ_HZ / MIN_AUDIBLE_FREQ_HZ) ** fraction)}Hz`;
         default:
             return '';
     }
@@ -73,7 +74,7 @@ export const PadGrid = ({
     // harmless — it is only read for live indices in the render loop below.
     // Effect re-runs whenever the set of live indices changes; the unmount
     // cleanup clears any survivors.
-    const liveCount = Math.min(pads.length, 16);
+    const liveCount = Math.min(pads.length, TOASTER_PAD_COUNT);
     useEffect(() => {
         for (const [index, timer] of flashTimers.current) {
             if (index >= liveCount) {
@@ -94,7 +95,7 @@ export const PadGrid = ({
 
     return (
         <Grid cols={4} gap={1.5}>
-            {pads.slice(0, 16).map((pad, index) => {
+            {pads.slice(0, TOASTER_PAD_COUNT).map((pad, index) => {
                 const targetPad = pads[selectedIndex] ?? pads[0];
                 const activeColor = sixteenLevelsTarget ? (targetPad?.color ?? pad.color) : pad.color;
                 const isSelected = index === selectedIndex;
@@ -241,7 +242,7 @@ export const PadGrid = ({
                                         className="h-full rounded-full"
                                         style={{
                                             width: sixteenLevelsTarget
-                                                ? `${Math.round(((index + 1) / 16) * 100)}%`
+                                                ? `${Math.round(((index + 1) / TOASTER_PAD_COUNT) * 100)}%`
                                                 : `${Math.round(pad.volume * 100)}%`,
                                             backgroundColor: activeColor,
                                             opacity: isFlashing ? 1 : 0.85,
