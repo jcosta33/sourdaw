@@ -2,7 +2,13 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { GAIN_TRIM_DB } from '#/utils/audioLevelLaw';
 
 import { GLUTEN_PARAM_IDS } from '../../models/GlutenParamIds';
-import { clampOversampling, DEFAULT_PATCH, SC_LPF_FREQ_RANGE, type GlutenPatch, type GlutenTopology } from '../../models/GlutenPatch';
+import {
+    clampOversampling,
+    DEFAULT_PATCH,
+    SC_LPF_FREQ_RANGE,
+    type GlutenPatch,
+    type GlutenTopology,
+} from '../../models/GlutenPatch';
 import { getGlutenState, loadGlutenPatch } from '../../stores/glutenStore';
 
 const TOPOLOGIES = ['vca', 'opto', 'fet', 'diode'] as const;
@@ -158,7 +164,11 @@ export function hydrateGlutenPatchFromProject(deviceId: string): void {
 
     const stereoMode = device.parameterValues[GLUTEN_PARAM_IDS.stereoMode];
     if (typeof stereoMode === 'number' && Number.isFinite(stereoMode)) {
-        patch = withField(patch, GLUTEN_PARAM_IDS.stereoMode, STEREO_MODES[rustU8(stereoMode)] ?? DEFAULT_PATCH.stereoMode);
+        patch = withField(
+            patch,
+            GLUTEN_PARAM_IDS.stereoMode,
+            STEREO_MODES[rustU8(stereoMode)] ?? DEFAULT_PATCH.stereoMode
+        );
     }
 
     if (patch !== currentPatch) {

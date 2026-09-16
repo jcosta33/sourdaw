@@ -3,9 +3,8 @@ import { type ChatCompletionTool } from '@mlc-ai/web-llm';
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
-import { parseToolPlanningOutcome, type ToolPlanningOutcome } from '../../transformers/toolCallParser';
-
 import { TOOL_CALLING_TEMPERATURE } from '../../models/LlmSamplingTemperatures';
+import { parseToolPlanningOutcome, type ToolPlanningOutcome } from '../../transformers/toolCallParser';
 
 import { generateWebLlmCompletion } from './generateWebLlmCompletion';
 

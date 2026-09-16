@@ -17,7 +17,9 @@ function findProofParameterValues(deviceId: string): Record<string, number> | nu
     }
 
     for (const track of trackState.tracks) {
-        const device = track.devices.find((candidate) => candidate.id === deviceId && candidate.type === DEVICE_TYPE_IDS.proof);
+        const device = track.devices.find(
+            (candidate) => candidate.id === deviceId && candidate.type === DEVICE_TYPE_IDS.proof
+        );
         if (device) {
             return device.parameterValues;
         }

@@ -1,10 +1,11 @@
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
+
 import { midiLearnStore } from '../../stores/midiLearnStore';
 
 import { getMidiLearnDependencies } from './getMidiLearnDependencies';
 import { scaleMidiValue } from './scaleMidiValue';
 
 import type { Track } from '#/modules/Arrangement/stores';
-import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
 /**
  * Apply one incoming controller value to every mapping learned for it.

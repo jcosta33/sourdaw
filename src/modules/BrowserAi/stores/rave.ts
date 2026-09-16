@@ -17,6 +17,7 @@
 
 import { logger as raveLogger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
+
 import { TARGET_SAMPLE_RATE } from '../services/audioResampler';
 
 export type RaveModel = {

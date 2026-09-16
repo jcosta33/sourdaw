@@ -22,16 +22,16 @@ import {
     YEAST_PREVIEW_REALIZED_FLAG,
     YEAST_PREVIEW_VALID_FLAGS,
 } from '../models/YeastPreviewSnapshot';
-
-import type { YeastNoteOffIdentity, YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
-import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
-import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
-import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
 import {
     YEAST_MIDI_EVENT_KIND,
     YEAST_WORKER_MESSAGE_TYPE,
     YEAST_WORKER_PROTOCOL_VERSION,
 } from '../models/YeastWorkerProtocol';
+
+import type { YeastNoteOffIdentity, YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
+import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
+import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
+import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
 
 /**
  * Upper bound on how long a `processBlock` round-trip may wait for the
@@ -98,7 +98,11 @@ function isCommandId(value: unknown): value is number {
 }
 
 function isReadyMessage(value: unknown): boolean {
-    return isPlainObject(value) && value.type === YEAST_WORKER_MESSAGE_TYPE.ready && value.protocolVersion === YEAST_WORKER_PROTOCOL_VERSION;
+    return (
+        isPlainObject(value) &&
+        value.type === YEAST_WORKER_MESSAGE_TYPE.ready &&
+        value.protocolVersion === YEAST_WORKER_PROTOCOL_VERSION
+    );
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -342,14 +346,22 @@ function decodePreviewPage(
 }
 
 function parseProcessedError(value: Record<string, unknown>): { requestId: number; error: string } | undefined {
-    if (value.type !== YEAST_WORKER_MESSAGE_TYPE.processedError || !isCommandId(value.requestId) || typeof value.error !== 'string') {
+    if (
+        value.type !== YEAST_WORKER_MESSAGE_TYPE.processedError ||
+        !isCommandId(value.requestId) ||
+        typeof value.error !== 'string'
+    ) {
         return undefined;
     }
     return { requestId: value.requestId, error: value.error };
 }
 
 function parseProjectionAck(value: unknown): ParsedProjectionAck | undefined {
-    if (!isPlainObject(value) || value.type !== YEAST_WORKER_MESSAGE_TYPE.projectionAck || !isCommandId(value.projectionId)) {
+    if (
+        !isPlainObject(value) ||
+        value.type !== YEAST_WORKER_MESSAGE_TYPE.projectionAck ||
+        !isCommandId(value.projectionId)
+    ) {
         return undefined;
     }
     const events = parseAcknowledgedNoteOffs(value, true);
@@ -385,7 +397,11 @@ function parseCommandAck(value: unknown): ParsedCommandAck | undefined {
 }
 
 function parseAllNotesOffAck(value: unknown): ParsedAllNotesOffAck | undefined {
-    if (!isPlainObject(value) || value.type !== YEAST_WORKER_MESSAGE_TYPE.allNotesOffAck || !isCommandId(value.panicId)) {
+    if (
+        !isPlainObject(value) ||
+        value.type !== YEAST_WORKER_MESSAGE_TYPE.allNotesOffAck ||
+        !isCommandId(value.panicId)
+    ) {
         return undefined;
     }
     if (typeof value.completed !== 'boolean') {
@@ -1138,7 +1154,10 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             });
         }, STARTUP_TIMEOUT_MS);
         try {
-            worker.postMessage({ type: YEAST_WORKER_MESSAGE_TYPE.initialize, protocolVersion: YEAST_WORKER_PROTOCOL_VERSION });
+            worker.postMessage({
+                type: YEAST_WORKER_MESSAGE_TYPE.initialize,
+                protocolVersion: YEAST_WORKER_PROTOCOL_VERSION,
+            });
         } catch (error: unknown) {
             closeClient({ error: toError(error), notifyTerminalHandlers: true });
         }

@@ -9,8 +9,8 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 import { Stack } from '#/components/layout';
-import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 import { Button } from '#/components/ui/button';
+import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 

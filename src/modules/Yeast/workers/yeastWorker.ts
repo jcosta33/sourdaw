@@ -21,17 +21,18 @@
  *   → { type: 'allNotesOffAck', panicId, completed, events, error? }
  */
 
+import {
+    YEAST_MIDI_EVENT_KIND,
+    YEAST_WORKER_MESSAGE_TYPE,
+    YEAST_WORKER_PROTOCOL_VERSION,
+} from '../models/YeastWorkerProtocol';
+
 import { MidiRack } from './MidiRack';
 import { createProcessor } from './processorFactory';
 
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
-import {
-    YEAST_MIDI_EVENT_KIND,
-    YEAST_WORKER_MESSAGE_TYPE,
-    YEAST_WORKER_PROTOCOL_VERSION,
-} from '../models/YeastWorkerProtocol';
 
 type YeastProcessBlockMessage = {
     type: typeof YEAST_WORKER_MESSAGE_TYPE.processBlock;
@@ -254,7 +255,11 @@ function isProjectionItem(value: unknown): value is YeastProcessorProjectionItem
 }
 
 function parseSetProjection(value: unknown): ParsedSetProjection | undefined {
-    if (!isPlainObject(value) || value.type !== YEAST_WORKER_MESSAGE_TYPE.setProjection || !isCommandId(value.projectionId)) {
+    if (
+        !isPlainObject(value) ||
+        value.type !== YEAST_WORKER_MESSAGE_TYPE.setProjection ||
+        !isCommandId(value.projectionId)
+    ) {
         return undefined;
     }
     if (!isFiniteNumber(value.nowSamples)) {
@@ -303,7 +308,11 @@ function parseReleasePreview(
 }
 
 function parseExecuteCommand(value: unknown): ParsedExecuteCommand | undefined {
-    if (!isPlainObject(value) || value.type !== YEAST_WORKER_MESSAGE_TYPE.executeCommand || !isCommandId(value.commandId)) {
+    if (
+        !isPlainObject(value) ||
+        value.type !== YEAST_WORKER_MESSAGE_TYPE.executeCommand ||
+        !isCommandId(value.commandId)
+    ) {
         return undefined;
     }
 
@@ -392,7 +401,11 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
         }
         try {
             const offs = rack.replaceProjection(parsed.processors, createProcessor, parsed.nowSamples);
-            postMessage({ type: YEAST_WORKER_MESSAGE_TYPE.projectionAck, projectionId: parsed.projectionId, events: offs });
+            postMessage({
+                type: YEAST_WORKER_MESSAGE_TYPE.projectionAck,
+                projectionId: parsed.projectionId,
+                events: offs,
+            });
         } catch (error: unknown) {
             postMessage({
                 type: YEAST_WORKER_MESSAGE_TYPE.projectionError,

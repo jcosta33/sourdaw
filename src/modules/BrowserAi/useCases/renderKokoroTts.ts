@@ -277,7 +277,9 @@ export const renderKokoroTts = inject({
                     tier: 'browser-preview',
                 };
 
-                logger.info(`[BrowserAi] Kokoro TTS complete: ${phraseId} (${String(finalAudio.length / TARGET_SAMPLE_RATE)}s)`);
+                logger.info(
+                    `[BrowserAi] Kokoro TTS complete: ${phraseId} (${String(finalAudio.length / TARGET_SAMPLE_RATE)}s)`
+                );
                 return { audio: finalAudio, sampleRate: TARGET_SAMPLE_RATE, provenance };
             } catch (error) {
                 updateRenderStatus(phraseId, requestId, 'error');

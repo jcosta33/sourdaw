@@ -1,9 +1,10 @@
-import { get16LevelsTarget } from './get16LevelsTarget';
-import { setPadParamImmediate } from './setPadParamImmediate';
-import { triggerToasterPad } from './triggerPad';
 import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
 import { TOASTER_PAD_COUNT } from '../models/ToasterKit';
+
+import { get16LevelsTarget } from './get16LevelsTarget';
+import { setPadParamImmediate } from './setPadParamImmediate';
+import { triggerToasterPad } from './triggerPad';
 
 export function trigger16Level(gridIndex: number, deviceId: string): void {
     const session = get16LevelsTarget(deviceId);

@@ -729,7 +729,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             : 'hover:border-white/12 hover:bg-white/[0.02]'
                                     }`}
                                     style={active ? { borderColor: meta.color } : undefined}
-                                    onClick={() => setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.topology, topology)}
+                                    onClick={() =>
+                                        setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.topology, topology)
+                                    }
                                 >
                                     <Row justify="between" align="center" className="w-full">
                                         <div
@@ -793,7 +795,12 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         width={360}
                                         height={180}
                                         onThresholdChange={(value, isTransient) =>
-                                            setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.threshold, value, isTransient)
+                                            setGlutenParamWithAudio(
+                                                deviceId,
+                                                GLUTEN_PARAM_IDS.threshold,
+                                                value,
+                                                isTransient
+                                            )
                                         }
                                         accentColor={accentColor}
                                     />
@@ -1057,21 +1064,27 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 active={patch.autoRelease}
                                 accentColor={accentColor}
                                 gate={gateFor(GLUTEN_PARAM_IDS.autoRelease, 'Auto rel')}
-                                onClick={() => setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.autoRelease, !patch.autoRelease)}
+                                onClick={() =>
+                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.autoRelease, !patch.autoRelease)
+                                }
                             />
                             <ToggleChip
                                 label="Auto gain"
                                 active={patch.autoMakeup}
                                 accentColor={accentColor}
                                 gate={gateFor(GLUTEN_PARAM_IDS.autoMakeup, 'Auto gain')}
-                                onClick={() => setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.autoMakeup, !patch.autoMakeup)}
+                                onClick={() =>
+                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.autoMakeup, !patch.autoMakeup)
+                                }
                             />
                             <ToggleChip
                                 label="Delta"
                                 active={patch.deltaListen}
                                 accentColor={accentColor}
                                 gate={gateFor(GLUTEN_PARAM_IDS.deltaListen, 'Delta')}
-                                onClick={() => setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.deltaListen, !patch.deltaListen)}
+                                onClick={() =>
+                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.deltaListen, !patch.deltaListen)
+                                }
                             />
                             <ToggleChip
                                 label="Match"
@@ -1079,7 +1092,11 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 accentColor={accentColor}
                                 gate={gateFor(GLUTEN_PARAM_IDS.gainMatchBypass, 'Match')}
                                 onClick={() =>
-                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.gainMatchBypass, !patch.gainMatchBypass)
+                                    setGlutenParamWithAudio(
+                                        deviceId,
+                                        GLUTEN_PARAM_IDS.gainMatchBypass,
+                                        !patch.gainMatchBypass
+                                    )
                                 }
                             />
                         </Row>
@@ -1168,7 +1185,11 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                     if (oversamplingGate.isInert) {
                                                         return;
                                                     }
-                                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.oversampling, factor);
+                                                    setGlutenParamWithAudio(
+                                                        deviceId,
+                                                        GLUTEN_PARAM_IDS.oversampling,
+                                                        factor
+                                                    );
                                                 }}
                                             >
                                                 {`${factor}×`}
@@ -1187,7 +1208,11 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     accentColor={accentColor}
                                     gate={gateFor(GLUTEN_PARAM_IDS.scHpfEnabled, 'HPF')}
                                     onClick={() =>
-                                        setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.scHpfEnabled, !patch.scHpfEnabled)
+                                        setGlutenParamWithAudio(
+                                            deviceId,
+                                            GLUTEN_PARAM_IDS.scHpfEnabled,
+                                            !patch.scHpfEnabled
+                                        )
                                     }
                                 />
                                 <ToggleChip
@@ -1196,7 +1221,11 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     accentColor={accentColor}
                                     gate={gateFor(GLUTEN_PARAM_IDS.scLpfEnabled, 'LPF')}
                                     onClick={() =>
-                                        setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.scLpfEnabled, !patch.scLpfEnabled)
+                                        setGlutenParamWithAudio(
+                                            deviceId,
+                                            GLUTEN_PARAM_IDS.scLpfEnabled,
+                                            !patch.scLpfEnabled
+                                        )
                                     }
                                 />
                                 <ToggleChip
@@ -1204,7 +1233,13 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     active={patch.scEqEnabled}
                                     accentColor={accentColor}
                                     gate={gateFor(GLUTEN_PARAM_IDS.scEqEnabled, 'SC EQ')}
-                                    onClick={() => setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.scEqEnabled, !patch.scEqEnabled)}
+                                    onClick={() =>
+                                        setGlutenParamWithAudio(
+                                            deviceId,
+                                            GLUTEN_PARAM_IDS.scEqEnabled,
+                                            !patch.scEqEnabled
+                                        )
+                                    }
                                 />
                                 <ToggleChip
                                     label="Ext SC"
@@ -1212,7 +1247,11 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     accentColor={accentColor}
                                     gate={gateFor(GLUTEN_PARAM_IDS.extSidechain, 'Ext SC')}
                                     onClick={() =>
-                                        setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.extSidechain, !patch.extSidechain)
+                                        setGlutenParamWithAudio(
+                                            deviceId,
+                                            GLUTEN_PARAM_IDS.extSidechain,
+                                            !patch.extSidechain
+                                        )
                                     }
                                 />
                             </Row>
@@ -1225,7 +1264,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             active={active}
                                             tone="lavender"
                                             size="sm"
-                                            onClick={() => setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.detection, mode)}
+                                            onClick={() =>
+                                                setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.detection, mode)
+                                            }
                                         >
                                             {mode.toUpperCase()}
                                         </DawPluginChip>
@@ -1239,7 +1280,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             active={active}
                                             tone="lavender"
                                             size="sm"
-                                            onClick={() => setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.stereoMode, mode)}
+                                            onClick={() =>
+                                                setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.stereoMode, mode)
+                                            }
                                         >
                                             {mode === 'dual-mono' ? 'Dual mono' : mode}
                                         </DawPluginChip>
@@ -1344,7 +1387,13 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     active={patch.allButtons}
                                     accentColor={accentColor}
                                     gate={gateFor(GLUTEN_PARAM_IDS.allButtons, 'All buttons')}
-                                    onClick={() => setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.allButtons, !patch.allButtons)}
+                                    onClick={() =>
+                                        setGlutenParamWithAudio(
+                                            deviceId,
+                                            GLUTEN_PARAM_IDS.allButtons,
+                                            !patch.allButtons
+                                        )
+                                    }
                                 />
                             </Stack>
                         ) : null}
@@ -1363,7 +1412,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 active={active}
                                                 accentColor={accentColor}
                                                 gate={gateFor(GLUTEN_PARAM_IDS.limitMode, labels[index] ?? '')}
-                                                onClick={() => setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.limitMode, mode)}
+                                                onClick={() =>
+                                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.limitMode, mode)
+                                                }
                                             />
                                         );
                                     })}
@@ -1387,7 +1438,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 active={active}
                                                 accentColor={accentColor}
                                                 gate={gateFor(GLUTEN_PARAM_IDS.recovery, `Recovery ${value}`)}
-                                                onClick={() => setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.recovery, value)}
+                                                onClick={() =>
+                                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.recovery, value)
+                                                }
                                             />
                                         );
                                     })}
@@ -1437,7 +1490,13 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 active={active}
                                                 accentColor={accentColor}
                                                 gate={gateFor(GLUTEN_PARAM_IDS.feedForward, labels[index] ?? '')}
-                                                onClick={() => setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.feedForward, mode)}
+                                                onClick={() =>
+                                                    setGlutenParamWithAudio(
+                                                        deviceId,
+                                                        GLUTEN_PARAM_IDS.feedForward,
+                                                        mode
+                                                    )
+                                                }
                                             />
                                         );
                                     })}
@@ -1460,7 +1519,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         active={active}
                                         accentColor={accentColor}
                                         gate={glutenStageTwoOptionGate({ patch: currentPatch, option: topology })}
-                                        onClick={() => setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.blendTopology, topology)}
+                                        onClick={() =>
+                                            setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.blendTopology, topology)
+                                        }
                                     />
                                 );
                             })}

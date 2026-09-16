@@ -71,7 +71,8 @@ export const SpectralBinEditor = ({
         ctx.font = '7px monospace';
         const freqLabels = [100, 500, 1000, 5000, 10000];
         for (const freq of freqLabels) {
-            const logPos = Math.log10(freq / MIN_AUDIBLE_FREQ_HZ) / Math.log10(MAX_AUDIBLE_FREQ_HZ / MIN_AUDIBLE_FREQ_HZ);
+            const logPos =
+                Math.log10(freq / MIN_AUDIBLE_FREQ_HZ) / Math.log10(MAX_AUDIBLE_FREQ_HZ / MIN_AUDIBLE_FREQ_HZ);
             const x = logPos * width;
             ctx.fillText(freq >= 1000 ? `${freq / 1000}k` : `${freq}`, x, height - 2);
             ctx.strokeStyle = 'rgba(255,255,255,0.03)';
