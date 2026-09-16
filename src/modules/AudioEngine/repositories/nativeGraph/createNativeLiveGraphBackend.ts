@@ -48,6 +48,7 @@
 
 import {
     type AudioGraphApplyResult,
+    type AudioGraphAttachedCrumbsInstance,
     type AudioGraphAttachedPlugin,
     type AudioGraphBackend,
     type AudioGraphCommandBatch,
@@ -113,6 +114,29 @@ function readAttachedPlugins(value: unknown): readonly AudioGraphAttachedPlugin[
 }
 
 /**
+ * Read the Crumbs instances the same applied batch says its engine start took
+ * over, under the same rule: absent is empty, and an entry naming no instance
+ * is dropped rather than guessed at.
+ *
+ * A Crumbs instance is named by the device's own id, because that is the id the
+ * renderer created it with, so these ids join the hosted plugins' in one attach
+ * set without colliding with them.
+ */
+function readAttachedCrumbsInstances(value: unknown): readonly AudioGraphAttachedCrumbsInstance[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value.flatMap((entry) => {
+        const attached = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : null;
+        const instanceId = attached?.instanceId;
+        if (typeof instanceId !== 'string') {
+            return [];
+        }
+        return [{ instanceId }];
+    });
+}
+
+/**
  * Read `apply_graph_commands`'s mirror of {@link AudioGraphApplyResult}.
  *
  * The correlation is echoed verbatim by the native side, so it is carried back
@@ -152,6 +176,7 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
             ...admittedBatch,
             reports,
             attachedPlugins: readAttachedPlugins(payload.attachedPlugins),
+            attachedCrumbs: readAttachedCrumbsInstances(payload.attachedCrumbs),
         };
     }
     const reason = payload.reason;

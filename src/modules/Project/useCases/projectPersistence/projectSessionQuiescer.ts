@@ -1,4 +1,5 @@
 import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { markEveryCrumbsInstanceDetached } from '#/modules/Crumbs/stores';
 import { beginProjectSessionPluginRetirement } from '#/modules/PluginHost/useCases';
 import { repairRuntimeGraphFromProject, stopPlayback } from '#/modules/Transport/useCases';
 
@@ -32,6 +33,11 @@ const quarantineFailedRuntime = async (): Promise<void> => {
         // Terminal remains terminal. Keep the quarantine fence closed even
         // when native bulk retirement itself cannot complete.
     }
+    // Retracted whether or not the retirement completed, and for the same
+    // reason the fence stays shut: this session's engine is gone either way,
+    // and a mirror still claiming its Crumbs instances would have the next
+    // topology name instances nothing holds.
+    markEveryCrumbsInstanceDetached();
 };
 
 const repair = async (): Promise<ProjectSessionQuiesceOutcome> => {
@@ -88,6 +94,7 @@ const retire = async (
         pluginRetirement = await beginProjectSessionPluginRetirement();
         resetAudioGraph();
         await pluginRetirement.retire();
+        markEveryCrumbsInstanceDetached();
         if (cancellationRequestId === requestId) {
             return await repair();
         }

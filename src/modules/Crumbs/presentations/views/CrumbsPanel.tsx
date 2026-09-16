@@ -18,12 +18,12 @@ import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 
 import { midiNoteToName } from '../../models/CrumbsTypes';
+import { crumbsEngineAttachmentStore } from '../../stores/crumbsEngineAttachmentStore';
 import { defaultCrumbsState, crumbsStore } from '../../stores/crumbsStore';
 import { defaultPadState, padStore, ensurePadInstance, reorderPad, selectPad } from '../../stores/padStore';
 import { defaultSliceState, sliceStore, ensureSliceInstance, setActiveSlice } from '../../stores/sliceStore';
 import { ensureCrumbsInstanceFromProject } from '../../useCases/crumbsLifecycle/ensureCrumbsInstanceFromProject';
-import { initCrumbsEngine } from '../../useCases/crumbsLifecycle/initCrumbsEngine';
-import { teardownCrumbsEngine } from '../../useCases/crumbsLifecycle/teardownCrumbsEngine';
+import { readCrumbsEngineReadiness } from '../../useCases/crumbsLifecycle/readCrumbsEngineReadiness';
 import { handleCrumbsFileDrop } from '../../useCases/handleFileDrop';
 import { hydrateCrumbsParametersFromProject } from '../../useCases/hydrateCrumbsParametersFromProject';
 import { subscribeToPosition } from '../../useCases/positionTracking';
@@ -79,6 +79,11 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     const projectParameterValues = useStoreSelector(trackStore, (project) =>
         selectProjectParameterValues(project, deviceId)
     );
+    // Read rather than remembered, so the LED follows the engine instead of one
+    // promise resolved at mount. {@link readCrumbsEngineReadiness} states what
+    // each witness is worth.
+    const attachedNatively = useStoreSelector(crumbsEngineAttachmentStore, (ids) => ids?.has(deviceId) === true);
+    const hasInstanceState = useStoreSelector(crumbsStore, (instances) => instances?.[deviceId] !== undefined);
 
     const [isDragOver, setIsDragOver] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
@@ -86,49 +91,18 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     // after the user already pressed Stop is stale and must not write the
     // readout — the LED would flip back to "Recording..." over a closed take.
     const recorderRequestRef = useRef(0);
-    // null = still initializing, true = engine ready, false = engine unavailable.
-    // Gates the status LED so a failed init can't read 'Ready' while param writes
-    // silently no-op against a missing backend instance.
-    const [engineReady, setEngineReady] = useState<boolean | null>(null);
-    // Reset the gate to 'initializing' when the panel is pointed at a new device:
-    // done during render via the previous-prop pattern (react.dev "storing
-    // information from previous renders") rather than synchronously in the effect
-    // body, which would trigger a cascading re-render.
-    const [prevDeviceId, setPrevDeviceId] = useState(deviceId);
-    if (prevDeviceId !== deviceId) {
-        setPrevDeviceId(deviceId);
-        setEngineReady(null);
-    }
-
-    // Create / destroy crumbs engine instance on mount/unmount.
+    // The native instance is not this panel's to own (#4204): it follows the
+    // device's presence on the project, created and destroyed by
+    // `syncCrumbsNativeInstances`, so the sampler sounds whether or not anyone
+    // has this window open. The panel only ensures the stores it reads, for the
+    // browser build and for the frame before the sync's own ensure lands.
     useEffect(() => {
-        let cancelled = false;
         // Seeded from project truth, not from the module default: on a reload the
         // panel can mount before the engine chain is built, and a default entry
         // written first would shadow the saved sample for the rest of the session.
         ensureCrumbsInstanceFromProject(deviceId);
         ensurePadInstance(deviceId);
         ensureSliceInstance(deviceId);
-
-        initCrumbsEngine(deviceId)
-            .then(() => {
-                if (!cancelled) {
-                    setEngineReady(true);
-                }
-                return undefined;
-            })
-            .catch((error) => {
-                logger.warn('Failed to create crumbs instance:', error);
-                if (!cancelled) {
-                    setEngineReady(false);
-                }
-            });
-        return () => {
-            cancelled = true;
-            teardownCrumbsEngine(deviceId).catch((error) => {
-                logger.warn('Failed to destroy crumbs instance:', error);
-            });
-        };
     }, [deviceId]);
 
     useEffect(() => {
@@ -155,6 +129,8 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         isLoading,
         voiceStack,
     } = state;
+
+    const engineReady = readCrumbsEngineReadiness({ attachedNatively, hasInstanceState });
 
     let statusLabel = 'Ready';
     if (engineReady === false) {

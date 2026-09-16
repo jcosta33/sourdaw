@@ -93,7 +93,7 @@ export type LiveMidiSpan = Readonly<{ startSeconds: number; endSeconds: number }
 export type LiveMidiProgrammeInput = Readonly<{
     /** Every track and bus the session builds a strip for, in project order. */
     stripTracks: readonly Track[];
-    /** The external plugin instances the native engine currently owns. */
+    /** The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}. */
     attachedInstanceIds: ReadonlySet<string>;
     /** The strips whose device chain the audio programme replaces with a bake. */
     bakedStripIds: ReadonlySet<string>;

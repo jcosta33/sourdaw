@@ -4,10 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
+import { crumbsEngineAttachmentStore, markCrumbsInstanceAttached } from '../../../stores/crumbsEngineAttachmentStore';
 import { crumbsStore, defaultCrumbsState, ensureInstance, setActiveSample, setMode } from '../../../stores/crumbsStore';
 import { ensurePadInstance, padStore } from '../../../stores/padStore';
 import { ensureSliceInstance, sliceStore } from '../../../stores/sliceStore';
-import { initCrumbsEngine } from '../../../useCases/crumbsLifecycle/initCrumbsEngine';
+import { ensureCrumbsInstanceFromProject } from '../../../useCases/crumbsLifecycle/ensureCrumbsInstanceFromProject';
 import { armCrumbsRecording } from '../../../useCases/recording/armCrumbsRecording';
 import { switchCrumbsMode } from '../../../useCases/setCrumbsMode';
 import { setCrumbsParamWithAudio } from '../../../useCases/setCrumbsParamWithAudio';
@@ -15,16 +16,21 @@ import { CrumbsPanel } from '../CrumbsPanel';
 
 import type { SampleMeta } from '../../../models/CrumbsTypes';
 
-// Engine lifecycle and position polling reach the desktop bridge; stub them so the
-// render exercises real store-driven DOM without IPC. The panel still drives its
-// own `useStoreSelector` against the real signal stores.
-vi.mock('../../../useCases/crumbsLifecycle/initCrumbsEngine', () => ({
-    initCrumbsEngine: vi.fn().mockResolvedValue(undefined),
+// Whether a native runtime is in question at all is a desktop-bridge read; the
+// panel's readout is what is under test, so the answer is what is stubbed. The
+// double is hoisted rather than imported back: presentation code, tests
+// included, does not reach a repository directly.
+const nativeAvailableMock = vi.hoisted(() => vi.fn(() => false));
+vi.mock('../../../repositories/crumbsBridge/isCrumbsNativeAvailable', () => ({
+    isCrumbsNativeAvailable: nativeAvailableMock,
 }));
-vi.mock('../../../useCases/crumbsLifecycle/teardownCrumbsEngine', () => ({
-    teardownCrumbsEngine: vi.fn().mockResolvedValue(undefined),
+// The panel's own ensure seeds an instance entry on mount, which is one of the
+// two witnesses the readout reads. Stubbed so a test can present the panel with
+// a device the runtime holds no instance for.
+vi.mock('../../../useCases/crumbsLifecycle/ensureCrumbsInstanceFromProject', () => ({
+    ensureCrumbsInstanceFromProject: vi.fn(),
 }));
-// Silence the engine-init warning the panel logs when init rejects.
+// Silence the warnings the panel logs from its recorder controls.
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
@@ -43,7 +49,7 @@ vi.mock('../../../useCases/setCrumbsParamWithAudio', () => ({
     setCrumbsParamWithAudio: vi.fn(),
 }));
 
-const initEngineMock = vi.mocked(initCrumbsEngine);
+const ensureInstanceFromProjectMock = vi.mocked(ensureCrumbsInstanceFromProject);
 const armRecordingMock = vi.mocked(armCrumbsRecording);
 const switchModeMock = vi.mocked(switchCrumbsMode);
 const setParamMock = vi.mocked(setCrumbsParamWithAudio);
@@ -84,11 +90,13 @@ beforeEach(() => {
     crumbsStore.set({});
     padStore.set({});
     sliceStore.set({});
+    crumbsEngineAttachmentStore.set(new Set<string>());
     ensureInstance(DEVICE);
     ensurePadInstance(DEVICE);
     ensureSliceInstance(DEVICE);
-    initEngineMock.mockReset();
-    initEngineMock.mockResolvedValue(undefined);
+    nativeAvailableMock.mockReset();
+    nativeAvailableMock.mockReturnValue(false);
+    ensureInstanceFromProjectMock.mockReset();
     armRecordingMock.mockReset();
     armRecordingMock.mockResolvedValue(true);
     switchModeMock.mockReset();
@@ -177,34 +185,47 @@ describe('CrumbsPanel', () => {
         (_content: string, el: Element | null): boolean =>
             el?.textContent === text;
 
-    it('shows "Loading..." until engine init resolves, then "Ready"', async () => {
-        // Init is gated: engineReady starts null → "Loading...", flips to "Ready"
-        // only once initCrumbsEngine resolves. This guards against the LED reading
-        // "Ready" while param writes silently no-op against a missing backend.
-        let resolveInit: () => void = () => undefined;
-        initEngineMock.mockReturnValueOnce(
-            new Promise<void>((resolve) => {
-                resolveInit = resolve;
-            })
-        );
+    // The panel no longer owns the instance's lifetime (#4204), so the readout
+    // is read from the engine's own state rather than remembered from one
+    // resolved promise at mount.
+    it('reads "Ready" from the engine attaching this instance, with no instance state of its own', async () => {
+        nativeAvailableMock.mockReturnValue(true);
+        crumbsStore.set({});
+
+        render(<CrumbsPanel deviceId={DEVICE} />);
+        expect(screen.getAllByText(hasOwnText('Engine unavailable')).length).toBeGreaterThan(0);
+
+        act(() => {
+            markCrumbsInstanceAttached(DEVICE);
+        });
+
+        expect(await screen.findByText(hasOwnText('Ready'))).toBeInTheDocument();
+        expect(screen.queryAllByText(hasOwnText('Engine unavailable'))).toHaveLength(0);
+    });
+
+    it('shows "Engine unavailable" when the native runtime holds no instance for this device', () => {
+        // What a refused `create_crumbs` leaves behind: the sync rolls the
+        // instance state back, so a populated-but-dead panel cannot read
+        // "Ready" while every parameter write silently no-ops.
+        nativeAvailableMock.mockReturnValue(true);
+        crumbsStore.set({});
+
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        expect(screen.getAllByText(hasOwnText('Engine unavailable')).length).toBeGreaterThan(0);
+        expect(screen.queryAllByText(hasOwnText('Ready'))).toHaveLength(0);
+    });
+
+    it('shows "Loading..." rather than an engine verdict on a build with no native runtime', () => {
+        // Nothing native is in question in the browser build, so the absence of
+        // an instance entry in the frames before the mount ensure lands is not
+        // a backend that failed.
+        crumbsStore.set({});
 
         render(<CrumbsPanel deviceId={DEVICE} />);
 
         expect(screen.getAllByText(hasOwnText('Loading...')).length).toBeGreaterThan(0);
-        expect(screen.queryAllByText(hasOwnText('Ready'))).toHaveLength(0);
-
-        resolveInit();
-        expect(await screen.findByText(hasOwnText('Ready'))).toBeInTheDocument();
-        expect(screen.queryAllByText(hasOwnText('Loading...'))).toHaveLength(0);
-    });
-
-    it('shows "Engine unavailable" when engine init rejects', async () => {
-        initEngineMock.mockRejectedValueOnce(new Error('engine boot failed'));
-
-        render(<CrumbsPanel deviceId={DEVICE} />);
-
-        expect(await screen.findByText(hasOwnText('Engine unavailable'))).toBeInTheDocument();
-        expect(screen.queryAllByText(hasOwnText('Ready'))).toHaveLength(0);
+        expect(screen.queryAllByText(hasOwnText('Engine unavailable'))).toHaveLength(0);
     });
 
     it('shows the pad bay only in drum mode', () => {

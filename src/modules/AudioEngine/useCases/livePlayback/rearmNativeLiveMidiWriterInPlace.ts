@@ -24,7 +24,7 @@
 import { armNativeLiveMidiWriter } from './armNativeLiveMidiWriter';
 import { currentStripTracks } from './currentStripTracks';
 import { nativeLiveMidiWriter } from './nativeLiveMidiWriterState';
-import { readAttachedExternalInstanceIds } from './readAttachedExternalInstanceIds';
+import { readAttachedEngineInstanceIds } from './readAttachedEngineInstanceIds';
 
 export type RearmNativeLiveMidiWriterInPlaceInput = Readonly<{
     /**
@@ -41,7 +41,7 @@ export async function rearmNativeLiveMidiWriterInPlace(input: RearmNativeLiveMid
     }
     await armNativeLiveMidiWriter({
         stripTracks: currentStripTracks(pass.stripTracks),
-        attachedInstanceIds: readAttachedExternalInstanceIds(),
+        attachedInstanceIds: readAttachedEngineInstanceIds(),
         carriedStripIds: pass.carriedStripIds,
         sampleRate: pass.sampleRate,
         positionSeconds: input.positionSeconds ?? pass.entrySeconds,

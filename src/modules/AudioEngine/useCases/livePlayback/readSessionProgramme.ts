@@ -32,7 +32,7 @@ export type ReadSessionProgrammeInput = Readonly<{
     stripTracks: readonly Track[];
     /** The tracks whose Web Audio strip is receiving a live input signal. */
     inputMonitoredTrackIds: ReadonlySet<string>;
-    /** The external plugin instances the native engine currently owns. */
+    /** The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}. */
     attachedInstanceIds: ReadonlySet<string>;
     /** The frame grid every beat is placed on, matching the caller's transport. */
     sampleRate: number;

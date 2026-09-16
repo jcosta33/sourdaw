@@ -3,6 +3,7 @@
 
 export { commitCrumbsDeviceState } from './commitCrumbsDeviceState';
 export { ensureCrumbsInstanceFromProject } from './crumbsLifecycle/ensureCrumbsInstanceFromProject';
+export { syncCrumbsNativeInstances } from './crumbsLifecycle/syncCrumbsNativeInstances';
 export { hydrateCrumbsStateFromProject } from './hydrateCrumbsStateFromProject';
 export { initCrumbsDeviceStatePersistence } from './initCrumbsDeviceStatePersistence';
 export { panicCrumbs } from './panicCrumbs';

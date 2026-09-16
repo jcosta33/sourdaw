@@ -124,7 +124,7 @@ import {
     type LiveGraphTopologyInput,
 } from './projectLiveGraphTopology';
 import { projectRollPosition } from './projectRollPosition';
-import { readAttachedExternalInstanceIds } from './readAttachedExternalInstanceIds';
+import { readAttachedEngineInstanceIds } from './readAttachedEngineInstanceIds';
 import { readLiveStripTracks } from './readLiveStripTracks';
 import { readSessionProgramme } from './readSessionProgramme';
 import { replaceNativeChains } from './replaceNativeChains';
@@ -288,7 +288,7 @@ function readSessionTopology(): Readonly<{
                 deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups: vcaGroups }),
             ])
         ),
-        attachedInstanceIds: readAttachedExternalInstanceIds(),
+        attachedInstanceIds: readAttachedEngineInstanceIds(),
         inputMonitoredTrackIds: new Set(stripTracks.filter(receivesLiveInput).map((track) => track.id)),
     };
 }
@@ -866,7 +866,7 @@ async function bindAttachedPlugins(input: {
     if ((started.result.attachedPlugins ?? []).length === 0) {
         return { resent: started, installed: first };
     }
-    const attachedInstanceIds = readAttachedExternalInstanceIds();
+    const attachedInstanceIds = readAttachedEngineInstanceIds();
     // Re-projected, not reused: binding an instrument moves a MIDI strip out of
     // `webVoicedStripIds`, and the first programme was read before the engine
     // held that instrument.

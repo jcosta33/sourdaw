@@ -884,6 +884,21 @@ export type AudioGraphAttachedPlugin = Readonly<{
 }>;
 
 /**
+ * One Crumbs instance a batch's attach took over.
+ *
+ * The instance id is the whole payload, and it is the device id too: a Crumbs
+ * runtime is created under the id of the device it belongs to, so the caller
+ * needs nothing else to know which device just became audible.
+ *
+ * Reported apart from {@link AudioGraphAttachedPlugin} because the two name
+ * different id spaces — a hosted plugin's instance id against a Crumbs device's
+ * own id — and a caller writes them into different mirrors.
+ */
+export type AudioGraphAttachedCrumbsInstance = Readonly<{
+    instanceId: string;
+}>;
+
+/**
  * The outcome vocabulary of `RuntimeGraphDeltaResult`, applied to a batch.
  *
  * The three states mean exactly what they mean there — `rejected` is refused
@@ -936,6 +951,19 @@ export type AudioGraphApplyResult =
            * engine at all, and from one whose payload predates the field.
            */
           attachedPlugins?: readonly AudioGraphAttachedPlugin[];
+          /**
+           * Crumbs instances this batch handed to the engine.
+           *
+           * The same report as {@link attachedPlugins} and carried for the same
+           * reason — a Crumbs runtime created before the engine was rendering
+           * is parked dormant, `create_crumbs` told its caller exactly that,
+           * and nothing else revises the answer. It is reported separately
+           * because the ids name devices rather than hosted instances.
+           *
+           * Empty when the batch took none. Absent from a backend that hosts no
+           * engine at all, and from one whose payload predates the field.
+           */
+          attachedCrumbs?: readonly AudioGraphAttachedCrumbsInstance[];
       }>
     | Readonly<{
           acceptance: 'accepted';

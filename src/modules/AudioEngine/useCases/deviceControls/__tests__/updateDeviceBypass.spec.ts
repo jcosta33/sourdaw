@@ -107,4 +107,34 @@ describe('updateDeviceBypass', () => {
         expect(audioEngine.updateDeviceBypass).toHaveBeenCalledWith('t1', 'd1', true);
         expect(sendNativeDeviceBypass).not.toHaveBeenCalled();
     });
+
+    // The engine splices a Crumbs instance rather than building a body for it,
+    // so `nativeBuiltinWriteTarget` resolves nothing for one — but the chain is
+    // still the only writer of that device's bypass (`set_crumbs_param` carries
+    // the sampler's parameters and nothing else), which is why the native side
+    // admits this write where it refuses a hosted plugin's. Without the branch
+    // the panel's bypass button goes dead the moment the strip is carried.
+    it('forwards to a carried Crumbs device the engine builds no built-in body for', () => {
+        projectHolding(createDevice({ id: 'd1', name: 'Break Kit', type: 'builtin-crumbs' }));
+        vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+
+        updateDeviceBypass('t1', 'd1', true);
+
+        expect(audioEngine.updateDeviceBypass).toHaveBeenCalledTimes(1);
+        expect(audioEngine.updateDeviceBypass).toHaveBeenCalledWith('t1', 'd1', true);
+        expect(sendNativeDeviceBypass).toHaveBeenCalledExactlyOnceWith({
+            trackId: 't1',
+            deviceId: 'd1',
+            bypassed: true,
+        });
+    });
+
+    it('does not forward for a Crumbs device no native session is carrying', () => {
+        projectHolding(createDevice({ id: 'd1', name: 'Break Kit', type: 'builtin-crumbs' }));
+
+        updateDeviceBypass('t1', 'd1', true);
+
+        expect(audioEngine.updateDeviceBypass).toHaveBeenCalledWith('t1', 'd1', true);
+        expect(sendNativeDeviceBypass).not.toHaveBeenCalled();
+    });
 });

@@ -51,7 +51,7 @@ export type ReadLiveGraphProgrammeInput = Readonly<{
     /** The strips this session builds, in project order. */
     stripTracks: LiveGraphProgrammeInput['stripTracks'];
     /**
-     * The external plugin instances the native engine currently owns.
+     * The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}.
      *
      * The caller's, not read here, for the same reason the topology takes it:
      * a session threads one attach state through every projection it makes, so
