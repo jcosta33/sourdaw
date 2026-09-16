@@ -9,9 +9,9 @@
  * player's hands off the keys and leaves their foot where it was
  * (`AudioScheduler::release_sounding_notes`). So a damper pressed before play,
  * or held across a chain reorder, reaches a fresh body only if something on this
- * side remembers it. This is that memory; `replaceNativeChains` spends it onto
- * the bodies a whole-topology batch builds, and `mirrorDeviceChainDelta` spends
- * it inside the batch that rebuilds one strip mid-roll.
+ * side remembers it. This is that memory; `latchedPedalCommands.ts` spends it,
+ * inside whichever batch builds the bodies — a session start's whole-topology
+ * batch, or the one `mirrorDeviceChainDelta` sends for one strip mid-roll.
  *
  * Module state rather than a parameter for the reason
  * `nativeLiveGraphSessionState` is: the foot is one physical thing, and the

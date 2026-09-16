@@ -133,7 +133,7 @@ describe('panicLiveNotes', () => {
         // and its own spec pins it. The send is unconditional for that second
         // reason: after a stop the native chains are already gone, and a panic
         // that skipped a device nothing holds would leave the latch standing for
-        // the next play's `replaceNativeChains` to replay.
+        // the next play's topology batch to carry onto the body it builds.
         track_store.value = grand_boule_tracks();
 
         panicLiveNotes();

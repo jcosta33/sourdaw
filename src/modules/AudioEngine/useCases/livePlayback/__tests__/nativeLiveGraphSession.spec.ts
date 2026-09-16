@@ -35,6 +35,7 @@ import {
     offlinePpqEndpointProjectorState,
     type OfflinePpqEndpointProjector,
 } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import { noteLiveMidiControl } from '../../../services/liveMidiControlLatch';
 import { masterGainState } from '../../engineAccess/masterGainState';
 import { disarmNativeLiveMidiWriter } from '../disarmNativeLiveMidiWriter';
 import { nativeEnginePlayheadFeed } from '../nativeEnginePlayheadFeedState';
@@ -487,9 +488,62 @@ function scheduledMidiTargets(): { trackId: string; deviceId: string }[] {
         );
 }
 
+/**
+ * The commands the whole-topology batch actually carried, in the wire shape.
+ *
+ * The wire shape rather than the contract's because a pedal is read here the
+ * way the engine is handed it: `send-midi-control` flattens its device target
+ * into the command's own fields.
+ */
+function topologyWireCommands(): NativeGraphWireBatch['commands'] {
+    const batch = mocks.applyGraphCommands.mock.calls
+        .map(([input]) => input.batch as NativeGraphWireBatch)
+        .find((candidate) => candidate.replaceTopology === true);
+    return batch?.commands ?? [];
+}
+
 /** How one batch built the strip for `trackId`, or `undefined` if it built none. */
 function stripCreation(batch: AudioGraphCommandBatch | undefined, trackId: string) {
     return batch?.commands.find((command) => command.kind === 'create-track-strip' && command.trackId === trackId);
+}
+
+/** The instrument whose pedals the renderer has to press back onto a new body. */
+const GRAND_BOULE_DEVICE: Device = {
+    id: 'gb-1',
+    name: 'Grand Boule',
+    type: 'grand-boule',
+    bypassed: false,
+    parameterValues: {},
+};
+
+/** The damper, and the message that discharges the renderer's memory of it. */
+const CC_SUSTAIN_PEDAL = 64;
+const CC_RESET_ALL_CONTROLLERS = 121;
+
+/** Every address a case here presses a pedal on. */
+const PEDALLED_ADDRESSES = [
+    { trackId: 'midi-1', deviceId: 'gb-1' },
+    { trackId: 'midi-1', deviceId: 'gb-absent' },
+] as const;
+
+/**
+ * Presses the damper with no session open, which is what leaves it remembered
+ * and unsent — the state a session start finds the player's foot in.
+ */
+function pressRememberedDamper(address: (typeof PEDALLED_ADDRESSES)[number]): void {
+    noteLiveMidiControl({ ...address, controller: CC_SUSTAIN_PEDAL, value: 127, channel: 0 });
+}
+
+/**
+ * Forgets every pedal the cases here press. The latch is module state with no
+ * reset of its own, and Reset All Controllers is the message that discharges
+ * it — so one case's remembered foot cannot reach the next, where it would ride
+ * a batch that case never asked for.
+ */
+function forgetPressedPedals(): void {
+    for (const address of PEDALLED_ADDRESSES) {
+        noteLiveMidiControl({ ...address, controller: CC_RESET_ALL_CONTROLLERS, value: 0, channel: 0 });
+    }
 }
 
 /** A device the host has resolved to an external plugin instance. */
@@ -627,6 +681,10 @@ beforeEach(() => {
     // would read a programme no gesture in it asked for.
     offlinePpqEndpointProjectorState.project = null;
     offlinePpqEndpointProjectorState.resolveTempoAtBeat = null;
+    // The remembered foot is module state as well, and it rides the topology
+    // batch — so a case inheriting the previous one's would read a controller
+    // no gesture in it ever sent.
+    forgetPressedPedals();
     trackStore.set({ tracks: [createTrack({ id: 'audio-1' })], selectedTrackId: null, ghostClips: [] });
 });
 
@@ -1863,6 +1921,64 @@ describe('startNativeLiveGraphSession', () => {
         await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(scheduledMidiTargets()).toEqual([]);
+    });
+
+    /**
+     * Every body this batch builds comes up with its pedals raised, and the
+     * engine never lifts one — so the damper the player is standing on has to
+     * ride the batch itself, behind the command that builds the body it names.
+     * Behind it because the mapper registers a strip's chain as it maps that
+     * command, and refuses the whole batch over a controller naming a device it
+     * does not yet hold.
+     *
+     * Sent after the batch instead, the pedal queues behind the task that
+     * installed the session and the engine renders at least one bridge round
+     * trip with the foot lifted: a clip note at the play position is struck
+     * with the hammers at full travel under a held una corda, because stiffness
+     * is baked at `note_on`, and a sostenuto edge inside that window captures
+     * nothing.
+     */
+    it('carries the remembered pedal inside the topology batch that builds its body', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'midi-1', kind: 'midi', devices: [GRAND_BOULE_DEVICE] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        pressRememberedDamper({ trackId: 'midi-1', deviceId: 'gb-1' });
+
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        const commands = topologyWireCommands();
+        expect(commands.filter((command) => command.kind === 'send-midi-control')).toEqual([
+            {
+                kind: 'send-midi-control',
+                trackId: 'midi-1',
+                deviceId: 'gb-1',
+                controller: CC_SUSTAIN_PEDAL,
+                value: 127,
+                channel: 0,
+            },
+        ]);
+        expect(commands.findIndex((command) => command.kind === 'send-midi-control')).toBeGreaterThan(
+            commands.findIndex((command) => command.kind === 'create-track-strip' && command.trackId === 'midi-1')
+        );
+    });
+
+    // A pedal is remembered whether or not the engine holds a body for it, so
+    // the record outlives the device it names. Carried anyway, the controller
+    // would name a device the registry does not hold and the mapper would
+    // refuse the whole topology — a play button that starts no engine at all.
+    it('carries no pedal for a device the topology builds no body for', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'midi-1', kind: 'midi', devices: [GRAND_BOULE_DEVICE] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        pressRememberedDamper({ trackId: 'midi-1', deviceId: 'gb-absent' });
+
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(topologyWireCommands().filter((command) => command.kind === 'send-midi-control')).toEqual([]);
     });
 
     // The note pass is armed from the batch the engine actually rebuilt

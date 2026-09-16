@@ -100,10 +100,18 @@ function passWritesParameterOf(deviceId: string): void {
 const CC_SUSTAIN_PEDAL = 64;
 const CC_RESET_ALL_CONTROLLERS = 121;
 
-/** Every address a case here presses a pedal on. */
+/**
+ * Every address a case here presses a pedal on.
+ *
+ * The third one deliberately repeats the second track with the *same* device
+ * id as the first: a latch is keyed by (track, device), so an address filter
+ * that compared device ids alone would press another strip's foot onto this
+ * one's body — and two disjoint ids could never tell the two filters apart.
+ */
 const PEDALLED_ADDRESSES = [
     { trackId: 'audio-1', deviceId: 'gb' },
     { trackId: 'audio-2', deviceId: 'gb-elsewhere' },
+    { trackId: 'audio-2', deviceId: 'gb' },
 ] as const;
 
 /**
@@ -324,6 +332,84 @@ describe('mirrorDeviceChainDelta', () => {
                 value: 127,
                 channel: 0,
             },
+        ]);
+    });
+
+    /**
+     * Two tracks stand on a damper under the same device id, and only the
+     * rebuilt track's reaches the batch.
+     *
+     * The engine refuses a controller naming a device some other strip holds,
+     * and it refuses the whole batch with it — so a filter that matched device
+     * ids alone would turn a chain reorder into a play button that mirrors
+     * nothing. Same id on both tracks is what makes the track comparison
+     * observable at all.
+     */
+    it("carries only the rebuilt track's pedal when another track latched the same device id", async () => {
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['eq', 'gb']]]);
+        const grandBoule = device('gb', { type: 'grand-boule' });
+        pressDamper({ trackId: 'audio-1', deviceId: 'gb' });
+        pressDamper({ trackId: 'audio-2', deviceId: 'gb' });
+
+        await mirrorDeviceChainDelta({
+            before: track([device('eq'), grandBoule]),
+            after: track([grandBoule, device('eq')]),
+        });
+
+        expect(sentCommands().filter((command) => command.kind === 'send-midi-control')).toEqual([
+            {
+                kind: 'send-midi-control',
+                target: { trackId: 'audio-1', deviceId: 'gb' },
+                controller: 64,
+                value: 127,
+                channel: 0,
+            },
+        ]);
+    });
+
+    /**
+     * An edit that inserts a device builds a body too, and the latch can
+     * already know its id: undoing a removal restores the same device under
+     * the same id, so the player's foot is remembered for a body that has just
+     * come back up with its pedals raised. The controller rides behind that
+     * insert for the reason a rebuild's does — the mapper registers the device
+     * before it reads the controller that names it.
+     */
+    it('presses a remembered pedal back behind the insert an edit makes', async () => {
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['eq']]]);
+        const grandBoule = device('gb', { type: 'grand-boule' });
+        pressDamper({ trackId: 'audio-1', deviceId: 'gb' });
+
+        await mirrorDeviceChainDelta({
+            before: track([device('eq')]),
+            after: track([device('eq'), grandBoule]),
+        });
+
+        expect(sentCommands()).toEqual([
+            { kind: 'insert-device', trackId: 'audio-1', device: grandBoule, index: 1 },
+            {
+                kind: 'send-midi-control',
+                target: { trackId: 'audio-1', deviceId: 'gb' },
+                controller: 64,
+                value: 127,
+                channel: 0,
+            },
+        ]);
+    });
+
+    // The other half of that rule: a body nobody's foot is on takes no
+    // controller, which would otherwise press a pedal the player is not
+    // standing on.
+    it('appends no controller to an edit that inserts a device with no remembered pedal', async () => {
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['eq']]]);
+
+        await mirrorDeviceChainDelta({
+            before: track([device('eq')]),
+            after: track([device('eq'), device('comp')]),
+        });
+
+        expect(sentCommands()).toEqual([
+            { kind: 'insert-device', trackId: 'audio-1', device: device('comp'), index: 1 },
         ]);
     });
 
