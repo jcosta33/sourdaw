@@ -152,6 +152,39 @@ describe('agent resource limits', () => {
         expect(createRun('concurrent-run-d')).toEqual({ status: 'created' });
     });
 
+    it('stops counting an active-phase run once it ages past the configured wall-clock limit', () => {
+        configureAgentResourceLimits({ concurrentRuns: 1, runDurationMs: 1000 });
+        agentRunLifecycle.create({
+            runId: 'aging-run-a',
+            request: 'Arrange this project.',
+            mode: 'apply',
+            createdRevision: 'revision-a',
+            createdAt: 1_000,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'aging-run-a', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'aging-run-a', phase: 'executing' });
+
+        expect(
+            agentRunLifecycle.create({
+                runId: 'aging-run-b',
+                request: 'Arrange this project.',
+                mode: 'apply',
+                createdRevision: 'revision-a',
+                createdAt: 2_000,
+            })
+        ).toEqual({ status: 'hard-limit-reached', reason: 'concurrentRuns' });
+
+        expect(
+            agentRunLifecycle.create({
+                runId: 'aging-run-b',
+                request: 'Arrange this project.',
+                mode: 'apply',
+                createdRevision: 'revision-a',
+                createdAt: 2_001,
+            })
+        ).toEqual({ status: 'created' });
+    });
+
     it('refuses a reservation made past the configured run duration and records no attempt', () => {
         configureAgentResourceLimits({ runDurationMs: 1000 });
         const createdAt = 1_700_000_000_000;

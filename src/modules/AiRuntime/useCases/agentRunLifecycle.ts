@@ -83,8 +83,21 @@ const LIFECYCLE_ENFORCED_LIMIT_CATEGORIES: ReadonlySet<string> = new Set<AgentRe
     'runDurationMs',
 ]);
 
-/** Phases in which a run still holds machine resources, so it counts against `concurrentRuns`. */
+/**
+ * Phases in which a run still holds machine resources. Phase membership alone is not sufficient to
+ * decide whether the run counts against `concurrentRuns` — see `isRunHoldingCapacity`.
+ */
 const ACTIVE_PHASES = new Set<AgentRunPhase>(['planning', 'previewing', 'executing']);
+
+/**
+ * A run counts toward `concurrentRuns` only while it can still reserve work. Once its age exceeds
+ * `runDurationMs`, `reserveAgentRunBudgetBatch` refuses every further reservation for it, so it holds
+ * no live capacity and must not go on blocking new runs forever — an active-phase run abandoned by an
+ * interrupted session or a thrown caller ages out instead of counting indefinitely.
+ */
+function isRunHoldingCapacity(run: AgentRun, now: number, limits: AgentResourceLimits): boolean {
+    return ACTIVE_PHASES.has(run.phase) && now - run.createdAt <= limits.runDurationMs;
+}
 
 function getConfiguredAgentResourceLimits(): AgentResourceLimits {
     return agentResourceLimitsStore.value ?? DEFAULT_AGENT_RESOURCE_LIMITS;
@@ -342,13 +355,16 @@ function createAgentRun(input: CreateAgentRunInput): CreateAgentRunResult {
         throw new Error(`Agent run already exists: ${input.runId}`);
     }
     const configuredLimits = getConfiguredAgentResourceLimits();
+    const createdAt = input.createdAt ?? Date.now();
     if (input.request.length > configuredLimits.requestChars) {
         return { status: 'hard-limit-reached', reason: 'requestChars' };
     }
-    if (state.runs.filter((run) => ACTIVE_PHASES.has(run.phase)).length >= configuredLimits.concurrentRuns) {
+    if (
+        state.runs.filter((run) => isRunHoldingCapacity(run, createdAt, configuredLimits)).length >=
+        configuredLimits.concurrentRuns
+    ) {
         return { status: 'hard-limit-reached', reason: 'concurrentRuns' };
     }
-    const createdAt = input.createdAt ?? Date.now();
     const run: AgentRun = {
         schemaVersion: AGENT_RUN_SCHEMA_VERSION,
         runId: input.runId,
