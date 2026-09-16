@@ -83,5 +83,7 @@ export { agentChangeComparison, getAgentChangeComparisonView } from './agentChan
 export { getProviderRouteView } from './getProviderRouteView';
 export { deleteAgentRunArtifacts } from './deleteAgentRunArtifacts';
 export { getAgentRunSagaProjection } from './getAgentRunSagaProjection';
+export { projectAgentRunTelemetry } from './projectAgentRunTelemetry';
+export { projectAgentRunDiagnostics } from './projectAgentRunDiagnostics';
 export { settleRetainedSectionRenderManualReview } from './settleRetainedSectionRenderManualReview';
 export { selectRetainedSectionRenderManualReviews } from './selectRetainedSectionRenderManualReviews';
