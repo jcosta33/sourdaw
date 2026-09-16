@@ -113,6 +113,35 @@ describe('refreshEngineRtDiagnostics', () => {
 
     it('starts with no reading rather than with a reading of all zeros', () => {
         expect(engineRtDiagnosticsStore.value?.latest).toBeNull();
+        expect(engineRtDiagnosticsStore.value?.nativeEngineObserved).toBe(false);
+    });
+
+    it('records having read a native engine, and keeps that record once the engine is gone', async () => {
+        // The helper's default rate is zero, which is the shape the command
+        // answers with no engine handle and the shape the browser build
+        // reports. A non-zero rate is one an engine negotiated.
+        vi.mocked(getEngineRtDiagnostics).mockResolvedValueOnce(diagnostics({ sampleRate: 48_000 }));
+        await refreshEngineRtDiagnostics();
+
+        expect(engineRtDiagnosticsStore.value?.nativeEngineObserved).toBe(true);
+
+        // Retiring the engine drops its handle, so every later poll reads the
+        // no-engine shape. The events that engine reported outlive it, so the
+        // record of having read it has to outlive it too.
+        vi.mocked(getEngineRtDiagnostics).mockResolvedValueOnce(diagnostics());
+        await refreshEngineRtDiagnostics();
+
+        expect(engineRtDiagnosticsStore.value?.latest?.sampleRate).toBe(0);
+        expect(engineRtDiagnosticsStore.value?.nativeEngineObserved).toBe(true);
+    });
+
+    it('leaves the record unset while every reading comes from no engine', async () => {
+        vi.mocked(getEngineRtDiagnostics).mockResolvedValue(diagnostics());
+
+        await refreshEngineRtDiagnostics();
+        await refreshEngineRtDiagnostics();
+
+        expect(engineRtDiagnosticsStore.value?.nativeEngineObserved).toBe(false);
     });
 
     it('accumulates drained events instead of replacing them', async () => {

@@ -227,6 +227,10 @@ function createWorkerRingTransport({ ctx, wasmModule, onFault }: CreateGrandBoul
     // ring SAB so the ring layout stays exactly as the SPSC proofs describe it.
     const syncSab = new SharedArrayBuffer(GRAND_BOULE_SYNC_INT_COUNT * Int32Array.BYTES_PER_ELEMENT);
 
+    // Null when the page is not cross-origin isolated: there is no shared buffer
+    // to count into, so this transport never opens dropout coverage.
+    const dropoutSab = dropoutCounters.getSab();
+
     // Create the engine Worker.
     const engineWorker = new Worker(new URL('../workers/grandBouleEngineWorker.ts', import.meta.url), {
         type: 'module',
@@ -246,11 +250,29 @@ function createWorkerRingTransport({ ctx, wasmModule, onFault }: CreateGrandBoul
 
     let stopped = false;
     let transportReady = false;
+    let dropoutCoverageOpen = false;
+    // Coverage opens on the worklet's own `ready`, not on the `init` post that
+    // hands it the buffer: until the worklet replies it has mapped nothing and
+    // counts nothing, so a transport that fails in between would leave underruns
+    // reading as an observed zero.
+    const openDropoutCoverage = (): void => {
+        if (dropoutCoverageOpen || stopped || !dropoutSab) {
+            return;
+        }
+        dropoutCoverageOpen = true;
+        dropoutCounters.openCoverage();
+    };
+    // The one teardown both the normal stop and `stopFailedTransport` reach, so
+    // an opened coverage is dropped exactly once.
     const stopTransport = (): void => {
         if (stopped) {
             return;
         }
         stopped = true;
+        if (dropoutCoverageOpen) {
+            dropoutCoverageOpen = false;
+            dropoutCounters.closeCoverage();
+        }
         node.onprocessorerror = null;
         engineWorker.onerror = null;
         engineWorker.onmessageerror = null;
@@ -296,6 +318,9 @@ function createWorkerRingTransport({ ctx, wasmModule, onFault }: CreateGrandBoul
     };
     node.port.onmessage = (event: MessageEvent) => {
         const outcome = workletHandshake.onMessage(event);
+        if (outcome === 'ready') {
+            openDropoutCoverage();
+        }
         if (outcome === 'error' || reportsTransportError(event)) {
             stopFailedTransport(readHandshakeError(event, 'GrandBouleNode worklet failed during initialization'));
         }
@@ -323,7 +348,7 @@ function createWorkerRingTransport({ ctx, wasmModule, onFault }: CreateGrandBoul
     node.port.postMessage({
         type: 'init',
         sab,
-        dropoutSab: dropoutCounters.getSab(),
+        dropoutSab,
         syncSab,
         countPreRollStarvation: false,
     });

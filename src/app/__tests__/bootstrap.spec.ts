@@ -351,6 +351,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     recordNativeChainReleases: recordNativeChainReleasesMock,
     configureDurableAudioBufferOwnership: configureDurableAudioBufferOwnershipMock,
     isTunerTelemetryNativelyOwned: isTunerTelemetryNativelyOwnedMock,
+    startMainThreadLongTaskObservation: noop,
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({

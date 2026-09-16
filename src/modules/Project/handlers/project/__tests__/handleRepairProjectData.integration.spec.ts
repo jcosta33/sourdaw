@@ -45,7 +45,10 @@ function mergeConflictingRemoteEdit(): void {
     if (!local) {
         throw new Error('Expected a seeded root document');
     }
-    const remote = change(clone(local, { actor: 'b'.repeat(64) }), (draft) => {
+    // Automerge keeps the concurrent value with the greatest actor id at equal counters,
+    // and the local document carries a random actor, so the remote actor must sort above
+    // every possible local actor for 0.7 to be the deterministic winner.
+    const remote = change(clone(local, { actor: 'f'.repeat(64) }), (draft) => {
         draft.targets['track-bass']!.gain = 0.7;
     });
     mutateCrdtDoc<ProjectDocument>({
@@ -141,9 +144,9 @@ describe('handleRepairProjectData against a conflicted document', () => {
             throw new Error('Expected the repaired root document');
         }
         expect(findAutomergeProjectConflicts({ document: repaired })).toEqual([]);
-        // The document had already resolved the conflict to the concurrent
-        // value (0.7): the repair closes the conflict by keeping that resolved
-        // value, not by re-imposing either side's preference.
+        // The conflict resolves to the remote value (0.7) by actor order at equal counters.
+        // The repair closes the conflict by keeping that resolved value rather than
+        // re-imposing the local preference.
         expect(repaired.targets['track-bass']?.gain).toBe(0.7);
 
         // Mutations are re-admitted and undo history survived the repair.
