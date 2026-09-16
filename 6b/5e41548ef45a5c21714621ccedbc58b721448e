@@ -1,0 +1,59 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/replaceNativeChains.spec.ts
+  s_9b530f08172a54::t_5cadddcba48b1f 1-115
+src/modules/AudioEngine/useCases/livePlayback/sendNativeLiveMidiControl.ts
+  s_9b530f08172a54::t_9ec3f7f6396442 17-18,21-22,24-33,37,39
+  s_9b530f08172a54::t_2a2da9f66795f2 54,57
+src/modules/MIDI/useCases/webMidiInput/panicLiveNotes.ts
+  s_9b530f08172a54::t_53ef09a29009cb 46,53-54,57-61,63-64,66,69,72-73,77-125
+  s_9b530f08172a54::t_fdd32322605ecb 9
+  s_9b530f08172a54::t_27c6edf1e36531 126-130
+src/modules/AudioEngine/useCases/livePlayback/__tests__/sendNativeLiveMidiControl.spec.ts
+  s_9b530f08172a54::t_bac499fb338af6 5-10,13,16,38-47,49-52,56-65,96,111-135,154-177
+  s_9b530f08172a54::t_a8fe8a45082c6c 178
+src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts
+  s_9b530f08172a54::t_cbd5e334854dee 2,9-22
+  s_9b530f08172a54::t_b5e2612d033969 73-88
+  s_9b530f08172a54::t_a757bfdbc077a3 23,98-121
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_21a41d82032276 1824-1831
+  s_9b530f08172a54::t_7918c212ee12ef 6128-6136
+  s_9b530f08172a54::t_b905f575d6e57a 10442-10451,10455
+  s_9b530f08172a54::t_bf55d88d236e6e 7022-7036,19382,19389,19396,19566,19572,19640,19647,19656
+  s_9b530f08172a54::t_84fcc81662c425 1401-1412,1414,1416
+  s_9b530f08172a54::t_848c655fb52bba 1848-1858,1868-1869
+  s_9b530f08172a54::t_4922508509da92 10472-10473
+  s_9b530f08172a54::t_a1be20f1497fcc 1979-1982,1994-1999,2001-2002,2006-2049,10550,19447,19561-19562,19636
+  s_9b530f08172a54::t_7ed72dbb03f624 2050-2052,6137-6138,6141,7037-7038,7046,10392-10393,10403-10405,10415-10423,10425-10427,10434-10441,10452-10454,10456-10471,10474-10478,10492-10495,10502-10506,10509-10517,10519-10527,10529-10532,10534-10542,10546-10549,19164-19165,19383-19388,19390-19395,19397,19399-19403,19405,19415-19446,19448-19560,19563-19565,19567-19571,19573-19585,19587-19588,19605,19611-19614,19619-19620,19623-19627,19630-19631,19634-19635,19637-19639,19641-19646,19648-19655,19657-19718
+src/modules/GrandBoule/useCases/__tests__/resolveGrandBouleEngine.spec.ts
+  s_9b530f08172a54::t_898d7084f11948 1
+  s_9b530f08172a54::t_927675dab7fddd 29
+  s_9b530f08172a54::t_81afc3136293cf 4
+  s_9b530f08172a54::t_d94597af3abf3a 36-42,49-85
+src/modules/AudioEngine/useCases/livePlayback/replaceNativeChains.ts
+  s_9b530f08172a54::t_11f337c710a6d2 3-4,10-17,21,24,28-30
+src/modules/MIDI/useCases/webMidiInput/routePedalToBodies.ts
+  s_9b530f08172a54::t_e6fd7fe6244ecb 65-79
+  s_9b530f08172a54::t_fbb575a462f176 36-39
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanel.spec.tsx
+  s_9b530f08172a54::t_cad5b79a9996eb 49,53
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  s_9b530f08172a54::t_e3b021fbae63ac 273-282,343,415,433,436-438,463-466
+src/modules/MIDI/useCases/webMidiInput/__tests__/panicLiveNotes.spec.ts
+  s_9b530f08172a54::t_baf1666f4bcb30 8-18,62-69,77-82,136-139,187-216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6b5e41548ef45a5c21714621ccedbc58b721448e",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
