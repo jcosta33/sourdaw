@@ -103,6 +103,7 @@ vi.mock('#/infra/store/createStore', async (importOriginal) => {
 });
 // Four hoisted bindings stay live; newly listed names are unread graph-coverage stubs.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    forgetProjectLatchedPedals: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 
     startFaustNote: vi.fn(),

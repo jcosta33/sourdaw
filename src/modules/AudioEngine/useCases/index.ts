@@ -124,6 +124,8 @@ export { initializeAudioEngine } from './initializeAudioEngine';
 export { claimNativeSessionRearm } from './livePlayback/claimNativeSessionRearm';
 export { nativeSessionRearmClaimHolds } from './livePlayback/nativeSessionRearmClaimHolds';
 export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
+// Published because the project-leaving use cases own the commit point the pedal latch is scoped to.
+export { forgetProjectLatchedPedals } from './livePlayback/forgetProjectLatchedPedals';
 export { isDeviceCarriedByNativeSession } from './livePlayback/isDeviceCarriedByNativeSession';
 // Published because the composition root decides which of the Tuner's two carriers publishes a reading.
 export { isTunerTelemetryNativelyOwned } from './livePlayback/isTunerTelemetryNativelyOwned';

@@ -236,6 +236,7 @@ vi.mock('#/modules/Knead/useCases', async () => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    forgetProjectLatchedPedals: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
     startFaustNote: vi.fn(),
     writeNativeBuiltinParameters: vi.fn(),

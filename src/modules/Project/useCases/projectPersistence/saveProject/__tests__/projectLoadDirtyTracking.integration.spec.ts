@@ -57,6 +57,7 @@ const {
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    forgetProjectLatchedPedals: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 
     startFaustNote: vi.fn(),

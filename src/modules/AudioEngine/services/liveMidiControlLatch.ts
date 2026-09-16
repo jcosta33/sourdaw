@@ -24,7 +24,10 @@
  * therefore discharges what is remembered for that device.
  *
  * The record is scoped to one project, and `forgetLatchedLiveMidiControls`
- * empties it at the boundary that leaves one (`resetAudioGraph`).
+ * empties it at the commit point of a load, a new project or a template —
+ * `forgetProjectLatchedPedals`, called once the CRDT authority has been
+ * replaced. Never at a graph reset: one also runs inside a project, for a
+ * runtime repair and for the teardown an aborted load then restores.
  */
 
 const CC_SUSTAIN_PEDAL = 64;
@@ -93,6 +96,13 @@ export function readLatchedLiveMidiControls(): readonly LatchedLiveMidiControl[]
  * every pedal up on both carriers, so a position latched under the project
  * being left would otherwise be pressed onto the first body the next one
  * builds while its Web Audio node comes up released.
+ *
+ * Called from the commit point of those three transitions only, never from a
+ * graph reset. A reset happens inside a project too — a runtime repair rebuilds
+ * the strips and resumes playback in the same one, and a load that aborts after
+ * its teardown restores the old graph — and there the held pedal must survive,
+ * or the rebuilt bodies come up raised and damp every note at release until the
+ * player's foot physically moves.
  */
 export function forgetLatchedLiveMidiControls(): void {
     latchedByAddress.clear();
