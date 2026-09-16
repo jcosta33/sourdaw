@@ -503,6 +503,22 @@ describe('admitCreativeCommandBatch', () => {
         expect(admissions[1]?.status).toBe('admitted');
     });
 
+    it('admits a device on a stamped track no project track carries once the batch has created a track', () => {
+        const stampedTrackNoProjectTrackCarries = 'track-ai-22222222-2222-4222-8222-222222222222';
+        const admissions = admitBatch(buildCreateAuthority([createdTrackSlot, nestedDeviceSlot]), [
+            addSynthTrack,
+            { name: 'addDevice', arguments: { trackId: stampedTrackNoProjectTrackCarries, deviceType: 'eq' } },
+        ]);
+
+        expect(admissions[0]?.status).toBe('admitted');
+        expect(admissions[1]).toEqual({
+            status: 'admitted',
+            targets: [
+                { argument: 'trackId', capability: 'device-host-track', objectId: stampedTrackNoProjectTrackCarries },
+            ],
+        });
+    });
+
     it('refuses a device on a stamped track the project holds and the authority does not name', () => {
         const admissions = admitBatch(
             buildCreateAuthority([createdTrackSlot, nestedDeviceSlot]),
