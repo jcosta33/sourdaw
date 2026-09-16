@@ -37,6 +37,8 @@ public/wasm/scoring/scoring_bg.wasm.d.ts
 crates/scoring/src/tuning.rs
   h_1228e573df1f42 12-13,15
   s_ded02992829a10::t_4e00ea5f7eab1a 14
+  s_ded02992829a10::t_3f5b4f4247da62 12-13
+  s_ded02992829a10::t_020b38b7b1fc1c 15
 crates/daw-dsp/src/fermenter/synth.rs
   s_914af328b3988f::t_41533a7810da31 995
 crates/daw-dsp/src/fermenter/layer.rs
@@ -47,7 +49,7 @@ crates/daw-dsp/src/gluten/mod.rs
   s_9b530f08172a54::t_4cb754d5fc9426 26
 public/wasm/manifest.json
   h_1228e573df1f42 40,45-46,49
-  s_914af328b3988f::t_88f8b8c005fead 12,16-18,21,26,30-32,35
+  s_914af328b3988f::t_88f8b8c005fead 12,16-18,16,21,26,30-32,35
 crates/proof-chamber/src/hybrid.rs
   s_9b530f08172a54::t_9d5d4edffd16b9 51-53
 crates/daw-dsp/src/levain/fallback.rs
@@ -66,6 +68,11 @@ crates/daw-dsp/src/grand_boule/parameters.rs
   "git_ai_version": "1.7.4",
   "base_commit_sha": "cc80db956b1f5241e3f2b5e7b442a2b6ac1f1dda",
   "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  },
   "sessions": {
     "s_914af328b3988f": {
       "agent_id": {
@@ -79,6 +86,14 @@ crates/daw-dsp/src/grand_boule/parameters.rs
       "agent_id": {
         "tool": "claude",
         "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab5443e65c7fba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2307a45-7e7b-4756-b1d2-9aaee184f227",
         "model": "claude-fable-5"
       },
       "human_author": "José Costa <j.costa.3394@gmail.com>"
