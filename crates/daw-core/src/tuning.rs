@@ -1,5 +1,20 @@
 pub mod scala;
 
+/// Concert-A reference frequency the 12-TET grid is anchored to.
+///
+/// Rust-side owner of the A4 anchor. TS↔Rust lockstep pair: `src/utils/pitch.ts`
+/// owns the TypeScript mirror (`STANDARD_A4_HZ` there and in the restatements
+/// the no-import rule forces on `scoring/src/tuning.rs` and
+/// `daw-dsp/src/crumbs/analysis/pitch.rs`) — every copy must stay equal, and a
+/// change to one is a change to all of them.
+pub const STANDARD_A4_HZ: f64 = 440.0;
+
+/// MIDI note number of concert A (the A above middle C) on that grid.
+pub const A4_MIDI_NOTE: f64 = 69.0;
+
+/// Semitones per octave in twelve-tone equal temperament.
+pub const SEMITONES_PER_OCTAVE: f64 = 12.0;
+
 #[derive(Clone, Copy, Debug)]
 pub struct TuningTable {
     pub frequencies: [f64; 128],
@@ -12,7 +27,8 @@ impl Default for TuningTable {
         let mut log2_frequencies = [0.0; 128];
 
         for midi_note in 0..128 {
-            let freq = 440.0 * 2.0_f64.powf((midi_note as f64 - 69.0) / 12.0);
+            let freq = STANDARD_A4_HZ
+                * 2.0_f64.powf((midi_note as f64 - A4_MIDI_NOTE) / SEMITONES_PER_OCTAVE);
             frequencies[midi_note] = freq;
             log2_frequencies[midi_note] = freq.log2();
         }
