@@ -1,0 +1,21 @@
+src/modules/AiRuntime/models/AgentRunTelemetry.ts
+  s_914af328b3988f::t_e17925ae8b9e97 70-74
+src/modules/AiRuntime/AGENTS.md
+  s_914af328b3988f::t_34023c4075d3ab 28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8e6cbe5cecf920a5e2cd5e416a9e90c6e9ad0ef2",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
