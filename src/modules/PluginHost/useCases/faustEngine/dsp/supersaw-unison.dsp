@@ -22,7 +22,7 @@ cutoff = hslider("cutoff", 6000, 100, 20000, 1);
 mod_cutoff = cutoff * (1 + lfo * 0.5) : max(100) : min(20000) : si.smoo;
 
 resonance = hslider("resonance", 0.3, 0, 0.99, 0.01);
-filtered = fi.resonlp(mod_cutoff, 1 + resonance * 8, raw);
+filtered = raw : fi.resonlp(mod_cutoff, 1 + resonance * 8, 1);
 process = filtered * en.adsr(
     hslider("attack",  0.01,  0.001, 5, 0.001),
     hslider("decay",   0.3,   0.01,  5, 0.01),

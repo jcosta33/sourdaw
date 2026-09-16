@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { FACTORY_LIBRARY_ROOT_ID } from '#/modules/FactorySynthesis/useCases';
 
-import { type LibraryState } from '../../../stores/libraryStore';
+import { embeddingStore, setEmbedding } from '../../../stores/embeddingStore';
+import { libraryStore, setSearchQuery, type LibraryState } from '../../../stores/libraryStore';
 import { LibraryBrowser } from '../LibraryBrowser';
 
 type LibraryBrowserMocks = {
@@ -128,6 +129,8 @@ describe('LibraryBrowser', () => {
         mocks.preview.playingId = null;
         mocks.getCachedAudioBuffer.mockReset();
         mocks.preview.play.mockReset();
+        embeddingStore.set({ embeddings: new Map(), modelStatus: 'idle' });
+        setSearchQuery('');
     });
 
     it('should render without crashing', () => {
@@ -743,5 +746,89 @@ describe('LibraryBrowser', () => {
             );
         });
         expect(mocks.preview.play).not.toHaveBeenCalled();
+    });
+
+    it('tells the user similarity analysis is unavailable for a sample without an embedding', () => {
+        mocks.libraryState = createLibraryState({
+            provider: 'desktop',
+            ext: 'wav',
+            rootRef: '/Users/jose/Samples',
+            relativePath: 'Drums/Kick.wav',
+            displayName: 'Kick',
+        });
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Find samples similar to Kick' }));
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Similarity analysis is not available for "Kick" yet.',
+            'warning'
+        );
+        expect(libraryStore.value?.searchQuery).toBe('');
+    });
+
+    it('tells the user when an embedded sample has no similar matches', () => {
+        setEmbedding('sample1', new Float32Array([1, 0]));
+        mocks.libraryState = createLibraryState({
+            provider: 'desktop',
+            ext: 'wav',
+            rootRef: '/Users/jose/Samples',
+            relativePath: 'Drums/Kick.wav',
+            displayName: 'Kick',
+        });
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Find samples similar to Kick' }));
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith('No similar samples found for "Kick".', 'info');
+        expect(libraryStore.value?.searchQuery).toBe('');
+    });
+
+    it('enters the similarity search when matching embeddings exist', () => {
+        setEmbedding('sample1', new Float32Array([1, 0]));
+        setEmbedding('sample2', new Float32Array([0.9, 0.1]));
+        const state = createLibraryState({
+            provider: 'desktop',
+            ext: 'wav',
+            rootRef: '/Users/jose/Samples',
+            relativePath: 'Drums/Kick.wav',
+            displayName: 'Kick',
+        });
+        const kick = state.samples[0]!;
+        state.samples = [kick, { ...kick, id: 'sample2', displayName: 'Snare', relativePath: 'Drums/Snare.wav' }];
+        mocks.libraryState = state;
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Find samples similar to Kick' }));
+
+        expect(libraryStore.value?.searchQuery).toBe('similar:sample1');
+    });
+
+    it('renders only the samples with matching embeddings while a similarity search is active', () => {
+        setEmbedding('sample1', new Float32Array([1, 0]));
+        setEmbedding('sample2', new Float32Array([0.9, 0.1]));
+        const state = createLibraryState({
+            provider: 'desktop',
+            ext: 'wav',
+            rootRef: '/Users/jose/Samples',
+            relativePath: 'Drums/Kick.wav',
+            displayName: 'Kick',
+        });
+        const kick = state.samples[0]!;
+        state.samples = [
+            kick,
+            { ...kick, id: 'sample2', displayName: 'Snare', relativePath: 'Drums/Snare.wav' },
+            { ...kick, id: 'sample3', displayName: 'Hat', relativePath: 'Drums/Hat.wav' },
+        ];
+        state.searchQuery = 'similar:sample1';
+        mocks.libraryState = state;
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        expect(screen.getByRole('button', { name: 'Play Snare' })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Play Hat' })).toBeNull();
     });
 });

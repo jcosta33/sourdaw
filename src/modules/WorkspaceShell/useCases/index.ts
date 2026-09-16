@@ -1,6 +1,7 @@
 export { openExportDialog } from './dialogs/openExportDialog';
 export { openPreferencesDialog } from './dialogs/openPreferencesDialog';
 export { dismissAlphaNotice } from './dismissAlphaNotice';
+export { dismissEngineFallbackNotice } from './dismissEngineFallbackNotice';
 export { setWorkspaceEventBus } from './workspaceEventBus';
 export { resetDisplayScaleForStartup } from './resetDisplayScaleForStartup';
 
@@ -8,7 +9,7 @@ export { resetDisplayScaleForStartup } from './resetDisplayScaleForStartup';
 
 export { getScratchPadHandlers } from './getScratchPadHandlers';
 
-export { showAutomationPanel } from './panels/devicePanels/showAutomationPanel';
+export { showDevicePanel } from './panels/devicePanels/showDevicePanel';
 export { showDevicePanelForType } from './panels/devicePanels/showDevicePanelForType';
 
 // ── Editing Tool ──────────────────────────────────────────────────────────────

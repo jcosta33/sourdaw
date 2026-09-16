@@ -12,6 +12,7 @@ import {
     findQuarantineReason,
     GAUGE_NAMES,
     hasLivePluginOnTrack,
+    isRunningEngineTitle,
     MONOTONIC_COUNTER_NAMES,
     parseArgs,
     parseEngineTitle,
@@ -129,6 +130,40 @@ describe('parseEngineTitle', () => {
 
     it('refuses a title that is not the engine dot', () => {
         expect(() => parseEngineTitle('Output latency 11.0 ms')).toThrow('does not start with "Engine: "');
+    });
+});
+
+describe('isRunningEngineTitle', () => {
+    // `useStatusBarMetrics.ts`'s `describeEngineIndicator` (#3706) names the
+    // engine the dot describes; these are the exact titles it composes.
+    it('accepts a healthy running native carrier', () => {
+        expect(
+            isRunningEngineTitle('Engine: native running · Web Audio: running · missed render deadlines: 0 (0.0 ms)')
+        ).toBe(true);
+    });
+
+    it('accepts a running Web Audio carrier', () => {
+        expect(isRunningEngineTitle('Engine: Web Audio running · missed render deadlines: 0 (0.0 ms)')).toBe(true);
+    });
+
+    it('refuses a running native carrier with an output stream fault', () => {
+        expect(
+            isRunningEngineTitle(
+                'Engine: native running · native output stream fault: deviceDisconnected · Web Audio: running'
+            )
+        ).toBe(false);
+    });
+
+    it('refuses a native carrier with no diagnostics reading yet', () => {
+        expect(isRunningEngineTitle('Engine: native (no reading yet) · Web Audio: running')).toBe(false);
+    });
+
+    it('refuses a stopped native carrier', () => {
+        expect(isRunningEngineTitle('Engine: native stopped · Web Audio: running')).toBe(false);
+    });
+
+    it('refuses the pre-#3706 single-carrier vocabulary, which no current build writes', () => {
+        expect(isRunningEngineTitle('Engine: running · missed render deadlines: 0 (0.0 ms)')).toBe(false);
     });
 });
 

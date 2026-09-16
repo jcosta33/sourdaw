@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { PATTERN_TEMPLATES as rawPatternTemplates } from '../../services/MidiPatternLibrary';
 import { generateMidiViaLlm } from '../llmMidiGeneration';
 
 const mocks = vi.hoisted(() => ({
@@ -18,16 +19,6 @@ vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => ({
     streamCloudChatCompletion: mocks.streamCloudChatCompletion,
 }));
 
-vi.mock('../patternQueries/PATTERN_TEMPLATES', () => ({
-    PATTERN_TEMPLATES: [
-        {
-            name: 'Ambient Pad',
-            tags: ['ambient'],
-            generate: () => [{ pitch: 60, velocity: 100, startBeat: 0, durationBeats: 1 }],
-        },
-    ],
-}));
-
 const notificationEventBus = { emit: vi.fn().mockResolvedValue(undefined) };
 const validNotes = JSON.stringify({
     notes: [
@@ -36,11 +27,32 @@ const validNotes = JSON.stringify({
     ],
 });
 
+// The real pattern registry is deterministic (pure theory, no randomness), so
+// the fallback tests run against it and observe the params the fallback hands
+// to the matched template. Spying on the raw service template covers both
+// match paths (library filter and registry scan), which each wrap `generate`
+// in their own public adapter. "Scale Run" (id ml-scale) has no scale
+// override, so its output pitches expose the admitted key/scale directly.
+const D_MAJOR_RUN_PITCH_CLASSES = [1, 2, 4, 6, 7, 9, 11, 1];
+const C_MINOR_RUN_PITCH_CLASSES = [0, 2, 3, 5, 7, 8, 10, 0];
+
+function spyOnTemplateGenerate(templateId: string) {
+    const template = rawPatternTemplates.find((entry) => entry.id === templateId);
+    if (!template) {
+        throw new Error(`Expected template ${templateId} in the pattern registry`);
+    }
+    return vi.spyOn(template, 'generate');
+}
+
 describe('generateMidiViaLlm', () => {
     beforeEach(() => {
         injectDependencies(notifyUser, { eventBus: notificationEventBus });
         vi.clearAllMocks();
         mocks.resolveBackend.mockReturnValue('none');
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
     });
 
     it('uses the built-in pattern when no retained provider is available', async () => {
@@ -49,6 +61,10 @@ describe('generateMidiViaLlm', () => {
         expect(notes.length).toBeGreaterThan(0);
         expect(mocks.generateWebLlmCompletion).not.toHaveBeenCalled();
         expect(mocks.streamCloudChatCompletion).not.toHaveBeenCalled();
+        expect(notificationEventBus.emit).toHaveBeenCalledWith(
+            'ui.notify',
+            expect.objectContaining({ level: 'warning', message: expect.stringContaining('built-in pattern') })
+        );
     });
 
     it('accumulates hosted stream tokens into validated MIDI notes', async () => {
@@ -86,5 +102,43 @@ describe('generateMidiViaLlm', () => {
 
         expect(notes.length).toBeGreaterThan(0);
         expect(mocks.generateWebLlmCompletion).toHaveBeenCalledOnce();
+    });
+
+    it('admits the requested key and scale into the matched built-in template', async () => {
+        const generateSpy = spyOnTemplateGenerate('ml-scale');
+
+        const notes = await generateMidiViaLlm('ascending scale in D major');
+
+        expect(generateSpy).toHaveBeenCalledWith({ key: 'D', scale: 'major', density: 5, complexity: 5 });
+        expect(notes.map((note) => note.pitch % 12)).toEqual(D_MAJOR_RUN_PITCH_CLASSES);
+    });
+
+    it('admits a repeated request in another key and scale', async () => {
+        const generateSpy = spyOnTemplateGenerate('ml-scale');
+
+        const notes = await generateMidiViaLlm('ascending scale in C minor');
+
+        expect(generateSpy).toHaveBeenCalledWith({ key: 'C', scale: 'minor', density: 5, complexity: 5 });
+        expect(notes.map((note) => note.pitch % 12)).toEqual(C_MINOR_RUN_PITCH_CLASSES);
+    });
+
+    it('keeps the built-in defaults when the prompt names no key or scale', async () => {
+        const generateSpy = spyOnTemplateGenerate('ml-scale');
+
+        const notes = await generateMidiViaLlm('ascending scale');
+
+        expect(generateSpy).toHaveBeenCalledWith({ key: 'C', scale: 'minor', density: 5, complexity: 5 });
+        expect(notes.map((note) => note.pitch % 12)).toEqual(C_MINOR_RUN_PITCH_CLASSES);
+    });
+
+    it('preserves the requested key and scale when an unreadable response falls back', async () => {
+        mocks.resolveBackend.mockReturnValue('webllm');
+        mocks.generateWebLlmCompletion.mockResolvedValue('not json at all');
+        const generateSpy = spyOnTemplateGenerate('ml-scale');
+
+        const notes = await generateMidiViaLlm('ascending scale in D major');
+
+        expect(generateSpy).toHaveBeenCalledWith({ key: 'D', scale: 'major', density: 5, complexity: 5 });
+        expect(notes.map((note) => note.pitch % 12)).toEqual(D_MAJOR_RUN_PITCH_CLASSES);
     });
 });

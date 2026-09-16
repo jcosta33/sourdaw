@@ -30,7 +30,7 @@ Write standard Node scripts against the `playwright` core library and execute th
 
 ### 3. Use `setupAgentBrowser`
 
-Initialize with `setupAgentBrowser` from `.agents/ui-scripts/utils.ts`: it launches headless Chromium, navigates to `process.env.BASE_URL || 'http://localhost:5173'`, and returns `{ browser, page }`. One shared launcher is one place to fix flakiness.
+Initialize with `setupAgentBrowser` from `.agents/ui-scripts/utils.ts`: it launches headless Chromium, navigates to `process.env.BASE_URL` or, absent that, the port `SOURDAW_E2E_PORT` selects (5173 by default, like e2e), and returns `{ browser, page }`. Before navigating it asserts the serving checkout's identity and refuses a dev server belonging to another checkout. One shared launcher is one place to fix flakiness.
 
 ### 4. Structured output: JSON to stdout only
 

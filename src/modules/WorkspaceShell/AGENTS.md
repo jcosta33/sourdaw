@@ -13,7 +13,7 @@ Top-level DAW application shell layout, dockable and collapsible panels, workspa
 - `stores`: `workspaceStore` (`WorkspaceState`, `EditingTool`, `defaultWorkspaceState`), `toolSwapStore`, `alphaNoticeStore`.
 - `presentations/views`: `AgentWorkspace`, `AppShell`, `WorkspaceAppBoundary`, `WorkspaceMobileGate`, `WorkspaceProjectLoadingFallback`, `WorkspaceRouteView`.
 - Shell-private presentation: `presentations/hooks/useProjectMutationRefusal` (`ProjectMutationRefusal`, `deriveProjectMutationRefusal`) and `presentations/components/ProjectMutationRefusedBanner`. Not exported across modules — the shell is the only surface that renders them.
-- `events`: `ShowDevicePanelPayload`, `NotifyPayload`, `ConfirmPayload`, `PromptPayload`, `ZoomToSelectionPayload`, `ToggleVoiceCommandPayload`, `ImportMidiPayload`, MIDI payload types.
+- `events`: `ShowDevicePanelGenericPayload`, `NotifyPayload`, `ConfirmPayload`, `PromptPayload`, `ZoomToSelectionPayload`, `ToggleVoiceCommandPayload`, `ImportMidiPayload`, MIDI payload types.
 - Handlers: `getWorkspaceHandlers`, `getScratchPadHandlers`.
 
 ## Key Subsystems

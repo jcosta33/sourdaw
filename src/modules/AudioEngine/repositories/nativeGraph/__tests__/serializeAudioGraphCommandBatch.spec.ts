@@ -292,6 +292,36 @@ describe('serializeAudioGraphCommandBatch', () => {
     });
 
     /**
+     * The same flattening as `set-device-parameters`, and a boolean that must
+     * travel as itself: a serializer that coerced the bypass to a presence
+     * flag would make "un-bypass" indistinguishable from "no write at all".
+     */
+    it('flattens a device bypass batch onto the graph.rs set-device-bypass spelling', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'set-device-bypass',
+                    target: { trackId: 'track-1', deviceId: 'dev-knead' },
+                    bypassed: true,
+                },
+                {
+                    kind: 'set-device-bypass',
+                    target: { trackId: 'track-1', deviceId: 'dev-knead' },
+                    bypassed: false,
+                },
+            ],
+        });
+
+        expect(wire.commands).toEqual([
+            { kind: 'set-device-bypass', trackId: 'track-1', deviceId: 'dev-knead', bypassed: true },
+            { kind: 'set-device-bypass', trackId: 'track-1', deviceId: 'dev-knead', bypassed: false },
+        ]);
+        // Flattened, not nested: the mirror has no `target` field to read.
+        expect(Object.keys(wire.commands[0] ?? {})).toEqual(['kind', 'trackId', 'deviceId', 'bypassed']);
+    });
+
+    /**
      * The same flattening for a live note, and one more thing the mapper turns
      * on: a note carries no timeline position, so every field it does carry is
      * the whole of what the engine has to place it by.
@@ -560,6 +590,35 @@ describe('serializeAudioGraphCommandBatch', () => {
         // Omitted, not `undefined`: the payload stays exactly what the engine
         // took before banks existed.
         expect(Object.keys(inserted.device)).toEqual(['id', 'name', 'type', 'bypassed', 'parameterValues']);
+    });
+
+    /// #2865 — the native wire has no envelope vocabulary. A playback that
+    /// carries one reaching this seam means a producer defect (the native
+    /// producers gate envelope-carrying clips back onto Web Audio), and the
+    /// honest answer is a refusal the caller can read, never a silently
+    /// dropped curve that prints the clip flat.
+    it('refuses a schedule-clip carrying a gain envelope rather than dropping it', () => {
+        expect(() =>
+            serializeAudioGraphCommandBatch({
+                schemaVersion: 1,
+                commands: [
+                    {
+                        kind: 'schedule-clip',
+                        playback: {
+                            trackId: 'track-1',
+                            source: { sourceId: 'take-1' },
+                            startTime: 0,
+                            sourceOffsetSeconds: 0,
+                            durationSeconds: 0.5,
+                            playbackRate: 1,
+                            gain: 1,
+                            envelope: [{ timeSec: 0, gain: 10 ** (-12 / 20) }],
+                            fade: { microFadeSeconds: 0 },
+                        },
+                    },
+                ],
+            })
+        ).toThrow('gain envelope cannot cross the native wire');
     });
 });
 

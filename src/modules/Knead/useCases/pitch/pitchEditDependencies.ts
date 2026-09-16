@@ -13,6 +13,10 @@ type CommitPitchEditInput = {
     audioBufferId?: string;
     segments: PitchEditSegment[];
     contour: PitchContour;
+    /** The live settings the bake must reproduce (#2058): the render replaces
+     *  the clip's audio, so anything omitted here is dropped for good. */
+    retuneSpeedMs: number;
+    formantPreserve: boolean;
 };
 
 /** The render reports which cache entry now holds the edited audio, so the commit

@@ -335,6 +335,11 @@ export const kneadStore = createStore<KneadStoreState>({
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => defaultKneadState,
+        projectCommittedLocalState: ({ authorityValue, localValue }) => ({
+            ...authorityValue,
+            isAnalyzing: localValue.isAnalyzing,
+            analysisProgress: localValue.analysisProgress,
+        }),
     }),
     initialData: defaultKneadState,
 });

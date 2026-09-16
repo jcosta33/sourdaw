@@ -2738,6 +2738,52 @@ describe('AudioEngine', () => {
         });
     });
 
+    // ── findLufsMeterReading: deviceId-keyed read path for the builtin meter ────
+    //
+    // Owns the strip/device-node traversal so the meter panel never reaches
+    // into strip internals; the reader rides the loaded device node (issue #3740).
+    describe('findLufsMeterReading', () => {
+        function pushLufsDevice(eng: AudioEngine, trackId: string, deviceId: string, withReader: boolean) {
+            const strip = eng.ensureTrackStrip(trackId);
+            const reader = {
+                read: vi.fn(() => ({
+                    window: 'momentary' as const,
+                    value: -14.2,
+                    momentary: -14.2,
+                    shortTerm: -16.5,
+                    integrated: -15.1,
+                })),
+                setWindow: vi.fn(),
+                window: vi.fn(() => 'momentary' as const),
+            };
+            strip.deviceNodes.push({
+                deviceId,
+                type: withReader ? 'builtin-lufs-meter' : 'builtin-gain',
+                nodes: [],
+                ...(withReader ? { lufsMeter: reader } : {}),
+            } as never);
+            return reader;
+        }
+
+        it('reads the matching meter device across tracks', () => {
+            pushLufsDevice(engine, 'tA', 'lufs-a', false);
+            const readerB = pushLufsDevice(engine, 'tB', 'lufs-b', true);
+
+            const reading = engine.findLufsMeterReading('lufs-b');
+            expect(reading).not.toBeNull();
+            expect(reading?.value).toBe(-14.2);
+            expect(readerB.read).toHaveBeenCalled();
+        });
+
+        it('returns null for a missing device or a device without a meter reader', () => {
+            pushLufsDevice(engine, 'tA', 'lufs-a', false);
+
+            expect(engine.findLufsMeterReading('nope')).toBeNull();
+            // deviceId exists but carries no lufsMeter surface.
+            expect(engine.findLufsMeterReading('lufs-a')).toBeNull();
+        });
+    });
+
     // ── Fix 6: the transport SAB allocation is guarded by hasSharedArrayBuffer ────
     //
     // The module-level singleton constructs the engine at import time. The

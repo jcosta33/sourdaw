@@ -14,7 +14,14 @@ import { cn } from '#/utils/Styles/cn';
 import { AGENT_EXECUTION_MODES, type AgentExecutionMode } from '../../models/AgentExecutionMode';
 import { type ChatMessage } from '../../models/Chat';
 import { agentRunStore } from '../../stores/agentRunStore';
-import { chatStore, clearChatMessages, toggleReasoning, setChatMode, stopGenerating } from '../../stores/chatStore';
+import {
+    chatStore,
+    appendChatMessage,
+    clearChatMessages,
+    toggleReasoning,
+    setChatMode,
+    stopGenerating,
+} from '../../stores/chatStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
 import { selectPreparedStemImportManualRepairs } from '../../stores/selectPreparedStemImportManualRepairs';
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
@@ -251,12 +258,31 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         }
     }, [chatState?.messages]);
 
-    const handleSend = () => {
-        if (!inputValue.trim() || chatState?.isGenerating) {
+    const handleSend = (): void => {
+        const request = inputValue.trim();
+        if (!request || chatState?.isGenerating) {
             return;
         }
-        void sendChatMessage(inputValue.trim(), { mode: executionMode });
         setInputValue('');
+        void sendChatMessage(request, { mode: executionMode }).then(
+            () => {
+                // Admission accepted: keep the composer clear unless newer text already replaced it.
+                setInputValue((current) => (current === request ? '' : current));
+            },
+            (error: unknown) => {
+                // Rejected before admission, so no conversation message was appended: restore the
+                // request for retry and announce the failure in the conversation.
+                const reason = error instanceof Error ? error.message : 'The message could not be sent.';
+                setInputValue((current) => (current.length === 0 ? request : current));
+                appendChatMessage({
+                    id: `msg-${crypto.randomUUID()}`,
+                    role: 'assistant',
+                    content: reason,
+                    timestamp: Date.now(),
+                    error: reason,
+                });
+            }
+        );
 
         // Return focus to input area after sending
         setTimeout(() => {

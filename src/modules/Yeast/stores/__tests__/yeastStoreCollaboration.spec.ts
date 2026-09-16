@@ -67,6 +67,10 @@ function createStorage() {
             localState = state;
             storage.storage.set(state);
         },
+        clear: () => {
+            localState = null;
+            storage.storage.clear();
+        },
         // Flushes ONLY this view's pending write. The module-wide
         // flushAutomergeStorageWrites() would also commit every other peer
         // storage's unflushed pending — against whichever port is configured.
@@ -112,6 +116,21 @@ describe('Yeast collaboration storage', () => {
 
         expect(mergedStorage.hydrate()).toBe(true);
         expect(mergedStorage.get()?.processors.map((processor) => processor.id)).toEqual(['left', 'right']);
+    });
+
+    it('deletes the active Yeast slot when storage is cleared', () => {
+        const peer = createPeer(from<RootDocument>({}));
+        const storage = createStorage();
+        configureAutomergeStoragePort(peer.port);
+        storage.set(createState([createProcessor('processor')]));
+        storage.flushPending();
+        expect(peer.getDoc()).toHaveProperty('yeast');
+
+        storage.clear();
+        storage.flushPending();
+
+        expect(peer.getDoc()).not.toHaveProperty('yeast');
+        expect(storage.get()).toBeNull();
     });
 
     it('preserves concurrent edits to different processor entities', () => {

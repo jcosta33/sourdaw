@@ -69,6 +69,14 @@ type RenderTrackSubgraphOfflineInput = {
      * case only renders what it is handed.
      */
     renderTracks: readonly Track[];
+    /**
+     * Tracks besides the target whose strip output mixes into the print — the
+     * send-return buses a bounce includes so the wet path it prints reaches the
+     * destination. A return's own `outputId` lies outside the subgraph, so
+     * without this its processed output routes nowhere. The caller owns the
+     * selection; this use case only wires what it is handed.
+     */
+    printTrackIds?: readonly string[];
     startBeat: number;
     endBeat: number;
     /** Seconds appended after the region so reverb/delay tails ring out. */
@@ -114,6 +122,7 @@ type RenderTrackSubgraphOfflineInput = {
 export async function renderTrackSubgraphOffline({
     targetTrackId,
     renderTracks,
+    printTrackIds = [],
     startBeat,
     endBeat,
     tailSeconds = 0,
@@ -173,6 +182,8 @@ export async function renderTrackSubgraphOffline({
     // afterwards is registered too late and the device degrades silently.
     const renderTrackIds = new Set(renderTracks.map((track) => track.id));
     const keyedSidechainDevices = new Set<object>();
+    /** Tracks whose only role here is feeding a keyed device's detector. */
+    const sidechainKeySourceIds = new Set<string>();
     for (const route of sidechainRoutes) {
         if (!renderTrackIds.has(route.sourceTrackId)) {
             continue;
@@ -183,6 +194,7 @@ export async function renderTrackSubgraphOffline({
         );
         if (targetDevice?.type === 'builtin-sidechain-compressor') {
             keyedSidechainDevices.add(targetDevice);
+            sidechainKeySourceIds.add(route.sourceTrackId);
         }
     }
     await prepareOfflineContext({
@@ -220,11 +232,20 @@ export async function renderTrackSubgraphOffline({
                 // shows that silent waveform on an unmuted track. The renderer this
                 // replaced never consulted `muted` at all.
                 //
+                // The one exception is the sidechain-key role. Live taps the key
+                // after `TrackNode.setMute` has zeroed `postFaderGain` (the
+                // analyser hangs off the panner), so a muted key feeds the
+                // detector silence and its compression disappears. Force-unmuting
+                // the key's strip here prints compression the monitored sound does
+                // not have. Target and content contributors keep the force-unmute
+                // above; only a track whose detector feed this render wires gets
+                // its own mute honored.
+                //
                 // The VCA multiplier is per-track and asymmetric here; see
                 // `resolveContributorVcaMultiplier` for why the target is the one
                 // track that does not get it.
                 {
-                    honorMuted: false,
+                    honorMuted: sidechainKeySourceIds.has(track.id),
                     vcaMultiplier: resolveContributorVcaMultiplier({
                         track,
                         isTarget: track.id === targetTrackId,
@@ -253,7 +274,7 @@ export async function renderTrackSubgraphOffline({
                 continue;
             }
 
-            if (track.id === targetTrackId) {
+            if (track.id === targetTrackId || printTrackIds.includes(track.id)) {
                 strip.outputNode.connect(offlineCtx.destination);
             } else {
                 const downstream = trackStripsById.get(track.outputId);

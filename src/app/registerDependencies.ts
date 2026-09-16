@@ -7,7 +7,6 @@ import {
 } from '#/modules/Arrangement/events';
 import { type AudioDeviceLoadedPayload, type AudioDeviceRemovedPayload } from '#/modules/AudioEngine/events';
 import {
-    type ShowDevicePanelPayload,
     type ShowDevicePanelGenericPayload,
     type VoidPayload,
     type NotifyPayload,
@@ -31,24 +30,8 @@ export type AppEvents = {
     'audioDevice.loaded': AudioDeviceLoadedPayload;
     'audioDevice.removed': AudioDeviceRemovedPayload;
 
-    // Panel toggles (generic — prefer this over per-device events)
+    // Panel toggles
     'panel.showDevice': ShowDevicePanelGenericPayload;
-
-    // Panel toggles (per-device — deprecated, use 'panel.showDevice' instead)
-    'panel.showFermenter': ShowDevicePanelPayload;
-    'panel.showToaster': ShowDevicePanelPayload;
-    'panel.showLevain': ShowDevicePanelPayload;
-    'panel.showDutchOven': ShowDevicePanelPayload;
-    'panel.showGluten': ShowDevicePanelPayload;
-    'panel.showBacteria': ShowDevicePanelPayload;
-    'panel.showGrinder': ShowDevicePanelPayload;
-    'panel.showProof': ShowDevicePanelPayload;
-    'panel.showYeast': ShowDevicePanelPayload;
-    'panel.showScoring': ShowDevicePanelPayload;
-    'panel.showCrust': ShowDevicePanelPayload;
-    'panel.showCrumbs': ShowDevicePanelPayload;
-    'panel.showGrandBoule': ShowDevicePanelPayload;
-    'panel.showAutomation': VoidPayload;
 
     // Dialog triggers
     'dialog.openExport': VoidPayload;

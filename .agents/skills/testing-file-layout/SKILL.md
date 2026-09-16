@@ -43,6 +43,23 @@ pnpm test:run path/to/__tests__/file.spec.ts
 
 An unrun test is not a test.
 
+### 7. MIDI note-correlation regressions prove the rack boundary
+
+When a MIDI transform or filter stores a Note On decision for a later Note Off,
+test supplied `noteInstanceId` values through `MidiRack`. Attack one equal-pitch
+note, change the deciding parameter while it remains held, then attack and
+release a second identity before the first. Assert the emitted identity and
+transformed pitch or suppression, and make the fixture fail if instance
+correlation is replaced by channel/pitch FIFO. Keep identityless FIFO coverage
+separate.
+
+### 8. Prefix-dependent inverses need real grouped replay
+
+PR #4071's forward comp-then-remove case proved that the removed lane stayed absent, but it did not inspect the
+removal inverse's intermediate snapshot or run grouped undo and redo. When one batch member snapshots state produced
+by an earlier member, inspect the real history entry and replay the group against both raw CRDT authority and its store
+projection; a correct forward final state alone cannot prove the inverse was composed from the batch prefix.
+
 ## References
 
 - [docs/06-testing.md](../../../docs/06-testing.md) — Vitest layout, mocks, DI in tests.

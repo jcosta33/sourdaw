@@ -105,14 +105,39 @@ export const setGrinderParamWithAudio = inject(grinderParamBridgeDependencies)((
         }
 
         const compositeKey = `${deviceId}:${key}`;
-        paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, key, value }, flushParam);
 
-        if (coupled) {
+        // Ordering law: neuralEnabled and engineMode both write NeuralCapture::engine_mode
+        // in DSP (crates/daw-dsp/src/grinder/neural.rs: engineMode -> EngineMode::from_index,
+        // neuralEnabled -> Hybrid when > 0.5 else Circuit).
+        // Because neuralEnabled > 0.5 unconditionally sets Hybrid, neuralEnabled must ALWAYS
+        // be scheduled before engineMode so that the coarse boolean lands first on the audio
+        // engine and the exact engineMode pick lands second. This ensures specific modes like
+        // 'capture' are not overwritten with 'hybrid'.
+        // When key === 'engineMode', schedule coupled (neuralEnabled) first, engineMode second.
+        // When key === 'neuralEnabled', schedule neuralEnabled first, coupled (engineMode) second.
+        if (key === 'engineMode' && coupled) {
             paramBatcher.schedule(
                 `${deviceId}:${coupled.key}`,
                 { deviceId: target.deviceId, key: coupled.key, value: coupled.value },
                 flushParam
             );
+            paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, key, value }, flushParam);
+        } else if (key === 'neuralEnabled' && coupled) {
+            paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, key, value }, flushParam);
+            paramBatcher.schedule(
+                `${deviceId}:${coupled.key}`,
+                { deviceId: target.deviceId, key: coupled.key, value: coupled.value },
+                flushParam
+            );
+        } else {
+            paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, key, value }, flushParam);
+            if (coupled) {
+                paramBatcher.schedule(
+                    `${deviceId}:${coupled.key}`,
+                    { deviceId: target.deviceId, key: coupled.key, value: coupled.value },
+                    flushParam
+                );
+            }
         }
     };
 });

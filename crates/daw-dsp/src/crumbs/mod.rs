@@ -19,7 +19,6 @@ pub mod smooth;
 pub mod streaming;
 pub mod types;
 pub mod voice;
-pub mod warp;
 
 use std::sync::Arc;
 
@@ -100,7 +99,7 @@ impl CrumbsInstance {
             .handle_command(CrumbsCommand::SetParam { param, value });
     }
 
-    /// Set the operating mode by name (`quick`, `drum`, `slice`, `warp`,
+    /// Set the operating mode by name (`quick`, `drum`, `slice`,
     /// `record`).
     pub fn set_mode(&mut self, mode: &str) {
         let Some(mode) = parse_crumbs_mode(mode) else {
@@ -167,5 +166,12 @@ impl CrumbsInstance {
     /// pool; see `CrumbsEngine::read_active_voice_count`.
     pub fn active_voices(&self) -> u32 {
         u32::from(self.engine.read_active_voice_count())
+    }
+
+    /// Sample writes the pool refused because the instance's fixed sample
+    /// budget (`MAX_POOL_SAMPLES`) was exhausted. Non-zero means new samples
+    /// stopped landing silently; the host logs a warning when this moves.
+    pub fn dropped_sample_writes(&self) -> u32 {
+        self.engine.read_dropped_sample_writes()
     }
 }

@@ -11,14 +11,26 @@ vi.mock('../../../useCases/collaboration/leaveSession', () => ({
 }));
 
 describe('handleLeaveCollabSession', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.leaveSession.mockResolvedValue(undefined);
+    });
 
-    it('delegates to leaveSession use case', () => {
-        void handleLeaveCollabSession.execute({
+    it('delegates to leaveSession use case', async () => {
+        await handleLeaveCollabSession.execute({
             type: 'leaveCollabSession',
             payload: undefined,
         });
         expect(mocks.leaveSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('propagates teardown failure through the handler promise', async () => {
+        const failure = new Error('durable teardown failed');
+        mocks.leaveSession.mockRejectedValueOnce(failure);
+
+        await expect(handleLeaveCollabSession.execute({ type: 'leaveCollabSession', payload: undefined })).rejects.toBe(
+            failure
+        );
     });
 
     it('describes itself for the command palette / undo log', () => {

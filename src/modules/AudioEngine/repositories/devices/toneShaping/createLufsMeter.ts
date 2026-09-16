@@ -1,5 +1,7 @@
 import { type OfflineDeviceNode } from '../types';
 
+import { createLufsMeterReader } from './lufsMeterReader';
+
 // ── LUFS Meter ───────────────────────────────────────────────────────────
 
 export function createLufsMeter(ctx: BaseAudioContext): OfflineDeviceNode {
@@ -20,5 +22,11 @@ export function createLufsMeter(ctx: BaseAudioContext): OfflineDeviceNode {
     input.connect(kHighShelf);
     kHighShelf.connect(kHighpass);
     kHighpass.connect(analyser);
-    return { inputNode: input, outputNode: output, nodes: [input, output, kHighShelf, kHighpass, analyser] };
+    return {
+        inputNode: input,
+        outputNode: output,
+        nodes: [input, output, kHighShelf, kHighpass, analyser],
+        namedNodes: { input, output, kHighShelf, kHighpass, analyser },
+        lufsMeter: createLufsMeterReader(analyser, ctx.sampleRate),
+    };
 }

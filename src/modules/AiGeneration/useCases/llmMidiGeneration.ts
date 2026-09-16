@@ -2,6 +2,7 @@ import { generateWebLlmCompletion, resolveBackend, streamCloudChatCompletion } f
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createAiGenerationError } from '../errors/AiGenerationError';
+import { type KeyName, type ScaleType } from '../models/MidiPatternType';
 import { readBalancedObject } from '../services/readBalancedObject';
 
 import { filterTemplates } from './patternQueries/filterTemplates';
@@ -37,6 +38,103 @@ Examples of valid output:
 const MIN_GENERATION_NOTES = 4;
 const MAX_GENERATION_NOTES = 128;
 const MAX_GENERATED_NOTE_END_BEATS = 1024;
+
+// ── Built-in fallback key/scale admission ──
+
+const FALLBACK_KEY: KeyName = 'C';
+const FALLBACK_SCALE: ScaleType = 'minor';
+
+/**
+ * Scale phrases a prompt may name, longest first so "pentatonic minor" wins
+ * over plain "minor". Bare "pentatonic" is deliberately absent: the registry
+ * has both pentatonic variants and a bare mention does not say which.
+ */
+const SCALE_PHRASES: readonly (readonly [phrase: string, scale: ScaleType])[] = [
+    ['harmonic minor', 'harmonic-minor'],
+    ['minor pentatonic', 'pentatonic-minor'],
+    ['pentatonic minor', 'pentatonic-minor'],
+    ['major pentatonic', 'pentatonic-major'],
+    ['pentatonic major', 'pentatonic-major'],
+    ['dorian', 'dorian'],
+    ['blues', 'blues'],
+    ['major', 'major'],
+    ['minor', 'minor'],
+];
+
+const SCALE_PHRASE_ALTERNATION = SCALE_PHRASES.map(([phrase]) => phrase.replaceAll(' ', '\\s+')).join('|');
+
+// A note letter as a standalone word with an optional accidental ("f#",
+// "b flat", "e♭"). A letter only counts as a key when it is paired with a
+// scale name or a "key of" phrase, so ordinary prose never reads as one.
+const NOTE_PATTERN = String.raw`([a-g])(?:\s*(?:#|♯|sharp|b|♭|flat))?`;
+
+const KEY_BEFORE_SCALE_PATTERN = new RegExp(String.raw`\b${NOTE_PATTERN}\s+(?:${SCALE_PHRASE_ALTERNATION})\b`);
+const KEY_AFTER_SCALE_PATTERN = new RegExp(String.raw`\b(?:${SCALE_PHRASE_ALTERNATION})\s+in\s+${NOTE_PATTERN}\b`);
+const KEY_OF_PATTERN = new RegExp(String.raw`\bkey\s+of\s+${NOTE_PATTERN}\b`);
+
+/** Enharmonic note spellings resolved to registry key names. */
+const KEY_BY_NOTE: Record<string, KeyName> = {
+    c: 'C',
+    'c#': 'C#',
+    db: 'C#',
+    cb: 'B',
+    d: 'D',
+    'd#': 'D#',
+    eb: 'D#',
+    e: 'E',
+    f: 'F',
+    'f#': 'F#',
+    gb: 'F#',
+    fb: 'E',
+    g: 'G',
+    'g#': 'G#',
+    ab: 'G#',
+    a: 'A',
+    'a#': 'A#',
+    bb: 'A#',
+    b: 'B',
+};
+
+type RequestedKeyScale = { key: KeyName; scale: ScaleType };
+
+/**
+ * Read the key and scale a prompt names into the template registry's bounded
+ * enums. Anything the prompt does not name — or names outside those enums —
+ * keeps the built-in defaults, so fallback output never depends on freeform
+ * prompt text.
+ */
+function parseRequestedKeyAndScale(promptText: string): RequestedKeyScale {
+    const text = promptText.toLowerCase().replaceAll(/[-_]/g, ' ');
+    return {
+        key: parseRequestedKey(text) ?? FALLBACK_KEY,
+        scale: parseRequestedScale(text) ?? FALLBACK_SCALE,
+    };
+}
+
+function parseRequestedScale(text: string): ScaleType | null {
+    for (const [phrase, scale] of SCALE_PHRASES) {
+        if (new RegExp(String.raw`\b${phrase.replaceAll(' ', '\\s+')}\b`).test(text)) {
+            return scale;
+        }
+    }
+    return null;
+}
+
+function parseRequestedKey(text: string): KeyName | null {
+    const match =
+        KEY_BEFORE_SCALE_PATTERN.exec(text) ?? KEY_AFTER_SCALE_PATTERN.exec(text) ?? KEY_OF_PATTERN.exec(text);
+    return match ? noteToKey(match[1]!, match[2]) : null;
+}
+
+function noteToKey(note: string, accidental: string | undefined): KeyName | null {
+    const suffix = (accidental ?? '')
+        .replaceAll(/\s+/g, '')
+        .replace('sharp', '#')
+        .replace('flat', 'b')
+        .replace('♯', '#')
+        .replace('♭', 'b');
+    return KEY_BY_NOTE[`${note}${suffix}`] ?? null;
+}
 
 // ── Types ──
 
@@ -104,7 +202,10 @@ function fallbackToPatternMatch(promptText: string): MidiGenerationNote[] {
         );
 
     if (matched) {
-        const notes = matched.generate({ key: 'C', scale: 'minor', density: 5, complexity: 5 });
+        // Density and complexity keep the built-in defaults: the panel supplies
+        // neither for this path, and nothing else in the prompt bounds them.
+        const { key, scale } = parseRequestedKeyAndScale(query);
+        const notes = matched.generate({ key, scale, density: 5, complexity: 5 });
         return notes.map((note) => ({
             pitch: note.pitch,
             velocity: note.velocity,

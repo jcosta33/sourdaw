@@ -12,9 +12,10 @@ import { createSession } from '../createSession';
 const mockRuntime = vi.hoisted(() => ({
     state: { sessionSecret: null as string | null },
     cleanup: vi.fn<(owner?: object | null, requestWitness?: number) => boolean>(),
-    initialize: vi.fn<(assetOwnerId: string) => void>(),
+    initialize: vi.fn<(assetOwnerId: string) => Promise<void>>(),
     captureOwner: vi.fn<() => object | null>(),
-    retire: vi.fn<(owner: object | null) => void>(),
+    settleRetainedTeardown: vi.fn<() => Promise<void>>(),
+    runLifecycle: vi.fn(<T>(operation: () => Promise<T>) => operation()),
     startPlayheadBroadcast: vi.fn<() => void>(),
     startBranchSync: vi.fn<(isHost: boolean) => void>(),
     generatePeerId: vi.fn<() => string>(),
@@ -43,23 +44,25 @@ describe('createSession', () => {
         mockRuntime.pickPeerColor.mockReturnValue('#3b82f6');
         mockRuntime.captureOwner.mockReturnValue(owner);
         mockRuntime.cleanup.mockReturnValue(true);
+        mockRuntime.initialize.mockResolvedValue(undefined);
+        mockRuntime.settleRetainedTeardown.mockResolvedValue(undefined);
     });
 
-    it('mints a fresh room secret onto the session runtime', () => {
-        createSession('Host');
+    it('mints a fresh room secret onto the session runtime', async () => {
+        await createSession('Host');
 
         expect(mockRuntime.generateSessionSecret).toHaveBeenCalledTimes(1);
         expect(mockRuntime.state.sessionSecret).toBe('secret-1');
     });
 
-    it('returns the generated session id', () => {
+    it('returns the generated session id', async () => {
         mockRuntime.generateSessionId.mockReturnValue('sess-42');
 
-        expect(createSession('Host')).toBe('sess-42');
+        await expect(createSession('Host')).resolves.toBe('sess-42');
     });
 
-    it('resets prior runtime state before initializing the new host session', () => {
-        createSession('Host');
+    it('resets prior runtime state before initializing the new host session', async () => {
+        await createSession('Host');
 
         expect(mockRuntime.cleanup).toHaveBeenCalledTimes(1);
         expect(mockRuntime.initialize).toHaveBeenCalledExactlyOnceWith('project-owner-1');
@@ -67,14 +70,14 @@ describe('createSession', () => {
         expect(mockRuntime.startBranchSync).toHaveBeenCalledWith(true);
     });
 
-    it('requests a peer color that excludes no other peers for a fresh session', () => {
-        createSession('Host');
+    it('requests a peer color that excludes no other peers for a fresh session', async () => {
+        await createSession('Host');
 
         expect(mockRuntime.pickPeerColor).toHaveBeenCalledWith([]);
     });
 
-    it('writes the new session into the collaboration store as the host with no peers yet', () => {
-        createSession('Bob');
+    it('writes the new session into the collaboration store as the host with no peers yet', async () => {
+        await createSession('Bob');
 
         expect(collaborationStore.value).toEqual({
             isEnabled: true,
@@ -90,18 +93,18 @@ describe('createSession', () => {
         });
     });
 
-    it('cleans only its partial runtime when host setup fails', () => {
+    it('cleans only its partial runtime when host setup fails', async () => {
         mockRuntime.startBranchSync.mockImplementationOnce(() => {
             throw new Error('branch setup failed');
         });
 
-        expect(() => createSession('Host')).toThrow('branch setup failed');
+        await expect(createSession('Host')).rejects.toThrow('branch setup failed');
 
-        expect(mockRuntime.retire).toHaveBeenCalledExactlyOnceWith(owner);
         expect(mockRuntime.cleanup).toHaveBeenLastCalledWith(owner);
+        expect(mockRuntime.settleRetainedTeardown).toHaveBeenCalledTimes(2);
     });
 
-    it('preserves the host setup error when cleaning its partial runtime also fails', () => {
+    it('reports both the host setup error and a partial-runtime cleanup failure', async () => {
         const setupError = new Error('branch setup failed');
         const cleanupError = new Error('cleanup failed');
         mockRuntime.startBranchSync.mockImplementationOnce(() => {
@@ -111,18 +114,29 @@ describe('createSession', () => {
             throw cleanupError;
         });
 
-        let thrown: unknown;
-        try {
-            createSession('Host');
-        } catch (error) {
-            thrown = error;
-        }
-
-        expect(thrown).toBe(setupError);
-        expect(mockRuntime.retire).toHaveBeenCalledExactlyOnceWith(owner);
+        await expect(createSession('Host')).rejects.toEqual(
+            expect.objectContaining({ errors: [setupError, cleanupError] })
+        );
         expect(loggerMock.warn).toHaveBeenCalledWith(
             '[Collaboration] Failed to clean up host session setup:',
             cleanupError
         );
+    });
+
+    it('does not install a replacement until retained teardown settles', async () => {
+        const teardownEntered = Promise.withResolvers<void>();
+        const teardown = Promise.withResolvers<void>();
+        mockRuntime.settleRetainedTeardown.mockImplementationOnce(async () => {
+            teardownEntered.resolve();
+            await teardown.promise;
+        });
+
+        const creating = createSession('Host');
+        await teardownEntered.promise;
+
+        expect(mockRuntime.initialize).not.toHaveBeenCalled();
+        teardown.resolve();
+        await creating;
+        expect(mockRuntime.initialize).toHaveBeenCalledOnce();
     });
 });

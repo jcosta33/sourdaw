@@ -1,4 +1,5 @@
 import { type AppAction } from '#/utils/handlerContract';
+import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 
@@ -16,7 +17,7 @@ export function isImportedStemSetApplied(action: ImportStemSetAction): boolean {
     const expectedTracks = [folder, ...importedTracks];
     const exactTracksExist = expectedTracks.every((expectedTrack) => {
         const matchingTracks = state.tracks.filter((track) => track.id === expectedTrack.id);
-        return matchingTracks.length === 1 && JSON.stringify(matchingTracks[0]) === JSON.stringify(expectedTrack);
+        return matchingTracks.length === 1 && jsonValuesEqual(matchingTracks[0], expectedTrack);
     });
     if (!exactTracksExist) {
         return false;

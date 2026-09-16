@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react';
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -11,6 +11,19 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 import { type SampleItem } from '../../../components/Sidebar/sidebarConstants';
 import { type PreviewHandle } from '../../../hooks/usePreviewAudio';
 import { SamplesTab } from '../SamplesTab';
+
+const stagingMocks = vi.hoisted(() => ({
+    stageAudioBufferAsset: vi.fn(),
+    getAssetTransfer: vi.fn(),
+}));
+
+vi.mock('#/modules/AudioRendering/useCases', () => ({
+    stageAudioBufferAsset: stagingMocks.stageAudioBufferAsset,
+}));
+
+vi.mock('#/modules/Collaboration/useCases', () => ({
+    getAssetTransfer: stagingMocks.getAssetTransfer,
+}));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: vi.fn(() => ({ id: 'new-track-id', name: 'New Track', kind: 'audio' })),
@@ -147,7 +160,16 @@ describe('SamplesTab', () => {
         vi.mocked(addTrack).mockReset();
         vi.mocked(addTrack).mockReturnValue({ id: 'new-track-id', name: 'New Track', kind: 'audio' });
         vi.mocked(addClip).mockReset();
-        transportStore.set({ ...defaultTransportState });
+        stagingMocks.stageAudioBufferAsset.mockReset();
+        // Default: no staged identity — clips are placed without an assetHash,
+        // exactly as an insertion outside any shareable context would be.
+        stagingMocks.stageAudioBufferAsset.mockResolvedValue(null);
+        stagingMocks.getAssetTransfer.mockReturnValue({
+            stageLocalAsset: vi.fn(),
+            releaseStagedAsset: vi.fn(),
+            promoteStagedAsset: vi.fn(),
+        });
+        transportStore.set(structuredClone(defaultTransportState));
     });
 
     it('should render sample rows', () => {
@@ -309,7 +331,7 @@ describe('SamplesTab', () => {
         });
     });
 
-    it('resolves cached buffer duration and computes correct beats when durationSeconds is omitted on sample', () => {
+    it('resolves cached buffer duration and computes correct beats when durationSeconds is omitted on sample', async () => {
         transportStore.set({ ...defaultTransportState, tempo: 120 });
         vi.mocked(getCachedAudioBuffer).mockReturnValue({
             ...cachedBuffer,
@@ -323,14 +345,49 @@ describe('SamplesTab', () => {
         fireEvent.click(screen.getByText('Vocal Chop'));
 
         expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'b-cached' });
-        expect(addClip).toHaveBeenCalledWith({
-            trackId: 't1',
-            startBeat: 0,
-            endBeat: 6,
-            name: 'Vocal Chop',
-            type: 'audio',
-            audioBufferId: 'b-cached',
+        await waitFor(() => {
+            expect(addClip).toHaveBeenCalledWith({
+                trackId: 't1',
+                startBeat: 0,
+                endBeat: 6,
+                name: 'Vocal Chop',
+                type: 'audio',
+                audioBufferId: 'b-cached',
+            });
         });
+    });
+
+    // #3759 — a clicked sample becomes a shareable clip, so its cached PCM is
+    // staged first and the clip carries the staged hash; the lease is promoted
+    // once the clip commits.
+    it('stages the cached PCM and binds the staged hash when a sample is clicked', async () => {
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({ ...cachedBuffer, duration: 3.0 });
+        stagingMocks.stageAudioBufferAsset.mockResolvedValue({ hash: 'staged-hash', leaseId: 'staged-lease' });
+        vi.mocked(addClip).mockReturnValue({ id: 'clip-staged' } as ReturnType<typeof addClip>);
+        const promoteStagedAsset = vi.fn();
+        stagingMocks.getAssetTransfer.mockReturnValue({
+            stageLocalAsset: vi.fn(),
+            releaseStagedAsset: vi.fn(),
+            promoteStagedAsset,
+        });
+        const samples: SampleItem[] = [
+            { id: 's-cached', name: 'Vocal Chop', category: 'Vocals', duration: '3.0s', audioBufferId: 'b-cached' },
+        ];
+        renderSamplesTab({ samples });
+
+        fireEvent.click(screen.getByText('Vocal Chop'));
+
+        await waitFor(() => {
+            expect(addClip).toHaveBeenCalledWith(
+                expect.objectContaining({ trackId: 't1', name: 'Vocal Chop', assetHash: 'staged-hash' })
+            );
+        });
+        expect(stagingMocks.stageAudioBufferAsset).toHaveBeenCalledWith(
+            expect.objectContaining({ duration: 3.0 }),
+            'Vocal Chop'
+        );
+        expect(promoteStagedAsset).toHaveBeenCalledWith('staged-lease');
     });
 
     it('defaults to 8 beats when neither durationSeconds nor cached buffer is present', () => {

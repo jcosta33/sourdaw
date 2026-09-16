@@ -47,13 +47,23 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             continue;
         }
 
+        // Loop recording writes every pass into one continuous clip, so the
+        // take — not the shared clip — carries where its own pass begins.
+        // `segmentStartBeat - sourceStartBeat` is how far into the source a
+        // consumer reads: a pass recorded one loop length later sits that much
+        // deeper in the shared buffer, so its origin resolves before the clip's
+        // own start. Audio consumers address PCM through the clip's media-entry
+        // offset, which shifts by the same span.
+        const passOffsetBeats = take.sourceOffsetBeats ?? 0;
+
         resolved.push({
             ...sourceClip,
             startBeat: overlapStart,
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,
             regionEndBeat: overlapEnd,
-            sourceStartBeat: sourceClip.startBeat,
+            sourceStartBeat: sourceClip.startBeat - passOffsetBeats,
+            audioOffsetBeats: (sourceClip.audioOffsetBeats ?? 0) + passOffsetBeats,
         });
     }
 

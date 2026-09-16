@@ -7,6 +7,11 @@
     // eslint-comments, prettier, @stylistic, naming-convention, import-x/order,
     // no-restricted-syntax, consistent-return, no-invalid-this, no-octal).
     "plugins": ["typescript", "unicorn", "jsx-a11y", "import", "promise"],
+    // JS plugin: agent JS-isms oxlint does not implement natively (spread-as-clone,
+    // conditional empty spread, JSON.parse(JSON.stringify), long array chains,
+    // ternary-as-if). Native size ceilings stay in ESLint until their 541-file
+    // override is ported; do not enable those here in this change.
+    "jsPlugins": ["./scripts/oxlintCraft/plugin.mjs"],
     "env": {
         "browser": true,
         "builtin": true
@@ -41,7 +46,10 @@
         // deleting an entry and fixing its errors is the intended move.
         "scripts/download-levain-samples-direct.ts",
         "scripts/download-levain-samples.ts",
-        "scripts/__tests__/check-dependency-boundaries.spec.ts"
+        "scripts/__tests__/check-dependency-boundaries.spec.ts",
+        // Deliberate sourdaw-craft fixtures (if added): they exist to fail the
+        // JS plugin and would fail this pass if parsed as app code.
+        "scripts/oxlintCraft/__tests__/fixtures/**"
     ],
     "rules": {
         // ── ESLint core (from eslint.config.mjs explicit config) ────────────
@@ -265,7 +273,15 @@
         "jsx-a11y/role-has-required-aria-props": "error",
         "jsx-a11y/role-supports-aria-props": "warn",
         "jsx-a11y/scope": "error",
-        "jsx-a11y/tabindex-no-positive": "error"
+        "jsx-a11y/tabindex-no-positive": "error",
+
+        // ── sourdaw-craft (JS plugin) ───────────────────────────────────────
+        "sourdaw-craft/no-conditional-empty-spread": "error",
+        "sourdaw-craft/no-useless-clone-spread": "error",
+        "sourdaw-craft/no-spread-clone-array-method": "error",
+        "sourdaw-craft/no-json-parse-stringify": "error",
+        "sourdaw-craft/no-long-array-chain": "error",
+        "sourdaw-craft/no-control-flow-ternary": "error"
     },
     "overrides": [
         {

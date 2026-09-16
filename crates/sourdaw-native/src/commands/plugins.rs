@@ -511,6 +511,11 @@ fn quarantine_if_process_failure(registry_store: &PluginRegistryStore, path: &Pa
 /// descriptor pass already has: an instance helper that hangs or crashes is
 /// exactly as capable of poisoning every future scan of this candidate as a
 /// descriptor helper that does.
+///
+/// A response-write refusal gets its own reason rather than the generic
+/// fallback: there the plugin answered and the helper failed writing the
+/// answer down, so the generic text would read as the plugin's silence
+/// (#3866).
 fn apply_instance_scan_result(
     descriptor: &mut ScannedDescriptor,
     instance: Result<ScannedInstance, String>,
@@ -525,7 +530,11 @@ fn apply_instance_scan_result(
         Err(error) => {
             quarantine_if_process_failure(registry_store, path, &error);
             descriptor.parameter_metadata_reason =
-                Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string());
+                Some(if plugin_scan_worker::is_response_limit_refusal(&error) {
+                    plugin_scan_worker::response_limit_metadata_reason()
+                } else {
+                    scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string()
+                });
         }
     }
 }
@@ -6641,6 +6650,31 @@ mod tests {
         assert!(
             store.is_quarantined(path).is_none(),
             "a deadline miss is not a process failure and must not quarantine the bundle"
+        );
+    }
+
+    /// A response-write refusal is the helper's limit, not the plugin's
+    /// silence (#3866): the row must carry the helper-limit reason instead of
+    /// the generic inspection fallback, and must not quarantine. Mutation this
+    /// catches: dropping the `is_response_limit_refusal` branch in
+    /// `apply_instance_scan_result` leaves the generic reason in place.
+    #[test]
+    fn an_instance_pass_response_limit_refusal_names_the_helpers_limit() {
+        let store = PluginRegistryStore::in_memory_only();
+        let path = Path::new("/plugins/HugeParameterList.vst3");
+        let mut row = descriptor("com.vendor.huge-parameter-list");
+        let error = plugin_scan_worker::response_write_refusal_error(path);
+
+        apply_instance_scan_result(&mut row, Err(error), &store, path);
+
+        assert_eq!(
+            row.parameter_metadata_reason.as_deref(),
+            Some(plugin_scan_worker::response_limit_metadata_reason().as_str()),
+            "the row must blame the helper's limit rather than the plugin's silence"
+        );
+        assert!(
+            store.is_quarantined(path).is_none(),
+            "a helper write refusal is not evidence against the binary"
         );
     }
 

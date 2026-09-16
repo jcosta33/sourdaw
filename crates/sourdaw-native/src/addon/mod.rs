@@ -1315,6 +1315,17 @@ impl SourdawNative {
     }
 
     #[napi]
+    pub async fn get_crumbs_dropped_sample_writes(&self, instance_id: String) -> Result<u32> {
+        reason(
+            commands::crumbs::get_crumbs_dropped_sample_writes(
+                instance_id,
+                &self.singletons.crumbs,
+            )
+            .await,
+        )
+    }
+
+    #[napi]
     pub async fn detect_smart_loop_points(
         &self,
         instance_id: String,

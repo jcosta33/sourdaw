@@ -29,7 +29,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { useTracks } from '../../../hooks/useTracks';
@@ -79,6 +79,9 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         '#/modules/Arrangement/useCases'
     );
     return {
+        ...actual,
+        setClipAudioAssetStager: vi.fn(),
+        stageAudioBufferAsset: vi.fn(),
         acceptsExternalPluginAutomationParameter: vi.fn(),
         addMidiFx: actual.addMidiFx,
         addTake: vi.fn(),
@@ -99,6 +102,7 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         getEffectiveGain: vi.fn(),
         getFactoryPresets: vi.fn(),
         getGainAtBeat: vi.fn(),
+        getLastClipEndBeat: vi.fn(() => 0),
         getPlatformPlugins: actual.getPlatformPlugins,
         getPluginById: vi.fn(),
         getSynthParamsForTrack: vi.fn(),
@@ -232,6 +236,8 @@ vi.mock('#/modules/Knead/useCases', async () => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
+    startFaustNote: vi.fn(),
     writeNativeBuiltinParameters: vi.fn(),
     claimNativeSessionRearm: vi.fn(() => null),
     nativeSessionRearmClaimHolds: vi.fn(() => false),
@@ -552,6 +558,17 @@ function openStripMenu(): void {
 const GAIN_LANE_ID = 'lane-gain-strip-track';
 
 /**
+ * The beat the stubbed engine's cursor reports to the gesture clock. #3799
+ * stamps gesture samples from the moving playback clock, not the transport
+ * store: during playback `playheadPosition` holds the beat playback *started*
+ * at, so stamping from it collapses a whole ride onto one beat. The clock
+ * source is the same injection seam `setAutomationRecordingDependencies`
+ * uses, registered here the way `src/app/bootstrap.ts` registers it in
+ * production.
+ */
+let reportedCursorBeat = 0;
+
+/**
  * Arm a real automation recording session for the strip's gain: a lane to write
  * into, a rolling transport, and the latency-compensation seam the recorder
  * reads. `getCompensationDelay` is zero so a recorded beat is the playhead beat
@@ -561,6 +578,11 @@ function armGainAutomation(mode: 'write' | 'touch'): void {
     setAutomationRecordingDependencies({
         getAudioContext: () => ({ baseLatency: 0, outputLatency: 0 }) as unknown as AudioContext,
         getCompensationDelay: () => 0,
+    });
+    reportedCursorBeat = 0;
+    setGestureClockSource({
+        getAudioTimeSeconds: () => 0,
+        readNativeCursorBeats: () => reportedCursorBeat,
     });
     automationStore.set({
         lanes: [
@@ -588,8 +610,15 @@ function armGainAutomation(mode: 'write' | 'touch'): void {
     transportStore.set({ ...defaultTransportState, isPlaying: true, tempo: 120, playheadPosition: 0 });
 }
 
+/**
+ * Advance the moving playback clock the gesture capture reads. The transport
+ * store is deliberately left alone: writing `playheadPosition` mid-playback is
+ * the pre-#3799 stamping, so keeping the store parked at the playback-start
+ * beat is what makes these assertions discriminate — a capture that regressed
+ * to it would stamp the whole V onto beat 0 and lose the vertex.
+ */
 function movePlayheadTo(beat: number): void {
-    transportStore.set({ ...transportStore.value!, playheadPosition: beat });
+    reportedCursorBeat = beat;
 }
 
 function recordedGainPoints(): Array<{ beat: number; value: number }> {

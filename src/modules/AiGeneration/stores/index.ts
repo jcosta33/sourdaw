@@ -1,2 +1,2 @@
-export type { AiTaskType, AiTaskStatus, AiTaskResult, AiState } from './aiStore';
+export type { AiTaskType, AiTaskStatus, AiMidiGenerationTaskData, AiTaskResult, AiState } from './aiStore';
 export { aiStore } from './aiStore';

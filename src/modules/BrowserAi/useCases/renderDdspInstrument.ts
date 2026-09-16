@@ -18,7 +18,7 @@ import {
     finalizeDdspAudio,
     joinDdspChunkAudio,
 } from '../services/ddspRenderPipeline';
-import { type MidiNote, midiToDdspInput } from '../services/midiToDdspInput';
+import { type MidiNote, assertMonophonicNotes, midiToDdspInput } from '../services/midiToDdspInput';
 import { clearActiveRender, startActiveRender } from '../stores/inferenceProgressStore';
 import {
     cancelQueuedRender,
@@ -118,6 +118,10 @@ export const renderDdspInstrument = inject({
             if (!MODEL_RELEASE_ADMISSION.ddsp) {
                 throw new Error('DDSP rendering is not release-admitted');
             }
+            // DDSP is monophonic: refuse a polyphonic clip before any model
+            // work instead of letting overlapping notes overwrite each other's
+            // pitch frames in input order.
+            assertMonophonicNotes(notes);
             const targetSamples = targetSampleCount(durationSec, OUTPUT_SAMPLE_RATE);
             const instrument = resolveDdspInstrument(instrumentId);
             const nativeTargetSamples = targetSampleCount(durationSec, instrument.nativeSampleRate);

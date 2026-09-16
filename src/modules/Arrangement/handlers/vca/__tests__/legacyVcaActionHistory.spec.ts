@@ -17,6 +17,7 @@ import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     clearActionHistory as clearCrdtActionHistory,
     createCrdtDoc,
+    getCrdtDoc,
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
     registerCrdtStorageRuntime,
@@ -45,6 +46,16 @@ const noActionHistoryMetadataPort = {
 type LegacyVcaState = {
     groups: ReturnType<typeof getVcaGroupsState>;
     memberships: Array<{ trackId: string; vcaGroupId: string | null }>;
+};
+
+type RawTrackCleanupState = {
+    id: string;
+    inputId?: unknown;
+    armed?: unknown;
+};
+
+type RawProjectDocument = {
+    tracks?: { tracks: RawTrackCleanupState[] };
 };
 
 type NotificationEvents = {
@@ -483,7 +494,7 @@ describe('legacy VCA action history', () => {
                 type: 'setTrackInput',
                 payload: { trackId: DORMANT_ACTION_TRACK_ID, inputId: null },
             },
-            assertTrack: (track: Track) => expect(track.inputId).toBeNull(),
+            assertTrack: (track: RawTrackCleanupState) => expect(track.inputId).toBeNull(),
         },
         {
             label: 'disarm cleanup',
@@ -491,9 +502,9 @@ describe('legacy VCA action history', () => {
                 type: 'armTrack',
                 payload: { trackId: DORMANT_ACTION_TRACK_ID, armed: false },
             },
-            assertTrack: (track: Track) => expect(track.armed).toBe(false),
+            assertTrack: (track: RawTrackCleanupState) => expect(track.armed).toBe(false),
         },
-    ] satisfies Array<{ label: string; action: AppAction; assertTrack: (track: Track) => void }>)(
+    ] satisfies Array<{ label: string; action: AppAction; assertTrack: (track: RawTrackCleanupState) => void }>)(
         'records macro, replay, and undo history for permitted dormant $label',
         async ({ action, assertTrack }) => {
             seedDormantActionTarget();
@@ -502,11 +513,13 @@ describe('legacy VCA action history', () => {
             await executeAppAction(action);
 
             expect(trackStore.value).not.toEqual(before);
-            const updated = trackStore.value?.tracks.find((track) => track.id === DORMANT_ACTION_TRACK_ID);
+            const rawTracks = getCrdtDoc<RawProjectDocument>('root')?.tracks?.tracks;
+            const updated = rawTracks?.find((track) => track.id === DORMANT_ACTION_TRACK_ID);
             if (!updated) {
-                throw new Error('Expected updated dormant action target');
+                throw new Error('Expected updated dormant action target in committed tracks slot');
             }
             assertTrack(updated);
+            expect(trackStore.value?.tracks.some((track) => track.id === DORMANT_ACTION_TRACK_ID)).toBe(false);
             expect(macroStore.value?.currentRecording).toEqual([
                 expect.objectContaining({
                     type: action.type,

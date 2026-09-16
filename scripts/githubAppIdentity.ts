@@ -64,8 +64,18 @@ export const AUTHOR_MINT_PERMISSIONS = {
     pull_requests: 'write',
 } as const;
 
-export const AUTHOR_WORKFLOW_MINT_PERMISSIONS = {
+/**
+ * Publishing asserts pull-request metadata — `gh label create` and `gh pr edit --add-label`/
+ * `--milestone` — which needs issues write on top of the ordinary author scope. Publishing keeps
+ * its own sets so no other author command's token is broadened.
+ */
+export const PUBLISH_AUTHOR_MINT_PERMISSIONS = {
     ...AUTHOR_MINT_PERMISSIONS,
+    issues: 'write',
+} as const;
+
+export const PUBLISH_AUTHOR_WORKFLOW_MINT_PERMISSIONS = {
+    ...PUBLISH_AUTHOR_MINT_PERMISSIONS,
     workflows: 'write',
 } as const;
 
@@ -433,7 +443,9 @@ export async function authenticatePublishingAuthor(input: {
     const authorization = resolvePublishingAuthorAuthorization(input.lane, input.baseSha, input.capture, input.env);
     const authentication = await authenticateWithPermissions(
         { ...input, role: 'author' },
-        authorization.permissionClass === 'workflow' ? AUTHOR_WORKFLOW_MINT_PERMISSIONS : AUTHOR_MINT_PERMISSIONS
+        authorization.permissionClass === 'workflow'
+            ? PUBLISH_AUTHOR_WORKFLOW_MINT_PERMISSIONS
+            : PUBLISH_AUTHOR_MINT_PERMISSIONS
     );
     return { ...authentication, authorization };
 }

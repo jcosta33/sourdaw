@@ -11,9 +11,21 @@ import { NOTE_NAMES } from '#/utils/noteNames';
 import scoringProcessorUrl from '../services/scoringProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
-import { telemetryAllocator, createTelemetryReader, SCORING_IDX, type TelemetrySlot } from './telemetryAllocator';
+import {
+    createTelemetryReader,
+    SCORING_IDX,
+    SCORING_POLY_STRING_COUNT,
+    telemetryAllocator,
+    type TelemetrySlot,
+} from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/scoring/scoring_bg.wasm';
+
+export type TunerPolyStringTelemetry = {
+    active: boolean;
+    cents: number;
+    confidence: number;
+};
 
 export type TunerTelemetry = {
     frequency: number;
@@ -24,6 +36,8 @@ export type TunerTelemetry = {
     midiNote: number;
     noteName: string;
     active: boolean;
+    /** Per-string poly readings, low string first; empty while the tracker is off. */
+    polyStrings: readonly TunerPolyStringTelemetry[];
 };
 
 const INACTIVE_TUNER_TELEMETRY: TunerTelemetry = {
@@ -35,12 +49,38 @@ const INACTIVE_TUNER_TELEMETRY: TunerTelemetry = {
     octave: 0,
     midiNote: 0,
     noteName: '',
+    polyStrings: [],
 };
+
+/**
+ * Poly string triplets → readings. Pure: the seqlock reader may re-run it.
+ * A count past the published capacity is clamped — the worklet zeroes anything
+ * it did not write, so a larger claim would only read headroom zeros.
+ */
+function projectPolyStrings(view: Float32Array): readonly TunerPolyStringTelemetry[] {
+    const claimed = view[SCORING_IDX.polyCount] ?? 0;
+    const count = Math.max(0, Math.min(Math.floor(claimed), SCORING_POLY_STRING_COUNT));
+    const strings: TunerPolyStringTelemetry[] = [];
+    for (let i = 0; i < count; i++) {
+        const base = SCORING_IDX.polyBase + i * 3;
+        strings.push({
+            active: (view[base] ?? 0) > 0.5,
+            cents: view[base + 1] ?? 0,
+            confidence: view[base + 2] ?? 0,
+        });
+    }
+    return strings;
+}
 
 /** Slot floats → tuner telemetry. Pure: the seqlock reader may re-run it on retry. */
 function projectTunerTelemetry(view: Float32Array): TunerTelemetry {
+    // The mono and poly blocks publish under one seqlock bracket but gate
+    // independently: the poly tracker keeps reporting through strings ringing
+    // out while the mono readout has already released (no single dominant
+    // pitch), so the mono active flag must not blank the string rows.
+    const polyStrings = projectPolyStrings(view);
     if (view[SCORING_IDX.active] === 0) {
-        return INACTIVE_TUNER_TELEMETRY;
+        return { ...INACTIVE_TUNER_TELEMETRY, polyStrings };
     }
     const noteIndex = view[SCORING_IDX.noteIndex] ?? 0;
     return {
@@ -52,6 +92,7 @@ function projectTunerTelemetry(view: Float32Array): TunerTelemetry {
         octave: view[SCORING_IDX.octave] ?? 0,
         midiNote: view[SCORING_IDX.midiNote] ?? 0,
         noteName: NOTE_NAMES[noteIndex % 12] ?? 'C',
+        polyStrings,
     };
 }
 

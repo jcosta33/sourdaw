@@ -126,7 +126,7 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "pnpm exec playwright install --with-deps chromium"
+            "run": "for attempt in 1 2 3; do\n  if pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",
@@ -461,8 +461,11 @@
             }
           },
           {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
           },
           {
             "name": "Set up Node",
@@ -550,8 +553,11 @@
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
           },
           {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
           },
           {
             "name": "Set up Node",
@@ -587,8 +593,11 @@
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
           },
           {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
           },
           {
             "name": "Set up Node",
@@ -634,8 +643,11 @@
             }
           },
           {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
           },
           {
             "name": "Set up Node",
@@ -679,8 +691,11 @@
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
           },
           {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
           },
           {
             "name": "Set up Node",
@@ -696,7 +711,7 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "pnpm exec playwright install --with-deps chromium"
+            "run": "for attempt in 1 2 3; do\n  if pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run offline smoke set",
@@ -716,8 +731,11 @@
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
           },
           {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
           },
           {
             "name": "Set up Node",
@@ -749,8 +767,11 @@
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
           },
           {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
           },
           {
             "name": "Set up Node",
@@ -763,7 +784,8 @@
           },
           {
             "name": "Install ALSA development headers",
-            "run": "sudo apt-get update && sudo apt-get install -y libasound2-dev"
+            "shell": "bash",
+            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo apt-get update && sudo apt-get install -y libasound2-dev; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
           },
           {
             "name": "Install the pinned Rust toolchain",
@@ -858,8 +880,11 @@
             "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
           },
           {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
           },
           {
             "name": "Set up Node",
@@ -1466,11 +1491,17 @@
           },
           {
             "name": "Build the packaged desktop app",
+            "id": "build-packaged-app",
             "run": "pnpm desktop:build"
           },
           {
             "name": "Measure the packaged app",
             "run": "pnpm desktop:measure --json measurements/desktop-latency/nightly-${{ github.sha }}.json"
+          },
+          {
+            "name": "Prove the agent workspace in the packaged app",
+            "if": "always() && steps.build-packaged-app.outcome == 'success'",
+            "run": "pnpm desktop:agent-proof --json measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json"
           },
           {
             "name": "Upload the measurement record",
@@ -1479,6 +1510,16 @@
             "with": {
               "name": "desktop-latency-${{ github.sha }}",
               "path": "measurements/desktop-latency/nightly-${{ github.sha }}.json",
+              "retention-days": 90
+            }
+          },
+          {
+            "name": "Upload the agent workspace proof record",
+            "if": "always()",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "desktop-agent-workspace-${{ github.sha }}",
+              "path": "measurements/desktop-agent-workspace/nightly-${{ github.sha }}.json",
               "retention-days": 90
             }
           }
@@ -1539,7 +1580,7 @@
           },
           {
             "name": "Install Playwright browsers",
-            "run": "pnpm exec playwright install --with-deps chromium"
+            "run": "for attempt in 1 2 3; do\n  if pnpm exec playwright install --with-deps chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
           },
           {
             "name": "Run shard",

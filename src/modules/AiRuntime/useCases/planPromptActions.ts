@@ -40,6 +40,19 @@ export type PlannedPromptActions = {
     result: PlannedIntentResult;
 };
 
+/**
+ * A rejection the bounded correction may be admitted to repair. Schema and
+ * resolution vocabulary classifies older rejection strings; every
+ * application-owned bridge or compilation rejection names a concrete violated
+ * constraint, so it is correctable by construction.
+ */
+function isCorrectableRejection(rejectionReason: string | undefined): boolean {
+    if (rejectionReason === undefined) {
+        return false;
+    }
+    return /schema|target|resolv/iu.test(rejectionReason) || rejectionReason.startsWith('Provider action rejected:');
+}
+
 export async function planPromptActions(input: PlanPromptActionsInput): Promise<PlannedPromptActions> {
     const projectRevision = settlePendingProjectWritesAndCaptureRevision();
     const context = getProjectContext();
@@ -141,8 +154,8 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             onProviderAttempt
         );
         const initialCreativeAuthority = result.creativeAuthority ?? null;
-        const correctableValidationFailure =
-            result.rejectionReason !== undefined && /schema|target|resolv/i.test(result.rejectionReason);
+        const rejectionEvidence = result.rejectionEvidence;
+        const correctableValidationFailure = isCorrectableRejection(result.rejectionReason);
         const correctionAdmission = input.onProviderAttempt;
         if (
             correctableValidationFailure &&
@@ -155,7 +168,16 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 error: normalizeAgentFailure({
                     category: result.rejectionReason?.includes('schema') ? 'schema' : 'resolution',
                     source: 'provider-planning',
-                    related: { workIds: [streamIdentity.requestId] },
+                    related: {
+                        workIds: [streamIdentity.requestId],
+                        // Durable identity of the failing proposal item, so the
+                        // run record says what was rejected, not just that
+                        // something was.
+                        commandIds: rejectionEvidence?.command ? [rejectionEvidence.command.name] : undefined,
+                        targetIds: rejectionEvidence?.candidateIds
+                            ? [...rejectionEvidence.candidateIds].slice(0, 8)
+                            : undefined,
+                    },
                     retry: 'read-only',
                     knownDomain: true,
                 }),
@@ -199,7 +221,13 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 input.onProviderResult,
                 streamIdentity,
                 admitCorrectionAttempt,
-                { creativeAuthority: initialCreativeAuthority }
+                {
+                    creativeAuthority: initialCreativeAuthority,
+                    // The correction attempt repairs the named failure; without
+                    // this evidence both a missing and an ambiguous target
+                    // arrived as the same bare `agent.resolution` code.
+                    rejectionEvidence,
+                }
             );
         }
         if (result.preparationRequest === 'stem-import') {
@@ -266,7 +294,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         await discardStemImportScope();
     }
 
-    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(input.prompt, context, projectRevision);
+    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(context, projectRevision);
     const wholeProjectVibeMixAction = result.actions.find((action) => action.type === 'automateTrackGainRange');
     if (wholeProjectVibeMixScope && wholeProjectVibeMixAction) {
         result.wholeProjectVibeMixPlan = {

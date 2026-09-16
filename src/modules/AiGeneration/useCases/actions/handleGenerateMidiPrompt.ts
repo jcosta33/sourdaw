@@ -6,7 +6,7 @@ import { getTransportState } from '#/modules/Transport/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { getAiSnapshot } from '../../stores/aiStore';
+import { type AiMidiGenerationTaskData, getAiSnapshot } from '../../stores/aiStore';
 import { generateMidiViaLlm } from '../llmMidiGeneration';
 
 import { addTask } from './addTask';
@@ -16,6 +16,43 @@ type MidiGenerationNote = Awaited<ReturnType<typeof generateMidiViaLlm>>[number]
 
 function isTaskProcessing(taskId: string): boolean {
     return getAiSnapshot().tasks.some((task) => task.id === taskId && task.status === 'processing');
+}
+
+/**
+ * The Generate panel embeds the chosen instrument as prompt metadata
+ * (`[Genre: …, Instrument: Drum Kit, …] free text`). An accepted Drums choice
+ * has to reach a playable drum kit: GM drum pitches on a plain synth track
+ * play as pitched notes, not as drums (issue #3788).
+ */
+const PROMPT_METADATA_PATTERN = /^\[([^\]]*)\]\s*/u;
+const DRUM_KIT_DEVICE_TYPE = 'builtin-drum-kit';
+
+function isDrumKitDeviceType(type: string): boolean {
+    return type === DRUM_KIT_DEVICE_TYPE || type.startsWith('builtin-drum-machine');
+}
+
+function readInstrumentChoice(prompt: string): string | null {
+    const metadata = PROMPT_METADATA_PATTERN.exec(prompt)?.[1];
+    if (!metadata) {
+        return null;
+    }
+    for (const field of metadata.split(',')) {
+        const separator = field.indexOf(':');
+        if (separator < 0) {
+            continue;
+        }
+        if (field.slice(0, separator).trim().toLowerCase() === 'instrument') {
+            const value = field.slice(separator + 1).trim();
+            if (value.length > 0) {
+                return value;
+            }
+        }
+    }
+    return null;
+}
+
+function requestsDrums(instrumentChoice: string | null): boolean {
+    return instrumentChoice !== null && /drum/iu.test(instrumentChoice);
 }
 
 function hasDurableGeneration(clipId: string, expectedNotes: readonly MidiGenerationNote[]): boolean {
@@ -75,10 +112,29 @@ export async function handleGenerateMidiPrompt(
             return;
         }
 
+        const instrumentChoice = readInstrumentChoice(prompt);
+        const wantsDrumKit = requestsDrums(instrumentChoice);
+
         const selectedTrackId = initialTrackState?.selectedTrackId;
         const selectedMidiTrack = initialTrackState?.tracks.find(
             (track) => track.id === selectedTrackId && track.kind === 'midi'
         );
+
+        // An accepted Drums choice on a track that already owns other
+        // instruments must not mutate anything — least of all silently replace
+        // the existing instrument. Ask before touching the project.
+        const existingDevices = selectedMidiTrack?.devices ?? [];
+        const hasDrumKitAlready = existingDevices.some((device) => isDrumKitDeviceType(device.type));
+        if (wantsDrumKit && selectedMidiTrack && existingDevices.length > 0 && !hasDrumKitAlready) {
+            const instrumentNames = existingDevices.map((device) => `"${device.name}"`).join(', ');
+            updateTask(taskId, {
+                status: 'error',
+                error: `Drum Kit generation needs clarification: the selected MIDI track already carries ${instrumentNames}. Generate on a new drum track instead, or clear the track's instruments first.`,
+                durationMs: Math.round(performance.now() - start),
+            });
+            return;
+        }
+
         const targetTrackId = selectedMidiTrack?.id ?? `track-ai-${crypto.randomUUID()}`;
         const clipId = `clip-ai-${crypto.randomUUID()}`;
 
@@ -92,13 +148,25 @@ export async function handleGenerateMidiPrompt(
 
         const actions: AppAction[] = [];
         if (!selectedMidiTrack) {
+            const addTrackPayload: Extract<AppAction, { type: 'addTrack' }>['payload'] = {
+                id: targetTrackId,
+                name: prompt ? `AI: ${prompt.slice(0, 20)}` : 'AI MIDI',
+                kind: 'midi',
+            };
+            if (wantsDrumKit) {
+                // Drums land on a drum kit device added below; a default
+                // synth would leave the GM pitches playing as pitched notes.
+                addTrackPayload.withoutDefaultDevice = true;
+            }
+            actions.push({ type: 'addTrack', payload: addTrackPayload });
+        }
+        if (wantsDrumKit && !hasDrumKitAlready) {
+            // The track owns no instrument (fresh track, or an empty device
+            // chain), so adding the kit is additive — never a replacement — and
+            // rides in the same validated, undoable batch as the clip.
             actions.push({
-                type: 'addTrack',
-                payload: {
-                    id: targetTrackId,
-                    name: prompt ? `AI: ${prompt.slice(0, 20)}` : 'AI MIDI',
-                    kind: 'midi',
-                },
+                type: 'addDevice',
+                payload: { trackId: targetTrackId, deviceType: DRUM_KIT_DEVICE_TYPE },
             });
         }
         actions.push(
@@ -154,7 +222,9 @@ export async function handleGenerateMidiPrompt(
                 data: {
                     noteCount: finalNotes.length,
                     warning,
-                },
+                    clipId,
+                    trackId: targetTrackId,
+                } satisfies AiMidiGenerationTaskData,
                 durationMs: Math.round(performance.now() - start),
             });
             return;

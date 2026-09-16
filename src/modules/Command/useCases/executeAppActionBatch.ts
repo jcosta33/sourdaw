@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import {
+    AutomergeStorageWriteConflictError,
     AutomergeStorageTransactionCommittedError,
     AutomergeStorageTransactionValidationError,
     runWithAutomergeStorageTransaction,
@@ -29,8 +30,9 @@ import { createUndoEntry } from './createUndoEntry';
 import { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 import { findSingletonBatchAction } from './findSingletonBatchAction';
 import { getCommandHandler } from './getCommandHandler';
+import { getProjectMutationAdmissionFailure } from './getProjectMutationAdmissionFailure';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
-import { getProjectMutationAdmissionFailure, PROJECT_REPAIR_REQUIRED_MESSAGE } from './isProjectMutationAllowed';
+import { PROJECT_REPAIR_REQUIRED_MESSAGE } from './isProjectMutationAllowed';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
@@ -133,6 +135,11 @@ type CanonicalizedBatchAction = {
     applicationAssignedIds: VersionedCommandEnvelope['applicationAssignedIds'];
     handler: ActionHandler;
     suppliedEnvelope: VersionedCommandEnvelope | undefined;
+};
+
+type AdmissionMaterializedBatchAction = {
+    action: AppAction;
+    handler: ActionHandler;
 };
 
 type AutomergeStorageTransactionScope = <Result>(callback: () => Result) => Result;
@@ -628,6 +635,27 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 };
             }
 
+            const admissionMaterializedActions: Array<AdmissionMaterializedBatchAction | undefined> = [];
+            for (const [actionIndex, action] of actions.entries()) {
+                const handler = getCommandHandler(action);
+                if (handler?.materializeCommandArgumentsAt !== 'admission') {
+                    admissionMaterializedActions.push(undefined);
+                    continue;
+                }
+                try {
+                    admissionMaterializedActions.push({
+                        action: materializeCommandHandlerArguments(action, handler, { actions, actionIndex }),
+                        handler,
+                    });
+                } catch (error) {
+                    return {
+                        status: 'rejected',
+                        reason: `Could not preflight ${action.type}: ${failureReason(error)}`,
+                        actions: [],
+                    };
+                }
+            }
+
             await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
             try {
                 const preExecutionFailure = options?.preExecutionValidation?.() ?? null;
@@ -678,11 +706,13 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             const canonicalizedActions: CanonicalizedBatchAction[] = [];
             for (const [index, requestedAction] of actions.entries()) {
                 const suppliedEnvelope = options?.commandEnvelopes?.[index];
+                const admissionMaterialized = admissionMaterializedActions[index];
+                const capturedAction = admissionMaterialized?.action ?? requestedAction;
                 const materialized = suppliedEnvelope
-                    ? { action: requestedAction, applicationAssignedIds: suppliedEnvelope.applicationAssignedIds }
-                    : materializeCommandApplicationIds(requestedAction);
+                    ? { action: capturedAction, applicationAssignedIds: suppliedEnvelope.applicationAssignedIds }
+                    : materializeCommandApplicationIds(capturedAction);
                 let action = materialized.action;
-                const handler = getCommandHandler(action);
+                const handler = admissionMaterialized?.handler ?? getCommandHandler(action);
                 if (!handler) {
                     return {
                         status: 'rejected',
@@ -691,7 +721,9 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     };
                 }
                 try {
-                    action = materializeCommandHandlerArguments(action, handler);
+                    if (!admissionMaterialized) {
+                        action = materializeCommandHandlerArguments(action, handler, { actions, actionIndex: index });
+                    }
                     if (
                         suppliedEnvelope &&
                         (suppliedEnvelope.operation !== action.type ||
@@ -919,6 +951,9 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         cause: storageTransaction.error,
                     })
                 );
+                if (storageTransaction.error instanceof AutomergeStorageWriteConflictError) {
+                    return { status: 'conflicted', reason, actions: [] };
+                }
                 return { status: 'failed', reason, actions: [] };
             }
 
@@ -936,7 +971,11 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 if (error instanceof AppActionBatchCancelledError && !compensationFailure && !rollbackFailure) {
                     return { status: 'cancelled', reason: error.message, actions: [] };
                 }
-                if (error instanceof AppActionConflictError && !compensationFailure && !rollbackFailure) {
+                if (
+                    (error instanceof AppActionConflictError || error instanceof AutomergeStorageWriteConflictError) &&
+                    !compensationFailure &&
+                    !rollbackFailure
+                ) {
                     return { status: 'conflicted', reason, actions: [] };
                 }
                 if (error instanceof AppActionBatchApprovalError && !compensationFailure && !rollbackFailure) {

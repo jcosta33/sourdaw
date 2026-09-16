@@ -1,6 +1,8 @@
-export // ── Convolution Reverb ──────────────────────────────────────────────────
+import { createSeededRandom } from '#/utils/SeededRandom/SeededRandom';
 
-type IRConfig = {
+// ── Convolution Reverb ──────────────────────────────────────────────────
+
+export type IRConfig = {
     sampleRate: number;
     duration: number;
     decayT60: number;
@@ -9,9 +11,26 @@ type IRConfig = {
     diffusion: number;
     hfDamping: number;
     lfDamping: number;
+    seed?: number;
 };
 
-type IRGenerator = (sampleRate: number) => AudioBuffer;
+export type IRGenerator = (sampleRate: number) => AudioBuffer;
+
+function computeIRSeed(config: IRConfig): number {
+    let h = 2166136261;
+    const mix = (n: number) => {
+        const bits = Math.round(n * 1000) | 0;
+        h = Math.imul(h ^ bits, 16777619);
+    };
+    mix(config.duration);
+    mix(config.decayT60);
+    mix(config.earlyMs);
+    mix(config.earlyLevel);
+    mix(config.diffusion);
+    mix(config.hfDamping);
+    mix(config.lfDamping);
+    return h >>> 0;
+}
 
 export function generateIR(config: IRConfig): AudioBuffer {
     const { sampleRate, duration, decayT60, earlyMs, earlyLevel, diffusion, hfDamping, lfDamping } = config;
@@ -19,8 +38,11 @@ export function generateIR(config: IRConfig): AudioBuffer {
     const buf = new AudioBuffer({ numberOfChannels: 2, length: len, sampleRate });
     const decayRate = -6.9078 / (decayT60 * sampleRate);
     const earlySamples = Math.floor((earlyMs * sampleRate) / 1000);
+    const baseSeed = config.seed ?? computeIRSeed(config);
 
     for (let ch = 0; ch < 2; ch++) {
+        const channelSeed = Math.imul(baseSeed ^ ((ch + 1) * 0x9e3779b9), 0x85ebca6b) >>> 0;
+        const rng = createSeededRandom(channelSeed);
         const data = buf.getChannelData(ch);
         let lpState = 0;
         const lpCoeff = Math.exp((-2 * Math.PI * hfDamping) / sampleRate);
@@ -28,7 +50,7 @@ export function generateIR(config: IRConfig): AudioBuffer {
         const hpCoeff = Math.exp((-2 * Math.PI * lfDamping) / sampleRate);
 
         for (let index = 0; index < len; index++) {
-            let sample = Math.random() * 2 - 1;
+            let sample = rng() * 2 - 1;
             const isEarly = index < earlySamples;
             if (isEarly) {
                 const spacing = Math.floor(sampleRate * 0.003 * (1 + ch * 0.2));

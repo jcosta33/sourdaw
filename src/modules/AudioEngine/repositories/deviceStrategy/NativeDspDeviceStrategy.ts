@@ -1,3 +1,5 @@
+import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
+
 import { type NoteExpressionControls } from '../../engine/noteExpression';
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
@@ -125,7 +127,7 @@ export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Dev
     await result.ready;
 
     const strategy = new NativeDspDeviceStrategy(result);
-    for (const [key, val] of Object.entries(device.parameterValues)) {
+    for (const [key, val] of orderDeviceParametersForReplay(device.type, device.parameterValues)) {
         strategy.setParam(key, val);
     }
 

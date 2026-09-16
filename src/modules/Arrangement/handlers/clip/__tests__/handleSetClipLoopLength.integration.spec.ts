@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
@@ -73,6 +76,7 @@ function seedClipFixture(): void {
     const clip = ClipDummy.create({ id: 'clip-1', endBeat: 8, loopEnabled: false });
     const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
     trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+    flushAutomergeStorageWrites();
 }
 
 describe('handleSetClipLoopLength atomic integration', () => {

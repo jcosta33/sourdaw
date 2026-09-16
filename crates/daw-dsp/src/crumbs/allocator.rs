@@ -118,14 +118,7 @@ impl Default for VoiceAllocator {
     }
 }
 
-// ── Voice Stealing ─────────────────────────────────────────────────────
-
-/// Steal priority for a voice. Lower values = more likely to be stolen.
-#[derive(Debug, Clone, Copy)]
-pub struct StealCandidate {
-    pub voice_index: usize,
-    pub priority: StealPriority,
-}
+// ── Voice stealing ──────────────────────────────────────────────────────
 
 /// Priority categories for voice stealing, ordered from most-stealable to least.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -156,35 +149,4 @@ pub enum StealPriority {
     Fading,
     /// No suitable candidate found.
     None,
-}
-
-/// Select the best voice to steal from a set of candidates.
-///
-/// Returns the index of the voice that should be stolen,
-/// following the priority order: same-note > choke > releasing > oldest > quietest.
-pub fn select_steal_target(candidates: &[StealCandidate]) -> Option<usize> {
-    if candidates.is_empty() {
-        return None;
-    }
-
-    let mut best: Option<&StealCandidate> = None;
-
-    for candidate in candidates {
-        if candidate.priority == StealPriority::None {
-            continue;
-        }
-
-        match best {
-            Some(current_best) => {
-                if candidate.priority < current_best.priority {
-                    best = Some(candidate);
-                }
-            }
-            None => {
-                best = Some(candidate);
-            }
-        }
-    }
-
-    best.map(|c| c.voice_index)
 }

@@ -208,6 +208,23 @@ export function parseEngineTitle(title: string): EngineTitleReading {
 }
 
 /**
+ * Whether an engine-dot title describes a carrier that is running and
+ * fault-free — the "running meter" the measurement gate waits for.
+ *
+ * The dot names the engine it describes (`Engine: native running …` while the
+ * native session is the audible output, `Engine: Web Audio running …` while
+ * Web Audio carries it), so both healthy titles count whichever side is
+ * audible. A running native carrier can still carry an
+ * `· native output stream fault: …` segment — running but degraded, which is
+ * not a meter to measure against — and `stopped` and `(no reading yet)` say
+ * so in their own text. The pre-#3706 single `Engine: running` prefix no
+ * longer exists on any build this harness can face.
+ */
+export const isRunningEngineTitle = (title: string): boolean =>
+    (title.startsWith('Engine: native running') || title.startsWith('Engine: Web Audio running')) &&
+    !title.includes('output stream fault');
+
+/**
  * `useStatusBarMetrics.ts:275,279-283` writes `n/a`, `-∞ dB`, or `<n> dB`.
  *
  * `n/a` is not silence and must not be read as one: it means the engine has no

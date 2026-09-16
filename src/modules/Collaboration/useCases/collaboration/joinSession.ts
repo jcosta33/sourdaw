@@ -8,12 +8,32 @@ import { collaborationAssetOwnership } from './getCollaborationAssetOwnerId';
 import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
+async function parseInvite(inviteString: string): Promise<Extract<SignalingMessage, { type: 'offer' }>> {
+    if (!inviteString.trim()) {
+        throw createCollaborationError('Invite string is empty');
+    }
+
+    let decompressedInvite: string;
+    try {
+        decompressedInvite = await runtime.decompressInvite(inviteString.trim());
+    } catch {
+        throw createCollaborationError('Invalid invite — must be a valid invite string');
+    }
+
+    let invite: SignalingMessage;
+    try {
+        invite = JSON.parse(decompressedInvite) as SignalingMessage;
+    } catch {
+        throw createCollaborationError('Invalid invite — must be a valid invite string');
+    }
+    if (invite.type !== 'offer') {
+        throw createCollaborationError('Invalid invite: expected offer');
+    }
+    return invite;
+}
+
 export async function joinSession(inviteString: string, name: string): Promise<string> {
-    const outgoingOwner = runtime.captureOwner();
-    const outgoingRequestWitness = joinAttemptAuthority.capture();
     const joinAttempt = joinAttemptAuthority.begin();
-    runtime.cleanup(outgoingOwner, outgoingRequestWitness);
-    const settledAssetOwnerId = collaborationAssetOwnership.getOwnerId();
     collaborationStore.set({
         isEnabled: true,
         sessionId: null,
@@ -26,88 +46,77 @@ export async function joinSession(inviteString: string, name: string): Promise<s
         error: null,
         quarantinedPeerIds: [],
     });
-
+    const invitePreparation = parseInvite(inviteString).then(
+        (invite) => ({ status: 'ready' as const, invite }),
+        (error: unknown) => ({ status: 'failed' as const, error })
+    );
     let installedOwner: ReturnType<typeof runtime.captureOwner> = null;
-    try {
-        if (!inviteString.trim()) {
-            throw createCollaborationError('Invite string is empty');
-        }
 
-        let decompressedInvite: string;
-        try {
-            decompressedInvite = await runtime.decompressInvite(inviteString.trim());
-        } catch {
-            throw createCollaborationError('Invalid invite — must be a valid invite string');
+    try {
+        await runtime.runLifecycle(async () => {
+            const outgoingOwner = runtime.captureOwner();
+            const outgoingRequestWitness = joinAttemptAuthority.capture();
+            runtime.cleanup(outgoingOwner, outgoingRequestWitness);
+            await runtime.settleRetainedTeardown();
+        });
+        const prepared = await invitePreparation;
+        if (prepared.status === 'failed') {
+            throw prepared.error;
         }
         if (!joinAttemptAuthority.isCurrent(joinAttempt)) {
             throw createCollaborationError('Join attempt was superseded');
         }
+        const invite = prepared.invite;
+        const { peerId, peer } = await runtime.runLifecycle(async () => {
+            if (!joinAttemptAuthority.isCurrent(joinAttempt)) {
+                throw createCollaborationError('Join attempt was superseded');
+            }
+            const settledAssetOwnerId = collaborationAssetOwnership.getOwnerId();
+            const peerId = invite.pendingPeerId ?? runtime.generatePeerId();
+            runtime.state.sessionSecret = invite.sessionSecret ?? null;
+            const color = runtime.pickPeerColor([PEER_COLORS[0]]);
 
-        let invite: SignalingMessage;
-        try {
-            invite = JSON.parse(decompressedInvite) as SignalingMessage;
-        } catch {
-            throw createCollaborationError('Invalid invite — must be a valid invite string');
-        }
+            collaborationStore.set({
+                isEnabled: true,
+                sessionId: invite.sessionId,
+                localPeerId: peerId,
+                localName: name,
+                localColor: color,
+                isHost: false,
+                peers: [
+                    {
+                        id: invite.peerId,
+                        name: sanitizePeerName(invite.name),
+                        color: PEER_COLORS[0],
+                        isHost: true,
+                        isConnected: false,
+                        lastSeen: Date.now(),
+                        latencyMs: null,
+                        syncHealth: 'converging',
+                    },
+                ],
+                connectionStatus: 'connecting',
+                error: null,
+                quarantinedPeerIds: [],
+            });
 
-        if (invite.type !== 'offer') {
-            throw createCollaborationError('Invalid invite: expected offer');
-        }
-
-        // Adopt the host-minted pendingPeerId as our session identity. The host
-        // keys our PeerConnection by it and lists us in its peer store under
-        // answer.peerId; minting our own id here splits the joiner across two
-        // identities, so host-side presence, peer-leave, disconnect cleanup, and
-        // color assignment all miss their lookups. Fall back to a self-minted id
-        // only for legacy invites that predate pendingPeerId.
-        const peerId = invite.pendingPeerId ?? runtime.generatePeerId();
-        // Adopt the host's room capability so a relay join carries it. An invite
-        // minted before the relay had rooms has none, and such a joiner can still
-        // complete the direct WebRTC handshake — it just cannot join a relay room.
-        runtime.state.sessionSecret = invite.sessionSecret ?? null;
-        // Pick a color that doesn't clash with the host's (always the first color).
-        const color = runtime.pickPeerColor([PEER_COLORS[0]]);
-
-        collaborationStore.set({
-            isEnabled: true,
-            sessionId: invite.sessionId,
-            localPeerId: peerId,
-            localName: name,
-            localColor: color,
-            isHost: false,
-            peers: [
+            const peerManager = await runtime.initialize(
+                `collaboration-join:${invite.sessionId}:${peerId}:${joinAttempt}`,
                 {
-                    id: invite.peerId,
-                    // Invite payloads are sender-controlled — bound the host
-                    // name with the same limit every identity ingress uses.
-                    name: sanitizePeerName(invite.name),
-                    color: PEER_COLORS[0],
-                    isHost: true,
-                    isConnected: false,
-                    lastSeen: Date.now(),
-                    latencyMs: null,
-                    syncHealth: 'converging',
-                },
-            ],
-            connectionStatus: 'connecting',
-            error: null,
-            quarantinedPeerIds: [],
+                    handoffSourceOwnerIds: [settledAssetOwnerId],
+                    rebindToSynchronizedOwner: true,
+                }
+            );
+            installedOwner = runtime.captureOwner();
+            runtime.startPlayheadBroadcast();
+            runtime.startBranchSync(false);
+            return { peerId, peer: peerManager.createPeer(invite.peerId) };
         });
 
-        const peerManager = runtime.initialize(`collaboration-join:${invite.sessionId}:${peerId}:${joinAttempt}`, {
-            handoffSourceOwnerIds: [settledAssetOwnerId],
-            rebindToSynchronizedOwner: true,
-        });
-        installedOwner = runtime.captureOwner();
-        runtime.startPlayheadBroadcast();
-        runtime.startBranchSync(false);
-
-        const peer = peerManager.createPeer(invite.peerId);
         const answerSdp = await peer.acceptOffer(invite.sdp);
         if (!joinAttemptAuthority.isCurrent(joinAttempt) || !installedOwner || !runtime.canWrite(installedOwner)) {
             throw createCollaborationError('Join attempt was superseded');
         }
-
         const answer: SignalingMessage = {
             type: 'answer',
             peerId,
@@ -115,7 +124,6 @@ export async function joinSession(inviteString: string, name: string): Promise<s
             sdp: answerSdp,
             pendingPeerId: invite.pendingPeerId,
         };
-
         const compressedAnswer = await runtime.compressInvite(JSON.stringify(answer));
         if (!joinAttemptAuthority.isCurrent(joinAttempt) || !runtime.canWrite(installedOwner)) {
             throw createCollaborationError('Join attempt was superseded');
@@ -123,29 +131,37 @@ export async function joinSession(inviteString: string, name: string): Promise<s
         return compressedAnswer;
     } catch (error) {
         const ownsInstalledRuntime = installedOwner === null || runtime.isInstalled(installedOwner);
-        if (installedOwner) {
-            runtime.retire(installedOwner);
+        let cleanupError: unknown = null;
+        if (installedOwner && ownsInstalledRuntime) {
             try {
-                runtime.cleanup(installedOwner);
-            } catch (cleanupError) {
-                logger.warn('[Collaboration] Failed to clean up join session setup:', cleanupError);
+                await runtime.runLifecycle(async () => {
+                    runtime.cleanup(installedOwner);
+                    await runtime.settleRetainedTeardown();
+                });
+            } catch (error) {
+                cleanupError = error;
+                logger.warn('[Collaboration] Failed to clean up join session setup:', error);
             }
         }
-        if (!joinAttemptAuthority.isCurrent(joinAttempt) || !ownsInstalledRuntime) {
-            throw error;
+        if (joinAttemptAuthority.isCurrent(joinAttempt) && ownsInstalledRuntime) {
+            collaborationStore.set({
+                isEnabled: false,
+                sessionId: null,
+                localPeerId: null,
+                localName: '',
+                localColor: '',
+                isHost: false,
+                peers: [],
+                connectionStatus: 'error',
+                error: error instanceof Error ? error.message : String(error),
+                quarantinedPeerIds: [],
+            });
         }
-        collaborationStore.set({
-            isEnabled: false,
-            sessionId: null,
-            localPeerId: null,
-            localName: '',
-            localColor: '',
-            isHost: false,
-            peers: [],
-            connectionStatus: 'error',
-            error: error instanceof Error ? error.message : String(error),
-            quarantinedPeerIds: [],
-        });
+        if (cleanupError) {
+            throw new AggregateError([error, cleanupError], 'Join setup and durable cleanup both failed', {
+                cause: error,
+            });
+        }
         throw error;
     }
 }

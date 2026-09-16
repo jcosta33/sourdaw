@@ -31,6 +31,7 @@ import {
     setDeviceParameter,
     initStalenessDetection,
     setArrangementEventBus,
+    setClipAudioAssetStager,
     setOfflineRenderDependencies,
     setTimeOperationDependencies,
     setVcaRuntimeProjectionDependencies,
@@ -55,8 +56,10 @@ import {
     recordNativeChainReleases,
     configureDurableAudioBufferOwnership,
     isTunerTelemetryNativelyOwned,
+    startMainThreadLongTaskObservation,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
+import { stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
 import {
     getAutomationValueAtBeat,
     prepareAutomationTimeOperation,
@@ -114,7 +117,7 @@ import {
     sessionUndoWitnessStampPort,
 } from '#/modules/CrdtDocument/useCases';
 import { initCrumbsDeviceStatePersistence, prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
-import { updateCrustMeters, resetCrustMeters } from '#/modules/Crust/stores';
+import { updateCrustMeters, deleteCrustMeters } from '#/modules/Crust/stores';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
@@ -159,6 +162,7 @@ import {
     setToasterEventBus,
     setToasterGrooveAssignmentExecutor,
 } from '#/modules/Toaster/useCases';
+import { setGestureClockSource } from '#/modules/Transport/stores';
 import {
     getTransportState,
     createMusicalPositionProjector,
@@ -166,6 +170,7 @@ import {
     projectPpqEndpoints,
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
+    readNativeEngineCursorBeats,
     resolveTempoAtBeat,
     setStopPlaybackCallback,
     reconcileVcaRuntimeGain,
@@ -286,6 +291,11 @@ setVcaRuntimeProjectionDependencies({ reconcileVcaRuntimeGain });
 setToasterGrooveAssignmentExecutor({ execute: executeUserAppAction });
 setArrangementEventBus(eventBus);
 setWorkspaceEventBus(eventBus);
+// Timeline drops of cached samples and generated AI renders must register
+// shareable bytes for their clips (#3759). The WAV encoder lives behind
+// AudioRendering's barrel, which Arrangement cannot import without a module
+// cycle, so the composition root supplies the stager.
+setClipAudioAssetStager(stageAudioBufferAsset);
 // An unload changes native strip state with no batch of its own to report it,
 // so PluginHost forwards the strips its own release touched here, the one
 // place that may cross from PluginHost's contract into AudioEngine's.
@@ -398,6 +408,15 @@ setAutomationRecordingDependencies({
     getCompensationDelay,
 });
 
+// Gesture timestamping reads the audio clock at the event's own instant and
+// follows the native engine's cursor while that engine is the audible
+// transport; Transport's stores stay leaf modules, so the reads are injected
+// here (see `gestureClockSource.ts`).
+setGestureClockSource({
+    getAudioTimeSeconds: () => getAudioContext().currentTime,
+    readNativeCursorBeats: () => readNativeEngineCursorBeats(),
+});
+
 setPitchEditDependencies({
     commitPitchEdit,
 });
@@ -478,12 +497,12 @@ configureAudioDeviceRuntimeSink({
     },
     updateGlutenMeters,
     deleteGlutenMeters,
-    // Crust's meter store is a single slot rather than a per-device map, which
-    // is the shape its panel was built against: one loudness desk on screen at
-    // a time. The device id is therefore dropped here, and a second Crust
-    // instance would tick the same readout.
-    updateCrustMeters: (_deviceId, meters) => {
-        updateCrustMeters({
+    // Crust's patch and meter stores are per-device maps (#3672): the engine
+    // registry emits each frame with its device id, and a second Crust instance
+    // ticking must not move the first one's readout. The device id travels
+    // through; the store scopes every write to that slice.
+    updateCrustMeters: (deviceId, meters) => {
+        updateCrustMeters(deviceId, {
             grDb: meters.grDb,
             inputDb: meters.inputDb,
             outputDb: meters.outputDb,
@@ -495,8 +514,8 @@ configureAudioDeviceRuntimeSink({
             truepeakExceeded: meters.truepeakExceeded,
         });
     },
-    deleteCrustMeters: () => {
-        resetCrustMeters();
+    deleteCrustMeters: (deviceId) => {
+        deleteCrustMeters(deviceId);
     },
     updateBacteriaMeters: (deviceId, meters) => {
         updateBacteriaMeters(deviceId, meters.inputDb, meters.outputDb, meters.bandLevels, meters.latency);
@@ -546,6 +565,9 @@ composeGrandBoule({ eventBus, logger });
 initCrumbsDeviceStatePersistence();
 initStalenessDetection();
 
+// Registered for the life of the process, so deadline-evidence reading has
+// main-thread long-task coverage from startup regardless of what is mounted.
+startMainThreadLongTaskObservation();
 initProjectDirtyTracking();
 initGrooveTemplateDirtyTracking();
 // Edits made inside a hosted plugin's own editor never pass through this app,

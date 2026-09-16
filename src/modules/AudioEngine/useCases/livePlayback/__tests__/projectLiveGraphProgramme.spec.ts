@@ -18,9 +18,9 @@
  * producer takes the projection as an argument for exactly that reason.
  */
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
-import { type Track } from '#/modules/Arrangement/stores';
+import { gainEnvelopeStore, type Track } from '#/modules/Arrangement/stores';
 import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 
 import {
@@ -136,6 +136,10 @@ function projectProgramme(input: {
 }
 
 describe('projectLiveGraphProgramme', () => {
+    beforeEach(() => {
+        gainEnvelopeStore.set({ envelopes: {} });
+    });
+
     it('plays an ordinary audio clip where the arrangement puts it', () => {
         const programme = projectProgramme({
             stripTracks: [
@@ -200,6 +204,47 @@ describe('projectLiveGraphProgramme', () => {
             gain: 1,
         });
         expect(programme.bakedStripIds.has('audio-1')).toBe(true);
+    });
+
+    /// #2865 — the native wire has no envelope vocabulary, so a clip carrying
+    /// an active envelope must stay on the Web Audio carrier that schedules
+    /// the drawn curve. Scheduling it here would sound it at one flat level
+    /// beside a gated-shut web twin holding the real curve.
+    it('names an envelope-carrying clip web-voiced rather than scheduling it flat (#2865)', () => {
+        gainEnvelopeStore.set({
+            envelopes: {
+                'clip-env': {
+                    clipId: 'clip-env',
+                    points: [
+                        { id: 'gep-1', beatOffset: 0, gainDb: -12 },
+                        { id: 'gep-2', beatOffset: 2, gainDb: 0 },
+                    ],
+                    enabled: true,
+                },
+            },
+        });
+
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    clips: [audioClip({ id: 'clip-env', trackId: 'audio-1', audioBufferId: 'mat-1' })],
+                }),
+            ],
+            buffers: { 'mat-1': material(10) },
+        });
+
+        expect(programme.playbacksByStripId.get('audio-1')).toBeUndefined();
+        expect(programme.exclusions).toEqual([
+            {
+                stripId: 'audio-1',
+                subjectId: 'clip-env',
+                reason: expect.stringContaining('gain envelope only the Web Audio carrier applies'),
+            },
+        ]);
+        // The strip keeps a Web Audio twin that sounds the envelope, so the
+        // carrier law must not gate that twin out of the mix.
+        expect(programme.webVoicedStripIds.has('audio-1')).toBe(true);
     });
 
     it('names a frozen track whose bake is not loaded rather than playing its clips instead', () => {

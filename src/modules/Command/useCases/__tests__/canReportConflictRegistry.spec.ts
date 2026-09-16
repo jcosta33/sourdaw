@@ -8,6 +8,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -40,6 +41,50 @@ type DivergedFixture = {
 };
 
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
+    {
+        title: 'restoreLoopRegion refuses to write against a collaborator loop edit',
+        actionType: 'restoreLoopRegion',
+        divergedAction: {
+            type: 'restoreLoopRegion',
+            payload: {
+                expected: { loopStart: 0, loopEnd: 4, isLooping: true },
+                replacement: { loopStart: 0, loopEnd: 0, isLooping: false },
+            },
+        },
+    },
+    {
+        // Live selection is take-a in [2,4); the captured forward guard expects take-b.
+        title: 'setCompRegion refuses to write against a diverged interval',
+        actionType: 'setCompRegion',
+        divergedAction: {
+            type: 'setCompRegion',
+            payload: {
+                laneId: 'lane-live',
+                trackId: 'track-comp',
+                startBeat: 2,
+                endBeat: 4,
+                takeId: 'take-b',
+                expected: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
+                replacement: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
+            },
+        },
+    },
+    {
+        // Live selection is take-a in [2,4); the captured replay guard expects take-b.
+        title: 'restoreCompRegionInterval refuses to write against a diverged interval',
+        actionType: 'restoreCompRegionInterval',
+        divergedAction: {
+            type: 'restoreCompRegionInterval',
+            payload: {
+                laneId: 'lane-live',
+                trackId: 'track-comp',
+                startBeat: 2,
+                endBeat: 4,
+                expected: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
+                replacement: [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }],
+            },
+        },
+    },
     {
         // Live track muted=false; the guard expects muted=true.
         title: 'muteTrack refuses to write against a diverged document',
@@ -209,6 +254,7 @@ const FIXTURE_PROVEN_ACTION_TYPES = [...new Set(CONFLICT_CAPABLE_FIXTURES.map((f
 
 /** The live project state every divergence guard above is checked against. */
 function seedLiveProjectState(): void {
+    transportStore.set({ ...defaultTransportState, loopStart: 0, loopEnd: 8, isLooping: true });
     setTrackStoreState({
         ...defaultTrackState,
         // No `gain` here: `CreateTrackInput` does not take one, so the track is
@@ -233,6 +279,15 @@ function seedLiveProjectState(): void {
     }
     takeLaneStore.set({
         lanes: [
+            {
+                id: 'lane-live',
+                trackId: 'track-comp',
+                takes: [
+                    { id: 'take-a', clipId: 'clip-a', name: 'A', startBeat: 0, endBeat: 8, selected: true },
+                    { id: 'take-b', clipId: 'clip-b', name: 'B', startBeat: 0, endBeat: 8, selected: false },
+                ],
+                activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'take-a' }],
+            },
             {
                 id: 'take-lane-live',
                 trackId: 'track-live',

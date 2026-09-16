@@ -3,7 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { readYeastGrooveAssignments } from '../useCases/readYeastGrooveAssignments';
 import { removeYeastProcessor } from '../useCases/removeYeastProcessor';
 
-import { findProcessor, isSameSnapshot, readYeastRackState } from './rackState';
+import { findProcessor, isSameProcessorSnapshot, readYeastRackState } from './rackState';
 
 export const handleRemoveYeastProcessor = createHandler<'removeYeastProcessor'>({
     // Conflicts when the live processor no longer matches `expectedProcessor`
@@ -16,7 +16,7 @@ export const handleRemoveYeastProcessor = createHandler<'removeYeastProcessor'>(
     validate: (action) => {
         const state = readYeastRackState();
         const processor = state ? findProcessor(state, action.payload.processorId) : undefined;
-        return processor !== undefined && isSameSnapshot(processor, action.payload.expectedProcessor);
+        return processor !== undefined && isSameProcessorSnapshot(processor, action.payload.expectedProcessor);
     },
     execute: (action) => {
         const state = readYeastRackState();
@@ -24,7 +24,7 @@ export const handleRemoveYeastProcessor = createHandler<'removeYeastProcessor'>(
         if (!processor) {
             return { status: 'conflict' };
         }
-        if (!isSameSnapshot(processor, action.payload.expectedProcessor)) {
+        if (!isSameProcessorSnapshot(processor, action.payload.expectedProcessor)) {
             return { status: 'conflict' };
         }
         // Also deletes the processor's groove assignments in the MIDI store;

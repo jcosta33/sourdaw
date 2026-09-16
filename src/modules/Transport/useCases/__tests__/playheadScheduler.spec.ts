@@ -98,6 +98,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     activeRecordingRef: { current: [] },
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    removeClip: vi.fn(),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
     startRecording: harness.start_recording,

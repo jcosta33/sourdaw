@@ -3,6 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import {
     AutomergeStorageTransactionCommittedError,
     AutomergeStorageTransactionValidationError,
+    AutomergeStorageWriteConflictError,
     runWithAutomergeStorageTransaction,
     waitForAutomergeSnapshotTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
@@ -24,8 +25,8 @@ import { commitUndoEntry } from './commitUndoEntry';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
 import { createUndoEntry } from './createUndoEntry';
 import { getCommandHandler } from './getCommandHandler';
+import { getProjectMutationAdmissionFailure } from './getProjectMutationAdmissionFailure';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
-import { getProjectMutationAdmissionFailure } from './isProjectMutationAllowed';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
@@ -145,7 +146,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 return;
             }
 
-            if (getProjectMutationAdmissionFailure()) {
+            // The repair action itself is the one admitted route through this
+            // gate while it holds; everything else is still refused.
+            if (getProjectMutationAdmissionFailure(action)) {
                 throw new AppActionConflictError(action.type);
             }
 
@@ -211,6 +214,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     );
                 }
                 logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
+                if (error instanceof AutomergeStorageWriteConflictError) {
+                    throw new AppActionConflictError(action.type);
+                }
                 throw error;
             }
             storage_transaction.validateCommit(getProjectMutationAdmissionFailure);
@@ -235,6 +241,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     );
                 }
                 logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
+                if (error instanceof AutomergeStorageWriteConflictError) {
+                    throw new AppActionConflictError(action.type);
+                }
                 throw error;
             }
 
@@ -278,6 +287,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     throw committed_error;
                 }
                 if (production_brief_commit_denied && error instanceof AutomergeStorageTransactionValidationError) {
+                    throw new AppActionConflictError(action.type);
+                }
+                if (error instanceof AutomergeStorageWriteConflictError) {
                     throw new AppActionConflictError(action.type);
                 }
                 logger.error(new Error(`Action storage commit failed for action: ${action.type}`, { cause: error }));

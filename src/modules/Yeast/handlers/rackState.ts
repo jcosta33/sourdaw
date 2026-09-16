@@ -1,3 +1,6 @@
+import { type YeastProcessorSnapshot } from '#/utils/handlerContract';
+import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
+
 import { yeastStore, type YeastProcessorInfo, type YeastState } from '../stores/yeastStore';
 
 /** Live rack state, or `null` when the store has not hydrated yet. */
@@ -46,5 +49,10 @@ export function moveProcessorId(order: readonly string[], processorId: string, t
  * compare would miss.
  */
 export function isSameSnapshot(left: unknown, right: unknown): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
+    return jsonValuesEqual(left, right);
+}
+
+/** Empty processor params are the same durable rack state as an omitted map. */
+export function isSameProcessorSnapshot(left: YeastProcessorSnapshot, right: YeastProcessorSnapshot): boolean {
+    return jsonValuesEqual({ ...left, params: left.params ?? {} }, { ...right, params: right.params ?? {} });
 }

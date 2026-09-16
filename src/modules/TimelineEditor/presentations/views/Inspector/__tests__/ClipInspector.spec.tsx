@@ -5,6 +5,20 @@ import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { ClipInspector } from '../ClipInspector';
 
+vi.mock('#/components/daw/DawCompactCheckbox', () => ({
+    DawCompactCheckbox: ({
+        checked,
+        onChange,
+        id,
+        'aria-label': ariaLabel,
+    }: {
+        checked?: boolean;
+        onChange?: (e: { target: { checked: boolean } }) => void;
+        id?: string;
+        'aria-label'?: string;
+    }) => <input type="checkbox" id={id} checked={checked} onChange={onChange} aria-label={ariaLabel} />,
+}));
+
 vi.mock('#/components/daw/DawCompactInput', () => ({
     DawCompactInput: ({
         value,
@@ -396,5 +410,63 @@ describe('ClipInspector', () => {
         const { container } = render(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, type: 'midi' }} />);
         expect(container.querySelector('#stretch-mode-select')).toBeNull();
         expect(screen.queryByText('Time Stretch')).not.toBeInTheDocument();
+    });
+
+    it('renders Muted and Locked checkboxes and dispatches muteClip and lockClip actions when toggled from unchecked', () => {
+        render(<ClipInspector {...defaultProps} />);
+
+        expect(screen.getByText('Muted')).toBeInTheDocument();
+        expect(screen.getByText('Locked')).toBeInTheDocument();
+
+        const muteCheckbox = screen.getByLabelText('Mute clip') as HTMLInputElement;
+        const lockCheckbox = screen.getByLabelText('Lock clip') as HTMLInputElement;
+
+        expect(muteCheckbox).toBeInTheDocument();
+        expect(muteCheckbox.checked).toBe(false);
+        expect(lockCheckbox).toBeInTheDocument();
+        expect(lockCheckbox.checked).toBe(false);
+
+        fireEvent.click(muteCheckbox);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'muteClip',
+            payload: { clipId: 'clip-1', muted: true },
+        });
+
+        fireEvent.click(lockCheckbox);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'lockClip',
+            payload: { clipId: 'clip-1', locked: true },
+        });
+    });
+
+    it('renders Muted and Locked checkboxes checked and dispatches false when toggled from checked', () => {
+        render(
+            <ClipInspector
+                {...defaultProps}
+                clip={{
+                    ...defaultProps.clip,
+                    muted: true,
+                    locked: true,
+                }}
+            />
+        );
+
+        const muteCheckbox = screen.getByLabelText('Mute clip') as HTMLInputElement;
+        const lockCheckbox = screen.getByLabelText('Lock clip') as HTMLInputElement;
+
+        expect(muteCheckbox.checked).toBe(true);
+        expect(lockCheckbox.checked).toBe(true);
+
+        fireEvent.click(muteCheckbox);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'muteClip',
+            payload: { clipId: 'clip-1', muted: false },
+        });
+
+        fireEvent.click(lockCheckbox);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'lockClip',
+            payload: { clipId: 'clip-1', locked: false },
+        });
     });
 });

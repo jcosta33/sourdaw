@@ -1337,7 +1337,7 @@ const ProofLatencyReadout = ({ deviceId }: { deviceId: string }): ReactElement =
 
 const Level5Lab = ({ patch, deviceId }: { patch: ProofPatch; deviceId: string }): ReactElement => {
     const targetLufs = patch.targetLufs;
-    const { status, fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser();
+    const { status, fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser(deviceId);
 
     // Same contract as Level3Build: the desk window owns all scrolling, so
     // the fixed-width gain comparison can never crush the metering column.

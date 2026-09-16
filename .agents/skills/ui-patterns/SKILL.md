@@ -35,7 +35,7 @@ Reach for real buttons, inputs, sliders, lists, dialogs, menus, and labels befor
 
 ### 5. Styling is systematic
 
-Use design tokens and project-standard primitives, tuned for dark-UI legibility at DAW density. No one-off styling system per feature: fragmented styling is unmaintainable at that density.
+Use design tokens and project-standard primitives, tuned for dark-UI legibility at DAW density. No one-off styling system per feature: fragmented styling is unmaintainable at that density. Extend CVA variants on `src/components/ui/` primitives; do not dump a long `className` pile onto `Button` / `Input` / other `ui/` primitives at the call site.
 
 ### 6. No happy-path-only coding
 
@@ -61,6 +61,8 @@ View models shape data for display. Validation, persistence, cross-feature mutat
 When reviewing dock allocation, exercise the editor and virtual keyboard together and inspect the rendered main and editor viewports. Individual pane state or class assertions cannot prove that the remaining canvas stays usable; this escaped #4027.
 
 Before treating rendered acceptance as evidence for a lane, verify that the served deciding source and port belong to that lane. A reused shared dev server does not prove a lane's layout; isolate it without stopping a foreign server. This escaped #4032.
+
+For maintained editor E2E, create the asserted track and clip deterministically, then require editor admission before interacting. Each advertised outcome needs a visible product readout or control state that fails if the deciding canvas or selector is removed; optional locators and early successful returns are not evidence. Playback evidence must observe two distinct valid post-start Bars.Beats.Ticks positions, since one non-start sample can come from a scheduler that emits only one tick. This escaped the MIDI and expression coverage in #1536 and #1590.
 
 For a fixed-height status strip, measure the effective CSS viewport at every admitted UI scale. Keep engine and active monitoring states direct, and move optional metrics or actions through one React-owned disclosure; CSS-hidden duplicate trees leave stale portals, focus, and mutable DOM refs. This escaped #4054.
 

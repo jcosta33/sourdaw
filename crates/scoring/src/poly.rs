@@ -136,7 +136,9 @@ impl PolyStringTracker {
             .collect();
         self.detectors = targets[..n]
             .iter()
-            .map(|t| YinDetector::new(self.sample_rate, t.lo_hz, t.hi_hz))
+            .map(|t| {
+                YinDetector::new_with_window(self.sample_rate, t.lo_hz, t.hi_hz, self.buf_size)
+            })
             .collect();
         self.buffers = (0..n).map(|_| vec![0.0; self.buf_size]).collect();
         self.buf_positions = vec![0; n];

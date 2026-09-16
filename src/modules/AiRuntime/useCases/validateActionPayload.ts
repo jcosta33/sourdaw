@@ -72,6 +72,17 @@ function isPositiveNumber(value: unknown): value is number {
 function isNonNegativeNumber(value: unknown): value is number {
     return isNumber(value) && value >= 0;
 }
+function isValidLoopRegion(value: unknown): boolean {
+    return (
+        isObj(value) &&
+        hasExactKeys(value, ['loopStart', 'loopEnd', 'isLooping']) &&
+        isNonNegativeNumber(value.loopStart) &&
+        isNonNegativeNumber(value.loopEnd) &&
+        value.loopEnd >= value.loopStart &&
+        typeof value.isLooping === 'boolean' &&
+        (!value.isLooping || value.loopEnd > value.loopStart)
+    );
+}
 function isOptional<Value>(value: unknown, check: (value: unknown) => value is Value): value is Value | undefined {
     return value === undefined || check(value);
 }
@@ -445,12 +456,9 @@ const validators = {
         param.endBeat > param.startBeat,
     restoreLoopRegion: (param): param is PayloadOf<'restoreLoopRegion'> =>
         isObj(param) &&
-        hasExactKeys(param, ['loopStart', 'loopEnd', 'isLooping']) &&
-        isNonNegativeNumber(param.loopStart) &&
-        isNonNegativeNumber(param.loopEnd) &&
-        param.loopEnd >= param.loopStart &&
-        typeof param.isLooping === 'boolean' &&
-        (!param.isLooping || param.loopEnd > param.loopStart),
+        hasExactKeys(param, ['expected', 'replacement']) &&
+        isValidLoopRegion(param.expected) &&
+        isValidLoopRegion(param.replacement),
 
     // Automation
     addAutomationLane: (param): param is PayloadOf<'addAutomationLane'> =>
@@ -677,7 +685,7 @@ const validators = {
         hasExactKeys(param, ['trackId', 'soloed']) &&
         isNonEmptyString(param.trackId) &&
         typeof param.soloed === 'boolean',
-    // `expectedSelectedTakeId` is internal replay metadata, not a provider argument.
+    // Lane ownership and expected selection are internal replay metadata, not provider arguments.
     selectTake: (param): param is PayloadOf<'selectTake'> =>
         isObj(param) &&
         hasExactKeys(param, ['trackId', 'takeId']) &&

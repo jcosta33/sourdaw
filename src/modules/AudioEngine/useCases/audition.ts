@@ -4,11 +4,13 @@ import {
     scheduleNote,
     getDrumKitDefByIndex,
     scheduleDrumKitNote,
+    scheduleKitNote,
     getSynthParamsFromDevices,
 } from '#/modules/Synth/useCases';
 
 import { audioEngine } from '../repositories/createWebAudioEngine';
 
+import { getDrumKitByIndex } from './audioEngineQueries/getDrumKitByIndex';
 import { startFaustNote } from './faustScheduler/startFaustNote';
 
 type AuditionDeviceParameterValues = Record<string, number> & {
@@ -44,8 +46,45 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         const kitDef = getDrumKitDefByIndex(kitIndex);
         if (kitDef) {
             scheduleDrumKitNote(audioEngine.context, strip.gainNode, kitDef, pitch, now, velocity);
+            return () => {};
         }
-        return () => {};
+
+        // The dedicated kit definitions cover only the 808, so the remaining
+        // declared kit selections (Analog … Trap) resolve through the factory
+        // kit table — the same fallback the hardware MIDI path uses. Return
+        // without dispatching only when nothing declares the index.
+        const kit = getDrumKitByIndex(kitIndex);
+        if (!kit) {
+            return () => {};
+        }
+
+        const osc: (OscillatorNode & { _env?: GainNode }) | null = scheduleKitNote(
+            audioEngine.context,
+            strip.gainNode,
+            kit,
+            pitch,
+            now,
+            60,
+            velocity
+        );
+        if (!osc) {
+            return () => {};
+        }
+
+        const releaseTime = getSynthParamsFromDevices(track?.devices ?? []).release;
+        return () => {
+            const killTime = audioEngine.context.currentTime;
+            // scheduleKitNote schedules through the builtin synth, which always
+            // attaches the amplitude envelope, so apply the exponential smooth
+            // release (no hard cutoff) before stopping.
+            osc._env?.gain.cancelScheduledValues(killTime);
+            osc._env?.gain.setTargetAtTime(0, killTime, releaseTime / 3);
+            try {
+                osc.stop(killTime + releaseTime + 0.05);
+            } catch {
+                /* already stopped */
+            }
+        };
     }
 
     const fermenterDevice = track?.devices.find((data) => data.type === 'fermenter');

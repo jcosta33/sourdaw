@@ -1,3 +1,5 @@
+import { valuesEqual } from '#/utils/structuralEquality';
+
 import {
     type GrooveConsumerType,
     type GrooveTemplateAssignment,
@@ -28,7 +30,7 @@ export function restoreGrooveAssignment({
         (candidate) => candidate.consumerType === consumerType && candidate.consumerId === consumerId
     );
     const currentAssignment = existingIndex === -1 ? null : state.assignments[existingIndex]!;
-    if (expectedAssignment && JSON.stringify(currentAssignment) !== JSON.stringify(expectedAssignment)) {
+    if (expectedAssignment && !valuesEqual(currentAssignment, expectedAssignment)) {
         throw new Error('Cannot restore groove assignment: current value diverged from the action result');
     }
     if (assignment && !isGrooveTemplateAssignment(assignment)) {

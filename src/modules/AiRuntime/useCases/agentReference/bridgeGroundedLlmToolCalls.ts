@@ -3449,7 +3449,7 @@ function groundToolCall({
     const sidechainRoutingScope =
         call.name === 'addSidechainRoute' ? getSidechainRoutingPromptScope(prompt, context) : null;
     const wholeProjectVibeMixScope =
-        call.name === 'automateTrackGainRange' ? getWholeProjectVibeMixScope(prompt, context) : null;
+        call.name === 'automateTrackGainRange' ? getWholeProjectVibeMixScope(context) : null;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
         if (targetRule.optional && assertedValue === undefined) {
@@ -4335,7 +4335,7 @@ export function bridgeGroundedLlmToolCalls({
             return providerRoute ? [providerRoute] : [];
         });
     }
-    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(prompt, context);
+    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(context);
     const providerVibeMixCalls = calls.filter((call) => call.name === 'automateTrackGainRange');
     if (wholeProjectVibeMixScope || providerVibeMixCalls.length > 0) {
         const providerCall = providerVibeMixCalls[0];

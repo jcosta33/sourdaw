@@ -518,10 +518,18 @@ impl GlutenEngine {
                 _ => (mixed_l, mixed_r),
             };
 
+            // Time-aligned dry reference for delta listen:
+            // delayed_l and delayed_r are in the processed domain (M/S encoded if Mid or Side mode).
+            // Decode them back to stereo so they match out_l and out_r's domain and lookahead latency.
+            let (dry_delayed_l, dry_delayed_r) = match self.stereo_mode {
+                StereoMode::Mid | StereoMode::Side => decode_ms(delayed_l, delayed_r),
+                _ => (delayed_l, delayed_r),
+            };
+
             // Delta listen: output only the difference (what compression removed)
             if self.delta_listen {
-                left[i] = dry_l - out_l;
-                right[i] = dry_r - out_r;
+                left[i] = dry_delayed_l - out_l;
+                right[i] = dry_delayed_r - out_r;
             } else {
                 left[i] = out_l;
                 right[i] = out_r;

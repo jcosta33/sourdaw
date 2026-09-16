@@ -108,10 +108,22 @@ pub struct CaptureInputBlock<'a> {
 /// Trait for a plugin that can process audio on the real-time thread.
 pub trait NativePlugin: Any + Send {
     /// Process a block of stereo audio in-place.
+    ///
+    /// The scheduler never dispatches straight to this for a block it renders:
+    /// every block travels through [`Self::process_with_events`], which
+    /// delegates here by default, so a body that wants the transport stages it
+    /// there and one that does not care keeps this as its whole pass.
     fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize);
 
     /// Process audio with MIDI events and transport info.
-    /// Default implementation ignores MIDI/transport and delegates to process_audio.
+    ///
+    /// This is the one dispatch the scheduler makes for a rendered block, and
+    /// `midi_events` is the block's real set — empty on most blocks an audio
+    /// effect renders. Every processed block therefore carries the current
+    /// transport, whatever the MIDI density: a body that caches transport
+    /// metadata stages it here rather than waiting for a note to arrive, and
+    /// the default implementation ignores both and delegates to
+    /// [`Self::process_audio`].
     fn process_with_events(
         &mut self,
         left: &mut [f32],

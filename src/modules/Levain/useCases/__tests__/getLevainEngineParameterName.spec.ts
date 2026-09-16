@@ -34,10 +34,9 @@ describe('getLevainEngineParameterName', () => {
         const published = getPluginById('levain')?.parameters ?? [];
         expect(published.length).toBeGreaterThan(0);
 
-        const unaddressed = published
-            .filter((parameter) => parameter.automatable)
-            .map((parameter) => parameter.id)
-            .filter((paramId) => getLevainEngineParameterName({ paramId }) === null);
+        const automatable = published.filter((parameter) => parameter.automatable);
+        const ids = automatable.map((parameter) => parameter.id);
+        const unaddressed = ids.filter((paramId) => getLevainEngineParameterName({ paramId }) === null);
 
         expect(unaddressed).toEqual([]);
     });

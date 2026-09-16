@@ -114,17 +114,15 @@ describe('executableAppActionEffectsByType', () => {
             expect(rowFor(actionType).dimensions, `${actionType}: MASTER_OPERATIONS member`).toContain('master');
         }
 
-        for (const actionType of onlyExecutableActionTypes(CREATE_OPERATIONS)) {
-            const row = rowFor(actionType);
-            expect(row.creates, `${actionType}: CREATE_OPERATIONS member must declare creates`).toBeDefined();
-            expect(row.creates?.length ?? 0, `${actionType}: creates must be non-empty`).toBeGreaterThan(0);
-        }
+        const expectedCreateOperations = new Set(
+            descriptorActionTypes.filter((actionType) => (rowFor(actionType).creates?.length ?? 0) > 0)
+        );
+        expect(CREATE_OPERATIONS).toEqual(expectedCreateOperations);
 
-        for (const actionType of onlyExecutableActionTypes(DELETE_OPERATIONS)) {
-            const row = rowFor(actionType);
-            expect(row.removes, `${actionType}: DELETE_OPERATIONS member must declare removes`).toBeDefined();
-            expect(row.removes?.length ?? 0, `${actionType}: removes must be non-empty`).toBeGreaterThan(0);
-        }
+        const expectedDeleteOperations = new Set(
+            descriptorActionTypes.filter((actionType) => (rowFor(actionType).removes?.length ?? 0) > 0)
+        );
+        expect(DELETE_OPERATIONS).toEqual(expectedDeleteOperations);
     });
 
     it('S7: getExecutableAppActionEffect returns the row identity for known types and null for unknown names', () => {

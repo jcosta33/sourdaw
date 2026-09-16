@@ -12,6 +12,7 @@ import {
     selectAllClips,
     selectClipWithFocus,
     setMarqueeSelection,
+    getLastClipEndBeat,
 } from '#/modules/Arrangement/useCases';
 import { CommandEventBus, executeUserAppAction, pushUndoEntry, redo, undo } from '#/modules/Command/useCases';
 import { loopStationStore } from '#/modules/SessionLauncher/stores';
@@ -23,7 +24,7 @@ import {
     openExportDialog,
     openPreferencesDialog,
     setEditingTool,
-    showAutomationPanel,
+    showDevicePanel,
     startToolSwap,
     toggleCommandPalette,
     toggleMixer,
@@ -35,7 +36,6 @@ import {
 
 import { parseLoopStationPadCallbackId, shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
 import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';
-import { getLastClipEndBeat } from '../../selectionHelpers/getLastClipEndBeat';
 import { goToNextMarker } from '../../selectionHelpers/goToNextMarker';
 import { goToPreviousMarker } from '../../selectionHelpers/goToPreviousMarker';
 import { duplicateSelectedClipsForward } from '../clipShortcuts/duplicateSelectedClipsForward';
@@ -332,7 +332,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                     toggleVirtualKeyboard();
                     return true;
                 case 'showAutomationPanel':
-                    showAutomationPanel();
+                    showDevicePanel('automation', null);
                     return true;
 
                 // ── Dialog openers (emit event the dialog listens to)─

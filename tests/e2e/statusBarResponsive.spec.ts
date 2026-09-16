@@ -6,8 +6,8 @@ import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS } from './e2eUtils';
 const OUTER_VIEWPORT = { width: 1150, height: 1264 };
 const COMPACT_STATUS_BAR_MAX_WIDTH = 1199;
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
-const METRIC_LABELS = ['UI CPU', 'MEM', 'AI Model', 'Rate', 'Latency', 'Out'] as const;
-const DEFERRED_METRIC_LABELS = ['UI CPU', 'MEM', 'AI Model', 'Out'] as const;
+const METRIC_LABELS = ['UI CPU', 'JS MEM', 'AI Model', 'Rate', 'Latency', 'Out'] as const;
+const DEFERRED_METRIC_LABELS = ['UI CPU', 'JS MEM', 'AI Model', 'Out'] as const;
 
 type Rect = { left: number; top: number; right: number; bottom: number; width: number; height: number };
 type LabelGeometry = {
@@ -253,7 +253,7 @@ for (const scale of [0.5, 1, 1.25, 2]) {
                 await expect(details.getByRole('button', { name: 'Toggle collaboration panel' })).toBeVisible();
                 await expect(details.getByRole('button', { name: 'Toggle undo history panel' })).toBeVisible();
                 const memoryReadout = details
-                    .getByText('MEM', { exact: true })
+                    .getByText('JS MEM', { exact: true })
                     .locator('..')
                     .getByText(/ MB$/, { exact: true });
                 await expect.poll(async () => memoryReadout.innerText()).not.toBe('0 MB');
@@ -281,7 +281,7 @@ for (const scale of [0.5, 1, 1.25, 2]) {
                 await more.click();
                 await expect(details).toBeVisible();
                 const remountedMemoryReadout = details
-                    .getByText('MEM', { exact: true })
+                    .getByText('JS MEM', { exact: true })
                     .locator('..')
                     .getByText(/ MB$/, { exact: true });
                 await expect.poll(async () => remountedMemoryReadout.innerText()).not.toBe('0 MB');

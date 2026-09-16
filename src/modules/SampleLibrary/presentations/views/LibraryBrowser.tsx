@@ -146,7 +146,8 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         const q = searchQuery.toLowerCase();
         if (q.startsWith('similar:')) {
             const sampleId = searchQuery.split(':')[1];
-            const similarIds = findSimilarSamples(sampleId!);
+            const similar = sampleId ? findSimilarSamples(sampleId) : undefined;
+            const similarIds = similar?.status === 'matches' ? similar.sampleIds : [];
             visibleFiles = rootSamples.filter((s) => similarIds.includes(s.id));
         } else {
             visibleFiles = rootSamples.filter(
@@ -320,12 +321,20 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         }
     };
 
-    const handleFindSimilar = (sampleId: string): void => {
-        const similarIds = findSimilarSamples(sampleId);
-        if (similarIds.length > 0) {
-            setSearchQuery(`similar:${sampleId}`);
-            // Logic to filter visible files by these IDs would go here
+    // "Find similar" must be observable in every state: no embedding producer
+    // runs in this build, so unavailable analysis and empty results each tell
+    // the user what happened instead of silently doing nothing.
+    const handleFindSimilar = (sample: (typeof rootSamples)[number]): void => {
+        const result = findSimilarSamples(sample.id);
+        if (result.status === 'unavailable') {
+            notifyUser(`Similarity analysis is not available for "${sample.displayName}" yet.`, 'warning');
+            return;
         }
+        if (result.sampleIds.length === 0) {
+            notifyUser(`No similar samples found for "${sample.displayName}".`, 'info');
+            return;
+        }
+        setSearchQuery(`similar:${sample.id}`);
     };
 
     return (
@@ -602,7 +611,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                     }}
                                     onStop={handleStopPreview}
                                     onToggleFavorite={() => void toggleFavorite(sample.id)}
-                                    onFindSimilar={() => handleFindSimilar(sample.id)}
+                                    onFindSimilar={() => handleFindSimilar(sample)}
                                     onDragStart={(e) => {
                                         e.dataTransfer.setData(
                                             'application/x-sourdaw-sample',

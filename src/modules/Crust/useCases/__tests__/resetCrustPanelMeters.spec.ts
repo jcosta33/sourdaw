@@ -1,13 +1,24 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { crustStore, defaultCrustState } from '../../stores/crustStore';
+import {
+    crustMeterStore,
+    crustStore,
+    getCrustMeters,
+    getCrustState,
+    INITIAL_METERS,
+    setCrustParam,
+    updateCrustMeters,
+} from '../../stores/crustStore';
 import { resetCrustPanelMeters } from '../resetCrustPanelMeters';
 
 describe('resetCrustPanelMeters', () => {
     beforeEach(() => {
-        crustStore.set({
-            ...defaultCrustState,
-            patch: { ...defaultCrustState.patch, name: 'Edited patch', gain: 7, uiLevel: 3 },
+        crustStore.set({});
+        crustMeterStore.set({});
+        setCrustParam('d1', 'name', 'Edited patch');
+        setCrustParam('d1', 'gain', 7);
+        setCrustParam('d1', 'uiLevel', 3);
+        updateCrustMeters('d1', {
             grDb: -8,
             inputDb: -12,
             outputDb: -2,
@@ -20,18 +31,18 @@ describe('resetCrustPanelMeters', () => {
         });
     });
 
-    it('should reset every meter field while preserving the current patch', () => {
-        resetCrustPanelMeters();
+    it('should reset every meter field for the addressed device while preserving its patch', () => {
+        resetCrustPanelMeters('d1');
 
-        expect(crustStore.value).toEqual({
-            ...defaultCrustState,
-            patch: { ...defaultCrustState.patch, name: 'Edited patch', gain: 7, uiLevel: 3 },
-        });
+        expect(getCrustMeters('d1')).toEqual(INITIAL_METERS);
+        expect(getCrustState('d1').patch.name).toBe('Edited patch');
+        expect(getCrustState('d1').patch.gain).toBe(7);
+        expect(getCrustState('d1').patch.uiLevel).toBe(3);
     });
 
     it('should not throw when Crust state is unavailable', () => {
-        crustStore.set(null);
+        crustMeterStore.set(null);
 
-        expect(() => resetCrustPanelMeters()).not.toThrow();
+        expect(() => resetCrustPanelMeters('d1')).not.toThrow();
     });
 });

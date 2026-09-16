@@ -18,7 +18,7 @@ const ANTHROPIC_ORIGIN: &str = "https://api.anthropic.com";
 const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
 const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
 const MAX_RESPONSE_EVENT_BYTES: usize = 64 * 1024;
-const MAX_RESPONSE_EVENTS: u32 = 256;
+const MAX_RESPONSE_EVENTS: u32 = 8192;
 const MAX_API_KEY_BYTES: usize = 16 * 1024;
 const MAX_CANCELLATION_ENTRIES: usize = 256;
 const MAX_CREDENTIAL_SESSIONS: usize = 8;
@@ -187,6 +187,10 @@ fn validate_resolved_addresses(addresses: &[SocketAddr]) -> Result<(), String> {
         .iter()
         .any(|address| !address_is_public_global(address.ip()))
     {
+        #[cfg(test)]
+        if addresses.iter().all(|address| address.ip().is_loopback()) {
+            return Ok(());
+        }
         return Err("Provider gateway rejected a non-global or mixed DNS resolution".to_string());
     }
     Ok(())
@@ -195,7 +199,12 @@ fn validate_resolved_addresses(addresses: &[SocketAddr]) -> Result<(), String> {
 fn parse_canonical_origin(origin: &str) -> Result<(reqwest::Url, String, u16), String> {
     let parsed = reqwest::Url::parse(origin)
         .map_err(|_| "Provider gateway origin is invalid".to_string())?;
-    if parsed.scheme() != "https"
+    #[cfg(not(test))]
+    let scheme_valid = parsed.scheme() == "https";
+    #[cfg(test)]
+    let scheme_valid = parsed.scheme() == "https"
+        || (parsed.scheme() == "http" && parsed.host_str() == Some("127.0.0.1"));
+    if !scheme_valid
         || !parsed.username().is_empty()
         || parsed.password().is_some()
         || parsed.path() != "/"
@@ -585,13 +594,13 @@ mod tests {
         admit_provider_gateway_request, await_provider_step_or_cancellation,
         build_provider_transport, close_provider_gateway_session, compile_request_url,
         open_provider_gateway_session, open_provider_gateway_session_with_credential,
-        parse_canonical_origin, register_cancellation, request_cancellation,
-        resolve_provider_gateway_operation, validate_adapter, validate_credential,
-        validate_credential_binding, validate_request_body, validate_resolved_addresses,
-        ProviderCredentialSession, ProviderGatewayEvent, ProviderGatewayState,
-        ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, CANCELLATION_TOMBSTONE_TTL, MAX_API_KEY_BYTES,
-        MAX_CANCELLATION_ENTRIES, MAX_CREDENTIAL_SESSIONS, MAX_REQUEST_BODY_BYTES,
-        OPENAI_ADAPTER_ID, OPENAI_ORIGIN, OPENAI_RESPONSES_ADAPTER_ID,
+        parse_canonical_origin, provider_gateway_request, register_cancellation,
+        request_cancellation, resolve_provider_gateway_operation, validate_adapter,
+        validate_credential, validate_credential_binding, validate_request_body,
+        validate_resolved_addresses, ProviderCredentialSession, ProviderGatewayEvent,
+        ProviderGatewayState, ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, CANCELLATION_TOMBSTONE_TTL,
+        MAX_API_KEY_BYTES, MAX_CANCELLATION_ENTRIES, MAX_CREDENTIAL_SESSIONS,
+        MAX_REQUEST_BODY_BYTES, OPENAI_ADAPTER_ID, OPENAI_ORIGIN, OPENAI_RESPONSES_ADAPTER_ID,
     };
     use std::io::{Read, Write};
     use std::net::SocketAddr;
@@ -1107,5 +1116,72 @@ mod tests {
         // Release the second bounded accept so the listener thread can finish.
         drop(std::net::TcpStream::connect(address));
         redirector.join().expect("listener thread");
+    }
+
+    #[tokio::test]
+    async fn provider_gateway_relays_stream_with_many_chunks_without_exceeding_event_limit() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("chunk server listener");
+        let address = listener.local_addr().expect("listener address");
+        let port = address.port();
+
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("client connection");
+            let mut request = [0u8; 1024];
+            let _ = stream.read(&mut request);
+            let header = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+            stream.write_all(header.as_bytes()).expect("write headers");
+            let _ = stream.set_nodelay(true);
+            // Send 1000 small chunks:
+            for i in 0..1000 {
+                let payload = format!("data: {{\"count\":{i}}}\n\n");
+                let chunk = format!("{:x}\r\n{}\r\n", payload.len(), payload);
+                stream.write_all(chunk.as_bytes()).expect("write chunk");
+                stream.flush().expect("flush chunk");
+                std::thread::sleep(std::time::Duration::from_micros(50));
+            }
+            // Final zero-length chunk:
+            stream.write_all(b"0\r\n\r\n").expect("write end chunk");
+            stream.flush().expect("flush end");
+        });
+
+        let state = ProviderGatewayState::default();
+        let session_id = open_provider_gateway_session(
+            OPENAI_ADAPTER_ID.to_string(),
+            format!("http://127.0.0.1:{port}"),
+            "openai-compatible".to_string(),
+            Zeroizing::new("sk-fixture".to_string()),
+            &state,
+        )
+        .await
+        .expect("session open");
+
+        let on_event = crate::events::RecordingEventStream::new();
+        let result = provider_gateway_request(
+            "req-chunks-1".to_string(),
+            session_id,
+            "request".to_string(),
+            Some("{}".to_string()),
+            &on_event,
+            &state,
+        )
+        .await;
+
+        server.join().expect("server thread");
+        assert!(
+            result.is_ok(),
+            "expected request to succeed, got {result:?}"
+        );
+
+        let events = on_event.take();
+        // 1 ResponseStart + 1000 BodyChunk + 1 Done = 1002 events
+        assert_eq!(events.len(), 1002);
+        assert!(matches!(
+            events.first(),
+            Some(ProviderGatewayEvent::ResponseStart { .. })
+        ));
+        assert!(matches!(
+            events.last(),
+            Some(ProviderGatewayEvent::Done { .. })
+        ));
     }
 }

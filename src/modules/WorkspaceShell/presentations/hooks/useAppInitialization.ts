@@ -6,6 +6,7 @@ import {
     getAudioContext,
     setMasterGainValue,
     resumeEngine,
+    syncControlRoomMonitoring,
     syncNativeTimelineSamples,
 } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
@@ -44,6 +45,7 @@ export const useAppInitialization = (): void => {
         let unsubscribeTransportMaps: (() => void) | null = null;
         let unsubscribeNativeRearm: (() => void) | null = null;
         let unsubscribeTimelineSamples: (() => void) | null = null;
+        let unsubscribeControlRoomMonitoring: (() => void) | null = null;
         let disposed = false;
 
         void (async () => {
@@ -56,6 +58,9 @@ export const useAppInitialization = (): void => {
                 // reaches the native sample pool as it lands rather than at
                 // the first play gesture (#3068).
                 unsubscribeTimelineSamples = syncNativeTimelineSamples();
+                // Applies the monitoring state held at boot before the first
+                // subscription fires, so a pre-boot toggle is not lost.
+                unsubscribeControlRoomMonitoring = syncControlRoomMonitoring();
                 if (disposed) {
                     unsubscribeKnead();
                     unsubscribeKnead = null;
@@ -65,6 +70,8 @@ export const useAppInitialization = (): void => {
                     unsubscribeNativeRearm = null;
                     unsubscribeTimelineSamples();
                     unsubscribeTimelineSamples = null;
+                    unsubscribeControlRoomMonitoring();
+                    unsubscribeControlRoomMonitoring = null;
                 }
                 const transport = getTransportState();
                 if (transport) {
@@ -107,6 +114,10 @@ export const useAppInitialization = (): void => {
             if (unsubscribeTimelineSamples) {
                 unsubscribeTimelineSamples();
                 unsubscribeTimelineSamples = null;
+            }
+            if (unsubscribeControlRoomMonitoring) {
+                unsubscribeControlRoomMonitoring();
+                unsubscribeControlRoomMonitoring = null;
             }
         };
     }, []);

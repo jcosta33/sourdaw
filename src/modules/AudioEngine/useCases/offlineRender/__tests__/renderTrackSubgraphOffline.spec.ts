@@ -89,7 +89,15 @@ type Contribution = {
 };
 
 const contributions: Contribution[] = [];
-const createdGains: { gain: { value: number } }[] = [];
+const createdGains: { gain: { value: number }; connect: { mock: { calls: unknown[][] } } }[] = [];
+const createdContexts: RenderHarnessContext[] = [];
+
+/** What the tests read back off a strip the real builder produced. */
+type HarnessStrip = {
+    outputNode: { connect: { calls: unknown[][] } };
+    inputNode: Record<string, unknown>;
+    postFaderGain: { gain: { value: number } };
+};
 
 class RenderHarnessBuffer {
     readonly duration: number;
@@ -163,7 +171,9 @@ class RenderHarnessContext {
         readonly numberOfChannels: number,
         readonly length: number,
         readonly sampleRate: number
-    ) {}
+    ) {
+        createdContexts.push(this);
+    }
 
     createGain() {
         const gain = { ...createNode(), gain: createParam(1) };
@@ -253,6 +263,8 @@ const mocks = vi.hoisted(() => ({
     instrumentNoteOff: vi.fn(),
     /** Fader level the real strip builder computed, per track, in build order. */
     builtFaderGains: new Map<string, number>(),
+    /** The full strip the real builder produced, per track id, for wiring reads. */
+    builtStripsById: new Map<string, HarnessStrip>(),
 }));
 
 vi.mock('../../buildDeviceChain', () => ({ buildDeviceChain: mocks.buildDeviceChain }));
@@ -268,6 +280,7 @@ vi.mock('../createOfflineTrackStrip', async (importOriginal) => {
         ): ReturnType<typeof original.createOfflineTrackStrip> => {
             const strip = await original.createOfflineTrackStrip(...args);
             mocks.builtFaderGains.set(stripKeyForGain(args[1].gain), strip.faderNode.gain.value);
+            mocks.builtStripsById.set(args[1].id, strip as unknown as HarnessStrip);
             return strip;
         },
     };
@@ -347,6 +360,8 @@ describe('renderTrackSubgraphOffline', () => {
         vi.clearAllMocks();
         contributions.length = 0;
         createdGains.length = 0;
+        createdContexts.length = 0;
+        mocks.builtStripsById.clear();
         vi.stubGlobal('OfflineAudioContext', RenderHarnessContext);
         vi.stubGlobal('AudioBuffer', RenderHarnessBuffer);
         mocks.getAudioContext.mockReturnValue({ sampleRate: SAMPLE_RATE });
@@ -1413,6 +1428,184 @@ describe('renderTrackSubgraphOffline', () => {
 
                 expect(destroy).toHaveBeenCalledTimes(1);
             });
+        });
+    });
+
+    describe('send-return wet capture (#3690)', () => {
+        function createSendSubgraph(): { target: Track; returnBus: Track } {
+            const target = TrackDummy.create({
+                id: 'lead-synth',
+                kind: 'midi',
+                clips: [midiClip()],
+                sends: [{ busId: 'return-bus', level: 0.5, preFader: false }],
+            });
+            const returnBus = TrackDummy.create({
+                id: 'return-bus',
+                kind: 'bus',
+                devices: [
+                    { id: 'reverb-1', name: 'Reverb', type: 'proof-chamber', bypassed: false, parameterValues: {} },
+                ],
+            });
+            trackStore.set({ tracks: [target, returnBus], selectedTrackId: null, ghostClips: [] });
+            return { target, returnBus };
+        }
+
+        it('wires an included return bus into the mixdown so its wet output prints', async () => {
+            const { target, returnBus } = createSendSubgraph();
+            mocks.buildDeviceChain.mockResolvedValue([createInstrumentEntry('fermenter-1', 'fermenter')]);
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target, returnBus],
+                printTrackIds: ['return-bus'],
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            const destination = createdContexts.at(-1)!.destination;
+            const busStrip = mocks.builtStripsById.get('return-bus');
+            expect(busStrip).toBeDefined();
+            // The return's own output routing ('master') lies outside the
+            // subgraph; the print marking is what carries its wet to the file.
+            expect(busStrip!.outputNode.connect).toHaveBeenCalledWith(destination);
+
+            // The target's send edge feeds the bus strip through a gain set to
+            // the send level — the wet that bus then processes.
+            const sendEdge = createdGains.find((gain) =>
+                gain.connect.mock.calls.some((call) => call[0] === busStrip!.inputNode)
+            );
+            expect(sendEdge).toBeDefined();
+            expect(sendEdge!.gain.value).toBe(0.5);
+        });
+
+        it('leaves an unmarked return bus unconnected, so nothing prints without the marking', async () => {
+            const { target, returnBus } = createSendSubgraph();
+            mocks.buildDeviceChain.mockResolvedValue([createInstrumentEntry('fermenter-1', 'fermenter')]);
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target, returnBus],
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            const busStrip = mocks.builtStripsById.get('return-bus');
+            expect(busStrip).toBeDefined();
+            expect(busStrip!.outputNode.connect).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('sidechain key mute parity (#3692)', () => {
+        function createKeySubgraph(): Track[] {
+            const target = TrackDummy.create({
+                id: 'comp-target',
+                kind: 'audio',
+                devices: [
+                    {
+                        id: 'comp-1',
+                        name: 'Sidechain',
+                        type: 'builtin-sidechain-compressor',
+                        bypassed: false,
+                        parameterValues: {},
+                    },
+                ],
+            });
+            const key = TrackDummy.create({ id: 'kick-key', kind: 'audio', muted: true, outputId: 'master' });
+            const mutedContributor = TrackDummy.create({
+                id: 'muted-upstream',
+                kind: 'audio',
+                muted: true,
+                outputId: 'comp-target',
+            });
+            trackStore.set({ tracks: [target, key, mutedContributor], selectedTrackId: null, ghostClips: [] });
+            return [target, key, mutedContributor];
+        }
+
+        function mockCompressorEntry(): void {
+            mocks.buildDeviceChain.mockImplementation((_context: OfflineAudioContext, devices: Track['devices']) => {
+                if (devices.some((device) => device.type === 'builtin-sidechain-compressor')) {
+                    const inputNode = { ...createNode(), numberOfInputs: 2 };
+                    return Promise.resolve([
+                        {
+                            deviceId: 'comp-1',
+                            deviceType: 'builtin-sidechain-compressor',
+                            node: { inputNode },
+                            strategy: {},
+                        } as unknown as DeviceNodeEntry,
+                    ]);
+                }
+                return Promise.resolve([]);
+            });
+        }
+
+        async function seedKeyRoute(): Promise<void> {
+            const { sidechainStore } = await import('#/modules/Routing/stores');
+            sidechainStore.set({
+                ...sidechainStore.value!,
+                routes: [
+                    {
+                        id: 'route-1',
+                        sourceTrackId: 'kick-key',
+                        targetTrackId: 'comp-target',
+                        targetDeviceId: 'comp-1',
+                        targetParameterId: 'threshold',
+                        gain: 1,
+                    },
+                ],
+            });
+        }
+
+        it('honors a muted sidechain key mute at the strip the detector is fed from', async () => {
+            const tracks = createKeySubgraph();
+            await seedKeyRoute();
+            mockCompressorEntry();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: 'comp-target',
+                renderTracks: tracks,
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            // Live taps the key post-fader, after the mute zeroes it, so a muted
+            // key feeds the detector silence. The offline strip must gate the
+            // same node or the print carries compression the monitored sound
+            // does not have.
+            expect(mocks.builtStripsById.get('kick-key')!.postFaderGain.gain.value).toBe(0);
+            // The target's own mute stays ignored, exactly as before.
+            expect(mocks.builtStripsById.get('comp-target')!.postFaderGain.gain.value).toBe(1);
+            // And a muted track whose role here is content, not key, keeps the
+            // force-unmute the deliverable-print rule gives it.
+            expect(mocks.builtStripsById.get('muted-upstream')!.postFaderGain.gain.value).toBe(1);
+        });
+
+        it('keeps an unmuted sidechain key strip open', async () => {
+            const target = TrackDummy.create({
+                id: 'comp-target',
+                kind: 'audio',
+                devices: [
+                    {
+                        id: 'comp-1',
+                        name: 'Sidechain',
+                        type: 'builtin-sidechain-compressor',
+                        bypassed: false,
+                        parameterValues: {},
+                    },
+                ],
+            });
+            const key = TrackDummy.create({ id: 'kick-key', kind: 'audio', muted: false });
+            trackStore.set({ tracks: [target, key], selectedTrackId: null, ghostClips: [] });
+            await seedKeyRoute();
+            mockCompressorEntry();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target, key],
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            expect(mocks.builtStripsById.get('kick-key')!.postFaderGain.gain.value).toBe(1);
         });
     });
 });

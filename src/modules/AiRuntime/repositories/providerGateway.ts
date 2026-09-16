@@ -3,7 +3,7 @@ import { productionProviderGatewayDependencies, type ProviderGatewayDependencies
 const MAX_PROVIDER_REQUEST_BYTES = 1024 * 1024;
 const MAX_PROVIDER_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_PROVIDER_EVENT_BYTES = 64 * 1024;
-const MAX_PROVIDER_EVENTS = 256;
+const MAX_PROVIDER_EVENTS = 8192;
 
 type ProviderGatewayWireEvent =
     | {

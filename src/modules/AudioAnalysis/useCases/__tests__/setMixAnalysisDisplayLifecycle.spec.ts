@@ -5,6 +5,7 @@ import { setMixAnalysisDisplayLifecycle } from '../setMixAnalysisDisplayLifecycl
 
 const empty_result: Parameters<typeof mixAnalysisDisplayLifecycle.complete>[0]['result'] = {
     timestamp: 1,
+    status: { availability: 'measured', provenance: 'live-analyser-snapshot' },
     overallLevel: { peakDb: -6, rmsDb: -12 },
     frequencyBalance: {
         sub: -80,

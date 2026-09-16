@@ -758,6 +758,41 @@ fn note_on(note: u8) -> MidiNoteEvent {
 }
 
 #[cfg(test)]
+mod event_buffer_capacity {
+    use super::*;
+
+    /// The buffer is the one bound every downstream adapter sizes its delivery
+    /// from (the hosted bridge takes its scratch capacity from this constant),
+    /// so the accepted count and the overflow answer have to be exactly what
+    /// the constant states: everything up to it is consumed by a caller that
+    /// drains, and one past it is refused observably — `try_push` answers
+    /// `false` rather than silently overwriting or hiding the event.
+    #[test]
+    fn a_full_buffer_is_accepted_and_the_next_event_is_refused_observably() {
+        let mut events = MidiEventBuffer::new();
+        assert_eq!(events.capacity(), MIDI_EVENT_BUFFER_CAPACITY);
+
+        for index in 0..MIDI_EVENT_BUFFER_CAPACITY {
+            assert!(
+                events.try_push(note_on(index as u8)),
+                "event {index} is within capacity and must be accepted"
+            );
+        }
+        assert_eq!(events.len(), MIDI_EVENT_BUFFER_CAPACITY);
+
+        assert!(
+            !events.try_push(note_on(0)),
+            "the first event past capacity is refused, not dropped silently"
+        );
+        assert_eq!(
+            events.len(),
+            MIDI_EVENT_BUFFER_CAPACITY,
+            "a refused event does not disturb the events already held"
+        );
+    }
+}
+
+#[cfg(test)]
 mod velocity_scaler_tests {
     use super::*;
 

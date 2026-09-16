@@ -175,6 +175,7 @@ describe('createScoringNode', () => {
             octave: 4,
             midiNote: 69,
             noteName: 'A',
+            polyStrings: [],
         });
     });
 
@@ -210,7 +211,86 @@ describe('createScoringNode', () => {
             octave: 0,
             midiNote: 0,
             noteName: '',
+            polyStrings: [],
         });
+    });
+
+    // The poly block publishes under its own gate: strings ringing out while
+    // the mono readout has released must still reach the panel's string rows.
+    // Slot values are Float32, so the fixture uses exactly representable ones.
+    it('projects per-string poly telemetry while the mono readout is inactive', async () => {
+        const { telemetryAllocator, SCORING_IDX } = await import('../telemetryAllocator');
+        const view = new Float32Array(32);
+        view[SCORING_IDX.active] = 0;
+        view[SCORING_IDX.polyCount] = 2;
+        view[SCORING_IDX.polyBase] = 1; // string 0 active
+        view[SCORING_IDX.polyBase + 1] = -7.5;
+        view[SCORING_IDX.polyBase + 2] = 0.5;
+        // String 1: published but flagged inactive.
+        view[SCORING_IDX.polyBase + 3] = 0;
+        view[SCORING_IDX.polyBase + 4] = 12;
+        view[SCORING_IDX.polyBase + 5] = 0.25;
+        vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
+            sab: {} as SharedArrayBuffer,
+            byteOffset: 0,
+            view,
+            seqView: new Int32Array(32),
+        });
+        const rafCallbacks: FrameRequestCallback[] = [];
+        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+            rafCallbacks.push(cb);
+            return rafCallbacks.length;
+        });
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+
+        const node = await createScoringNode(makeCtx());
+        const cb = vi.fn();
+        node.onTelemetry(cb);
+        rafCallbacks[0]!(0);
+
+        expect(cb).toHaveBeenCalledWith({
+            active: false,
+            frequency: 0,
+            cents: 0,
+            confidence: 0,
+            noteIndex: 0,
+            octave: 0,
+            midiNote: 0,
+            noteName: '',
+            polyStrings: [
+                { active: true, cents: -7.5, confidence: 0.5 },
+                { active: false, cents: 12, confidence: 0.25 },
+            ],
+        });
+    });
+
+    // The slot carries six per-string triplets; a larger claim from the worklet
+    // side would only be reading zeroed headroom, so the projection clamps it.
+    it('caps the projected poly string list at the published slot capacity', async () => {
+        const { telemetryAllocator, SCORING_IDX } = await import('../telemetryAllocator');
+        const view = new Float32Array(32);
+        view[SCORING_IDX.active] = 1;
+        view[SCORING_IDX.polyCount] = 9;
+        vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
+            sab: {} as SharedArrayBuffer,
+            byteOffset: 0,
+            view,
+            seqView: new Int32Array(32),
+        });
+        const rafCallbacks: FrameRequestCallback[] = [];
+        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+            rafCallbacks.push(cb);
+            return rafCallbacks.length;
+        });
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+
+        const node = await createScoringNode(makeCtx());
+        const cb = vi.fn();
+        node.onTelemetry(cb);
+        rafCallbacks[0]!(0);
+
+        const frame = cb.mock.calls[0]?.[0] as { polyStrings: unknown[] };
+        expect(frame.polyStrings).toHaveLength(6);
     });
 
     it('should connect to the destination and swallow a disconnect error instead of throwing', async () => {

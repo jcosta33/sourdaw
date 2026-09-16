@@ -1,3 +1,5 @@
+import { valuesEqual } from '#/utils/structuralEquality';
+
 import { STRAIGHT_GROOVE_TEMPLATE_ID, isGrooveTemplate } from '../../models/GrooveTemplate';
 import { isGrooveTemplateState } from '../../models/GrooveTemplateState';
 import { isGrooveTemplateAssignment, grooveTemplateStore } from '../../stores/grooveTemplateStore';
@@ -24,7 +26,7 @@ export function restoreDeletedGrooveTemplate(snapshot: DeletedGrooveTemplateSnap
         throw new Error('Cannot restore groove template: snapshot references a different template or is not canonical');
     }
     const existingTemplate = state.templates.find((template) => template.id === snapshot.template.id);
-    if (existingTemplate && JSON.stringify(existingTemplate) !== JSON.stringify(snapshot.template)) {
+    if (existingTemplate && !valuesEqual(existingTemplate, snapshot.template)) {
         throw new Error(
             `Cannot restore groove template "${snapshot.template.id}": identity was recreated with different content`
         );

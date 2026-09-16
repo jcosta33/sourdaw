@@ -46,7 +46,7 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     setEditingTool: vi.fn(),
     startToolSwap: vi.fn(),
     finishToolSwap: vi.fn(),
-    showAutomationPanel: vi.fn(),
+    showDevicePanel: vi.fn(),
     toggleMixer: vi.fn(),
     toggleTrackList: vi.fn(),
     toggleVirtualKeyboard: vi.fn(),
@@ -77,6 +77,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     executeUndoableDuplicateTimeRange: vi.fn(),
     executeUndoableInsertTime: vi.fn(),
     getAllTracks: vi.fn(() => []),
+    getLastClipEndBeat: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -93,7 +94,6 @@ vi.mock('../../../stores/shortcutStore', () => ({
 }));
 
 vi.mock('../../selectionHelpers/getAllClipIds', () => ({ getAllClipIds: vi.fn() }));
-vi.mock('../../selectionHelpers/getLastClipEndBeat', () => ({ getLastClipEndBeat: vi.fn() }));
 vi.mock('../../selectionHelpers/goToNextMarker', () => ({ goToNextMarker: vi.fn() }));
 vi.mock('../../selectionHelpers/goToPreviousMarker', () => ({ goToPreviousMarker: vi.fn() }));
 

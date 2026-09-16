@@ -1,35 +1,13 @@
 import { inject } from '#/infra/di/inject';
 
+import { mapBacteriaModAssignments } from '../../models/BacteriaModulationIds';
 import { type BacteriaBand, type BacteriaPatch } from '../../models/BacteriaPatch';
 import { getBacteriaState, loadBacteriaPatch } from '../../stores/bacteriaStore';
 
 import { bacteriaParamBridgeDependencies } from './bacteriaParamBridgeDependencies';
-import { encodePatchValue } from './helpers';
+import { encodePatchValue, NON_SCALAR_BAND_KEYS, NON_SCALAR_GLOBAL_KEYS } from './helpers';
 
 import type { DeviceRef, PersistDeviceParamFn, UpdateDeviceParamFn } from './helpers';
-
-/**
- * Top-level `BacteriaPatch` keys that are NOT scalar audio parameters and so
- * are never pushed to the engine as a single `(paramId, value)` message:
- *   - `name`            — display label, no audio meaning
- *   - `bands`           — array; pushed per-band below with a `band{i}_` prefix
- *   - `modAssignments`  — UI/persistence-only routing metadata (see BacteriaPatch.ts)
- *   - `snapshots`       — UI/persistence-only XY-morph metadata (see BacteriaPatch.ts)
- *
- * Every other key is a scalar (number / boolean / enum-string) the engine
- * understands. Iterating the patch keys minus this set — instead of a parallel
- * hand-maintained string list — guarantees new scalar params (e.g. lfo1Sync /
- * lfo2Sync) are pushed without a second edit, and that the two lists can never
- * silently drift apart.
- */
-const NON_SCALAR_GLOBAL_KEYS = new Set<keyof BacteriaPatch>(['name', 'bands', 'modAssignments', 'snapshots']);
-
-/**
- * Per-band keys that are not scalar audio parameters: `convolutionIr` is an IR
- * identifier string with no numeric encoding (encodePatchValue returns null for
- * it), so it is excluded explicitly rather than relying on the null guard.
- */
-const NON_SCALAR_BAND_KEYS = new Set<keyof BacteriaBand>(['convolutionIr']);
 
 function createPushParamImmediately(
     updateDeviceParamFn: UpdateDeviceParamFn,
@@ -44,6 +22,7 @@ function createPushParamImmediately(
 export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies)(({
     getAllTracks: getAllTracksFn,
     updateDeviceParam: updateDeviceParamFn,
+    updateDevicePatch: updateDevicePatchFn,
     persistDeviceParam: persistDeviceParamFn,
     resolveEligibleDeviceWriteTarget: resolveEligibleDeviceWriteTargetFn,
 }) => {
@@ -116,6 +95,17 @@ export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies
                 }
                 pushParamImmediately(target, prefixedKey, encodedValue);
             }
+        }
+
+        // Assignments are structured rows, not scalar params, so they leave
+        // through the patch door as one wholesale replacement — a load must
+        // also drop the assignments the previous patch had. Pushed
+        // unconditionally rather than diffed: a reloaded worklet empties its
+        // engine table without the store mirror knowing, so a matching mirror
+        // proves nothing.
+        const mappedAssignments = mapBacteriaModAssignments(patch.modAssignments);
+        if (mappedAssignments) {
+            updateDevicePatchFn(target.trackId, target.deviceId, { modAssignments: mappedAssignments });
         }
     };
 });

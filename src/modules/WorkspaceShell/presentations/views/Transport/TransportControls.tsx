@@ -14,7 +14,6 @@ import { executeUserAppAction } from '#/modules/Command/useCases';
 import {
     togglePlayback,
     stopPlayback,
-    toggleLoop,
     toggleOverdub,
     toggleMetronome,
     setMetronomeVolume,
@@ -184,6 +183,9 @@ export const TransportControls = ({
     countInBars,
     compact = false,
 }: TransportControlsProps): ReactElement => {
+    const toggleLoop = (): void => {
+        void executeUserAppAction({ type: 'toggleLoop' }).catch(() => undefined);
+    };
     const setPunchEnabled = (): void => {
         void executeUserAppAction({
             type: 'setPunchEnabled',

@@ -9,6 +9,7 @@ import { downloadBlob, OBJECT_URL_LIFETIME_MS } from '../downloadFile';
  */
 function stubbedAnchor(): HTMLAnchorElement {
     const anchor = document.createElement('a');
+    // @ts-expect-error the Electron DOM augmentation adds a createElement("webview") overload this mock does not satisfy
     vi.spyOn(document, 'createElement').mockReturnValue(anchor);
     return anchor;
 }

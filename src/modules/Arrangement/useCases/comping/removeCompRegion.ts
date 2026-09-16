@@ -1,6 +1,7 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { type TakeLane } from '../../models/TakeLane';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 
-import { takeLaneStore, type TakeLaneStoreState } from '../../stores/takeLaneStore';
+import { pushTargetedTakeLaneUndoEntry } from './takeLaneUndo';
 
 export function removeCompRegion(trackId: string, startBeat: number): void {
     const state = takeLaneStore.value;
@@ -15,23 +16,21 @@ export function removeCompRegion(trackId: string, startBeat: number): void {
         return;
     }
 
-    const previous: TakeLaneStoreState = state;
-    const next: TakeLaneStoreState = {
-        lanes: state.lanes.map((l) => {
-            if (l.trackId !== trackId) {
-                return l;
-            }
-            return {
-                ...l,
-                activeCompRegions: l.activeCompRegions.filter((r) => r.startBeat !== startBeat),
-            };
-        }),
+    const nextLane: TakeLane = {
+        ...lane,
+        activeCompRegions: lane.activeCompRegions.filter((r) => r.startBeat !== startBeat),
     };
-    takeLaneStore.set(next);
+    takeLaneStore.set({
+        lanes: state.lanes.map((l) => (l.trackId === trackId ? nextLane : l)),
+    });
 
-    pushUndoEntry(
-        'Remove comp region',
-        () => takeLaneStore.set(previous),
-        () => takeLaneStore.set(next)
-    );
+    // The entry captures only this lane's comp regions (#4081): replaying a
+    // whole-store snapshot on undo erased every later edit to any lane.
+    pushTargetedTakeLaneUndoEntry({
+        kind: 'facet',
+        label: 'Remove comp region',
+        laneId: lane.id,
+        before: { kind: 'activeCompRegions', value: lane.activeCompRegions },
+        after: { kind: 'activeCompRegions', value: nextLane.activeCompRegions },
+    });
 }
