@@ -1805,6 +1805,15 @@ const CC_SOSTENUTO_PEDAL: u8 = 66;
 /// The una corda (soft) pedal's controller number.
 const CC_UNA_CORDA_PEDAL: u8 = 67;
 
+/// The All Sound Off channel-mode message's controller number.
+const CC_ALL_SOUND_OFF: u8 = 120;
+
+/// The Reset All Controllers channel-mode message's controller number.
+const CC_RESET_ALL_CONTROLLERS: u8 = 121;
+
+/// The All Notes Off channel-mode message's controller number.
+const CC_ALL_NOTES_OFF: u8 = 123;
+
 /// The Grand Boule piano, hosted as a built-in instrument body.
 ///
 /// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
@@ -1927,6 +1936,16 @@ impl GrandBouleBody {
     /// to the instrument rather than to a voice, so a damper pressed on any
     /// channel holds every string the instrument is sounding — which is what
     /// the mechanism physically does.
+    ///
+    /// The three channel-mode messages a panic is made of are answered too. A
+    /// note-off cannot discharge them here: with the damper down or a sostenuto
+    /// capture standing, the instrument's `note_off` routes to `release_key`
+    /// and the voice goes on ringing, so a panic built out of note-offs alone
+    /// leaves a pedalled piano sounding. All Sound Off and All Notes Off
+    /// therefore kill every voice outright — the instrument offers nothing
+    /// gentler that a held pedal cannot veto, and silence is what a panic is
+    /// asking for. Reset All Controllers lifts the pedals, which is the state
+    /// that made the kill necessary.
     fn control_change(&mut self, event: MidiControlEvent) {
         match event.controller {
             CC_SUSTAIN_PEDAL => self
@@ -1938,6 +1957,8 @@ impl GrandBouleBody {
             CC_UNA_CORDA_PEDAL => self
                 .instance
                 .set_una_corda(event.value >= MIDI_SWITCH_THRESHOLD),
+            CC_ALL_SOUND_OFF | CC_ALL_NOTES_OFF => self.instance.all_notes_off(),
+            CC_RESET_ALL_CONTROLLERS => self.reset_controllers(),
             _ => {}
         }
     }
@@ -6019,13 +6040,14 @@ impl AudioScheduler {
                 }
                 GraphCommand::SendMidiControl(id, event) => {
                     // Nothing is queued: a controller is a state write on the
-                    // instance, not a frame-stamped event, so it applies here
-                    // — at the head of this block, ahead of every note this
-                    // block renders. That ordering is the whole point: a
-                    // damper pressed before a key is what sustains the note
-                    // that key sounds, and a controller deferred behind the
-                    // block's notes would reach the instrument after the
-                    // release it was meant to hold.
+                    // instance, not a frame-stamped event, so it applies here,
+                    // at the head of this block. A controller and a note sent
+                    // in the same callback therefore have no frame order
+                    // between them — the controller lands at the block head
+                    // whichever was pushed first. A note-off sent ahead of a
+                    // pedal press in one callback is consequently held rather
+                    // than released, which is the tie-break this placement
+                    // buys and the cost it charges.
                     //
                     // A body nothing will hand a block to is skipped at the
                     // door, on the same discard law
@@ -10298,6 +10320,18 @@ mod tests {
         /// over an idle body would cover none of the routes above.
         /// `reset_controllers` runs inside the guard as well, because the stop
         /// that calls it calls it from the same drain.
+        ///
+        /// Every controller is followed by a render inside the guard, because a
+        /// pedal's cost is mostly paid on the block after it: the damper's
+        /// crossings, the sostenuto capture and the una corda re-aim all leave
+        /// state the next `process` walks, and a guard holding controllers
+        /// alone would never enter those paths. The key is also let go under a
+        /// held damper, which is the one sequence that takes `note_off`'s
+        /// release-key route rather than its damping one.
+        ///
+        /// The sounding check is read inside the guard and asserted outside it:
+        /// a failing `assert!` formats its message, and an allocation on the
+        /// panic path would abort the process instead of failing the test.
         #[test]
         fn a_grand_boule_control_change_allocates_nothing() {
             const FRAMES: usize = 512;
@@ -10332,13 +10366,46 @@ mod tests {
                 channel: 0,
             };
 
+            let release = MidiNoteEvent {
+                is_note_on: false,
+                ..note
+            };
+            let mut held_after_release = false;
+
             assert_no_alloc(|| {
-                for controller in [CC_SUSTAIN, CC_SOSTENUTO, CC_UNA_CORDA] {
+                body.control_change(control(CC_SUSTAIN, 127));
+                body.process(&mut left, &mut right, FRAMES, &[]);
+                body.process(
+                    &mut left,
+                    &mut right,
+                    FRAMES,
+                    std::slice::from_ref(&release),
+                );
+                // Cleared so the block below is read on its own: `process`
+                // sums into these buffers, so residue from the blocks above
+                // would read as sound whatever the damper did.
+                left.fill(0.0);
+                right.fill(0.0);
+                body.process(&mut left, &mut right, FRAMES, &[]);
+                held_after_release = left.iter().any(|sample| *sample != 0.0);
+
+                body.control_change(control(CC_SUSTAIN, 0));
+                body.process(&mut left, &mut right, FRAMES, &[]);
+                for controller in [CC_SOSTENUTO, CC_UNA_CORDA] {
                     body.control_change(control(controller, 127));
+                    body.process(&mut left, &mut right, FRAMES, &[]);
                     body.control_change(control(controller, 0));
+                    body.process(&mut left, &mut right, FRAMES, &[]);
                 }
                 body.reset_controllers();
+                body.process(&mut left, &mut right, FRAMES, &[]);
             });
+
+            assert!(
+                held_after_release,
+                "the key was let go under a held damper and the instrument fell silent, so the \
+                 guard covered a decaying body rather than the release-key route"
+            );
         }
 
         /// A hosted Gluten compresses a callback without allocating.
@@ -18911,6 +18978,11 @@ mod timeline_tests {
     const CC_SOSTENUTO: u8 = 66;
     const CC_UNA_CORDA: u8 = 67;
 
+    /// The two channel-mode messages a panic is made of, spelled as literals
+    /// for the same reason the three pedals above are.
+    const CC_PANIC_ALL_SOUND_OFF: u8 = 120;
+    const CC_PANIC_RESET_CONTROLLERS: u8 = 121;
+
     /// Full scale on a 7-bit controller, and the divisor that turns one into
     /// the `0..1` position the instrument takes — spelled here for the reason
     /// [`grand_boule_velocity`] spells its own divisor.
@@ -19303,6 +19375,371 @@ mod timeline_tests {
         assert_eq!(
             hosted_right, lifted_right,
             "the hosted right channel is not the signal a stop that lifts all three renders"
+        );
+    }
+
+    /// The renderer's panic silences the instrument even while the damper is
+    /// holding the note, and lifts the pedal on its way out.
+    ///
+    /// A panic built out of note-offs cannot reach this state: with the damper
+    /// down the instrument's `note_off` routes to `release_key`, so the key
+    /// going up leaves the strings ringing. The programme puts the body exactly
+    /// there — key struck, damper down, key let go — and then sends the two
+    /// channel-mode messages a panic is made of.
+    ///
+    /// Three renders of one programme, differing only in what arrives at the
+    /// panic callback. The first sends nothing and is the control: its tail
+    /// proves the note really was still ringing, so silence in the others is
+    /// the panic's doing rather than the note having decayed. The second sends
+    /// All Sound Off alone, which kills the voices but leaves the damper down.
+    /// The third sends All Sound Off and Reset All Controllers, which is what
+    /// `panicLiveNotes` sends.
+    ///
+    /// The second render is what makes the pedal lift observable: a note struck
+    /// and released after the panic rings on under a damper nobody lifted, and
+    /// damps under one Reset All Controllers raised. Dropping either arm from
+    /// `GrandBouleBody::control_change` therefore fails a different assertion.
+    #[test]
+    fn a_panic_sequence_silences_a_damper_held_grand_boule() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 24;
+        const NOTE: u8 = 60;
+        /// Where the damper goes down and the key is let go.
+        const PEDAL_CALLBACK: usize = 1;
+        /// Where the panic arrives, well after the damper took the note.
+        const PANIC_CALLBACK: usize = 8;
+        /// A second key struck past the panic, to read the pedal state it left.
+        const SECOND_NOTE_CALLBACK: usize = 12;
+        const SECOND_RELEASE_CALLBACK: usize = 16;
+        /// The note ringing under the damper, past the release transient and
+        /// before the panic.
+        const BEFORE: std::ops::Range<usize> =
+            (PEDAL_CALLBACK + 2) * CALLBACK..PANIC_CALLBACK * CALLBACK;
+        /// What the panic left, before the second key is struck.
+        const AFTER: std::ops::Range<usize> =
+            (PANIC_CALLBACK + 1) * CALLBACK..SECOND_NOTE_CALLBACK * CALLBACK;
+        /// What the second key left once it was released.
+        const SECOND_AFTER: std::ops::Range<usize> = (SECOND_RELEASE_CALLBACK + 2) * CALLBACK
+            ..(SECOND_RELEASE_CALLBACK + 2) * CALLBACK + 4 * CALLBACK;
+        /// How far below the ringing window the panicked tail has to sit. A
+        /// kill is immediate, so this is a margin against an unrelated decay
+        /// rather than a tuned figure.
+        const DECISIVE: f32 = 100.0;
+
+        /// What arrives at the panic callback in one render.
+        #[derive(Clone, Copy, PartialEq)]
+        enum Panic {
+            /// Nothing: the control render.
+            None,
+            /// All Sound Off alone, leaving the damper down.
+            SoundOff,
+            /// The whole sequence `panicLiveNotes` sends.
+            SoundOffAndReset,
+        }
+
+        let render = |panic: Panic| {
+            let mut harness = Harness::new(32);
+            track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+            harness.playing();
+            harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+            render_master_at_callback_heads(
+                &mut harness,
+                CALLBACK,
+                CALLBACKS,
+                move |callback, harness| match callback {
+                    PEDAL_CALLBACK => {
+                        harness.send(pedal(CC_SUSTAIN, 127));
+                        harness.send(GraphCommand::SendMidiNote(
+                            GRAND_BOULE_ID,
+                            grand_boule_release(NOTE),
+                        ));
+                    }
+                    PANIC_CALLBACK => {
+                        if panic != Panic::None {
+                            harness.send(pedal(CC_PANIC_ALL_SOUND_OFF, 0));
+                        }
+                        if panic == Panic::SoundOffAndReset {
+                            harness.send(pedal(CC_PANIC_RESET_CONTROLLERS, 0));
+                        }
+                    }
+                    SECOND_NOTE_CALLBACK => {
+                        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+                    }
+                    SECOND_RELEASE_CALLBACK => {
+                        harness.send(GraphCommand::SendMidiNote(
+                            GRAND_BOULE_ID,
+                            grand_boule_release(NOTE),
+                        ));
+                    }
+                    _ => {}
+                },
+            )
+        };
+
+        let (control_left, _control_right) = render(Panic::None);
+        let (sound_off_left, _sound_off_right) = render(Panic::SoundOff);
+        let (panicked_left, _panicked_right) = render(Panic::SoundOffAndReset);
+
+        assert!(
+            rms(&panicked_left[BEFORE]) > 0.0,
+            "the instrument was already silent before the panic, so its tail proves nothing"
+        );
+        assert!(
+            rms(&control_left[AFTER]) > 0.0,
+            "the note had decayed on its own by {}, so the silence below is not the panic's doing",
+            AFTER.start
+        );
+        assert!(
+            rms(&panicked_left[AFTER]) * DECISIVE < rms(&panicked_left[BEFORE]),
+            "the panic left {} against the {} it was holding, so the damper-held voice went on \
+             ringing through it",
+            rms(&panicked_left[AFTER]),
+            rms(&panicked_left[BEFORE])
+        );
+
+        assert!(
+            rms(&sound_off_left[SECOND_AFTER]) > 0.0,
+            "the second key left nothing ringing even with the damper still down, so the \
+             comparison below says nothing about the pedal being lifted"
+        );
+        assert!(
+            rms(&panicked_left[SECOND_AFTER]) < rms(&sound_off_left[SECOND_AFTER]),
+            "a key released after the whole panic rang as long as one released under a damper \
+             nobody lifted ({} against {}), so Reset All Controllers never reached the pedals",
+            rms(&panicked_left[SECOND_AFTER]),
+            rms(&sound_off_left[SECOND_AFTER])
+        );
+    }
+
+    /// Sostenuto on its own captures the key that is sounding, and it is CC66
+    /// that carries it.
+    ///
+    /// The reference engages exactly one pedal before the note-off, so the
+    /// equality names which pedal the body reached for. The inequality against
+    /// the una corda reference is the discriminating half: swapping the CC66
+    /// and CC67 arms in `GrandBouleBody::control_change` makes the hosted
+    /// render the other reference and fails the equality here.
+    #[test]
+    fn a_grand_boule_sostenuto_pedal_alone_captures_the_held_key() {
+        let (hosted, own, other) = render_one_grand_boule_pedal(CC_SOSTENUTO);
+
+        assert!(
+            rms(&own.0[SINGLE_PEDAL_TAIL..]) > 0.0,
+            "the sostenuto reference captured nothing, so its tail proves nothing"
+        );
+        assert_ne!(
+            own.0[SINGLE_PEDAL_TAIL..],
+            other.0[SINGLE_PEDAL_TAIL..],
+            "a captured key renders exactly what the soft pedal renders, so the equality below \
+             cannot tell one pedal from the other"
+        );
+        assert_eq!(
+            hosted.0, own.0,
+            "the hosted left channel is not the signal a sostenuto capture renders"
+        );
+        assert_eq!(
+            hosted.1, own.1,
+            "the hosted right channel is not the signal a sostenuto capture renders"
+        );
+    }
+
+    /// Una corda on its own softens the instrument, and it is CC67 that carries
+    /// it.
+    ///
+    /// The sibling of the sostenuto spec above, with the two references the
+    /// other way round. The soft pedal's coupling ratio is read on every block
+    /// rather than at the hammer, so engaging it mid-note moves the signal and
+    /// the equality below can tell a delivered CC67 from a dropped one.
+    #[test]
+    fn a_grand_boule_una_corda_pedal_alone_softens_the_hammers() {
+        let (hosted, own, other) = render_one_grand_boule_pedal(CC_UNA_CORDA);
+
+        assert_ne!(
+            own.0[SINGLE_PEDAL_TAIL..],
+            other.0[SINGLE_PEDAL_TAIL..],
+            "the soft pedal renders exactly what a sostenuto capture renders, so the equality \
+             below cannot tell one pedal from the other"
+        );
+        assert_eq!(
+            hosted.0, own.0,
+            "the hosted left channel is not the signal an engaged soft pedal renders"
+        );
+        assert_eq!(
+            hosted.1, own.1,
+            "the hosted right channel is not the signal an engaged soft pedal renders"
+        );
+    }
+
+    /// Where the two single-pedal specs above read their tails: past the run
+    /// the pedal went down on and the key was let go, so the window holds
+    /// whatever that one pedal was doing rather than the release transient.
+    const SINGLE_PEDAL_TAIL: usize = 5 * SINGLE_PEDAL_CALLBACK_FRAMES;
+
+    /// The callback length those two specs render at.
+    const SINGLE_PEDAL_CALLBACK_FRAMES: usize = 256;
+
+    /// Render one pedal pressed alone, with the two single-pedal references to
+    /// judge it against.
+    ///
+    /// Returns the hosted pair, the reference pair for `controller`'s own pedal,
+    /// and the reference pair for the other switch pedal. Both references run
+    /// the same programme and engage exactly one pedal, so the pair of them
+    /// separates CC66 from CC67 rather than a pedal from no pedal.
+    fn render_one_grand_boule_pedal(
+        controller: u8,
+    ) -> (
+        (Vec<f32>, Vec<f32>),
+        (Vec<f32>, Vec<f32>),
+        (Vec<f32>, Vec<f32>),
+    ) {
+        const CALLBACK: usize = SINGLE_PEDAL_CALLBACK_FRAMES;
+        const CALLBACKS: usize = 16;
+        const RUNS: usize = CALLBACK * CALLBACKS / GRAND_BOULE_RUN_FRAMES;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        const PEDAL_CALLBACK: usize = 1;
+        const PEDAL_RUN: usize = PEDAL_CALLBACK * RUNS_PER_CALLBACK;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+        let hosted = render_master_at_callback_heads(
+            &mut harness,
+            CALLBACK,
+            CALLBACKS,
+            move |callback, harness| {
+                if callback == PEDAL_CALLBACK {
+                    harness.send(pedal(controller, 127));
+                    harness.send(GraphCommand::SendMidiNote(
+                        GRAND_BOULE_ID,
+                        grand_boule_release(NOTE),
+                    ));
+                }
+            },
+        );
+
+        let reference = |sostenuto: bool| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                }
+                if run == PEDAL_RUN {
+                    if sostenuto {
+                        instance.set_sostenuto(true);
+                    } else {
+                        instance.set_una_corda(true);
+                    }
+                    instance.note_off_on_channel(NOTE, 0);
+                }
+            })
+        };
+
+        let sostenuto = reference(true);
+        let una_corda = reference(false);
+        if controller == CC_SOSTENUTO {
+            (hosted, sostenuto, una_corda)
+        } else {
+            (hosted, una_corda, sostenuto)
+        }
+    }
+
+    /// A loop wrap leaves the musician's foot on the damper, exactly as it
+    /// leaves their hands on the keys.
+    ///
+    /// The seam strands a scheduled note-off, which is the whole reason a
+    /// stored note is released there. A pedal is neither scheduled nor
+    /// stranded, and no DAW lifts a pedal where a region starts again, so
+    /// `release_sounding_notes` lifts controllers for [`ReleaseScope::All`]
+    /// alone.
+    ///
+    /// The key is let go under the damper before the first wrap, so the voice
+    /// is ringing on nothing but the pedal when the seam arrives. The
+    /// discriminating reference lifts the damper at the run the wrap's release
+    /// lands on, which is what making that reset unconditional renders.
+    #[test]
+    fn a_loop_wrap_leaves_the_grand_boule_damper_down() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 20;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS: usize = RENDERED / GRAND_BOULE_RUN_FRAMES;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        /// A whole number of callbacks, so the seam lands on a block boundary
+        /// and the instrument's runs stay on the 128-frame grid its reference
+        /// walks.
+        const LOOP_CALLBACKS: usize = 4;
+        const LOOP_END: u64 = (LOOP_CALLBACKS * CALLBACK) as u64;
+        /// Where the damper goes down and the key is let go, before the wrap.
+        const PEDAL_CALLBACK: usize = 1;
+        const PEDAL_RUN: usize = PEDAL_CALLBACK * RUNS_PER_CALLBACK;
+        /// The wrap falls at the end of the last callback inside the region, so
+        /// a release taken on the seam reaches the instrument from the next
+        /// callback's first run.
+        const SEAM_RUN: usize = LOOP_CALLBACKS * RUNS_PER_CALLBACK;
+        /// Far enough past the seam that the window reads the pedal state
+        /// rather than the seam's own transient.
+        const TAIL: usize = (LOOP_CALLBACKS + 4) * CALLBACK;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+        let (hosted_left, hosted_right) = render_master_at_callback_heads(
+            &mut harness,
+            CALLBACK,
+            CALLBACKS,
+            |callback, harness| {
+                if callback == PEDAL_CALLBACK {
+                    harness.send(pedal(CC_SUSTAIN, 127));
+                    harness.send(GraphCommand::SendMidiNote(
+                        GRAND_BOULE_ID,
+                        grand_boule_release(NOTE),
+                    ));
+                }
+            },
+        );
+
+        let reference = |lifted_at_seam: bool| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                }
+                if run == PEDAL_RUN {
+                    instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
+                    instance.note_off_on_channel(NOTE, 0);
+                }
+                if lifted_at_seam && run == SEAM_RUN {
+                    instance.set_sustain(0.0);
+                }
+            })
+        };
+        let (held_left, held_right) = reference(false);
+        let (wrap_lifted_left, _wrap_lifted_right) = reference(true);
+
+        assert!(
+            rms(&held_left[TAIL..]) > 0.0,
+            "the damper was holding nothing past the seam, so the equality below proves nothing"
+        );
+        assert!(
+            rms(&wrap_lifted_left[TAIL..]) < rms(&held_left[TAIL..]),
+            "lifting the damper on the seam renders the same tail as leaving it down ({} against \
+             {}), so the equality below cannot tell one from the other",
+            rms(&wrap_lifted_left[TAIL..]),
+            rms(&held_left[TAIL..])
+        );
+        assert_eq!(
+            hosted_left, held_left,
+            "the hosted left channel is not the signal a wrap that leaves the damper down renders"
+        );
+        assert_eq!(
+            hosted_right, held_right,
+            "the hosted right channel is not the signal a wrap that leaves the damper down renders"
         );
     }
 

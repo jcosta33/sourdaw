@@ -30,6 +30,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
     isDeviceCarriedByNativeSession: () => false,
+    isDeviceHeldByNativeSession: () => false,
     sendNativeLiveMidiControl: async () => true,
     sendNativeLiveMidiNote: async () => true,
 }));
@@ -70,8 +71,26 @@ function make_dependencies(overrides: Partial<HandleWebMidiCCDependencies> = {})
         eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
         panicLiveNotes: () => {},
         isDeviceCarriedByNativeSession: () => false,
+        isDeviceHeldByNativeSession: () => false,
         sendNativeLiveMidiControl: send_native_live_midi_control,
         ...overrides,
+    };
+}
+
+/** A Grand Boule node whose three pedal setters are all observable. */
+function grand_boule_strip(controls: {
+    setSustain: (value: number) => void;
+    setSostenuto: (on: boolean) => void;
+    setUnaCorda: (on: boolean) => void;
+}) {
+    return {
+        deviceNodes: [
+            {
+                type: 'grand-boule',
+                deviceId: 'gb-1',
+                grandBouleControls: { ready: true, ...controls },
+            },
+        ],
     };
 }
 
@@ -315,7 +334,7 @@ describe('handleWebMidiCC', () => {
         expect(set_una_corda).toHaveBeenLastCalledWith(true);
     });
 
-    it('sends a carried Grand Boule its pedals natively, with the raw 7-bit value', () => {
+    it('sends a held Grand Boule its pedals natively, with the raw 7-bit value', () => {
         target_track_id.value = 'track-1';
         const set_sustain = vi.fn<(value: number) => void>();
         const set_sostenuto = vi.fn<(on: boolean) => void>();
@@ -324,7 +343,7 @@ describe('handleWebMidiCC', () => {
         const fn = handleWebMidiCC._factory(
             make_dependencies({
                 getTrackStoreState: grand_boule_track_state,
-                isDeviceCarriedByNativeSession: (trackId: string, deviceId: string) =>
+                isDeviceHeldByNativeSession: (trackId: string, deviceId: string) =>
                     trackId === 'track-1' && deviceId === 'gb-1',
                 eventBus: {
                     emit: (type: string, payload: Record<string, unknown>) => {
@@ -335,20 +354,13 @@ describe('handleWebMidiCC', () => {
                 },
             })
         );
-        get_track_strip.mockReturnValue({
-            deviceNodes: [
-                {
-                    type: 'grand-boule',
-                    deviceId: 'gb-1',
-                    grandBouleControls: {
-                        ready: true,
-                        setSustain: set_sustain,
-                        setSostenuto: set_sostenuto,
-                        setUnaCorda: set_una_corda,
-                    },
-                },
-            ],
-        });
+        get_track_strip.mockReturnValue(
+            grand_boule_strip({
+                setSustain: set_sustain,
+                setSostenuto: set_sostenuto,
+                setUnaCorda: set_una_corda,
+            })
+        );
 
         fn(3, 64, 96);
         fn(3, 66, 127);
@@ -380,14 +392,15 @@ describe('handleWebMidiCC', () => {
             channel: 3,
         });
 
-        // The Web Audio node is gated silent while the engine carries the
-        // device, so pressing the pedal there would hold notes nobody hears.
-        expect(set_sustain).not.toHaveBeenCalled();
-        expect(set_sostenuto).not.toHaveBeenCalled();
-        expect(set_una_corda).not.toHaveBeenCalled();
+        // And the Web Audio node takes the same movement, normalized. Both
+        // bodies exist; only one of them is audible, and which one that is can
+        // change between a press and its release.
+        expect(set_sustain).toHaveBeenCalledWith(96 / 127);
+        expect(set_sostenuto).toHaveBeenCalledWith(true);
+        expect(set_una_corda).toHaveBeenCalledWith(false);
 
         // The panel reads its pedal indicators off this event whichever
-        // carrier sounds the instrument.
+        // carrier sounds the instrument, and the foot moved once per message.
         expect(emitted).toEqual([
             { type: 'midi.pedalCc', payload: { deviceId: 'gb-1', cc: 64, value: 96 / 127 } },
             { type: 'midi.pedalCc', payload: { deviceId: 'gb-1', cc: 66, value: true } },
@@ -395,12 +408,12 @@ describe('handleWebMidiCC', () => {
         ]);
     });
 
-    it('sends a carried Grand Boule nothing for a controller that is not a pedal', () => {
+    it('sends a held Grand Boule nothing for a controller that is not a pedal', () => {
         target_track_id.value = 'track-1';
         const fn = handleWebMidiCC._factory(
             make_dependencies({
                 getTrackStoreState: grand_boule_track_state,
-                isDeviceCarriedByNativeSession: () => true,
+                isDeviceHeldByNativeSession: () => true,
             })
         );
         get_track_strip.mockReturnValue({ deviceNodes: [] });
@@ -408,6 +421,56 @@ describe('handleWebMidiCC', () => {
         fn(0, 74, 40);
 
         expect(send_native_live_midi_control).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        { cc: 64, pressed: 1 as number | boolean, released: 0 as number | boolean },
+        { cc: 66, pressed: true as number | boolean, released: false as number | boolean },
+        { cc: 67, pressed: true as number | boolean, released: false as number | boolean },
+    ])('keeps both Grand Boule bodies in step when the carrier flips mid-pedal (CC $cc)', (pedal) => {
+        // A session can start, stop, or go shadowed between a press and its
+        // release. A pedal is held state with no second message coming to clear
+        // it, so a body that took only one half of the pair stays latched until
+        // something unrelated moves that pedal again.
+        target_track_id.value = 'track-1';
+        const held = { value: false };
+        // One log for all three setters, so the expectation below also proves
+        // no pedal other than the one under test was written.
+        const web_audio: Array<number | boolean> = [];
+        const set_sustain = vi.fn<(value: number) => void>((value) => web_audio.push(value));
+        const set_sostenuto = vi.fn<(on: boolean) => void>((on) => web_audio.push(on));
+        const set_una_corda = vi.fn<(on: boolean) => void>((on) => web_audio.push(on));
+        const fn = handleWebMidiCC._factory(
+            make_dependencies({
+                getTrackStoreState: grand_boule_track_state,
+                isDeviceHeldByNativeSession: () => held.value,
+            })
+        );
+        get_track_strip.mockReturnValue(
+            grand_boule_strip({
+                setSustain: set_sustain,
+                setSostenuto: set_sostenuto,
+                setUnaCorda: set_una_corda,
+            })
+        );
+
+        fn(0, pedal.cc, 127);
+        held.value = true;
+        fn(0, pedal.cc, 0);
+
+        // Web Audio saw the whole movement, even though the engine took the
+        // device over halfway through it.
+        expect(web_audio).toEqual([pedal.pressed, pedal.released]);
+        // And the native body, which only existed for the second half, was
+        // told the pedal is up rather than left believing it is down.
+        expect(send_native_live_midi_control).toHaveBeenCalledTimes(1);
+        expect(send_native_live_midi_control).toHaveBeenCalledWith({
+            trackId: 'track-1',
+            deviceId: 'gb-1',
+            controller: pedal.cc,
+            value: 0,
+            channel: 0,
+        });
     });
 
     it('does not engage Grand Boule pedals when the device node is not ready', () => {

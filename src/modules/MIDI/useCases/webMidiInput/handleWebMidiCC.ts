@@ -12,13 +12,10 @@ import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime } from './resolveInputEventTime';
+import { routePedalToBodies } from './routePedalToBodies';
 
 const CC_CHANNEL_VOLUME = 7;
 const CC_PAN = 10;
-const CC_SUSTAIN_PEDAL = 64;
-const CC_SOSTENUTO_PEDAL = 66;
-const CC_UNA_CORDA_PEDAL = 67;
-const PEDAL_LATCH_THRESHOLD = 64;
 const PAN_RANGE = 50;
 
 export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
@@ -104,67 +101,22 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             const trackState = deps.getTrackStoreState();
             const track = trackState?.tracks.find((candidate) => candidate.id === targetTrackId);
             const grandBouleDevice = track?.devices.find((device) => device.type === 'grand-boule');
-            if (grandBouleDevice && deps.isDeviceCarriedByNativeSession(targetTrackId, grandBouleDevice.id)) {
-                // The native body precedes the Web Audio branch below, on the
-                // law `handleWebMidiNoteOn` states for notes: a device the
-                // engine is carrying is gated silent on Web Audio, so writing
-                // the pedal to the Web Audio node would press it on a chain
-                // nobody hears while the engine's piano damps every note.
-                //
-                // The raw 7-bit value, deliberately: the engine's own body
-                // divides CC64 by full scale and reads 66/67 against the
-                // switch threshold, so a normalized fraction sent here would
-                // latch every pedal off.
-                if (
-                    controlChange.cc === CC_SUSTAIN_PEDAL ||
-                    controlChange.cc === CC_SOSTENUTO_PEDAL ||
-                    controlChange.cc === CC_UNA_CORDA_PEDAL
-                ) {
-                    void deps.sendNativeLiveMidiControl({
+            if (grandBouleDevice) {
+                routePedalToBodies(
+                    {
                         trackId: targetTrackId,
                         deviceId: grandBouleDevice.id,
-                        controller: controlChange.cc,
-                        value: controlChange.value,
-                        channel,
-                    });
-                    void deps.eventBus.emit('midi.pedalCc', {
-                        deviceId: grandBouleDevice.id,
                         cc: controlChange.cc,
-                        value:
-                            controlChange.cc === CC_SUSTAIN_PEDAL
-                                ? controlChange.normalized
-                                : controlChange.value >= PEDAL_LATCH_THRESHOLD,
-                    });
-                }
-            } else if (grandBouleDevice) {
-                const strip = audioEngine.getTrackStrip(targetTrackId);
-                const deviceNode = resolveDeviceNode(strip, { deviceId: grandBouleDevice.id, type: 'grand-boule' });
-                if (deviceNode?.grandBouleControls?.ready) {
-                    // Pedals are 64/66/67 — above the 14-bit range, so the
-                    // resolved controller and value are the raw ones.
-                    if (controlChange.cc === CC_SUSTAIN_PEDAL) {
-                        deviceNode.grandBouleControls.setSustain(controlChange.normalized);
-                        void deps.eventBus.emit('midi.pedalCc', {
-                            deviceId: grandBouleDevice.id,
-                            cc: CC_SUSTAIN_PEDAL,
-                            value: controlChange.normalized,
-                        });
-                    } else if (controlChange.cc === CC_SOSTENUTO_PEDAL) {
-                        deviceNode.grandBouleControls.setSostenuto(controlChange.value >= PEDAL_LATCH_THRESHOLD);
-                        void deps.eventBus.emit('midi.pedalCc', {
-                            deviceId: grandBouleDevice.id,
-                            cc: CC_SOSTENUTO_PEDAL,
-                            value: controlChange.value >= PEDAL_LATCH_THRESHOLD,
-                        });
-                    } else if (controlChange.cc === CC_UNA_CORDA_PEDAL) {
-                        deviceNode.grandBouleControls.setUnaCorda(controlChange.value >= PEDAL_LATCH_THRESHOLD);
-                        void deps.eventBus.emit('midi.pedalCc', {
-                            deviceId: grandBouleDevice.id,
-                            cc: CC_UNA_CORDA_PEDAL,
-                            value: controlChange.value >= PEDAL_LATCH_THRESHOLD,
-                        });
+                        value: controlChange.value,
+                        normalized: controlChange.normalized,
+                        channel,
+                    },
+                    {
+                        isDeviceHeldByNativeSession: deps.isDeviceHeldByNativeSession,
+                        sendNativeLiveMidiControl: deps.sendNativeLiveMidiControl,
+                        emitPedalCc: (payload) => void deps.eventBus.emit('midi.pedalCc', payload),
                     }
-                }
+                );
             }
 
             const levainDevice = track?.devices.find((device) => device.type === 'levain');
