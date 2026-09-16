@@ -1,0 +1,33 @@
+src/infra/testing/__tests__/rustConstReferences.ts
+  s_9b530f08172a54::t_fbe21966330c5e 1-213
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredRangeVsKnobTravel.spec.ts
+  s_914af328b3988f::t_d0861c53eaeb38 2,7-12
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  s_914af328b3988f::t_f115c8e8eee38a 1-2,7
+src/modules/Gluten/models/__tests__/glutenTopologyGating.spec.ts
+  s_9b530f08172a54::t_81a150d741285d 7-8,54-59,110-121,123-132,134-153,162-168,170-174,178-179,182-192,223-226,229,278,358-369,384,391,395-403,405,409-426,431
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "acde1444b14fac435abf2be6303706ed1d8f01c0",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
