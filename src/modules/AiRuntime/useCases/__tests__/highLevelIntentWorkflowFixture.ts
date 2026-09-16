@@ -329,7 +329,7 @@ export type ScriptedCreativeCatalog = {
     modes: readonly string[];
     targets: ReadonlyArray<{ candidateId: string; objectIds: readonly string[] }>;
     dimensions: ReadonlyArray<{ candidateId: string; dimension: string }>;
-    creationSlots: ReadonlyArray<{ candidateId: string; objectType: string }>;
+    creationSlots: ReadonlyArray<{ candidateId: string; objectType: string; parentCandidateId: string | null }>;
 };
 
 function requireCandidateRecords(value: unknown, family: string): Record<string, unknown>[] {
@@ -372,6 +372,7 @@ export function readCreativeInterpretationCatalog(userMessage: string): Scripted
         creationSlots: requireCandidateRecords(catalog.creationSlots, 'creation slot').map((slot) => ({
             candidateId: requireCandidateId(slot, 'creation slot'),
             objectType: String(slot.objectType),
+            parentCandidateId: typeof slot.parentCandidateId === 'string' ? slot.parentCandidateId : null,
         })),
     };
 }
@@ -400,6 +401,18 @@ function requireCreationSlotId(catalog: ScriptedCreativeCatalog, objectType: str
     return slot.candidateId;
 }
 
+/** A slot the catalog hangs under its own track creation slot rather than under an existing target. */
+function requireNestedCreationSlotId(catalog: ScriptedCreativeCatalog, objectType: string): string {
+    const trackSlotId = requireCreationSlotId(catalog, 'track');
+    const slot = catalog.creationSlots.find(
+        (candidate) => candidate.objectType === objectType && candidate.parentCandidateId === trackSlotId
+    );
+    if (!slot) {
+        throw new TypeError(`Creative interpretation catalog published no nested ${objectType} creation slot`);
+    }
+    return slot.candidateId;
+}
+
 /** Discovers command schemas without first searching the index, for a run whose vocabulary is fixed. */
 export function catalogDiscoveryCall(names: readonly string[]): ProviderCall {
     return { name: 'agent.catalog.discover', arguments: { category: 'command', names: [...names] } };
@@ -416,6 +429,7 @@ export function selectCreativeInterpretationCall(input: {
     targetObjectIds?: readonly string[];
     dimensions?: readonly string[];
     creationSlotObjectTypes?: readonly string[];
+    nestedCreationSlotObjectTypes?: readonly string[];
     uncertainty?: 'none' | 'artistic' | 'authority';
 }): ProviderCall {
     const { catalog } = input;
@@ -431,9 +445,14 @@ export function selectCreativeInterpretationCall(input: {
                 requireDimensionCandidateId(catalog, dimension)
             ),
             constraintCandidateIds: [],
-            creationSlotIds: (input.creationSlotObjectTypes ?? []).map((objectType) =>
-                requireCreationSlotId(catalog, objectType)
-            ),
+            creationSlotIds: [
+                ...(input.creationSlotObjectTypes ?? []).map((objectType) =>
+                    requireCreationSlotId(catalog, objectType)
+                ),
+                ...(input.nestedCreationSlotObjectTypes ?? []).map((objectType) =>
+                    requireNestedCreationSlotId(catalog, objectType)
+                ),
+            ],
             uncertainty: input.uncertainty ?? 'none',
         },
     };

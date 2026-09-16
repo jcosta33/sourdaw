@@ -325,6 +325,114 @@ function bridgeBandProposal(input: { creationSlots: CreativeRequestAuthority['cr
     });
 }
 
+/** A request that asks for one track and for processing on it, naming no object the project holds. */
+const SYNTH_PROMPT = 'add a synth track with a radio filter';
+
+/** The slot the catalog publishes for a device hanging under a track the same batch creates. */
+const NESTED_DEVICE_SLOT = {
+    objectType: 'device',
+    parentObjectId: null,
+    parentCreatedObjectType: 'track',
+    budget: 4,
+} as const;
+
+const SYNTH_DEVICE_PARAM_ID = 'gain';
+const SYNTH_DEVICE_PARAM_VALUE = -6;
+
+/**
+ * A device a plan item may bind is typed from the published descriptor's own parameters, so the
+ * filter this proposal creates carries the write contract a later item's setting is checked against.
+ */
+const createdDeviceContext: ProjectContext = {
+    ...context,
+    availableDeviceTypes: [
+        {
+            id: 'radio-filter',
+            name: 'Radio Filter',
+            parameters: [
+                {
+                    id: SYNTH_DEVICE_PARAM_ID,
+                    name: 'Gain',
+                    type: 'float',
+                    value: 0,
+                    minValue: -12,
+                    maxValue: 12,
+                    unit: 'dB',
+                },
+            ],
+        },
+        { id: 'compressor', name: 'Compressor' },
+    ],
+};
+
+const synthPlan = {
+    semantic: { classification: 'complex', uncertainty: [] },
+    objective: 'Add one synth track this batch creates and put a radio filter on it.',
+    constraints: ['Leave every object the project already holds unchanged.'],
+    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+    capabilityIds: [],
+    assetIds: [],
+    alternatives: [],
+    validationStrategy: ['Validate that the filter lands on the track this batch creates.'],
+    stoppingConditions: ['Stop if the track cannot be created.'],
+};
+
+const synthTrackItem = {
+    id: 'make-synth',
+    name: 'addTrack',
+    arguments: { name: 'Synth', kind: 'midi', binding: 'synth' },
+};
+
+function radioFilterItems(count: number): Record<string, unknown>[] {
+    return Array.from({ length: count }, (_entry, index) => ({
+        id: `add-radio-${String(index)}`,
+        name: 'addDevice',
+        arguments: { trackId: '$synth', deviceType: 'radio-filter', binding: `radio-${String(index)}` },
+        dependsOn: ['make-synth'],
+    }));
+}
+
+/**
+ * Compiles a proposal that creates one track and works inside it, then grounds it, so the batch the
+ * bridge reads is the one the compiler produced for this authority.
+ */
+function bridgeSynthProposal(input: {
+    creationSlots: CreativeRequestAuthority['creationSlots'];
+    items: ReadonlyArray<Record<string, unknown>>;
+}) {
+    const creativeAuthority = buildAuthority({
+        mode: 'create',
+        targets: [],
+        editDimensions: ['processing', 'arrangement'],
+        creationSlots: input.creationSlots,
+    });
+    const compiled = compileArbitraryCommandList({
+        calls: [
+            {
+                name: 'command.batch.propose',
+                arguments: { plan: synthPlan, list: { schemaVersion: 1, items: [...input.items] } },
+            },
+        ],
+        context: createdDeviceContext,
+        creativeAuthority,
+        revision: PROJECT_REVISION,
+    });
+    if (compiled.status === 'rejected') {
+        throw new TypeError(compiled.reason);
+    }
+    if (compiled.compilerEvidence === undefined) {
+        throw new TypeError('Expected the compiled proposal to carry bridge evidence');
+    }
+    return bridgeGroundedLlmToolCalls({
+        calls: compiled.compilerEvidence.commands,
+        compilerEvidence: compiled.compilerEvidence,
+        context: createdDeviceContext,
+        creativeAuthority,
+        projectRevision: PROJECT_REVISION,
+        prompt: SYNTH_PROMPT,
+    });
+}
+
 describe('creative authority grounding in the tool-call bridge', () => {
     it('refuses a device the request never named when the run carries no authority', () => {
         const result = bridge({ calls: [addRadioFilter] });
@@ -899,6 +1007,62 @@ describe('creative authority grounding in the tool-call bridge', () => {
         expect(result.actions).toEqual([]);
         expect(result.rejections).toMatchObject([
             { name: 'setDeviceParameter', reason: 'Provider action is not grounded in the user request' },
+        ]);
+    });
+
+    it('grounds a device and its setting on a track the same batch creates under the nested slot', () => {
+        const result = bridgeSynthProposal({
+            creationSlots: [TRACK_CREATION_SLOT, NESTED_DEVICE_SLOT],
+            items: [
+                synthTrackItem,
+                {
+                    id: 'add-radio',
+                    name: 'addDevice',
+                    arguments: { trackId: '$synth', deviceType: 'radio-filter', binding: 'radio' },
+                    dependsOn: ['make-synth'],
+                },
+                {
+                    id: 'set-radio-gain',
+                    name: 'setDeviceParameter',
+                    arguments: {
+                        deviceId: '$radio',
+                        paramId: SYNTH_DEVICE_PARAM_ID,
+                        value: SYNTH_DEVICE_PARAM_VALUE,
+                    },
+                    dependsOn: ['add-radio'],
+                },
+            ],
+        });
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addDevice', 'setDeviceParameter']);
+    });
+
+    it('refuses the device past the nested slot budget and the batch that carried it', () => {
+        const result = bridgeSynthProposal({
+            creationSlots: [TRACK_CREATION_SLOT, NESTED_DEVICE_SLOT],
+            items: [synthTrackItem, ...radioFilterItems(5)],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([
+            { index: 5, name: 'addDevice', reason: 'Creative authority has spent its device creation budget of 4' },
+        ]);
+    });
+
+    it('refuses a device on the created track when the authority published no nested device slot', () => {
+        const result = bridgeSynthProposal({
+            creationSlots: [TRACK_CREATION_SLOT],
+            items: [synthTrackItem, ...radioFilterItems(1)],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([
+            {
+                index: 1,
+                name: 'addDevice',
+                reason: 'Creative authority publishes no device creation slot here',
+            },
         ]);
     });
 });

@@ -184,8 +184,14 @@ function collectConstraints(context: ProjectContext): CreativeConstraintCandidat
 }
 
 function collectCreationSlots(targets: readonly CreativeTargetCandidate[]): CreativeCreationSlot[] {
+    const trackCreationSlotId = 'slot-1';
     const slots: CreativeCreationSlot[] = [
-        { candidateId: 'slot-1', objectType: 'track', parentCandidateId: null, budget: TRACK_CREATION_BUDGET },
+        {
+            candidateId: trackCreationSlotId,
+            objectType: 'track',
+            parentCandidateId: null,
+            budget: TRACK_CREATION_BUDGET,
+        },
     ];
     const nextId = () => `slot-${String(slots.length + 1)}`;
     const trackCandidate = targets.find((target) => target.objectType === 'track');
@@ -220,6 +226,21 @@ function collectCreationSlots(targets: readonly CreativeTargetCandidate[]): Crea
             budget: NOTE_CREATION_BUDGET,
         });
     }
+    // The contents a track this batch creates may carry. They hang under the track creation slot
+    // rather than under a target, and come last so a slot looked up by object type still resolves to
+    // the one covering an object the project already holds.
+    slots.push({
+        candidateId: nextId(),
+        objectType: 'device',
+        parentCandidateId: trackCreationSlotId,
+        budget: DEVICE_CREATION_BUDGET,
+    });
+    slots.push({
+        candidateId: nextId(),
+        objectType: 'clip',
+        parentCandidateId: trackCreationSlotId,
+        budget: CLIP_CREATION_BUDGET,
+    });
     return slots;
 }
 

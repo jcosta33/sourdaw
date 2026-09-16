@@ -5,7 +5,7 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 
 import { getAgentReferenceCapabilityKind } from './agentReferenceCapabilityKinds';
-import { GENERATED_BATCH_LOCAL_ID_PREFIXES } from './batchLocalBindingProducers';
+import { GENERATED_BATCH_LOCAL_ID_PREFIXES, PLAN_CREATED_OBJECT_COMMANDS } from './batchLocalBindingProducers';
 import { CREATIVE_AUTHORITY_REASON_PREFIX, getSpentCreationBudgetReason } from './creativeAuthorityReasons';
 
 type ExecutableAppActionEffect = NonNullable<ReturnType<typeof getExecutableAppActionEffect>>;
@@ -48,6 +48,14 @@ function isBatchLocalDeviceReference(value: unknown): boolean {
         return false;
     }
     return value.startsWith('$') || value.startsWith(GENERATED_BATCH_LOCAL_ID_PREFIXES.addDevice);
+}
+
+/** The same reading for a track this batch is creating, named by binding or by stamped identity. */
+function isBatchLocalTrackReference(value: unknown): boolean {
+    if (typeof value !== 'string') {
+        return false;
+    }
+    return value.startsWith('$') || value.startsWith(GENERATED_BATCH_LOCAL_ID_PREFIXES.addTrack);
 }
 
 function findDeviceOwnerTrackId(context: ProjectContext, deviceId: unknown): string | null {
@@ -144,6 +152,7 @@ function findDimensionRejection(effect: ExecutableAppActionEffect, index: Author
 }
 
 type TargetIdAdmissionInput = {
+    admitsBatchLocalTrack: boolean;
     capability: string;
     context: ProjectContext;
     dependencyValue: unknown;
@@ -195,7 +204,10 @@ function findTargetIdRejection(input: TargetIdAdmissionInput): string | null {
         return protectionRejection;
     }
     if (getAgentReferenceCapabilityKind(input.capability) === 'track') {
-        return input.index.trackIds.has(input.objectId)
+        if (input.index.trackIds.has(input.objectId)) {
+            return null;
+        }
+        return isBatchLocalTrackReference(input.objectId) && input.admitsBatchLocalTrack
             ? null
             : `${CREATIVE_AUTHORITY_REASON_PREFIX} does not cover the track ${input.objectId}`;
     }
@@ -223,6 +235,7 @@ type TargetRuleAdmission =
     { status: 'admitted'; targets: readonly CreativeAdmittedTarget[] } | { status: 'rejected'; reason: string };
 
 function admitTargetRule(input: {
+    admitsBatchLocalTrack: boolean;
     assertedValue: unknown;
     context: ProjectContext;
     dependencyValue: unknown;
@@ -247,6 +260,7 @@ function admitTargetRule(input: {
             };
         }
         const rejection = findTargetIdRejection({
+            admitsBatchLocalTrack: input.admitsBatchLocalTrack,
             capability: targetRule.capability,
             context: input.context,
             dependencyValue: input.dependencyValue,
@@ -263,6 +277,7 @@ function admitTargetRule(input: {
 }
 
 function admitTargets(input: {
+    admitsBatchLocalTrack: boolean;
     call: ToolCallResult;
     context: ProjectContext;
     hasAdmittedDeviceCreation: boolean;
@@ -276,6 +291,7 @@ function admitTargets(input: {
             continue;
         }
         const admission = admitTargetRule({
+            admitsBatchLocalTrack: input.admitsBatchLocalTrack,
             assertedValue,
             context: input.context,
             dependencyValue:
@@ -292,18 +308,21 @@ function admitTargets(input: {
     return { status: 'admitted', targets };
 }
 
+type CreationParent = { kind: 'existing'; objectIds: readonly (string | null)[] } | { kind: 'batch-created-track' };
+
 /**
  * Which already-admitted object a creation hangs under. A track creates itself, so it has no parent;
  * a clip or device hangs under the call's admitted track; notes hang under the admitted clip, whose
- * own track slot answers for them too.
+ * own track slot answers for them too. A batch-local track names no project object, so a creation
+ * under it answers to the slot the authority published for tracks this batch creates.
  */
-function getCreationParentObjectIds(
+function getCreationParent(
     objectType: CreationSlotObjectType,
     targets: readonly CreativeAdmittedTarget[],
     context: ProjectContext
-): readonly (string | null)[] | null {
+): CreationParent | null {
     if (objectType === 'track') {
-        return [null];
+        return { kind: 'existing', objectIds: [null] };
     }
     if (objectType === 'notes') {
         const clipTarget = targets.find((target) => getAgentReferenceCapabilityKind(target.capability) === 'clip');
@@ -311,10 +330,29 @@ function getCreationParentObjectIds(
             return null;
         }
         const ownerTrackId = findClipOwnerTrackId(context, clipTarget.objectId);
-        return ownerTrackId === null ? [clipTarget.objectId] : [clipTarget.objectId, ownerTrackId];
+        return {
+            kind: 'existing',
+            objectIds: ownerTrackId === null ? [clipTarget.objectId] : [clipTarget.objectId, ownerTrackId],
+        };
     }
     const trackTarget = targets.find((target) => getAgentReferenceCapabilityKind(target.capability) === 'track');
-    return trackTarget === undefined ? null : [trackTarget.objectId];
+    if (trackTarget === undefined) {
+        return null;
+    }
+    if (isBatchLocalTrackReference(trackTarget.objectId)) {
+        return { kind: 'batch-created-track' };
+    }
+    return { kind: 'existing', objectIds: [trackTarget.objectId] };
+}
+
+function coversCreationParent(
+    slot: CreativeRequestAuthority['creationSlots'][number],
+    parent: CreationParent
+): boolean {
+    if (slot.parentCreatedObjectType !== undefined) {
+        return parent.kind === 'batch-created-track';
+    }
+    return parent.kind === 'existing' && parent.objectIds.includes(slot.parentObjectId);
 }
 
 type CreationAdmission =
@@ -330,21 +368,26 @@ function admitCreations(input: {
     const usedSlotIndexes: number[] = [];
     const pendingUsageBySlotIndex = new Map<number, number>();
     for (const objectType of input.creates) {
+        // A call that creates a track also lists the initial contents that track carries; those hang
+        // inside the track this same call creates, which the track slot it spends already answers for.
+        if (objectType !== 'track' && input.creates.includes('track')) {
+            continue;
+        }
         if (!isCreationSlotObjectType(objectType)) {
             return {
                 status: 'rejected',
                 reason: `${CREATIVE_AUTHORITY_REASON_PREFIX} admits no ${objectType} creation`,
             };
         }
-        const parentObjectIds = getCreationParentObjectIds(objectType, input.targets, input.context);
-        if (parentObjectIds === null) {
+        const parent = getCreationParent(objectType, input.targets, input.context);
+        if (parent === null) {
             return {
                 status: 'rejected',
                 reason: `${CREATIVE_AUTHORITY_REASON_PREFIX} publishes no creation slots under a track this batch creates`,
             };
         }
         const matchingSlots = input.authority.creationSlots.flatMap((slot, slotIndex) =>
-            slot.objectType === objectType && parentObjectIds.includes(slot.parentObjectId) ? [{ slot, slotIndex }] : []
+            slot.objectType === objectType && coversCreationParent(slot, parent) ? [{ slot, slotIndex }] : []
         );
         if (matchingSlots.length === 0) {
             return {
@@ -373,6 +416,7 @@ function admitCall(input: {
     call: ToolCallResult;
     context: ProjectContext;
     hasAdmittedDeviceCreation: boolean;
+    hasAdmittedTrackCreation: boolean;
     index: AuthorityIndex;
     slotUsage: ReadonlyMap<number, number>;
 }): { admission: CreativeCallAdmission; usedSlotIndexes: readonly number[] } {
@@ -407,7 +451,11 @@ function admitCall(input: {
     if (groundingRules === null) {
         return reject(`${CREATIVE_AUTHORITY_REASON_PREFIX} cannot admit the unknown command ${input.call.name}`);
     }
+    // A track this batch creates carries no project id, so the authority reaches it only through the
+    // commands whose whole effect lands inside the object being created. Anything else naming that
+    // track — soloing it, routing it — reaches the rest of the project through it.
     const targetAdmission = admitTargets({
+        admitsBatchLocalTrack: input.hasAdmittedTrackCreation && PLAN_CREATED_OBJECT_COMMANDS.has(input.call.name),
         call: input.call,
         context: input.context,
         hasAdmittedDeviceCreation: input.hasAdmittedDeviceCreation,
@@ -451,12 +499,14 @@ export function admitCreativeCommandBatch(input: {
     const admissionsByCallIndex = new Map<number, CreativeCallAdmission>();
     const slotUsage = new Map<number, number>();
     let hasAdmittedDeviceCreation = false;
+    let hasAdmittedTrackCreation = false;
     for (const [callIndex, call] of input.calls.entries()) {
         const { admission, usedSlotIndexes } = admitCall({
             authority: input.authority,
             call,
             context: input.context,
             hasAdmittedDeviceCreation,
+            hasAdmittedTrackCreation,
             index,
             slotUsage,
         });
@@ -469,6 +519,9 @@ export function admitCreativeCommandBatch(input: {
         }
         if (call.name === 'addDevice') {
             hasAdmittedDeviceCreation = true;
+        }
+        if ((getExecutableAppActionEffect(call.name)?.creates ?? []).includes('track')) {
+            hasAdmittedTrackCreation = true;
         }
     }
     return admissionsByCallIndex;
