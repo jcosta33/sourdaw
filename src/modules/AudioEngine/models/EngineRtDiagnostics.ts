@@ -86,6 +86,21 @@ export type EngineRtDiagnostics = {
     events: EngineEvent[];
 };
 
+/**
+ * Whether a reading came from a native engine that exists.
+ *
+ * `sampleRate` is the discriminator, not `running`. The rate is taken from the
+ * output stream's negotiated format when the engine handle is built and is
+ * never rewritten afterwards, while the shape reported with no handle at all —
+ * the native command's default payload, and what the browser build reports —
+ * carries zero in it along with every other reading. An engine cannot report a
+ * zero rate: a stream that negotiates no format fails to spawn rather than
+ * yielding one.
+ */
+export function isExistingEngineReading(latest: EngineRtDiagnostics | null): latest is EngineRtDiagnostics {
+    return latest !== null && latest.sampleRate > 0;
+}
+
 /** The shape a stopped engine reports, and the shape the browser build reports. */
 export const notRunningEngineRtDiagnostics: EngineRtDiagnostics = {
     running: false,

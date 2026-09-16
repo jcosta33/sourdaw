@@ -256,15 +256,16 @@ your lane.
 A lane records its authoring model when opened: `--model <model>`, the lowercase public name of
 the model itself, keeping every qualifier that distinguishes capability or edition within the
 family (flash, mini, pro, air, codex, thinking) and dropping only deployment-routing prefixes and
-date-snapshot suffixes. `lane:publish` labels the PR `model:<model>` and carries the milestone and
-project membership of the bound issue;
+date-snapshot suffixes. `lane:publish` labels the PR with the model's bare name and carries the
+milestone and project membership of the bound issue;
 `--milestone`/`--project` override those values by open title on any lane — left empty rather than
 forced. Project membership is applied when the author App can access the owner's projects;
 otherwise it is left to the operator backfill. The PR also carries the repository's descriptive
 labels: the bound issue's labels minus the `priority:` and `status:` namespaces, or on an issueless
 lane one type label derived from the conventional subject (`feat` → `enhancement`,
 `fix` → `bug`, `docs` → `documentation`); `--label <name>` adds more by live canonical name, and
-descriptive labels are never created on demand — only `model:<model>` is.
+descriptive labels are never created on demand — only authorship labels are, identified by their
+`Authored by ` description.
 
 Publish a stack parent first. `lane:publish` validates the child descriptor as untrusted data and
 targets the exact open parent head, or `main` after the recorded parent PR has merged. Landed-child
@@ -320,246 +321,135 @@ never a recorded list.
 
 ## Delivery
 
-Use trusted `pnpm` scripts for every covered GitHub write; their role identities and delivery gates
-exclude hand-rolled equivalents or bypasses. The only manual `gh` write exceptions are correcting
-an issue's own state, labels, milestone, project membership, or sub-issue links, and backfilling a
-pull request's own labels, milestone, or project membership when it predates `lane:publish`'s
-metadata assertion. Manual writes use the operator account. Scripts use their designated App
-identities except final orchestrator acceptance and merge, which use the verified `jcosta33` user
-identity. No other manual `gh pr` write qualifies. Lane tooling owns every `git push`: other pushes
-break review anchors and can strand lanes.
-Use `branch:prune` for remote deletion; it defaults to dry run and deletes only branches whose every
-PR is merged or closed. Read-only `gh` is unrestricted; use it for live tracker state.
+Use trusted `pnpm` scripts for every covered GitHub write; their role identities and delivery
+gates exclude hand-rolled equivalents or bypasses. The only manual `gh` write exceptions:
+correcting an issue's own state, labels, milestone, project membership, or sub-issue links; and
+backfilling a pull request's own labels, milestone, or project membership predating
+`lane:publish`'s metadata assertion — these use the operator account. Scripts use their
+designated App identities except final orchestrator acceptance and merge, which use the verified
+`jcosta33` user identity; no other manual `gh pr` write qualifies. Lane tooling owns every
+`git push`: other pushes break review anchors and can strand lanes. Read-only `gh` is
+unrestricted; use it for live tracker state.
 
-| Need                         | Command                                                                                                                                                                                       |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Open a lane                  | `pnpm lane:open [issue] [slug] [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                                         |
-| Sync a dependent lane        | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                          |
-| Push; open or update the PR  | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]` |
-| Write the review bundle      | `pnpm review:prepare <pr>`                                                                                                                                                                    |
-| Post `review.json`           | `pnpm review:publish <pr>`                                                                                                                                                                    |
-| Post final `acceptance.json` | `pnpm review:accept <pr>`                                                                                                                                                                     |
-| Reply `Done` and resolve     | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                                                                                                         |
-| Squash-merge                 | `pnpm deliver <pr>`                                                                                                                                                                           |
-| Recover a crashed delivery   | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
-| Close a superseded PR        | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                                                                                                                             |
-| Prune spent remote branches  | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
-| Remove a spent lane          | `pnpm lane:remove <path>`                                                                                                                                                                     |
-| Strand an abandoned lane     | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                   |
-| Prune lane artifacts         | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                      |
+The delivery procedure — command table, script order, flags, validation and refusal semantics,
+locks, receipts, document formats, launcher boundary — lives in [delivery-orchestration]; ALWAYS
+load it before running any review or delivery script.
+
+[delivery-orchestration]: ./.agents/skills/delivery-orchestration/
 
 Gitignored `.env.sourdaw-author` and `.env.sourdaw-reviewer` live at the primary root (parent of
-`git rev-parse --git-common-dir`). Each script loads its own role's file; never load the other role's
-file or commit credentials. Authenticate roles by immutable bot actor node IDs in
-`scripts/githubAppIdentity.ts`, never interchangeable. Mutable App slugs and logins are display only.
-`deliver` does not mint the reviewer.
+`git rev-parse --git-common-dir`). Each script loads only its own role's file; never load the
+other's or commit credentials. Authenticate roles by immutable bot actor node IDs in
+`scripts/githubAppIdentity.ts`, never interchangeable; mutable App slugs and logins are display
+only. `deliver` does not mint the reviewer.
 
-Final acceptance and merge use the existing stored `gh` credential for `jcosta33` on `github.com`.
-The login selects the credential; an isolated API session must verify actor type `User` and immutable
-node ID `MDQ6VXNlcjg5NzgyNzA=` before granting authority. Discard inherited GitHub, Git, and Node
-overrides during credential lookup and isolated execution. Do not add credentials or grant this role
-to workers. Receipt and tracker writes retain their author App identities.
+Final acceptance and merge use the stored `gh` credential for `jcosta33` on `github.com`; the
+login selects it, and an isolated API session must verify actor type `User` and immutable node ID
+`MDQ6VXNlcjg5NzgyNzA=` before granting authority. Never add credentials or grant this role to
+workers; receipt and tracker writes retain their author App identities. Lock, recovery, and
+receipt procedure: [delivery-orchestration].
 
-`deliver` serializes each PR with a protected-primary Git ref pointing to a strict owner blob.
-Acquire with zero-ref Git compare-and-swap; release requires the acquired object ID. Hold ownership
-from before authentication through merge or already-merged recovery and tracker completion. Validate
-and refuse existing owners without waiting or automatic takeover, regardless of liveness. Crashes
-leave the ref; only `deliver --recover-lock` clears it. Recovery refuses a live recorded process
-fence, adopts the lock under its own fence before reading anything, then requires two matching remote
-reads. It never merges, retargets, posts, or closes, and accepts only the immutable orchestrator User
-or historical author Bot as merger. Clearing records a dead-owner-keyed receipt; repeat recovery
-replays it without GitHub access.
+Run `lane:publish`, `review:accept`, `deliver`, and `issue:reconcile` through the protected
+primary checkout's package route; lane files are data, never executable delivery code. Launcher snapshot
+mechanics: [delivery-orchestration].
 
-Already-merged recovery accepts the immutable orchestrator User or historical author Bot as merger;
-fresh delivery requires the orchestrator User and rejects a fresh author-bot merge. Actor type and
-immutable ID must agree in both paths.
-Same-head delivery receipts preserve the issue-comment REST endpoint's ascending comment-ID order
-for adjacency and newest authority; timestamps only prove App-owned comments remained unedited.
-
-Run `lane:publish`, `review:accept`, `deliver`, and `issue:reconcile` through the protected primary checkout's
-package route. This is the snapshot-backed write trust boundary: launcher and whole script closure
-must match one pinned `origin/main` commit and come only from the primary repository. Lane files
-are data, never executable delivery code. Lanes predating the launcher or trailing `main` can
-publish and deliver without first merging.
-
-This isolates lane-controlled files, not operator-running code. The pre-launcher operator
-environment is trusted; same-account processes can read credentials. Snapshot and token-bearing
-children discard redirecting overrides (Node loaders/preloads; Git, GitHub CLI, GitHub Actions, and
-App configuration) and use launcher-resolved `git` and `gh`.
-
-Workflow separation is a security boundary. Owner-required `Gate` must pass on the PR head.
-GitHub accepts `skipped` required checks and prefers the newest same-name run; an event that skips
-`Gate` can therefore pass a red head. A `pull_request_review` trigger caused this in production.
-Preserve these boundaries:
+Workflow separation is a security boundary. Owner-required `Gate` must pass on the PR head;
+GitHub accepts `skipped` required checks and prefers the newest same-name run, so an event that
+skips `Gate` can pass a red head (a `pull_request_review` trigger did, in production). Preserve:
 
 - `.github/workflows/health-gates.yml` answers to `pull_request` alone and mints `Gate`. Its `gate`
-  job carries `!cancelled()` and no other predicate, because any predicate that can be false is the
-  hole. Do not add a trigger to this file, and do not rename `gate`.
-- `.github/workflows/validation.yml` is the shared lane — types, lint, boundaries, the unit matrix,
-  build, Rust, the natives, the offline smoke set, the diff secret scan, dependency review — called
-  by `health-gates.yml` and `heavy-gates.yml` so there is one definition rather than two that drift.
+  job carries `!cancelled()` and no other predicate: any predicate that can be
+  false is the hole. Do not add a trigger to this file, and do not rename `gate`.
+- `.github/workflows/validation.yml` is the shared lane — types, lint, boundaries, unit matrix,
+  build, Rust, natives, smoke set, secret scan, dependency review — shared by both gate workflows
+  so one definition does not drift.
 - `.github/workflows/heavy-gates.yml` owns the review event and the jobs that cannot fit a push
-  budget: the end-to-end matrix, the Browser AI hardware proof, CodeQL, and the full-history secret
-  scan. Its summary is `HeavyGate` and is deliberately not ruleset-required.
-- `.github/workflows/nightly.yml` owns the schedule and dispatch events: the full train, and the
-  nightly failure report. It is the only production web deploy — `vercel.json` turns the Git
-  integration off, so reaching `main` deploys nothing by itself.
+  budget — the E2E matrix, the Browser AI hardware proof, CodeQL, the full-history secret scan;
+  its summary `HeavyGate` is deliberately not ruleset-required.
+- `.github/workflows/nightly.yml` owns the schedule and dispatch events: the full train and the
+  nightly failure report. It is the only production web deploy — `vercel.json` disables the Git
+  integration, so reaching `main` deploys nothing by itself.
 
 No job outside `health-gates.yml` may be named `Gate`.
 
 `unit` decides `Gate` for web-scope runs. E2E never runs on pull requests; including it in `Gate`
 would claim always-skipped coverage. It decides `HeavyGate` on approving-review runs and gates the
 nightly train. The required approval triggers the heavy lane, but no required check waits for its
-verdict before merge. Its enforcement awaits arming `deliver`'s required-CI admission, a separate
-change. The ruleset alone has CI merge authority while that admission is advisory. The old ban on
-PR-editable workflows holding merge authority is superseded: review must catch heads weakening
-their own gates.
+verdict; enforcement awaits arming `deliver`'s required-CI admission, leaving the ruleset alone
+with CI merge authority while that is advisory. The old ban on PR-editable workflows holding
+merge authority is superseded: review must catch heads weakening their own gates.
 
 Resource Safety governs local checks; never rerun repository-wide pipeline gates locally.
 
 Read the live `main` ruleset; repository configuration, not this text, enforces it. It blocks
-deletion and non-fast-forward, requires squashed PRs, two approving reviews and approval of the last push,
-resolved threads, and `Gate` on the PR head. It is non-strict: unrelated `origin/main` movement
-requires no merge. Take `main` only for real conflicts or mergeability; the resulting new head
-requires fresh `Gate` and review.
+deletion and non-fast-forward, requires squashed PRs, two approving reviews and approval of the
+last push, resolved threads, and `Gate` on the PR head. It is non-strict: unrelated `origin/main`
+movement requires no merge; take `main` only for real conflicts or mergeability, and the new head
+then requires fresh `Gate` and review.
 
-For committed wasm artifacts, consult `scripts/wasm-artifacts.ts` for packages and build scripts;
-script names cannot be derived from crate names. Any non-test edit in a package's path-dependency
-closure, including comments, changes its hash: rebuild that package, rewrite the manifest, stage
-artifacts, then verify after staging. Exception: root `Cargo.toml` contributes only canonical
-profile tables, workspace package table, patch/replace tables, resolver line, and closure-resolved
-workspace dependencies; new members, comments, and unrelated dependencies do not change the hash.
-`wasm:manifest` retains hashes for packages without rebuild evidence, so rebuilding the wrong package
-can leave a matching manifest over stale artifacts; use `pnpm wasm:all` when unsure. Clean rebases
-can leave wasm stale; only `pnpm wasm:verify` proves freshness.
+For committed wasm artifacts, consult `scripts/wasm-artifacts.ts` for package and build-script
+names; they cannot be derived from crate names. Any non-test edit in a package's
+path-dependency closure, including comments, changes its hash: rebuild the package, rewrite the
+manifest, stage artifacts, then verify after staging. Exception: root `Cargo.toml` contributes
+only canonical profile tables, the workspace package table, patch/replace tables, the resolver
+line, and closure-resolved workspace dependencies; new members, comments, and unrelated
+dependencies do not. `wasm:manifest` retains hashes for packages without rebuild evidence, so
+rebuilding the wrong package can match a manifest over stale artifacts; use `pnpm wasm:all` when
+unsure. Clean rebases can leave wasm stale; only `pnpm wasm:verify` proves freshness.
 
-`lane:publish` pushes without `--force`, and refuses any lane with uncommitted changes: commit the
-work yourself with a conventional subject first. An issue number resolves its lane by branch prefix;
-`--lane` names an exact absolute lane root, which is what disambiguates write-disjoint lanes sharing
-one issue.
+`lane:publish` pushes without `--force` and refuses uncommitted changes: commit the work yourself
+with a conventional subject first. Titling, bodies, flags, stacks, and stranded lanes:
+[delivery-orchestration].
 
-For conforming `agent/` lanes, `lane:publish` opens a PR titled from the newest non-merge commit
-above `origin/main`; it refuses lanes lacking one and never retitles existing PRs, including after
-follow-up commits or merges. The body follows [`.github/pull_request_template.md`](./.github/pull_request_template.md);
-the script controls format and rejects malformed bodies. New PRs require explicit `--summary` and
-`--test`; later supplied flags replace their section, omitted flags preserve it. Publishing neither
-enables auto-merge nor posts reviews.
+Request changes when this head must not merge, posting every blocking comment with that review.
+Approve when the change improves the system, even if imperfect — never when it makes it worse;
+style-guide and code-craft violations block, personal style does not. An approval is never empty:
+its body states what the reviewer attacked and what held.
 
-Author-locked off-convention branches may publish via `--lane <absolute-path>` only with an already
-open PR for that exact branch, proving it a genuine stranded lane. This path only pushes; it never
-writes PR title or body and refuses if the PR is no longer open when the push lands.
+Give reviewers the bundle and neutral acceptance conditions from the request or governing
+contract, never author transcripts or conclusions; preserve blind dispatch and independently
+inspect the final head before accepting it. Bundle, publication, acceptance, and thread
+procedure: [delivery-orchestration].
 
-Write for a teammate outside the session. Under template headings explain what changed and why,
-without repeating the title, and how to test. Product changes require user/reviewer-observable steps
-and expected results, not substituted author/CI checks; internal or developer work may name its
-actual validation interface. Exclude session diaries, unpublished rounds, and mutation tables.
-
-`review:prepare` prints a primary-root bundle path containing `manifest.json`, `diff.patch`,
-`review-size.json`, `pr.md`, and merge-base `contracts/`. The manifest binds PR, base branch,
-merge-base, and head. The diff and deterministic size report use the actual base/head merge-base;
-handwritten, test, documentation, and generated changes (including lockfiles) remain visible as
-separate groups, and unknown paths count as handwritten. Paths are keyed by head sha. Re-preparing the same head replaces generated
-files and preserves caller files only while the bound base name and merge-base context match; a
-populated legacy bundle without base identity cannot be reused. Unrelated movement of the base tip is
-allowed when that context is unchanged. Give reviewers the bundle and neutral acceptance conditions
-from the request or governing contract, not author transcripts or conclusions. `review:publish`
-prints the review id and posts as reviewer App only if GitHub's live head matches the bundle; fresh
-approvals also require matching base context.
-
-After independent review, write `acceptance.json` beside `review.json` in that head's existing bundle.
-`review:accept <pr>` accepts only an APPROVE document with no inline comments and the same head-bound
-evidence schema as reviewer approval. It requires the reviewer Bot's current-head approval and all
-threads resolved before publishing final acceptance as the immutable orchestrator User. The posting
-identity supplies the role; generated text must not announce acceptance on another person's behalf or
-claim personal human review. Preserve blind reviewer dispatch and independently inspect the final
-head before accepting it.
-
-Read every changed line and surrounding code as needed. Comment on the defective line with one
-problem, discussing code rather than author. Use literal fields `defect`, `consequence`, and `done`
-for what is wrong, why it matters, and the required result; retired `body` is refused with an error
-naming the replacement. Each field is one non-empty line without edge whitespace; target one precise
-sentence, never padding. Tooling space-joins fields and appends a period where terminal punctuation
-is absent. The composed comment must fit 600 bytes, not characters; there is no minimum.
-
-Request changes when this head must not merge, and post every blocking comment with that review. The
-summary is a short pointer to those comments, not a report.
-
-Approve when the change improves the system, even if it is not perfect. Do not approve a change that
-makes it worse. Style-guide and code-craft violations block; personal style does not. An approval is
-never empty: its body states what the reviewer attacked and what held.
-
-New APPROVE publication requires `format: compact-v1` and
-`evidence: { headSha, claims: [{ observable, verification, observed }] }` in `review.json`. Bind
-`headSha` to the reviewed bundle head. Supply at least one claim, with every value a nonblank,
-trimmed, single-line string: `observable` is expected behavior from the request or contract,
-`verification` is the exact command, check URL, or source comparison, and `observed` is the decisive
-result or excerpt. Keep the body to a short conclusion. Publication renders a generated
-`Evidence SHA-256: <digest>` footer that binds the retained structured evidence without publishing
-its prose. The complete rendered body must fit 600 Unicode code points; reject excess and report the
-actual and allowed lengths, never truncate. Record completeness, the digest, and head binding do not
-prove truthful execution; the orchestrator remains responsible for verifying the claims.
-REQUEST_CHANGES must not carry approval evidence. Unknown fresh formats fail closed. Historical
-unversioned documents remain readable only for exact reconstruction and recovery; never rewrite old
-bundles or posted reviews.
-
-A stack child may receive `REQUEST_CHANGES` while its verified parent branch is its base. Fresh
-APPROVE publication and acceptance require base `main`; for a registered child they also require the
-bundle's live context and proof that reconciliation contains the recorded parent's landed commit.
-
-Do not fill approvals, acceptance, delivery summaries, or closing comments with routine successful-CI
-narration, passed-check inventories, or links that merely repeat required-check status. Keep
-discriminating checks in structured evidence and always disclose material failed, skipped, or
-incomplete verification. Report the delivered outcome and material exceptions; do not add a closing
+Never fill approvals, acceptance, delivery summaries, or closing comments with routine
+successful-CI narration, passed-check inventories, or links repeating required-check status;
+always disclose material failed, skipped, or incomplete verification, keep discriminating checks
+in structured evidence, and report the outcome and material exceptions; do not add a closing
 comment that only repeats the merged state.
 
 Approvals carry no inline comments; `review:publish` rejects APPROVE documents with comments.
 Each inline comment opens a merge-blocking thread; `review:resolve` replies `Done`, asserting a
-repair, so it cannot honestly clear a non-blocking note. Put observations in the approval body with
-`Nit:` or `Optional:`, or file them. Inline comments belong to `CHANGES_REQUESTED` reviews and require
-an addressing new head.
+repair, so it cannot honestly clear a non-blocking note. Put observations in the approval body
+with `Nit:` or `Optional:`, or file them — they belong to `CHANGES_REQUESTED` reviews and
+require an addressing new head.
 
-Push fixes before `review:resolve`, which posts only bare `Done` as author bot and resolves against
-that head. No script writes free-form thread replies; wrongly posted findings have no discussion
-route. Clarify code, not threads. Resolve only when the current head addresses the finding, then
-obtain a new review. File out-of-scope feedback; do not grow the PR.
+Push fixes before `review:resolve`; resolve a thread only once the current head addresses the
+finding, then obtain a fresh review. No script writes free-form thread replies, so wrongly posted
+findings have no discussion route. Clarify code, not threads. File out-of-scope feedback; do not
+grow the PR.
 
 Before merge, the orchestrator independently reads the current diff and confirms specified
 behavior, tests observing their claimed subjects, and every accepted finding repaired rather than
-silenced. Green `Gate` and advisory `HeavyGate` do not prove these; the heavy lane's advisory status
+silenced — green `Gate` and advisory `HeavyGate` do not prove these, and the advisory status
 raises this duty. Push-lane failures yield required red `Gate`, never softened warnings. Attribute
-every unexplained failure to the change or a named, filed pre-existing defect. Let the pipeline run
-checks; locally format changed files and stage rewrites.
+every unexplained failure to the change or a named, filed pre-existing defect. Let the pipeline
+run checks; locally format changed files and stage rewrites.
 
-Unrelated `origin/main` movement does not stale reviews. Re-review feature-head changes touching
-the reviewed surface and conflict resolutions. GitHub structural mergeability independently gates
-base compatibility: delivery retries one transient `UNKNOWN`, refusing conflicts or a second
-`UNKNOWN`. CI's aggregate merge-state label cannot substitute.
+Unrelated `origin/main` movement does not stale reviews; re-review feature-head changes touching
+the reviewed surface and conflict resolutions. CI's aggregate merge-state label cannot substitute.
 
-Every consequential claim needs discriminating proof, such as a test failing on revert or a
-measurement at the user boundary; approval alone is weak. Keep detailed logs in the session and the
-concise head-bound verification record in structured bundle evidence. The public approval carries
-only its short conclusion and evidence digest. Never include secrets or sensitive log data in the
+Every consequential claim needs discriminating proof — a test failing on revert, a measurement at
+the user boundary; approval alone is weak. Never include secrets or sensitive log data in the
 public review.
 
-`pnpm deliver` squash-merges only non-draft, structurally mergeable PRs after BOTH validation points
-confirm both the immutable reviewer Bot and orchestrator User `APPROVED` the current head, with final
-user acceptance after reviewer approval, and all threads resolved. Approval counts or matching logins
-cannot substitute for those actor identities or ordering. Merge executes as the verified orchestrator
-User; receipt and tracker writes retain their author App identities. Head, head
-branch, base branch, body, canonical closing target, and stacked dependents must stay stable between
-reads. Snapshot-backed CI admission is advisory: successful, failed, pending, absent, cancelled,
-malformed, or unavailable evidence does not itself block delivery. GitHub still enforces the live
-ruleset's required `Gate`; `deliver` refuses `BLOCKED` before any remote write, including receipts
-or merge attempts. Dormant required-CI admission retains pinned workflow-derived gate and complete-rollup
-rules from the launcher's pinned `origin/main` workflow copy; lanes cannot select or reshape it.
-`lane:publish` targets `main` for ordinary lanes and the verified parent branch for registered stack
-children. `deliver` remains main-only and refuses any other base; reconcile a landed parent through
-`lane:sync-parent`, republish the child against main, and obtain fresh review before delivery. Do not
-merge any other way.
+`pnpm deliver` squash-merges only non-draft, structurally mergeable PRs after both the immutable
+reviewer Bot's and orchestrator User's approval of the current head, final user acceptance after
+reviewer approval, and all threads resolved; it is main-only — merge no other way. Validation
+order, admission, and retry semantics: [delivery-orchestration].
 
 Keep batches small, live lanes few, and merges prompt. If reviewers cannot attack a diff whole,
-reassess its scope under Delegation before review. Drain before filling: open no lane while a finished
-head waits only on review or merge.
+reassess its scope under Delegation before review. Drain before filling: open no lane while a
+finished head waits only on review or merge.
 A finished change waits only on its GitHub review. Enable hooks: `git config core.hooksPath .githooks`.
 
 ## Safety

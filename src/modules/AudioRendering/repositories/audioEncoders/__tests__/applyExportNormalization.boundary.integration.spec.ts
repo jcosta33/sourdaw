@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
+
 import { applyExportNormalization } from '../applyExportNormalization';
-import { measureTruePeak } from '../measureTruePeak';
 
 const SAMPLE_RATE = 48_000;
 const TRUE_PEAK_TAIL_FRAMES = 11;

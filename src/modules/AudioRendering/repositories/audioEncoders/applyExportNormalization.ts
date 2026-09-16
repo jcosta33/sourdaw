@@ -1,5 +1,6 @@
-import { measureIntegratedLoudness } from './measureIntegratedLoudness';
-import { measureTruePeak } from './measureTruePeak';
+import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
+import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
+
 import { resolveNormalizationGain } from './resolveNormalizationGain';
 
 export type ApplyExportNormalizationInput = {

@@ -50,6 +50,7 @@ import { isOnboardingCompleted, startOnboardingTour } from '#/modules/Onboarding
 import { PreferencesDialog } from '#/modules/Preferences/presentations/views';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { repairProjectData, unlockProjectScopedBrief } from '#/modules/Project/useCases';
 import { ProofPanel } from '#/modules/Proof/presentations/views';
 import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views';
 import { RoutingMatrix } from '#/modules/Routing/presentations/views';
@@ -661,7 +662,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     lives in the workspace it sits above. It is deliberately absent
                     from `anyDialogOpen` and from the `inert` set. */}
                 {project.initialized && projectMutationRefusal !== null ? (
-                    <ProjectMutationRefusedBanner refusal={projectMutationRefusal} />
+                    <ProjectMutationRefusedBanner
+                        refusal={projectMutationRefusal}
+                        onRepair={repairProjectData}
+                        onUnlock={unlockProjectScopedBrief}
+                    />
                 ) : null}
 
                 {/* Whole-engine failure, not a per-device problem: mounted once at
