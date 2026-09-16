@@ -1,0 +1,87 @@
+scripts/checkLevainProvenance.ts
+  s_9b530f08172a54::t_5ab9bb8b53d50e 8,191-192
+scripts/pruneRemoteBranches.ts
+  s_914af328b3988f::t_911d94be9b9caa 18,21,91,146,427
+scripts/publishReview.ts
+  s_914af328b3988f::t_e9dac27fc3fe50 17,271
+scripts/recoverDeliveryLock.ts
+  s_914af328b3988f::t_f1be10e83ba5d6 29,174,199,254
+scripts/releaseHistory.ts
+  s_914af328b3988f::t_9aec35782c9d44 2,129
+scripts/removeLane.ts
+  s_914af328b3988f::t_0306eb6ec1d580 16,305,375,378,409,416,557,777,809,850
+scripts/stackedLanes.ts
+  s_914af328b3988f::t_5d3dbe70522535 6,21,147,220,235,262
+scripts/supersedePullRequest.ts
+  s_914af328b3988f::t_1caa7f911de3a1 17,98,180,242,250,261,382,402,599
+scripts/syncParentLane.ts
+  s_914af328b3988f::t_e2bd82f5c16237 17,90
+tests/e2e/firstPaintWarmup.ts
+  s_9b530f08172a54::t_5353ec95822233 6,44-48
+tests/e2e/smoke.spec.ts
+  s_914af328b3988f::t_2cfaef118a3ac5 4,185
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_0112f6a7120cfb::t_d719227d8b2026 36-45,420-438,476,559
+scripts/deliverPullRequest.ts
+  s_0112f6a7120cfb::t_5cbfec76597412 33-34,327,463,468,475,489,785-787,790,796,827,1298,1302,1309,1313,2004-2007,2062,2095,2098,2102,2109,2112,2116,2612,2631,2646,2704,2721,2725,2728-2729,2811,3562
+scripts/githubAppIdentity.ts
+  s_3212a39d6b5dbb::t_432d1091d4f08d 7,638,640
+scripts/openLane.ts
+  s_3212a39d6b5dbb::t_c19fef5ee51782 18-25,264
+scripts/prContract.ts
+  s_0112f6a7120cfb::t_ec9bb14d24aaa6 6-46,556
+scripts/publishLane.ts
+  s_3212a39d6b5dbb::t_88a5abc7dc6816 31,39-43,754
+scripts/pullRequestMutationLock.ts
+  s_3212a39d6b5dbb::t_47fc53eeb78ee6 4,572,589,609,665
+scripts/trustedGithubWriteBootstrap.ts
+  s_0112f6a7120cfb::t_45035d57f4b1be 17-27
+scripts/verify-wasm-artifacts.ts
+  s_3212a39d6b5dbb::t_124738ac6c3bf7 41,193-194
+src/app/resolveAppComposition.ts
+  s_3212a39d6b5dbb::t_e8aa6d676fc752 12-18
+tests/e2e/e2eUtils.ts
+  s_0112f6a7120cfb::t_04348eda1c1ef6 4-5,17-32,56-64,83,86,94
+tests/e2e/promptBarCancelRecentTestId.spec.ts
+  s_0112f6a7120cfb::t_9720a3509bc51f 4,44,146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "50dfe2ba5e6832d24b0b88e5461d60b8886efa46",
+  "prompts": {},
+  "sessions": {
+    "s_0112f6a7120cfb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af2c0813386eebeef",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_3212a39d6b5dbb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af7d342e7bdd7c884",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
