@@ -531,6 +531,17 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
         expect(Math.abs(bandEnergy(receipt, 'mid') - 0.75)).toBeLessThan(0.05);
     });
 
+    it('counts each frame once when the render is a whole number of frames', () => {
+        // One frame of 1 kHz then one frame of 6 kHz, both at -6 dBFS. 4096
+        // samples are exactly two frames, so the stepped frames already reach
+        // the end and there is no final frame to add. Adding one anyway would
+        // repeat the 6 kHz frame and report a third of the render as 1 kHz.
+        const channel = toneStepChannel({ peakDbfs: -6, toneHz: TONE_HZ }, { peakDbfs: -6, toneHz: 6000 }, 2048, 4096);
+        const receipt = analyze([channel, channel]);
+
+        expect(Math.abs(bandEnergy(receipt, 'mid') - 0.5)).toBeLessThan(0.03);
+    });
+
     it('refuses band energy for a render shorter than one analysis frame', () => {
         const fragment = sineChannel(-23, 1000);
         const receipt = analyze([fragment, fragment]);
