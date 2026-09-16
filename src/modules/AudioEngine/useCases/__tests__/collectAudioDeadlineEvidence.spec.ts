@@ -7,7 +7,11 @@ import { DROPOUT_IDX, dropoutCounters } from '../../engine/dropoutCounter';
 import { notRunningEngineRtDiagnostics } from '../../models/EngineRtDiagnostics';
 import { getEngineRtDiagnostics } from '../../repositories/engineDiagnostics/getEngineRtDiagnostics';
 import { LONG_TASK_OBSERVATION_UNSUPPORTED, readMainThreadLongTasks } from '../../services/mainThreadLongTaskLatch';
-import { defaultEngineRtDiagnosticsState, engineRtDiagnosticsStore } from '../../stores/engineRtDiagnosticsStore';
+import {
+    defaultEngineRtDiagnosticsState,
+    ENGINE_EVENT_HISTORY_LIMIT,
+    engineRtDiagnosticsStore,
+} from '../../stores/engineRtDiagnosticsStore';
 import { collectAudioDeadlineEvidence } from '../collectAudioDeadlineEvidence';
 import { getEngineState } from '../engineAccess/getEngineState';
 import { refreshEngineRtDiagnostics } from '../engineAccess/refreshEngineRtDiagnostics';
@@ -235,6 +239,28 @@ describe('collectAudioDeadlineEvidence', () => {
         // No engine is open to name, on the same reading that still counts the
         // fault: the count spans engine generations, the carrier entry does not.
         expect(evidence.workload.nativeEngine).toBeNull();
+    });
+
+    it('reads the retained window, not a session total, once faults exceed the history limit', () => {
+        // Seed the store the way the writer leaves it: appended, then trimmed
+        // from the front to the last ENGINE_EVENT_HISTORY_LIMIT entries. A
+        // device that reported more faults than the window holds plateaus the
+        // count at the limit instead of the true session total.
+        const overflowing = Array.from({ length: ENGINE_EVENT_HISTORY_LIMIT + 5 }, () => ({
+            type: 'streamError' as const,
+            side: 'output' as const,
+            kind: 'xrun' as const,
+        }));
+        engineRtDiagnosticsStore.set({
+            latest: runningNativeDiagnostics,
+            nativeEngineObserved: true,
+            events: overflowing.slice(Math.max(0, overflowing.length - ENGINE_EVENT_HISTORY_LIMIT)),
+        });
+
+        expect(collectAudioDeadlineEvidence().nativeStreamFaults).toEqual({
+            coverage: 'observed',
+            events: ENGINE_EVENT_HISTORY_LIMIT,
+        });
     });
 
     it('reports no native coverage until a reading from a native engine has been recorded', async () => {

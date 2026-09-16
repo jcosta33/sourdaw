@@ -55,10 +55,12 @@ function readEngineUnderruns(): DeadlineCategoryReading {
  * from the latest reading would report none at exactly the moment the count
  * holds the fault worth reporting.
  *
- * The count is cumulative for the session and can span engine generations: the
- * history survives one engine being retired and the next one opening, so a
- * fault counted here need not belong to the engine `workload.nativeEngine`
- * names.
+ * The count is over the retained event history, bounded to the most recent
+ * `ENGINE_EVENT_HISTORY_LIMIT` events, and still spans engine generations
+ * within that window: the history survives one engine being retired and the
+ * next one opening, so a fault counted here need not belong to the engine
+ * `workload.nativeEngine` names. A device that reports more faults than the
+ * window holds plateaus this count at the limit instead of continuing to grow.
  */
 function readNativeStreamFaults(): DeadlineCategoryReading {
     const diagnostics = engineRtDiagnosticsStore.value ?? defaultEngineRtDiagnosticsState;
@@ -107,8 +109,9 @@ function readWebEngine(): AudioDeadlineWorkload['webEngine'] {
  * Names the native engine that exists now, and is null once none does. It
  * survives the stream ceasing to render, because the handle and its negotiated
  * rate outlive that, but not the engine being retired. It is therefore not a
- * carrier for `nativeStreamFaults`, whose count is cumulative for the session
- * and can hold faults an earlier engine reported at another rate.
+ * carrier for `nativeStreamFaults`, whose count is over the retained event
+ * history, bounded to `ENGINE_EVENT_HISTORY_LIMIT`, and can hold faults an
+ * earlier engine reported at another rate.
  *
  * The frames slot is written only from inside the render callback, so it holds
  * zero on a stream that has opened but never rendered. That zero is a figure
@@ -149,9 +152,10 @@ function readTransport(): AudioDeadlineWorkload['transport'] {
  *
  * `engineUnderruns` belongs to the `webEngine` entry beside it: the counter is
  * fed by the worklets that context hosts, and closing it ends the coverage.
- * `nativeStreamFaults` has no such carrier. Its count is cumulative for the
- * session and can span native engine generations, so `nativeEngine` names the
- * native engine open now rather than the one each fault was counted against.
+ * `nativeStreamFaults` has no such carrier. Its count is over the retained
+ * event history, bounded to `ENGINE_EVENT_HISTORY_LIMIT`, and can span native
+ * engine generations within that window, so `nativeEngine` names the native
+ * engine open now rather than the one each fault was counted against.
  */
 export function collectAudioDeadlineEvidence(): AudioDeadlineEvidence {
     return {
