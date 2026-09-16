@@ -4,6 +4,7 @@ import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } 
 import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../../models/AgentExecutionMode';
+import { type AgentRunCreationRefusalReason, describeAgentRunCreationRefusal } from '../../models/AgentResourceLimits';
 import { type AgentRunBudgets, type AgentRunDecisionResume, type AgentRunWorkLease } from '../../models/AgentRun';
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
@@ -53,6 +54,10 @@ type PromptRequestAdmission = {
     providerReceiptIdentity: string;
     providerLease: AgentRunWorkLease;
 };
+
+type PromptRequestAdmissionResult =
+    | { status: 'admitted'; admission: PromptRequestAdmission }
+    | { status: 'hard-limit-reached'; reason: AgentRunCreationRefusalReason };
 
 type PromptRequestState = {
     assistantMessageId: string | null;
@@ -117,9 +122,9 @@ function recordApplicationToolOnlyPlan(input: {
     });
 }
 
-function admitPromptRequest(input: PromptChatRequestInput): PromptRequestAdmission {
+function admitPromptRequest(input: PromptChatRequestInput): PromptRequestAdmissionResult {
     const runId = `agent-run-${crypto.randomUUID()}`;
-    agentRunLifecycle.create({
+    const created = agentRunLifecycle.create({
         runId,
         request: input.userText,
         mode: input.interactionMode,
@@ -131,6 +136,9 @@ function admitPromptRequest(input: PromptChatRequestInput): PromptRequestAdmissi
         budgets: input.options?.budgets,
         resume: input.options?.resume,
     });
+    if (created.status === 'hard-limit-reached') {
+        return { status: 'hard-limit-reached', reason: created.reason };
+    }
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
     const providerReceiptIdentity = `provider:${input.backend}:${runId}`;
     const providerLeaseResult = agentRunWorkLease.claim({
@@ -164,7 +172,10 @@ function admitPromptRequest(input: PromptChatRequestInput): PromptRequestAdmissi
         }
         throw error;
     }
-    return { runId, providerReceiptIdentity, providerLease: providerLeaseResult.lease };
+    return {
+        status: 'admitted',
+        admission: { runId, providerReceiptIdentity, providerLease: providerLeaseResult.lease },
+    };
 }
 
 function appendPlanRetentionWarning(userText: string, warning: string): void {
@@ -473,7 +484,25 @@ async function mapPromptFailure(input: {
 export async function orchestratePromptChatRequest(
     input: PromptChatRequestInput
 ): Promise<AgentApplyReceipt | undefined> {
-    const admission = admitPromptRequest(input);
+    const admissionResult = admitPromptRequest(input);
+    if (admissionResult.status === 'hard-limit-reached') {
+        const refusal = describeAgentRunCreationRefusal(admissionResult.reason);
+        appendChatMessage({
+            id: `msg-${crypto.randomUUID()}`,
+            role: 'user',
+            content: input.userText,
+            timestamp: Date.now(),
+        });
+        appendChatMessage({
+            id: `msg-${crypto.randomUUID()}`,
+            role: 'assistant',
+            content: refusal,
+            error: refusal,
+            timestamp: Date.now(),
+        });
+        return undefined;
+    }
+    const admission = admissionResult.admission;
     const aborter = new AbortController();
     const state: PromptRequestState = {
         assistantMessageId: null,

@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(),
     cancel: vi.fn(),
     claim: vi.fn(),
-    create: vi.fn(),
+    create: vi.fn(() => ({ status: 'created' as const })),
     executeImmediatePromptCommand: vi.fn(),
     executePromptCommandPreview: vi.fn(),
     getActiveModelId: vi.fn(),

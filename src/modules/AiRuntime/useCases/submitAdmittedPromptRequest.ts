@@ -71,12 +71,15 @@ export async function submitAdmittedPromptRequest(
     const prompt = input.prompt.trim();
     const runId = `agent-run-${crypto.randomUUID()}`;
     const createdRevision = settlePendingProjectWritesAndCaptureRevision();
-    agentRunLifecycle.create({
+    const admission = agentRunLifecycle.create({
         runId,
         request: prompt,
         mode: getPromptRunMode(input.source),
         createdRevision,
     });
+    if (admission.status === 'hard-limit-reached') {
+        return { status: 'rejected', runId };
+    }
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning', revision: createdRevision });
 
     let cancellationAttempt: Promise<void> | null = null;

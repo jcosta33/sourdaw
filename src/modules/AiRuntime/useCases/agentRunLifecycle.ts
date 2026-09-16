@@ -1,6 +1,12 @@
 import { type AgentContextEvidence } from '../models/AgentContext';
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
 import {
+    type AgentResourceLimitCategory,
+    type AgentResourceLimits,
+    type AgentRunCreationRefusalReason,
+    DEFAULT_AGENT_RESOURCE_LIMITS,
+} from '../models/AgentResourceLimits';
+import {
     AGENT_RUN_SCHEMA_VERSION,
     type AgentRun,
     type AgentRunArtifact,
@@ -28,6 +34,7 @@ import {
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
 import { type AiBackendPreference } from '../models/LlmOrchestrationTypes';
+import { agentResourceLimitsStore } from '../stores/agentResourceLimitsStore';
 import { persistAgentRunState, readAgentRunState, resetAgentRunState } from '../stores/agentRunStore';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
 
@@ -69,7 +76,29 @@ const DEFAULT_GRANTS: AgentRunGrants = {
     autoCommit: false,
 };
 
-const DEFAULT_BUDGETS: AgentRunBudgets = { limits: {}, consumed: {} };
+/** Limits the lifecycle enforces itself; they are ceilings on the run, never spendable budgets. */
+const LIFECYCLE_ENFORCED_LIMIT_CATEGORIES: ReadonlySet<string> = new Set<AgentResourceLimitCategory>([
+    'requestChars',
+    'concurrentRuns',
+    'runDurationMs',
+]);
+
+/** Phases in which a run still holds machine resources, so it counts against `concurrentRuns`. */
+const ACTIVE_PHASES = new Set<AgentRunPhase>(['planning', 'previewing', 'executing']);
+
+function getConfiguredAgentResourceLimits(): AgentResourceLimits {
+    return agentResourceLimitsStore.value ?? DEFAULT_AGENT_RESOURCE_LIMITS;
+}
+
+function armConfiguredAgentRunBudgets(limits: AgentResourceLimits): AgentRunBudgets {
+    const armed: Record<string, number> = {};
+    for (const [category, limit] of Object.entries(limits)) {
+        if (!LIFECYCLE_ENFORCED_LIMIT_CATEGORIES.has(category)) {
+            armed[category] = limit;
+        }
+    }
+    return { limits: armed, consumed: {} };
+}
 
 /**
  * Agent media listening and generated media are deferred capabilities (AC-047), so no run records
@@ -106,6 +135,9 @@ type CreateAgentRunInput = {
     budgets?: AgentRunBudgets;
     resume?: AgentRunDecisionResume;
 };
+
+export type CreateAgentRunResult =
+    { status: 'created' } | { status: 'hard-limit-reached'; reason: AgentRunCreationRefusalReason };
 
 function assertNonEmpty(value: string, field: string): void {
     if (value.trim().length === 0) {
@@ -302,12 +334,19 @@ function retryAgentRunPersistence(runId: string): AgentRun | null {
     return structuredClone(run);
 }
 
-function createAgentRun(input: CreateAgentRunInput): AgentRun {
+function createAgentRun(input: CreateAgentRunInput): CreateAgentRunResult {
     assertNonEmpty(input.runId, 'runId');
     assertNonEmpty(input.request, 'request');
     const state = readAgentRunState();
     if (state.runs.some((run) => run.runId === input.runId)) {
         throw new Error(`Agent run already exists: ${input.runId}`);
+    }
+    const configuredLimits = getConfiguredAgentResourceLimits();
+    if (input.request.length > configuredLimits.requestChars) {
+        return { status: 'hard-limit-reached', reason: 'requestChars' };
+    }
+    if (state.runs.filter((run) => ACTIVE_PHASES.has(run.phase)).length >= configuredLimits.concurrentRuns) {
+        return { status: 'hard-limit-reached', reason: 'concurrentRuns' };
     }
     const createdAt = input.createdAt ?? Date.now();
     const run: AgentRun = {
@@ -324,7 +363,7 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         },
         scope: structuredClone(input.scope ?? DEFAULT_SCOPE),
         grants: structuredClone(refuseDeferredMediaGrants(input.grants ?? DEFAULT_GRANTS)),
-        budgets: structuredClone(input.budgets ?? DEFAULT_BUDGETS),
+        budgets: structuredClone(input.budgets ?? armConfiguredAgentRunBudgets(configuredLimits)),
         budgetAttempts: [],
         plan: null,
         decision: null,
@@ -360,7 +399,7 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         updatedAt: createdAt,
     };
     persistAgentRunState({ ...state, runs: [...state.runs, run] });
-    return structuredClone(run);
+    return { status: 'created' };
 }
 
 function recordAgentRunContextEvidence(input: {
@@ -567,6 +606,10 @@ function reserveAgentRunBudgetBatch(input: {
     if (run === null) {
         throw new Error(`Unknown agent run: ${input.runId}`);
     }
+    const reservedAt = input.reservedAt ?? Date.now();
+    if (reservedAt - run.createdAt > getConfiguredAgentResourceLimits().runDurationMs) {
+        return { status: 'hard-limit-reached', reason: 'runDurationMs' };
+    }
     const attemptIds = new Set<string>();
     const newAttempts: AgentRunBudgetReservation[] = [];
     const additionalByCategory = new Map<string, number>();
@@ -597,7 +640,7 @@ function reserveAgentRunBudgetBatch(input: {
     if (newAttempts.length === 0) {
         return { status: 'reserved' };
     }
-    updateAgentRun(input.runId, input.reservedAt ?? Date.now(), (current) => {
+    updateAgentRun(input.runId, reservedAt, (current) => {
         const consumed = { ...current.budgets.consumed };
         for (const [category, additional] of additionalByCategory) {
             consumed[category] = (consumed[category] ?? 0) + additional;
