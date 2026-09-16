@@ -1,5 +1,12 @@
 //! The Unified Crumbs Suite: sample loading, playback control, analysis, and
 //! waveform peak retrieval.
+//!
+//! An instance's audio side is registered detached and runs every callback all
+//! the same. The slot's process call is the only drain of the command ring this
+//! module keeps the sending end of, so the engine hands it a discarded block
+//! until a strip chain splices the device in — see [`CrumbsEngineSlot`],
+//! [`register_crumbs_slot`] and
+//! [`daw_engine::plugin_slot::NativePlugin::runs_while_detached`].
 
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -45,6 +52,11 @@ pub enum CrumbsEngineSlot {
     /// what `AddPlugin` does — they would sound outside every one of them, and
     /// taking the device off the strip would leave the sampler rendering over
     /// the whole mix.
+    ///
+    /// Waiting, not idle: the engine renders the slot every callback while it
+    /// waits, into scratch it discards, because the slot's process call is what
+    /// drains the rings this side writes into
+    /// ([`register_crumbs_slot`]).
     Attached {
         plugin_id: usize,
         ends: CrumbsInstanceEnds,
@@ -398,8 +410,18 @@ fn ensure_crumbs_capture_headroom(
 /// and sends. The instance is published where a chain can borrow it instead,
 /// and `commands::graph` splices the `builtin-crumbs` device carrying this
 /// instance's id onto this plugin id — exactly as it splices a hosted plugin
-/// the engine already owns. An instance no chain holds runs nowhere, which is
-/// the same answer a hosted plugin taken off a strip gets.
+/// the engine already owns.
+///
+/// An instance no chain holds is carried by no chain's output, but it is not
+/// left unrun — and this is where it parts company with a hosted plugin taken
+/// off a strip. [`CrumbsPluginSlot::process_block_internal`] is the only drain
+/// of the command ring whose sending end this registration hands back, and the
+/// only reader of a finished take, so the slot answers
+/// [`daw_engine::plugin_slot::NativePlugin::runs_while_detached`] and the
+/// scheduler renders it every callback into scratch it discards. That is what
+/// arms the recorder and sounds the pads of a panel opened before the first
+/// play, or of one whose strip never leaves the Web Audio path, instead of
+/// banking every note, parameter and sample load in the ring until it is full.
 ///
 /// The slot and its record feed cross as one fenced batch. Admission checks
 /// the effect table and the capture ledger for the whole batch and provisions
@@ -619,18 +641,18 @@ pub struct CrumbsAttachReport {
 ///
 /// Takes only the instances lock, so a caller already holding the registry
 /// guard keeps the registry -> instances order every other path here follows.
-pub fn attached_crumbs_instances(state: &CrumbsState) -> Result<HashMap<String, usize>, String> {
-    let instances = state
-        .instances
-        .lock()
-        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
-    Ok(instances
+/// A panic elsewhere does not withhold the lookup, on the same terms as every
+/// other reader in this module ([`crate::state::locked_or_poisoned`]): the map
+/// is a plain map that a panicked writer left readable, and refusing it would
+/// degrade every Crumbs device in the batch that asked.
+pub fn attached_crumbs_instances(state: &CrumbsState) -> HashMap<String, usize> {
+    crate::state::locked_or_poisoned(&state.instances)
         .iter()
         .filter_map(|(instance_id, instance)| match instance.engine_slot {
             CrumbsEngineSlot::Attached { plugin_id, .. } => Some((instance_id.clone(), plugin_id)),
             CrumbsEngineSlot::Dormant(_) => None,
         })
-        .collect())
+        .collect()
 }
 
 /// Put every attached instance back to dormant, because the engine holding
@@ -2981,6 +3003,101 @@ mod tests {
             registry.fenced_batches(),
             0,
             "a refused attach must number nothing"
+        );
+    }
+
+    /// An instance no strip ever splices still drains its command ring.
+    ///
+    /// The slot is registered detached and a chain may never come for it: a
+    /// panel opened before the first play, a track left on the Web Audio path,
+    /// a device inserted mid-roll. [`CrumbsPluginSlot::process_block_internal`]
+    /// is the only drain of that ring, so an unrun slot leaves every gesture
+    /// the panel made banked until the ring reports "Command queue full" — and
+    /// hands the whole stale backlog to the first chain that takes it.
+    ///
+    /// Driven on the real scheduler, by the production route, and never
+    /// spliced: [`OfflineRenderer`] is `AudioScheduler` without a device, the
+    /// registration commands are the ones [`create_crumbs`] published, and the
+    /// two gestures go through the command functions the addon calls. What is
+    /// observed is the drain itself — the ring comes back empty and the engine
+    /// voices the note that ring carried — and that none of it reached the mix,
+    /// because no chain is carrying this instance.
+    #[test]
+    fn an_unspliced_instance_still_drains_its_command_ring_on_a_running_scheduler() {
+        use daw_engine::offline::{OfflineRenderer, OFFLINE_BLOCK_FRAMES};
+
+        let state = CrumbsState::default();
+        let app_state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        *app_state
+            .engine
+            .lock()
+            .expect("engine lock should be available") = Some(engine);
+
+        let instance_id = "unspliced-crumbs";
+        crate::block_on_test(create_crumbs(instance_id.to_string(), &state, &app_state))
+            .expect("the create should register its runtime");
+
+        // The registration batch, verbatim, onto a scheduler that renders it.
+        let mut renderer = OfflineRenderer::new(48_000.0, 8);
+        while let Ok(command) = command_rx.pop() {
+            renderer
+                .push(command)
+                .expect("the renderer's ring holds the registration batch");
+        }
+
+        // A sample for the note to sound, then the two gestures a panel makes.
+        let metering = {
+            let mut instances = state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available");
+            let instance = instances
+                .get_mut(instance_id)
+                .expect("the create owns a map entry");
+            instance
+                .send(CrumbsCommand::AddSample {
+                    id: 1,
+                    data: Arc::new(SampleData::from_mono(vec![0.1; 4_800], 48_000)),
+                })
+                .expect("the command ring has room");
+            instance
+                .send(CrumbsCommand::SetActiveSample(1))
+                .expect("the command ring has room");
+            Arc::clone(&instance.metering)
+        };
+        crate::block_on_test(arm_recording(instance_id.to_string(), 0.5, 0, 1.0, &state))
+            .expect("the arm should reach the ring");
+        crate::block_on_test(crumbs_note_on(instance_id.to_string(), 60, 100, &state))
+            .expect("the note should reach the ring");
+
+        let (left, right) = renderer.render(OFFLINE_BLOCK_FRAMES);
+
+        let queued = {
+            let instances = state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available");
+            let instance = instances
+                .get(instance_id)
+                .expect("the create owns a map entry");
+            let CrumbsEngineSlot::Attached { ends, .. } = &instance.engine_slot else {
+                panic!("the create attaches its instance to the running engine");
+            };
+            ends.command_tx.buffer().capacity() - ends.command_tx.slots()
+        };
+        assert_eq!(
+            queued, 0,
+            "an unspliced slot must still drain the ring its panel writes into"
+        );
+        assert!(
+            metering.active_voice_count.load(Ordering::Relaxed) >= 1,
+            "the engine must sound the note the drained ring carried"
+        );
+        assert!(
+            left.iter().chain(right.iter()).all(|sample| *sample == 0.0),
+            "an instance no chain carries must not reach the mix"
         );
     }
 }

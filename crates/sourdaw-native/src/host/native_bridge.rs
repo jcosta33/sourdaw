@@ -3429,6 +3429,19 @@ impl NativePlugin for CrumbsPluginSlot {
         true
     }
 
+    /// Every callback, spliced or not.
+    ///
+    /// `process_block_internal` is the only drain of this slot's command ring
+    /// and the only reader of the engine's committed take, and the slot is
+    /// registered detached — the strip's chain splices it in later, or never,
+    /// if the strip stays on the Web Audio path. A block only while a chain
+    /// carried it would leave every arm, note, parameter and sample load the
+    /// panel pushed banked in the ring, the recorder unarmed against a caller
+    /// the command told `Ok`, and a finished take unforwarded.
+    fn runs_while_detached(&self) -> bool {
+        true
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

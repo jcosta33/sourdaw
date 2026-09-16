@@ -4262,16 +4262,7 @@ pub async fn apply_graph_commands(
     // binds in this batch rather than waiting for the next one. A panel opened
     // before the first play therefore becomes audible on the batch that starts
     // the engine, with no silent block in between.
-    let attached_crumbs = match crumbs::attached_crumbs_instances(crumbs) {
-        Ok(attached) => attached,
-        Err(error) => {
-            // A lock this cannot take is not the batch's failure: an empty
-            // lookup falls back on the degradation law every unbindable device
-            // already takes, and the next batch reads it again.
-            eprintln!("[Crumbs] attached instances could not be read: {error}");
-            HashMap::new()
-        }
-    };
+    let attached_crumbs = crumbs::attached_crumbs_instances(crumbs);
 
     let mut engine_guard = state
         .engine

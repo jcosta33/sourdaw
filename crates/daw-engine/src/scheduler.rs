@@ -1439,6 +1439,32 @@ impl PluginCore {
         }
     }
 
+    /// Whether this body must be handed a block every callback even while no
+    /// chain runs it ([`NativePlugin::runs_while_detached`]).
+    ///
+    /// Only a native body can answer `true`. A built-in's writes arrive on the
+    /// command drain and land on the instance itself, so one nothing renders is
+    /// still current; a native body whose only command drain is its process call
+    /// is not.
+    #[inline]
+    fn runs_while_detached(&self) -> bool {
+        match self {
+            Self::Native(plugin) => plugin.runs_while_detached(),
+            Self::Knead(_)
+            | Self::Fermenter(_)
+            | Self::GrandBoule(_)
+            | Self::Gluten(_)
+            | Self::Crust(_)
+            | Self::Grinder(_)
+            | Self::Bacteria(_)
+            | Self::Proof(_)
+            | Self::DutchOven(_)
+            | Self::Toaster(_)
+            | Self::Levain(_)
+            | Self::Scoring(_) => false,
+        }
+    }
+
     /// The latency this body reports for the patch it was built with, or `None`
     /// for a core that declares none.
     ///
@@ -5246,13 +5272,39 @@ impl ActiveEffect {
         self.placement == EffectPlacement::Detached
     }
 
+    /// Whether the callback hands this effect a block although no chain runs
+    /// it — a body that must render every callback to drain its own command
+    /// surface ([`NativePlugin::runs_while_detached`]), into scratch
+    /// [`AudioScheduler::process_block`] discards.
+    ///
+    /// Bypass does not enter into it. The output is discarded either way, and
+    /// the reason the block is handed over — the drain — is owed to a bypassed
+    /// device exactly as much as to an audible one.
+    #[inline]
+    fn runs_detached(&self) -> bool {
+        self.runs_nowhere() && self.instance.runs_while_detached()
+    }
+
     /// Whether nothing will hand this effect a block on this callback.
     ///
     /// Either it runs nowhere, or it is bypassed — every chain skips a
     /// bypassed device rather than processing it. Work queued for a body no
     /// block reaches has no drain, so it is discarded rather than banked.
+    ///
+    /// A body that [`Self::runs_detached`] is the one exception, and it is one
+    /// because the premise above is false for it: the discard pass hands it
+    /// this callback's block, so its queued MIDI is read rather than stranded
+    /// and every law stated on this gate — the paired queue-and-track of
+    /// [`Self::enqueue_midi`], the releases [`Self::release_sounding_notes`]
+    /// spends, the stamps [`AudioScheduler::apply_due_device_params`] lands —
+    /// holds for it on the same terms as for a device on a chain. Discarding
+    /// its work instead would strand the note-offs against the keys its own
+    /// ring has already sounded.
     #[inline]
     fn receives_no_block(&self) -> bool {
+        if self.runs_detached() {
+            return false;
+        }
         self.bypassed || self.runs_nowhere()
     }
 
@@ -5747,6 +5799,20 @@ pub struct AudioScheduler {
     stripped_note_work: SlotWorkSet,
     /// The explicit, deterministic order of master insert processing.
     master_work: MasterWorkList,
+    /// Slots holding a body that must render every callback although no chain
+    /// runs it ([`ActiveEffect::runs_detached`]). Kept as a set for the same
+    /// reason the sets above are: the pass costs nothing on the overwhelming
+    /// majority of graphs, which hold no such body at all.
+    detached_run_work: SlotWorkSet,
+    /// The pair the discard pass renders those bodies into.
+    ///
+    /// Reserved once at construction at [`MAX_CALLBACK_FRAMES`], which is what
+    /// the callback clamps its ask to, so the pass slices rather than grows
+    /// inside the deadline. It is its own pair rather than a borrow of the
+    /// timeline's generator scratch because that scratch belongs to the render
+    /// already in flight when this pass runs.
+    detached_discard_left: Vec<f32>,
+    detached_discard_right: Vec<f32>,
     /// Effect ids the render callback hands captured device audio to.
     ///
     /// Reserved once at [`CRUMBS_CAPTURE_RESERVE`] and never grown: it is
@@ -5877,6 +5943,9 @@ impl AudioScheduler {
             pending_midi_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
             stripped_note_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
             master_work: MasterWorkList::reserved(EFFECT_TABLE_CAPACITY),
+            detached_run_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
+            detached_discard_left: vec![0.0; MAX_CALLBACK_FRAMES],
+            detached_discard_right: vec![0.0; MAX_CALLBACK_FRAMES],
             capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
             pdc_dirty: false,
             timeline: TimelineGraph::new(),
@@ -6225,7 +6294,10 @@ impl AudioScheduler {
                         // drain — unless a later command in it bypasses the
                         // device again, which leaves both record and bits
                         // standing for the next un-bypass.
-                        if was_bypassed && !bypassed {
+                        // A detached body the discard pass runs banked
+                        // nothing under its bypass — the block reached it
+                        // either way — so it is owed nothing here.
+                        if was_bypassed && !bypassed && !self.effects[slot].runs_detached() {
                             self.owe_releases_on_resume(slot);
                         }
                     }
@@ -6810,6 +6882,9 @@ impl AudioScheduler {
         if placement == EffectPlacement::MasterChain {
             self.master_work.append(slot);
         }
+        if self.effects[slot].runs_detached() {
+            self.detached_run_work.insert(slot);
+        }
     }
 
     /// Register a built-in effect — whose instance the command carried
@@ -6927,12 +7002,25 @@ impl AudioScheduler {
         if placement == EffectPlacement::MasterChain {
             self.master_work.append(slot);
         }
+        // The discard pass follows the placement, both ways: a body that must
+        // render while detached joins it here and leaves it the moment a chain
+        // takes the device over.
+        if self.effects[slot].runs_detached() {
+            self.detached_run_work.insert(slot);
+        } else {
+            self.detached_run_work.remove(slot);
+        }
         if placement == EffectPlacement::Detached {
             if let Some(delay) = self.effects[slot].dry_delay.as_mut() {
                 delay.restart_from_silence();
             }
         }
-        if prior == EffectPlacement::Detached {
+        // Except for a body the detachment never stopped: it read every
+        // trigger that arrived while it ran nowhere, so its keys are the keys
+        // it is actually holding and owing releases here would cut the note a
+        // player is still holding as the splice lands.
+        if prior == EffectPlacement::Detached && !self.effects[slot].instance.runs_while_detached()
+        {
             self.owe_releases_on_resume(slot);
         }
     }
@@ -6982,6 +7070,7 @@ impl AudioScheduler {
         self.pending_midi_work.remove(slot);
         self.stripped_note_work.remove(slot);
         self.master_work.remove(slot);
+        self.detached_run_work.remove(slot);
         let removed = self.effects.swap_remove(slot);
         // The swap moved the table's tail into `slot` unless the removed
         // entry was itself the tail; that entry's mapping still points at the
@@ -6992,6 +7081,7 @@ impl AudioScheduler {
             self.pending_midi_work.move_slot(old_tail, slot);
             self.stripped_note_work.move_slot(old_tail, slot);
             self.master_work.move_slot(old_tail, slot);
+            self.detached_run_work.move_slot(old_tail, slot);
         }
         Some(removed)
     }
@@ -7457,6 +7547,11 @@ impl AudioScheduler {
                     // placed on a chain again. A hosted plugin cannot be
                     // written to at all until it is handed a block — that is
                     // the whole of the asymmetry.
+                    //
+                    // Which is also why a body the callback runs while
+                    // detached ([`ActiveEffect::runs_detached`]) never reaches
+                    // this arm: it *is* handed a block, so its queue drains on
+                    // that block exactly as a chain member's does.
                     (PluginCore::Native(_), DeviceParamTarget::Hosted { .. })
                         if receives_no_block => {}
                     (PluginCore::Native(plugin), DeviceParamTarget::Hosted { id }) => {
@@ -7758,6 +7853,48 @@ impl AudioScheduler {
                 &mut self.midi_rt_diagnostics,
                 left,
                 right,
+                frames,
+            );
+        }
+
+        // Then every body that has to render although nothing carries it,
+        // into scratch this callback throws away. Its command surface is
+        // drained by its process call and by nothing else
+        // ([`NativePlugin::runs_while_detached`]), so a callback that skipped it
+        // would bank the notes, parameters and loads its control side pushed
+        // until its ring was full and hand the whole stale backlog to the first
+        // chain that took the device.
+        //
+        // It runs ahead of the detached-MIDI cleanup below because
+        // `process_device` is what drains `pending_midi`: cleared first, this
+        // block's events would be discarded before the body read them, with the
+        // sounding bits that record them already spent.
+        //
+        // No dry line is fed. What a detached device's line holds is decided by
+        // the placement that takes it — every splice ships a fresh silent line
+        // — and this pass renders nothing any chain will hear.
+        let mut detached_index = 0;
+        while detached_index < self.detached_run_work.slots.len() {
+            let slot = self.detached_run_work.slots[detached_index];
+            detached_index += 1;
+            debug_assert!(
+                slot < self.effects.len(),
+                "detached run work points beyond the effect table"
+            );
+            let discard_left = &mut self.detached_discard_left[..frames];
+            let discard_right = &mut self.detached_discard_right[..frames];
+            // Zeroed per body, on the same law the timeline's generators run
+            // under: a body that sums into the pair it is handed would
+            // otherwise render over the previous body's discarded block.
+            discard_left.fill(0.0);
+            discard_right.fill(0.0);
+            process_device(
+                &mut self.effects[slot],
+                &self.transport,
+                self.sample_rate,
+                &mut self.midi_rt_diagnostics,
+                discard_left,
+                discard_right,
                 frames,
             );
         }
@@ -10050,6 +10187,54 @@ mod tests {
         #[global_allocator]
         static ALLOCATOR: AllocDisabler = AllocDisabler;
 
+        /// A body that must be handed a block while no chain runs it, counting
+        /// the calls it takes and adding a constant to whatever it is handed:
+        /// the count says the pass ran, and the constant says where its block
+        /// went.
+        struct DetachedDrainProbe {
+            calls: Arc<AtomicUsize>,
+            midi_events: Arc<AtomicUsize>,
+        }
+
+        impl NativePlugin for DetachedDrainProbe {
+            fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+                self.calls.fetch_add(1, Ordering::Relaxed);
+                for index in 0..num_samples {
+                    left[index] += 1.0;
+                    right[index] += 1.0;
+                }
+            }
+
+            fn process_with_events(
+                &mut self,
+                left: &mut [f32],
+                right: &mut [f32],
+                num_samples: usize,
+                midi_events: &[MidiNoteEvent],
+                _transport: &TransportState,
+            ) {
+                self.midi_events
+                    .fetch_add(midi_events.len(), Ordering::Relaxed);
+                self.process_audio(left, right, num_samples);
+            }
+
+            fn name(&self) -> &str {
+                "detached-drain-probe"
+            }
+
+            fn runs_while_detached(&self) -> bool {
+                true
+            }
+
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+
+            fn as_any_mut(&mut self) -> &mut dyn Any {
+                self
+            }
+        }
+
         /// Every arm of the input bus, on the callback, under the guard:
         /// admission, refusal, delivery to a native consumer, the underrun
         /// count, the prune a removal performs, and the drop that follows when
@@ -10099,6 +10284,41 @@ mod tests {
             assert_eq!(diagnostics.capture_consumer_refusals, 1);
             assert_eq!(diagnostics.capture_input_underruns, 1);
             assert_eq!(diagnostics.capture_blocks_dropped, 1);
+        }
+
+        /// The discard pass runs inside the deadline, so its scratch is
+        /// reserved at construction and only sliced per block: a pair
+        /// allocated per callback — or grown by an ask the clamp let through —
+        /// would be exactly the heap traffic ADR 0020 keeps off the callback.
+        #[test]
+        fn the_detached_discard_pass_hands_its_body_a_block_without_allocating() {
+            let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+            let calls = Arc::new(AtomicUsize::new(0));
+            let midi_events = Arc::new(AtomicUsize::new(0));
+            // Built, boxed and pushed control-side; the store with it.
+            command_tx
+                .push(GraphCommand::AddHostedPlugin(
+                    7,
+                    Box::new(DetachedDrainProbe {
+                        calls: Arc::clone(&calls),
+                        midi_events: Arc::clone(&midi_events),
+                    }),
+                    MidiNoteStore::new(),
+                ))
+                .unwrap();
+            let mut left = [0.0; 8];
+            let mut right = [0.0; 8];
+
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+                scheduler.process_block(&mut left, &mut right, 8);
+            });
+
+            // The guarded callback did the work: the body ran and its block
+            // never reached the pair the callback rendered into.
+            assert_eq!(calls.load(Ordering::Relaxed), 1);
+            assert_eq!(left, [0.0; 8]);
+            assert_eq!(right, [0.0; 8]);
         }
 
         #[test]
@@ -12325,6 +12545,73 @@ mod timeline_tests {
         }
     }
 
+    /// The same counted, offset-adding pass, from a body that must be run even
+    /// while no chain carries it — the Crumbs slot's answer
+    /// (`NativePlugin::runs_while_detached`). The count says whether the
+    /// scheduler ran it; the offset says whether whatever it rendered into
+    /// reached the mix.
+    struct DetachedDrainPlugin {
+        inner: CountingOffsetPlugin,
+    }
+
+    impl NativePlugin for DetachedDrainPlugin {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            self.inner.process_audio(left, right, num_samples);
+        }
+
+        fn process_with_events(
+            &mut self,
+            left: &mut [f32],
+            right: &mut [f32],
+            num_samples: usize,
+            midi_events: &[MidiNoteEvent],
+            transport: &TransportState,
+        ) {
+            self.inner
+                .process_with_events(left, right, num_samples, midi_events, transport);
+        }
+
+        fn name(&self) -> &str {
+            "detached-drain-plugin"
+        }
+
+        fn runs_while_detached(&self) -> bool {
+            true
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// A body registered exactly as `register_crumbs_slot` registers the
+    /// sampler's — `AddHostedPlugin`, no chain splice — that has to be run all
+    /// the same.
+    fn detached_body_that_must_drain(
+        harness: &mut Harness,
+        effect_id: usize,
+        offset: f32,
+    ) -> ChainBoundPlugin {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let midi_events = Arc::new(AtomicUsize::new(0));
+        harness.send(GraphCommand::AddHostedPlugin(
+            effect_id,
+            Box::new(DetachedDrainPlugin {
+                inner: CountingOffsetPlugin {
+                    offset,
+                    calls: Arc::clone(&calls),
+                    midi_events: Arc::clone(&midi_events),
+                },
+            }),
+            MidiNoteStore::new(),
+        ));
+        ChainBoundPlugin { calls, midi_events }
+    }
+
     /// One engine-owned hosted plugin and its call counters, spliced onto a
     /// track that plays a constant.
     struct ChainBoundPlugin {
@@ -14148,6 +14435,117 @@ mod timeline_tests {
         harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
         harness.render(4);
         assert_eq!(received.load(Ordering::Relaxed), 1);
+    }
+
+    /// A body whose own process call is the only drain of its command surface
+    /// is handed a block every callback while it runs nowhere, and what it
+    /// renders is thrown away.
+    ///
+    /// Detached, the master loop skips it and no strip chain reaches it, so
+    /// without this pass nothing calls it at all — and everything its control
+    /// side pushed banks in its ring until the ring is full, with the first
+    /// splice replaying the whole stale backlog.
+    #[test]
+    fn a_detached_body_that_must_drain_runs_every_callback_over_scratch_the_mix_never_sees() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let plugin = detached_body_that_must_drain(&mut harness, 7, 1.0);
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Detached,
+            "the sampler's registration homes the slot detached"
+        );
+
+        // The offset the body adds to every buffer it is handed is the probe:
+        // the pair the callback renders into must come back untouched.
+        let (left, right) = harness.render(4);
+        assert_eq!(plugin.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(left, vec![0.0; 4], "a detached body's block is discarded");
+        assert_eq!(right, vec![0.0; 4], "a detached body's block is discarded");
+
+        let (left, right) = harness.render(4);
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            2,
+            "the block is owed once per callback, not once per placement"
+        );
+        assert_eq!(left, vec![0.0; 4]);
+        assert_eq!(right, vec![0.0; 4]);
+    }
+
+    /// And only for a body that asks. Every other detached device — a hosted
+    /// plugin a strip released, a note sink at its home — is reached by its
+    /// host some other way and stays off the callback's clock.
+    #[test]
+    fn a_detached_body_that_needs_no_drain_is_handed_no_block_at_all() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let midi_events = Arc::new(AtomicUsize::new(0));
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddHostedPlugin(
+            7,
+            Box::new(CountingOffsetPlugin {
+                offset: 1.0,
+                calls: Arc::clone(&calls),
+                midi_events: Arc::clone(&midi_events),
+            }),
+            MidiNoteStore::new(),
+        ));
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Detached
+        );
+
+        let (left, right) = harness.render(4);
+        harness.render(4);
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            0,
+            "a body the host reaches without a block must not be run detached"
+        );
+        assert_eq!(left, vec![0.0; 4]);
+        assert_eq!(right, vec![0.0; 4]);
+    }
+
+    /// The block reaches it, so its MIDI does too: `receives_no_block` answers
+    /// `false` for such a body, and the events queued for it are read on the
+    /// discarded block rather than discarded at the door.
+    ///
+    /// And because it read them, the keys it holds are the keys it is really
+    /// holding — so the splice that finally carries it must not pay a release
+    /// for them. A body that banked its triggers unread is owed exactly that
+    /// payment ([`AudioScheduler::owe_releases_on_resume`]); one that read
+    /// them is owed none, and paying it would cut the note under a player's
+    /// finger the moment the device landed on a strip.
+    #[test]
+    fn a_detached_body_that_must_drain_reads_its_midi_and_keeps_its_keys_across_a_splice() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let plugin = detached_body_that_must_drain(&mut harness, 7, 1.0);
+
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+        harness.render(4);
+
+        assert_eq!(
+            plugin.midi_events.load(Ordering::Relaxed),
+            1,
+            "a body the callback runs must be handed the note addressed to it"
+        );
+        assert!(
+            harness.scheduler.effects[0].pending_midi.is_empty(),
+            "the body's own pass is what drains its queue"
+        );
+
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(insert_track_device(1, effect(7), 0));
+        harness.render(4);
+
+        assert_eq!(
+            plugin.midi_events.load(Ordering::Relaxed),
+            1,
+            "the splice must not pay a release for a key the body is still holding"
+        );
     }
 
     /// A hosted plugin a strip holds is run by that strip's chain, and the
