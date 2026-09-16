@@ -1,0 +1,14 @@
+crates/proof-chamber/src/lib.rs
+  h_1228e573df1f42 60-79,385-389
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8c76f0768bd8d5adbb2967362c9482d5818d30ee",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
