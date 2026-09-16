@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -27,7 +27,7 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  *     declared range  ==  knob travel  ==  engine clamp
  *
  * Two of those legs are derivable for every parameter this file compares; the
- * third is derivable for 116 of the 193. So the census is **three-way where it
+ * third is derivable for 117 of the 191. So the census is **three-way where it
  * can be and two-way where it cannot**, and it says which is which rather than
  * implying uniform coverage. A two-way row that is honest beats a three-way one
  * that fabricates a clamp from a comment.
@@ -59,9 +59,21 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  * **Leg 3 — engine clamp.** The two-sided numeric `value.clamp(a, b)` in the
  * Rust `set_param` arm, or in an explicitly mapped one-hop setter whose matching
  * arm passes raw `value` into the clamped parameter. Sources are split per
- * exclusive alternative where a device has one. Covers 116 of 193; every shape
+ * exclusive alternative where a device has one. Covers 117 of 191; every shape
  * it cannot read is named in `ENGINE_CLAMP_COVERAGE`, at the point where the
  * derivation stops.
+ *
+ * An arm name or a bound may also arrive as an **imported const reference**
+ * rather than a literal: the shared-constants campaign rewrote Rust authoring
+ * as `"threshold" => value.clamp(THRESHOLD_MIN_DB, THRESHOLD_MAX_DB)` and
+ * `DECAY =>` in `crates/daw-dsp/src/params.rs` consts. Dropping the reference
+ * would drop the parameter from `threeWay` and the arm name from `contested`
+ * — silently, since the row would leave the census without joining any pin —
+ * so the reader follows the reference into the module the file's `use` names
+ * and reads the `pub const NAME: TYPE = VALUE;` there, as text. The same
+ * refusal discipline as the TS leg applies: only a const whose value is a
+ * literal number or string resolves; a computed, re-exported, or tuple value
+ * stays a counted gap. See `readRustConstReferences`.
  *
  * ## Coverage is part of the claim
  *
@@ -814,15 +826,242 @@ function readParamFunctionBodies(source: string): string[] {
     return bodies;
 }
 
+// ── Rust const references ──────────────────────────────────────────────────
+
+type RustConstReferences = {
+    /** The wire name an all-caps arm identifier resolves to, when it names a literal `&str` const. */
+    readonly wireName: (identifier: string) => string | null;
+    /** The number an all-caps bound identifier resolves to, when it names a literal numeric const. */
+    readonly number: (identifier: string) => number | null;
+};
+
+type RustConstDeclaration =
+    { readonly kind: 'string'; readonly text: string } | { readonly kind: 'number'; readonly value: number };
+
+/**
+ * Follows one Rust file's const references to the values their modules author.
+ *
+ * The mirror of `readImportedReferences` on the TS side, for the shared-constants
+ * campaign's Rust shapes: a `set_param` arm spelled `DECAY =>` and a bound
+ * spelled `value.clamp(THRESHOLD_MIN_DB, THRESHOLD_MAX_DB)`, where the consts
+ * arrive through `use crate::params::{…}`, a path-qualified `use
+ * crate::params::DECAY`, or `use super::DEFAULT_THRESHOLD_DB`. The local name
+ * is bound to the module the `use` path names, and the module's own
+ * `pub const NAME: TYPE = VALUE;` is read **as text** — never through an
+ * import, because nothing in `crates/` is importable from a browser spec.
+ *
+ * Resolves only a const whose value is a numeric literal or a double-quoted
+ * string literal. Everything else — a computed value, a tuple const
+ * (`HIGH_CUT_RANGE.0` in `proof-chamber/output_stage.rs`), a function
+ * parameter (`clamped_param`'s `min`/`max`), a `pub use` re-export, a glob
+ * import, or a path into another crate — stays unresolved, and the arm or
+ * bound carrying it falls into the gap `ENGINE_CLAMP_COVERAGE` counts rather
+ * than guessing at. The pre-campaign refusal of *same-name-different-value*
+ * consts (`MAX_BANDS`) survives in a narrower form: those names reach no
+ * `use` path and no single-module declaration, so there is still no
+ * literature saying which value is meant.
+ */
+function readRustConstReferences(file: string): RustConstReferences {
+    const source = stripComments(readFileSync(file, 'utf8'));
+
+    /** The crate's `src/` directory: `crate::` paths root here. */
+    let crateRoot = dirname(file);
+    while (basename(crateRoot) !== 'src' && dirname(crateRoot) !== crateRoot) {
+        crateRoot = dirname(crateRoot);
+    }
+    if (basename(crateRoot) !== 'src') {
+        return { wireName: () => null, number: () => null };
+    }
+
+    /**
+     * The file's own module path in crate terms (`gluten/vca.rs` →
+     * `['gluten', 'vca']`, `gluten/mod.rs` → `['gluten']`, a crate-root
+     * `lib.rs` → `[]`): `super::` walks up this list, `self::` extends it.
+     */
+    const fileSegment = relative(crateRoot, file);
+    const pathSegments = fileSegment
+        .split(sep)
+        .map((part, index, all) => (index === all.length - 1 ? part.replace(/\.rs$/, '') : part));
+    if (pathSegments[pathSegments.length - 1] === 'mod') {
+        pathSegments.pop();
+    }
+    // The crate-root file is the root module itself, not a child of one.
+    const moduleSegments = fileSegment === 'lib.rs' || fileSegment === 'main.rs' ? [] : pathSegments;
+
+    /** `crate::proof::metering` → that module's file, trying both Rust layouts. */
+    const moduleFile = (segments: readonly string[]): string | null => {
+        if (segments.length === 0) {
+            return (
+                [join(crateRoot, 'lib.rs'), join(crateRoot, 'main.rs')].find((candidate) => existsSync(candidate)) ??
+                null
+            );
+        }
+        const base = join(crateRoot, ...segments);
+        return [`${base}.rs`, join(base, 'mod.rs')].find((candidate) => existsSync(candidate)) ?? null;
+    };
+
+    // Local name → the module file and const name a `use` binds it to.
+    const imports = new Map<string, { readonly file: string | null; readonly name: string }>();
+    for (const statement of source.matchAll(/^[ \t]*(pub\s+)?use\s+([^;]+);/gm)) {
+        if (statement[1] !== undefined) {
+            // A re-export: the value's author is another hop away, so it stays
+            // a gap rather than being chased through `pub use` chains.
+            continue;
+        }
+        const tree = statement[2]!;
+        if (tree.includes('*')) {
+            continue;
+        }
+        const braced = /^([\w:]*::)?\{([^}]*)\}$/.exec(tree);
+        const single = braced === null ? /^([\w:]*::)?(\w+)(?:\s+as\s+(\w+))?$/.exec(tree) : null;
+        if (braced === null && single === null) {
+            continue;
+        }
+        const prefix = (braced?.[1] ?? single![1] ?? '').split('::').filter((segment) => segment !== '');
+        let items: readonly { readonly name: string; readonly local: string }[];
+        if (braced !== null) {
+            items = braced[2]!
+                .split(',')
+                .map((item) => /^(\w+)(?:\s+as\s+(\w+))?$/.exec(item.trim()))
+                .filter((item): item is RegExpExecArray => item !== null)
+                .map((item) => ({ name: item[1]!, local: item[2] ?? item[1]! }));
+        } else {
+            items = [{ name: single![2]!, local: single![3] ?? single![2]! }];
+        }
+        if (items.length === 0) {
+            continue;
+        }
+
+        // `crate::` roots at the crate; `self::` extends this file's module;
+        // `super::` (repeatable) walks up it, and may then hand back to
+        // `crate::`/`self::`. Any other head is another crate, whose sources
+        // this census has no business reading.
+        let base: readonly string[] | null = null;
+        let rest = [...prefix];
+        if (rest[0] === 'crate') {
+            base = [];
+            rest = rest.slice(1);
+        } else if (rest[0] === 'self') {
+            base = moduleSegments;
+            rest = rest.slice(1);
+        } else if (rest[0] === 'super') {
+            let supers = 0;
+            while (rest[supers] === 'super') {
+                supers++;
+            }
+            const after = rest[supers];
+            if (after === 'crate') {
+                base = [];
+                rest = rest.slice(supers + 1);
+            } else if ((after === undefined || after === 'self') && supers <= moduleSegments.length) {
+                base = moduleSegments.slice(0, moduleSegments.length - supers);
+                rest = rest.slice(supers + (after === 'self' ? 1 : 0));
+            }
+        }
+        if (base === null) {
+            continue;
+        }
+        const target = moduleFile([...base, ...rest]);
+        for (const item of items) {
+            imports.set(item.local, { file: target, name: item.name });
+        }
+    }
+
+    /** One module file's literal const declarations, read once per run. */
+    const declarationsFor = (path: string | null): ReadonlyMap<string, RustConstDeclaration | null> => {
+        if (path === null) {
+            return new Map();
+        }
+        const cached = rustConstDeclarations.get(path);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const declarations = new Map<string, RustConstDeclaration | null>();
+        const text = stripComments(readFileSync(path, 'utf8'));
+        const declaration =
+            /(?:^|\n)[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?const[ \t]+([A-Z][A-Z0-9_]*)[ \t]*:[ \t]*([^=\n]+?)[ \t]*=[ \t]*([^;\n]+);/g;
+        for (const match of text.matchAll(declaration)) {
+            const type = match[2]!.trim();
+            const value = match[3]!.trim();
+            if (type === '&str' || type === "&'static str") {
+                const string = /^"([\w-]+)"$/.exec(value);
+                declarations.set(match[1]!, string === null ? null : { kind: 'string', text: string[1]! });
+                continue;
+            }
+            const numericType = /^(?:f32|f64|u\d+|i\d+|usize|isize)$/.test(type);
+            const numericLiteral = new RegExp(`^${RUST_NUMBER}$`).test(value);
+            if (numericType && numericLiteral) {
+                declarations.set(match[1]!, { kind: 'number', value: Number(value.replaceAll('_', '')) });
+                continue;
+            }
+            declarations.set(match[1]!, null);
+        }
+        rustConstDeclarations.set(path, declarations);
+        return declarations;
+    };
+
+    const own = declarationsFor(file);
+    const declarationFor = (identifier: string): RustConstDeclaration | null => {
+        const local = own.get(identifier);
+        if (local !== undefined) {
+            return local;
+        }
+        const binding = imports.get(identifier);
+        if (binding === undefined) {
+            return null;
+        }
+        return declarationsFor(binding.file).get(binding.name) ?? null;
+    };
+
+    return {
+        wireName: (identifier) => {
+            const declaration = declarationFor(identifier);
+            return declaration !== null && declaration.kind === 'string' ? declaration.text : null;
+        },
+        number: (identifier) => {
+            const declaration = declarationFor(identifier);
+            return declaration !== null && declaration.kind === 'number' ? declaration.value : null;
+        },
+    };
+}
+
+/**
+ * Module-file const declarations are shared by every scanned file that imports
+ * them (`params.rs` is read by half the crate), so they are parsed once.
+ */
+const rustConstDeclarations = new Map<string, ReadonlyMap<string, RustConstDeclaration | null>>();
+
+/**
+ * One clamp bound: a numeric literal, or an imported numeric const. The
+ * literal branch keeps the separator-free `NUMBER` the arm reader has always
+ * used, so a separated inline literal (`crust`'s `1_000.0`) stays a gap
+ * exactly as before this reader learned about consts; a *const's* value
+ * parses with `RUST_NUMBER`, whose separators are legal there.
+ */
+function readRustBound(bound: string, references: RustConstReferences): number | null {
+    if (new RegExp(`^${NUMBER}$`).test(bound)) {
+        return Number(bound);
+    }
+    return references.number(bound);
+}
+
 type Clamp = readonly [number, number];
 
 /**
- * Two-sided numeric clamps, per string match-arm name.
+ * Two-sided numeric clamps, per match-arm name.
  *
  * The body is split at each arm header (`"a" | "b" => …`) and the segment up to
  * the next header is searched for `value.clamp(lit, lit)`, optionally preceded
  * by a cast. Segmenting rather than searching backwards from each `clamp` is
  * what stops a multi-statement arm attributing its neighbour's bound.
+ *
+ * An arm element and a bound may each be an imported const — `DECAY =>` or
+ * `value.clamp(THRESHOLD_MIN_DB, THRESHOLD_MAX_DB)` — since the
+ * shared-constants campaign; those resolve through
+ * `readRustConstReferences`, and the census claims exactly what the defining
+ * module wrote down. The campaign's consts restated the literals verbatim
+ * (`THRESHOLD_MIN_DB` is the old `-60.0`), so resolution restores the
+ * pre-campaign derivation rather than widening it.
  *
  * Shapes deliberately NOT read, because reading them would mean inventing an
  * endpoint or a domain — see `ENGINE_CLAMP_COVERAGE`:
@@ -830,40 +1069,62 @@ type Clamp = readonly [number, number];
  *   - remapped `(value / 10.0).clamp(0.0, 1.0)` (`grinder/pedals.rs:36-38`) and
  *     `(value * 0.01).clamp(0.0, 1.0)` (`crust/engine.rs:389`), where the clamp
  *     bounds the *transformed* value and say nothing about the wire domain
- *   - named-constant bounds; `MAX_BANDS`, `MAX_BURSTS` and `MAX_VOICES` are each
- *     defined more than once with different values in different modules
- *     (`crust/bands.rs:19` = 5 against `bacteria/engine.rs:22` = 6), so a
- *     name-only resolver picks the wrong one
+ *   - bounds that are not one literal author: a function parameter
+ *     (`clamped_param`'s `min`/`max`), a tuple member (`WIDTH_RANGE.0`), or a
+ *     const the `use` chain does not lead to a numeric or string literal for.
+ *     The old blanket refusal of named bounds survives here for `MAX_BANDS`,
+ *     `MAX_BURSTS` and `MAX_VOICES`: each is defined more than once with
+ *     different values in different modules (`crust/bands.rs:19` = 5 against
+ *     `bacteria/engine.rs:22` = 6) and no `use` path says which one a bare
+ *     name means
  */
 function readClampsFromFiles(files: readonly string[]): {
     byName: ReadonlyMap<string, Clamp>;
     contested: readonly string[];
 } {
     const found = new Map<string, Set<string>>();
-    const armHeader = /"([\w-]+)"((?:\s*\|\s*"[\w-]+")*)\s*=>/g;
+    // One arm-name element: a string literal, or an all-caps const the campaign
+    // imported (`DECAY`). All-caps only, so a `_ =>` wildcard, an enum variant
+    // (`None =>`), and a local binding can never pose as a wire name.
+    const armElement = String.raw`(?:"[\w-]+"|[A-Z][A-Z0-9_]*)`;
+    const armHeader = new RegExp(String.raw`${armElement}(?:\s*\|\s*${armElement})*\s*=>`, 'g');
     // A cast is allowed between `value` and `.clamp`, but no arithmetic: the
     // leading `(` of `(value / 10.0)` is excluded by requiring `value` or
-    // `(value as T)` immediately before the call.
+    // `(value as T)` immediately before the call. A bound is a numeric literal
+    // or an all-caps const; an identifier that names no literal const (a
+    // helper's `min`/`max` parameters) resolves to nothing and the match is
+    // skipped in favour of a later, resolvable one in the same segment.
     const clamp = new RegExp(
-        String.raw`(?:value|\(\s*value\s+as\s+\w+\s*\))\.clamp\(\s*(${NUMBER})\s*,\s*(${NUMBER})\s*\)`
+        String.raw`(?:value|\(\s*value\s+as\s+\w+\s*\))\.clamp\(\s*(${NUMBER}|[A-Z][A-Z0-9_]*)\s*,\s*(${NUMBER}|[A-Z][A-Z0-9_]*)\s*\)`,
+        'g'
     );
 
     for (const file of files) {
+        const references = readRustConstReferences(file);
         for (const body of readParamFunctionBodies(stripComments(readFileSync(file, 'utf8')))) {
             const flattened = body.replaceAll(/\s+/g, ' ');
             const headers = [...flattened.matchAll(armHeader)];
             for (const [index, header] of headers.entries()) {
                 const start = header.index + header[0].length;
                 const end = headers[index + 1]?.index ?? flattened.length;
-                const hit = clamp.exec(flattened.slice(start, end));
-                if (hit === null) {
-                    continue;
-                }
-                const names = [header[1]!, ...[...header[2]!.matchAll(/"([\w-]+)"/g)].map((alt) => alt[1]!)];
-                for (const name of names) {
-                    const spans = found.get(name) ?? new Set<string>();
-                    spans.add(`${Number(hit[1])},${Number(hit[2])}`);
-                    found.set(name, spans);
+                const segment = flattened.slice(start, end);
+                clamp.lastIndex = 0;
+                let hit = clamp.exec(segment);
+                while (hit !== null) {
+                    const min = readRustBound(hit[1]!, references);
+                    const max = readRustBound(hit[2]!, references);
+                    if (min !== null && max !== null) {
+                        const names = [...header[0].matchAll(/"([\w-]+)"|([A-Z][A-Z0-9_]*)/g)]
+                            .map((element) => element[1] ?? references.wireName(element[2]!))
+                            .filter((name): name is string => name !== null);
+                        for (const name of names) {
+                            const spans = found.get(name) ?? new Set<string>();
+                            spans.add(`${min},${max}`);
+                            found.set(name, spans);
+                        }
+                        break;
+                    }
+                    hit = clamp.exec(segment);
                 }
             }
         }
@@ -1488,9 +1749,10 @@ const KNOWN_RANGE_DISAGREEMENTS: readonly RangeDisagreement[] = [
  * Written here, at the point the derivation stops, rather than only in a PR
  * description: a future lane reading this file will otherwise assume the third
  * leg is covered everywhere and build on it. It is **not** a population-wide
- * equality. It covers 116 of the 193 compared parameters — the ones whose arm
- * contains a two-sided numeric `value.clamp(a, b)` or whose explicitly mapped
- * one-hop provider does. The remaining 77 are not
+ * equality. It covers 117 of the 191 compared parameters — the ones whose arm
+ * contains a two-sided numeric `value.clamp(a, b)` (bounds literal or resolved
+ * through an imported const) or whose explicitly mapped
+ * one-hop provider does. The remaining 74 are not
  * skipped for effort; each shape below yields no interval to compare, and
  * inventing one is exactly the "fabricate a clamp from a comment" this census
  * must not do.
@@ -1515,10 +1777,18 @@ const KNOWN_RANGE_DISAGREEMENTS: readonly RangeDisagreement[] = [
  *     sub-processor's own `set_param` (`toaster/engines/mod.rs:409-435`,
  *     `proof-chamber/src/lib.rs:281-297`), and ~27 hand the raw value to a setter
  *     that may or may not clamp inside (`bacteria/engine.rs:815-824`).
- *  5. **Named-constant bounds.** Resolvable in principle, refused in practice:
- *     `MAX_BANDS`, `MAX_BURSTS` and `MAX_VOICES` are each defined more than once
- *     with different values in different modules (`crust/bands.rs:19` = 5 against
- *     `bacteria/engine.rs:22` = 6), so a name-only resolver picks the wrong one.
+ *  5. **Const bounds without one literal author.** The shared-constants
+ *     campaign moved bounds into imported consts, and
+ *     `readRustConstReferences` follows the file's `use` to the defining
+ *     module's literal (`THRESHOLD_MIN_DB` → −60.0), the way the knob leg
+ *     follows `min={GAIN_TRIM_DB.min}`. What stays refused is every other
+ *     const shape: a computed or re-exported value, a tuple member
+ *     (`WIDTH_RANGE.0`), a helper's own parameters (`clamped_param`'s
+ *     `min`/`max`), and a name that arrives through no `use` path —
+ *     `MAX_BANDS`, `MAX_BURSTS` and `MAX_VOICES` are each defined more than
+ *     once with different values in different modules (`crust/bands.rs:19` = 5
+ *     against `bacteria/engine.rs:22` = 6), so a bare name still picks the
+ *     wrong one.
  *  6. **Two files in one source group clamping the same name differently.**
  *     A name can then carry two intervals with nothing to attribute them to.
  *     `contested` collects these and refuses the name rather than picking a
@@ -1563,7 +1833,7 @@ const ENGINE_CLAMP_COVERAGE = {
         'one-sided (`value.max(0.0)`, `.min(n)`) — one endpoint only, the other would have to be invented',
         'clamp on a transformed value (`(value / 10.0).clamp(…)`) — bounds the result, not the wire domain',
         'unmapped clamp applied in a callee or in a sub-processor the arm delegates to',
-        'named-constant bounds — the same constant name is defined with different values in different modules',
+        'const bounds with no one literal author — computed, re-exported, or a name differing modules define without a `use` saying which',
         'contested — two files in one source group clamp the same arm name to different intervals',
         'Crumbs: enum-variant arms behind `parse_crumbs_param`, not string arms',
     ],
@@ -1598,7 +1868,7 @@ type ClampDisagreement = {
 };
 
 /**
- * Declared range and engine clamp that disagree, for the 107 parameters where
+ * Declared range and engine clamp that disagree, for the 117 parameters where
  * the clamp is derivable.
  *
  * Every row's verdict is a **claim with its evidence**, not a settled fact — the
@@ -1996,11 +2266,18 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         expect(CENSUS.ambiguous).toStrictEqual([]);
 
         // threeWay = the subset of `compared` that ALSO has a derivable engine
-        // clamp. 116 of 193 is the honest size of the three-way census; the
-        // other 77 are two-way only, for the shapes named in
+        // clamp. 117 of 191 is the honest size of the three-way census; the
+        // other 74 are two-way only, for the shapes named in
         // `ENGINE_CLAMP_COVERAGE.notDerivable`. Distribution is pinned
         // separately, by identity, in `threeWayPerDevice`.
-        expect(CENSUS.threeWay.length).toBe(116);
+        //
+        // One higher than the pre-constants-campaign 116, and the rise is
+        // named: following imported const references also resolves same-file
+        // literal consts, which made bacteria's `sampleRateReduce` derivable
+        // (`(value as u32).clamp(1, MAX_SR_DIVIDER)`, `MAX_SR_DIVIDER = 64`
+        // authored in both `distortion.rs` and `lofi.rs`). Coverage grew by
+        // resolving a real bound; no leg moved down.
+        expect(CENSUS.threeWay.length).toBe(117);
 
         // The findings themselves, **by identity**. This was a bare count, which
         // is the wrong shape for a list of named defects: one row leaving while
@@ -2096,7 +2373,12 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         expect(Object.fromEntries(CENSUS.threeWayPerDevice)).toStrictEqual({
             fermenter: 53,
             gluten: 21,
-            bacteria: 20,
+            // One higher than before const references resolved:
+            // `sampleRateReduce` clamps to a file-local literal const
+            // (`MAX_SR_DIVIDER = 64`, authored identically in
+            // `distortion.rs` and `lofi.rs`), which the literal-only reader
+            // could not see.
+            bacteria: 21,
             'dutch-oven': 12,
             // Only four of Grinder's 25 compared parameters reach leg 3: most of
             // its arms are the transformed-value shape `(value / 10.0).clamp(…)`
@@ -2624,7 +2906,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             'one-sided (`value.max(0.0)`, `.min(n)`) — one endpoint only, the other would have to be invented',
             'clamp on a transformed value (`(value / 10.0).clamp(…)`) — bounds the result, not the wire domain',
             'unmapped clamp applied in a callee or in a sub-processor the arm delegates to',
-            'named-constant bounds — the same constant name is defined with different values in different modules',
+            'const bounds with no one literal author — computed, re-exported, or a name differing modules define without a `use` saying which',
             'contested — two files in one source group clamp the same arm name to different intervals',
             'Crumbs: enum-variant arms behind `parse_crumbs_param`, not string arms',
         ]);
