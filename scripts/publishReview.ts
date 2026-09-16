@@ -82,11 +82,19 @@ export type ReviewDocument = {
     body: string;
     comments: ReviewComment[];
     evidence?: ApprovalEvidence;
+    /**
+     * The model that performed the review stance, in the same token form
+     * `lane:open --model` records (e.g. `glm-5.3`, `glm-5.3-flash`). Required
+     * on fresh review publications so `review:publish` can enforce the
+     * reviewer-diversity rule: the reviewer model must differ from the PR's
+     * authoring-model label when the two are comparable.
+     */
+    reviewerModel?: string;
 };
 
 export type PublishReviewPort = {
     primaryRoot: () => string;
-    pullRequest: (number: number) => { state: string; head: string };
+    pullRequest: (number: number) => { state: string; head: string; labels?: string[] };
     readReviewJson: (path: string) => unknown;
     readBundleDiff: (path: string) => string;
     assertApprovalContext?: (number: number, head: string, bundle: string) => ReviewBundleContext;
@@ -173,15 +181,17 @@ export function parseReviewDocument(value: unknown): ReviewDocument {
             fail('REQUEST_CHANGES must not carry approval evidence');
         }
         const evidence = parseApprovalEvidence(record.evidence);
+        const reviewerModel = typeof record.reviewerModel === 'string' ? record.reviewerModel : undefined;
         if (record.format === 'compact-v1') {
-            return { format: record.format, event: record.event, body, comments, evidence };
+            return { format: record.format, event: record.event, body, comments, evidence, reviewerModel };
         }
-        return { event: record.event, body: renderLegacyApprovalBody(body, evidence), comments, evidence };
+        return { event: record.event, body: renderLegacyApprovalBody(body, evidence), comments, evidence, reviewerModel };
     }
+    const reviewerModel = typeof record.reviewerModel === 'string' ? record.reviewerModel : undefined;
     if (record.format === 'compact-v1') {
         fail('compact-v1 requires APPROVE with evidence');
     }
-    return { event: record.event, body, comments };
+    return { event: record.event, body, comments, reviewerModel };
 }
 
 function assertPublicationEvidence(document: ReviewDocument, head: string): void {
@@ -193,6 +203,49 @@ function assertPublicationEvidence(document: ReviewDocument, head: string): void
     }
     if (document.evidence !== undefined && document.evidence.headSha !== head) {
         fail('approval evidence.headSha does not match the pull-request head');
+    }
+}
+
+/**
+ * Enforce the reviewer-model diversity rule (AGENTS.md Review): the reviewer
+ * must be a different model from the PR's authoring model. The authoring
+ * model is on the PR as a `model:<name>` authorship label (applied by
+ * `lane:publish` from the lane's recorded `--model`). The reviewer's model
+ * is the `reviewerModel` field on the review document.
+ *
+ * Refuses when both are present and identical. A missing `reviewerModel` on
+ * a fresh review publication is also a refusal — the field is required so
+ * the check cannot be silently skipped. The orchestrator's own acceptance
+ * (`review:accept`) is exempt: the acceptance is the orchestrator's
+ * judgement by design, not an independent review stance.
+ */
+function assertReviewerModelDiversity(
+    number: number,
+    document: ReviewDocument,
+    port: PublishReviewPort,
+    actorNodeId: string
+): void {
+    if (actorNodeId === ORCHESTRATOR_USER_NODE_ID) {
+        return;
+    }
+    if (document.reviewerModel === undefined || document.reviewerModel.trim() === '') {
+        fail(
+            'review.json must carry reviewerModel (the model that performed the review stance, ' +
+                'e.g. "glm-5.3-flash"); the reviewer-diversity rule cannot be checked without it'
+        );
+    }
+    const labels = port.pullRequest(number).labels ?? [];
+    const authorModelLabel = labels.find((label) => label.startsWith('model:'));
+    if (authorModelLabel === undefined) {
+        return;
+    }
+    const authorModel = authorModelLabel.slice('model:'.length);
+    if (authorModel === document.reviewerModel.trim()) {
+        fail(
+            `reviewer model "${document.reviewerModel}" matches the PR's authoring model; ` +
+                'assign the review stance to a different model (AGENTS.md: "Assign reviewers a model ' +
+                'different from the author\'s")'
+        );
     }
 }
 
@@ -243,6 +296,7 @@ function prepareReviewPublication(
     const document =
         actorNodeId === ORCHESTRATOR_USER_NODE_ID ? parseAcceptanceDocument(parsed) : parseReviewDocument(parsed);
     assertPublicationEvidence(document, head);
+    assertReviewerModelDiversity(number, document, port, actorNodeId);
     const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
     return {

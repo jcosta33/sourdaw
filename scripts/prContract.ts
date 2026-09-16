@@ -12,7 +12,7 @@ export const TITLE_PATTERN = /^(?:feat|fix|chore|docs|test|refactor|perf|build|c
 export const REQUIRED_BODY_HEADINGS = [
     '### 🎯 What does this PR do?',
     '### 🧪 How to test',
-    '### 📌 Related tickets & additional notes',
+    '### 📌 Related issues & additional notes',
 ] as const;
 
 /**
@@ -26,7 +26,7 @@ const TEMPLATE_BODY_HEADINGS = [
     '### 🎯 What does this PR do?',
     '### 🧪 How to test',
     '### 🖼️ Screenshots',
-    '### 📌 Related tickets & additional notes',
+    '### 📌 Related issues & additional notes',
 ] as const;
 
 export const PULL_REQUEST_BODY_BYTE_LIMIT = 4_000;
@@ -230,7 +230,7 @@ function relatedTicketLines(body: string): string[] {
     const heading = REQUIRED_BODY_HEADINGS.at(-1);
     const headingIndex = heading === undefined ? -1 : body.indexOf(heading);
     if (heading === undefined || headingIndex < 0 || headingIndex !== body.lastIndexOf(heading)) {
-        fail('pull-request body must contain exactly one Related tickets section');
+        fail('pull-request body must contain exactly one Related issues section');
     }
     return body
         .slice(headingIndex + heading.length)
@@ -435,7 +435,7 @@ export function issueRelationshipFromBody(
     });
     if (issue === undefined) {
         if (lines[0] !== NO_RELATED_TICKETS || relationships.length > 0) {
-            fail('issueless pull-request body must start its Related tickets section with None.');
+            fail('issueless pull-request body must start its Related issues section with None.');
         }
         assertIssueClosingReferences(body, issue, undefined, repository);
         return undefined;
@@ -476,7 +476,7 @@ ${howToTest}
 ### 🖼️ Screenshots
 None.
 
-### 📌 Related tickets & additional notes
+### 📌 Related issues & additional notes
 ${relatedTickets}
 `;
     assertPullRequestBody(body, 'pull-request body', title);

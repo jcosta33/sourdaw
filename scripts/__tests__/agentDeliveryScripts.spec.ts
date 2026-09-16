@@ -227,7 +227,7 @@ function pullRequestSnapshot(overrides: Partial<PullRequestSnapshot> = {}): Pull
             '### 🖼️ Screenshots',
             'None.',
             '',
-            '### 📌 Related tickets & additional notes',
+            '### 📌 Related issues & additional notes',
             'Closes #2406',
         ].join('\n'),
         headRefName: 'agent/2495/delivery-lock',
