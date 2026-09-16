@@ -1,0 +1,18 @@
+src/modules/Crust/models/__tests__/crustParamIds.spec.ts
+  h_1228e573df1f42 29,32
+src/modules/Gluten/models/__tests__/glutenParamIds.spec.ts
+  h_1228e573df1f42 27,30
+src/utils/__tests__/pitch.spec.ts
+  h_1228e573df1f42 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "95990d73823f90bdf3cc32377bb6f47be9ef9d8e",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
