@@ -33,12 +33,13 @@ const LABELLED_PREFIX = `(?<![A-Za-z0-9])((?:${LABEL_ALTERNATION})["']?\\s*[:=]\
  * already replaced and count it twice. The quoted entries are one per quote
  * character, so the other quote character may appear inside the value; a
  * space or a separator inside the matched quotes cannot end the value early,
- * so both quoted entries run before the unquoted one. An unterminated quoted
- * value falls through to the unquoted entry, which keeps the opening quote
- * and stops at the first separator. The unquoted value class excludes `&`,
- * `[`, both quotes and the separators, so a query string keeps its remaining
- * parameters and the bracketed placeholder is never matched again by a later
- * pass.
+ * so both quoted entries run before the unquoted one. An escaped character
+ * inside the quotes is consumed with its backslash, so a JSON-escaped quote
+ * does not end the value. An unterminated quoted value falls through to the
+ * unquoted entry, which keeps the opening quote and stops at the first
+ * separator. The unquoted value class excludes `&`, `[`, both quotes and the
+ * separators, so a query string keeps its remaining parameters and the
+ * bracketed placeholder is never matched again by a later pass.
  *
  * The final pattern is the base64 and base64url alphabets with optional
  * padding, so a slash or a plus inside a credential no longer splits it into
@@ -56,11 +57,11 @@ const SECRET_PATTERNS: readonly { readonly pattern: RegExp; readonly replacement
     { pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]+/g, replacement: `Bearer ${REDACTION_PLACEHOLDER}` },
     { pattern: /\bBasic\s+[A-Za-z0-9+/=_-]+/g, replacement: `Basic ${REDACTION_PLACEHOLDER}` },
     {
-        pattern: new RegExp(`${LABELLED_PREFIX}"[^"]*"`, 'gi'),
+        pattern: new RegExp(`${LABELLED_PREFIX}"(?:\\\\.|[^"\\\\])*"`, 'gi'),
         replacement: `$1"${REDACTION_PLACEHOLDER}"`,
     },
     {
-        pattern: new RegExp(`${LABELLED_PREFIX}'[^']*'`, 'gi'),
+        pattern: new RegExp(`${LABELLED_PREFIX}'(?:\\\\.|[^'\\\\])*'`, 'gi'),
         replacement: `$1'${REDACTION_PLACEHOLDER}'`,
     },
     {

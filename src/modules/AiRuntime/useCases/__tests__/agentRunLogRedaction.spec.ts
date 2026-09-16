@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { type AgentRun, type AgentRunGrants, type AgentRunPlan, type AgentRunScope } from '../../models/AgentRun';
+import { type RedactedText } from '../../models/AgentRunTelemetry';
 import { redactSecrets } from '../../services/agentRunRedaction/redactSecrets';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { projectAgentRunDiagnostics } from '../projectAgentRunDiagnostics';
@@ -28,12 +29,25 @@ const BEARER_TOKEN = ['ya29.a0AfH6', 'SMB-short'].join('');
 const BASIC_CREDENTIAL = ['YWRtaW46', 'c3VwZXJzZWNyZXQ='].join('');
 const JSON_API_KEY = ['a1b2c3d4', 'e5f6a7b8', 'c9d0e1f2'].join('');
 
+/** The text the redaction writes in place of each credential shape it replaced. */
+const REDACTION_PLACEHOLDER = '[redacted]';
+
+/**
+ * The run's free text. Every field the diagnostics tier carries — the request,
+ * one plan step description, the decision reason, the error message and the
+ * cancellation reason — holds the credential exactly once, so a field that
+ * skipped redaction is observable on that field alone. Project words sit beside
+ * the credential, so a redaction that swallowed the whole field is observable too.
+ */
 const LYRIC = 'moonlight on the water';
-const REQUEST = `write a hook: ${LYRIC}, hold me till the morning`;
+const REQUEST = `write a hook: ${LYRIC}, hold me till the morning (${CREDENTIAL} leaked into the draft)`;
 const ERROR_MESSAGE = `The provider rejected the request with ${CREDENTIAL} in the echoed header.`;
-const CANCELLATION_REASON = `Stopped the run because ${LYRIC} was the wrong hook.`;
-const DECISION_REASON = `Kept ${LYRIC} as the hook because the user asked for it.`;
+const CANCELLATION_REASON = `Stopped the run because ${LYRIC} was the wrong hook, logged beside ${CREDENTIAL}.`;
+const DECISION_REASON = `Kept ${LYRIC} as the hook because the user asked for it, quoting ${CREDENTIAL}.`;
 const RENDER_SUMMARY = `Rendered ${LYRIC} to a stem.`;
+
+/** The plan step whose description carries the credential. */
+const CREDENTIAL_STEP_INDEX = 1;
 
 const RUN_ID = 'run-redaction-fixture';
 const CREATED_AT = 1000;
@@ -97,7 +111,11 @@ const PLAN: AgentRunPlan = {
     scope: SCOPE,
     steps: [
         { order: 1, actionType: 'createMidiClip', description: `Open a clip for ${LYRIC}.` },
-        { order: 2, actionType: 'addNotes', description: 'Write the hook melody into that clip.' },
+        {
+            order: 2,
+            actionType: 'addNotes',
+            description: `Write the hook melody into that clip, as ${CREDENTIAL} authorised.`,
+        },
     ],
     expectedImpact: {
         project: ['One new MIDI clip.'],
@@ -337,6 +355,18 @@ function requirePlan(run: AgentRun): AgentRunPlan {
     return plan;
 }
 
+/** The fixture text as a carried detail field holds it: the credential replaced, the rest kept. */
+function withCredentialRedacted(text: string): string {
+    return text.replaceAll(CREDENTIAL, REDACTION_PLACEHOLDER);
+}
+
+function requireText(detail: RedactedText | null | undefined): { text: string; secretsRedacted: number } {
+    if (detail === undefined || detail === null || detail.kind !== 'text') {
+        throw new Error('Expected a carried detail text.');
+    }
+    return detail;
+}
+
 function requireDecisionReason(run: AgentRun): string {
     const decision = run.decision;
     if (!decision) {
@@ -495,6 +525,36 @@ describe('redactSecrets', () => {
             text: 'password: "[redacted]',
             redactedCount: 1,
         });
+    });
+
+    it('consumes an escaped quote inside a labelled quoted value', () => {
+        const escapedQuoteValue = ['Aa1"Bb2', 'Cc3Dd4Ee5'].join('');
+        expect(redactSecrets(JSON.stringify({ client_secret: escapedQuoteValue }))).toEqual({
+            text: '{"client_secret":"[redacted]"}',
+            redactedCount: 1,
+        });
+        const escapedApostropheValue = ["it\\'s-", 'Aa1Bb2Cc3'].join('');
+        expect(redactSecrets(`token: '${escapedApostropheValue}'`)).toEqual({
+            text: "token: '[redacted]'",
+            redactedCount: 1,
+        });
+    });
+
+    it('replaces a labelled quoted value before the encoded run it contains', () => {
+        // With the encoded-run entry applied first, the run inside the quotes
+        // would be replaced and the quoted entry would then replace what is
+        // left, counting two replacements for one value.
+        const spacedEncodedRun = `hello ${'W'.repeat(40)} world`;
+        expect(redactSecrets(`password: "${spacedEncodedRun}"`)).toEqual({
+            text: 'password: "[redacted]"',
+            redactedCount: 1,
+        });
+    });
+
+    it('replaces a provider key at the length floor and keeps a shorter one', () => {
+        expect(redactSecrets(`sk-${'ab12'.repeat(4)}`)).toEqual({ text: '[redacted]', redactedCount: 1 });
+        const belowFloor = `sk-${'ab12'.repeat(3)}ab1`;
+        expect(redactSecrets(belowFloor)).toEqual({ text: belowFloor, redactedCount: 0 });
     });
 });
 
@@ -708,18 +768,23 @@ describe('agent run telemetry and diagnostics projections', () => {
         const plan = requirePlan(run);
 
         const record = projectAgentRunDiagnostics(run, { includeProjectContent: true });
-        const request = record.detail.request;
-        const errorMessage = record.detail.errorMessages[0];
-        const decisionReason = record.detail.decisionReason;
+        const request = requireText(record.detail.request);
+        const credentialStep = requireText(record.detail.planDescriptions[CREDENTIAL_STEP_INDEX]);
+        const decisionReason = requireText(record.detail.decisionReason);
+        const errorMessage = requireText(record.detail.errorMessages[0]);
+        const cancellationReason = requireText(record.detail.cancellationReason);
 
-        expect(request.kind).toBe('text');
-        expect(request.kind === 'text' ? request.text : '').toContain(LYRIC);
+        for (const detail of [request, credentialStep, decisionReason, errorMessage, cancellationReason]) {
+            expect(detail.text).toContain(REDACTION_PLACEHOLDER);
+            expect(detail.text).not.toContain(CREDENTIAL);
+            expect(detail.secretsRedacted).toBe(1);
+        }
+        expect(request.text).toContain(LYRIC);
         expect(record.detail.planDescriptions.map((entry) => (entry.kind === 'text' ? entry.text : null))).toEqual(
-            plan.steps.map((step) => step.description)
+            plan.steps.map((step) => withCredentialRedacted(step.description))
         );
-        expect(decisionReason?.kind === 'text' ? decisionReason.text : null).toBe(requireDecisionReason(run));
-        expect(errorMessage?.kind === 'text' ? errorMessage.text : '').toContain('[redacted]');
-        expect(errorMessage?.kind === 'text' ? errorMessage.secretsRedacted : 0).toBe(1);
+        expect(decisionReason.text).toBe(withCredentialRedacted(requireDecisionReason(run)));
+        expect(cancellationReason.text).toBe(withCredentialRedacted(CANCELLATION_REASON));
         expect(containsCredential(record)).toBe(false);
     });
 
