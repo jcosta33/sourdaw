@@ -1,0 +1,26 @@
+src/modules/AudioAnalysis/services/agentObjectiveAnalysis/buildAgentObjectiveMeasurements.ts
+  s_914af328b3988f::t_2b7ee1a73a2f87 170-183,187
+src/modules/AudioAnalysis/useCases/__tests__/agentObjectiveAnalysis.spec.ts
+  s_914af328b3988f::t_f0531c4027b2e3 456-467
+  s_914af328b3988f::t_8293c360c9ff7e 297-299,304-354
+  s_914af328b3988f::t_c59a31e0ddb7cb 101-122
+  s_914af328b3988f::t_608cb51a9df004 300
+src/modules/AudioAnalysis/services/agentObjectiveAnalysis/measureRenderSpectrum.ts
+  s_914af328b3988f::t_5eb882c1e94f30 6,14-27,32,34-35,77-85,90-91,93-97,99-102,105-106,108-109,113,133-139,147,176,190,197-202,207-208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2cbb63f760c0ff1367939b2b1a0e9b6268012044",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
