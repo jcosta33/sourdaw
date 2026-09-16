@@ -367,9 +367,9 @@ describe('searchAgentCatalog', () => {
 
         it('should order equal-score matches alphabetically by display name', () => {
             seedLibrary([
-                buildRecord({ id: 'k-3', displayName: 'Kick Charlie' }),
-                buildRecord({ id: 'k-1', displayName: 'Kick Alpha' }),
-                buildRecord({ id: 'k-2', displayName: 'Kick Bravo' }),
+                buildRecord({ id: 'k-b', displayName: 'Kick Charlie' }),
+                buildRecord({ id: 'k-c', displayName: 'Kick Alpha' }),
+                buildRecord({ id: 'k-a', displayName: 'Kick Bravo' }),
             ]);
 
             const result = expectResults(searchAgentCatalog({ text: 'kick' }));
