@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { chromium, type FullConfig } from '@playwright/test';
 
 import { assertServingCheckoutIdentity } from '../../scripts/e2eServerIdentity';
+import { DIRECT_E2E_VIEWPORT_NAME } from '../../src/app/resolveAppComposition';
 
 import { LAUNCH_SCREEN_NAME } from './e2eUtils';
 
@@ -40,9 +41,11 @@ export default async function warmFirstPaint(config: FullConfig): Promise<void> 
         const page = await browser.newPage({ baseURL });
         // Direct composition, as in e2eUtils: the launch overlay then renders
         // in the main frame instead of inside the display-scale host iframe.
-        await page.addInitScript(() => {
-            window.name = 'sourdaw-e2e-direct';
-        });
+        // The name rides the argument channel; an init script's free
+        // variables do not exist in the page realm.
+        await page.addInitScript((viewportName: string) => {
+            window.name = viewportName;
+        }, DIRECT_E2E_VIEWPORT_NAME);
         await page.goto('/');
         await page.getByLabel(LAUNCH_SCREEN_NAME).waitFor({ state: 'visible', timeout: COLD_FIRST_PAINT_TIMEOUT_MS });
     } finally {

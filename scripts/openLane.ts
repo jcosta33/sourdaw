@@ -15,7 +15,14 @@ import {
     nodeModulesLinkTarget as resolveNodeModulesLinkTarget,
     outsideSymlinkRefusal,
 } from './pnpmModulesPreflight.ts';
-import { assertIssueNumber, assertLaneSlug, fail, isIssueArgument, laneBranchName } from './prContract.ts';
+import {
+    AUTHOR_LANE_BRANCH_PREFIX,
+    assertIssueNumber,
+    assertLaneSlug,
+    fail,
+    isIssueArgument,
+    laneBranchName,
+} from './prContract.ts';
 import { assertStackAcyclic, readLaneStack, writeLaneStack, type LaneStack } from './stackedLanes.ts';
 
 export const OPEN_LANE_USAGE =
@@ -254,7 +261,7 @@ export function shellPort(
             if (
                 parentPath === realpathSync(primaryRoot) ||
                 parentBranch === undefined ||
-                !parentBranch.startsWith('agent/') ||
+                !parentBranch.startsWith(AUTHOR_LANE_BRANCH_PREFIX) ||
                 !fields.includes(`locked ${AUTHOR_LOCK_REASON}`)
             ) {
                 fail('stack parent must be an exact author-locked lane in this primary repository');
