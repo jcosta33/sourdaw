@@ -1,0 +1,22 @@
+src/modules/AiRuntime/services/agentRunRedaction/redactSecrets.ts
+  s_914af328b3988f::t_40c0fe6fb9dd8d 33-41
+  s_914af328b3988f::t_801c257797d7e9 59-60,63-68
+src/modules/AiRuntime/useCases/__tests__/agentRunLogRedaction.spec.ts
+  s_914af328b3988f::t_e631dbaf05e6e3 476-498
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c8c1b5e06e7c0fc3d39ff43098d91d965475d8ba",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
