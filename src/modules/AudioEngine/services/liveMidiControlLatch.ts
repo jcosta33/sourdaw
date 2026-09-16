@@ -22,6 +22,9 @@
  * player is still holding — so the only one that touches this record is Reset
  * All Controllers, which says every held controller is now released and
  * therefore discharges what is remembered for that device.
+ *
+ * The record is scoped to one project, and `forgetLatchedLiveMidiControls`
+ * empties it at the boundary that leaves one (`resetAudioGraph`).
  */
 
 const CC_SUSTAIN_PEDAL = 64;
@@ -80,4 +83,17 @@ export function noteLiveMidiControl(control: LatchedLiveMidiControl): void {
  */
 export function readLatchedLiveMidiControls(): readonly LatchedLiveMidiControl[] {
     return [...latchedByAddress.values()];
+}
+
+/**
+ * Forget every remembered pedal.
+ *
+ * The foot is remembered for the engine's bodies of one project, and track and
+ * device ids outlive a project: a load, a new project or a template starts with
+ * every pedal up on both carriers, so a position latched under the project
+ * being left would otherwise be pressed onto the first body the next one
+ * builds while its Web Audio node comes up released.
+ */
+export function forgetLatchedLiveMidiControls(): void {
+    latchedByAddress.clear();
 }

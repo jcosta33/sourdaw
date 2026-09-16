@@ -75,8 +75,9 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
         // foot, and a body that took only one half of a press stays latched
         // until something unrelated moves that pedal again.
         setSustain: (pedalInput) => {
-            controls.setSustain(pedalInput.position);
-            sendPedalToNativeBody(track.id, input.deviceId, CC_SUSTAIN_PEDAL, wirePosition(pedalInput.position));
+            const wire = wirePosition(pedalInput.position);
+            controls.setSustain(wire / CONTROLLER_FULL_SCALE);
+            sendPedalToNativeBody(track.id, input.deviceId, CC_SUSTAIN_PEDAL, wire);
         },
         setUnaCorda: (pedalInput) => {
             controls.setUnaCorda(pedalInput.engaged);
@@ -99,6 +100,12 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
 /**
  * The `0..1` panel position as the wire carries it. The engine's body divides
  * CC64 by full scale itself, so a fraction sent raw would read as fully up.
+ *
+ * The quantization this applies is the only one either carrier gets: the Web
+ * Audio node takes this value back over full scale rather than the raw
+ * position, so both bodies read one damper. Both engage strictly above half
+ * travel, and the panel's slider can reach exactly `0.50` — raw, that step
+ * engaged the native body (`64/127`) and not the web one.
  */
 function wirePosition(position: number): number {
     return Math.round(position * CONTROLLER_FULL_SCALE);

@@ -20836,6 +20836,105 @@ mod timeline_tests {
         );
     }
 
+    /// A spent edge record leaves no mark behind for a later un-bypass to be
+    /// killed by.
+    ///
+    /// The mark is per-slot and outlives the record it was set for unless
+    /// something clears it. The stop that sets it is answered by
+    /// [`ActiveEffect::pay_owed_releases`], which clears it on full payment —
+    /// and that clear is the whole of what keeps a later, unrelated un-bypass
+    /// out of the kill arm. Nothing else in a session's life clears it except
+    /// a kill that already happened.
+    ///
+    /// So the programme spends one: an unpedalled key sounding under a rolling
+    /// transport, parked, which owes ordinary note-offs and pays them in full.
+    /// Then it rolls again, sounds a second key, presses the damper, and takes
+    /// the device off the signal and back — an un-bypass with no transport
+    /// edge of its own, whose releases
+    /// [`AudioScheduler::owe_releases_on_resume`] deliberately does not mark.
+    /// With the mark spent the payment pays, and the damper the player is
+    /// standing on holds the strings. With a stale one it reads the pedal,
+    /// kills the voices and leaves the window behind the resume silent.
+    ///
+    /// Deleting the clear in [`ActiveEffect::pay_owed_releases`] fails the
+    /// second assertion here; every other `grand_boule` spec stays green,
+    /// because none of them spends an edge record before the un-bypass it
+    /// reads.
+    #[test]
+    fn a_grand_boule_un_bypassed_after_a_spent_transport_edge_still_pays_under_the_damper() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 32;
+        const NOTE: u8 = 60;
+        /// Where the transport parks with the first, unpedalled key sounding:
+        /// the edge marks the slot and the note-offs it owes are paid in full.
+        const FIRST_STOP_CALLBACK: usize = 4;
+        /// Where it rolls again.
+        const ROLL_CALLBACK: usize = 8;
+        /// Where the second key goes down.
+        const SECOND_NOTE_CALLBACK: usize = 10;
+        /// Where the damper goes down, with that key still held.
+        const PEDAL_CALLBACK: usize = 12;
+        /// Where the device leaves the signal.
+        const BYPASS_CALLBACK: usize = 16;
+        /// Where it comes back, which is where the banked release is paid —
+        /// under the damper, and with no transport edge of its own.
+        const RESUME_CALLBACK: usize = 20;
+        /// The second key ringing under the damper, past its attack and before
+        /// the bypass.
+        const BEFORE: std::ops::Range<usize> =
+            (SECOND_NOTE_CALLBACK + 2) * CALLBACK..BYPASS_CALLBACK * CALLBACK;
+        /// What the resume left, past its own transient.
+        const AFTER: std::ops::Range<usize> =
+            (RESUME_CALLBACK + 2) * CALLBACK..CALLBACKS * CALLBACK;
+        /// The loudest sample a silenced body would leave there, spelled the
+        /// way the stop specs spell it.
+        const SILENT: f32 = 1.0e-7;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+        let (left, _right) = render_master_at_callback_heads(
+            &mut harness,
+            CALLBACK,
+            CALLBACKS,
+            |callback, harness| match callback {
+                FIRST_STOP_CALLBACK => {
+                    harness.send(stop_transport());
+                }
+                ROLL_CALLBACK => {
+                    harness.playing();
+                }
+                SECOND_NOTE_CALLBACK => {
+                    harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+                }
+                PEDAL_CALLBACK => {
+                    harness.send(pedal(CC_SUSTAIN, 127));
+                }
+                BYPASS_CALLBACK => {
+                    harness.send(GraphCommand::SetBypass(GRAND_BOULE_ID, true));
+                }
+                RESUME_CALLBACK => {
+                    harness.send(GraphCommand::SetBypass(GRAND_BOULE_ID, false));
+                }
+                _ => {}
+            },
+        );
+
+        assert!(
+            peak(&left[BEFORE]) > 0.0,
+            "the second key sounded nothing before the bypass, so the window behind the resume \
+             proves nothing"
+        );
+        assert!(
+            peak(&left[AFTER]) > SILENT,
+            "the resume left a loudest sample of {} behind it, so the release it owed was \
+             answered by the kill the earlier stop's mark asks for — a mark that stop's own \
+             payment spent",
+            peak(&left[AFTER])
+        );
+    }
+
     /// A stop that killed and forgot a live key leaves the next stop nothing
     /// to pay for it.
     ///

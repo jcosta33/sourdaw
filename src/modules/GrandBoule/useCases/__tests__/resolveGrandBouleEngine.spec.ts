@@ -68,6 +68,29 @@ describe('resolveGrandBouleEngine', () => {
     });
 
     it.each([
+        { position: 0.5, wire: 64 },
+        { position: 0.3, wire: 38 },
+    ])('quantizes a damper position of $position once for both carriers', (subject) => {
+        // The body divides CC64 by full scale, so the web node has to take the
+        // wire value back over full scale: at the panel's reachable 0.50 step
+        // the raw position sat on the wrong side of the half-travel threshold
+        // both carriers engage above, so the native piano sustained and the
+        // web one did not.
+        const engine = resolveGrandBouleEngine({ deviceId: 'grand-1' });
+
+        engine.setSustain({ position: subject.position });
+
+        expect(mocks.controls.setSustain).toHaveBeenCalledWith(subject.wire / 127);
+        expect(mocks.sendNativeLiveMidiControl).toHaveBeenCalledWith({
+            trackId: 'track-1',
+            deviceId: 'grand-1',
+            controller: 64,
+            value: subject.wire,
+            channel: 0,
+        });
+    });
+
+    it.each([
         { pedal: 'sostenuto' as const, controller: 66, setter: mocks.controls.setSostenuto },
         { pedal: 'una corda' as const, controller: 67, setter: mocks.controls.setUnaCorda },
     ])('sends a panel $pedal switch to both bodies, engaged and released', (subject) => {
