@@ -80,6 +80,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
     executeUserAppAction: commandMocks.executeUserAppAction,
     executeAppActionBatch: commandMocks.executeAppActionBatch,
     pushUndoEntry: vi.fn(),

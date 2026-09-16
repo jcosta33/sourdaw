@@ -1,5 +1,5 @@
 import { resetAudioGraph, stopAllScheduled } from '#/modules/AudioEngine/useCases';
-import { markEveryCrumbsInstanceDetached } from '#/modules/Crumbs/stores';
+import { retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 import { resetExternalPluginRuntimeForGraphRebuild } from '#/modules/PluginHost/useCases';
 
@@ -37,7 +37,7 @@ export async function repairRuntimeGraphFromProject(): Promise<void> {
     // exactly as its hosted instances do. A mirror left claiming them attached
     // would build the next topology naming instances the engine no longer
     // holds, and the mapper refuses that batch whole.
-    markEveryCrumbsInstanceDetached();
+    retractEveryCrumbsEngineAttachment();
     resetAudioGraph();
     const rebuild = ensureTrackStrips({ collectExternalPluginActivations: true });
     if (rebuild.status === 'failed') {

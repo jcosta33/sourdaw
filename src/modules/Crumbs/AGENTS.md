@@ -4,8 +4,8 @@ Multi-mode creative sampler and granular instrument (Classic, Granular, Slicer, 
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `commitCrumbsDeviceState`, `ensureCrumbsInstanceFromProject`, `hydrateCrumbsStateFromProject`, `initCrumbsDeviceStatePersistence`, `panicCrumbs`, `prepareCrumbsEngine`, `syncCrumbsNativeInstances`.
-- **Stores** (`stores/index.ts`): `crumbsEngineAttachmentStore`, `markCrumbsInstanceAttached`, `markCrumbsInstanceDetached`, `markEveryCrumbsInstanceDetached`, `readAttachedCrumbsInstanceIds`.
+- **Use Cases** (`useCases/index.ts`): `commitCrumbsDeviceState`, `ensureCrumbsInstanceFromProject`, `hydrateCrumbsStateFromProject`, `initCrumbsDeviceStatePersistence`, `markCrumbsEngineAttached`, `panicCrumbs`, `prepareCrumbsEngine`, `retractEveryCrumbsEngineAttachment`, `syncCrumbsNativeInstances`.
+- **Stores** (`stores/index.ts`): `crumbsEngineAttachmentStore`, `readAttachedCrumbsInstanceIds` — read-only. The mirror's writes are use cases, never store mutators, because a foreign module mutates through this module's use cases.
 - **Views** (`presentations/views/index.ts`): `CrumbsPanel`.
 - **Events** (`events/index.ts`): No public events.
 

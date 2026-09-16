@@ -899,6 +899,29 @@ export type AudioGraphAttachedCrumbsInstance = Readonly<{
 }>;
 
 /**
+ * Crumbs instances the engine took over while this call ran.
+ *
+ * Carried by every outcome, because the attach is a fact about the call rather
+ * than about the batch: `apply_graph_commands` takes over its dormant Crumbs
+ * instances *before* it maps the batch — which is what lets one bind inside the
+ * same batch instead of the next — so a batch that is then refused, or that
+ * only partly applies, has still attached them. An outcome that dropped the
+ * report would leave that sampler on Web Audio until some later batch reported
+ * it again, and a refusal is exactly when a producer resends.
+ *
+ * Empty when the call took none. Absent from a backend that hosts no engine at
+ * all, and from one whose payload predates the field; both mean the same thing
+ * to a reader, which is why no reader distinguishes them.
+ *
+ * Note the contrast with `attachedPlugins`, which stays on the applied arm
+ * alone: a dormant *plugin* is taken after the batch is fenced, so only an
+ * applied answer can ever have taken one.
+ */
+type AudioGraphCallAttachedCrumbs = Readonly<{
+    attachedCrumbs?: readonly AudioGraphAttachedCrumbsInstance[];
+}>;
+
+/**
  * The outcome vocabulary of `RuntimeGraphDeltaResult`, applied to a batch.
  *
  * The three states mean exactly what they mean there — `rejected` is refused
@@ -909,12 +932,13 @@ export type AudioGraphAttachedCrumbsInstance = Readonly<{
  * alike).
  */
 export type AudioGraphApplyResult =
-    | Readonly<{
+    | (Readonly<{
           acceptance: 'rejected';
           application: 'not-applied';
           reason: string;
-      }>
-    | Readonly<{
+      }> &
+          AudioGraphCallAttachedCrumbs)
+    | (Readonly<{
           acceptance: 'accepted';
           application: 'applied';
           correlation?: AudioGraphCorrelation;
@@ -951,21 +975,9 @@ export type AudioGraphApplyResult =
            * engine at all, and from one whose payload predates the field.
            */
           attachedPlugins?: readonly AudioGraphAttachedPlugin[];
-          /**
-           * Crumbs instances this batch handed to the engine.
-           *
-           * The same report as {@link attachedPlugins} and carried for the same
-           * reason — a Crumbs runtime created before the engine was rendering
-           * is parked dormant, `create_crumbs` told its caller exactly that,
-           * and nothing else revises the answer. It is reported separately
-           * because the ids name devices rather than hosted instances.
-           *
-           * Empty when the batch took none. Absent from a backend that hosts no
-           * engine at all, and from one whose payload predates the field.
-           */
-          attachedCrumbs?: readonly AudioGraphAttachedCrumbsInstance[];
-      }>
-    | Readonly<{
+      }> &
+          AudioGraphCallAttachedCrumbs)
+    | (Readonly<{
           acceptance: 'accepted';
           application: 'needs-reconcile';
           /**
@@ -977,7 +989,8 @@ export type AudioGraphApplyResult =
           reason: string;
           runtimeRevision: number;
           reports: readonly AudioGraphStripReport[];
-      }>;
+      }> &
+          AudioGraphCallAttachedCrumbs);
 
 /**
  * A renderer, behind one seam.

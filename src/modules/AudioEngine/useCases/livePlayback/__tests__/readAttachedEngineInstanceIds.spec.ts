@@ -12,11 +12,8 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-    crumbsEngineAttachmentStore,
-    markCrumbsInstanceAttached,
-    markCrumbsInstanceDetached,
-} from '#/modules/Crumbs/stores';
+import { crumbsEngineAttachmentStore } from '#/modules/Crumbs/stores';
+import { markCrumbsEngineAttached, retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
 import {
     defaultExternalPluginParameterState,
     externalPluginParameterStore,
@@ -37,7 +34,7 @@ afterEach(() => {
 describe('readAttachedEngineInstanceIds', () => {
     it('unions the attached hosted instances with the attached Crumbs devices', () => {
         externalPluginParameterStore.set({ byInstanceId: { i1: snapshot(true), i2: snapshot(false) } });
-        markCrumbsInstanceAttached('d-crumbs');
+        markCrumbsEngineAttached({ instanceId: 'd-crumbs' });
 
         expect(readAttachedEngineInstanceIds()).toEqual(new Set(['i1', 'd-crumbs']));
     });
@@ -50,14 +47,14 @@ describe('readAttachedEngineInstanceIds', () => {
 
     it('reports the samplers alone when no plugin has reached the engine', () => {
         externalPluginParameterStore.set({ byInstanceId: { i2: snapshot(false) } });
-        markCrumbsInstanceAttached('d-crumbs');
+        markCrumbsEngineAttached({ instanceId: 'd-crumbs' });
 
         expect(readAttachedEngineInstanceIds()).toEqual(new Set(['d-crumbs']));
     });
 
     it('drops a sampler the mirror has retracted', () => {
-        markCrumbsInstanceAttached('d-crumbs');
-        markCrumbsInstanceDetached('d-crumbs');
+        markCrumbsEngineAttached({ instanceId: 'd-crumbs' });
+        retractEveryCrumbsEngineAttachment();
 
         expect(readAttachedEngineInstanceIds()).toEqual(new Set());
     });

@@ -188,6 +188,31 @@ describe('createNativeLiveGraphBackend', () => {
             acceptance: 'rejected',
             application: 'not-applied',
             reason: 'engine-not-running: no default output device',
+            attachedCrumbs: [],
+        });
+    });
+
+    // The attach runs before the batch is mapped, so a refusal can report one.
+    // Dropping it here would leave a sampler the engine is now rendering on Web
+    // Audio for the rest of the session — and a refusal is exactly when the
+    // producer resends the topology that would have claimed it.
+    it('keeps the Crumbs instances a refused answer attached before refusing', async () => {
+        const transport = stubTransport(() =>
+            Promise.resolve({
+                acceptance: 'rejected',
+                application: 'not-applied',
+                reason: 'the engine refused command 2 of 5',
+                attachedCrumbs: [{ instanceId: 'd-crumbs' }, { instanceId: 7 }],
+            })
+        );
+
+        const result = await createNativeLiveGraphBackend({ transport }).apply(BATCH);
+
+        expect(result).toEqual({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'the engine refused command 2 of 5',
+            attachedCrumbs: [{ instanceId: 'd-crumbs' }],
         });
     });
 
@@ -212,6 +237,7 @@ describe('createNativeLiveGraphBackend', () => {
             reason: 'the engine refused command 2 of 5',
             runtimeRevision: 7,
             reports: [{ kind: 'bus', id: 'bus-1', deviceIds: [] }],
+            attachedCrumbs: [],
         });
     });
 
@@ -220,10 +246,13 @@ describe('createNativeLiveGraphBackend', () => {
 
         const result = await createNativeLiveGraphBackend({ transport }).apply(BATCH);
 
+        // No call reached the engine, so nothing attached: the empty report is
+        // the honest one, not an omission.
         expect(result).toEqual({
             acceptance: 'rejected',
             application: 'not-applied',
             reason: 'bridge command not exposed',
+            attachedCrumbs: [],
         });
     });
 
@@ -270,7 +299,12 @@ describe('createNativeLiveGraphBackend', () => {
         backend.dispose();
         const result = await backend.apply(BATCH);
 
-        expect(result).toEqual({ acceptance: 'rejected', application: 'not-applied', reason: 'backend disposed' });
+        expect(result).toEqual({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'backend disposed',
+            attachedCrumbs: [],
+        });
         expect(applyGraphCommands).not.toHaveBeenCalled();
     });
 

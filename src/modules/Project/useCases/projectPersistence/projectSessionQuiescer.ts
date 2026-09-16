@@ -1,5 +1,5 @@
 import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
-import { markEveryCrumbsInstanceDetached } from '#/modules/Crumbs/stores';
+import { retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
 import { beginProjectSessionPluginRetirement } from '#/modules/PluginHost/useCases';
 import { repairRuntimeGraphFromProject, stopPlayback } from '#/modules/Transport/useCases';
 
@@ -37,7 +37,7 @@ const quarantineFailedRuntime = async (): Promise<void> => {
     // reason the fence stays shut: this session's engine is gone either way,
     // and a mirror still claiming its Crumbs instances would have the next
     // topology name instances nothing holds.
-    markEveryCrumbsInstanceDetached();
+    retractEveryCrumbsEngineAttachment();
 };
 
 const repair = async (): Promise<ProjectSessionQuiesceOutcome> => {
@@ -94,7 +94,7 @@ const retire = async (
         pluginRetirement = await beginProjectSessionPluginRetirement();
         resetAudioGraph();
         await pluginRetirement.retire();
-        markEveryCrumbsInstanceDetached();
+        retractEveryCrumbsEngineAttachment();
         if (cancellationRequestId === requestId) {
             return await repair();
         }

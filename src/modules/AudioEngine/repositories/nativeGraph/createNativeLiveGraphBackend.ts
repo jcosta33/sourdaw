@@ -77,8 +77,19 @@ export type NativeLiveGraphBackendDeps = Readonly<{
     acquireNativeSampleBank?: AcquireNativeSampleBank;
 }>;
 
-function rejected(reason: string): AudioGraphApplyResult {
-    return { acceptance: 'rejected', application: 'not-applied', reason };
+/**
+ * A refusal, with whatever the call attached before refusing.
+ *
+ * The default is the honest answer for every refusal this module raises
+ * itself — a transport that never reached the engine, a disposed backend —
+ * because no such call ran an attach. Only a refusal read back from a payload
+ * can carry one.
+ */
+function rejected(
+    reason: string,
+    attachedCrumbs: readonly AudioGraphAttachedCrumbsInstance[] = []
+): AudioGraphApplyResult {
+    return { acceptance: 'rejected', application: 'not-applied', reason, attachedCrumbs };
 }
 
 function reasonOf(error: unknown): string {
@@ -147,7 +158,13 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
     const payload = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
     if (payload?.acceptance === 'rejected') {
         const reason = payload.reason;
-        return rejected(typeof reason === 'string' ? reason : 'refused without a reason');
+        // A refused batch can still have attached instances: the Crumbs attach
+        // runs before the batch is mapped, so it has already happened by the
+        // time anything can refuse the batch.
+        return rejected(
+            typeof reason === 'string' ? reason : 'refused without a reason',
+            readAttachedCrumbsInstances(payload.attachedCrumbs)
+        );
     }
     // The outcome is decided before any of its payload is read, so an answer
     // in no known shape is reported as the unknown outcome it is rather than as
@@ -191,6 +208,7 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
         reason: typeof reason === 'string' ? reason : 'partially applied without a reason',
         runtimeRevision,
         reports,
+        attachedCrumbs: readAttachedCrumbsInstances(payload.attachedCrumbs),
     };
 }
 
