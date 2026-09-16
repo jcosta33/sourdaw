@@ -5665,6 +5665,7 @@ const schemaIdByActionType = {
     deleteTrackTemplate: 413,
     createProjectFromTemplate: 413,
     setProductionBrief: 479,
+    repairProjectData: 118,
     createVcaGroup: 480,
     assignToVca: 481,
     removeFromVca: 124,

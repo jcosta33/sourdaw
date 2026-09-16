@@ -5,8 +5,8 @@ import { AppActionConflictError } from '../errors/AppActionExecutionError';
 
 import { ACTION_LABELS } from './actionLabels';
 import { executeAppAction, type ExecuteAppActionOptions } from './executeAppAction';
+import { getProjectMutationAdmissionFailure } from './getProjectMutationAdmissionFailure';
 import { humanizeActionType } from './humanizeActionType';
-import { getProjectMutationAdmissionFailure } from './isProjectMutationAllowed';
 
 function describeRefusal(action: AppAction): string {
     const admissionFailure = getProjectMutationAdmissionFailure();
