@@ -1,0 +1,16 @@
+crates/sourdaw-native/src/commands/plugins.rs
+  h_1228e573df1f42 1206-1210,1225
+crates/sourdaw-native/src/commands/speech.rs
+  h_1228e573df1f42 501-504,617-618,974
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c9665aca438465108816d76c42b1c43afdec7fcf",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
