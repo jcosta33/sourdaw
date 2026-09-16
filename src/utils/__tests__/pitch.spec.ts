@@ -1,12 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import {
-    A4_MIDI_NOTE,
-    frequencyToMidiNote,
-    midiNoteToFrequency,
-    SEMITONES_PER_OCTAVE,
-    STANDARD_A4_HZ,
-} from '../pitch';
+import { A4_MIDI_NOTE, frequencyToMidiNote, midiNoteToFrequency, SEMITONES_PER_OCTAVE, STANDARD_A4_HZ } from '../pitch';
 
 describe('12-TET anchors', () => {
     it('states concert A at MIDI note 69 and 12 semitones per octave', () => {

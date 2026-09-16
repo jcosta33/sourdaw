@@ -24,12 +24,10 @@ const TABLE_SOURCE = 'src/modules/AudioEngine/models/GlutenDspParamNames.ts';
  */
 describe('GlutenParamIds is the camelCase half of the DSP name weld', () => {
     const source = readFileSync(join(REPO_ROOT, TABLE_SOURCE), 'utf8');
-    const block = /const GLUTEN_DSP_PARAM_NAMES: Readonly<Record<string, string>> = \{([\s\S]*?)\n\};/.exec(
-        source
-    );
+    const block = /const GLUTEN_DSP_PARAM_NAMES: Readonly<Record<string, string>> = \{([\s\S]*?)\n\};/.exec(source);
     expect(block, `${TABLE_SOURCE} must declare GLUTEN_DSP_PARAM_NAMES`).not.toBeNull();
 
-    const dspKeys = [...block![1]!.matchAll(/^\s*([A-Za-z0-9_]+):/gm)].map((entry) => entry[1]!);
+    const dspKeys = Array.from(block![1]!.matchAll(/^\s*([A-Za-z0-9_]+):/gm)).map((entry) => entry[1]!);
 
     it('declares exactly the ids the engine translation table translates', () => {
         expect(dspKeys.length).toBeGreaterThan(0);
