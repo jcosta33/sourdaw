@@ -170,9 +170,12 @@ type SpectralMetricId = 'spectralCentroid' | 'spectralRolloff' | 'frequencyBandE
 /**
  * A silent render is silent at every length, so silence answers before length
  * here as it does everywhere else in this receipt. Below one analysis frame
- * there is nothing to transform. Above it, a render with no reading has frames
- * the transform found empty, which is silence at the frames that were measured
- * rather than a length the measurement cannot reach.
+ * there is nothing to transform. At or above one frame the transform reaches
+ * every sample, including the ones past the last whole frame, so a render with
+ * no reading is one whose frames hold nothing but a constant — a DC offset the
+ * receipt reports as a level, carrying no sound for a spectrum to place. That
+ * is silence at the frames that were measured rather than a length the
+ * measurement cannot reach.
  */
 function spectrumMissingReason(silent: boolean, length: number): AgentObjectiveMetricUnavailableReason {
     if (silent) {

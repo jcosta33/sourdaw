@@ -11,15 +11,24 @@ import { FREQUENCY_RANGES, type FrequencyBand } from '../../models/MixComparison
  * either would report a spectrum the render does not have. Summing magnitudes
  * cancels nothing, because a magnitude carries no sign.
  *
- * Those frame spectra accumulate into one spectrum, and all three figures are
- * derived from that sum. Deriving them per frame and averaging would weigh
+ * Those frame spectra accumulate twice, and each figure reads the accumulation
+ * its own definition asks for. The centroid reads the summed amplitudes, so it
+ * is the balance point of the render's mean magnitude spectrum. The rolloff and
+ * the band shares read the summed squares, because energy is what adds across
+ * frames: squaring an amplitude that was already summed over frames raises a
+ * band's share to the square of the number of frames it sounds in, which would
+ * let a faint tone held for two hundred frames outweigh a full-scale one.
+ *
+ * Both accumulate rather than average per-frame figures. Averaging would weigh
  * every frame alike however little it carries, so a lead-in at -120 dBFS would
  * pull the centroid of a render that is otherwise a single loud tone.
  *
- * Bin 0 is left out of all three. It holds the render's DC offset, which is a
- * level the receipt reports on its own and not a frequency the render sounds:
- * counted as a bin it drags the centroid towards 0 Hz in proportion to the
- * offset.
+ * Each frame is measured with its own mean subtracted, per channel. Meyda
+ * windows every frame, and a window spreads a constant offset over the lowest
+ * bins instead of leaving it in bin 0, so dropping bin 0 alone would still let
+ * a DC offset read as a sub-bass tone the render never sounds. Bin 0 stays out
+ * of all three figures as well, because DC is a level the receipt reports on
+ * its own and not a frequency.
  *
  * Frames at digital silence are skipped rather than accumulated. Meyda returns
  * an all-zero spectrum for them, which contributes nothing, but skipping keeps
@@ -49,11 +58,61 @@ export type MeasureRenderSpectrumInput = {
     readonly sampleRate: number;
 };
 
+/** Where one analysis frame starts, and how many of the render's samples it has. */
+type FrameSpan = {
+    readonly offset: number;
+    readonly count: number;
+};
+
+/** The two weightings the readings need: amplitudes for the centroid, squares for energy. */
+type SpectrumAccumulation = {
+    readonly amplitude: Float64Array;
+    readonly energy: Float64Array;
+};
+
+/**
+ * Whole frames over the render, then its remaining samples as one short span.
+ * Dropping that remainder would leave up to one frame of the render unmeasured,
+ * and no render is obliged to be a whole number of frames long.
+ */
+function frameSpans(length: number): readonly FrameSpan[] {
+    const spans: FrameSpan[] = [];
+    for (let offset = 0; offset + SPECTRUM_FRAME <= length; offset += SPECTRUM_FRAME) {
+        spans.push({ offset, count: SPECTRUM_FRAME });
+    }
+    const remainder = length % SPECTRUM_FRAME;
+    if (remainder > 0) {
+        spans.push({ offset: length - remainder, count: remainder });
+    }
+    return spans;
+}
+
+/**
+ * The span's samples with their own mean removed, zero-padded to a whole frame.
+ * The mean is taken over the real samples alone: padding is absence of audio,
+ * not audio at zero, and averaging it in would leave a short span offset by the
+ * very DC this removes. Writing into a fresh frame leaves the caller's channel
+ * as it was.
+ */
+function frameSamples(channel: Float32Array, { offset, count }: FrameSpan): Float32Array {
+    let total = 0;
+    for (let index = 0; index < count; index++) {
+        total += channel[offset + index] ?? 0;
+    }
+    const mean = total / count;
+
+    const frame = new Float32Array(SPECTRUM_FRAME);
+    for (let index = 0; index < count; index++) {
+        frame[index] = (channel[offset + index] ?? 0) - mean;
+    }
+    return frame;
+}
+
 /** The summed amplitude spectrum of one frame, or `null` when no channel yielded one. */
-function sumChannelSpectra(channels: readonly Float32Array[], offset: number): Float64Array | null {
+function sumChannelSpectra(channels: readonly Float32Array[], span: FrameSpan): Float64Array | null {
     let summed: Float64Array | null = null;
     for (const channel of channels) {
-        const features = Meyda.extract(['amplitudeSpectrum'], channel.subarray(offset, offset + SPECTRUM_FRAME));
+        const features = Meyda.extract(['amplitudeSpectrum'], frameSamples(channel, span));
         const spectrum = features?.amplitudeSpectrum;
         if (!spectrum) {
             continue;
@@ -74,11 +133,16 @@ function amplitudeTotal(spectrum: Float64Array): number {
     return total;
 }
 
-/** Adds one frame's spectrum to the running accumulation, starting it when there is none. */
-function accumulateFrame(accumulated: Float64Array | null, frame: Float64Array): Float64Array {
-    const running = accumulated ?? new Float64Array(frame.length);
-    for (let bin = 0; bin < running.length; bin++) {
-        running[bin] = (running[bin] ?? 0) + (frame[bin] ?? 0);
+/** Adds one frame's spectrum to both accumulations, starting them when there are none. */
+function accumulateFrame(accumulated: SpectrumAccumulation | null, frame: Float64Array): SpectrumAccumulation {
+    const running = accumulated ?? {
+        amplitude: new Float64Array(frame.length),
+        energy: new Float64Array(frame.length),
+    };
+    for (let bin = 0; bin < frame.length; bin++) {
+        const amplitude = frame[bin] ?? 0;
+        running.amplitude[bin] = (running.amplitude[bin] ?? 0) + amplitude;
+        running.energy[bin] = (running.energy[bin] ?? 0) + amplitude ** 2;
     }
     return running;
 }
@@ -103,20 +167,20 @@ function centroidHz(spectrum: Float64Array, sampleRate: number): number | null {
 }
 
 /** Lowest frequency below which the render carries its rolloff share of energy. */
-function rolloffHz(spectrum: Float64Array, sampleRate: number): number {
-    let energy = 0;
-    for (let bin = FIRST_TONAL_BIN; bin < spectrum.length; bin++) {
-        energy += (spectrum[bin] ?? 0) ** 2;
+function rolloffHz(energy: Float64Array, sampleRate: number): number {
+    let total = 0;
+    for (let bin = FIRST_TONAL_BIN; bin < energy.length; bin++) {
+        total += energy[bin] ?? 0;
     }
-    const threshold = ROLLOFF_ENERGY_FRACTION * energy;
+    const threshold = ROLLOFF_ENERGY_FRACTION * total;
     let cumulative = 0;
-    for (let bin = FIRST_TONAL_BIN; bin < spectrum.length; bin++) {
-        cumulative += (spectrum[bin] ?? 0) ** 2;
+    for (let bin = FIRST_TONAL_BIN; bin < energy.length; bin++) {
+        cumulative += energy[bin] ?? 0;
         if (cumulative >= threshold) {
             return binHz(bin, sampleRate);
         }
     }
-    return binHz(spectrum.length - 1, sampleRate);
+    return binHz(energy.length - 1, sampleRate);
 }
 
 function bandOfBin(bin: number, sampleRate: number): FrequencyBand | null {
@@ -131,15 +195,15 @@ function bandOfBin(bin: number, sampleRate: number): FrequencyBand | null {
 }
 
 /** The accumulated bin energy as shares per band, or `null` when the bands carry none. */
-function bandEnergyProfile(spectrum: Float64Array, sampleRate: number): Record<FrequencyBand, number> | null {
+function bandEnergyProfile(energy: Float64Array, sampleRate: number): Record<FrequencyBand, number> | null {
     const totals = {} as Record<FrequencyBand, number>;
     for (const band of BANDS) {
         totals[band] = 0;
     }
-    for (let bin = FIRST_TONAL_BIN; bin < spectrum.length; bin++) {
+    for (let bin = FIRST_TONAL_BIN; bin < energy.length; bin++) {
         const band = bandOfBin(bin, sampleRate);
         if (band) {
-            totals[band] += (spectrum[bin] ?? 0) ** 2;
+            totals[band] += energy[bin] ?? 0;
         }
     }
 
@@ -156,9 +220,12 @@ function bandEnergyProfile(spectrum: Float64Array, sampleRate: number): Record<F
 
 /**
  * Returns `null` when the render is shorter than one analysis frame, or when
- * every whole frame it does have sits at digital silence — a spectrum measured
- * over zero frames is not a flat spectrum, it is no measurement. The caller
- * distinguishes the two cases by the render's own length.
+ * every frame it does have carries nothing but a constant — a spectrum measured
+ * over zero frames is not a flat spectrum, it is no measurement. Since the
+ * remainder of the render is measured too, no audio is left out by length: a
+ * render at or above one frame reads null only when mean removal empties every
+ * frame, which is a render with no sound in it. The caller distinguishes the
+ * two cases by the render's own length.
  */
 export function measureRenderSpectrum({
     channels,
@@ -173,13 +240,13 @@ export function measureRenderSpectrum({
     // both are restored below to the values this call found them at.
     const previousSampleRate = Meyda.sampleRate;
     const previousBufferSize = Meyda.bufferSize;
-    let accumulated: Float64Array | null = null;
+    let accumulated: SpectrumAccumulation | null = null;
 
     try {
         Meyda.sampleRate = sampleRate;
         Meyda.bufferSize = SPECTRUM_FRAME;
-        for (let offset = 0; offset + SPECTRUM_FRAME <= length; offset += SPECTRUM_FRAME) {
-            const spectrum = sumChannelSpectra(channels, offset);
+        for (const span of frameSpans(length)) {
+            const spectrum = sumChannelSpectra(channels, span);
             if (!spectrum) {
                 continue;
             }
@@ -197,15 +264,15 @@ export function measureRenderSpectrum({
     if (!accumulated) {
         return null;
     }
-    const centroid = centroidHz(accumulated, sampleRate);
-    const bandEnergy = bandEnergyProfile(accumulated, sampleRate);
+    const centroid = centroidHz(accumulated.amplitude, sampleRate);
+    const bandEnergy = bandEnergyProfile(accumulated.energy, sampleRate);
     if (centroid === null || !bandEnergy) {
         return null;
     }
 
     return {
         centroidHz: centroid,
-        rolloffHz: rolloffHz(accumulated, sampleRate),
+        rolloffHz: rolloffHz(accumulated.energy, sampleRate),
         bandEnergy,
     };
 }

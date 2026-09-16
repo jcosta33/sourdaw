@@ -354,6 +354,66 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
         expect(Math.abs(metric(receipt, 'dcOffset') - 0.05)).toBeLessThan(1e-6);
     });
 
+    it('keeps a DC offset out of the sub band as well as out of the centroid', () => {
+        // A 1 kHz tone at -23 dBFS under 0.1 of constant offset. Meyda windows
+        // every frame, and a window puts half of a constant in bin 1 rather
+        // than leaving it all in bin 0, so excluding bin 0 alone would leave
+        // the offset sounding as a 23 Hz tone louder than the tone itself.
+        const channel = offsetChannel(sineChannel(-23, 96_000), 0.1);
+        const receipt = analyze([channel, channel]);
+
+        expect(Math.abs(metric(receipt, 'spectralCentroid') - TONE_HZ)).toBeLessThan(60);
+        expect(bandEnergy(receipt, 'sub')).toBeLessThan(0.01);
+    });
+
+    it('has no spectrum to report for a render that is nothing but a constant offset', () => {
+        // A steady 0.5 on both channels is a DC offset the receipt reports as a
+        // level. It sounds no frequency at any length, so the spectral figures
+        // are missing for the same reason silence makes them missing.
+        const constant = constantChannel(0.5, 48_000);
+        const receipt = analyze([constant, constant]);
+
+        expect(entry(receipt, 'spectralCentroid')).toEqual({ status: 'unavailable', reason: 'silent' });
+        expect(entry(receipt, 'spectralRolloff')).toEqual({ status: 'unavailable', reason: 'silent' });
+        expect(entry(receipt, 'frequencyBandEnergy')).toEqual({ status: 'unavailable', reason: 'silent' });
+        expect(Math.abs(metric(receipt, 'dcOffset') - 0.5)).toBeLessThan(1e-6);
+    });
+
+    it('shares band energy by the energy each frame carries, not by the square of its frame count', () => {
+        // Half a second of 1 kHz at -6 dBFS, then 3.5 s of 12 kHz at -26 dBFS.
+        // Per frame the 1 kHz passage carries a hundred times the energy, and
+        // it holds about 94 % of the render's. Squaring a bin that was summed
+        // over frames scales each band by the square of the frames it sounds
+        // in, which hands the render to the long quiet passage.
+        const channel = toneStepChannel(
+            { peakDbfs: -6, toneHz: TONE_HZ },
+            { peakDbfs: -26, toneHz: 12_000 },
+            24_000,
+            192_000
+        );
+        const receipt = analyze([channel, channel]);
+
+        expect(Math.abs(bandEnergy(receipt, 'mid') - 0.935)).toBeLessThan(0.015);
+        expect(Math.abs(metric(receipt, 'spectralRolloff') - TONE_HZ)).toBeLessThan(60);
+    });
+
+    it('leaves one full-scale frame above two hundred frames a hundredth of its amplitude', () => {
+        // One 2048-sample frame of 1 kHz at 0 dBFS, then 200 frames of 12 kHz
+        // at -40 dBFS. The loud frame holds ten thousand times the energy of
+        // each faint one, so it keeps 98 % of the render's. Summing amplitude
+        // over frames before squaring multiplies the faint passage by 200
+        // first, which leaves it four times the loud frame.
+        const channel = toneStepChannel(
+            { peakDbfs: 0, toneHz: TONE_HZ },
+            { peakDbfs: -40, toneHz: 12_000 },
+            2048,
+            411_648
+        );
+        const receipt = analyze([channel, channel]);
+
+        expect(Math.abs(bandEnergy(receipt, 'mid') - 0.98)).toBeLessThan(0.01);
+    });
+
     it('reads the spectrum off the frames that carry audio, not off the silent ones', () => {
         // Two analysis frames: the first is digital silence, which meyda reports
         // as a NaN centroid and a rolloff above Nyquist because it divides by
@@ -444,6 +504,28 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
 
         expect(bandEnergy(receipt, 'mid')).toBeGreaterThan(0.9);
         expect(Math.abs(metric(receipt, 'spectralCentroid') - TONE_HZ)).toBeLessThan(60);
+    });
+
+    it('reads a hit that lands past the last whole analysis frame', () => {
+        // 4000 samples hold one whole 2048-sample frame, and the hit at sample
+        // 3000 lives in the 1952 that follow it. Stopping at whole frames
+        // leaves a render that plainly carries a transient with no spectrum.
+        const click = clickChannel(4000, [3000]);
+        const receipt = analyze([click, click]);
+
+        expect(entry(receipt, 'spectralCentroid').status).toBe('measured');
+        expect(Number.isFinite(metric(receipt, 'spectralCentroid'))).toBe(true);
+    });
+
+    it('weighs the trailing partial frame by the samples it actually carries', () => {
+        // One whole frame of 1 kHz then half a frame of 6 kHz, both at
+        // -6 dBFS. Half a frame passes half the window's energy, so the 1 kHz
+        // frame keeps two thirds of the render; padding the remainder out to a
+        // whole frame of tone instead would split it evenly.
+        const channel = toneStepChannel({ peakDbfs: -6, toneHz: TONE_HZ }, { peakDbfs: -6, toneHz: 6000 }, 2048, 3072);
+        const receipt = analyze([channel, channel]);
+
+        expect(Math.abs(bandEnergy(receipt, 'mid') - 0.667)).toBeLessThan(0.05);
     });
 
     it('refuses band energy for a render shorter than one analysis frame', () => {
