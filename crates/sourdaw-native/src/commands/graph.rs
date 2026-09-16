@@ -987,19 +987,50 @@ struct StripEntry {
     output: StripOutput,
 }
 
+/// Where a chain device's effect came from.
+///
+/// Written at registration from what [`map_device`] actually built, and it is
+/// the only such fact the entry keeps: ownership, note-store presence,
+/// parameter vocabulary and bypass authority all follow from it, so none can
+/// drift out of step with the others or with the body the engine holds.
+///
+/// The two borrowed origins are deliberately separate even though almost every
+/// law reads them alike through [`Self::builtin`]. They part on exactly one
+/// question — who writes the device's bypass — and a single "not a built-in"
+/// flag could not answer it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DeviceOrigin {
+    /// An effect this registry allocated and the engine built, for a type it
+    /// has a body for.
+    Builtin(BuiltinEffectType),
+    /// A plugin instance the plugin host loaded, which the chain borrows under
+    /// the instance's own engine plugin id.
+    Hosted,
+    /// A Crumbs sampler runtime `commands::crumbs` created, which the chain
+    /// borrows the same way.
+    Crumbs,
+}
+
+impl DeviceOrigin {
+    /// The built-in body this device is, or `None` for an instance the chain
+    /// borrows.
+    ///
+    /// Every law that read `builtin: None` before the sampler had an origin of
+    /// its own still reads exactly this, so adding the origin moved no device
+    /// between populations.
+    fn builtin(self) -> Option<BuiltinEffectType> {
+        match self {
+            Self::Builtin(builtin) => Some(builtin),
+            Self::Hosted | Self::Crumbs => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct DeviceEntry {
     native_effect_id: usize,
     strip_id: String,
-    /// The built-in body this device is, or `None` when its effect is a hosted
-    /// plugin instance the engine already owned rather than one this registry
-    /// allocated.
-    ///
-    /// Written at registration from what [`map_device`] actually built, and it
-    /// is the only such fact the entry keeps: ownership, note-store presence
-    /// and parameter vocabulary all follow from it, so none of the three can
-    /// drift out of step with the others or with the body the engine holds.
-    builtin: Option<BuiltinEffectType>,
+    origin: DeviceOrigin,
     /// The reading handle of the scoring body this device is, and `None` for
     /// every other device.
     ///
@@ -1013,16 +1044,21 @@ struct DeviceEntry {
 }
 
 impl DeviceEntry {
-    /// Whether the effect id is a hosted plugin instance the engine already
-    /// owns.
+    fn builtin(&self) -> Option<BuiltinEffectType> {
+        self.origin.builtin()
+    }
+
+    /// Whether the effect id is an instance the engine already owns — a hosted
+    /// plugin or a Crumbs sampler — rather than one this registry allocated.
     ///
     /// It decides how the device leaves a chain: an effect this registry built
-    /// is retired with its removal, while an engine-owned one is only released,
-    /// because its lifetime belongs to the load that registered it and
-    /// `unload_plugin` is what frees it. Retiring one here would take a live
-    /// plugin's effect out from under the panel still driving it.
+    /// is retired with its removal, while a borrowed one is only released,
+    /// because its lifetime belongs to the load or create that registered it
+    /// and `unload_plugin` or `destroy_crumbs` is what frees it. Retiring one
+    /// here would take a live instance's effect out from under the panel still
+    /// driving it.
     fn engine_owned(&self) -> bool {
-        self.builtin.is_none()
+        self.builtin().is_none()
     }
 
     /// Whether this device holds a note store, and so can be scheduled at.
@@ -1036,7 +1072,7 @@ impl DeviceEntry {
     /// `commands::crumbs::register_crumbs_slot` for a sampler; a built-in is
     /// registered with one exactly when its type sounds notes.
     fn note_sink(&self) -> bool {
-        match self.builtin {
+        match self.builtin() {
             None => true,
             Some(builtin) => builtin.sounds_notes(),
         }
@@ -2168,7 +2204,7 @@ const CRUMBS_DEVICE_TYPE: &str = "builtin-crumbs";
 #[derive(Clone, Debug)]
 struct MappedDevice {
     effect_id: usize,
-    builtin: Option<BuiltinEffectType>,
+    origin: DeviceOrigin,
     chain_kind: DeviceKind,
     scoring_telemetry: Option<Arc<ScoringTelemetry>>,
 }
@@ -2213,7 +2249,7 @@ fn map_device(
         }
         return Ok(Some(MappedDevice {
             effect_id,
-            builtin: None,
+            origin: DeviceOrigin::Hosted,
             chain_kind,
             scoring_telemetry: None,
         }));
@@ -2222,7 +2258,7 @@ fn map_device(
     // Crumbs is spliced, never built. `commands::crumbs` owns one engine
     // instance per device — created by the panel under the device's own id and
     // registered detached — so the chain borrows that instance exactly as it
-    // borrows a hosted plugin, under the same `builtin: None` ownership: it is
+    // borrows a hosted plugin, under the same engine-owned ownership: it is
     // released from a chain rather than retired, its parameters travel on
     // `set_crumbs_param` rather than through the engine's built-in vocabulary,
     // and its note store came with `AddHostedPlugin`.
@@ -2255,7 +2291,7 @@ fn map_device(
         }
         return Ok(Some(MappedDevice {
             effect_id: plugin_id,
-            builtin: None,
+            origin: DeviceOrigin::Crumbs,
             // A sampler sounds material of its own, so the chain sums it in at
             // the device's place rather than running it over the signal: the
             // strip hands it zeroed generator scratch and sums the result
@@ -2517,7 +2553,7 @@ fn map_device(
     }
     Ok(Some(MappedDevice {
         effect_id,
-        builtin: Some(builtin),
+        origin: DeviceOrigin::Builtin(builtin),
         chain_kind: builtin_chain_kind(builtin),
         scoring_telemetry,
     }))
@@ -2901,7 +2937,7 @@ fn map_command(
                     DeviceEntry {
                         native_effect_id: mapped.effect_id,
                         strip_id: track_id.clone(),
-                        builtin: mapped.builtin,
+                        origin: mapped.origin,
                         scoring_telemetry: mapped.scoring_telemetry,
                     },
                 );
@@ -3010,7 +3046,7 @@ fn map_command(
                     DeviceEntry {
                         native_effect_id: mapped.effect_id,
                         strip_id: bus_id.clone(),
-                        builtin: mapped.builtin,
+                        origin: mapped.origin,
                         scoring_telemetry: mapped.scoring_telemetry,
                     },
                 );
@@ -3206,7 +3242,7 @@ fn map_command(
                 DeviceEntry {
                     native_effect_id: mapped.effect_id,
                     strip_id: track_id.clone(),
-                    builtin: mapped.builtin,
+                    origin: mapped.origin,
                     scoring_telemetry: mapped.scoring_telemetry,
                 },
             );
@@ -3291,7 +3327,7 @@ fn map_command(
             // by the name it was written under: a built-in's parameters are the
             // vocabulary its own body answers to, and a hosted plugin's are the
             // plugin's own numeric ids, which only the plugin can resolve.
-            let param = match device.builtin {
+            let param = match device.builtin() {
                 None => DeviceParamTarget::Hosted {
                     id: hosted_parameter_id(parameter_id)?,
                 },
@@ -3334,7 +3370,7 @@ fn map_command(
                     "set-device-parameters: device '{device_id}' is not on strip '{track_id}'"
                 ));
             }
-            let Some(builtin) = device.builtin else {
+            let Some(builtin) = device.builtin() else {
                 return Err(format!(
                     "set-device-parameters: device '{device_id}' is an externally hosted plugin, \
                      whose parameters take the plugin host's own control path"
@@ -3377,11 +3413,14 @@ fn map_command(
                     "set-device-bypass: device '{device_id}' is not on strip '{track_id}'"
                 ));
             }
-            // The chain-level bypass is every built-in's, but a hosted
-            // plugin's own bypass state is written by the plugin host's
-            // ordered control path; a second live writer here would race that
-            // order, so the command names a built-in only.
-            if device.builtin.is_none() {
+            // The chain-level bypass belongs to the graph for every device
+            // whose bypass no other writer owns: the built-ins this registry
+            // built, and the Crumbs samplers it splices — `set_crumbs_param`
+            // carries a sampler's parameters and nothing else, so the chain is
+            // the only writer of its bypass. A hosted plugin's own bypass state
+            // is written by the plugin host's ordered control path, and a
+            // second live writer here would race that order.
+            if device.origin == DeviceOrigin::Hosted {
                 return Err(format!(
                     "set-device-bypass: device '{device_id}' is an externally hosted plugin, \
                      whose bypass takes the plugin host's own control path"
@@ -6167,7 +6206,7 @@ mod tests {
                 DeviceEntry {
                     native_effect_id: FIRST_GRAPH_EFFECT_ID + index,
                     strip_id: "t1".to_string(),
-                    builtin: Some(BuiltinEffectType::Knead),
+                    origin: DeviceOrigin::Builtin(BuiltinEffectType::Knead),
                     scoring_telemetry: None,
                 },
             );
@@ -8360,7 +8399,7 @@ mod tests {
             DeviceEntry {
                 native_effect_id: 1,
                 strip_id: track_id.clone(),
-                builtin: Some(BuiltinEffectType::Knead),
+                origin: DeviceOrigin::Builtin(BuiltinEffectType::Knead),
                 scoring_telemetry: None,
             },
         );
@@ -8455,7 +8494,7 @@ mod tests {
             DeviceEntry {
                 native_effect_id: 1,
                 strip_id: track_id.clone(),
-                builtin: Some(BuiltinEffectType::Fermenter),
+                origin: DeviceOrigin::Builtin(BuiltinEffectType::Fermenter),
                 scoring_telemetry: None,
             },
         );
@@ -8552,7 +8591,7 @@ mod tests {
             DeviceEntry {
                 native_effect_id: 1,
                 strip_id: track_id.clone(),
-                builtin: Some(BuiltinEffectType::GrandBoule),
+                origin: DeviceOrigin::Builtin(BuiltinEffectType::GrandBoule),
                 scoring_telemetry: None,
             },
         );
@@ -8644,7 +8683,7 @@ mod tests {
             DeviceEntry {
                 native_effect_id: IMMEDIATE_PARAM_EFFECT_ID,
                 strip_id: track_id.to_string(),
-                builtin: Some(builtin),
+                origin: DeviceOrigin::Builtin(builtin),
                 scoring_telemetry: None,
             },
         );
@@ -9334,7 +9373,7 @@ mod tests {
             DeviceEntry {
                 native_effect_id: MIDI_DEVICE_EFFECT_ID,
                 strip_id: track_id.to_string(),
-                builtin: None,
+                origin: DeviceOrigin::Hosted,
                 scoring_telemetry: None,
             },
         );
@@ -10908,15 +10947,15 @@ mod tests {
             )),
             "the instance is borrowed, never registered a second time"
         );
+        let entry = registry
+            .devices
+            .get("d-crumbs")
+            .expect("the splice registers the device");
+        assert_eq!(entry.origin, DeviceOrigin::Crumbs);
         assert!(
-            registry
-                .devices
-                .get("d-crumbs")
-                .expect("the splice registers the device")
-                .builtin
-                .is_none(),
-            "the registry entry has to read engine-owned, or the release, bypass and \
-             parameter laws all fall to the built-in side"
+            entry.builtin().is_none(),
+            "the entry has to read engine-owned, or the release, stamped-write and \
+             parameter-vocabulary laws all fall to the built-in side"
         );
         // The registry never allocated for it, so the next built device still
         // takes the first graph effect id.
@@ -11060,6 +11099,50 @@ mod tests {
                 .any(|op| matches!(op, GraphCommand::SetBypass(CRUMBS_PLUGIN_ID, true))),
             "the bypass must reach the effect the chain runs"
         );
+    }
+
+    /// A mid-roll bypass reaches a spliced sampler, in both directions.
+    ///
+    /// The chain is the only writer of a Crumbs device's bypass:
+    /// `set_crumbs_param` carries the sampler's parameters and nothing else, so
+    /// there is no ordered control path for this write to race — the reason
+    /// a hosted plugin is refused here does not hold for the sampler. Refused,
+    /// the panel's bypass button would go dead the moment the device was on a
+    /// strip.
+    #[test]
+    fn a_spliced_crumbs_device_takes_a_live_bypass() {
+        for (bypassed, direction) in [(true, "into bypass"), (false, "out of it")] {
+            let mut registry = GraphRegistry::default();
+            map_crumbs_batch(
+                &batch(crumbs_strip(true, false, json!({}))),
+                &mut registry,
+                &sample_pool(),
+                48_000.0,
+                &attached_crumbs_lookup(),
+            )
+            .expect("the strip splices the sampler");
+
+            let mapped = map_crumbs_batch(
+                &set_device_bypass_batch("pads", "d-crumbs", bypassed),
+                &mut registry,
+                &sample_pool(),
+                48_000.0,
+                &attached_crumbs_lookup(),
+            )
+            .expect("a spliced sampler takes a bypass write");
+
+            assert_eq!(
+                bypass_writes(&mapped.ops),
+                vec![(CRUMBS_PLUGIN_ID, bypassed)],
+                "the toggle must reach the engine as one chain-level write {direction}, at the \
+                 instance's own plugin id"
+            );
+            assert_eq!(
+                mapped.ops.len(),
+                1,
+                "a bypass is one op: no parameter write travels with it"
+            );
+        }
     }
 
     /// Taking the device off the strip releases the instance and retires
