@@ -14,11 +14,13 @@ import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
+import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 
 import { midiNoteToName } from '../../models/CrumbsTypes';
 import { crumbsEngineAttachmentStore } from '../../stores/crumbsEngineAttachmentStore';
+import { crumbsNativeLifecycleStore } from '../../stores/crumbsNativeLifecycleStore';
 import { defaultCrumbsState, crumbsStore } from '../../stores/crumbsStore';
 import { defaultPadState, padStore, ensurePadInstance, reorderPad, selectPad } from '../../stores/padStore';
 import { defaultSliceState, sliceStore, ensureSliceInstance, setActiveSlice } from '../../stores/sliceStore';
@@ -84,6 +86,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     // each witness is worth.
     const attachedNatively = useStoreSelector(crumbsEngineAttachmentStore, (ids) => ids?.has(deviceId) === true);
     const hasInstanceState = useStoreSelector(crumbsStore, (instances) => instances?.[deviceId] !== undefined);
+    const nativeLifecycle = useStore(crumbsNativeLifecycleStore)[deviceId];
 
     const [isDragOver, setIsDragOver] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
@@ -130,7 +133,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         voiceStack,
     } = state;
 
-    const engineReady = readCrumbsEngineReadiness({ attachedNatively, hasInstanceState });
+    const engineReady = readCrumbsEngineReadiness({ attachedNatively, hasInstanceState, nativeLifecycle });
 
     let statusLabel = 'Ready';
     if (engineReady === false) {

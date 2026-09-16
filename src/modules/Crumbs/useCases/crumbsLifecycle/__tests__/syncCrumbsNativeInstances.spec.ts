@@ -22,6 +22,7 @@ import { destroyCrumbsInstance } from '../../../repositories/crumbsBridge/destro
 import { isCrumbsNativeAvailable } from '../../../repositories/crumbsBridge/isCrumbsNativeAvailable';
 import { loadSample } from '../../../repositories/crumbsBridge/loadSample';
 import { crumbsEngineAttachmentStore } from '../../../stores/crumbsEngineAttachmentStore';
+import { crumbsNativeLifecycleStore } from '../../../stores/crumbsNativeLifecycleStore';
 import { crumbsStore } from '../../../stores/crumbsStore';
 import { padStore } from '../../../stores/padStore';
 import { sliceStore } from '../../../stores/sliceStore';
@@ -134,6 +135,7 @@ beforeEach(() => {
     padStore.set({});
     sliceStore.set({});
     crumbsEngineAttachmentStore.set(new Set<string>());
+    crumbsNativeLifecycleStore.set({});
     trackStore.set(null);
     createMock.mockReset();
     createMock.mockResolvedValue({ attached: true });
@@ -279,6 +281,66 @@ describe('syncCrumbsNativeInstances', () => {
         expect(padStore.value?.[DEVICE]).toBeUndefined();
         expect(sliceStore.value?.[DEVICE]).toBeUndefined();
         expect(loadSampleMock).not.toHaveBeenCalled();
+    });
+
+    // The lifecycle state is the panel's only honest witness on a native build:
+    // instance state says nothing, because a panel mount re-seeds it from
+    // project truth whether or not an instance was ever created.
+    it('records the create in flight before the round trip answers', async () => {
+        const { promise: pendingCreate, resolve: finishCreate } = Promise.withResolvers<{ attached: boolean }>();
+        createMock.mockReturnValue(pendingCreate);
+        stop = syncCrumbsNativeInstances();
+
+        projectWithCrumbs();
+        await settle();
+
+        expect(crumbsNativeLifecycleStore.value?.[DEVICE]).toBe('creating');
+
+        finishCreate({ attached: true });
+        await settle();
+
+        expect(crumbsNativeLifecycleStore.value?.[DEVICE]).toBe('bound');
+    });
+
+    it('records a dormant instance as bound, because it still takes the writes', async () => {
+        createMock.mockResolvedValue({ attached: false });
+        stop = syncCrumbsNativeInstances();
+
+        projectWithCrumbs();
+        await settle();
+
+        expect(crumbsNativeLifecycleStore.value?.[DEVICE]).toBe('bound');
+    });
+
+    it('records a duplicate refusal as bound, because the instance the device needs exists', async () => {
+        createMock.mockRejectedValue(new Error("Crumbs instance 'd-crumbs' already exists"));
+        stop = syncCrumbsNativeInstances();
+
+        projectWithCrumbs();
+        await settle();
+
+        expect(crumbsNativeLifecycleStore.value?.[DEVICE]).toBe('bound');
+    });
+
+    it('records a rolled-back create as failed', async () => {
+        createMock.mockRejectedValue(new Error('engine boot failed'));
+        stop = syncCrumbsNativeInstances();
+
+        projectWithCrumbs();
+        await settle();
+
+        expect(crumbsNativeLifecycleStore.value?.[DEVICE]).toBe('failed');
+    });
+
+    it('forgets the lifecycle state with the instance, rather than leaving a stale one', async () => {
+        stop = syncCrumbsNativeInstances();
+        projectWithCrumbs();
+        await settle();
+
+        emptyProject();
+        await settle();
+
+        expect(crumbsNativeLifecycleStore.value?.[DEVICE]).toBeUndefined();
     });
 
     it('creates nothing on a build with no native runtime', async () => {

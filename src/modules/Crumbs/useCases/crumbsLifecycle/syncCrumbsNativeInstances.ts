@@ -45,6 +45,12 @@ import { destroyCrumbsInstance } from '../../repositories/crumbsBridge/destroyCr
 import { isCrumbsNativeAvailable } from '../../repositories/crumbsBridge/isCrumbsNativeAvailable';
 import { loadSample } from '../../repositories/crumbsBridge/loadSample';
 import { markCrumbsInstanceAttached, markCrumbsInstanceDetached } from '../../stores/crumbsEngineAttachmentStore';
+import {
+    forgetCrumbsInstanceLifecycle,
+    markCrumbsInstanceBound,
+    markCrumbsInstanceCreating,
+    markCrumbsInstanceFailed,
+} from '../../stores/crumbsNativeLifecycleStore';
 import { crumbsStore, removeInstance } from '../../stores/crumbsStore';
 import { ensurePadInstance, removePadInstance } from '../../stores/padStore';
 import { ensureSliceInstance, removeSliceInstance } from '../../stores/sliceStore';
@@ -76,6 +82,9 @@ function crumbsDeviceIds(state: TrackStoreState | null): ReadonlySet<string> {
 }
 
 async function openInstance(deviceId: string): Promise<void> {
+    // Recorded before the round trip so a panel opening while it is in flight
+    // reads an undecided device rather than a failed one.
+    markCrumbsInstanceCreating(deviceId);
     // Seeded from project truth before the round trip, so the sample path the
     // restore below reads is the document's and not a module default.
     ensureCrumbsInstanceFromProject(deviceId);
@@ -84,19 +93,26 @@ async function openInstance(deviceId: string): Promise<void> {
 
     try {
         const { attached } = await createCrumbsInstance(deviceId);
+        markCrumbsInstanceBound(deviceId);
         if (attached) {
             markCrumbsInstanceAttached(deviceId);
         }
     } catch (error) {
         if (isDuplicateInstanceRefusal(error)) {
+            // The id is bound, so the device has a sampler; which creator made
+            // it does not change what a write reaches.
             logger.debug(`[Crumbs] instance ${deviceId} is already bound to the engine`);
+            markCrumbsInstanceBound(deviceId);
             return;
         }
         // Rolled back for the same reason the panel's own init used to roll it
         // back: a populated entry with no instance behind it is a device whose
-        // every parameter write silently no-ops, and the panel reads the
-        // absence of the entry as the engine being unavailable.
+        // every parameter write silently no-ops. The panel cannot read that
+        // from the absence of the entry — its own mount seeds one straight back
+        // through `ensureCrumbsInstanceFromProject` — so the failure is
+        // recorded here instead.
         logger.warn(`[Crumbs] could not create the native instance for ${deviceId}: ${String(error)}`);
+        markCrumbsInstanceFailed(deviceId);
         removeInstance(deviceId);
         removePadInstance(deviceId);
         removeSliceInstance(deviceId);
@@ -130,6 +146,7 @@ async function closeInstance(deviceId: string): Promise<void> {
     // strip naming an instance the engine no longer holds, and the mapper
     // refuses that batch whole.
     markCrumbsInstanceDetached(deviceId);
+    forgetCrumbsInstanceLifecycle(deviceId);
     removeInstance(deviceId);
     removePadInstance(deviceId);
     removeSliceInstance(deviceId);

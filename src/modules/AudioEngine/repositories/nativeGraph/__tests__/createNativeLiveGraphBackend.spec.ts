@@ -103,10 +103,11 @@ describe('createNativeLiveGraphBackend', () => {
             runtimeRevision: 4,
             admittedBatch: 6,
             reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['device-a'] }],
-            // A batch that attached no dormant plugin instance says so, rather
-            // than leaving the caller to tell "attached none" from "did not
-            // answer".
+            // A batch that attached no dormant instance says so, rather than
+            // leaving the caller to tell "attached none" from "did not answer".
+            // Both populations answer, because both decide a carrier.
             attachedPlugins: [],
+            attachedCrumbs: [],
         });
     });
 
@@ -138,6 +139,25 @@ describe('createNativeLiveGraphBackend', () => {
         expect(result).toMatchObject({
             attachedPlugins: [{ instanceId: 'inst-1' }, { instanceId: 'inst-2' }],
         });
+    });
+
+    // Same rule, second population (#4204): a Crumbs instance is named by its
+    // device's own id, and marking one the engine never took builds a topology
+    // the mapper refuses whole.
+    it('reads the Crumbs instances a batch took over, and drops an entry it cannot read', async () => {
+        const transport = stubTransport(() =>
+            Promise.resolve({
+                acceptance: 'accepted',
+                application: 'applied',
+                runtimeRevision: 4,
+                reports: [],
+                attachedCrumbs: [{ instanceId: 'd-crumbs' }, {}, { instanceId: 7 }, { instanceId: null }],
+            })
+        );
+
+        const result = await createNativeLiveGraphBackend({ transport }).apply(BATCH);
+
+        expect(result).toMatchObject({ attachedCrumbs: [{ instanceId: 'd-crumbs' }] });
     });
 
     it('echoes a correlation back only when the batch carried one', async () => {

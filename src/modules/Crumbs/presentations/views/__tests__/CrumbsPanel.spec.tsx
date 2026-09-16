@@ -5,6 +5,12 @@ import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { crumbsEngineAttachmentStore, markCrumbsInstanceAttached } from '../../../stores/crumbsEngineAttachmentStore';
+import {
+    crumbsNativeLifecycleStore,
+    markCrumbsInstanceBound,
+    markCrumbsInstanceCreating,
+    markCrumbsInstanceFailed,
+} from '../../../stores/crumbsNativeLifecycleStore';
 import { crumbsStore, defaultCrumbsState, ensureInstance, setActiveSample, setMode } from '../../../stores/crumbsStore';
 import { ensurePadInstance, padStore } from '../../../stores/padStore';
 import { ensureSliceInstance, sliceStore } from '../../../stores/sliceStore';
@@ -24,12 +30,17 @@ const nativeAvailableMock = vi.hoisted(() => vi.fn(() => false));
 vi.mock('../../../repositories/crumbsBridge/isCrumbsNativeAvailable', () => ({
     isCrumbsNativeAvailable: nativeAvailableMock,
 }));
-// The panel's own ensure seeds an instance entry on mount, which is one of the
-// two witnesses the readout reads. Stubbed so a test can present the panel with
-// a device the runtime holds no instance for.
-vi.mock('../../../useCases/crumbsLifecycle/ensureCrumbsInstanceFromProject', () => ({
-    ensureCrumbsInstanceFromProject: vi.fn(),
-}));
+// Backed by the real ensure, because it is the hazard the desktop readout has
+// to survive: a mount re-seeds the instance entry from project truth whether or
+// not a native instance was ever created, so a readout that believed the entry
+// would report Ready over a rolled-back create. A test wanting the frames
+// before the ensure lands overrides it with a no-op.
+vi.mock('../../../useCases/crumbsLifecycle/ensureCrumbsInstanceFromProject', async () => {
+    const actual = await vi.importActual<
+        typeof import('../../../useCases/crumbsLifecycle/ensureCrumbsInstanceFromProject')
+    >('../../../useCases/crumbsLifecycle/ensureCrumbsInstanceFromProject');
+    return { ensureCrumbsInstanceFromProject: vi.fn(actual.ensureCrumbsInstanceFromProject) };
+});
 // Silence the warnings the panel logs from its recorder controls.
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -91,12 +102,15 @@ beforeEach(() => {
     padStore.set({});
     sliceStore.set({});
     crumbsEngineAttachmentStore.set(new Set<string>());
+    crumbsNativeLifecycleStore.set({});
     ensureInstance(DEVICE);
     ensurePadInstance(DEVICE);
     ensureSliceInstance(DEVICE);
     nativeAvailableMock.mockReset();
     nativeAvailableMock.mockReturnValue(false);
-    ensureInstanceFromProjectMock.mockReset();
+    // Cleared, never reset: a reset would drop the real implementation the
+    // factory installed.
+    ensureInstanceFromProjectMock.mockClear();
     armRecordingMock.mockReset();
     armRecordingMock.mockResolvedValue(true);
     switchModeMock.mockReset();
@@ -188,42 +202,76 @@ describe('CrumbsPanel', () => {
     // The panel no longer owns the instance's lifetime (#4204), so the readout
     // is read from the engine's own state rather than remembered from one
     // resolved promise at mount.
-    it('reads "Ready" from the engine attaching this instance, with no instance state of its own', async () => {
+    it('reads "Ready" from the engine attaching this instance while the create is still in flight', async () => {
         nativeAvailableMock.mockReturnValue(true);
-        crumbsStore.set({});
+        act(() => {
+            markCrumbsInstanceCreating(DEVICE);
+        });
 
         render(<CrumbsPanel deviceId={DEVICE} />);
-        expect(screen.getAllByText(hasOwnText('Engine unavailable')).length).toBeGreaterThan(0);
+        expect(screen.getAllByText(hasOwnText('Loading...')).length).toBeGreaterThan(0);
 
         act(() => {
             markCrumbsInstanceAttached(DEVICE);
         });
 
         expect(await screen.findByText(hasOwnText('Ready'))).toBeInTheDocument();
-        expect(screen.queryAllByText(hasOwnText('Engine unavailable'))).toHaveLength(0);
+        expect(screen.queryAllByText(hasOwnText('Loading...'))).toHaveLength(0);
     });
 
-    it('shows "Engine unavailable" when the native runtime holds no instance for this device', () => {
-        // What a refused `create_crumbs` leaves behind: the sync rolls the
-        // instance state back, so a populated-but-dead panel cannot read
-        // "Ready" while every parameter write silently no-ops.
+    it('reads "Ready" from a created instance no batch has attached yet', () => {
+        // A dormant instance takes the write and parks it; reporting the
+        // backend unavailable for one would name a failure that is not one.
         nativeAvailableMock.mockReturnValue(true);
-        crumbsStore.set({});
+        act(() => {
+            markCrumbsInstanceBound(DEVICE);
+        });
 
         render(<CrumbsPanel deviceId={DEVICE} />);
 
+        expect(screen.getAllByText(hasOwnText('Ready')).length).toBeGreaterThan(0);
+    });
+
+    // The mount hazard, and the whole reason the readout does not believe the
+    // instance entry: the real `ensureCrumbsInstanceFromProject` runs here and
+    // seeds one straight back over the rollback.
+    it('shows "Engine unavailable" after a rolled-back create, however the mount re-seeds the store', () => {
+        nativeAvailableMock.mockReturnValue(true);
+        crumbsStore.set({});
+        act(() => {
+            markCrumbsInstanceFailed(DEVICE);
+        });
+
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        expect(crumbsStore.value?.[DEVICE]).toBeDefined();
         expect(screen.getAllByText(hasOwnText('Engine unavailable')).length).toBeGreaterThan(0);
         expect(screen.queryAllByText(hasOwnText('Ready'))).toHaveLength(0);
+    });
+
+    it('shows "Loading..." rather than an engine verdict while nothing has been decided', () => {
+        // On the desktop build the sync has not answered for this device yet;
+        // an undecided create is not a backend that failed.
+        nativeAvailableMock.mockReturnValue(true);
+
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        expect(screen.getAllByText(hasOwnText('Loading...')).length).toBeGreaterThan(0);
+        expect(screen.queryAllByText(hasOwnText('Engine unavailable'))).toHaveLength(0);
     });
 
     it('shows "Loading..." rather than an engine verdict on a build with no native runtime', () => {
         // Nothing native is in question in the browser build, so the absence of
         // an instance entry in the frames before the mount ensure lands is not
         // a backend that failed.
+        // Once, so the real implementation stays installed for the tests after
+        // this one; the store assertion below is what proves the override took.
+        ensureInstanceFromProjectMock.mockImplementationOnce(() => undefined);
         crumbsStore.set({});
 
         render(<CrumbsPanel deviceId={DEVICE} />);
 
+        expect(crumbsStore.value?.[DEVICE]).toBeUndefined();
         expect(screen.getAllByText(hasOwnText('Loading...')).length).toBeGreaterThan(0);
         expect(screen.queryAllByText(hasOwnText('Engine unavailable'))).toHaveLength(0);
     });
