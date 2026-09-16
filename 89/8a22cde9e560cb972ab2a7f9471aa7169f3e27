@@ -1,0 +1,16 @@
+crates/scoring/src/mpm.rs
+  h_1228e573df1f42 5,45,47
+crates/scoring/src/poly.rs
+  h_1228e573df1f42 6,80,127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "898a22cde9e560cb972ab2a7f9471aa7169f3e27",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
