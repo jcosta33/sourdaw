@@ -672,10 +672,12 @@ export type AudioGraphSendMidiNoteCommand = Readonly<{
  * — which is what makes a damper pressed before a key sustain the note that key
  * sounds.
  *
- * A backend lifts every controller on a stop or a locate, so a pedal whose
- * release message never arrives cannot hold an instrument ringing for the rest
- * of the session. A loop wrap does not: it leaves the player's foot where it is,
- * exactly as it leaves the key they are holding down.
+ * No transport edge lifts a pedal — a stop, a locate and a loop wrap all
+ * leave the player's foot exactly where it stands. A stop or a locate kills
+ * the sounding voices of an instrument a pedal is holding instead, because
+ * their note-offs cannot discharge a held key and nothing else would stop it
+ * ringing for the rest of the session. A loop wrap only strands the release
+ * its own store scheduled, so it neither lifts the pedal nor kills the voice.
  */
 export type AudioGraphSendMidiControlCommand = Readonly<{
     kind: 'send-midi-control';

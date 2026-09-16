@@ -532,9 +532,13 @@ pub enum GraphCommand {
     /// this command — ahead of every note that block renders, which is what
     /// makes a damper pressed before a key sustain the note that key sounds.
     ///
-    /// [`AudioScheduler::release_sounding_notes`] resets a body's controllers
-    /// alongside the releases it queues for a stop or a locate, so a pedal is
-    /// not left pressed under a stopped transport.
+    /// [`AudioScheduler::owe_all_releases`] answers a stop or a locate: it
+    /// calls each body's [`PluginCore::silence_pedal_held_voices`], which
+    /// kills the voices of a Grand Boule whose damper or sostenuto is
+    /// engaged and otherwise leaves the release to the note-offs already
+    /// queued. Pedals keep the positions the player's foot holds — only
+    /// Reset All Controllers (CC121, sent by the renderer's panic) lifts
+    /// them.
     SendMidiControl(usize, MidiControlEvent),
     /// Write a batch of timeline-addressed notes into a plugin's note store.
     ///
@@ -20636,13 +20640,15 @@ mod timeline_tests {
     /// The seam strands a scheduled note-off, which is the whole reason a
     /// stored note is released there. A pedal is neither scheduled nor
     /// stranded, and no DAW lifts a pedal where a region starts again, so
-    /// `release_sounding_notes` lifts controllers for [`ReleaseScope::All`]
-    /// alone.
+    /// `release_sounding_notes` never touches a controller for either
+    /// [`ReleaseScope`] — it only queues note-offs, and the wrap's seam
+    /// takes [`ReleaseScope::Stored`].
     ///
     /// The key is let go under the damper before the first wrap, so the voice
     /// is ringing on nothing but the pedal when the seam arrives. The
     /// discriminating reference lifts the damper at the run the wrap's release
-    /// lands on, which is what making that reset unconditional renders.
+    /// lands on, which is what a body that wrongly lifted the pedal there
+    /// would render.
     #[test]
     fn a_loop_wrap_leaves_the_grand_boule_damper_down() {
         const CALLBACK: usize = 256;
