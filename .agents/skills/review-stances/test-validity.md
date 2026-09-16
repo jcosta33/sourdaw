@@ -270,3 +270,11 @@ Probe that would have caught it: clone snapshots with each optional absent, expl
 `undefined`, and populated. Use `toStrictEqual` plus `Object.hasOwn` to verify exact property presence,
 mutate every populated nested container to prove source isolation, then run the connected glue
 apply/undo/redo path and retain a changed-value conflict case.
+
+### 2026-09-16 — a merge-conflict fixture left the winning actor to chance (escaped via PR #4292)
+
+The repair-route integration spec cloned the remote side with actor `'b'.repeat(64)` against a local document holding a random `init()` actor, and asserted the remote value won. Automerge picks the concurrent value by greatest opId, actor deciding at equal counters, so about one run in four kept the local value and the spec failed on main with `expected 0.6 to be 0.7` on unrelated heads.
+
+Blind spot: the fixture's chosen actor looked deterministic, and the stance never asked what the other side's actor was or which side the assertion assumed would win.
+
+Probe that would have caught it: for any fixture that merges two concurrent writes to one key and asserts the surviving value, name both actors; if either is random, require the fixture to fix the ordering (an actor that sorts above or below every possible peer) and run the spec with the chosen actor flipped to the opposite extreme, expecting it to redden.
