@@ -1,0 +1,22 @@
+src/modules/Project/handlers/project/__tests__/handleRepairProjectData.integration.spec.ts
+  s_914af328b3988f::t_e0e19b5a2d041e 147-149
+  s_914af328b3988f::t_e29fe7acb9103c 48-51
+.agents/skills/review-stances/test-validity.md
+  s_914af328b3988f::t_90a95c4bb7d852 273-280
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "037ac8581d7b3b68ce9f74d89d14f74a5f731cc5",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
