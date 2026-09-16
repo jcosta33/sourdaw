@@ -1,0 +1,27 @@
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_9b530f08172a54::t_a9057218ad7591 130
+src/modules/AiRuntime/useCases/agentReference/__tests__/prepareStemImportBudget.spec.ts
+  s_9b530f08172a54::t_dcbe7272197a9b 39
+src/modules/Arrangement/useCases/__tests__/importAudioClipToTrack.spec.ts
+  s_9b530f08172a54::t_e128dbf0792b5b 40
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceTrack.spec.ts
+  s_9b530f08172a54::t_99795b5d6e5391 82
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/snapToZeroCrossing.spec.ts
+  s_9b530f08172a54::t_bef30f7ce098ae 18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "abe34efe243f41de8bc553ebd07ac467e1d35bb3",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
