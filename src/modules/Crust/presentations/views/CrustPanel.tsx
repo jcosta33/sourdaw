@@ -15,6 +15,7 @@ import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 
+import { CRUST_PARAM_IDS } from '../../models/CrustParamIds';
 import { CRUST_OVERSAMPLE_FACTORS, type CrustPatch, type CrustStreamingPreset } from '../../models/CrustPatch';
 import { crustStore, getCrustState } from '../../stores/crustStore';
 import { hydrateCrustPatchFromProject } from '../../useCases/crustParamBridge/hydrateCrustPatchFromProject';
@@ -260,9 +261,9 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                             active={patch.streamingPreset === preset.id}
                                             className="crust-window w-full rounded-[12px]"
                                             onPress={() => {
-                                                handleSetParam('streamingPreset', preset.id);
+                                                handleSetParam(CRUST_PARAM_IDS.streamingPreset, preset.id);
                                                 if (preset.id !== 'custom') {
-                                                    handleSetParam('ceiling', preset.tpCeiling);
+                                                    handleSetParam(CRUST_PARAM_IDS.ceiling, preset.tpCeiling);
                                                 }
                                                 setStreamingMenuOpen(false);
                                             }}
@@ -288,7 +289,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
             </Row>
 
             <Row align="stretch" grow gap={2.5} className="min-h-0">
-                <CrustGainStrip value={patch.gain} onChange={(value) => handleSetParam('gain', value)} />
+                <CrustGainStrip value={patch.gain} onChange={(value) => handleSetParam(CRUST_PARAM_IDS.gain, value)} />
 
                 <Stack grow gap={2.5} className="min-w-0 overflow-y-auto pr-1 [&>*]:shrink-0">
                     <Grid cols={4} gap={2.5} className="shrink-0">
@@ -396,7 +397,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         max={0}
                         step={0.1}
                         value={patch.ceiling}
-                        onChange={(event) => handleSetParam('ceiling', Number(event.target.value))}
+                        onChange={(event) => handleSetParam(CRUST_PARAM_IDS.ceiling, Number(event.target.value))}
                         className="crust-window w-16"
                         align="center"
                         monospace
@@ -408,7 +409,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                     active={patch.truePeak}
                     tone="copper"
                     size="sm"
-                    onClick={() => handleSetParam('truePeak', !patch.truePeak)}
+                    onClick={() => handleSetParam(CRUST_PARAM_IDS.truePeak, !patch.truePeak)}
                 >
                     True peak
                 </DawPluginChip>
@@ -421,7 +422,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 active={patch.oversampling === option}
                                 tone="copper"
                                 size="sm"
-                                onClick={() => handleSetParam('oversampling', option)}
+                                onClick={() => handleSetParam(CRUST_PARAM_IDS.oversampling, option)}
                             >
                                 {option === 1 ? 'OS off' : `${option}×`}
                             </DawPluginChip>
@@ -434,7 +435,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         active={patch.unityGain}
                         tone="copper"
                         size="sm"
-                        onClick={() => handleSetParam('unityGain', !patch.unityGain)}
+                        onClick={() => handleSetParam(CRUST_PARAM_IDS.unityGain, !patch.unityGain)}
                     >
                         A=B
                     </DawPluginChip>
@@ -442,7 +443,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         active={patch.deltaListen}
                         tone="copper"
                         size="sm"
-                        onClick={() => handleSetParam('deltaListen', !patch.deltaListen)}
+                        onClick={() => handleSetParam(CRUST_PARAM_IDS.deltaListen, !patch.deltaListen)}
                     >
                         Delta
                     </DawPluginChip>
