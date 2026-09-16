@@ -15,6 +15,27 @@ import { LOUDNESS_OFFSET, loudnessChannelWeight } from './loudnessScale';
 /** 100 ms, the refresh interval Tech 3341 specifies for both meters. */
 const WINDOW_STEP_SECONDS = 0.1;
 
+/**
+ * Every window start frame: the Tech 3341 hop, plus one window flush with the
+ * end of the render when the last hop leaves frames uncovered.
+ *
+ * Stepped windows reach only `(count - 1) * step + windowFrames`, so on a render
+ * whose length is not a whole number of hops the final frames sit inside no
+ * window at all. A passage that begins there would not reach the maximum, and a
+ * render that is silent until that point would read as silence.
+ */
+function windowStartFrames(length: number, windowFrames: number, stepFrames: number): number[] {
+    const starts: number[] = [];
+    for (let start = 0; start + windowFrames <= length; start += stepFrames) {
+        starts.push(start);
+    }
+    const finalStart = length - windowFrames;
+    if (finalStart > (starts[starts.length - 1] ?? 0)) {
+        starts.push(finalStart);
+    }
+    return starts;
+}
+
 export type MeasureMaxWindowedLoudnessInput = {
     channels: readonly Float32Array[];
     length: number;
@@ -44,11 +65,11 @@ export function measureMaxWindowedLoudness({
     }
 
     const stepFrames = Math.max(1, Math.round(WINDOW_STEP_SECONDS * sampleRate));
-    const windowCount = Math.floor((length - windowFrames) / stepFrames) + 1;
+    const starts = windowStartFrames(length, windowFrames, stepFrames);
     const { shelf, highPass } = createKWeightingFilters(sampleRate);
 
     // Weighted mean square per window, summed across channels.
-    const windowPower = new Float64Array(windowCount);
+    const windowPower = new Float64Array(starts.length);
     for (let channelIndex = 0; channelIndex < channels.length; channelIndex++) {
         const source = channels[channelIndex]!;
         const weighted = new Float64Array(length);
@@ -60,8 +81,8 @@ export function measureMaxWindowedLoudness({
         applyBiquad(weighted, highPass);
 
         const weight = loudnessChannelWeight(channelIndex);
-        for (let window = 0; window < windowCount; window++) {
-            const start = window * stepFrames;
+        for (let window = 0; window < starts.length; window++) {
+            const start = starts[window]!;
             let sumSquares = 0;
             for (let offset = 0; offset < windowFrames; offset++) {
                 const value = weighted[start + offset]!;

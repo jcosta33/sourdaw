@@ -11,7 +11,7 @@ import {
 } from '../../models/AgentObjectiveAnalysisTypes';
 
 import { measureRenderLevels, RENDER_SILENCE_LINEAR, type RenderLevelReadings } from './measureRenderLevels';
-import { measureRenderSpectrum } from './measureRenderSpectrum';
+import { measureRenderSpectrum, SPECTRUM_FRAME } from './measureRenderSpectrum';
 import { measureRenderStereo } from './measureRenderStereo';
 
 /**
@@ -29,13 +29,11 @@ const MINIMUM_LOUDNESS_SECONDS = 0.4;
 const SHORT_TERM_WINDOW_SECONDS = 3;
 const MOMENTARY_WINDOW_SECONDS = 0.4;
 /**
- * `measureProgramAudio` fills both of its windows with a stand-in rather than
- * refusing: a render below its 8192-sample spectrum window comes back with every
- * band at `1 / bandCount`, and one below its 2048-sample frame window comes back
- * with a dynamic range of 0 because no frame was measured. Both read as figures,
- * so the receipt refuses them at the same lengths instead of publishing them.
+ * `measureProgramAudio` fills its frame window with a stand-in rather than
+ * refusing: a render below its 2048-sample frame window comes back with a
+ * dynamic range of 0 because no frame was measured. That reads as a figure, so
+ * the receipt refuses it at that length instead of publishing it.
  */
-const PROFILE_SPECTRUM_FRAMES = 8192;
 const DYNAMIC_RANGE_FRAMES = 2048;
 
 export type BuildAgentObjectiveMeasurementsInput = {
@@ -46,7 +44,6 @@ export type BuildAgentObjectiveMeasurementsInput = {
     readonly onsetTimesSec: readonly number[];
     /** `measureProgramAudio` dynamic range, or null when it found no programme. */
     readonly dynamicRangeDb: number | null;
-    readonly frequencyProfile: Readonly<Record<string, number>> | null;
 };
 
 type MetricEntries<Id extends AgentObjectiveMetricId> = Record<Id, AgentObjectiveMetricEntry>;
@@ -170,38 +167,21 @@ function buildLevelEntries({ length, levels, silent }: RenderMeasurementContext)
 
 type SpectralMetricId = 'spectralCentroid' | 'spectralRolloff' | 'frequencyBandEnergy';
 
-/**
- * A render below the profile's spectrum window produces an evenly split profile
- * rather than no profile, which would read as a measured flat balance.
- */
-function bandEnergyEntry(
-    length: number,
-    silent: boolean,
-    frequencyProfile: Readonly<Record<string, number>> | null
-): AgentObjectiveMetricEntry {
-    if (silent) {
-        return unavailable('silent');
-    }
-    if (length < PROFILE_SPECTRUM_FRAMES) {
-        return unavailable('too-short');
-    }
-    if (!frequencyProfile) {
-        return unavailable('silent');
-    }
-    return measured('ratio', frequencyProfile, 'estimated');
-}
-
 function buildSpectralEntries(context: RenderMeasurementContext): MetricEntries<SpectralMetricId> {
-    const { channels, length, sampleRate, frequencyProfile, silent } = context;
-    const channel = channels[0];
-    const spectrum = !silent && channel ? measureRenderSpectrum({ channel, length, sampleRate }) : null;
-    /** A non-silent render with no analysis frame is too short to have a spectrum. */
-    const missing = silent ? unavailable('silent') : unavailable('too-short');
+    const { channels, length, sampleRate, silent } = context;
+    const spectrum = silent ? null : measureRenderSpectrum({ channels, length, sampleRate });
+    /**
+     * Below one analysis frame there is nothing to transform. Above it, a render
+     * with no reading has frames the transform found empty, which is silence at
+     * the frames that were measured rather than a length the measurement cannot
+     * reach.
+     */
+    const missing = unavailable(length < SPECTRUM_FRAME ? 'too-short' : 'silent');
 
     return {
         spectralCentroid: spectrum ? measured('hertz', spectrum.centroidHz, 'estimated') : missing,
         spectralRolloff: spectrum ? measured('hertz', spectrum.rolloffHz, 'estimated') : missing,
-        frequencyBandEnergy: bandEnergyEntry(length, silent, frequencyProfile),
+        frequencyBandEnergy: spectrum ? measured('ratio', spectrum.bandEnergy, 'estimated') : missing,
     };
 }
 

@@ -143,6 +143,42 @@ describe('measureMaxWindowedLoudness', () => {
         expect(Math.abs(five! - two! - 10 * Math.log10(5.82 / 2))).toBeLessThan(0.02);
     });
 
+    it('measures the tail a whole number of hops never reaches, over a 400 ms window', () => {
+        // 148799 frames is not a whole number of 100 ms hops: the last stepped
+        // 400 ms window ends exactly at frame 144000, where the tone begins, so
+        // every stepped window sees silence alone.
+        const length = 148_799;
+        const channel = writeTone(new Float32Array(length), { dbfs: -14, hz: 1000, startFrame: 144_000 });
+
+        const result = measureMaxWindowedLoudness({
+            channels: [channel, channel],
+            length,
+            sampleRate: SAMPLE_RATE,
+            windowSeconds: 0.4,
+        });
+
+        expect(result).not.toBeNull();
+        // The window flush with the end holds 4799 of its 19200 frames of tone.
+        expect(Math.abs(result! - (-14 + 10 * Math.log10(4799 / 19_200)))).toBeLessThan(0.15);
+    });
+
+    it('measures the tail a whole number of hops never reaches, over a 3 s window', () => {
+        const length = 148_799;
+        const channel = writeTone(new Float32Array(length), { dbfs: -14, hz: 1000, startFrame: 144_000 });
+
+        const result = measureMaxWindowedLoudness({
+            channels: [channel, channel],
+            length,
+            sampleRate: SAMPLE_RATE,
+            windowSeconds: 3,
+        });
+
+        expect(result).not.toBeNull();
+        // The only stepped window is [0, 144000), which stops where the tone
+        // starts; the window flush with the end holds 4799 of its 144000 frames.
+        expect(Math.abs(result! - (-14 + 10 * Math.log10(4799 / 144_000)))).toBeLessThan(0.15);
+    });
+
     it('steps the window by 100 ms, so a burst straddling window boundaries still reads', () => {
         const length = SAMPLE_RATE * 2;
         const channel = writeTone(new Float32Array(length), { dbfs: -40, hz: 1000 });

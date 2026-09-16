@@ -4,6 +4,7 @@ import {
     type AgentObjectiveMetricEntry,
     type AgentObjectiveMetricId,
     type AgentObjectiveMetricUnit,
+    type AgentObjectiveMetricValue,
 } from '../../models/AgentObjectiveAnalysisTypes';
 
 /**
@@ -25,6 +26,15 @@ function deltaUnit(unit: AgentObjectiveMetricUnit): AgentObjectiveDeltaUnit {
     return unit;
 }
 
+/**
+ * Only a finite number subtracts. NaN and Infinity pass a `typeof` check and
+ * then produce a delta that is not a difference between two measurements, so
+ * they are refused alongside the shapes that were never scalars.
+ */
+function isScalar(value: AgentObjectiveMetricValue): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
 function compareEntries(
     candidate: AgentObjectiveMetricEntry,
     baseline: AgentObjectiveMetricEntry | undefined
@@ -37,7 +47,7 @@ function compareEntries(
     }
     // Differing units make the pair no more subtractable than a list does: the
     // two numbers are not the same measurement.
-    if (typeof candidate.value !== 'number' || typeof baseline.value !== 'number' || candidate.unit !== baseline.unit) {
+    if (!isScalar(candidate.value) || !isScalar(baseline.value) || candidate.unit !== baseline.unit) {
         return { status: 'incomparable', reason: 'non-scalar' };
     }
     return { status: 'compared', delta: candidate.value - baseline.value, unit: deltaUnit(candidate.unit) };

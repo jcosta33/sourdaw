@@ -161,7 +161,6 @@ export function analyzeAgentRenderReceipt({
         durationSeconds,
         onsetTimesSec,
         dynamicRangeDb: programAnalysis?.dynamicRange ?? null,
-        frequencyProfile: programAnalysis?.frequencyProfile ?? null,
     });
     const { comparison, warnings } = resolveComparison(measurements, baseline);
 

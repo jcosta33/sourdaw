@@ -4,6 +4,7 @@ import {
     type AgentObjectiveAnalysisReceipt,
     type AgentObjectiveMetricEntry,
     type AgentObjectiveMetricId,
+    type AgentObjectiveMetricValue,
     type MeasuredAgentObjectiveAnalysisReceipt,
 } from '../../models/AgentObjectiveAnalysisTypes';
 import { analyzeAgentRenderReceipt } from '../analyzeAgentRenderReceipt';
@@ -74,6 +75,14 @@ function sineChannel(peakDbfs: number, length: number, toneHz = TONE_HZ, phase =
     for (let index = 0; index < length; index++) {
         samples[index] = amplitude * Math.sin((2 * Math.PI * toneHz * index) / SAMPLE_RATE + phase);
     }
+    return samples;
+}
+
+/** Digital silence until `startFrame`, then a sine of the given level to the end. */
+function silentLeadInChannel(peakDbfs: number, length: number, startFrame: number): Float32Array {
+    const samples = new Float32Array(length);
+    const tone = sineChannel(peakDbfs, length);
+    samples.set(tone.subarray(startFrame), startFrame);
     return samples;
 }
 
@@ -178,6 +187,26 @@ function metric(receipt: AgentObjectiveAnalysisReceipt, id: AgentObjectiveMetric
     return found.value;
 }
 
+/** A per-band map, told apart from the receipt's other value shapes. */
+function isBandMap(value: AgentObjectiveMetricValue): value is Readonly<Record<string, number>> {
+    return typeof value === 'object' && !Array.isArray(value);
+}
+
+function bandEnergy(receipt: AgentObjectiveAnalysisReceipt, band: string): number {
+    const found = entry(receipt, 'frequencyBandEnergy');
+    if (found.status !== 'measured') {
+        throw new Error(`Expected frequencyBandEnergy to be measured, got unavailable (${found.reason})`);
+    }
+    if (!isBandMap(found.value)) {
+        throw new TypeError('Expected frequencyBandEnergy to be a per-band map');
+    }
+    const energy = found.value[band];
+    if (typeof energy !== 'number') {
+        throw new TypeError(`Expected a ${band} band energy`);
+    }
+    return energy;
+}
+
 beforeEach(() => {
     mocks.getExactAgentSectionRenderArtifact.mockReset();
 });
@@ -237,6 +266,43 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
 
         expect(Math.abs(metric(receipt, 'stereoCorrelation') - -1)).toBeLessThan(1e-6);
         expect(Math.abs(metric(receipt, 'sideEnergyFraction') - 1)).toBeLessThan(1e-6);
+        // The two channels sum to nothing, so a spectrum read off a mono mix
+        // would have no tone left to place.
+        expect(Math.abs(metric(receipt, 'spectralCentroid') - TONE_HZ)).toBeLessThan(60);
+    });
+
+    it('reads the spectrum over every channel, so a tone in one channel is not missed', () => {
+        // 1 kHz at -20 dBFS on the left, 8 kHz at -6 dBFS on the right. The
+        // louder tone dominates the amplitude-weighted centroid; channel 0
+        // alone would place it at 1 kHz.
+        const length = SAMPLE_RATE * 2;
+        const receipt = analyze([sineChannel(-20, length), sineChannel(-6, length, 8000)]);
+
+        expect(metric(receipt, 'spectralCentroid')).toBeGreaterThan(5500);
+        expect(metric(receipt, 'spectralCentroid')).toBeLessThan(8000);
+    });
+
+    it('reads the spectrum off the frames that carry audio, not off the silent ones', () => {
+        // Two analysis frames: the first is digital silence, which meyda reports
+        // as a NaN centroid and a rolloff above Nyquist because it divides by
+        // the frame's own amplitude sum. Both are numbers, so a summing loop
+        // that only checks the type carries them into the mean.
+        const length = 4096;
+        const channel = silentLeadInChannel(-6, length, 2048);
+        const receipt = analyze([channel, channel]);
+
+        expect(Math.abs(metric(receipt, 'spectralCentroid') - TONE_HZ)).toBeLessThan(60);
+        expect(metric(receipt, 'spectralRolloff')).toBeLessThan(2000);
+    });
+
+    it('reads band energy past the first spectrum window, so a silent lead-in does not decide it', () => {
+        // Silence over the whole first 8192 frames, then a full-scale 1 kHz
+        // tone: a profile taken from that opening window alone finds no energy.
+        const length = SAMPLE_RATE * 2;
+        const channel = silentLeadInChannel(0, length, 8192);
+        const receipt = analyze([channel, channel]);
+
+        expect(bandEnergy(receipt, 'mid')).toBeGreaterThan(0.9);
     });
 
     it('reads a single loud channel 3 dB below the same tone in both', () => {
@@ -298,14 +364,21 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
         expect(entry(receipt, 'dynamicRangeEstimate')).toEqual({ status: 'unavailable', reason: 'too-short' });
     });
 
-    it('refuses a band profile the spectrum window was too short to measure', () => {
-        // Below 8192 frames `measureProgramAudio` splits its profile evenly
-        // across the bands, which reads as a measured flat balance.
+    it('reads band energy from every whole analysis frame a short render has', () => {
+        // 4800 frames carries two 2048-frame analysis frames: enough to place a
+        // 1 kHz tone in the 500-2000 Hz band.
         const fragment = sineChannel(-23, 4800);
         const receipt = analyze([fragment, fragment]);
 
-        expect(entry(receipt, 'frequencyBandEnergy')).toEqual({ status: 'unavailable', reason: 'too-short' });
+        expect(bandEnergy(receipt, 'mid')).toBeGreaterThan(0.9);
         expect(Math.abs(metric(receipt, 'spectralCentroid') - TONE_HZ)).toBeLessThan(60);
+    });
+
+    it('refuses band energy for a render shorter than one analysis frame', () => {
+        const fragment = sineChannel(-23, 1000);
+        const receipt = analyze([fragment, fragment]);
+
+        expect(entry(receipt, 'frequencyBandEnergy')).toEqual({ status: 'unavailable', reason: 'too-short' });
     });
 
     it('has no silent fraction to report for a render with no frames', () => {
@@ -463,6 +536,29 @@ describe('analyzeAgentRenderReceipt — comparison against a baseline receipt', 
             status: 'incomparable',
             reason: 'candidate-unavailable',
         });
+    });
+
+    it('refuses to subtract a baseline figure that is not a finite number', () => {
+        // A baseline is data an earlier run wrote, so a NaN or an infinity can
+        // reach this comparison; subtracting either yields a delta that is not
+        // a difference between two measurements.
+        const tone = sineChannel(-23, SAMPLE_RATE * 2);
+        const earlier = measuredReceipt(analyze([tone, tone]));
+        const corruptPeak: AgentObjectiveMetricEntry = {
+            status: 'measured',
+            metricVersion: 1,
+            unit: 'dBFS',
+            value: Number.NaN,
+            confidence: 'exact',
+        };
+        const baseline: MeasuredAgentObjectiveAnalysisReceipt = {
+            ...earlier,
+            measurements: { ...earlier.measurements, samplePeak: corruptPeak },
+        };
+
+        const candidate = measuredReceipt(analyze([tone, tone], { baseline }));
+
+        expect(candidate.comparison?.metrics.samplePeak).toEqual({ status: 'incomparable', reason: 'non-scalar' });
     });
 
     it('refuses to compare a baseline written against another schema version', () => {
