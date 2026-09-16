@@ -7,7 +7,14 @@
 /// on the RT path.
 
 /// Maximum audio buffer size this host supports (must match the max_frames_count passed to activate).
-const MAX_BUFFER: usize = 4096;
+///
+/// Lockstep restatement of `daw_engine::audio_thread::MAX_CALLBACK_FRAMES`:
+/// no crate edge exists from this crate to the engine, so the value is
+/// restated here per the lockstep rule, and `sourdaw-native`'s
+/// `host/native_bridge.rs` welds the pair with a compile-time equality assert.
+/// A plugin activated for less than the engine's callback ceiling would be
+/// handed a block it never allocated for.
+pub const MAX_BUFFER: usize = 4096;
 /// Maximum MIDI events processed per audio block. Events beyond this are silently dropped.
 const MAX_MIDI: usize = 64;
 /// Maximum parameter events processed per audio block. Extra pending values remain host-side.
@@ -2328,7 +2335,7 @@ unsafe fn activate_plugin(plugin: *const clap_plugin, sample_rate: f64) -> bool 
         return false;
     }
     match (*plugin).activate {
-        Some(activate) => activate(plugin, sample_rate, 32, 4096),
+        Some(activate) => activate(plugin, sample_rate, 32, MAX_BUFFER as u32),
         None => false,
     }
 }
@@ -2552,7 +2559,7 @@ impl ClapWrapper {
             }
 
             if let Some(activate_fn) = plugin_ref.activate {
-                if !activate_fn(self.plugin, self.sample_rate, 32, 4096) {
+                if !activate_fn(self.plugin, self.sample_rate, 32, MAX_BUFFER as u32) {
                     return Err(format!(
                         "[CLAP] reactivation for latency change failed for {}",
                         self.name

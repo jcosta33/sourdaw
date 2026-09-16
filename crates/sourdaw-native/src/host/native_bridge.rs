@@ -45,7 +45,15 @@ fn host_transport_from(transport: &TransportState) -> HostTransport {
     }
 }
 /// Maximum block size the native engine produces (matches ClapWrapper activation).
-const MAX_BUFFER: usize = 4096;
+///
+/// Taken from the engine's own callback ceiling rather than restated, for the
+/// same reason as [`MAX_MIDI_EVENTS`] below: scratch sized under the real
+/// ceiling would truncate a block. `daw-plugin-host` cannot import the engine's
+/// constant (no crate edge), so it restates the figure as
+/// `clap_wrapper::MAX_BUFFER` — this assert welds that lockstep pair at
+/// compile time, here where both are visible.
+const MAX_BUFFER: usize = daw_engine::audio_thread::MAX_CALLBACK_FRAMES;
+const _: () = assert!(MAX_BUFFER == daw_plugin_host::clap_wrapper::MAX_BUFFER);
 /// Maximum MIDI events per block for the event-conversion scratch array.
 ///
 /// The engine's own per-block buffer, so the array holds every event the
