@@ -836,11 +836,22 @@ pub struct GraphApplyResultPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attached_plugins: Option<Vec<AttachedPluginPayload>>,
     /// Crumbs instances that were created before any engine was running and
-    /// that this batch took over — see [`crate::commands::crumbs::attach_dormant_crumbs`].
+    /// that this call took over — see [`crate::commands::crumbs::attach_dormant_crumbs`].
     ///
-    /// Present on an applied batch and empty when it attached nothing, exactly
-    /// like `attachedPlugins` and for the same reason: only an applied payload
-    /// can honestly report an attach.
+    /// Unlike `attachedPlugins`, this is a fact about the *call*, not about the
+    /// batch, and the presence rule follows the attach rather than the outcome:
+    /// present on every payload a call produces after its attach pass has run —
+    /// applied, `rejected` or `needs-reconcile` — and empty when the pass took
+    /// nothing. Absent when the call answered before the pass could run (the
+    /// admission refusals) and on a mapping, which has no engine to attach to.
+    ///
+    /// It has to read that way because the crumbs attach precedes `map_batch`
+    /// for the same-batch binding: an instance is already engine-owned and out
+    /// of the dormant set by the time a mapping or push refusal is decided, so
+    /// a `rejected` payload that said nothing about it would strand the caller
+    /// forever — `create_crumbs` already answered `attached: false`, no later
+    /// batch reports an instance that is no longer dormant, and there is no
+    /// event.
     ///
     /// Reported separately from `attachedPlugins` because the two name
     /// different populations — a hosted plugin's instance id and a Crumbs
@@ -848,7 +859,8 @@ pub struct GraphApplyResultPayload {
     ///
     /// The caller needs it because nothing else corrects `create_crumbs`'s
     /// `attached: false`: the create told it the sampler had no engine, and
-    /// there is no later event.
+    /// there is no later event. A caller mirrors it on every variant that
+    /// carries it, refusal included.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attached_crumbs: Option<Vec<AttachedCrumbsPayload>>,
 }
@@ -893,13 +905,29 @@ impl GraphApplyResultPayload {
         }
     }
 
+    /// Record the crumbs instances this call's attach pass took, on whatever
+    /// answer the call went on to give.
+    ///
+    /// Every exit past the pass calls it, which is what makes the empty vector
+    /// meaningful: `[]` says the pass ran and found nothing, and an absent
+    /// field says the call never reached the pass. One writer, so the two
+    /// cannot drift apart.
+    fn reporting_attached_crumbs(mut self, instance_ids: Vec<String>) -> Self {
+        self.attached_crumbs = Some(
+            instance_ids
+                .into_iter()
+                .map(|instance_id| AttachedCrumbsPayload { instance_id })
+                .collect(),
+        );
+        self
+    }
+
     fn applied(
         correlation: Option<Value>,
         runtime_revision: u64,
         admitted_batch: u64,
         reports: Vec<StripReportPayload>,
         attached_plugins: Vec<AttachedPluginPayload>,
-        attached_crumbs: Vec<AttachedCrumbsPayload>,
     ) -> Self {
         Self {
             acceptance: "accepted",
@@ -911,7 +939,7 @@ impl GraphApplyResultPayload {
             admitted_batch: Some(admitted_batch),
             reports: Some(reports),
             attached_plugins: Some(attached_plugins),
-            attached_crumbs: Some(attached_crumbs),
+            attached_crumbs: None,
         }
     }
 
@@ -4204,7 +4232,10 @@ pub async fn apply_graph_commands(
     // the order every path holding both takes them in — and both released
     // before this batch claims the engine below. A crumbs refusal is that
     // instance's to carry, never this batch's: it stays dormant for the next
-    // one. The registry guard already held above is passed straight through
+    // one. What this pass *did* take is reported by every answer below,
+    // refusals included — the attach is a fact about this call, and an
+    // instance it moved out of the dormant set is named by no later batch.
+    // The registry guard already held above is passed straight through
     // (#3807): the attach's own fence must be numbered on this same registry,
     // ahead of `working`'s clone below, so the batch fence that follows
     // inherits the count in the order the two fences take on the ring — the
@@ -4271,9 +4302,13 @@ pub async fn apply_graph_commands(
     // The engine is installed above and only the quit cascade releases one, so
     // an empty slot here means the process is shutting down under this batch.
     let Some(engine) = engine_guard.as_mut() else {
-        return result_json(&GraphApplyResultPayload::rejected(
-            "engine-not-running: the engine was released while this batch was admitted".to_string(),
-        ));
+        return result_json(
+            &GraphApplyResultPayload::rejected(
+                "engine-not-running: the engine was released while this batch was admitted"
+                    .to_string(),
+            )
+            .reporting_attached_crumbs(attached_crumbs_this_batch),
+        );
     };
 
     // Admission opens by subtracting what the engine has proven landed since
@@ -4306,7 +4341,14 @@ pub async fn apply_graph_commands(
         &mut levain_banks,
     ) {
         Ok(mapped) => mapped,
-        Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+        // Past the attach, so the refusal carries what the attach took: the
+        // instance is engine-owned from here on whatever this batch answers.
+        Err(reason) => {
+            return result_json(
+                &GraphApplyResultPayload::rejected(reason)
+                    .reporting_attached_crumbs(attached_crumbs_this_batch),
+            )
+        }
     };
 
     // Whole-batch admission and visibility: `send_graph_batch` provisions a
@@ -4325,8 +4367,13 @@ pub async fn apply_graph_commands(
     match engine.send_graph_batch_with_headroom(mapped.ops, dormant_plugin_count) {
         Ok(()) => {}
         Err(GraphBatchError::Refused(reason)) => {
-            // Nothing was pushed: a refusal here is a clean rejection.
-            return result_json(&GraphApplyResultPayload::rejected(reason));
+            // Nothing of *this batch* was pushed: a refusal here is a clean
+            // rejection. The attach's own registration went onto the ring
+            // ahead of it, so the report still belongs to this answer.
+            return result_json(
+                &GraphApplyResultPayload::rejected(reason)
+                    .reporting_attached_crumbs(attached_crumbs_this_batch),
+            );
         }
         Err(GraphBatchError::Partial {
             pushed,
@@ -4342,15 +4389,18 @@ pub async fn apply_graph_commands(
             // commands that will never all arrive, so the engine drains
             // nothing further from this ring. A state that broken must never
             // report itself as whole.
-            return result_json(&GraphApplyResultPayload::needs_reconcile(
-                format!(
-                    "the engine refused command {pushed} of {total} after {pushed} were \
-                     already queued: {error}"
-                ),
-                correlation,
-                registry_guard.runtime_revision,
-                mapped.reports,
-            ));
+            return result_json(
+                &GraphApplyResultPayload::needs_reconcile(
+                    format!(
+                        "the engine refused command {pushed} of {total} after {pushed} were \
+                         already queued: {error}"
+                    ),
+                    correlation,
+                    registry_guard.runtime_revision,
+                    mapped.reports,
+                )
+                .reporting_attached_crumbs(attached_crumbs_this_batch),
+            );
         }
     }
 
@@ -4387,15 +4437,6 @@ pub async fn apply_graph_commands(
             instance_id: attached.instance_id,
         })
         .collect();
-    // Reported from the attach that ran ahead of the mapping, unlike the
-    // plugins above: the crumbs attach has to precede `map_batch` for the
-    // same-batch binding, and this batch is `applied` by the time the payload
-    // is built, so the report is honest either way.
-    let attached_crumbs: Vec<AttachedCrumbsPayload> = attached_crumbs_this_batch
-        .into_iter()
-        .map(|instance_id| AttachedCrumbsPayload { instance_id })
-        .collect();
-
     working.runtime_revision = registry_guard.runtime_revision + 1;
     let revision = working.runtime_revision;
     // `map_batch` advanced this count for the fence just published, so it is
@@ -4403,14 +4444,20 @@ pub async fn apply_graph_commands(
     // — the same number the ledger stamped every write in it with.
     let admitted_batch = working.batches_sent;
     *registry_guard = working;
-    result_json(&GraphApplyResultPayload::applied(
-        correlation,
-        revision,
-        admitted_batch,
-        mapped.reports,
-        attached_plugins,
-        attached_crumbs,
-    ))
+    result_json(
+        &GraphApplyResultPayload::applied(
+            correlation,
+            revision,
+            admitted_batch,
+            mapped.reports,
+            attached_plugins,
+        )
+        // From the attach that ran ahead of the mapping, unlike the plugins
+        // above: the crumbs attach has to precede `map_batch` for the
+        // same-batch binding, so it is reported by whichever answer this call
+        // reaches, this one included.
+        .reporting_attached_crumbs(attached_crumbs_this_batch),
+    )
 }
 
 /// The wire's fault marker for a `prior` that no longer replays: the stable
@@ -8298,22 +8345,54 @@ mod tests {
             r#"{"acceptance":"rejected","application":"not-applied","reason":"engine-not-running: no device"}"#
         );
 
-        let applied = serde_json::to_string(&GraphApplyResultPayload::applied(
-            None,
-            3,
-            5,
-            vec![StripReportPayload {
-                kind: "track",
-                id: "t1".to_string(),
-                device_ids: vec!["d1".to_string()],
-            }],
-            vec![AttachedPluginPayload {
-                instance_id: "i1".to_string(),
-            }],
-            vec![AttachedCrumbsPayload {
-                instance_id: "d-crumbs".to_string(),
-            }],
-        ))
+        // `attachedCrumbs` follows the attach pass rather than the outcome,
+        // so a refusal past the pass carries it and a refusal before the pass
+        // (the one above) does not. Empty says the pass ran and took nothing.
+        let refused_past_the_attach = serde_json::to_string(
+            &GraphApplyResultPayload::rejected(
+                "previously applied commands no longer map".to_string(),
+            )
+            .reporting_attached_crumbs(vec!["d-crumbs".to_string()]),
+        )
+        .expect("a refusal past the attach serializes");
+        assert_eq!(
+            refused_past_the_attach,
+            concat!(
+                r#"{"acceptance":"rejected","application":"not-applied","#,
+                r#""reason":"previously applied commands no longer map","#,
+                r#""attachedCrumbs":[{"instanceId":"d-crumbs"}]}"#
+            )
+        );
+
+        let took_nothing = serde_json::to_string(
+            &GraphApplyResultPayload::rejected("engine-not-running: no device".to_string())
+                .reporting_attached_crumbs(Vec::new()),
+        )
+        .expect("an empty report serializes");
+        assert_eq!(
+            took_nothing,
+            concat!(
+                r#"{"acceptance":"rejected","application":"not-applied","#,
+                r#""reason":"engine-not-running: no device","attachedCrumbs":[]}"#
+            )
+        );
+
+        let applied = serde_json::to_string(
+            &GraphApplyResultPayload::applied(
+                None,
+                3,
+                5,
+                vec![StripReportPayload {
+                    kind: "track",
+                    id: "t1".to_string(),
+                    device_ids: vec!["d1".to_string()],
+                }],
+                vec![AttachedPluginPayload {
+                    instance_id: "i1".to_string(),
+                }],
+            )
+            .reporting_attached_crumbs(vec!["d-crumbs".to_string()]),
+        )
         .expect("applied serializes");
         assert_eq!(
             applied,
@@ -8363,6 +8442,26 @@ mod tests {
                 r#""reason":"the engine refused command 2 of 3","#,
                 r#""compensation":"not-attempted","correlation":{"documentRevision":9},"#,
                 r#""runtimeRevision":7,"reports":[{"kind":"track","id":"t1","deviceIds":[]}]}"#
+            )
+        );
+
+        let stalled_past_the_attach = serde_json::to_string(
+            &GraphApplyResultPayload::needs_reconcile(
+                "the engine refused command 2 of 3".to_string(),
+                None,
+                7,
+                Vec::new(),
+            )
+            .reporting_attached_crumbs(vec!["d-crumbs".to_string()]),
+        )
+        .expect("needs-reconcile past the attach serializes");
+        assert_eq!(
+            stalled_past_the_attach,
+            concat!(
+                r#"{"acceptance":"accepted","application":"needs-reconcile","#,
+                r#""reason":"the engine refused command 2 of 3","#,
+                r#""compensation":"not-attempted","runtimeRevision":7,"reports":[],"#,
+                r#""attachedCrumbs":[{"instanceId":"d-crumbs"}]}"#
             )
         );
     }
@@ -11257,6 +11356,53 @@ mod tests {
             "the splice borrows the very id the attach registered in this same batch"
         );
         assert_eq!(spliced[0].kind, DeviceKind::Generator);
+    }
+
+    /// And a call that refuses its batch after the attach still reports it.
+    ///
+    /// The attach has to precede `map_batch` for the binding above, so by the
+    /// time a mapping refusal is decided the instance is engine-owned and out
+    /// of the dormant set: no later batch will ever name it, `create_crumbs`
+    /// already answered `attached: false`, and no event follows. Silence here
+    /// would leave the caller refusing its own Crumbs strip for the engine's
+    /// whole life.
+    #[test]
+    fn a_batch_refused_after_a_dormant_crumbs_attach_still_reports_the_attach() {
+        let state = AppState::default();
+        let crumbs = CrumbsState::default();
+        block_on_test(crumbs::create_crumbs(
+            "d-crumbs".to_string(),
+            &crumbs,
+            &state,
+        ))
+        .expect("a create before the engine runs holds a dormant instance");
+
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(256);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        // Refused by the mapping, which runs after the attach: the batch names
+        // a track no strip ever created.
+        let rejected = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [
+                { "kind": "set-track-output", "trackId": "missing",
+                  "target": { "kind": "master" } }
+            ] }),
+            &state,
+            &crumbs,
+        ))
+        .expect("a refusal resolves to a result");
+
+        assert_eq!(rejected["acceptance"], "rejected");
+        assert_eq!(
+            rejected["attachedCrumbs"],
+            json!([{ "instanceId": "d-crumbs" }]),
+            "the refusal names the instance it attached on the way: {rejected:?}"
+        );
+        assert!(
+            !crumbs::attached_crumbs_instances(&crumbs).is_empty(),
+            "and the instance really is attached, so no later batch would report it"
+        );
     }
 
     /// An offline render has no engine, so it has no instances: the binding
