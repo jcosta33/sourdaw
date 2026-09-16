@@ -1,0 +1,124 @@
+crates/daw-dsp/src/bacteria/distortion.rs
+  h_1228e573df1f42 13,162
+crates/daw-dsp/src/bacteria/engine.rs
+  h_1228e573df1f42 21,1272
+crates/daw-dsp/src/bacteria/params.rs
+  h_1228e573df1f42 3-4,61
+crates/daw-dsp/src/crumbs/types.rs
+  h_1228e573df1f42 2,337,339,341,351
+crates/daw-dsp/src/crust/engine.rs
+  h_1228e573df1f42 32-33,36-38,376,380,647,650
+crates/daw-dsp/src/crust/limiter.rs
+  h_1228e573df1f42 51
+crates/daw-dsp/src/fermenter/synth.rs
+  h_1228e573df1f42 11,460,479
+crates/daw-dsp/src/gluten/detector.rs
+  h_1228e573df1f42 4-5,60,76,79
+crates/daw-dsp/src/gluten/diode.rs
+  h_1228e573df1f42 10,92,94
+crates/daw-dsp/src/gluten/engine.rs
+  h_1228e573df1f42 16-19,157-158,241,357,569,587,590,592,595
+crates/daw-dsp/src/gluten/fet.rs
+  h_1228e573df1f42 9,92,94,98
+crates/daw-dsp/src/gluten/gain_computer.rs
+  h_1228e573df1f42 4-6,51-52
+crates/daw-dsp/src/gluten/mod.rs
+  h_1228e573df1f42 23-27
+crates/daw-dsp/src/gluten/opto.rs
+  h_1228e573df1f42 8,102-103
+crates/daw-dsp/src/gluten/vca.rs
+  h_1228e573df1f42 8-9,111,148,150,154
+crates/daw-dsp/src/grand_boule/engine.rs
+  h_1228e573df1f42 17,525
+crates/daw-dsp/src/grinder/params.rs
+  h_1228e573df1f42 178
+crates/daw-dsp/src/grinder/pedals.rs
+  h_1228e573df1f42 4,37-38,132-133,251,353,355,358
+crates/daw-dsp/src/levain/engine.rs
+  h_1228e573df1f42 24,773,839-840,845
+crates/daw-dsp/src/lib.rs
+  h_1228e573df1f42 10
+crates/daw-dsp/src/params.rs
+  h_1228e573df1f42 1-31
+crates/daw-dsp/src/primitives/db.rs
+  h_1228e573df1f42 1-8
+crates/daw-dsp/src/primitives/mod.rs
+  h_1228e573df1f42 6,17
+crates/daw-dsp/src/proof/chain.rs
+  h_1228e573df1f42 17,407
+crates/daw-dsp/src/proof/dynamic_eq.rs
+  h_1228e573df1f42 11-13,79,111,114,207,209-210
+crates/daw-dsp/src/proof/exciter.rs
+  h_1228e573df1f42 5,190
+crates/daw-dsp/src/proof/limiter.rs
+  h_1228e573df1f42 11,13-14,114-117,238,368,371
+crates/daw-dsp/src/proof/metering.rs
+  h_1228e573df1f42 3-9,230-231,235,686,700,716,816,868,906,909,1281,1284,1288,1291,1298,1305
+crates/daw-dsp/src/proof/mod.rs
+  h_1228e573df1f42 26,178,184
+crates/daw-dsp/src/proof/multiband.rs
+  h_1228e573df1f42 4-6,35,154,156-157,187,190
+crates/daw-dsp/src/toaster/engine.rs
+  h_1228e573df1f42 11,363-364,448,466
+crates/daw-dsp/src/toaster/engines/clap.rs
+  h_1228e573df1f42 7,148,152,157-158
+crates/daw-dsp/src/toaster/engines/clap_808.rs
+  h_1228e573df1f42 10,184
+crates/daw-dsp/src/toaster/engines/clap_909.rs
+  h_1228e573df1f42 8,158
+crates/daw-dsp/src/toaster/engines/cr78.rs
+  h_1228e573df1f42 11,281-282
+crates/daw-dsp/src/toaster/engines/cymbal.rs
+  h_1228e573df1f42 8,158,163,168-169
+crates/daw-dsp/src/toaster/engines/fm_perc.rs
+  h_1228e573df1f42 5,137,143,146,150
+crates/daw-dsp/src/toaster/engines/hihat.rs
+  h_1228e573df1f42 7,168-169,174-175
+crates/daw-dsp/src/toaster/engines/hihat_808.rs
+  h_1228e573df1f42 20,159-161
+crates/daw-dsp/src/toaster/engines/hihat_909.rs
+  h_1228e573df1f42 15,169-170
+crates/daw-dsp/src/toaster/engines/kick.rs
+  h_1228e573df1f42 6,147,149-151
+crates/daw-dsp/src/toaster/engines/kick_808.rs
+  h_1228e573df1f42 16,257,260,263
+crates/daw-dsp/src/toaster/engines/kick_909.rs
+  h_1228e573df1f42 13,192-194
+crates/daw-dsp/src/toaster/engines/modal.rs
+  h_1228e573df1f42 9,288,298,302,306
+crates/daw-dsp/src/toaster/engines/perc.rs
+  h_1228e573df1f42 7,216,221,225,229
+crates/daw-dsp/src/toaster/engines/perc_808.rs
+  h_1228e573df1f42 8,253-254
+crates/daw-dsp/src/toaster/engines/snare.rs
+  h_1228e573df1f42 6,158-159,165-166
+crates/daw-dsp/src/toaster/engines/snare_808.rs
+  h_1228e573df1f42 11,214,216
+crates/daw-dsp/src/toaster/engines/tom.rs
+  h_1228e573df1f42 7,144,149,152-153
+crates/daw-dsp/src/toaster/engines/tom_808.rs
+  h_1228e573df1f42 11,193-194
+crates/daw-dsp/src/toaster/pad.rs
+  h_1228e573df1f42 4,95-98
+crates/proof-chamber/src/convolution.rs
+  h_1228e573df1f42 464-466
+crates/proof-chamber/src/fdn.rs
+  h_1228e573df1f42 575-577
+crates/proof-chamber/src/proof_chamber.rs
+  h_1228e573df1f42 945-947
+crates/proof-chamber/src/reverse.rs
+  h_1228e573df1f42 136-138
+crates/proof-chamber/src/spring.rs
+  h_1228e573df1f42 154-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5140859917660fb61599947430c5b81e7390568e",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
