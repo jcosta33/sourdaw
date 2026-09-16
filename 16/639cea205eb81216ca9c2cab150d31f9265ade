@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/__tests__/agentRunLogRedaction.spec.ts
+  s_914af328b3988f::t_fc049883e30a86 114-118
+  s_914af328b3988f::t_8457655036b821 358-369
+  s_914af328b3988f::t_c6be9938cb6c8a 4
+  s_914af328b3988f::t_f136a0a1c1ea5f 51
+  s_914af328b3988f::t_6836a15b1a0741 32-41,43,45-46,49-50
+  s_914af328b3988f::t_b789b12a0f161f 529-558
+  s_914af328b3988f::t_a41923d93cc125 771-782,784,786-787
+src/modules/AiRuntime/services/agentRunRedaction/redactSecrets.ts
+  s_914af328b3988f::t_6303138bd3b7ef 38-42
+  s_914af328b3988f::t_1fa654ded005a1 60,64
+  s_914af328b3988f::t_1669cc7cf58716 36-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "16639cea205eb81216ca9c2cab150d31f9265ade",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
