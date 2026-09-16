@@ -1,0 +1,24 @@
+src/modules/AudioEngine/useCases/collectAudioDeadlineEvidence.ts
+  s_914af328b3988f::t_83551aaf621627 155-158
+  s_914af328b3988f::t_283b380ed2c794 58-63
+  s_914af328b3988f::t_71613059e32f7d 112-114
+src/modules/AudioEngine/useCases/__tests__/collectAudioDeadlineEvidence.spec.ts
+  s_914af328b3988f::t_9f5e412f35b174 10-14
+  s_914af328b3988f::t_4c4540556e23ac 244-265
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9b8e2f8f37e6c5814f1c62c8f6454f5d3e110109",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
