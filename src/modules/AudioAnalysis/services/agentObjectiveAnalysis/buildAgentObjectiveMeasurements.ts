@@ -167,16 +167,24 @@ function buildLevelEntries({ length, levels, silent }: RenderMeasurementContext)
 
 type SpectralMetricId = 'spectralCentroid' | 'spectralRolloff' | 'frequencyBandEnergy';
 
+/**
+ * A silent render is silent at every length, so silence answers before length
+ * here as it does everywhere else in this receipt. Below one analysis frame
+ * there is nothing to transform. Above it, a render with no reading has frames
+ * the transform found empty, which is silence at the frames that were measured
+ * rather than a length the measurement cannot reach.
+ */
+function spectrumMissingReason(silent: boolean, length: number): AgentObjectiveMetricUnavailableReason {
+    if (silent) {
+        return 'silent';
+    }
+    return length < SPECTRUM_FRAME ? 'too-short' : 'silent';
+}
+
 function buildSpectralEntries(context: RenderMeasurementContext): MetricEntries<SpectralMetricId> {
     const { channels, length, sampleRate, silent } = context;
     const spectrum = silent ? null : measureRenderSpectrum({ channels, length, sampleRate });
-    /**
-     * Below one analysis frame there is nothing to transform. Above it, a render
-     * with no reading has frames the transform found empty, which is silence at
-     * the frames that were measured rather than a length the measurement cannot
-     * reach.
-     */
-    const missing = unavailable(length < SPECTRUM_FRAME ? 'too-short' : 'silent');
+    const missing = unavailable(spectrumMissingReason(silent, length));
 
     return {
         spectralCentroid: spectrum ? measured('hertz', spectrum.centroidHz, 'estimated') : missing,

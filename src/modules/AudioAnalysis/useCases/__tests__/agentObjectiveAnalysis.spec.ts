@@ -98,6 +98,28 @@ function levelStepChannel(firstDbfs: number, secondDbfs: number, switchFrame: nu
     return samples;
 }
 
+/** A sine that changes both its frequency and its level at `switchFrame`. */
+function toneStepChannel(
+    first: { peakDbfs: number; toneHz: number },
+    second: { peakDbfs: number; toneHz: number },
+    switchFrame: number,
+    length: number
+): Float32Array {
+    const samples = sineChannel(first.peakDbfs, length, first.toneHz);
+    samples.set(sineChannel(second.peakDbfs, length, second.toneHz).subarray(switchFrame), switchFrame);
+    return samples;
+}
+
+/** The elementwise sum of two channels of the same length. */
+function mixChannels(first: Float32Array, second: Float32Array): Float32Array {
+    return first.map((sample, index) => sample + (second[index] ?? 0));
+}
+
+/** The same channel with a constant added to every sample. */
+function offsetChannel(channel: Float32Array, offset: number): Float32Array {
+    return channel.map((sample) => sample + offset);
+}
+
 /** The same channel with one sample replaced by a value no meter can read. */
 function corruptSample(channel: Float32Array, index: number, value: number): Float32Array {
     const corrupted = Float32Array.from(channel);
@@ -272,14 +294,64 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
     });
 
     it('reads the spectrum over every channel, so a tone in one channel is not missed', () => {
-        // 1 kHz at -20 dBFS on the left, 8 kHz at -6 dBFS on the right. The
-        // louder tone dominates the amplitude-weighted centroid; channel 0
-        // alone would place it at 1 kHz.
+        // 1 kHz at -20 dBFS on the left, 8 kHz at -6 dBFS on the right. Weighing
+        // each tone by its own amplitude puts the centroid at
+        // (1000 * 0.1 + 8000 * 0.5) / 0.6 = 6833 Hz: channel 0 alone would place
+        // it at 1 kHz, and weighing by energy rather than amplitude at 7733 Hz.
         const length = SAMPLE_RATE * 2;
         const receipt = analyze([sineChannel(-20, length), sineChannel(-6, length, 8000)]);
 
-        expect(metric(receipt, 'spectralCentroid')).toBeGreaterThan(5500);
-        expect(metric(receipt, 'spectralCentroid')).toBeLessThan(8000);
+        expect(Math.abs(metric(receipt, 'spectralCentroid') - 6833)).toBeLessThan(150);
+    });
+
+    it('reads a tone that lives in one channel at its own frequency', () => {
+        // Hard-panned 8 kHz with digital silence in the left channel. Half the
+        // frames of the summed spectrum carry nothing, so a reading that divided
+        // by the channel count would place the tone an octave low.
+        const length = SAMPLE_RATE * 2;
+        const receipt = analyze([new Float32Array(length), sineChannel(-6, length, 8000)]);
+
+        expect(receipt.status).toBe('measured');
+        expect(Math.abs(metric(receipt, 'spectralCentroid') - 8000)).toBeLessThan(100);
+    });
+
+    it('reports the rolloff at the 85 % energy point, not at the last audible tone', () => {
+        // 1 kHz at 0 dBFS with 8 kHz at -10 dBFS under it: the 1 kHz tone holds
+        // 91 % of the energy, so 85 % of it is reached at its own bin. A 99 %
+        // fraction would walk past it and report 8 kHz.
+        const length = SAMPLE_RATE * 2;
+        const channel = mixChannels(sineChannel(0, length), sineChannel(-10, length, 8000));
+        const receipt = analyze([channel, channel]);
+
+        expect(Math.abs(metric(receipt, 'spectralRolloff') - TONE_HZ)).toBeLessThan(60);
+    });
+
+    it('weighs each frame by the level it carries rather than counting them alike', () => {
+        // 2048 frames of 15 kHz at -120 dBFS, then 2048 frames of 1 kHz at
+        // -6 dBFS. Normalising each frame by its own amplitude sum before
+        // averaging erases the 114 dB between them and reports 8 kHz, the
+        // midpoint of two tones only one of which is audible.
+        const channel = toneStepChannel(
+            { peakDbfs: -120, toneHz: 15_000 },
+            { peakDbfs: -6, toneHz: TONE_HZ },
+            2048,
+            4096
+        );
+        const receipt = analyze([channel, channel]);
+
+        expect(Math.abs(metric(receipt, 'spectralCentroid') - TONE_HZ)).toBeLessThan(60);
+        expect(metric(receipt, 'spectralRolloff')).toBeLessThan(1200);
+    });
+
+    it('places a tone at its own frequency when the render carries a DC offset', () => {
+        // Bin 0 holds the DC the receipt already reports as a level, not a
+        // frequency the render sounds. Counted as a bin it drags a 1 kHz tone
+        // with 0.05 of offset under it down to about 877 Hz.
+        const channel = offsetChannel(sineChannel(-6, SAMPLE_RATE), 0.05);
+        const receipt = analyze([channel, channel]);
+
+        expect(Math.abs(metric(receipt, 'spectralCentroid') - TONE_HZ)).toBeLessThan(60);
+        expect(Math.abs(metric(receipt, 'dcOffset') - 0.05)).toBeLessThan(1e-6);
     });
 
     it('reads the spectrum off the frames that carry audio, not off the silent ones', () => {
@@ -379,6 +451,18 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
         const receipt = analyze([fragment, fragment]);
 
         expect(entry(receipt, 'frequencyBandEnergy')).toEqual({ status: 'unavailable', reason: 'too-short' });
+    });
+
+    it('calls a silent render silent rather than short, however few frames it has', () => {
+        // Every other metric answers silence before length. A spectrum that
+        // answered length first would blame the 1000 frames for a reading the
+        // silence in them denied at any length.
+        const silence = new Float32Array(1000);
+        const receipt = analyze([silence, silence]);
+
+        expect(entry(receipt, 'spectralCentroid')).toEqual({ status: 'unavailable', reason: 'silent' });
+        expect(entry(receipt, 'spectralRolloff')).toEqual({ status: 'unavailable', reason: 'silent' });
+        expect(entry(receipt, 'frequencyBandEnergy')).toEqual({ status: 'unavailable', reason: 'silent' });
     });
 
     it('has no silent fraction to report for a render with no frames', () => {
