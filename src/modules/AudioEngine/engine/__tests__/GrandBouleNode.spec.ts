@@ -211,6 +211,13 @@ describe('createGrandBouleNode', () => {
     });
 
     afterEach(() => {
+        // Coverage is process-wide state on the shared counter, and cases here
+        // settle worklet handshakes without tearing the transport down again.
+        // One worker is constructed per ring transport, so that many closes
+        // cover every transport this case could have opened.
+        for (let transport = 0; transport < workerConstructed; transport++) {
+            dropoutCounters.closeCoverage();
+        }
         vi.unstubAllGlobals();
         vi.clearAllMocks();
     });
@@ -318,6 +325,48 @@ describe('createGrandBouleNode', () => {
         // silence and records zero dropouts, because `process()` returns at its
         // not-ready guard before the underrun is ever counted.
         expect({ afterWorkerOnly, afterBoth: resolved }).toEqual({ afterWorkerOnly: false, afterBoth: true });
+    });
+
+    it('opens dropout coverage when the worklet takes the ring and closes it on teardown', async () => {
+        const node = await createGrandBouleNode(ctx);
+        const afterInitPost = dropoutCounters.hasCoverage();
+
+        lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        const whileCounting = dropoutCounters.hasCoverage();
+
+        node.destroy();
+
+        expect({ afterInitPost, whileCounting, afterDestroy: dropoutCounters.hasCoverage() }).toEqual({
+            afterInitPost: false,
+            whileCounting: true,
+            afterDestroy: false,
+        });
+    });
+
+    it('closes dropout coverage when the transport fails after the worklet took the ring', async () => {
+        const node = await createGrandBouleNode(ctx);
+        lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        const whileCounting = dropoutCounters.hasCoverage();
+
+        lastWorker?.onerror?.({ message: 'wasm compile failed' } as ErrorEvent);
+        await expect(node.ready).rejects.toThrow('wasm compile failed');
+
+        expect({ whileCounting, afterFailure: dropoutCounters.hasCoverage() }).toEqual({
+            whileCounting: true,
+            afterFailure: false,
+        });
+    });
+
+    it('never opens dropout coverage for a transport that failed before the worklet replied', async () => {
+        const node = await createGrandBouleNode(ctx);
+
+        lastWorker?.onerror?.({ message: 'wasm compile failed' } as ErrorEvent);
+        await expect(node.ready).rejects.toThrow('wasm compile failed');
+        // A late `ready` from a worklet whose transport is already gone must not
+        // reopen coverage that nothing will close.
+        lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+
+        expect(dropoutCounters.hasCoverage()).toBe(false);
     });
 
     it('rejects ready when either side reports an init error', async () => {
