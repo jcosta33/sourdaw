@@ -9,9 +9,9 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '
 import { INIT_SAB_MESSAGE_TYPE } from '#/infra/audioWorklet/workletPortMessages';
 import { NOTE_NAMES } from '#/utils/noteNames';
 
+import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import scoringProcessorUrl from '../services/scoringProcessor.ts?worker&url';
 
-import { STEREO_CHANNEL_COUNT } from './constants';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import {
     createTelemetryReader,

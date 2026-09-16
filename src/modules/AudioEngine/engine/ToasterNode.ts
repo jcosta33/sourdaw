@@ -10,10 +10,10 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '
 import { INIT_SAB_MESSAGE_TYPE } from '#/infra/audioWorklet/workletPortMessages';
 import { logger } from '#/infra/logger/appLogger';
 
+import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { TOASTER_AUTOMATION_PARAM_IDS } from '../models/ToasterAutomationParams';
 import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
-import { STEREO_CHANNEL_COUNT } from './constants';
 import {
     createTelemetryReader,
     telemetryAllocator,

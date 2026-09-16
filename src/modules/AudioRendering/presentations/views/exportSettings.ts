@@ -46,7 +46,7 @@ export const MAX_MANUAL_TAIL_SECONDS = 60;
  * settings validator both read this — one list, so the dialog can never offer
  * a rate the validator rejects.
  */
-export const EXPORT_SAMPLE_RATES: readonly number[] = [44100, 48000, 88200, 96000];
+export const EXPORT_SAMPLE_RATES = [44100, 48000, 88200, 96000] as const;
 
 const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
 const DEFAULT_EXPORT_SETTINGS: ExportSettings = {

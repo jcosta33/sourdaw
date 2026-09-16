@@ -15,9 +15,8 @@ import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 import { logger } from '#/infra/logger/appLogger';
 
+import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import crumbsProcessorUrl from '../services/crumbsProcessor.ts?worker&url';
-
-import { STEREO_CHANNEL_COUNT } from './constants';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 

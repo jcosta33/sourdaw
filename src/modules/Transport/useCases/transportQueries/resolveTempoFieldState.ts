@@ -5,10 +5,7 @@ import {
     MIN_TEMPO_MAP_TEMPO,
     type TempoChange,
 } from '../../models/TempoMap';
-
-/** Range of the transport's own base tempo, mirroring `transportStore`'s validator. */
-const MIN_BASE_TEMPO = 20;
-const MAX_BASE_TEMPO = 300;
+import { MAX_TEMPO, MIN_TEMPO } from '../../stores/transportStore';
 
 type ResolveTempoFieldStateInput = {
     changes: readonly TempoChange[];
@@ -88,8 +85,8 @@ export function resolveTempoFieldState(input: ResolveTempoFieldStateInput): Reso
     const tempo = getTempoAtBeat(input.changes, input.beat, input.defaultTempo);
     const governedByMap = governing !== undefined;
 
-    let minTempo = MIN_BASE_TEMPO;
-    let maxTempo = MAX_BASE_TEMPO;
+    let minTempo = MIN_TEMPO;
+    let maxTempo = MAX_TEMPO;
     if (governedByMap) {
         minTempo = MIN_TEMPO_MAP_TEMPO;
         maxTempo = MAX_TEMPO_MAP_TEMPO;

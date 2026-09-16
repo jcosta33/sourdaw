@@ -1,11 +1,10 @@
 import { addClip, addTrack, importMidiFile, removeTrack } from '#/modules/Arrangement/useCases';
 import { cacheAudioBuffer, decodeAudioFileBuffer } from '#/modules/AudioEngine/useCases';
 import { captureProjectTransitionAuthority, newProject } from '#/modules/Project/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { isAudioFile } from '#/utils/audioFileExtensions';
 
 const MIDI_FILE_EXTENSIONS = ['mid', 'midi'];
-const DEFAULT_TEMPO = 120;
 const MINIMUM_AUDIO_CLIP_BEATS = 4;
 
 type ImportDroppedLaunchFilesInput = {
@@ -93,7 +92,7 @@ export async function importDroppedLaunchFiles({
                 return { status: 'superseded' };
             }
 
-            const tempo = transportStore.value?.tempo ?? DEFAULT_TEMPO;
+            const tempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
             const beats = Math.max(MINIMUM_AUDIO_CLIP_BEATS, Math.ceil((buffer.duration / 60) * tempo));
             const clip = addClip({
                 trackId: track.id,

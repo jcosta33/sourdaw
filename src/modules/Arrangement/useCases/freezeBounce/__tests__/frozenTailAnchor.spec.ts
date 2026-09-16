@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { MIN_TEMPO } from '#/modules/Transport/stores';
@@ -7,10 +11,22 @@ import {
     UNKNOWN_FROZEN_TAIL_SECONDS,
 } from '#/utils/frozenBufferTail';
 
+const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../../../../');
+const TEMPO_MAP_SOURCE = readFileSync(join(REPO_ROOT, 'src/modules/Transport/models/TempoMap.ts'), 'utf8');
+
 // Inlined from Transport's `models/TempoMap.ts` — models constants never cross
-// module boundaries (docs/architecture/03-typescript-module.md §4.1); this spec
-// is the cross-boundary anchor proving both sides still agree on 20.
+// module boundaries (docs/architecture/03-typescript-module.md §4.1). The weld
+// to its owner is a source read: the cross-check test parses the owner's own
+// declaration and asserts this mirror still equals it.
 const MIN_TEMPO_MAP_TEMPO = 20;
+
+function parseMinTempoMapTempo(source: string): number {
+    const declaration = /export const MIN_TEMPO_MAP_TEMPO = (\d+);/u.exec(source);
+    if (!declaration) {
+        throw new Error('MIN_TEMPO_MAP_TEMPO is not declared as a plain integer in models/TempoMap.ts');
+    }
+    return Number(declaration[1]);
+}
 
 /**
  * The unknown-baked-tail floor is a number in one file derived from mechanisms
@@ -60,7 +76,10 @@ describe('unknown frozen tail floor — anchored to freeze’s real mechanism', 
         // transport's copy alone, so lowering the tempo-map copy would have left
         // the floor silently wrong with every test still green. Nothing but a
         // test spanning the boundary can see that, because the copies agree at
-        // the moment they are written.
+        // the moment they are written. The span is a source read — the owner
+        // cannot be imported across the boundary (§4.1), so the mirror above is
+        // checked against the value parsed from the owner's own declaration.
+        expect(MIN_TEMPO_MAP_TEMPO).toBe(parseMinTempoMapTempo(TEMPO_MAP_SOURCE));
         const slowestLegalTempo = Math.min(MIN_TEMPO, MIN_TEMPO_MAP_TEMPO);
 
         expect(UNKNOWN_FROZEN_TAIL_SECONDS).toBeGreaterThanOrEqual(

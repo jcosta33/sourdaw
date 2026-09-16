@@ -59,13 +59,13 @@ import { defaultTransportState, type TempoMapStoreState, transportStore } from '
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
-import { STEREO_CHANNEL_COUNT } from '../../engine/constants';
 import {
     type AudioGraphAddSendCommand,
     type AudioGraphCommand,
     type AudioGraphParameterTarget,
     type AudioGraphParameterWrite,
 } from '../../models/AudioGraphBackend';
+import { STEREO_CHANNEL_COUNT } from '../../models/ChannelLaw';
 import { createNativeOfflineGraphBackend } from '../../repositories/nativeGraph/createNativeOfflineGraphBackend';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import {

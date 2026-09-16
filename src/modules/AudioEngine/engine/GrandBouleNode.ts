@@ -30,6 +30,7 @@
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
+import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import {
     GRAND_BOULE_CONTROL_HEADER_BYTES,
     GRAND_BOULE_CONTROL_INT_COUNT,
@@ -39,7 +40,6 @@ import {
 import grandBouleOfflineProcessorUrl from '../worklets/grandBouleOfflineProcessor.ts?worker&url';
 import grandBouleProcessorUrl from '../worklets/grandBouleProcessor.ts?worker&url';
 
-import { STEREO_CHANNEL_COUNT } from './constants';
 import { dropoutCounters } from './dropoutCounter';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 

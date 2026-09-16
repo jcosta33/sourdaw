@@ -9,7 +9,7 @@ import {
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
-import { fail } from './prContract.ts';
+import { fail, PR_STATE } from './prContract.ts';
 
 export const USAGE = 'usage: pnpm review:resolve <pr-number> --thread <thread-node-id> --head <full-sha>';
 
@@ -112,7 +112,7 @@ function assertThreadPrecondition(state: ThreadState, number: number, threadId: 
     if (state.pullRequestNumber !== number) {
         fail(`thread ${threadId} belongs to PR #${state.pullRequestNumber}, not PR #${number}`);
     }
-    if (state.pullRequestState !== 'OPEN') {
+    if (state.pullRequestState !== PR_STATE.OPEN) {
         fail(`PR #${number} is ${state.pullRequestState}; refusing to resolve a thread on a closed pull request`);
     }
     if (state.head !== expectedHead) {

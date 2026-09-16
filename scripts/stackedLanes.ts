@@ -142,7 +142,7 @@ export function stackParentQuery(branch: string): string[] {
 
 function parentState(state: 'open' | 'closed', mergedAt: string | null): StackParent['state'] {
     if (mergedAt !== null) {
-        return 'MERGED';
+        return PR_STATE.MERGED;
     }
     return state === 'open' ? PR_STATE.OPEN : PR_STATE.CLOSED;
 }

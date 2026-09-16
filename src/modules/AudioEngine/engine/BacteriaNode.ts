@@ -11,11 +11,11 @@ import { INIT_SAB_MESSAGE_TYPE, LATENCY_CHANGED_MESSAGE_TYPE } from '#/infra/aud
 import { logger } from '#/infra/logger/appLogger';
 
 import { createBacteriaRuntimeParameterIds } from '../models/BacteriaRuntimeControl';
+import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
 import bacteriaProcessorUrl from '../services/bacteriaProcessor.ts?worker&url';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
 
-import { STEREO_CHANNEL_COUNT } from './constants';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import {
     telemetryAllocator,

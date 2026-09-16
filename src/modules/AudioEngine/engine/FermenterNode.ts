@@ -14,10 +14,10 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '
 import { INIT_SAB_MESSAGE_TYPE } from '#/infra/audioWorklet/workletPortMessages';
 import { logger } from '#/infra/logger/appLogger';
 
+import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { FERMENTER_AUTOMATION_PARAM_IDS } from '../models/FermenterAutomationParams';
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
 
-import { STEREO_CHANNEL_COUNT } from './constants';
 import {
     createTelemetryReader,
     createWideTelemetrySlot,

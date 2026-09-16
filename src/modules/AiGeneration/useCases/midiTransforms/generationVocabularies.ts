@@ -1,10 +1,7 @@
-import type {
-    ChordProgressionStyle,
-    ChordVoicing,
-    DrumPatternStyle,
-    MelodyScaleType,
-    MelodyStyle,
-} from '../../models/GenerationStyles';
+import { DRUM_PATTERN_STYLES } from '../generateDrumPattern/algorithm';
+import { MELODY_STYLES } from '../generateMelody/algorithm';
+
+import type { ChordProgressionStyle, ChordVoicing, MelodyScaleType } from '../../models/GenerationStyles';
 
 /**
  * The generation vocabularies as ordered value lists.
@@ -36,33 +33,10 @@ export const CHORD_SCALES = ['major', 'minor'] as const;
 
 export const CHORD_RHYTHMS = ['whole', 'half', 'quarter', 'syncopated'] as const;
 
-export const DRUM_PATTERN_STYLES = [
-    'four-on-floor',
-    'breakbeat',
-    'trap',
-    'jazz',
-    'latin',
-    'rock',
-    'dnb',
-    'half-time',
-    'blues',
-    'reggae',
-    'lofi',
-    'house',
-    'techno',
-    'synthwave',
-    'afrobeat',
-    'metal',
-    'punk',
-] as const satisfies readonly DrumPatternStyle[];
-
-export const MELODY_STYLES = [
-    'simple',
-    'arpeggiated',
-    'stepwise',
-    'rhythmic',
-    'ambient',
-] as const satisfies readonly MelodyStyle[];
+// Single-sourced from the algorithms that own them: the drum roster lives in
+// `../generateDrumPattern/algorithm.ts`, the melody roster in
+// `../generateMelody/algorithm.ts`.
+export { DRUM_PATTERN_STYLES, MELODY_STYLES };
 
 export const MELODY_SCALES = [
     'major',
