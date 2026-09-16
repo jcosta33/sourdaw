@@ -297,7 +297,7 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
         // 1 kHz at -20 dBFS on the left, 8 kHz at -6 dBFS on the right. Weighing
         // each tone by its own amplitude puts the centroid at
         // (1000 * 0.1 + 8000 * 0.5) / 0.6 = 6833 Hz: channel 0 alone would place
-        // it at 1 kHz, and weighing by energy rather than amplitude at 7733 Hz.
+        // it at 1 kHz, and weighing by energy rather than amplitude at 7732 Hz.
         const length = SAMPLE_RATE * 2;
         const receipt = analyze([sineChannel(-20, length), sineChannel(-6, length, 8000)]);
 
