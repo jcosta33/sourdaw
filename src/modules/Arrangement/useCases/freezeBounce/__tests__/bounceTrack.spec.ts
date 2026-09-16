@@ -79,7 +79,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 
-vi.mock("#/modules/Transport/stores", () => ({
+vi.mock('#/modules/Transport/stores', () => ({
     DEFAULT_TEMPO_BPM: 120,
     transportStore: mocks.transportStore,
     readSecondsAtBeat: mocks.readSecondsAtBeat,

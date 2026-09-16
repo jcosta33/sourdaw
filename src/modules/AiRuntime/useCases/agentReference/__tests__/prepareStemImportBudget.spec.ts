@@ -36,7 +36,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 vi.mock('#/modules/Project/useCases', () => ({
     pickFiles: mocks.pickFiles,
 }));
-vi.mock("#/modules/Transport/stores", () => ({
+vi.mock('#/modules/Transport/stores', () => ({
     DEFAULT_TEMPO_BPM: 120,
     transportStore: { value: { tempo: 120 } },
 }));
