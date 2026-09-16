@@ -1,0 +1,33 @@
+src/modules/MIDI/workers/__tests__/smfConstantsParity.spec.ts
+  s_9b530f08172a54::t_bcd065f6ba40b3 1-4,7-40,42-48
+docs/07-conventions.md
+  s_b8c914ebd50fc0::t_777d703436cf07 274
+src/modules/Arrangement/useCases/timelineInteractions/hitTestAutomationSubLane.ts
+  s_b8c914ebd50fc0::t_e081e0b25e350b 8-10
+src/modules/MIDI/workers/midiImportWorker.ts
+  s_b8c914ebd50fc0::t_afd51e87b6e587 224-228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "db9583f3c7ce70bbbb5b14fcc78765bedd622112",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b8c914ebd50fc0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a33e17d55a59dc990",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
