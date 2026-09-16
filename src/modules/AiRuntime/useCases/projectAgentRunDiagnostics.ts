@@ -31,9 +31,6 @@ export function projectAgentRunDiagnostics(
             decisionReason: run.decision === null ? null : carry(run.decision.reason),
             errorMessages: run.errors.map((error) => carry(error.message)),
             cancellationReason: run.cancellation.reason === null ? null : carry(run.cancellation.reason),
-            providerFallbackReasons: run.providerUsage.flatMap((usage) =>
-                typeof usage.fallbackReason === 'string' ? [carry(usage.fallbackReason)] : []
-            ),
         },
     };
 }

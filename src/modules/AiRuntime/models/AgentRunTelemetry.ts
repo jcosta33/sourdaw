@@ -99,8 +99,10 @@ export type AgentRunTelemetryRecord = {
 
 /**
  * One free-text field of a run, carried as its length alone or as text whose
- * credential shapes have already been replaced. There is no third form: a
- * diagnostics record never carries an unredacted string.
+ * credential shapes have been replaced. There is no third form: a diagnostics
+ * record never carries a string that skipped that replacement. The replacement
+ * screens the shapes `redactSecrets` covers and leaves anything outside them in
+ * place, so `text` is screened text rather than proven-clean text.
  */
 export type RedactedText =
     | { readonly kind: 'withheld'; readonly length: number }
@@ -112,7 +114,6 @@ export type AgentRunDiagnosticsDetail = {
     readonly decisionReason: RedactedText | null;
     readonly errorMessages: readonly RedactedText[];
     readonly cancellationReason: RedactedText | null;
-    readonly providerFallbackReasons: readonly RedactedText[];
 };
 
 /**

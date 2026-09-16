@@ -4,20 +4,40 @@ const REDACTION_PLACEHOLDER = '[redacted]';
 
 /**
  * Credential shapes replaced in any text a diagnostics record carries, in the
- * order they are applied. Order is part of the contract: `Bearer <token>` and
- * `api_key=<value>` keep their label and run first, so the encoded-run pattern
- * below cannot also match the value they already replaced and count it twice.
+ * order they are applied.
  *
- * The final pattern is base64url's alphabet, which contains hexadecimal's, so
- * one run covers both a hashed and an encoded credential. Thirty-two characters
- * is the shortest such run a credential digest produces; ordinary prose words
- * are far shorter.
+ * The shapes are the ones a prompt or a provider error plausibly carries: an
+ * `Authorization` header holding `Bearer` or `Basic` credentials, a labelled
+ * key, token, secret or password assignment as it appears in a header line, a
+ * query string or a JSON body, an AWS access key id, a provider `sk-` key, and
+ * any long encoded run.
+ *
+ * Order is part of the contract: the labelled forms keep their label and run
+ * first, so the encoded-run pattern below cannot also match a value they
+ * already replaced and count it twice. The placeholder survives the later
+ * patterns because its brackets are outside every character class here.
+ *
+ * The final pattern is the base64 and base64url alphabets with optional
+ * padding, so a slash or a plus inside a credential no longer splits it into
+ * runs too short to match; that alphabet contains hexadecimal's, so one run
+ * covers a hashed credential too. Thirty-two characters is the shortest such
+ * run a credential digest produces; ordinary prose words are far shorter.
+ *
+ * A credential outside these shapes passes through unchanged. A record
+ * carrying redacted text therefore states that the text was screened for these
+ * shapes, not that it holds no secret.
  */
 const SECRET_PATTERNS: readonly { readonly pattern: RegExp; readonly replacement: string }[] = [
     { pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]+/g, replacement: `Bearer ${REDACTION_PLACEHOLDER}` },
-    { pattern: /\b(api[_-]?key\s*[:=]\s*)[^\s,;]+/gi, replacement: `$1${REDACTION_PLACEHOLDER}` },
+    { pattern: /\bBasic\s+[A-Za-z0-9+/=_-]+/g, replacement: `Basic ${REDACTION_PLACEHOLDER}` },
+    {
+        pattern:
+            /\b((?:api[_-]?key|apikey|x-api-key|access[_-]?token|auth[_-]?token|client[_-]?secret|secret[_-]?key|password|token|secret)["']?\s*[:=]\s*["']?)[^\s,;"'}]+/gi,
+        replacement: `$1${REDACTION_PLACEHOLDER}`,
+    },
+    { pattern: /\bAKIA[0-9A-Z]{16}\b/g, replacement: REDACTION_PLACEHOLDER },
     { pattern: /sk-[A-Za-z0-9_-]{16,}/g, replacement: REDACTION_PLACEHOLDER },
-    { pattern: /[A-Za-z0-9_-]{32,}/g, replacement: REDACTION_PLACEHOLDER },
+    { pattern: /[A-Za-z0-9+/_-]{32,}={0,2}/g, replacement: REDACTION_PLACEHOLDER },
 ];
 
 /** Replace every credential shape in `text` and report how many were replaced. */
