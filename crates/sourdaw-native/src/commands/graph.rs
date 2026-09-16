@@ -2314,9 +2314,17 @@ fn map_device(
             return Ok(None);
         };
         charge_chain_slot(registry, &device.id)?;
-        if device.bypassed {
-            ops.push(GraphCommand::SetBypass(plugin_id, true));
-        }
+        // Written both ways, unlike a built-in body's. The instance outlives
+        // every strip that carries it — the engine slot is the same slot it
+        // was, still holding the flag the last splice set — whereas a built-in
+        // is constructed fresh by the batch that splices it, where an omitted
+        // write honestly means "not bypassed". Rebuilt un-bypassed over a slot
+        // the engine still holds bypassed, a splice that wrote nothing would
+        // leave the sampler silent with its panel showing it live, and nothing
+        // else would correct it: the bypass send is a chain-level write, so a
+        // toggle performed while the strip is not carried never reaches the
+        // engine at all.
+        ops.push(GraphCommand::SetBypass(plugin_id, device.bypassed));
         return Ok(Some(MappedDevice {
             effect_id: plugin_id,
             origin: DeviceOrigin::Crumbs,
@@ -11188,6 +11196,71 @@ mod tests {
                 .iter()
                 .any(|op| matches!(op, GraphCommand::SetBypass(CRUMBS_PLUGIN_ID, true))),
             "the bypass must reach the effect the chain runs"
+        );
+    }
+
+    /// And the splice writes the flag even when it is off, because the
+    /// instance is not rebuilt with the strip.
+    ///
+    /// A built-in body is constructed by the batch that splices it, so an
+    /// omitted `SetBypass` truthfully says "not bypassed". The sampler's slot
+    /// is long-lived: it survives every teardown and rebuild still holding
+    /// whatever the last splice set. Silence here would leave a rebuilt strip
+    /// mute with its panel showing the device live, and no later write would
+    /// correct it — a bypass is a chain-level write, so a toggle performed
+    /// while the strip is not carried never reaches the engine.
+    #[test]
+    fn a_crumbs_splice_writes_its_bypass_in_both_directions() {
+        let mut registry = GraphRegistry::default();
+        let bypassed = map_crumbs_batch(
+            &batch(crumbs_strip(true, true, json!({}))),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("a bypassed Crumbs device splices like any other");
+        assert_eq!(
+            bypass_writes(&bypassed.ops),
+            vec![(CRUMBS_PLUGIN_ID, true)],
+            "the splice carries the bypass the device was built with"
+        );
+
+        // Re-spliced un-bypassed onto the strip it was taken off: the device
+        // record is new, the engine slot is the one it always was.
+        let respliced = map_crumbs_batch(
+            &batch(json!([
+                { "kind": "remove-device", "trackId": "pads", "deviceId": "d-crumbs" },
+                { "kind": "insert-device", "trackId": "pads", "index": 0,
+                  "device": { "id": "d-crumbs", "name": "Crumbs", "type": "builtin-crumbs",
+                              "bypassed": false, "parameterValues": {} } }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("the device is spliced back onto the strip");
+        assert_eq!(
+            bypass_writes(&respliced.ops),
+            vec![(CRUMBS_PLUGIN_ID, false)],
+            "the splice must clear the bypass the engine slot is still holding"
+        );
+
+        // And the same for the whole-graph rebuild a repair performs: the
+        // mapper's registry starts empty, the engine's slot does not.
+        let rebuilt = map_crumbs_batch(
+            &batch(crumbs_strip(true, false, json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("a repair rebuilds the strip from the project");
+        assert_eq!(
+            bypass_writes(&rebuilt.ops),
+            vec![(CRUMBS_PLUGIN_ID, false)],
+            "a rebuilt strip must not inherit a bypass no device record carries"
         );
     }
 

@@ -12771,6 +12771,36 @@ mod timeline_tests {
         ChainBoundPlugin { calls, midi_events }
     }
 
+    /// The same fixture as [`track_carrying_a_body_that_must_drain`], spliced
+    /// as a generator — the shape a Crumbs device actually takes on a strip,
+    /// and a different bypass branch (`run_generator`'s) from the effect one.
+    fn track_carrying_a_generator_that_must_drain(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        offset: f32,
+    ) -> ChainBoundPlugin {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let midi_events = Arc::new(AtomicUsize::new(0));
+
+        track_with_constant_clip(harness, track_id, track_id + 100, 1.0, 4);
+        insert_track_generator(
+            harness,
+            track_id,
+            effect_id,
+            Box::new(DetachedDrainPlugin {
+                inner: CountingOffsetPlugin {
+                    offset,
+                    calls: Arc::clone(&calls),
+                    midi_events: Arc::clone(&midi_events),
+                },
+            }),
+            0,
+        );
+
+        ChainBoundPlugin { calls, midi_events }
+    }
+
     /// The same fixture as [`track_carrying_a_hosted_plugin`], spliced as a
     /// generator instead of an effect: `AddHostedPlugin`, then the chain
     /// splice `insert_track_generator` ships, hold included.
@@ -14721,6 +14751,47 @@ mod timeline_tests {
             "the block is owed once per callback, not once per bypass edge"
         );
         assert_eq!(left, vec![1.0; 4]);
+        assert_eq!(right, vec![1.0; 4]);
+    }
+
+    /// The same law on the instrument route, which is the one a sampler takes:
+    /// a Crumbs device joins its strip as a generator, so `run_generator`'s
+    /// bypass branch — not `run_device`'s — is what must leave this
+    /// population's queue for the discard pass to read.
+    ///
+    /// The two branches are separate code with separate clears, so an effect
+    /// spec says nothing about the instrument one: a generator that cleared
+    /// unconditionally would drop the pads a musician played into a bypassed
+    /// sampler, and their note-ons would be spent without a sound.
+    #[test]
+    fn a_bypassed_generator_that_must_drain_still_reads_the_midi_queued_for_it() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let plugin = track_carrying_a_generator_that_must_drain(&mut harness, 1, 7, 0.5);
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+
+        let (left, right) = harness.render(4);
+
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            1,
+            "a bypassed instrument that must drain is handed exactly one block per callback"
+        );
+        assert_eq!(
+            plugin.midi_events.load(Ordering::Relaxed),
+            1,
+            "the note queued under the bypass is read on that block, never dropped at the door"
+        );
+        assert!(
+            harness.scheduler.effects[0].pending_midi.is_empty(),
+            "and the queue is drained by the pass that read it"
+        );
+        assert_eq!(
+            left,
+            vec![1.0; 4],
+            "a bypassed instrument contributes none of its own material; only the strip's clip sounds"
+        );
         assert_eq!(right, vec![1.0; 4]);
     }
 
