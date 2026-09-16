@@ -4,6 +4,7 @@
 //! at a minor 3rd), clave (short resonant bandpass impulse), shaker
 //! (shaped noise grains), and rim (short sine + noise burst).
 
+use crate::params::{DECAY, DRIVE, TONE, TUNE};
 use std::f32::consts::TAU;
 
 const DEFAULT_BASE_FREQ: f32 = 800.0;
@@ -212,20 +213,20 @@ impl PercEngine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "decay" => {
+            DECAY => {
                 // Normalize 0-1 to amp decay range 0.005-1.0s
                 let v = value.clamp(0.0, 1.0);
                 self.decay = 0.005 + v * 0.995;
             }
-            "tune" => {
+            TUNE => {
                 // Determine tune ratio from base 800Hz
                 self.tune_ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0);
             }
-            "tone" => {
+            TONE => {
                 // 0-1 tone parameter
                 self.tone = value.clamp(0.0, 1.0);
             }
-            "drive" => self.drive = value.clamp(0.0, 10.0),
+            DRIVE => self.drive = value.clamp(0.0, 10.0),
             "base_freq" => self.base_freq = value.clamp(100.0, 8000.0),
             "noise_level" => self.noise_level = value.clamp(0.0, 1.0),
             "type" => {

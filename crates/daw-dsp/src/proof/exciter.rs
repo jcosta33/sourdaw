@@ -2,6 +2,7 @@
 
 use super::biquad::{BiquadCoeffs, BiquadState};
 use super::crossover::FourBandSplitter;
+use crate::params::DRIVE;
 use crate::primitives::oversample::Oversampler2x;
 
 const NUM_BANDS: usize = 4;
@@ -186,7 +187,7 @@ impl HarmonicExciter {
                     _ => SaturationType::Tape,
                 };
             }
-            "drive" => self.bands[idx].drive = value.clamp(0.0, 1.0),
+            DRIVE => self.bands[idx].drive = value.clamp(0.0, 1.0),
             "blend" => self.bands[idx].blend = value.clamp(0.0, 1.0),
             "enabled" => self.bands[idx].enabled = value > 0.5,
             _ => {}

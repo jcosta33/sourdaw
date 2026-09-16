@@ -8,6 +8,7 @@
 //! Hi-hat: Square waves mixed with white noise through a bridged-T bandpass filter.
 //! The CR-78 sounds more delicate and organic than the 808, owing to simpler VCA envelopes.
 
+use crate::params::{DECAY, TUNE};
 use crate::primitives::flush_denormal;
 use crate::toaster::bridged_t::BridgedTFilter;
 use crate::toaster::dc_block::DcBlocker;
@@ -277,8 +278,8 @@ impl Cr78Engine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "decay" => self.decay = value.clamp(0.0, 1.0),
-            "tune" => self.tune = value.clamp(-24.0, 24.0),
+            DECAY => self.decay = value.clamp(0.0, 1.0),
+            TUNE => self.tune = value.clamp(-24.0, 24.0),
             _ => {}
         }
     }

@@ -18,6 +18,7 @@ use super::modulation::{EnvelopeFollower, Lfo, LfoShape, LorenzAttractor};
 use super::params::{db_to_linear, linear_to_db, SmoothedParam};
 use super::stft::StftProcessor;
 use super::waveshaper::CustomWaveshaper;
+use crate::params::MIX;
 use crate::primitives::oversample::OversamplingChain;
 
 const MAX_BANDS: usize = 6;
@@ -1268,7 +1269,7 @@ impl BacteriaEngine {
             // Global
             "inputGain" => self.input_gain.set_target(db_to_linear(value)),
             "outputGain" => self.output_gain.set_target(db_to_linear(value)),
-            "mix" => self.mix.set_target(value),
+            MIX => self.mix.set_target(value),
             "bypass" => self.bypassed = value > 0.5,
 
             // Crossover

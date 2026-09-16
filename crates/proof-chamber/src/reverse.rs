@@ -133,6 +133,9 @@ impl ReverseReverb {
         self.output.reset();
     }
 
+    // Param-name arms here restate the wire vocabulary daw-dsp owns in
+    // `crates/daw-dsp/src/params.rs` (this crate cannot depend on that one);
+    // keep the names in step with it.
     pub fn set_param(&mut self, name: &str, value: f32) {
         if self.output.set_param(name, value) {
             return;

@@ -8,6 +8,7 @@ use super::layer::Layer;
 use super::oscillator::Wavetable;
 use super::params::SmoothedParam;
 use super::voice::note_frequency;
+use crate::params::{MASTER_GAIN, THRESHOLD_MAX_DB, THRESHOLD_MIN_DB};
 use crate::primitives::{ProcessLifecycle, TailLength};
 
 /// `MidiEvent::kind` — release voices at the pitch.
@@ -456,7 +457,7 @@ impl MasterSynth {
                 return;
             }
             "comp_threshold" => {
-                self.comp_threshold = value.clamp(-60.0, 0.0);
+                self.comp_threshold = value.clamp(THRESHOLD_MIN_DB, THRESHOLD_MAX_DB);
                 return;
             }
             "comp_ratio" => {
@@ -475,7 +476,7 @@ impl MasterSynth {
                 self.comp_mix.set(value.clamp(0.0, 1.0));
                 return;
             }
-            "master_gain" => {
+            MASTER_GAIN => {
                 self.master_gain.set(value.clamp(0.0, 2.0));
                 return;
             }
