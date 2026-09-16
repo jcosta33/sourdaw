@@ -1,0 +1,25 @@
+src/modules/AiRuntime/AGENTS.md
+  s_914af328b3988f::t_a0e38dc8f060a5 32
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_914af328b3988f::t_941efa037443ea 86-89,92-100
+  s_914af328b3988f::t_43eb7c3dd2de6a 358,362-365
+  s_914af328b3988f::t_d6dc96069a33b3 101
+src/modules/AiRuntime/useCases/__tests__/agentResourceLimits.spec.ts
+  s_914af328b3988f::t_8a24a58c9d5e95 155-187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f77bfff9a80121aacd963585cbb3dcecc9680a43",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
