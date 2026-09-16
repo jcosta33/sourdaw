@@ -1,4 +1,5 @@
 import { type MidiClipDataActionSnapshot, type MidiClipGlueActionSnapshot } from '#/utils/handlerContract';
+import { DEFAULT_NOTE_PROBABILITY } from '#/utils/midiData';
 
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
@@ -80,7 +81,7 @@ function compareCodeUnits(left: string, right: string): number {
 }
 
 function hasIdentityDependentProbability(note: MidiNote): boolean {
-    const probability = note.probability ?? 100;
+    const probability = note.probability ?? DEFAULT_NOTE_PROBABILITY;
     return probability > 0 && probability < 100;
 }
 

@@ -12,7 +12,9 @@ import { type Modulator } from '../../models/Modulator';
  */
 function seededRandom(cell: number): number {
     // Mulberry32: pure integer arithmetic, no transcendental functions.
-    let t = (cell >>> 0) + 0x6d2b79f5;
+    // The seed scrambler is the algorithm's named constant — not a tuning knob.
+    const MULBERRY32_SEED_SCRAMBLER = 0x6d2b79f5;
+    let t = (cell >>> 0) + MULBERRY32_SEED_SCRAMBLER;
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;

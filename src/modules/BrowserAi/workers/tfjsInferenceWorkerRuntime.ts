@@ -4,6 +4,7 @@ import {
     type WorkerRequest,
     type WorkerResponse,
 } from '../models/InferenceRequest';
+import { MODEL_STORAGE_TRANSFER_TYPE } from '../models/ModelStorageWorkerProtocol';
 
 export type TfjsWorkerTensor = {
     data: () => Promise<ArrayLike<number>>;
@@ -412,7 +413,7 @@ export function createTfjsInferenceRequestHandler(input: CreateTfjsInferenceRequ
                 event: MessageEvent<{ message?: string; modelData?: ArrayBuffer; type?: string } | undefined>
             ) => {
                 const message = event.data;
-                if (message?.type === 'model-data' && message.modelData !== undefined) {
+                if (message?.type === MODEL_STORAGE_TRANSFER_TYPE.modelData && message.modelData !== undefined) {
                     finish({ bytes: message.modelData });
                 } else {
                     finish({ error: new Error(message?.message ?? `Unable to read DDSP artifact: ${artifact.path}`) });

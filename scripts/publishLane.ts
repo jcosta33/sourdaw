@@ -28,6 +28,7 @@ import {
 import {
     assertConventionalSubject,
     assertIssueNumber,
+    AUTHOR_LANE_BRANCH_PREFIX,
     canonicalPath,
     composePublishBody,
     containsPath,
@@ -35,6 +36,11 @@ import {
     howToTestFromBody,
     issueRelationshipFromBody,
     readGuardFailureReceipt,
+    TRUSTED_COMMON_DIR_ENV,
+    TRUSTED_GH_PATH_ENV,
+    TRUSTED_GIT_PATH_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV,
+    TRUSTED_PRIMARY_ROOT_ENV,
     whatFromBody,
     type GuardFailureReceipt,
     type IssueRelationship,
@@ -94,12 +100,6 @@ function normalizeAuthorModel(token: string): string {
     }
     return normalized;
 }
-
-const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
-const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
-const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
-const TRUSTED_GH_PATH_ENV = 'SOURDAW_TRUSTED_GH_PATH';
-const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 
 type TrustedPublishRuntime = {
     primaryRoot: string;
@@ -606,8 +606,6 @@ type AuthorizedResolvedLane = PublishingAuthorAuthorization & { legacy: boolean 
 export const NO_ISSUE_LANE_FAILURE =
     'not inside a locked author lane: pass its issue number or --lane with its absolute worktree root';
 
-export const AUTHOR_LANE_BRANCH_PREFIX = 'agent/';
-
 /**
  * A push target must be lock-shaped *and* branch-shaped. `lockReason` is only ever set on a locked
  * worktree, so it alone proves the lock; the branch prefix is the part that keeps a hand-locked
@@ -816,7 +814,7 @@ export function resolveAuthorLane(
     // pick up an unrelated stranded lane and stamp `Closes #<that issue>` on its pull request. A
     // legacy lane resolves only from an explicit lane-path selection with no issue argument — see
     // the `issue === undefined` branch above.
-    const prefix = `agent/${issue}/`;
+    const prefix = `${AUTHOR_LANE_BRANCH_PREFIX}${issue}/`;
     const matches = lanes.filter((lane) => lane.branch.startsWith(prefix));
     if (matches.length !== 1) {
         return fail(`expected exactly one locked author lane for issue #${issue}`);

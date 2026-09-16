@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
-import { fail } from './prContract.ts';
+import { fail, TRUSTED_GH_PATH_ENV, TRUSTED_GIT_PATH_ENV } from './prContract.ts';
 
 export const AUTHOR_BOT_NODE_ID = 'BOT_kgDOEv71mA';
 export const REVIEWER_BOT_NODE_ID = 'BOT_kgDOEv74EA';
@@ -635,9 +635,9 @@ export function spawnRun(
 export function trustedChildExecutable(command: string, env: NodeJS.ProcessEnv = process.env): string {
     let trustedPath: string | undefined;
     if (command === 'git') {
-        trustedPath = env.SOURDAW_TRUSTED_GIT_PATH;
+        trustedPath = env[TRUSTED_GIT_PATH_ENV];
     } else if (command === 'gh') {
-        trustedPath = env.SOURDAW_TRUSTED_GH_PATH;
+        trustedPath = env[TRUSTED_GH_PATH_ENV];
     }
     if (trustedPath === undefined) {
         return command;

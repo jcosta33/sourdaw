@@ -4,7 +4,7 @@ import { automationStore } from '#/modules/Automation/stores';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
-import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { isCanonicalProjectId } from '../models/ProjectData';
 import {
@@ -292,7 +292,7 @@ function buildTempoEntities(): SemanticIndexEntity[] {
         name: 'Project tempo',
         startBeat: 0,
         endBeat: 0,
-        tempo: transport?.tempo ?? 120,
+        tempo: transport?.tempo ?? DEFAULT_TEMPO_BPM,
         meter: [transport?.timeSignatureNumerator ?? 4, transport?.timeSignatureDenominator ?? 4],
     };
     const tempos = (tempoMapStore.value?.changes ?? []).map((change): SemanticIndexEntity => ({

@@ -5,6 +5,7 @@ import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { checkLevainUpstreamProof } from './checkLevainUpstreamProof.ts';
+import { PROJECT_LICENSE_ID } from './checkProjectLicense.ts';
 import { LEVAIN_SOURCE } from './levainSource.ts';
 
 export type LevainProvenance = {
@@ -187,8 +188,8 @@ export function validateLevainProvenance(root: string, provenance: LevainProvena
         if (!generated.path.startsWith(`${sampleRoot}/`) || !generated.path.endsWith('/manifest.json')) {
             errors.push(`${generated.path}: generated path must be a Levain manifest`);
         }
-        if (generated.license !== 'Apache-2.0') {
-            errors.push(`${generated.path}: license must be Apache-2.0`);
+        if (generated.license !== PROJECT_LICENSE_ID) {
+            errors.push(`${generated.path}: license must be ${PROJECT_LICENSE_ID}`);
         }
         if (!/^[0-9a-f]{64}$/.test(generated.sha256)) {
             errors.push(`${generated.path}: sha256 must be SHA-256`);

@@ -28,6 +28,23 @@
  */
 
 /**
+ * Exposed commands this shell branches on by name instead of routing
+ * generically, named once here because more than one file compares against
+ * each: `scan_plugins` has a separate process for its backend (`appIpc.ts`),
+ * `apply_graph_commands` is the native engine's lazy bootstrap and the
+ * power-save start signal, and `retire_native_engine` is the shell-visible
+ * moment its audio stream is gone (`main.ts`); `pluginCommandAdmission.ts`
+ * closes all three at quit. Each is a member of `EXPOSED_COMMANDS` below, and
+ * the renderer-side argument table restates the same names with
+ * `src/utils/sourdawCommandArguments.ts` as its owner (no import route crosses
+ * the shell boundary; `__tests__/commands.spec.ts` pins both sides against the
+ * Rust source).
+ */
+export const APPLY_GRAPH_COMMANDS = 'apply_graph_commands';
+export const RETIRE_NATIVE_ENGINE = 'retire_native_engine';
+export const SCAN_PLUGINS = 'scan_plugins';
+
+/**
  * Commands the renderer may invoke.
  *
  * Sorted, because the order carries no meaning and a sorted list makes an
@@ -40,7 +57,7 @@ export const EXPOSED_COMMANDS = [
     'agent_asset_register_handle',
     'agent_asset_stage_export',
     'analyze_pitch',
-    'apply_graph_commands',
+    APPLY_GRAPH_COMMANDS,
     'arm_recording',
     'begin_levain_bank',
     'cancel_provider_gateway_request',
@@ -91,8 +108,8 @@ export const EXPOSED_COMMANDS = [
     'register_timeline_sample',
     'release_levain_bank',
     'render_graph_offline',
-    'retire_native_engine',
-    'scan_plugins',
+    RETIRE_NATIVE_ENGINE,
+    SCAN_PLUGINS,
     'send_push_midi',
     'set_crumbs_mode',
     'set_crumbs_param',

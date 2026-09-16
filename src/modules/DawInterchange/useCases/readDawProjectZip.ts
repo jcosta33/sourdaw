@@ -1,8 +1,8 @@
 import { ZipArchiveError } from '#/infra/archive/extractGuardedZip';
 
+import { METADATA_XML_ENTRY_PATH, PROJECT_XML_ENTRY_NAME, PROJECT_XML_ENTRY_PATH } from './dawProjectEntryNames';
 import { DAW_PROJECT_ZIP_LIMITS } from './dawProjectZipLimits';
 import { extractDawProjectZipEntries } from './extractDawProjectZipEntries';
-import { metadataXmlPath, projectXmlPath } from './runDawProjectZipWorkerRequest';
 
 export type DawProjectZipContents = {
     projectXml: string;
@@ -21,16 +21,16 @@ export async function readDawProjectZip(buffer: ArrayBuffer): Promise<DawProject
         restrictLimits: DAW_PROJECT_ZIP_LIMITS,
     });
 
-    const projectPath = Object.keys(header.entries).find((path) => projectXmlPath.test(path));
+    const projectPath = Object.keys(header.entries).find((path) => PROJECT_XML_ENTRY_PATH.test(path));
     if (!projectPath) {
-        throw new Error('DAWproject archive did not extract project.xml');
+        throw new Error(`DAWproject archive did not extract ${PROJECT_XML_ENTRY_NAME}`);
     }
     const projectEntry = header.entries[projectPath];
     if (!projectEntry) {
-        throw new Error('DAWproject archive did not extract project.xml');
+        throw new Error(`DAWproject archive did not extract ${PROJECT_XML_ENTRY_NAME}`);
     }
 
-    const metadataPath = Object.keys(header.entries).find((path) => metadataXmlPath.test(path));
+    const metadataPath = Object.keys(header.entries).find((path) => METADATA_XML_ENTRY_PATH.test(path));
     const metadataEntry = metadataPath ? header.entries[metadataPath] : null;
 
     return {

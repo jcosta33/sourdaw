@@ -1,4 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
 import { readGrandBouleMorphState } from '../models/GrandBouleDeviceState';
 import { type GrandBouleMorphState } from '../models/GrandBouleMorphState';
@@ -7,7 +8,7 @@ import { createGrandBouleStore } from '../stores/grandBouleStore';
 export function hydrateGrandBouleMorphStateFromProject(deviceId: string): GrandBouleMorphState | null {
     const device = trackStore.value?.tracks
         .flatMap((track) => track.devices)
-        .find((candidate) => candidate.id === deviceId && candidate.type === 'grand-boule');
+        .find((candidate) => candidate.id === deviceId && candidate.type === DEVICE_TYPE_IDS.grandBoule);
     if (!device) {
         return null;
     }

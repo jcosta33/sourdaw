@@ -17,6 +17,13 @@ import { resolveInputEventTime } from './resolveInputEventTime';
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { resolveNativeNoteSink } from './resolveNativeNoteSink';
 
+/**
+ * Duration sentinel handed to `scheduleNote` when a live note must sustain
+ * until its note-off arrives: 60 seconds is far longer than any held note, and
+ * the note-off path tears the voice down regardless.
+ */
+const HOLD_UNTIL_NOTE_OFF_SECONDS = 60;
+
 export const handleWebMidiNoteOn = inject({
     ...midiMessageHandlerDependencies,
     handleWebMidiNoteOff,
@@ -314,7 +321,7 @@ export const handleWebMidiNoteOn = inject({
                         strip.gainNode,
                         note,
                         dispatchTime,
-                        60,
+                        HOLD_UNTIL_NOTE_OFF_SECONDS,
                         velocity,
                         synthParams
                     );
@@ -356,7 +363,7 @@ export const handleWebMidiNoteOn = inject({
                 strip.gainNode,
                 note,
                 dispatchTime,
-                60,
+                HOLD_UNTIL_NOTE_OFF_SECONDS,
                 velocity,
                 synthParams
             );

@@ -1,3 +1,5 @@
+import { clampMidiData7 } from '#/utils/midiData';
+
 import { CHORD_TYPES, type ChordType } from '../../models/ChordTypes';
 import { type MidiEffect, type MidiEffectNote } from '../../models/MidiEffectTypes';
 
@@ -19,7 +21,7 @@ export function createChordGenerator(chordType = 'major'): MidiEffect {
                     // Clamp to the MIDI pitch range like createTranspose and
                     // createVelocityCurve do; a maj7 on pitch 120 would
                     // otherwise emit 131 downstream.
-                    result.push({ ...note, pitch: Math.max(0, Math.min(127, note.pitch + interval)) });
+                    result.push({ ...note, pitch: clampMidiData7(note.pitch + interval) });
                 }
             }
             return result;

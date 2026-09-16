@@ -27,9 +27,10 @@ import { useStore } from '#/infra/store/useStore';
 import { executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import { formatChordName } from '#/modules/MIDI/useCases';
+import { NOTE_NAMES } from '#/utils/noteNames';
 import { cn } from '#/utils/Styles/cn';
 
-const ROOT_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
+const ROOT_NAMES = NOTE_NAMES;
 
 type ChordTrackLaneProps = {
     pixelsPerBeat: number;

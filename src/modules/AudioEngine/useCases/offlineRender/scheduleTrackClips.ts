@@ -12,10 +12,11 @@ import {
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 // Not `#/modules/Arrangement/useCases`. This file is the single edge that decides whether the
 // 43-module knot (Arrangement, Transport, Collaboration, CrdtDocument, Yeast, MIDI, AudioEngine, …)
 // is a cycle: importing that barrel here reds `deps:validate` with ~200 no-circular rows.
-import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
@@ -412,7 +413,7 @@ export async function scheduleTrackClips({
         const mpe: ScheduledMpe = {
             pressure: clampOptional(note.pressure, 0, 127),
             slide: clampOptional(note.slide, 0, 127),
-            pitchBend: clampOptional(note.pitchBend, -8192, 8191),
+            pitchBend: clampOptional(note.pitchBend, PITCH_BEND_MIN, PITCH_BEND_MAX),
             pitchBendRangeSemitones: clampOptional(note.pitchBendRangeSemitones, 0, 127),
         };
         if (note.pitchBend !== undefined && mpe.pitchBendRangeSemitones === undefined) {

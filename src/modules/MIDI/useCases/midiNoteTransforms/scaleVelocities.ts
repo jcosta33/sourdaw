@@ -1,3 +1,5 @@
+import { clampVelocity } from '#/utils/midiData';
+
 import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
 
 type VelocityCurve = 'linear' | 'exponential' | 'logarithmic' | 's-curve' | 'compress' | 'expand';
@@ -68,7 +70,7 @@ export function scaleVelocities(clipId: string, curve: string, minVelocity = 1, 
             const newVelocity = Math.round(minVelocity + curved * (maxVelocity - minVelocity));
             return {
                 ...node,
-                velocity: Math.max(1, Math.min(127, newVelocity)),
+                velocity: clampVelocity(newVelocity),
             };
         });
     });

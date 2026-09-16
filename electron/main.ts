@@ -33,7 +33,6 @@ import {
     registerScanCommand,
     registerNativeMenuChannels,
     registerWindowControlChannels,
-    SCAN_COMMAND,
 } from './appIpc.js';
 import { createApplicationMenuTemplate, type NativeMenuIntent } from './applicationMenu.js';
 import {
@@ -44,7 +43,7 @@ import {
     STREAM_CHANNEL,
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
 } from './channels.js';
-import { EXPOSED_COMMANDS } from './commands.js';
+import { APPLY_GRAPH_COMMANDS, EXPOSED_COMMANDS, RETIRE_NATIVE_ENGINE, SCAN_PLUGINS } from './commands.js';
 import { createCommandStream, createEventForwarder } from './events.js';
 import {
     bindMainWindowOwnerTeardown,
@@ -66,7 +65,14 @@ import { createPluginCommandAdmission } from './pluginCommandAdmission.js';
 import { createEditorWindow } from './pluginEditorWindow.js';
 import { registerPluginWindowHost, type EditorWindow, type PluginWindowHost } from './pluginGui.js';
 import { createPowerSaveController } from './powerSave.js';
-import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
+import {
+    APP_ENTRY_URL,
+    APP_ORIGIN,
+    APP_TITLE,
+    handleAppProtocol,
+    registerAppScheme,
+    resolveContentRoots,
+} from './protocol.js';
 import { createRendererCrashRecovery } from './rendererCrashRecovery.js';
 import { createRendererSessionLifecycle } from './rendererSessionLifecycle.js';
 import { completeMacCloseAfterSessionQuiesce, createRendererSessionQuiescer } from './rendererSessionQuiescer.js';
@@ -204,7 +210,7 @@ const rebuildMacApplicationMenu = (
         return;
     }
     shellComposition.installMenu(
-        createApplicationMenuTemplate({ appName: 'Sourdaw', send: nativeMenuAction, recentProjects })
+        createApplicationMenuTemplate({ appName: APP_TITLE, send: nativeMenuAction, recentProjects })
     );
 };
 
@@ -346,7 +352,7 @@ const createWindow = (): BrowserWindow => {
         height: 900,
         minWidth: 1024,
         minHeight: 600,
-        title: 'Sourdaw',
+        title: APP_TITLE,
         backgroundColor: '#0a0a0a',
         show: false,
         ...(process.platform === 'linux' ? { icon: join(contentRoots.distDir, 'icon-transparent.png') } : {}),
@@ -718,17 +724,17 @@ const startNativeSurface = (): void => {
             if (settlement !== 'fulfilled') {
                 return;
             }
-            if (command === 'apply_graph_commands') {
+            if (command === APPLY_GRAPH_COMMANDS) {
                 powerSave.audioActivityStarted();
             }
-            if (command === 'retire_native_engine') {
+            if (command === RETIRE_NATIVE_ENGINE) {
                 powerSave.audioActivityEnded();
             }
         },
         // Every exposed command except the one whose backend is another
         // process. Its channel is registered by `registerScanCommand`, so the
         // renderer-visible surface is identical either way.
-        commands: EXPOSED_COMMANDS.filter((command) => command !== SCAN_COMMAND),
+        commands: EXPOSED_COMMANDS.filter((command) => command !== SCAN_PLUGINS),
     });
 
     registerVoiceDictation({ ipcMain, native: () => nativeHost, isTrustedFrameUrl: isAllowedFrameUrl });

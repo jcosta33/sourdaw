@@ -1,3 +1,5 @@
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
+
 import { midiLearnStore } from '../../stores/midiLearnStore';
 
 import { getMidiLearnDependencies } from './getMidiLearnDependencies';
@@ -62,7 +64,7 @@ export function handleMidiMessage(channel: number, cc: number, value: number, no
                     let targetTrack: Track | undefined;
                     let fermenterDeviceId: string | undefined;
                     for (const track of deps.getAllTracks()) {
-                        const fermenter = track.devices.find((device) => device.type === 'fermenter');
+                        const fermenter = track.devices.find((device) => device.type === DEVICE_TYPE_IDS.fermenter);
                         if (fermenter) {
                             targetTrack = track;
                             fermenterDeviceId = fermenter.id;

@@ -24,6 +24,14 @@ import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 
+/**
+ * Port message discriminant, restated from the app-side owner
+ * `src/infra/audioWorklet/workletPortMessages.ts` because this processor runs
+ * in the isolated worklet realm and must not import app-side code; pinned
+ * equal by `__tests__/workletPortMessageParity.spec.ts`.
+ */
+export const INIT_SAB_MESSAGE_TYPE = 'init-sab';
+
 /** Pad count the ToasterInstance is created with; the allNotesOff release loop spans 0..PAD_COUNT-1. */
 const TOASTER_PAD_COUNT = 16;
 const TOASTER_MAX_BLOCK_SIZE = 4096;
@@ -133,7 +141,7 @@ function toEngineKitParamValue(name: string, value: number): number {
 
 type ToasterMsg =
     | { type: 'init' }
-    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
+    | { type: typeof INIT_SAB_MESSAGE_TYPE; sab: SharedArrayBuffer; byteOffset: number }
     | { type: 'dispose' }
     | { type: 'noteOn'; pad: number; velocity: number; note?: number; sampleFrame?: number }
     | { type: 'noteOff'; pad: number; sampleFrame?: number }
@@ -197,7 +205,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
                     this._telemetryView = null;
                     this._telemetrySeqView = null;
                     this.port.postMessage({ type: 'disposed' });
-                } else if (msg.type === 'init-sab') {
+                } else if (msg.type === INIT_SAB_MESSAGE_TYPE) {
                     this._telemetryView = new Float32Array(msg.sab, msg.byteOffset);
                     this._telemetrySeqView = new Int32Array(msg.sab, msg.byteOffset);
                 } else if (msg.type === 'init') {
@@ -302,7 +310,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
         }
         switch (msg.type) {
             case 'init':
-            case 'init-sab':
+            case INIT_SAB_MESSAGE_TYPE:
             case 'dispose':
                 break;
             case 'noteOn':

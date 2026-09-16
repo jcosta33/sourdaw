@@ -1,7 +1,7 @@
 import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { readBeatAtSamples, readSecondsAtBeat, transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, readBeatAtSamples, readSecondsAtBeat, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../../models/Track';
@@ -103,7 +103,7 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     // Add tail if requested
     let finalEndBeat = endBeat;
     if (options.tailHandling === 'manual') {
-        const tempo = transportStore.value?.tempo ?? 120;
+        const tempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
         finalEndBeat += (5 * tempo) / 60; // 5 seconds fixed tail
     }
 
