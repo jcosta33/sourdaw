@@ -992,7 +992,7 @@ impl MasterSynth {
                 | "comp_attack"
                 | "comp_release"
                 | "comp_mix"
-                | "master_gain"
+                | MASTER_GAIN
                 | "stereo_width"
         )
     }

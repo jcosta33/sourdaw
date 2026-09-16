@@ -9,8 +9,10 @@ const NOTE_NAMES: [&str; 12] = [
 //
 // Restated per the TS↔Rust lockstep rule (scoring cannot depend on the
 // owners): `daw_core::tuning` owns the Rust pair, `src/utils/pitch.ts` the
-// TypeScript one, and `daw-dsp/src/crumbs/analysis/pitch.rs` carries the
-// sample-analysis copy. Every copy must stay equal.
+// TypeScript one, and — inside daw-dsp, which also cannot depend on the
+// owners — `crumbs/analysis/pitch.rs`, `fermenter/voice.rs`,
+// `levain/fallback.rs`, and `grand_boule/parameters.rs` carry the rest of
+// the copies. Every copy must stay equal.
 
 /// Concert-A reference frequency the 12-TET grid is anchored to. The tuner's
 /// `a4_hz` control starts here and the user may retune it (415–466 Hz).

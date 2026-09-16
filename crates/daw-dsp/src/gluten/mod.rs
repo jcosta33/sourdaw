@@ -23,7 +23,7 @@ pub mod vca;
 /// Threshold the VCA topology constructs itself with and the Glue style
 /// preset re-applies: −18 dBFS is the classic bus-comp operating point, a
 /// comfortable margin under a mastered bus.
-pub(crate) const DEFAULT_THRESHOLD_DB: f32 = -18.0;
+const DEFAULT_THRESHOLD_DB: f32 = -18.0;
 
 use crate::primitives::sanitize_block;
 use engine::GlutenEngine;

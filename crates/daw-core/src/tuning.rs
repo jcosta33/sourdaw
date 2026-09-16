@@ -4,8 +4,9 @@ pub mod scala;
 ///
 /// Rust-side owner of the A4 anchor. TS↔Rust lockstep pair: `src/utils/pitch.ts`
 /// owns the TypeScript mirror (`STANDARD_A4_HZ` there and in the restatements
-/// the no-import rule forces on `scoring/src/tuning.rs` and
-/// `daw-dsp/src/crumbs/analysis/pitch.rs`) — every copy must stay equal, and a
+/// the no-import rule forces on `scoring/src/tuning.rs` and, inside `daw-dsp`,
+/// `crumbs/analysis/pitch.rs`, `fermenter/voice.rs`, `levain/fallback.rs`, and
+/// `grand_boule/parameters.rs`) — every copy must stay equal, and a
 /// change to one is a change to all of them.
 pub const STANDARD_A4_HZ: f64 = 440.0;
 

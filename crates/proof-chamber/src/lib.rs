@@ -59,11 +59,11 @@ fn init_panic_hook() {
 
 // Wire values of the `algorithm` parameter. This dispatch is a wire format —
 // the value is written into project files and replayed verbatim, and the
-// TypeScript side positions `PROOF_CHAMBER_ALGORITHMS` in
-// `src/modules/ProofChamber/models/ProofChamberState.ts` by the same ids
-// (TS↔Rust lockstep pair: neither side can import the other). 4 and 5 stay
-// assigned to the reserved convolution/hybrid engines, so the selectable ids
-// are 0, 1, 2, 3, and 6.
+// TypeScript side holds the same ids in `ALGORITHM_MAP` in
+// `src/modules/ProofChamber/models/ProofChamberState.ts` (TS↔Rust lockstep
+// pair: neither side can import the other). 4 and 5 stay assigned to the
+// reserved convolution/hybrid engines, so the selectable ids are 0, 1, 2, 3,
+// and 6.
 
 /// Wire id selecting the Dattorro plate.
 const ALGORITHM_PLATE: u8 = 0;
@@ -439,6 +439,9 @@ impl ProofChamberInstance {
     }
 
     pub fn set_param_by_id(&mut self, param_id: u32, value: f32) {
+        // Wire names here restate the vocabulary daw-dsp owns in
+        // `crates/daw-dsp/src/params.rs` (this crate cannot depend on that
+        // one); keep the names in step with it.
         let name = match param_id {
             0 => "mix",
             1 => "decay",

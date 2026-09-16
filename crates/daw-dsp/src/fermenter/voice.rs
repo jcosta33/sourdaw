@@ -22,6 +22,18 @@ use super::stepseq::StepSequencer;
 /// site for why it is unreachable in the current gate and why it is still here.
 const MIN_BALANCE_SUM: f32 = 1e-6;
 
+// 12-TET anchor, restated per the TS↔Rust lockstep rule (daw-dsp has no edge
+// to the owners): `daw_core::tuning::STANDARD_A4_HZ`/`A4_MIDI_NOTE`/
+// `SEMITONES_PER_OCTAVE` own the Rust figures and `src/utils/pitch.ts` owns
+// the TypeScript ones; every copy must stay equal.
+
+/// Concert-A reference frequency the 12-TET grid is anchored to.
+const STANDARD_A4_HZ: f32 = 440.0;
+/// MIDI note number of concert A on that grid.
+const A4_MIDI_NOTE: f32 = 69.0;
+/// Semitones per octave in twelve-tone equal temperament.
+const SEMITONES_PER_OCTAVE: f32 = 12.0;
+
 /// Equal-tempered frequency of a MIDI note, A4 = 440 Hz.
 ///
 /// Shared so that the pitch a note glides *to* and the pitch a later note glides
@@ -30,7 +42,7 @@ const MIN_BALANCE_SUM: f32 = 1e-6;
 /// destination formula by even a rounding step would put an audible sub-cent
 /// ramp on a note that should have snapped.
 pub(super) fn note_frequency(note: u8) -> f32 {
-    440.0 * 2.0f32.powf((note as f32 - 69.0) / 12.0)
+    STANDARD_A4_HZ * 2.0f32.powf((note as f32 - A4_MIDI_NOTE) / SEMITONES_PER_OCTAVE)
 }
 
 /// All per-block parameters passed from MasterSynth to Voice::render.

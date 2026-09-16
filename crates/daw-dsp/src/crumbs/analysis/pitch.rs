@@ -18,8 +18,10 @@ const MAX_PITCH_HZ: f32 = 4000.0;
 //
 // Restated per the TS↔Rust lockstep rule (no crate edge exists to the
 // owners): `daw_core::tuning` owns the Rust pair, `src/utils/pitch.ts` the
-// TypeScript one, and `scoring/src/tuning.rs` carries the tuner's own copy.
-// All four must agree on the A4 anchor.
+// TypeScript one, `scoring/src/tuning.rs` carries the tuner's own copy, and
+// `fermenter/voice.rs`, `levain/fallback.rs`, and `grand_boule/parameters.rs`
+// carry the rest of this crate's copies. All seven must agree on the A4
+// anchor.
 
 /// Concert-A reference frequency the 12-TET grid is anchored to.
 const STANDARD_A4_HZ: f32 = 440.0;

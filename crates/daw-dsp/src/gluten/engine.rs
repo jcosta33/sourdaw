@@ -14,7 +14,7 @@ use super::sidechain::SidechainChain;
 use super::stereo::{decode_ms, encode_ms, parallel_mix, StereoMode};
 use super::vca::VcaCompressor;
 use super::DEFAULT_THRESHOLD_DB;
-use crate::params::MIX;
+use crate::params::{MIX, THRESHOLD};
 use crate::primitives::LINEAR_TO_DB_FLOOR;
 use crate::proof::metering::SILENCE_DB;
 
@@ -354,7 +354,7 @@ impl GlutenEngine {
         match style {
             CompStyle::Glue => {
                 self.active_topology = Topology::Vca;
-                self.vca.set_param("threshold", DEFAULT_THRESHOLD_DB);
+                self.vca.set_param(THRESHOLD, DEFAULT_THRESHOLD_DB);
                 self.vca.set_param("ratio", 4.0);
                 self.vca.set_param("attack", 10.0);
                 self.vca.set_param("auto_release", 1.0);

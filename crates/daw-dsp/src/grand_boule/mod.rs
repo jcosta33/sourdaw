@@ -38,6 +38,11 @@ use wasm_bindgen::prelude::*;
 /// renders this many frames and leaves the remainder of the caller's block
 /// untouched. A host reading the returned pointers may therefore read at most
 /// `min(asked, GRAND_BOULE_BLOCK_FRAMES)` frames out of either channel.
+///
+/// Restatement of the engine's callback ceiling,
+/// `daw_engine::audio_thread::MAX_CALLBACK_FRAMES`: `daw-dsp` cannot depend
+/// on the engine, so the figure is restated here and every copy must move
+/// with the ceiling.
 pub const GRAND_BOULE_BLOCK_FRAMES: usize = 4096;
 
 /// Grand Boule host instance for native and WASM integration.
