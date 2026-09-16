@@ -127,7 +127,8 @@ vi.mock('#/modules/Project/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/Transport/stores', () => ({
+vi.mock("#/modules/Transport/stores", () => ({
+    DEFAULT_TEMPO_BPM: 120,
     transportStore: {
         get value() {
             return mocks.transportStoreValue.value;

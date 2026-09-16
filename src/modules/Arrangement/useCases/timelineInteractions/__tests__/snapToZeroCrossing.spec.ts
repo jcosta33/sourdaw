@@ -15,7 +15,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
 }));
 
-vi.mock('#/modules/Transport/stores', () => ({
+vi.mock("#/modules/Transport/stores", () => ({
+    DEFAULT_TEMPO_BPM: 120,
     transportStore: mocks.transportStore,
 }));
 
