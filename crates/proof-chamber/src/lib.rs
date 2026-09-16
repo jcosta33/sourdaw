@@ -57,6 +57,26 @@ fn init_panic_hook() {
 // Algorithm enum
 // ---------------------------------------------------------------------------
 
+// Wire values of the `algorithm` parameter. This dispatch is a wire format —
+// the value is written into project files and replayed verbatim, and the
+// TypeScript side positions `PROOF_CHAMBER_ALGORITHMS` in
+// `src/modules/ProofChamber/models/ProofChamberState.ts` by the same ids
+// (TS↔Rust lockstep pair: neither side can import the other). 4 and 5 stay
+// assigned to the reserved convolution/hybrid engines, so the selectable ids
+// are 0, 1, 2, 3, and 6.
+
+/// Wire id selecting the Dattorro plate.
+const ALGORITHM_PLATE: u8 = 0;
+/// Wire id selecting the 8-delay FDN.
+const ALGORITHM_FDN8: u8 = 1;
+/// Wire id selecting the 16-delay FDN.
+const ALGORITHM_FDN16: u8 = 2;
+/// Wire id selecting the spring model.
+const ALGORITHM_SPRING: u8 = 3;
+// 4 = Convolution and 5 = Hybrid: reserved, not free — see the match arm.
+/// Wire id selecting the reverse-envelope engine.
+const ALGORITHM_REVERSE: u8 = 6;
+
 /// Which engine renders.
 ///
 /// The five a wire value selects carry nothing: their engines are built once in
@@ -362,11 +382,11 @@ impl ProofChamberInstance {
             }
             "algorithm" => {
                 self.active = match value as u8 {
-                    0 => ReverbEngine::Plate,
-                    1 => ReverbEngine::Fdn8,
-                    2 => ReverbEngine::Fdn16,
-                    3 => ReverbEngine::Spring,
-                    6 => ReverbEngine::Reverse,
+                    ALGORITHM_PLATE => ReverbEngine::Plate,
+                    ALGORITHM_FDN8 => ReverbEngine::Fdn8,
+                    ALGORITHM_FDN16 => ReverbEngine::Fdn16,
+                    ALGORITHM_SPRING => ReverbEngine::Spring,
+                    ALGORITHM_REVERSE => ReverbEngine::Reverse,
                     // 4 (Convolution) and 5 (Hybrid) are reserved, not free.
                     // Both are built and both render, but both need an impulse
                     // response and nothing can deliver one: `load_ir` has no
