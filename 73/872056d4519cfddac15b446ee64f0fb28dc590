@@ -1,0 +1,32 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_1228e573df1f42 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_1228e573df1f42 1
+public/wasm/manifest.json
+  h_1228e573df1f42 12,16-18,21,26,30-32,35,40,45-46,49
+public/wasm/proof-chamber/proof_chamber.d.ts
+  h_1228e573df1f42 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  h_1228e573df1f42 1
+public/wasm/scoring/scoring.d.ts
+  h_1228e573df1f42 1
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  h_1228e573df1f42 1
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_1228e573df1f42 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  h_1228e573df1f42 1
+src/modules/AudioEngine/wasm/scoring.d.ts
+  h_1228e573df1f42 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "73872056d4519cfddac15b446ee64f0fb28dc590",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
