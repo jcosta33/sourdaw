@@ -1,0 +1,65 @@
+src/modules/AudioAnalysis/useCases/__tests__/agentObjectiveAnalysis.spec.ts
+  s_914af328b3988f::t_59905e99b4eae0 325-399
+  s_914af328b3988f::t_a57315a8367279 66-69,71,75-86,92-97
+  s_914af328b3988f::t_7af5817ecd283b 417-432
+  s_914af328b3988f::t_9eb29452135465 273,278-287,293-314
+  s_914af328b3988f::t_5c15b59d20ae17 460
+  s_914af328b3988f::t_2741af8924354f 98
+src/modules/AudioAnalysis/services/agentObjectiveAnalysis/measureRenderSpectrum.ts
+  s_914af328b3988f::t_8cc81d281ac1ac 44
+src/modules/AudioAnalysis/useCases/detectOnsets.ts
+  s_914af328b3988f::t_f857bd33b8b29a 7-17
+  s_914af328b3988f::t_ff476a971dbe13 30-34
+src/utils/audioMetering/__tests__/measureMaxWindowedLoudness.spec.ts
+  s_914af328b3988f::t_cf1299cc3ee6f4 39,113-165
+  s_914af328b3988f::t_4fc25c380d8808 21-36
+  s_914af328b3988f::t_bb809155557f1e 37-38,56,67,166-168
+src/modules/AudioAnalysis/useCases/referenceMixComparison/analyzeMix/measureProgramAudio.ts
+  s_914af328b3988f::t_0333633380e78c 30-42
+  s_65edb5038451c4::t_0dd44b991cda7a 58,71,139
+src/modules/AudioAnalysis/useCases/analyzeAgentRenderReceipt.ts
+  s_914af328b3988f::t_34d2d21160e013 50-71,74,76-83,87-100
+  s_914af328b3988f::t_b721fa1aecaaad 17
+  s_914af328b3988f::t_4a110125c66e1e 153-155
+src/utils/audioMetering/measureMaxWindowedLoudness.ts
+  s_914af328b3988f::t_3aa6b65bc60a51 41-42
+  s_914af328b3988f::t_46dbb5519c1f9d 27-28,30-33
+src/modules/AudioAnalysis/services/agentObjectiveAnalysis/buildAgentObjectiveMeasurements.ts
+  s_914af328b3988f::t_4c10686aefc1c6 31-39
+  s_914af328b3988f::t_ded07444733573 159,164-166
+  s_914af328b3988f::t_27aa1c7c0b80db 140-141,143-144,146,148-149,153
+  s_914af328b3988f::t_38dc939db8b2b8 75-92,94
+  s_914af328b3988f::t_018887678ae8ed 99-109
+  s_914af328b3988f::t_7c4d19294503f1 173-193
+  s_914af328b3988f::t_0ab0009f965fd1 204
+src/modules/AudioAnalysis/models/AgentObjectiveAnalysisTypes.ts
+  s_914af328b3988f::t_d8cebbafe12d43 17-18,21-22,24,50-52,71-73,76
+src/modules/AudioAnalysis/services/agentObjectiveAnalysis/compareAgentObjectiveMeasurements.ts
+  s_914af328b3988f::t_55f76dc57d986b 51-56,61-90
+src/modules/AudioAnalysis/services/agentObjectiveAnalysis/readRenderChannels.ts
+  s_914af328b3988f::t_e7155f2d09c42f 2-3,9-19,21-32,36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e12759e451212b2c36c742042c0a17f8a659046a",
+  "prompts": {},
+  "sessions": {
+    "s_65edb5038451c4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a00b498892d62359c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
