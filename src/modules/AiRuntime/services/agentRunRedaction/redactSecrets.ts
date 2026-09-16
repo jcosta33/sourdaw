@@ -30,12 +30,15 @@ const LABELLED_PREFIX = `(?<![A-Za-z0-9])((?:${LABEL_ALTERNATION})["']?\\s*[:=]\
  *
  * Order is part of the contract: the labelled forms keep their label and run
  * first, so the encoded-run pattern below cannot also match a value they
- * already replaced and count it twice. A quoted labelled value is consumed to
- * its closing quote, so a space or a separator inside the quotes cannot end the
- * value early; that entry therefore runs before the unquoted one. The unquoted
- * value class excludes `&`, `[`, both quotes and the separators, so a query
- * string keeps its remaining parameters and the bracketed placeholder is never
- * matched again by a later pass.
+ * already replaced and count it twice. The quoted entries are one per quote
+ * character, so the other quote character may appear inside the value; a
+ * space or a separator inside the matched quotes cannot end the value early,
+ * so both quoted entries run before the unquoted one. An unterminated quoted
+ * value falls through to the unquoted entry, which keeps the opening quote
+ * and stops at the first separator. The unquoted value class excludes `&`,
+ * `[`, both quotes and the separators, so a query string keeps its remaining
+ * parameters and the bracketed placeholder is never matched again by a later
+ * pass.
  *
  * The final pattern is the base64 and base64url alphabets with optional
  * padding, so a slash or a plus inside a credential no longer splits it into
@@ -53,12 +56,16 @@ const SECRET_PATTERNS: readonly { readonly pattern: RegExp; readonly replacement
     { pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]+/g, replacement: `Bearer ${REDACTION_PLACEHOLDER}` },
     { pattern: /\bBasic\s+[A-Za-z0-9+/=_-]+/g, replacement: `Basic ${REDACTION_PLACEHOLDER}` },
     {
-        pattern: new RegExp(`${LABELLED_PREFIX}(["'])[^"']*\\2`, 'gi'),
-        replacement: `$1$2${REDACTION_PLACEHOLDER}$2`,
+        pattern: new RegExp(`${LABELLED_PREFIX}"[^"]*"`, 'gi'),
+        replacement: `$1"${REDACTION_PLACEHOLDER}"`,
     },
     {
-        pattern: new RegExp(`${LABELLED_PREFIX}[^\\s,;"'&\\[}]+`, 'gi'),
-        replacement: `$1${REDACTION_PLACEHOLDER}`,
+        pattern: new RegExp(`${LABELLED_PREFIX}'[^']*'`, 'gi'),
+        replacement: `$1'${REDACTION_PLACEHOLDER}'`,
+    },
+    {
+        pattern: new RegExp(`${LABELLED_PREFIX}(["']?)[^\\s,;"'&\\[}]+`, 'gi'),
+        replacement: `$1$2${REDACTION_PLACEHOLDER}`,
     },
     { pattern: /\bAKIA[0-9A-Z]{16}\b/g, replacement: REDACTION_PLACEHOLDER },
     { pattern: /sk-[A-Za-z0-9_-]{16,}/g, replacement: REDACTION_PLACEHOLDER },

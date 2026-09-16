@@ -473,6 +473,29 @@ describe('redactSecrets', () => {
     it('accepts empty input', () => {
         expect(redactSecrets('')).toEqual({ text: '', redactedCount: 0 });
     });
+
+    it('redacts a double-quoted value that carries a single quote', () => {
+        const passwordValue = ['it', "'s-a-", 'secret'].join('');
+        expect(redactSecrets(JSON.stringify({ password: passwordValue }))).toEqual({
+            text: '{"password":"[redacted]"}',
+            redactedCount: 1,
+        });
+    });
+
+    it('redacts a single-quoted value that carries a double quote', () => {
+        const quotedValue = ['say "hi"', ' now'].join('');
+        expect(redactSecrets(`token: '${quotedValue}'`)).toEqual({
+            text: "token: '[redacted]'",
+            redactedCount: 1,
+        });
+    });
+
+    it('falls back to the unquoted entry when a quoted value has no closing quote', () => {
+        expect(redactSecrets('password: "abc')).toEqual({
+            text: 'password: "[redacted]',
+            redactedCount: 1,
+        });
+    });
 });
 
 describe('agent run telemetry and diagnostics projections', () => {
