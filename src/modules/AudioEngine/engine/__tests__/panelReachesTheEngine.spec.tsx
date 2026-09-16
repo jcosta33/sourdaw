@@ -187,7 +187,7 @@ const NOT_COVERED_DEVICE_TYPES: Readonly<Record<string, string>> = {
         'Not yet driven. The band controls are Route A; the step sequencer surface (`StepSequencerEditor`) has a known dead `onStepsChange` that belongs to a different defect class.',
     grinder:
         'Panel edits ride `updateDevicePatch` (patch, not param) via `sendPatchToDevice`; the readout half of the comparison is a pedal-board model rather than an `aria-valuenow`.',
-    proof: 'Write path is Route A and sound. Its live defect is on the READ path — `useProofAnalyser.ts:36-50` calls `getMasterAnalyser()`, so on a non-master track the EQ curve is drawn over the master spectrum. Not assertable by this harness: the comparison needs a device-scoped analyser to compare against, and `ProofNodeResult` exposes no analyser tap to build one from.',
+    proof: "Write path is Route A and sound. The former read-path defect is fixed: `useProofAnalyser` no longer taps `getMasterAnalyser()` and draws the instance's own output instead (via `getDeviceOutputNode`). Still not assertable by this harness: a read-path comparison needs a device-scoped analyser over known signal content, and jsdom cannot render the panel's spectrum surface.",
     yeast: 'No audio node at all. Yeast is a MIDI FX rack; the scheduler re-reads `yeastStore` per block, so there is no device node for a panel write to miss.',
     'native-scoring':
         'The Tuner panel is a read-only readout driven by `ScoringNode` meter data; it has no parameter write to route.',

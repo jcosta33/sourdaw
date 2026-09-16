@@ -419,6 +419,27 @@ pub enum GraphCommandPayload {
         /// have is answered by the instrument doing nothing.
         values: HashMap<String, f64>,
     },
+    /// Set a built-in's bypass on the engine's own chain, at the next audio
+    /// callback.
+    ///
+    /// The immediate counterpart of the `bypassed` field a device's topology
+    /// carries: the engine otherwise learns a mid-roll toggle only at the next
+    /// strip rebuild, which is the next Play. The chain skips a bypassed body
+    /// and runs its dry line in place of it
+    /// ([`GraphCommand::SetBypass`]), so this is what takes a carried device
+    /// out of — and back into — the audible path while rolling.
+    ///
+    /// A native built-in only. An externally hosted plugin's bypass is owned
+    /// by the plugin host's own control path (`set_plugin_bypass`), whose
+    /// sends are totally ordered per instance; a second live writer here would
+    /// race that order, so one aimed at a borrowed instance is refused by
+    /// device.
+    #[serde(rename_all = "camelCase")]
+    SetDeviceBypass {
+        track_id: String,
+        device_id: String,
+        bypassed: bool,
+    },
     /// Write timeline-addressed notes into the note store a device holds.
     ///
     /// A batch variant rather than a command of its own, because a producer
@@ -3190,6 +3211,39 @@ fn map_command(
             for (param, value) in immediate_device_parameters(builtin, values, device_id)? {
                 ops.push(GraphCommand::SetParam(effect_id, param, value));
             }
+            Ok(())
+        }
+
+        GraphCommandPayload::SetDeviceBypass {
+            track_id,
+            device_id,
+            bypassed,
+        } => {
+            let device = registry
+                .devices
+                .get(device_id)
+                .ok_or_else(|| format!("set-device-bypass: unknown device '{device_id}'"))?;
+            if device.strip_id != *track_id {
+                return Err(format!(
+                    "set-device-bypass: device '{device_id}' is not on strip '{track_id}'"
+                ));
+            }
+            // The chain-level bypass is every built-in's, but a hosted
+            // plugin's own bypass state is written by the plugin host's
+            // ordered control path; a second live writer here would race that
+            // order, so the command names a built-in only.
+            if device.builtin.is_none() {
+                return Err(format!(
+                    "set-device-bypass: device '{device_id}' is an externally hosted plugin, \
+                     whose bypass takes the plugin host's own control path"
+                ));
+            }
+            // No budget charge, unlike the stamped write above: a bypass lands
+            // on the next drain and waits in no queue, so there is no pending
+            // window for the ledger to hold open. Its only capacity is the
+            // command ring, which `EngineHandle::send_graph_batch_with_headroom`
+            // sizes to the batch it is handed, this arm's one op included.
+            ops.push(GraphCommand::SetBypass(device.native_effect_id, *bypassed));
             Ok(())
         }
 
@@ -8906,6 +8960,106 @@ mod tests {
             !refusal.contains("filterCutoff")
                 && !refusal.contains("is not an instrument parameter"),
             "the batch charge must precede parsing, got: {refusal}"
+        );
+    }
+
+    // ── Device bypass ──────────────────────────────────────────────────────
+
+    /// One `set-device-bypass` batch, deserialized from the wire spelling.
+    fn set_device_bypass_batch(
+        track_id: &str,
+        device_id: &str,
+        bypassed: bool,
+    ) -> GraphBatchPayload {
+        batch(json!([
+            { "kind": "set-device-bypass", "trackId": track_id, "deviceId": device_id,
+              "bypassed": bypassed }
+        ]))
+    }
+
+    /// Every bypass write a mapping emitted, in order.
+    fn bypass_writes(ops: &[GraphCommand]) -> Vec<(usize, bool)> {
+        ops.iter()
+            .filter_map(|op| match op {
+                GraphCommand::SetBypass(effect_id, bypassed) => Some((*effect_id, *bypassed)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A mid-roll bypass crosses as one chain-level write at this device,
+    /// applied on the next callback drain — the op the scheduler already
+    /// answers, aimed at the chain slot the device is spliced into, in both
+    /// directions.
+    #[test]
+    fn set_device_bypass_at_a_builtin_emits_one_set_bypass_for_the_device() {
+        for (bypassed, direction) in [(true, "into bypass"), (false, "out of it")] {
+            let mut registry =
+                registry_with_builtin_device("t1", "d-knead", BuiltinEffectType::Knead);
+
+            let mapped = map_immediate(
+                &set_device_bypass_batch("t1", "d-knead", bypassed),
+                &mut registry,
+            )
+            .expect("a built-in the registry holds takes a bypass write");
+
+            assert_eq!(
+                bypass_writes(&mapped.ops),
+                vec![(IMMEDIATE_PARAM_EFFECT_ID, bypassed)],
+                "the toggle must reach the engine as one chain-level write {direction}"
+            );
+            assert_eq!(
+                mapped.ops.len(),
+                1,
+                "a bypass is one op: no parameter write travels with it"
+            );
+        }
+    }
+
+    /// A hosted plugin's own bypass state is written by the plugin host's
+    /// ordered control path; a second live writer on the graph ring would race
+    /// that order, so the command is refused by device.
+    #[test]
+    fn set_device_bypass_at_a_hosted_plugin_is_refused() {
+        let mut registry = registry_with_hosted_device("t1", "d-plugin");
+
+        let refusal = map_immediate(
+            &set_device_bypass_batch("t1", "d-plugin", true),
+            &mut registry,
+        )
+        .expect_err("a hosted plugin takes its bypass on the plugin host's path");
+
+        assert!(
+            refusal.contains("d-plugin") && refusal.contains("plugin host"),
+            "the refusal must name the device and the path its bypass takes, got: {refusal}"
+        );
+    }
+
+    /// The same two address refusals every device-addressed command makes: a
+    /// device the registry does not hold, and one held on a different strip
+    /// than the batch claims.
+    #[test]
+    fn set_device_bypass_at_a_device_on_another_strip_is_refused() {
+        let mut registry = registry_with_builtin_device("t1", "d-knead", BuiltinEffectType::Knead);
+
+        let unknown = map_immediate(
+            &set_device_bypass_batch("t1", "d-missing", true),
+            &mut registry.clone(),
+        )
+        .expect_err("a device the registry does not hold must refuse the batch");
+        assert!(
+            unknown.contains("unknown device 'd-missing'"),
+            "the refusal must name the device it could not resolve, got: {unknown}"
+        );
+
+        let wrong_strip = map_immediate(
+            &set_device_bypass_batch("t2", "d-knead", true),
+            &mut registry,
+        )
+        .expect_err("a device held on another strip must refuse the batch");
+        assert!(
+            wrong_strip.contains("is not on strip 't2'"),
+            "the refusal must name the strip the batch claimed, got: {wrong_strip}"
         );
     }
 

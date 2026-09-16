@@ -6,6 +6,7 @@ import { beginMixAnalysis } from '../beginMixAnalysis';
 
 const analysis_result: MixAnalysis = {
     timestamp: 1,
+    status: { availability: 'measured', provenance: 'live-analyser-snapshot' },
     overallLevel: { peakDb: -6, rmsDb: -12 },
     frequencyBalance: {
         sub: 0,

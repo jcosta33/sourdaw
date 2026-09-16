@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi, beforeEach, type Mock } from 'vite
 
 import { type Logger } from '#/infra/logger/types';
 import {
+    AutomergeStorageWriteConflictError,
     configureAutomergeStoragePort,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
@@ -75,6 +76,7 @@ type CreateMockHandlerInput<Action extends AppAction> = {
     executionKind?: ActionHandler<Action>['executionKind'];
     isNoop?: (action: Action) => boolean;
     materializeCommandArguments?: ActionHandler<Action>['materializeCommandArguments'];
+    materializeCommandArgumentsAt?: ActionHandler<Action>['materializeCommandArgumentsAt'];
     undoable?: boolean;
     validate?: ActionHandler<Action>['validate'];
 };
@@ -89,6 +91,7 @@ function create_mock_handler<Action extends AppAction>({
     executionKind,
     isNoop,
     materializeCommandArguments,
+    materializeCommandArgumentsAt,
     undoable = true,
     validate,
 }: CreateMockHandlerInput<Action> = {}): CreateMockHandlerOutput<Action> {
@@ -106,6 +109,7 @@ function create_mock_handler<Action extends AppAction>({
         undoable,
         isNoop,
         materializeCommandArguments,
+        materializeCommandArgumentsAt,
         validate,
     };
 }
@@ -196,6 +200,30 @@ describe('executeAppAction', () => {
         await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
         expect(handler.execute).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        [
+            'synchronous',
+            () => {
+                throw new AutomergeStorageWriteConflictError('storage conflict');
+            },
+        ],
+        [
+            'awaited',
+            async () => {
+                await Promise.resolve();
+                throw new AutomergeStorageWriteConflictError('storage conflict');
+            },
+        ],
+    ] as const)('classifies a %s handler storage conflict without recording history', async (_kind, execute) => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        registerHandlerMap({ [action.type]: create_mock_handler<SetEditingToolAction>({ execute }) });
+
+        await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
     });
 
     it('captures and rechecks the handler-materialized single-action production-lock footprint', async () => {
@@ -1024,6 +1052,43 @@ describe('executeAppAction', () => {
             signal: undefined,
             onDeferredEffectAttempt: undefined,
         });
+    });
+
+    it('materializes an admission-opted single action once before its snapshot wait', async () => {
+        let releaseWait!: () => void;
+        const wait = new Promise<void>((resolve) => {
+            releaseWait = resolve;
+        });
+        configureAutomergeStoragePort({
+            getDoc: () => undefined,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => false,
+            mutateDoc: () => undefined,
+            waitForSnapshotTransaction: () => wait,
+        });
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+        const materialize = vi.fn((candidate: SetEditingToolAction) => {
+            candidate.payload.tool = 'marquee';
+        });
+        const handler = create_mock_handler<SetEditingToolAction>({
+            materializeCommandArguments: materialize,
+            materializeCommandArgumentsAt: 'admission',
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        const execution = executeAppAction(action);
+        await Promise.resolve();
+
+        expect(materialize).toHaveBeenCalledOnce();
+        expect(handler.describe).not.toHaveBeenCalled();
+        releaseWait();
+        await execution;
+        expect(materialize).toHaveBeenCalledOnce();
+        expect(handler.execute).toHaveBeenCalledWith(
+            { type: 'setEditingTool', payload: { tool: 'marquee' } },
+            expect.any(Object)
+        );
+        expect(action.payload.tool).toBe('select');
     });
 
     it('scopes the snapshot transaction to storage writes made by the action', async () => {

@@ -232,25 +232,40 @@ impl DocumentStore {
     /// Root-shadowing ids are rejected here too, before anything is inserted or
     /// merged: accepting one on this path and refusing it in `load_all` let the
     /// app save a `.sdaw` it could never reopen.
+    ///
+    /// The merge is atomic: every record is loaded and merged into staged
+    /// candidates before anything is published, so a corrupt or unmergeable
+    /// late record returns `Err` with the live store byte-identical to before
+    /// the call. Publishing records one at a time failed after earlier records
+    /// had already mutated the authoritative store.
     pub fn merge_bundle(&mut self, bundle: HashMap<DocId, Vec<u8>>) -> Result<MergeResult, String> {
         reject_root_shadowing(bundle.keys().map(String::as_str))?;
 
-        let mut result = MergeResult::default();
-
+        let mut incoming_docs = HashMap::new();
         for (id, bytes) in bundle {
-            let mut incoming = AutoCommit::load(&bytes)
+            let doc = AutoCommit::load(&bytes)
                 .map_err(|e| format!("Failed to load document {}: {}", id, e))?;
+            incoming_docs.insert(id, doc);
+        }
 
-            if let Some(existing) = self.docs.get_mut(&id) {
-                existing
+        let mut result = MergeResult::default();
+        let mut staged: HashMap<DocId, AutoCommit> = HashMap::new();
+
+        for (id, mut incoming) in incoming_docs {
+            if let Some(existing) = self.docs.get(&id) {
+                let mut candidate = existing.clone();
+                candidate
                     .merge(&mut incoming)
                     .map_err(|e| format!("Failed to merge document {}: {}", id, e))?;
-                result.merged_doc_ids.push(id);
+                result.merged_doc_ids.push(id.clone());
+                staged.insert(id, candidate);
             } else {
-                self.docs.insert(id.clone(), incoming);
-                result.new_doc_ids.push(id);
+                result.new_doc_ids.push(id.clone());
+                staged.insert(id, incoming);
             }
         }
+
+        self.docs.extend(staged);
 
         Ok(result)
     }
@@ -301,6 +316,34 @@ mod tests {
             Ok(_) => panic!("{expectation}"),
             Err(error) => error,
         }
+    }
+
+    /// A two-record bundle whose iteration order puts the valid record first
+    /// and a corrupt record second, in this process. Placeholder entries pick
+    /// a corrupt key that iterates after the valid key; payloads are then
+    /// assigned to those existing keys, which never changes iteration order.
+    /// Returns the bundle and the corrupt record's key, since the key that
+    /// iterates second depends on this process's hash seed.
+    fn bundle_with_valid_before_corrupt(
+        valid: (DocId, Vec<u8>),
+        corrupt_bytes: Vec<u8>,
+    ) -> (HashMap<DocId, Vec<u8>>, DocId) {
+        for index in 0..64 {
+            let corrupt_id: DocId = format!("track_corrupt_{index}");
+            let mut bundle = HashMap::with_capacity(2);
+            bundle.insert(valid.0.clone(), Vec::new());
+            bundle.insert(corrupt_id.clone(), Vec::new());
+
+            if bundle.keys().next().expect("two entries") != &valid.0 {
+                continue;
+            }
+
+            bundle.insert(valid.0, valid.1);
+            bundle.insert(corrupt_id.clone(), corrupt_bytes);
+            return (bundle, corrupt_id);
+        }
+
+        panic!("no candidate corrupt key iterates after the valid key in this process");
     }
 
     #[test]
@@ -377,6 +420,96 @@ mod tests {
 
         assert!(result.new_doc_ids.contains(&"track_2".to_string()));
         assert!(result.merged_doc_ids.contains(&"root".to_string()));
+    }
+
+    /// Regression: `merge_bundle` published records one at a time, so a corrupt
+    /// later record returned `Err` after the earlier record had already mutated
+    /// the authoritative store. A rejected bundle must fail with every
+    /// pre-state document byte-identical and the document-id set untouched —
+    /// whether the earlier record would have updated an existing document or
+    /// inserted a new one.
+    #[test]
+    fn merge_bundle_with_a_corrupt_late_record_leaves_the_store_unchanged() {
+        let corrupt_bytes = b"not an automerge document".to_vec();
+
+        for (label, early_id) in [
+            (
+                "the early record updates an existing document",
+                "root".to_string(),
+            ),
+            (
+                "the early record inserts a new document",
+                "track_guest".to_string(),
+            ),
+        ] {
+            let mut store = project("Host");
+            store.create_child_doc("track_stay".to_string());
+
+            let mut incoming = project("Incoming");
+            incoming.create_child_doc("track_guest".to_string());
+            let mut incoming_bundle = incoming.save_all();
+            let early_bytes = incoming_bundle
+                .remove(&early_id)
+                .expect("the incoming project saved this id");
+
+            let (bundle, corrupt_id) =
+                bundle_with_valid_before_corrupt((early_id, early_bytes), corrupt_bytes.clone());
+
+            let before = store.save_all();
+            let error = store
+                .merge_bundle(bundle)
+                .expect_err("the corrupt late record must fail the whole merge");
+            assert!(
+                error.contains(format!("Failed to load document {corrupt_id}").as_str()),
+                "{label}: the corrupt late record must be the failure, got: {error}"
+            );
+
+            let after = store.save_all();
+            assert_eq!(before, after, "{label}: a rejected merge mutated the store");
+            assert!(
+                store.get_doc("track_guest").is_none(),
+                "{label}: a rejected merge must not publish the early record"
+            );
+            assert!(
+                store.get_doc(&corrupt_id).is_none(),
+                "{label}: a rejected merge must not publish the corrupt record"
+            );
+        }
+    }
+
+    /// The happy path is unchanged by making the merge atomic: ids that matched
+    /// existing documents are merged, new ids are inserted, and merged content
+    /// is readable from the host root.
+    #[test]
+    fn merge_bundle_with_all_valid_records_still_works() {
+        let mut store_a = project("Host");
+        store_a.create_child_doc("track_keep".to_string());
+
+        let mut store_b = project("Incoming");
+        store_b.create_child_doc("track_new".to_string());
+        if let Some(root) = store_b.get_doc_mut("root") {
+            wrote(
+                root.put(automerge::ROOT, "bundle_marker", "incoming"),
+                "bundle_marker",
+            )
+            .expect("root marker write must succeed");
+        }
+
+        let result = store_a
+            .merge_bundle(store_b.save_all())
+            .expect("a fully valid bundle must merge");
+
+        assert_eq!(result.merged_doc_ids, vec!["root".to_string()]);
+        assert_eq!(result.new_doc_ids, vec!["track_new".to_string()]);
+        assert_eq!(store_a.doc_ids().len(), 3);
+        assert!(store_a.get_doc("track_new").is_some());
+        let json = store_a
+            .export_root_json()
+            .expect("the merged root must export");
+        assert_eq!(
+            json["bundle_marker"], "incoming",
+            "merged content must land in the host root"
+        );
     }
 
     #[test]

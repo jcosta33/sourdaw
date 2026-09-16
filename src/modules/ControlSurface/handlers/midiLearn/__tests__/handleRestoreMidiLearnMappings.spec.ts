@@ -296,6 +296,30 @@ describe('handleRestoreMidiLearnMappings — execute', () => {
         expect(written.mappings).toEqual([mappingA, mappingB]);
     });
 
+    it('writes when optional target ids are omitted by JSON serialization and mapping keys are reordered', () => {
+        const expected: MidiMapping = {
+            scaleMode: 'log',
+            maxValue: FADER_MAX_GAIN,
+            minValue: 0,
+            paramId: undefined,
+            deviceId: undefined,
+            trackId: 'track1',
+            targetType: 'trackGain',
+            cc: 7,
+            channel: 0,
+            id: 'm1',
+        };
+        setState({ mappingsSchemaVersion: 1, mappings: [mappingA], isLearning: false, learningTarget: null });
+
+        const result = handleRestoreMidiLearnMappings.execute({
+            type: 'restoreMidiLearnMappings',
+            payload: { expected: { mappings: [expected] }, replacement: { mappings: [mappingB] } },
+        });
+
+        expect(result).toEqual({ status: 'written' });
+        expect(mockedSet).toHaveBeenCalledTimes(1);
+    });
+
     it('returns conflict and does not write when current mappings drifted from expected', () => {
         setState({ mappingsSchemaVersion: 1, mappings: [mappingA, mappingB], isLearning: false, learningTarget: null });
 

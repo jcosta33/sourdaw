@@ -202,6 +202,11 @@ export const midiLearnStore = createStore<MidiLearnState>({
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => defaultMidiLearnState,
+        projectCommittedLocalState: ({ authorityValue, localValue }) => ({
+            ...authorityValue,
+            isLearning: localValue.isLearning,
+            learningTarget: localValue.learningTarget,
+        }),
         toCrdt: ({ mappingsSchemaVersion, mappings }) => ({ mappingsSchemaVersion, mappings }),
     }),
     initialData: defaultMidiLearnState,

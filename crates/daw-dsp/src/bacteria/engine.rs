@@ -2,12 +2,13 @@
 //!
 //! Routes audio through: crossover → per-band effect chains → summing.
 //! Handles multi-band splitting, serial/parallel/mid-side routing,
-//! oversampling, modulation routing, macro mapping, and XY morphing.
+//! oversampling, modulation routing, and macro mapping.
 
 use super::chorus::ChorusFlanger;
 use super::chorus::Phaser;
 use super::convolution::ConvolutionProcessor;
 use super::crossover::CrossoverEngine;
+use super::crossover::CrossoverSlope;
 use super::distortion::DistortionProcessor;
 use super::filter::SvfFilter;
 use super::granular::GranularProcessor;
@@ -39,6 +40,26 @@ const MAX_MACRO_MAPPINGS: usize = 64;
 /// since a clamp would silently retarget a mapping onto a parameter the caller
 /// did not name.
 const PARAM_OFFSET_COUNT: usize = 1024;
+
+/// Modulation target layout beyond the original mix / band-gain ids (#2389).
+///
+/// `BAND_MODULE_BASE + band * BAND_MODULE_STRIDE + slot` addresses one
+/// parameter of one band's effect chain, so an assignment can name Drive or
+/// Filter Cutoff with per-band destination identity:
+///
+/// - slot 0: `drive` (distortion drive, the knob's own 0–100 units)
+/// - slot 1: `filterCutoff` (Hz, the knob's own units)
+///
+/// Remaining slots in each stride are reserved; targets at or beyond
+/// [`PARAM_TARGET_COUNT`] name nothing and are rejected by the setters.
+const BAND_MODULE_BASE: usize = 16;
+const BAND_MODULE_STRIDE: usize = 16;
+const BAND_MOD_DRIVE: usize = 0;
+const BAND_MOD_FILTER_CUTOFF: usize = 1;
+
+/// Highest valid modulation target + 1: mix, six band gains, and the six
+/// per-band module strides.
+const PARAM_TARGET_COUNT: usize = BAND_MODULE_BASE + MAX_BANDS * BAND_MODULE_STRIDE;
 
 /// Distinct target slots the modulation pass can have to clear in one sample.
 const MAX_MODULATED_TARGETS: usize = MAX_MOD_ASSIGNMENTS + MAX_MACRO_MAPPINGS;
@@ -239,6 +260,16 @@ struct MacroMapping {
 
 /// Per-band processing chain with all effect modules.
 #[allow(dead_code)]
+/// The modulation matrix's resolved contribution to one band for this
+/// sample, consumed by [`BandChain::process_sample`]. Additive in each
+/// parameter's own units, matching the existing mix and band-gain offsets.
+#[derive(Clone, Copy, Default)]
+struct BandModOffsets {
+    gain: f32,
+    drive: f32,
+    filter_cutoff: f32,
+}
+
 struct BandChain {
     // DSP processors
     distortion: DistortionProcessor,
@@ -604,13 +635,51 @@ impl BandChain {
         self.peak_level = 0.0;
     }
 
-    fn process_sample(&mut self, left: f32, right: f32, gain_offset: f32) -> (f32, f32) {
+    /// Drop every stage's in-flight audio.
+    ///
+    /// Engine-level events that must leave the band silent regardless of what
+    /// it was doing — an engine rebuild, a program change — call this so no
+    /// stage hands the next block a tail from the previous one. Every member
+    /// that remembers a sample is cleared: the oversampler's halfband history,
+    /// each effect's delay or transform buffer, the alignment ring, and the
+    /// peak meter. Enable flags, levels and the smoother *targets* are
+    /// configuration, not signal memory, and survive; the smoother's current
+    /// value glides to its target in its usual few milliseconds.
+    fn reset(&mut self) {
+        self.distortion.reset();
+        self.waveshaper.reset();
+        self.filter_l.reset();
+        self.filter_r.reset();
+        self.chorus.reset();
+        self.phaser.reset();
+        self.granular_l.reset();
+        self.granular_r.reset();
+        self.stft_l.reset();
+        self.stft_r.reset();
+        self.hilbert_l.reset();
+        self.hilbert_r.reset();
+        self.lofi.reset();
+        self.convolution.reset();
+        self.oversampler_l.reset();
+        self.oversampler_r.reset();
+        self.alignment.reset();
+        self.peak_level = 0.0;
+    }
+
+    fn process_sample(&mut self, left: f32, right: f32, offsets: BandModOffsets) -> (f32, f32) {
         if !self.enabled || self.mute {
             // Same reasoning as `skip_sample`: silence still has to flow
             // through the ring or an unmute flushes out pre-mute audio.
             self.skip_sample();
             return (0.0, 0.0);
         }
+
+        // Modulation reaches the chain's stages before they run: the offsets
+        // live exactly one sample and never accumulate into the stored knob
+        // values (#2389).
+        self.distortion.set_drive_offset(offsets.drive);
+        self.filter_l.set_cutoff_offset(offsets.filter_cutoff);
+        self.filter_r.set_cutoff_offset(offsets.filter_cutoff);
 
         let mut l = left;
         let mut r = right;
@@ -701,8 +770,8 @@ impl BandChain {
             r = cr;
         }
 
-        // Apply band gain — gain_offset (linear) arrives from the modulation matrix
-        let g = (self.gain.next() + gain_offset).max(0.0);
+        // Apply band gain — `offsets.gain` (linear) arrives from the modulation matrix
+        let g = (self.gain.next() + offsets.gain).max(0.0);
         l *= g;
         r *= g;
 
@@ -761,20 +830,6 @@ impl RoutingMode {
     }
 }
 
-/// Snapshot state for XY morph (A/B/C/D).
-#[allow(dead_code)]
-struct MorphSnapshot {
-    param_values: Vec<(String, f32)>,
-}
-
-impl MorphSnapshot {
-    fn new() -> Self {
-        Self {
-            param_values: Vec::new(),
-        }
-    }
-}
-
 #[allow(dead_code)]
 pub struct BacteriaEngine {
     sample_rate: f32,
@@ -825,11 +880,6 @@ pub struct BacteriaEngine {
     // Macros
     macros: [f32; MACRO_COUNT],
 
-    // XY morph
-    morph_x: f32,
-    morph_y: f32,
-    snapshots: [MorphSnapshot; 4],
-
     // Metering
     input_peak: f32,
     output_peak: f32,
@@ -868,7 +918,9 @@ pub struct BacteriaEngine {
     reported_latency: u32,
 
     // Computed parameter offsets from modulations.
-    // Convention: [0] = global mix; [1..=6] = per-band gain offsets (linear scale, bands 0-5).
+    // Convention: [0] = global mix; [1..=6] = per-band gain offsets (linear
+    // scale, bands 0-5); [BAND_MODULE_BASE..] = per-band module parameters in
+    // the layout documented on BAND_MODULE_BASE (drive, filter cutoff, ...).
     param_offsets: [f32; PARAM_OFFSET_COUNT],
 }
 
@@ -908,6 +960,12 @@ impl StepSequencer {
         let idx = (self.position as usize) % self.num_steps;
         self.steps[idx]
     }
+
+    /// Restart the gate at step zero, so a program change begins the pattern
+    /// from its first step rather than wherever the old program's clock was.
+    fn reset(&mut self) {
+        self.position = 0.0;
+    }
 }
 
 impl BacteriaEngine {
@@ -938,14 +996,6 @@ impl BacteriaEngine {
             modulated_targets: [0; MAX_MODULATED_TARGETS],
             modulated_target_count: 0,
             macros: [DEFAULT_MACRO; MACRO_COUNT],
-            morph_x: 0.5,
-            morph_y: 0.5,
-            snapshots: [
-                MorphSnapshot::new(),
-                MorphSnapshot::new(),
-                MorphSnapshot::new(),
-                MorphSnapshot::new(),
-            ],
             input_peak: 0.0,
             output_peak: 0.0,
             meter_decay_global: (-1.0 / (0.1 * sample_rate)).exp(), // ~100ms decay
@@ -977,6 +1027,39 @@ impl BacteriaEngine {
         // over at most six bands.
         self.realign_bands();
         self.clear_inactive_band_levels();
+    }
+
+    /// Drop every stage's in-flight audio and restart the modulation sources.
+    ///
+    /// For the engine-level events that must leave the device silent whatever
+    /// it was doing — the engine being re-initialized, or a program change
+    /// handing the bands to a different patch — a transport stop is
+    /// deliberately *not* one of them: effect tails are supposed to survive
+    /// the transport, and a stop therefore never calls this.
+    ///
+    /// Parameter state (gains, mixes, modes, enable flags) is configuration
+    /// and survives; only signal memory and the modulation clocks are
+    /// dropped. The macros are mirrored back into their resting
+    /// [`MOD_VALUES_AT_REST`] slots by the same rule that orders them at
+    /// construction, so the first block after a reset reads the same source
+    /// table a fresh engine would.
+    pub fn reset(&mut self) {
+        self.crossover.reset();
+        for band in &mut self.bands {
+            band.reset();
+        }
+        self.lfo1.reset();
+        self.lfo2.reset();
+        self.env_follower.reset();
+        self.lorenz.reset();
+        self.step_seq.reset();
+        self.mod_values = MOD_VALUES_AT_REST;
+        self.input_peak = 0.0;
+        self.output_peak = 0.0;
+        self.band_levels = [0.0; MAX_BANDS];
+        self.dry_alignment.reset();
+        self.side_alignment.reset();
+        self.param_offsets = [0.0; PARAM_OFFSET_COUNT];
     }
 
     /// Give every band the group delay the routing needs it to present.
@@ -1042,6 +1125,16 @@ impl BacteriaEngine {
             }
         }
 
+        // Under a sum the crossover's own delay sits in every band's path
+        // alike — zero in minimum-phase mode, the linear-phase pads' shared
+        // total otherwise — so it adds to the device figure the same way the
+        // dry tap below has to wait for it. Under `Serial` the crossover's
+        // outputs are unread (the chain carries the raw signal), so its delay
+        // is not in the path and must not be reported.
+        if !serial {
+            device_delay += self.crossover.latency_samples() as f32;
+        }
+
         // The dry mix tap bypasses the bands entirely, so it needs the whole
         // device delay rather than a deficit against something it already
         // spent. Same figure the host is handed, from the same accumulation.
@@ -1089,6 +1182,16 @@ impl BacteriaEngine {
     /// The bounds test each write used to carry is gone with it: both setters
     /// reject an out-of-range target before an entry exists, so a stored one
     /// addresses a slot that is there.
+    /// Read one band's resolved modulation offsets out of `param_offsets`.
+    fn band_mod_offsets(&self, band: usize) -> BandModOffsets {
+        let base = BAND_MODULE_BASE + band * BAND_MODULE_STRIDE;
+        BandModOffsets {
+            gain: self.param_offsets[1 + band],
+            drive: self.param_offsets[base + BAND_MOD_DRIVE],
+            filter_cutoff: self.param_offsets[base + BAND_MOD_FILTER_CUTOFF],
+        }
+    }
+
     fn evaluate_modulation(&mut self) {
         if self.modulated_target_count == 0 {
             return;
@@ -1179,7 +1282,15 @@ impl BacteriaEngine {
             "crossoverFreq3" => self.set_crossover(2, value),
             "crossoverFreq4" => self.set_crossover(3, value),
             "crossoverFreq5" => self.set_crossover(4, value),
-            "crossoverSlope" | "crossoverMode" => {}
+            // Slope selects the LR order (12/24/36/48 dB/oct → LR2/4/6/8);
+            // mode selects minimum-phase IIR or the linear-phase FIR pair.
+            // Both reconfigure every point — the split these change is the
+            // device's core behaviour, not a stored chip value (#2400).
+            "crossoverSlope" => self.crossover.set_slope(
+                CrossoverSlope::from_index(value as u32),
+                &self.crossover_freqs,
+            ),
+            "crossoverMode" => self.crossover.set_mode(value > 0.5, &self.crossover_freqs),
 
             // Routing
             "globalRouting" => self.routing = RoutingMode::from_index(value as u32),
@@ -1193,10 +1304,6 @@ impl BacteriaEngine {
             "macro6" => self.set_macro(5, value),
             "macro7" => self.set_macro(6, value),
             "macro8" => self.set_macro(7, value),
-
-            // XY morph
-            "morphX" => self.morph_x = value,
-            "morphY" => self.morph_y = value,
 
             // LFO
             "lfo1Rate" => self.lfo1.set_rate(value),
@@ -1282,7 +1389,7 @@ impl BacteriaEngine {
     /// per-sample pass indexes with them directly; a rejected call is a no-op
     /// where an accepted bad one would abort the AudioWorklet.
     pub fn add_mod_assignment(&mut self, source_id: u8, target_param: u16, amount: f32) {
-        if source_id as usize >= MOD_SOURCE_COUNT || target_param as usize >= PARAM_OFFSET_COUNT {
+        if source_id as usize >= MOD_SOURCE_COUNT || target_param as usize >= PARAM_TARGET_COUNT {
             return;
         }
         if self.mod_assignments.len() == MAX_MOD_ASSIGNMENTS {
@@ -1310,7 +1417,7 @@ impl BacteriaEngine {
         min_value: f32,
         max_value: f32,
     ) {
-        if macro_index as usize >= MACRO_COUNT || target_param as usize >= PARAM_OFFSET_COUNT {
+        if macro_index as usize >= MACRO_COUNT || target_param as usize >= PARAM_TARGET_COUNT {
             return;
         }
         if self.macro_mappings.len() == MAX_MACRO_MAPPINGS {
@@ -1338,6 +1445,41 @@ impl BacteriaEngine {
         }
         self.modulated_targets[self.modulated_target_count] = target;
         self.modulated_target_count += 1;
+    }
+
+    /// Drop every modulation assignment, leaving the macro mappings alone.
+    ///
+    /// The table is append-only at the wasm boundary apart from this: removal,
+    /// undo, and a patch reload all arrive from the UI as "replace the whole
+    /// table", which the caller spells clear-then-re-add through
+    /// [`Self::add_mod_assignment`]. Clearing has to retire the cleared targets
+    /// from [`Self::modulated_targets`] — otherwise the per-sample pass would
+    /// go on re-zeroing slots nothing writes any more — and zero
+    /// [`Self::param_offsets`], because a slot that just left the table is
+    /// never cleared again and would otherwise hold its last resolved offset
+    /// forever. A target a macro mapping still writes is re-noted below, so
+    /// sharing a slot between an assignment and a mapping survives the clear.
+    pub fn clear_mod_assignments(&mut self) {
+        self.mod_assignments.clear();
+        self.rebuild_modulated_targets();
+    }
+
+    /// Recompute [`Self::modulated_targets`] from both tables and drop every
+    /// resolved offset.
+    ///
+    /// Index-walked rather than iterated by reference: [`Self::note_modulated_target`]
+    /// takes `&mut self`, and index reads end their borrow before the call.
+    fn rebuild_modulated_targets(&mut self) {
+        self.modulated_target_count = 0;
+        for index in 0..self.mod_assignments.len() {
+            let target = self.mod_assignments[index].target_param;
+            self.note_modulated_target(target);
+        }
+        for index in 0..self.macro_mappings.len() {
+            let target = self.macro_mappings[index].target_param;
+            self.note_modulated_target(target);
+        }
+        self.param_offsets = [0.0; PARAM_OFFSET_COUNT];
     }
 
     /// Process a stereo block in-place.
@@ -1407,13 +1549,9 @@ impl BacteriaEngine {
                             self.bands[b].skip_sample();
                             continue;
                         }
-                        // param_offsets[1..=6] carry per-band gain offsets (linear scale).
-                        let gain_offset = self.param_offsets[1 + b];
-                        let (bl, br) = self.bands[b].process_sample(
-                            self.bands_l[b],
-                            self.bands_r[b],
-                            gain_offset,
-                        );
+                        let offsets = self.band_mod_offsets(b);
+                        let (bl, br) =
+                            self.bands[b].process_sample(self.bands_l[b], self.bands_r[b], offsets);
                         sum_l += bl;
                         sum_r += br;
                     }
@@ -1436,8 +1574,8 @@ impl BacteriaEngine {
                     let mut chain_r = in_r;
                     for b in 0..self.band_count {
                         let (bl, br) = if self.bands[b].contributes(any_solo) {
-                            let gain_offset = self.param_offsets[1 + b];
-                            self.bands[b].process_sample(chain_l, chain_r, gain_offset)
+                            let offsets = self.band_mod_offsets(b);
+                            self.bands[b].process_sample(chain_l, chain_r, offsets)
                         } else {
                             // Bypassing a link in a chain passes the signal on;
                             // it does not cut it. Still routed through the
@@ -1459,12 +1597,14 @@ impl BacteriaEngine {
 
                     // Process mid through band 0, side through band 1
                     let (pm, _) = if self.band_count > 0 {
-                        self.bands[0].process_sample(mid, mid, self.param_offsets[1])
+                        let offsets = self.band_mod_offsets(0);
+                        self.bands[0].process_sample(mid, mid, offsets)
                     } else {
                         (mid, mid)
                     };
                     let (ps, _) = if self.band_count > 1 {
-                        self.bands[1].process_sample(side, side, self.param_offsets[2])
+                        let offsets = self.band_mod_offsets(1);
+                        self.bands[1].process_sample(side, side, offsets)
                     } else if self.band_count == 1 {
                         let (aligned_s, _) = self.side_alignment.process(side, side);
                         (aligned_s, aligned_s)
@@ -1526,8 +1666,10 @@ impl BacteriaEngine {
 
     /// Latency reported to the host for plugin delay compensation.
     ///
-    /// The LR4 crossover is zero-latency; a linear-phase mode would add its
-    /// own term here. The oversampled distortion path is not zero-latency:
+    /// The minimum-phase LR crossover is zero-latency; the linear-phase mode
+    /// adds its `points × FIR_DELAY` term, picked up in `realign_bands` and
+    /// delivered by the crossover's own band pads. The oversampled distortion
+    /// path is not zero-latency:
     /// `OversamplingChain` costs 6.5 / 9.75 / 11.375 base samples at 2x / 4x /
     /// 8x, pinned against the impulse centroid in `oversample.rs`.
     ///
@@ -1578,6 +1720,7 @@ impl BacteriaEngine {
 
 #[cfg(test)]
 mod tests {
+    use super::super::crossover::FIR_DELAY;
     use super::*;
     use crate::primitives::alias_probe::bin_magnitude;
     use std::f32::consts::PI;
@@ -2081,6 +2224,68 @@ mod tests {
             "unmuting over silence produced {burst} ({:.1} dBFS) — the frequency \
              shifter flushed what it was holding while muted",
             20.0 * burst.max(1e-12).log10()
+        );
+    }
+
+    /// An engine-level `reset` must hand the next block silence, whatever the
+    /// bands were holding. Every stage with signal memory is engaged at once —
+    /// the oversampled Smudge window, the filter, chorus, phaser, granular
+    /// buffer, spectral window, frequency shifter's all-pass network, the
+    /// lo-fi codec frame and the convolution buffer — loud noise is run
+    /// through long enough to fill all of them, and the block after the reset
+    /// is fed silence. Anything that comes out is stale state a program
+    /// change or an engine re-init should have dropped.
+    #[test]
+    fn resetting_the_engine_leaves_the_next_block_silent() {
+        const BLOCK: usize = 4_096;
+
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("bandCount", 2.0);
+        engine.set_param("distortionEnabled", 1.0);
+        engine.set_param("distortionMode", 7.0); // Smudge — overlap-add window
+        engine.set_param("drive", 12.0);
+        engine.set_param("oversampling", 8.0);
+        engine.set_param("filterEnabled", 1.0);
+        engine.set_param("chorusEnabled", 1.0);
+        engine.set_param("phaserEnabled", 1.0);
+        engine.set_param("granularEnabled", 1.0);
+        engine.set_param("spectralEnabled", 1.0);
+        engine.set_param("freqShiftEnabled", 1.0);
+        engine.set_param("freqShiftHz", 200.0);
+        engine.set_param("lofiEnabled", 1.0);
+        engine.set_param("lofiAmount", 60.0);
+        engine.set_param("codecArtifact", 0.5);
+        engine.set_param("convolutionEnabled", 1.0);
+        engine.set_param("mix", 1.0);
+
+        let mut seed = 41u32;
+        for _ in 0..8 {
+            let mut left = noise_block(BLOCK, &mut seed);
+            let mut right = noise_block(BLOCK, &mut seed);
+            engine.process_block(&mut left, &mut right);
+        }
+
+        engine.reset();
+
+        assert!(
+            engine.band_levels().iter().all(|level| *level == 0.0),
+            "the reset left band meters standing: {:?}",
+            engine.band_levels()
+        );
+
+        // Silence in: any output is audio the reset failed to drop.
+        let mut silent_l = vec![0.0_f32; BLOCK];
+        let mut silent_r = vec![0.0_f32; BLOCK];
+        engine.process_block(&mut silent_l, &mut silent_r);
+
+        let leaked = silent_l
+            .iter()
+            .chain(silent_r.iter())
+            .fold(0.0_f32, |worst, s| worst.max(s.abs()));
+        assert!(
+            leaked < 1.0e-6,
+            "the block after a reset emitted {leaked} — a stage handed the new \
+             program the previous one's tail"
         );
     }
 
@@ -2697,6 +2902,61 @@ mod tests {
         );
     }
 
+    /// The UI's remove, undo, and a patch reload all replace the whole
+    /// assignment table through `clear_mod_assignments` + re-add. After the
+    /// clear, a target only the removed assignment wrote must stop resolving —
+    /// and return to rest, because a slot that left the table is never
+    /// re-zeroed by the per-sample pass. A target a macro mapping still writes
+    /// keeps resolving through the mapping, so a shared slot survives.
+    #[test]
+    fn clearing_assignments_stops_them_and_releases_their_offsets() {
+        const MACRO_1_SOURCE: u8 = MACRO_SOURCE_BASE as u8;
+        const MIX_TARGET: u16 = 0;
+        const BAND_0_GAIN_TARGET: u16 = 1;
+
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        // Mix is written by the assignment alone; the band 0 gain is written by
+        // both the assignment and a constant macro mapping.
+        engine.add_mod_assignment(MACRO_1_SOURCE, MIX_TARGET, 1.0);
+        engine.add_mod_assignment(MACRO_1_SOURCE, BAND_0_GAIN_TARGET, 1.0);
+        engine.add_macro_mapping(0, BAND_0_GAIN_TARGET, 0.25, 0.25);
+
+        let mut seed = 17u32;
+        let mut left = noise_block(64, &mut seed);
+        let mut right = noise_block(64, &mut seed);
+        engine.process_block(&mut left, &mut right);
+        assert!(
+            (engine.param_offsets[MIX_TARGET as usize] - DEFAULT_MACRO).abs() < 1.0e-6,
+            "fixture: the assignment must be live before the clear, saw {}",
+            engine.param_offsets[MIX_TARGET as usize]
+        );
+
+        engine.clear_mod_assignments();
+        assert_eq!(
+            engine.mod_assignments.len(),
+            0,
+            "the clear must empty the assignment table"
+        );
+
+        let mut left = noise_block(64, &mut seed);
+        let mut right = noise_block(64, &mut seed);
+        engine.process_block(&mut left, &mut right);
+        assert_eq!(
+            engine.param_offsets[MIX_TARGET as usize], 0.0,
+            "a cleared assignment's slot must rest at zero, saw {}",
+            engine.param_offsets[MIX_TARGET as usize]
+        );
+        assert!(
+            (engine.param_offsets[BAND_0_GAIN_TARGET as usize] - 0.25).abs() < 1.0e-6,
+            "a slot a macro mapping still writes must keep resolving, saw {}",
+            engine.param_offsets[BAND_0_GAIN_TARGET as usize]
+        );
+        assert_eq!(
+            engine.modulated_target_count, 1,
+            "only the mapping's target may stay in the modulated set"
+        );
+    }
+
     // ---- spectral path ---------------------------------------------------
 
     /// The blur/freeze stage rendered the raw overlap-add reconstruction,
@@ -2867,6 +3127,197 @@ mod tests {
         assert!(
             (side_centroid - mid_centroid).abs() < 0.5,
             "side centroid {side_centroid:.2} and mid centroid {mid_centroid:.2} must match"
+        );
+    }
+
+    // ── Crossover slope and mode must change the sound (#2400) ─────────────
+
+    /// Render the low band alone (band 1 muted) at 2 kHz through a 1 kHz
+    /// split and return the output RMS. All effect stages are off, so the
+    /// figure is the crossover's own response.
+    fn low_band_rms_at_two_khz(slope: f32) -> f32 {
+        let mut engine = BacteriaEngine::new(48_000.0);
+        engine.set_param("bandCount", 2.0);
+        engine.set_param("crossoverFreq1", 1000.0);
+        engine.set_param("band1_mute", 1.0);
+        engine.set_param("crossoverSlope", slope);
+
+        let mut left = [0.0_f32; 128];
+        let mut right = [0.0_f32; 128];
+        let total_blocks = 48_000 * 3 / 5 / 128; // 0.6 s: settle, then measure
+        let measure_from_block = 48_000 / 5 / 128;
+        let mut energy = 0.0_f64;
+        let mut count = 0_usize;
+        for block in 0..total_blocks {
+            left.fill(0.0);
+            right.fill(0.0);
+            for (j, slot) in left.iter_mut().enumerate() {
+                let n = (block * 128 + j) as f32;
+                *slot = (2.0 * PI * 2000.0 * n / 48_000.0).sin();
+            }
+            right.copy_from_slice(&left);
+            engine.process_block(&mut left, &mut right);
+            if block >= measure_from_block {
+                energy += left.iter().map(|s| (*s as f64) * (*s as f64)).sum::<f64>();
+                count += left.len();
+            }
+        }
+        (energy / count.max(1) as f64).sqrt() as f32
+    }
+
+    /// The shipped defect stored `crossoverSlope` without acting on it: every
+    /// chip rendered the same LR4 split. The chips must select genuinely
+    /// different rolloffs, ordered by their declared dB per octave.
+    #[test]
+    fn crossover_slope_chips_change_the_actual_split() {
+        let flat = low_band_rms_at_two_khz(0.0);
+        let medium = low_band_rms_at_two_khz(1.0);
+        let steep = low_band_rms_at_two_khz(3.0);
+
+        assert!(
+            medium < flat * 0.3 && flat > 0.0,
+            "the 24 dB chip must roll off harder than the 12 dB chip              (rms {medium} against {flat})"
+        );
+        assert!(
+            steep < medium * 0.3,
+            "the 48 dB chip must roll off harder than the 24 dB chip              (rms {steep} against {medium})"
+        );
+        assert!(
+            flat > 1e-4,
+            "fixture: the 12 dB split must pass content ({flat})"
+        );
+    }
+
+    /// Linear-phase mode must report its delay to the host and actually
+    /// deliver it: the summed-band impulse response sits at the reported
+    /// sample, not at zero.
+    #[test]
+    fn linear_phase_mode_reports_and_delivers_its_latency() {
+        let mut engine = BacteriaEngine::new(48_000.0);
+        engine.set_param("bandCount", 2.0);
+        engine.set_param("crossoverFreq1", 1000.0);
+        assert_eq!(engine.latency_samples(), 0, "minimum phase reports none");
+
+        engine.set_param("crossoverMode", 1.0);
+        assert_eq!(
+            engine.latency_samples(),
+            FIR_DELAY as u32,
+            "one active point must report FIR_DELAY samples"
+        );
+
+        let mut left = [0.0_f32; 128];
+        let mut right = [0.0_f32; 128];
+        left[0] = 1.0;
+        right[0] = 1.0;
+        engine.process_block(&mut left, &mut right);
+        // The device output (dry tap included) carries the impulse at the
+        // reported delay.
+        let peak = left
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+            .map(|(index, _)| index)
+            .unwrap();
+        assert_eq!(
+            peak, FIR_DELAY as usize,
+            "the impulse must leave at the reported delay, found at {peak}"
+        );
+        assert!(
+            left[..FIR_DELAY as usize].iter().all(|s| s.abs() < 1e-4),
+            "no output may appear before the reported delay"
+        );
+
+        engine.set_param("crossoverMode", 0.0);
+        assert_eq!(
+            engine.latency_samples(),
+            0,
+            "returning to minimum phase must drop the report"
+        );
+    }
+
+    // ── Modulation must reach the band modules (#2389) ─────────────────────
+
+    /// Render `freq` through a one-band engine with distortion and filter
+    /// engaged; return (rms, peak) over the settled tail.
+    fn shaped_band_render(engine: &mut BacteriaEngine, freq: f32) -> (f32, f32) {
+        let mut left = [0.0_f32; 128];
+        let mut right = [0.0_f32; 128];
+        let total_blocks = 48_000 * 3 / 5 / 128;
+        let measure_from_block = 48_000 / 5 / 128;
+        let mut energy = 0.0_f64;
+        let mut count = 0_usize;
+        let mut peak = 0.0_f32;
+        for block in 0..total_blocks {
+            for (j, slot) in left.iter_mut().enumerate() {
+                *slot = (2.0 * PI * freq * ((block * 128 + j) as f32) / 48_000.0).sin();
+            }
+            right.copy_from_slice(&left);
+            engine.process_block(&mut left, &mut right);
+            if block >= measure_from_block {
+                energy += left.iter().map(|s| (*s as f64) * (*s as f64)).sum::<f64>();
+                count += left.len();
+                peak = peak.max(left.iter().fold(0.0_f32, |acc, s| acc.max(s.abs())));
+            }
+        }
+        ((energy / count.max(1) as f64).sqrt() as f32, peak)
+    }
+
+    /// A one-band engine with both stages on, Macro 1 at centre.
+    fn shaped_band_engine() -> BacteriaEngine {
+        let mut engine = BacteriaEngine::new(48_000.0);
+        engine.set_param("bandCount", 1.0);
+        engine.set_param("band0_distortionEnabled", 1.0);
+        engine.set_param("band0_filterEnabled", 1.0);
+        engine.set_param("macro1", 0.5);
+        engine
+    }
+
+    /// The engine accepted `add_mod_assignment` calls from day one, but their
+    /// offsets were only wired to the global mix and the per-band gains, so
+    /// turning Macro 1 or an LFO could not move Drive, Filter, or any other
+    /// module. The module slots must carry the resolved offsets into the
+    /// band's stages, and an assignment with no depth must change nothing.
+    #[test]
+    fn mod_assignments_reach_band_drive_and_filter_cutoff() {
+        // Drive: Macro 1 feeds band 0's drive slot with amount 200, resolving
+        // to +100 drive units on top of the stored 25 — the shaper crushes.
+        let mut driven = shaped_band_engine();
+        driven.add_mod_assignment(6, BAND_MODULE_BASE as u16 + BAND_MOD_DRIVE as u16, 200.0);
+
+        let mut untouched = shaped_band_engine();
+        untouched.add_mod_assignment(6, BAND_MODULE_BASE as u16 + BAND_MOD_DRIVE as u16, 0.0);
+
+        let (driven_rms, driven_peak) = shaped_band_render(&mut driven, 200.0);
+        let (untouched_rms, untouched_peak) = shaped_band_render(&mut untouched, 200.0);
+        assert!(
+            driven_peak < untouched_peak * 0.8,
+            "an assignment on band 0's drive must reshape the band: driven peak \
+             {driven_peak} against {untouched_peak}"
+        );
+        assert!(
+            driven_rms < untouched_rms * 0.8,
+            "drive modulation must be audible in the band's level: {driven_rms} \
+             against {untouched_rms}"
+        );
+
+        // Filter cutoff: the same machinery, different slot — Macro 1 pulls
+        // band 0's cutoff ~6 kHz below its stored 8 kHz, and a 4 kHz tone
+        // then sits an octave above the moving cutoff.
+        let mut dark = shaped_band_engine();
+        dark.add_mod_assignment(
+            6,
+            BAND_MODULE_BASE as u16 + BAND_MOD_FILTER_CUTOFF as u16,
+            -11_900.0,
+        );
+
+        let mut open = shaped_band_engine();
+
+        let (dark_rms, _) = shaped_band_render(&mut dark, 4_000.0);
+        let (open_rms, _) = shaped_band_render(&mut open, 4_000.0);
+        assert!(
+            dark_rms < open_rms * 0.5 && open_rms > 0.01,
+            "an assignment on band 0's filter cutoff must move the split: \
+             {dark_rms} against {open_rms}"
         );
     }
 }

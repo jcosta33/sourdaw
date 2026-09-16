@@ -1,8 +1,8 @@
 /**
- * XY Morph Pad — bilinear interpolation between 4 snapshots (A/B/C/D).
- *
- * Renders a draggable crosshair over a gradient background showing
- * the current morph position.
+ * XY Morph Pad — a draggable crosshair over a gradient background showing the
+ * current morph position between the 4 snapshot corners (A/B/C/D). The
+ * interpolation between the corners lives in the model
+ * (`models/MorphInterpolation.ts`); this component only reports positions.
  */
 import { type ReactElement, useRef } from 'react';
 
@@ -11,14 +11,14 @@ import { type BacteriaSnapshot } from '../../models/BacteriaPatch';
 type XYMorphPadProps = {
     x: number;
     y: number;
-    onChangeX: (value: number) => void;
-    onChangeY: (value: number) => void;
+    /** Reports the clamped pad position (0..1 in both axes). */
+    onChange: (x: number, y: number) => void;
     snapshots: BacteriaSnapshot[];
     width: number;
     height: number;
 };
 
-export const XYMorphPad = ({ x, y, onChangeX, onChangeY, snapshots, width, height }: XYMorphPadProps): ReactElement => {
+export const XYMorphPad = ({ x, y, onChange, snapshots, width, height }: XYMorphPadProps): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const dragging = useRef(false);
 
@@ -50,8 +50,7 @@ export const XYMorphPad = ({ x, y, onChangeX, onChangeY, snapshots, width, heigh
         }
         const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         const ny = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
-        onChangeX(nx);
-        onChangeY(ny);
+        onChange(nx, ny);
     };
 
     const labels = ['A', 'B', 'C', 'D'];

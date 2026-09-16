@@ -75,8 +75,8 @@ function makeRampLane(): AutomationLane {
         id: 'lane-1',
         trackId: 'track-1',
         clipId: undefined,
-        parameterId: 'device-1:gain-level',
-        parameterName: 'Gain Level',
+        parameterId: 'device-1:trem-depth',
+        parameterName: 'Tremolo Depth',
         points: [
             { beat: 128, value: 0, curve: 'linear', tension: 0 },
             { beat: 132, value: 1, curve: 'linear', tension: 0 },
@@ -123,7 +123,8 @@ function renderDeviceLaneAtGrain(scheduleGrainMs: number, lane: AutomationLane =
     const deviceNode: OfflineDeviceNode = {
         inputNode: {} as AudioNode,
         outputNode: {} as AudioNode,
-        nodes: [{ gain: deviceParam } as unknown as AudioNode],
+        namedNodes: { lfoDepth: { gain: deviceParam } as unknown as AudioNode },
+        nodes: [],
     };
 
     scheduleTrackAutomationFixture({
@@ -134,8 +135,8 @@ function renderDeviceLaneAtGrain(scheduleGrainMs: number, lane: AutomationLane =
         deviceEntries: [
             {
                 deviceId: 'device-1',
-                deviceType: 'builtin-gain',
-                strategy: new WebAudioDeviceStrategy(deviceNode, 'builtin-gain'),
+                deviceType: 'builtin-tremolo',
+                strategy: new WebAudioDeviceStrategy(deviceNode, 'builtin-tremolo'),
             },
         ],
         durationSeconds: DURATION_SECONDS,
@@ -163,6 +164,9 @@ describe('offline automation slew follows the live scheduler grain', () => {
         expect(emitted.length).toBeGreaterThanOrEqual(tickCount);
         for (const [index, reference] of expected.entries()) {
             const actual = emitted[index]!;
+            // `trem-depth` binds to `lfoDepth.gain` with an identity
+            // device→AudioParam law (no `convert`), so the emitted values are
+            // already the device-space recurrence this gate races against.
             expect(actual.timeSeconds, `tick ${index + 1} time at ${scheduleGrainMs}ms grain`).toBeCloseTo(
                 reference.timeSeconds,
                 10
@@ -233,6 +237,8 @@ describe('offline automation slew follows the live scheduler grain', () => {
             const timeSeconds = tick * tickSeconds;
             smoothed = slewStep(smoothed, trueCurveAt(timeSeconds), AUTOMATION_SLEW_ALPHA);
             const rendered = emitted[tick - 1];
+            // Identity binding (no `convert`): the emitted value is already in
+            // device space, so it races the live recurrence directly.
             expect(rendered?.timeSeconds, `tick ${tick} time`).toBeCloseTo(timeSeconds, 10);
             expect(rendered?.value, `tick ${tick} value`).toBeCloseTo(smoothed, 6);
         }

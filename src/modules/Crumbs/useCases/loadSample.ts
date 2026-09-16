@@ -6,6 +6,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { basename_from_path } from '#/utils/path-basename';
 
+import { getCrumbsDroppedSampleWrites } from '../repositories/crumbsBridge/getCrumbsDroppedSampleWrites';
 import { getWaveformPeaks } from '../repositories/crumbsBridge/getWaveformPeaks';
 import { loadSample } from '../repositories/crumbsBridge/loadSample';
 import { setActiveSample, setLoading, setWaveformPeaks } from '../stores/crumbsStore';
@@ -102,6 +103,26 @@ export async function loadSampleFromPath(
         };
 
         setActiveSample(instanceId, meta);
+
+        // The pool refuses writes past its fixed bound as a counted no-op, so
+        // an exhausted instance accepts the load on the command side and then
+        // silently drops it on the audio side. Reading the refusal count here
+        // turns that into a warning instead of a sample that never sounds.
+        // The count lags the drain by up to one block, so a load that itself
+        // trips the bound may surface on the next load — fine for a warning.
+        try {
+            const droppedWrites = await getCrumbsDroppedSampleWrites(instanceId);
+            if (droppedWrites > 0) {
+                logger.warn(
+                    `Crumbs sample pool for ${instanceId} refused ${String(droppedWrites)} write(s): ` +
+                        'the per-instance sample budget is exhausted and new samples are not landing. ' +
+                        'Reload the project to reset the pool.'
+                );
+            }
+        } catch {
+            // The warning is best-effort telemetry; a failed read must not
+            // fail the load that already succeeded.
+        }
 
         // Load waveform peaks for display at a level sized to the canvas, not the
         // recording length (avoids an enormous IPC payload for long samples).

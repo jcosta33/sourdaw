@@ -1,13 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type AdjustmentLayerState } from '../../../stores/adjustmentLayer';
-import { type TrackStoreState, type Track } from '../../../stores/trackStore';
+import { createTrack, type Track } from '../../../models/Track';
+import { type AdjustmentLayer, type AdjustmentLayerState } from '../../../stores/adjustmentLayer';
+import { type TrackStoreState } from '../../../stores/trackStore';
 import { commitAdjustmentLayerMutation } from '../commitAdjustmentLayerMutation';
 
-type InversePayload = {
-    expectedLayersFingerprint: string;
-    freezeTransitions: Array<{ trackId: string; previousStatus: 'frozen'; expectedSourceSignature: string }>;
-};
+type InverseAction = Parameters<typeof commitAdjustmentLayerMutation>[0]['inverseAction'];
 
 const mocks = vi.hoisted(() => ({
     layerValue: { value: null as AdjustmentLayerState | null },
@@ -36,9 +34,7 @@ vi.mock('../../../stores/trackStore', () => ({
 
 function makeFrozenTrack(id: string): Track {
     return {
-        id,
-        name: id,
-        kind: 'audio',
+        ...createTrack({ id, name: id, kind: 'audio', withoutDefaultDevice: true }),
         clips: [
             {
                 id: `${id}-clip`,
@@ -56,23 +52,18 @@ function makeFrozenTrack(id: string): Track {
                 muted: false,
             },
         ],
-        devices: [{ id: 'd1', type: 'gain', parameterValues: { gain: 1 }, bypassed: false }],
+        devices: [{ id: 'd1', type: 'gain', name: 'Gain', parameterValues: { gain: 1 }, bypassed: false }],
+        frozen: true,
         freezeState: { status: 'frozen' },
-        color: '',
-        muted: false,
-        soloed: false,
-        height: 80,
-        volume: 1,
-        pan: 0,
-        automationMode: 'read',
-    } as unknown as Track;
+    };
 }
 
 function makeUnfrozenTrack(id: string): Track {
     return {
         ...makeFrozenTrack(id),
+        frozen: false,
         freezeState: { status: 'unfrozen' },
-    } as unknown as Track;
+    };
 }
 
 describe('commitAdjustmentLayerMutation', () => {
@@ -82,8 +73,11 @@ describe('commitAdjustmentLayerMutation', () => {
         mocks.trackValue.value = { tracks: [], selectedTrackId: null, ghostClips: [] };
     });
 
-    function makeInverse(): { payload: InversePayload } {
-        return { payload: { expectedLayersFingerprint: '', freezeTransitions: [] } };
+    function makeInverse(): InverseAction {
+        return {
+            type: 'restoreAdjustmentLayerMutation',
+            payload: { layers: [], expectedLayersFingerprint: '', freezeTransitions: [] },
+        };
     }
 
     it('records the post-mutation layers fingerprint on the inverse action', () => {
@@ -91,7 +85,7 @@ describe('commitAdjustmentLayerMutation', () => {
         mocks.layerValue.value = { layers: [] };
 
         commitAdjustmentLayerMutation({
-            inverseAction: inverse as never,
+            inverseAction: inverse,
             mutation: () => {
                 // simulate the mutation writing a new layer set
                 mocks.layerValue.value = { layers: [] };
@@ -102,10 +96,35 @@ describe('commitAdjustmentLayerMutation', () => {
         expect(inverse.payload.expectedLayersFingerprint).toBe('[]');
     });
 
+    it('keeps the literal JSON fingerprint for nonempty post-mutation layers', () => {
+        const layer: AdjustmentLayer = {
+            id: 'L',
+            name: 'EQ',
+            effectType: 'eq',
+            parameters: [],
+            affectedTrackIds: [],
+            insertionIndex: 0,
+            regions: [],
+            enabled: true,
+            mix: 1,
+            color: '#fff',
+        };
+        const inverse = makeInverse();
+
+        commitAdjustmentLayerMutation({
+            inverseAction: inverse,
+            mutation: () => {
+                mocks.layerValue.value = { layers: [layer] };
+            },
+        });
+
+        expect(inverse.payload.expectedLayersFingerprint).toBe(JSON.stringify([layer]));
+    });
+
     it('throws when the mutation returns a value (must be synchronous)', () => {
         expect(() =>
             commitAdjustmentLayerMutation({
-                inverseAction: makeInverse() as never,
+                inverseAction: makeInverse(),
                 mutation: () => 'not-allowed' as unknown as void,
             })
         ).toThrow('synchronous');
@@ -117,7 +136,7 @@ describe('commitAdjustmentLayerMutation', () => {
 
         expect(() =>
             commitAdjustmentLayerMutation({
-                inverseAction: inverse as never,
+                inverseAction: inverse,
                 mutation: () => undefined,
             })
         ).not.toThrow();
@@ -130,7 +149,7 @@ describe('commitAdjustmentLayerMutation', () => {
         const inverse = makeInverse();
 
         commitAdjustmentLayerMutation({
-            inverseAction: inverse as never,
+            inverseAction: inverse,
             mutation: () => undefined,
         });
 
@@ -162,7 +181,7 @@ describe('commitAdjustmentLayerMutation', () => {
         const inverse = makeInverse();
 
         commitAdjustmentLayerMutation({
-            inverseAction: inverse as never,
+            inverseAction: inverse,
             mutation: () => {
                 // mutation drops the layer
                 mocks.layerValue.value = { layers: [] };
@@ -189,7 +208,7 @@ describe('commitAdjustmentLayerMutation', () => {
         const inverse = makeInverse();
 
         commitAdjustmentLayerMutation({
-            inverseAction: inverse as never,
+            inverseAction: inverse,
             mutation: () => undefined,
         });
 
@@ -204,7 +223,7 @@ describe('commitAdjustmentLayerMutation', () => {
 
         expect(() =>
             commitAdjustmentLayerMutation({
-                inverseAction: makeInverse() as never,
+                inverseAction: makeInverse(),
                 mutation: () => {
                     throw boom;
                 },

@@ -1,56 +1,51 @@
 import { createHandler } from '#/utils/createHandler';
-import { type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type HandlerSessionActionEntry, type HandlerValidationContext } from '#/utils/handlerContract';
 
-import { type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
-import { getTakeLaneForTrack } from '../../useCases/comping/getTakeLaneForTrack';
+import { compRegionInterval } from '../../useCases/comping/compRegionInterval';
+import { takeLaneSelection } from '../../useCases/comping/takeLaneSelection';
 
-/** The take a lane's `selected` flags currently name, or `null` when none does. */
-function getSelectedTakeId(lane: TakeLane): string | null {
-    return lane.takes.find((take) => take.selected)?.id ?? null;
-}
+type SelectTakeAction = Extract<AppAction, { type: 'selectTake' }>;
 
-/**
- * The lane's selection as the batch's preceding actions leave it. Only
- * `selectTake` writes take `selected` flags, so a prior sibling of the same
- * type on the same lane is the only live-read staleness a preflight can miss.
- */
-function getPlannedSelectedTakeId(lane: TakeLane, context: HandlerValidationContext): string | null {
-    let selectedTakeId = getSelectedTakeId(lane);
-    for (const action of context.actions.slice(0, context.actionIndex)) {
-        if (action.type === 'selectTake' && action.payload.trackId === lane.trackId) {
-            selectedTakeId = action.payload.takeId;
-        }
+function resolveSelection(action: SelectTakeAction, context?: HandlerValidationContext) {
+    const state = takeLaneStore.value;
+    if (!state) {
+        return null;
     }
-    return selectedTakeId;
+    const projected = context
+        ? compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(state, context)
+        : state;
+    return projected ? takeLaneSelection.resolve(projected, action) : null;
 }
 
-/**
- * `undefined` carries no assertion — fresh user intent may select over any
- * current state. `null` expects an empty selection; a string expects itself.
- */
-function selectionMatchesExpected(
-    expectedSelectedTakeId: string | null | undefined,
-    selectedTakeId: string | null
-): boolean {
-    return expectedSelectedTakeId === undefined || expectedSelectedTakeId === selectedTakeId;
+function isSelectTakeAction(action: AppAction | null | undefined): action is SelectTakeAction {
+    return action?.type === 'selectTake';
 }
 
-function laneHasTake(lane: TakeLane, takeId: string): boolean {
-    return lane.takes.some((take) => take.id === takeId);
-}
-
-/** Flips only the `selected` flags that change, keeping every other take of the
- *  lane and every other lane of the store untouched — by reference where
- *  unchanged — so undo replays this same lane-scoped shape. */
-function withSelectedTake(lane: TakeLane, takeId: string): TakeLane {
-    return {
-        ...lane,
-        takes: lane.takes.map((take) => {
-            const shouldBeSelected = take.id === takeId;
-            return take.selected === shouldBeSelected ? take : { ...take, selected: shouldBeSelected };
-        }),
-    };
+function isSelectTakeSessionEntry(entry: HandlerSessionActionEntry): boolean {
+    if (
+        !isSelectTakeAction(entry.action) ||
+        !isSelectTakeAction(entry.inverseAction) ||
+        !isSelectTakeAction(entry.redoAction)
+    ) {
+        return false;
+    }
+    const action = entry.action.payload;
+    const inverse = entry.inverseAction.payload;
+    const redo = entry.redoAction.payload;
+    if (action.takeId === null || inverse.expectedLaneId === undefined || redo.expectedLaneId === undefined) {
+        return false;
+    }
+    return (
+        inverse.trackId === action.trackId &&
+        redo.trackId === action.trackId &&
+        inverse.expectedLaneId === redo.expectedLaneId &&
+        (action.expectedLaneId === undefined || action.expectedLaneId === inverse.expectedLaneId) &&
+        inverse.expectedSelectedTakeId === action.takeId &&
+        redo.takeId === action.takeId &&
+        redo.expectedSelectedTakeId === inverse.takeId &&
+        (action.expectedSelectedTakeId === undefined || action.expectedSelectedTakeId === inverse.takeId)
+    );
 }
 
 export const handleSelectTake = createHandler<'selectTake'>({
@@ -59,74 +54,53 @@ export const handleSelectTake = createHandler<'selectTake'>({
     // `canReportConflict` registry honesty spec; undo step-over (#2881)
     // relies on it.
     canReportConflict: true,
-    validate: (action, context) => {
-        const lane = getTakeLaneForTrack(action.payload.trackId);
-        if (!lane || !laneHasTake(lane, action.payload.takeId)) {
-            return false;
-        }
-        return selectionMatchesExpected(action.payload.expectedSelectedTakeId, getPlannedSelectedTakeId(lane, context));
-    },
+    validate: (action, context) => resolveSelection(action, context) !== null,
     execute: (action) => {
         const state = takeLaneStore.value;
-        const lane = state?.lanes.find((candidate) => candidate.trackId === action.payload.trackId);
-        if (!state || !lane || !laneHasTake(lane, action.payload.takeId)) {
+        const selected = state ? takeLaneSelection.apply(state, action) : null;
+        if (!selected) {
             return { status: 'conflict' };
         }
-        if (!selectionMatchesExpected(action.payload.expectedSelectedTakeId, getSelectedTakeId(lane))) {
-            return { status: 'conflict' };
-        }
-        takeLaneStore.set({
-            lanes: state.lanes.map((candidate) =>
-                candidate.trackId === action.payload.trackId
-                    ? withSelectedTake(candidate, action.payload.takeId)
-                    : candidate
-            ),
-        });
+        takeLaneStore.set(selected);
         return { status: 'written' };
     },
     isNoop: (action) => {
-        const lane = getTakeLaneForTrack(action.payload.trackId);
-        if (!lane) {
-            return false;
-        }
-        const selectedTakeId = getSelectedTakeId(lane);
-        return (
-            selectionMatchesExpected(action.payload.expectedSelectedTakeId, selectedTakeId) &&
-            selectedTakeId === action.payload.takeId
-        );
+        const selection = resolveSelection(action);
+        return selection !== null && selection.selectedTakeId === action.payload.takeId;
     },
-    describe: (action) => {
-        const lane = getTakeLaneForTrack(action.payload.trackId);
-        const previousTakeId = lane === null ? null : getSelectedTakeId(lane);
+    describe: (action, context) => {
+        const selection = resolveSelection(action, context);
+        if (!selection) {
+            return { label: 'Select take', inverseAction: null };
+        }
+        const previousTakeId = selection.selectedTakeId;
+        if (previousTakeId === action.payload.takeId) {
+            return { label: 'Select take', inverseAction: null };
+        }
         return {
             label: 'Select take',
-            // Restores only the prior selection; `null` when nothing was
-            // selected before (there is no "select nothing" action) or when the
-            // request selected the already-selected take.
-            inverseAction:
-                previousTakeId === null || previousTakeId === action.payload.takeId
-                    ? null
-                    : {
-                          type: 'selectTake',
-                          payload: {
-                              trackId: action.payload.trackId,
-                              takeId: previousTakeId,
-                              expectedSelectedTakeId: action.payload.takeId,
-                          },
-                      },
+            inverseAction: {
+                type: 'selectTake',
+                payload: {
+                    trackId: action.payload.trackId,
+                    takeId: previousTakeId,
+                    expectedLaneId: selection.lane.id,
+                    expectedSelectedTakeId: action.payload.takeId,
+                },
+            },
             // Redo runs against the post-undo state, whose selection is exactly
             // the pre-execution selection read here.
-            redoAction: lane
-                ? {
-                      type: 'selectTake',
-                      payload: {
-                          trackId: action.payload.trackId,
-                          takeId: action.payload.takeId,
-                          expectedSelectedTakeId: previousTakeId,
-                      },
-                  }
-                : undefined,
+            redoAction: {
+                type: 'selectTake',
+                payload: {
+                    trackId: action.payload.trackId,
+                    takeId: action.payload.takeId,
+                    expectedLaneId: selection.lane.id,
+                    expectedSelectedTakeId: previousTakeId,
+                },
+            },
         };
     },
+    validateSessionEntry: isSelectTakeSessionEntry,
     undoable: true,
 });

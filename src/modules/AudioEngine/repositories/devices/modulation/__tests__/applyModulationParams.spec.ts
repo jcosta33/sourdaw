@@ -32,7 +32,7 @@ function deviceFromNodesOnly(nodes: AudioNode[]): OfflineDeviceNode {
 }
 
 describe('applyPhaserParams', () => {
-    it('applies rate, depth, feedback and high/low stages Q via namedNodes', () => {
+    it('applies rate, depth and feedback via namedNodes', () => {
         const ctx = createMockAudioContext();
         const device = createPhaser(asBaseAudioContext(ctx));
 
@@ -40,7 +40,6 @@ describe('applyPhaserParams', () => {
             'phaser-rate': 2.5,
             'phaser-depth': 0.4,
             'phaser-feedback': 0.7,
-            'phaser-stages': 8, // > 6 ⇒ Q = 1
         });
 
         expect(param(device.namedNodes!.lfo, 'frequency').value).toBe(2.5);
@@ -50,27 +49,31 @@ describe('applyPhaserParams', () => {
         expect(param(device.namedNodes!.wet, 'gain').value).toBe(expectedWet);
         expect(param(device.namedNodes!.dry, 'gain').value).toBe(1 - expectedWet);
         expect(param(device.namedNodes!.feedback, 'gain').value).toBe(0.7);
-        for (const key of ['filter0', 'filter1', 'filter2', 'filter3'] as const) {
-            expect(param(device.namedNodes![key], 'Q').value).toBe(1); // stages > 6 ⇒ Q 1
-        }
         device.dispose?.();
     });
 
-    it('uses Q = 0.5 when stages <= 6 and skips undefined params', () => {
+    it('rewires the allpass chain to the requested stage count instead of writing Q', () => {
         const ctx = createMockAudioContext();
         const device = createPhaser(asBaseAudioContext(ctx));
+        const nn = device.namedNodes!;
+        const filter6 = nn.filter6 as unknown as { connectedTo: unknown[]; Q: { value: number } };
+        const filter7 = nn.filter7 as unknown as { connectedTo: unknown[] };
 
-        applyPhaserParams(device, { 'phaser-stages': 4 }); // <= 6 ⇒ Q 0.5
-        for (const key of ['filter0', 'filter1', 'filter2', 'filter3'] as const) {
-            expect(param(device.namedNodes![key], 'Q').value).toBe(0.5);
-        }
+        applyPhaserParams(device, { 'phaser-stages': 7 });
+
+        // The seventh stage (filter6) is now the chain's tail feeding the wet
+        // gain, the eighth is out of the chain, and no filter Q moved.
+        expect(filter6.connectedTo).toContain(nn.wet);
+        expect(filter7.connectedTo).not.toContain(nn.wet);
+        expect(filter6.Q.value).toBe(0.5);
         device.dispose?.();
     });
 
     it('resolves nodes through the nodes[] fallback when namedNodes is absent', () => {
         const ctx = createMockAudioContext();
         const base = createPhaser(asBaseAudioContext(ctx));
-        // nodes layout: [splitter(0), dry(1), wet(2), filter0(3), filter1(4), filter2(5), filter3(6), lfo(7), lfoGain(8), feedback(9), merger(10)]
+        // nodes layout: [splitter(0), dry(1), wet(2), filter0..filter11(3..14),
+        // lfo(15), lfoGain(16), feedback(17), merger(18)]
         const fallback = deviceFromNodesOnly(base.nodes);
 
         applyPhaserParams(fallback, {
@@ -80,15 +83,16 @@ describe('applyPhaserParams', () => {
             'phaser-stages': 9,
         });
 
-        // lfo at index 7
-        expect(param(fallback.nodes[7], 'frequency').value).toBe(3);
-        expect(param(fallback.nodes[8], 'gain').value).toBe(0.6 * 1000);
+        expect(param(fallback.nodes[15], 'frequency').value).toBe(3);
+        expect(param(fallback.nodes[16], 'gain').value).toBe(0.6 * 1000);
         const expectedWet = Math.min(1, 0.6 * 0.5 + 0.25);
         // wet is index 2 in fallback resolution (dn.nodes[2])
         expect(param(fallback.nodes[2], 'gain').value).toBe(expectedWet);
         expect(param(fallback.nodes[1], 'gain').value).toBe(1 - expectedWet);
-        expect(param(fallback.nodes[9], 'gain').value).toBe(0.2);
-        expect(param(fallback.nodes[3], 'Q').value).toBe(1);
+        expect(param(fallback.nodes[17], 'gain').value).toBe(0.2);
+        // The stage rewire ran through the fallback resolution too: the 9th
+        // stage (filter8 = nodes[11]) is the chain tail feeding the wet gain.
+        expect((fallback.nodes[11] as unknown as { connectedTo: unknown[] }).connectedTo).toContain(fallback.nodes[2]);
     });
 
     it('leaves values untouched when params object is empty', () => {
@@ -216,23 +220,36 @@ describe('applyAutoPanParams', () => {
 });
 
 describe('applyStereoWidenerParams', () => {
-    it('applies width, mid (dB→gain) and mono-bass via namedNodes', () => {
+    it('applies width, mid (dB→gain), side (dB→gain) and mono-bass via namedNodes', () => {
         const ctx = createMockAudioContext();
         const device = createStereoWidener(asBaseAudioContext(ctx));
-        applyStereoWidenerParams(device, { 'width-amount': 1.5, 'width-mid': -6, 'width-mono-bass': 120 });
+        applyStereoWidenerParams(device, {
+            'width-amount': 1.5,
+            'width-mid': -6,
+            'width-side': -12,
+            'width-mono-bass': 120,
+        });
         expect(param(device.namedNodes!.sideGain, 'gain').value).toBe(1.5);
         expect(param(device.namedNodes!.midGain, 'gain').value).toBeCloseTo(10 ** (-6 / 20));
+        expect(param(device.namedNodes!.sideLevel, 'gain').value).toBeCloseTo(10 ** (-12 / 20));
         expect(param(device.namedNodes!.monoBassFilter, 'frequency').value).toBe(120);
     });
 
     it('resolves nodes through the nodes[] fallback when namedNodes is absent', () => {
         const ctx = createMockAudioContext();
         const base = createStereoWidener(asBaseAudioContext(ctx));
-        // nodes: [input(0), output(1), splitter(2), merger(3), midSum(4), sideSum(5), rightInvert(6), midGain(7), sideGain(8), monoBassFilter(9), sideInvert(10)]
+        // nodes: [input(0), output(1), splitter(2), merger(3), midSum(4), sideSum(5),
+        // rightInvert(6), midGain(7), sideGain(8), monoBassFilter(9), sideInvert(10), sideLevel(11)]
         const fallback = deviceFromNodesOnly(base.nodes);
-        applyStereoWidenerParams(fallback, { 'width-amount': 0.8, 'width-mid': 0, 'width-mono-bass': 80 });
+        applyStereoWidenerParams(fallback, {
+            'width-amount': 0.8,
+            'width-mid': 0,
+            'width-side': 6,
+            'width-mono-bass': 80,
+        });
         expect(param(fallback.nodes[8], 'gain').value).toBe(0.8);
         expect(param(fallback.nodes[7], 'gain').value).toBe(10 ** (0 / 20));
+        expect(param(fallback.nodes[11], 'gain').value).toBeCloseTo(10 ** (6 / 20));
         expect(param(fallback.nodes[9], 'frequency').value).toBe(80);
     });
 

@@ -34,7 +34,7 @@ export function loadCrustPatchWithAudio(deviceId: string, rawPatch: CrustPatch):
         patch = { ...rawPatch, oversampling: declared };
     }
 
-    loadCrustPatch(patch);
+    loadCrustPatch(deviceId, patch);
 
     // Drop any rAF flush still pending from a prior knob drag so it can't fire
     // after these immediate pushes and overwrite a preset value with the stale

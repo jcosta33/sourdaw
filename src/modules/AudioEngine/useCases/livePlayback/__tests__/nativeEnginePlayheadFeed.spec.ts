@@ -387,6 +387,7 @@ describe('the native engine playhead feed', () => {
             octave: 4,
             midiNote: 69,
             noteName: 'A',
+            polyStrings: [],
         });
     });
 

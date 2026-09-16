@@ -39,6 +39,9 @@ const mocks = vi.hoisted(() => ({
 const { updateDeviceParam, persistDeviceParam } = mocks;
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
+
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
@@ -211,7 +214,7 @@ describe('loadCrustPatchWithAudio', () => {
         // Soft, so a regression reports both sinks rather than stopping at the
         // first. They are two separate writes of the same value and either one
         // slipping is the same desync.
-        const storedPatch = mocks.loadCrustPatch.mock.calls.at(0)?.[0] as CrustPatch | undefined;
+        const storedPatch = mocks.loadCrustPatch.mock.calls.at(0)?.[1] as CrustPatch | undefined;
         expect.soft(storedPatch?.oversampling, 'the store kept a factor the cascade does not build').toBe(16);
 
         const pushedOversampling = updateDeviceParam.mock.calls
@@ -228,7 +231,7 @@ describe('loadCrustPatchWithAudio', () => {
 
         loadCrustPatchWithAudio(DEVICE_ID, patch);
 
-        expect(mocks.loadCrustPatch).toHaveBeenCalledWith(patch);
+        expect(mocks.loadCrustPatch).toHaveBeenCalledWith(DEVICE_ID, patch);
         expect(updateDeviceParam).toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, 'oversampling', 2);
     });
 

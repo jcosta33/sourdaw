@@ -5,6 +5,11 @@ export type { PluginScanState } from './pluginScanStore';
 export { pluginScanStore, defaultPluginScanState } from './pluginScanStore';
 export type { ExternalPluginActivationState, ExternalPluginActivationStatus } from './externalPluginActivationStore';
 export { externalPluginActivationStore, defaultExternalPluginActivationState } from './externalPluginActivationStore';
+export type { ExternalPluginRestoreFailureState } from './externalPluginRestoreFailureStore';
+export {
+    externalPluginRestoreFailureStore,
+    defaultExternalPluginRestoreFailureState,
+} from './externalPluginRestoreFailureStore';
 export type { PluginGuiState, PluginGuiStatus } from './pluginGuiStore';
 export { pluginGuiStore, defaultPluginGuiState } from './pluginGuiStore';
 export type {

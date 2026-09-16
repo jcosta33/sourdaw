@@ -1,4 +1,5 @@
 import { type ClipSplitActionSnapshot } from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
 import { type Clip } from '../../stores/trackStore';
@@ -21,8 +22,8 @@ function trackSnapshotMatches(
     const rightClip = rightClipIndex < 0 ? null : clips[rightClipIndex]!;
     const effectiveRightIndex = rightClipIndex < 0 ? clips.length : rightClipIndex;
     return (
-        JSON.stringify(leftClip ?? null) === JSON.stringify(expected.leftClip) &&
-        JSON.stringify(rightClip) === JSON.stringify(expected.rightClip) &&
+        valuesEqual(leftClip ?? null, expected.leftClip) &&
+        valuesEqual(rightClip, expected.rightClip) &&
         effectiveRightIndex === expected.rightClipIndex
     );
 }

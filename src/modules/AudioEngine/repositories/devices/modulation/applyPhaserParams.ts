@@ -1,14 +1,12 @@
 import { type OfflineDeviceNode } from '../types';
 
+import { wirePhaserStages } from './phaserWiring';
+
 export function applyPhaserParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
     const nn = dn.namedNodes;
-    // nodes: [splitter, dry, wet, f0, f1, f2, f3, lfo, lfoGain, feedback, dry, wet]
-    const filtersP = nn
-        ? ([nn.filter0, nn.filter1, nn.filter2, nn.filter3] as BiquadFilterNode[])
-        : ([dn.nodes[3], dn.nodes[4], dn.nodes[5], dn.nodes[6]] as BiquadFilterNode[]);
-    const lfoP = (nn?.lfo ?? dn.nodes[7]) as OscillatorNode;
-    const lfoGainP = (nn?.lfoGain ?? dn.nodes[8]) as GainNode;
-    const feedbackP = (nn?.feedback ?? dn.nodes[9]) as GainNode;
+    const lfoP = (nn?.lfo ?? dn.nodes[15]) as OscillatorNode;
+    const lfoGainP = (nn?.lfoGain ?? dn.nodes[16]) as GainNode;
+    const feedbackP = (nn?.feedback ?? dn.nodes[17]) as GainNode;
     const dryP = (nn?.dry ?? dn.nodes[1]) as GainNode;
     const wetP = (nn?.wet ?? dn.nodes[2]) as GainNode;
     if (params['phaser-rate'] !== undefined) {
@@ -23,9 +21,8 @@ export function applyPhaserParams(dn: OfflineDeviceNode, params: Record<string, 
     if (params['phaser-feedback'] !== undefined) {
         feedbackP.gain.value = params['phaser-feedback'];
     }
+    // `phaser-stages` is not automatable, so this only runs on explicit writes.
     if (params['phaser-stages'] !== undefined) {
-        for (const freq of filtersP) {
-            freq.Q.value = params['phaser-stages'] > 6 ? 1 : 0.5;
-        }
+        wirePhaserStages(dn, params['phaser-stages']);
     }
 }

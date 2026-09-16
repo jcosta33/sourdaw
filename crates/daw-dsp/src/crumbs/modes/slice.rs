@@ -263,6 +263,7 @@ impl SliceMode {
             velocity,
             sample_id: self.sample_id,
             root_note: note, // Slices play at original pitch.
+            source_sample_rate: 0.0,
             choke_group: 0,
             playback_mode: self.playback_mode,
             loop_mode: self.loop_mode,

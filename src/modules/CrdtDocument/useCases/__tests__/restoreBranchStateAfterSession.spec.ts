@@ -86,4 +86,29 @@ describe('restoreBranchStateAfterSession', () => {
         // ...and the backup stays, so a later attempt can still make it durable.
         expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).not.toBeNull();
     });
+
+    it('should retain the backup and report unavailable durable reads without changing branch state', async () => {
+        const { branchStore } = await import('../../stores/branchStore');
+        const { preserveBranchStateForSession } = await import('../preserveBranchStateForSession');
+        const { restoreBranchStateAfterSession } = await import('../restoreBranchStateAfterSession');
+        branchStore.set(localState);
+        preserveBranchStateForSession();
+        branchStore.set(remoteState);
+        const getItem = Storage.prototype.getItem;
+        const durableStorage = window.localStorage;
+        const refusedRead = vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key) => {
+            if (key === BRANCH_STORAGE_KEY) {
+                throw new DOMException('The operation is insecure.', 'SecurityError');
+            }
+            return getItem.call(durableStorage, key);
+        });
+
+        expect(restoreBranchStateAfterSession()).toBe('storage-unavailable');
+        expect(branchStore.value).toEqual(remoteState);
+
+        refusedRead.mockRestore();
+        expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).not.toBeNull();
+        expect(restoreBranchStateAfterSession()).toBe('restored');
+        expect(branchStore.value).toEqual(localState);
+    });
 });

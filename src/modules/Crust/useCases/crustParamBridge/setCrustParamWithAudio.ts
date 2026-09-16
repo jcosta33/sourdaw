@@ -31,7 +31,7 @@ export function setCrustParamWithAudio<Key extends keyof CrustPatch>(
         return;
     }
 
-    setCrustParam(key, value);
+    setCrustParam(deviceId, key, value);
 
     let derivedAlgorithm: number | undefined;
     if (key === 'style' && typeof value === 'string') {
@@ -42,7 +42,7 @@ export function setCrustParamWithAudio<Key extends keyof CrustPatch>(
             // the same flush as style, after it, because the web host replays
             // a record in first-insertion order and style must precede the
             // algorithm it derives.
-            setCrustParam('algorithm', algorithm);
+            setCrustParam(deviceId, 'algorithm', algorithm);
 
             const encodedAlgorithm = encodeCrustValue('algorithm', algorithm);
             if (typeof encodedAlgorithm === 'number') {

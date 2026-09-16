@@ -1,5 +1,6 @@
 import { wireSidechainRoutes } from '#/modules/Routing/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -8,7 +9,6 @@ import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 import { removeTrackModulationReferences } from '../../useCases/removeTrackModulationReferences';
 import { isGeneratedMidiStateCurrent } from '../isGeneratedMidiStateCurrent';
-import { isJsonEntityEqual } from '../isJsonEntityEqual';
 import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPriorBatchActions';
 
 export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
@@ -20,7 +20,7 @@ export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
         }
         const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
         if (track && guard.midiByClipIdJson === '{}') {
-            return isJsonEntityEqual(projectTrackThroughPriorBatchActions(track, context), guard.entityJson);
+            return matchesJsonFingerprint(projectTrackThroughPriorBatchActions(track, context), guard.entityJson);
         }
         return isGeneratedMidiStateCurrent({
             entityId: action.payload.trackId,

@@ -1157,6 +1157,7 @@ export class TrackNode {
                     nodes: factoryNode.nodes,
                     inputNode: factoryNode.inputNode,
                     outputNode: factoryNode.outputNode,
+                    lufsMeter: factoryNode.lufsMeter,
                     dispose: factoryNode.dispose,
                 };
                 dn.controller = {

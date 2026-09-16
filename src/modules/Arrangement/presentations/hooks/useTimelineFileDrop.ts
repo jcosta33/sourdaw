@@ -10,6 +10,8 @@ import { trackStore } from '../../stores/trackStore';
 import { addTrack } from '../../useCases/addTrack';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { addClip } from '../../useCases/clip/addClip';
+import { type ClipAudioAssetStaging } from '../../useCases/clip/clipAudioAssetStagingState';
+import { stageClipAudioAsset } from '../../useCases/clip/stageClipAudioAsset';
 import { executeAddDeviceAction } from '../../useCases/device/executeAddDeviceAction';
 import { importMidiFile } from '../../useCases/importMidiFile';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
@@ -150,6 +152,7 @@ export const useTimelineFileDrop = ({
         // a clip pointing at the bufferId. No file decoding needed.
         const aiRenderData = event.dataTransfer.getData('application/x-sourdaw-ai-render');
         if (aiRenderData) {
+            let stagedAsset: ClipAudioAssetStaging | null = null;
             try {
                 const render = parseAiRender(aiRenderData);
                 let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
@@ -165,15 +168,42 @@ export const useTimelineFileDrop = ({
                 }
                 const model = buildTimelineRenderModel();
                 const durationBeats = Math.max(1, Math.ceil((render.durationSeconds / 60) * model.tempo));
-                addClip({
+                // The generated PCM exists only in this peer's audio cache, so the
+                // drop registers shareable, hash-verified bytes before the clip can
+                // carry them to a collaborator (#3759, round 7). A staging failure
+                // must not publish a clip a peer would receive as silence.
+                const renderBuffer = getCachedAudioBuffer({ bufferId: render.bufferId });
+                if (renderBuffer) {
+                    try {
+                        stagedAsset = await stageClipAudioAsset(renderBuffer, render.name);
+                    } catch {
+                        notifyUser(
+                            `Could not place "${render.name}" — its audio could not be registered for sharing.`,
+                            'error'
+                        );
+                        return;
+                    }
+                }
+                const clip = addClip({
                     trackId: targetTrackId,
                     startBeat: beat,
                     endBeat: beat + durationBeats,
                     name: render.name,
                     type: 'audio',
                     audioBufferId: render.bufferId,
+                    assetHash: stagedAsset?.hash,
                 });
+                if (clip) {
+                    if (stagedAsset) {
+                        getAssetTransfer()?.promoteStagedAsset(stagedAsset.leaseId);
+                    }
+                } else if (stagedAsset) {
+                    getAssetTransfer()?.releaseStagedAsset(stagedAsset.leaseId);
+                }
             } catch {
+                if (stagedAsset) {
+                    getAssetTransfer()?.releaseStagedAsset(stagedAsset.leaseId);
+                }
                 notifyUser('Could not place the generated clip — the dropped item was malformed.', 'error');
             }
             return;
@@ -218,6 +248,21 @@ export const useTimelineFileDrop = ({
                         1,
                         Math.ceil((cachedBuffer.duration / 60) * buildTimelineRenderModel().tempo)
                     );
+                    // Cached samples — factory content and already-decoded imports —
+                    // have no file to re-read, so their PCM is encoded and staged
+                    // here: the hash a receiving peer requests and verifies the
+                    // bytes against (#3759).
+                    try {
+                        const staged = await stageClipAudioAsset(cachedBuffer, sample.name);
+                        assetHash = staged?.hash;
+                        assetLeaseId = staged?.leaseId;
+                    } catch {
+                        discardPreparedSampleResources();
+                        if (authority.isCurrent()) {
+                            notifyUser(`Failed to import "${sample.name}" — asset registration failed`, 'error');
+                        }
+                        return;
+                    }
                 }
 
                 // The sample must survive read → decode → stage before anything is

@@ -23,6 +23,7 @@ import {
     captureProjectIdentity,
     captureProjectRevision,
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -88,6 +89,12 @@ const COLLABORATOR_PAD_NOTES: MidiClipNoteSnapshot[] = [
     ...PAD_NOTES,
     { id: 'pad-collaborator', pitch: 52, startBeat: 2, duration: 1, velocity: 64, channel: 0 },
 ];
+
+type RawMidiProjectDocument = {
+    midi?: {
+        notesByClipId?: Record<string, unknown>;
+    };
+};
 
 function createClip(id: string, trackId: string, name: string): Clip {
     return {
@@ -310,10 +317,12 @@ describe('protected target authority under collaborator drift', () => {
             confirmPendingChatActions({ confirmationId: 'confirmation-untouched-protected-track' })
         ).resolves.toEqual({ status: 'executed' });
 
+        flushFixtureProjectWrites();
         expect(midiStore.value?.notesByClipId['clip-lead']).toEqual([...LEAD_NOTES, ...ADDED_LEAD_NOTES]);
-        // Committing re-projects the stores from this batch's own staged document,
-        // so the protected clip carries exactly what the batch left it: nothing.
-        expect(midiStore.value?.notesByClipId['clip-pad']).toEqual(PAD_NOTES);
+        expect(midiStore.value?.notesByClipId['clip-pad']).toEqual(COLLABORATOR_PAD_NOTES);
+        const rawMidi = getCrdtDoc<RawMidiProjectDocument>('root')?.midi?.notesByClipId;
+        expect(rawMidi?.['clip-lead']).toEqual([...LEAD_NOTES, ...ADDED_LEAD_NOTES]);
+        expect(rawMidi?.['clip-pad']).toEqual(COLLABORATOR_PAD_NOTES);
         expect(getPendingActionConfirmation('confirmation-untouched-protected-track')?.status).toBe('executed');
     });
 

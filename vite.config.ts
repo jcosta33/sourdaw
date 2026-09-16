@@ -8,9 +8,28 @@ import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
-import { configDefaults, defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig, type Plugin } from 'vitest/config';
+
+import { createSourdawRootHeaderMiddleware, isSourdawE2eServeMode } from './scripts/e2eServerIdentity';
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
+
+/**
+ * E2E-only serving-identity marker. Browser verification on a shared machine
+ * must prove which checkout answers before reusing a server, so every dev
+ * response in `--mode e2e` carries this checkout's vite root. The plugin
+ * self-gates on the resolved command and mode: plain `pnpm dev`, vitest, and
+ * production builds carry no marker.
+ */
+function sourdawE2eServingCheckoutPlugin(): Plugin {
+    return {
+        name: 'sourdaw-e2e-serving-checkout',
+        apply: (_config, { command, mode }) => command === 'serve' && isSourdawE2eServeMode(mode),
+        configureServer(server) {
+            server.middlewares.use(createSourdawRootHeaderMiddleware(server.config.root));
+        },
+    };
+}
 
 // eslint-disable-next-line import-x/no-default-export
 export default defineConfig({
@@ -41,6 +60,7 @@ export default defineConfig({
         babel({ presets: [reactCompilerPreset()] }),
         react(),
         tailwindcss(),
+        sourdawE2eServingCheckoutPlugin(),
     ],
     test: {
         environment: 'jsdom',

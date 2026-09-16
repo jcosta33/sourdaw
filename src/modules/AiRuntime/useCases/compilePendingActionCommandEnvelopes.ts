@@ -94,6 +94,7 @@ export function compilePendingActionCommandEnvelopes(input: CompilePendingAction
             expectedEffect: input.actionLabels[index] ?? action.type,
             normalizedProjectRevision: input.projectRevision,
             options: { ...input.group, source: 'prompt' },
+            materializationContext: { actions: input.actions, actionIndex: index },
         });
         commandIds.push(envelope.commandId);
         indexProducedDevice(envelope, index, deviceProducers);

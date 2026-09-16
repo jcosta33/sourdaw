@@ -18,7 +18,13 @@ import { clearReportedLatency } from '../useCases/latencyCompensation/compensati
 import { reportLatency } from '../useCases/latencyCompensation/compensation/reportLatency';
 
 import { getAudioDeviceRuntimeSink } from './audioDeviceRuntimeSink';
-import { isBacteriaDevice, createBacteriaNode, type BacteriaNodeResult } from './BacteriaNode';
+import {
+    isBacteriaDevice,
+    createBacteriaNode,
+    extractBacteriaModAssignments,
+    type BacteriaNodeModAssignment,
+    type BacteriaNodeResult,
+} from './BacteriaNode';
 import { isCrumbsDevice, createCrumbsNode, type CrumbsNodeResult } from './CrumbsNode';
 import { isCrustDevice, createCrustNode, type CrustNodeResult } from './CrustNode';
 import { attachFaustMeterBridge, detachFaustMeterBridge } from './faustMeterReadings';
@@ -1065,6 +1071,11 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
         onRuntimeFailure: replaceRuntimeFailure,
     }) {
         const pendingParams: Array<[string, number]> = [];
+        // The latest assignment table pushed before the worklet finished
+        // loading. Replacement semantics make "latest wins" the correct
+        // coalescing, the same way a pre-load scalar write collapses to its
+        // newest value.
+        let pendingModAssignments: readonly BacteriaNodeModAssignment[] | null = null;
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         let runtimeFailureMessage: string | null = null;
         let publishedNode: BuiltinDeviceNode | null = null;
@@ -1084,7 +1095,11 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                 publishedNode.controller.ready = false;
             }
             pendingParams.length = 0;
+            pendingModAssignments = null;
             placeholder.nativeDspControls = { setParam: () => {}, setBypass: () => {} };
+            if (placeholder.controller) {
+                placeholder.controller.setPatch = () => {};
+            }
             replaceRuntimeFailure?.(publishedNode, placeholder);
             publishedResult.destroy();
             clearReportedLatency(deviceId);
@@ -1109,6 +1124,22 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
             },
             setBypass: () => {},
         };
+        // Same placeholder shape Grinder's uses: the descriptor owns its
+        // pre-load queueing, with the assignments table collapsing to the
+        // latest push. Without this, an assignment push landing while the
+        // worklet was still loading would be dropped whole.
+        placeholder.controller = {
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
+            setBypass: () => {},
+            setPatch: (patch) => {
+                const assignments = extractBacteriaModAssignments(patch);
+                if (assignments) {
+                    pendingModAssignments = assignments;
+                }
+            },
+        };
         const controlTarget = trackId && parameterIds ? { trackId, deviceId, deviceType, parameterIds } : undefined;
         const loadPromise = createBacteriaNode(context, undefined, signal, controlTarget, onRuntimeFailure)
             .then(async (result: BacteriaNodeResult) => {
@@ -1130,6 +1161,9 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                if (pendingModAssignments) {
+                    result.setModAssignments(pendingModAssignments);
+                }
                 result.onLatencyChanged((latency) => {
                     reportLatency(deviceId, (latency / context.sampleRate) * 1000);
                 });
@@ -1146,6 +1180,20 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     controller: {
                         setParam: result.setParam,
                         setBypass: result.setBypass,
+                        // The structured table arrives spelled as a patch, so
+                        // Bacteria's patch door carries only its assignment
+                        // table; every other key is ignored.
+                        setPatch: (patch) => {
+                            const assignments = extractBacteriaModAssignments(patch);
+                            if (assignments) {
+                                result.setModAssignments(assignments);
+                            }
+                        },
+                        // Reached through the engine's generic controller sweep
+                        // (`stopAllScheduled`), like Grinder's: an engine-level
+                        // re-init or program change must leave the bands silent
+                        // whatever tails they held.
+                        reset: result.reset,
                         destroy: () => {
                             result.destroy();
                             clearReportedLatency(deviceId);
@@ -1570,6 +1618,7 @@ const scoringDescriptor: WasmDeviceDescriptor = {
                         midiNote: data.midiNote,
                         noteName: data.noteName,
                         active: data.active,
+                        polyStrings: data.polyStrings,
                     });
                 });
                 onLoaded({

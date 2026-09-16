@@ -103,6 +103,16 @@ describe('StatusBar', () => {
         });
     });
 
+    describe('memory readout scoping', () => {
+        it('identifies the MEM value as the renderer JavaScript heap, not total usage', () => {
+            renderWithTooltip(<StatusBar />);
+
+            const cluster = screen.getByTitle(/JavaScript heap/);
+            expect(cluster).toHaveTextContent('JS MEM');
+            expect(screen.getByTitle(/excludes native audio/)).toBe(cluster);
+        });
+    });
+
     describe('responsive status disclosure', () => {
         it('keeps essential device status direct and defers the remaining status controls at the measured boundary', () => {
             setViewportWidth(1199);
@@ -123,7 +133,7 @@ describe('StatusBar', () => {
             fireEvent.click(screen.getByRole('button', { name: 'More application status' }));
             const details = screen.getByRole('dialog', { name: 'More application status' });
 
-            for (const label of ['UI CPU', 'MEM', 'AI Model', 'Out']) {
+            for (const label of ['UI CPU', 'JS MEM', 'AI Model', 'Out']) {
                 expect(details).toHaveTextContent(label);
             }
             expect(screen.getByRole('button', { name: 'Third-party licenses' })).toBeInTheDocument();

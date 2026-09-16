@@ -1,64 +1,56 @@
 import { describe, expect, it, vi } from 'vitest';
 
-// scheduleFaustNote delegates to scheduleDeviceParam; stub it to capture the
-// (trackId, deviceId, paramId, value, time) tuples without standing up the engine.
-// vi.hoisted so the mock fn exists before the hoisted vi.mock factory runs.
-const { scheduleDeviceParam } = vi.hoisted(() => ({ scheduleDeviceParam: vi.fn() }));
+// scheduleFaustNote dispatches through the polyphonic voice allocator
+// (scheduleDeviceKeyOn/scheduleDeviceKeyOff); stub both to capture the
+// (trackId, deviceId, pitch, velocity, time) tuples, and stub the retired
+// parameter route to prove it is no longer used. vi.hoisted so the mock fns
+// exist before the hoisted vi.mock factories run.
+const { scheduleDeviceKeyOn, scheduleDeviceKeyOff, scheduleDeviceParam } = vi.hoisted(() => ({
+    scheduleDeviceKeyOn: vi.fn(),
+    scheduleDeviceKeyOff: vi.fn(),
+    scheduleDeviceParam: vi.fn(),
+}));
+vi.mock('../../deviceControls/scheduleDeviceKeyOn', () => ({ scheduleDeviceKeyOn }));
+vi.mock('../../deviceControls/scheduleDeviceKeyOff', () => ({ scheduleDeviceKeyOff }));
 vi.mock('../../deviceControls/scheduleDeviceParam', () => ({ scheduleDeviceParam }));
 
 import { scheduleFaustNote } from '../scheduleFaustNote';
 
-function callsFor(paramId: string): Array<{ value: number; time: number }> {
-    return scheduleDeviceParam.mock.calls
-        .filter((c) => c[2] === paramId)
-        .map((c) => ({ value: c[3] as number, time: c[4] as number }));
-}
-
 describe('scheduleFaustNote', () => {
-    it('writes freq/gain/gate-on/gate-off derived from pitch, velocity and duration', () => {
-        scheduleDeviceParam.mockClear();
-        const pitch = 69; // A4 → 440 Hz
-        const velocity = 127; // max → gain 1.0 (clipGain default)
-        const startTime = 1.0;
-        const duration = 0.5;
+    it('voices the note through keyOn/keyOff, not parameter writes', () => {
+        scheduleFaustNote('t1', 'd1', 69, 1.0, 0.5, 127);
 
-        scheduleFaustNote('t1', 'd1', pitch, startTime, duration, velocity);
-
-        // MIDI→Hz: 440 * 2^((pitch-69)/12)
-        const freq = callsFor('freq')[0]!;
-        expect(freq.value).toBeCloseTo(440 * 2 ** ((69 - 69) / 12));
-        expect(freq.time).toBe(startTime);
-
-        const gain = callsFor('gain')[0]!;
-        expect(gain.value).toBeCloseTo((127 / 127) * 1.0);
-        expect(gain.time).toBe(startTime);
-
-        // gate on at startTime == 1, gate off at startTime + duration
-        const gates = callsFor('gate');
-        expect(gates).toHaveLength(2);
-        expect(gates[0]!.value).toBe(1);
-        expect(gates[0]!.time).toBe(startTime);
-        expect(gates[1]!.value).toBe(0);
-        expect(gates[1]!.time).toBeCloseTo(startTime + duration);
-
-        // every call targets the right track/device
-        for (const c of scheduleDeviceParam.mock.calls) {
-            expect(c[0]).toBe('t1');
-            expect(c[1]).toBe('d1');
-        }
+        // One voice allocation at the note start, one release at its end.
+        // The poly allocator maps pitch to 440*2^((pitch-69)/12) and velocity
+        // to velocity/127 itself; writing freq/gain/gate as device parameters
+        // reaches no voice and renders silence (#3721).
+        expect(scheduleDeviceKeyOn).toHaveBeenCalledTimes(1);
+        expect(scheduleDeviceKeyOn).toHaveBeenCalledWith('t1', 'd1', 69, 127, 1.0);
+        expect(scheduleDeviceKeyOff).toHaveBeenCalledTimes(1);
+        expect(scheduleDeviceKeyOff).toHaveBeenCalledWith('t1', 'd1', 69, 0, 1.5);
+        expect(scheduleDeviceParam).not.toHaveBeenCalled();
     });
 
-    it('applies a non-default clip gain and pitch transpose to the scheduled values', () => {
-        scheduleDeviceParam.mockClear();
-        const pitch = 81; // A5 → 880 Hz
-        const velocity = 64;
-        const clipGain = 0.5;
+    it('scales velocity by clip gain (the allocator divides velocity by 127)', () => {
+        scheduleFaustNote('t2', 'd2', 81, 2.0, 0.25, 64, 0.5);
 
-        scheduleFaustNote('t2', 'd2', pitch, 2.0, 0.25, velocity, clipGain);
+        // keyOn(velocity 32) -> voice gain 32/127 = (64/127) * 0.5, the same
+        // value the retired parameter route wrote into the gain control.
+        expect(scheduleDeviceKeyOn).toHaveBeenCalledWith('t2', 'd2', 81, 32, 2.0);
+        expect(scheduleDeviceKeyOff).toHaveBeenCalledWith('t2', 'd2', 81, 0, 2.25);
+    });
 
-        expect(callsFor('freq')[0]!.value).toBeCloseTo(440 * 2 ** ((81 - 69) / 12));
-        expect(callsFor('gain')[0]!.value).toBeCloseTo((64 / 127) * 0.5);
-        // gate off at 2.25
-        expect(callsFor('gate')[1]!.time).toBeCloseTo(2.25);
+    it('releases every call against the right track, device and pitch', () => {
+        scheduleDeviceKeyOn.mockClear();
+        scheduleDeviceKeyOff.mockClear();
+        scheduleFaustNote('t3', 'd3', 60, 0.0, 1.0, 100);
+
+        const on = scheduleDeviceKeyOn.mock.calls[0]!;
+        const off = scheduleDeviceKeyOff.mock.calls[0]!;
+        expect(on.slice(0, 3)).toEqual(['t3', 'd3', 60]);
+        expect(off.slice(0, 3)).toEqual(['t3', 'd3', 60]);
+        // The release is addressed to the note's own end, so overlapping notes
+        // release independently instead of one gate write cutting them all.
+        expect(off[4]).toBe(1.0);
     });
 });

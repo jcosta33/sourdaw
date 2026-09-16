@@ -18,17 +18,30 @@ describe('restoreLoopRegion', () => {
     });
 
     it('writes the complete loop snapshot atomically', () => {
-        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, loopStart: 0, loopEnd: 0 });
 
-        restoreLoopRegion({ loopStart: 4, loopEnd: 12, isLooping: true });
+        expect(
+            restoreLoopRegion({
+                expected: { loopStart: 0, loopEnd: 0, isLooping: false },
+                replacement: { loopStart: 4, loopEnd: 12, isLooping: true },
+            })
+        ).toEqual({ status: 'written' });
 
         expect(updateTransportState).toHaveBeenCalledWith({ loopStart: 4, loopEnd: 12, isLooping: true });
     });
 
     it('restores a disengaged region exactly as it was captured', () => {
-        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isLooping: true });
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            loopStart: 0,
+            loopEnd: 2,
+            isLooping: true,
+        });
 
-        restoreLoopRegion({ loopStart: 0, loopEnd: 2, isLooping: false });
+        restoreLoopRegion({
+            expected: { loopStart: 0, loopEnd: 2, isLooping: true },
+            replacement: { loopStart: 0, loopEnd: 2, isLooping: false },
+        });
 
         expect(updateTransportState).toHaveBeenCalledWith({ loopStart: 0, loopEnd: 2, isLooping: false });
     });
@@ -36,7 +49,10 @@ describe('restoreLoopRegion', () => {
     it('does not write when transport state is missing', () => {
         vi.mocked(getTransportState).mockReturnValue(null);
 
-        restoreLoopRegion({ loopStart: 4, loopEnd: 12, isLooping: true });
+        restoreLoopRegion({
+            expected: { loopStart: 0, loopEnd: 0, isLooping: false },
+            replacement: { loopStart: 4, loopEnd: 12, isLooping: true },
+        });
 
         expect(updateTransportState).not.toHaveBeenCalled();
     });

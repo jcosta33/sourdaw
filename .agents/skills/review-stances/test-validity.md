@@ -190,6 +190,22 @@ Probe that would have caught it: the checker exists and is cheap, so the probe i
 reproduce it by hand — `pnpm test:barrel-mocks` on the head, every `✗` row reported. The author's
 dispatch carries the same command whenever the change adds a barrel export or a barrel import.
 
+### 2026-09-09 — storage tests observed one terminal but not reentrant execution (escaped via PR #576)
+
+The adapter tests exercised an ordinary pending write and its final cache value. They never invoked a synchronous
+publication listener that called the public flush again, never changed a later selected write during an earlier
+preparation callback, and never compared terminal cache against a fresh decode of the actual published document.
+
+Probe that would have caught it: use an atomic publish-then-notify port and assert mutation owner/count, raw document,
+adapter cache, fresh decoder, pending count, and later flush. Delete the whole-snapshot claims, restore terminal pending
+copying, capture a later write only when its preparation starts, remove callback identity checks, and remove the
+post-publication error catch one at a time; each owning case must fail on behavior rather than error wording.
+
+The same probe must publish newer same-slot authority from inside each independently guarded terminal/hydrate callback
+and cover both later- and earlier-authored nested scopes. Bypass the authority-epoch check and the ambiguous terminal
+call separately; each must leave raw and cache divergent and fail. Include projectors that return `null` and throw with
+no configured initial value so nullish fallback cannot silently reinstate rejected document content.
+
 ### 2026-09-10 — catalog cases asserted presence, never selectability (escaped via PR #4128)
 
 The catalog spec checked that the creation slots for a track target existed by object type and the
@@ -215,3 +231,42 @@ Probe that would have caught it: for every nesting comparison independently vali
 case with equal start timestamps and one with equal end timestamps; for each pair, add a third
 with the enclosure a single unit narrower. The equality cases must admit only unique enclosures;
 the narrower and existing overlap fixtures must refuse.
+
+### 2026-09-12 — groove identity guards compared object serialization (escaped via PR #471)
+
+PR #471 introduced the extraction and inverse guards in `10bbf0bdcc` and the creation identity
+guard in `c166247ea4`. They compared `JSON.stringify` output, so a fresh Automerge projection with
+the same template or assignment fields in a different object-key order was rejected as changed.
+
+Blind spot: the fixtures reused author-constructed objects and never crossed a fresh document
+projection, while their retry assertions used the same insertion order as the producer.
+
+Probe that would have caught it: cross a fresh document projection for creation idempotence and
+guarded inverse checks, construct equal typed values with different top-level and nested key order,
+and assert their JSON strings differ. Unchanged values must admit the no-write or inverse path,
+while changed timing, dynamics, identity, and array order must still refuse.
+
+### 2026-09-12 — MIDI split fixtures equated absent keys with undefined (escaped via PRs #638 and #1874)
+
+PR #638 rebuilt split-right notes with absent optional fields materialized as own keys whose values
+were `undefined`; PR #1874 repeated the shape while adding two expression fields. Automerge's JSON
+boundary removed those keys, so the prepared undo guard could never match committed project truth.
+
+Blind spot: the producer specs used `toEqual` with explicit `undefined` properties, an oracle that
+also passes when those properties are absent.
+
+Probe that would have caught it: compare generated optional-field objects with `toStrictEqual` or
+explicit `Object.hasOwn` assertions before a serialized undo round trip. Require absent optionals to
+stay absent, defined zero values to survive, and changed values and array order to remain distinct.
+
+### 2026-09-12 — Replacement clones materialized absent clip fields (escaped via PR #2169)
+
+PR #2169 introduced the shared replacement-clip clone with unconditional `overrides` and
+`kneadState` properties. Inserting a captured clip that omitted those optionals therefore produced
+own keys set to `undefined`; the strict glue freshness guard then rejected the live replacement even
+though its serialized values were unchanged.
+
+Probe that would have caught it: clone snapshots with each optional absent, explicitly present as
+`undefined`, and populated. Use `toStrictEqual` plus `Object.hasOwn` to verify exact property presence,
+mutate every populated nested container to prove source isolation, then run the connected glue
+apply/undo/redo path and retain a changed-value conflict case.

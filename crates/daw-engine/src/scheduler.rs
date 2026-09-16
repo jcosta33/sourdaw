@@ -4193,6 +4193,26 @@ struct ActiveEffect {
     /// [`Self::settle_stripped_note_offs`], which answers that against the
     /// store the whole drain left behind.
     stripped: NoteAddressSet,
+    /// The keys this device owes releases for, at the head of the first block
+    /// it is actually handed.
+    ///
+    /// One record carries every release trigger at once, because the triggers
+    /// share one answer. A stop, a locate, an un-bypass and a re-placement all
+    /// strand sounding notes whose note-off nothing is going to render, and
+    /// each of them records the keys this device held instead of spending the
+    /// note-offs straight away; [`AudioScheduler::pay_owed_releases`] pays the
+    /// record at the end of the first drain the device comes out of holding a
+    /// placement a block can reach. Paying at the trigger instead would push
+    /// note-offs into `pending_midi` that a later command in the same drain
+    /// can still take the device away from — the bypassed arms discard
+    /// `pending_midi` unread, and sounding bits drained at the trigger could
+    /// never re-owe the lost note-offs, so the key would stay held for the
+    /// life of the device. The record is a snapshot rather than the live sets
+    /// for the same reason read the other way: a live key pressed after the
+    /// trigger in the same drain is not swept out with the notes the trigger
+    /// found sounding. A device handed no block keeps record and bits alike,
+    /// which is why the two travel together everywhere a release is owed.
+    owed_releases: Option<NoteAddressSet>,
     /// Frames of latency this device declares, as its host last read them.
     ///
     /// The figure the graph's compensation is computed from, kept exactly as
@@ -4808,6 +4828,7 @@ impl ActiveEffect {
             sounding: NoteAddressSet::default(),
             live_sounding: NoteAddressSet::default(),
             stripped: NoteAddressSet::default(),
+            owed_releases: None,
             placement,
             home,
             pending_params: DeviceParamQueue::new(),
@@ -5024,8 +5045,9 @@ impl ActiveEffect {
     /// falls due here is simply dropped rather than banked — this device will
     /// never be handed the buffer it would have landed in — so a bit already
     /// held for an earlier delivery stays held, and its note-off stays owed to
-    /// [`AudioScheduler::release_notes_owed_on_resume`] rather than being spent
-    /// on a device that will never read it.
+    /// the device's `owed_releases` record, which
+    /// [`AudioScheduler::pay_owed_releases`] settles at the head of the first
+    /// block the device runs again.
     #[inline]
     fn enqueue_due_midi_notes(
         &mut self,
@@ -5114,9 +5136,10 @@ impl ActiveEffect {
     /// that will be handed the buffer it is pushed into. A bypassed or
     /// detached device has `pending_midi` discarded unread, so draining here
     /// would spend a live key's only release on nobody and leave the key down
-    /// for good. The release stays owed, and
-    /// [`AudioScheduler::release_notes_owed_on_resume`] pays it at the head of
-    /// the first block the device is handed again.
+    /// for good. The release stays owed, and the trigger records it on the
+    /// device's `owed_releases` set for
+    /// [`AudioScheduler::pay_owed_releases`] to pay at the head of the first
+    /// block the device is handed again.
     ///
     /// A note-off the full buffer refuses leaves its note held, so the next
     /// trigger owes it again. Counting the overflow and forgetting the note
@@ -5152,6 +5175,99 @@ impl ActiveEffect {
             live_sounding.drain(&mut queue_release);
         }
         released
+    }
+
+    /// Record that this device owes the releases its sounding bits name, at
+    /// the head of the first block it is actually handed.
+    ///
+    /// Every trigger that strands a sounding note's note-off while owing a
+    /// release at the head of whatever renders next — a stop, a locate, the
+    /// device's own un-bypass, a placement back onto a chain — lands here
+    /// rather than in [`Self::release_sounding_notes`], because a payment made
+    /// the moment the trigger runs can still be taken away: the drain that
+    /// carries the trigger can carry a bypass or a detachment after it, and
+    /// the arms that skip such a device discard `pending_midi` unread. The
+    /// bits are the debt's only ledger, so draining them at the trigger would
+    /// lose the note-offs for good. What is recorded instead is a snapshot of
+    /// both sets, merged into any record already standing, and the bits stay
+    /// exactly as they are until [`Self::pay_owed_releases`] spends it.
+    #[inline]
+    fn owe_releases(&mut self) {
+        let mut owed = self.owed_releases.take().unwrap_or_default();
+        let Self {
+            sounding,
+            live_sounding,
+            ..
+        } = self;
+        // `drain` drops only the bits the closure accepts, so refusing each
+        // one copies the set without clearing it.
+        sounding.drain(|channel, note| {
+            owed.hold(channel, note);
+            false
+        });
+        live_sounding.drain(|channel, note| {
+            owed.hold(channel, note);
+            false
+        });
+        self.owed_releases = Some(owed);
+    }
+
+    /// Pay the releases the owed record names, into `pending_midi` at the
+    /// head of this block.
+    ///
+    /// Runs once per callback, at the end of the command drain, for a device
+    /// the drain has left receiving a block: that block is the first one the
+    /// device is handed since the trigger, so the note-offs land ahead of
+    /// anything the block itself enqueues. A key the clear settlement has
+    /// already answered this drain is skipped, so a key is released once
+    /// however many triggers named it, exactly as the immediate path's
+    /// `is_held` gate answers.
+    ///
+    /// A note-off the full buffer refuses stays owed: the bit stays held and
+    /// the record keeps the key, so the next block pays it. This is the same
+    /// law [`Self::release_sounding_notes`] states for the immediate path —
+    /// counting the overflow and forgetting the note would turn one dropped
+    /// event into a key held for the rest of the session — retried at the
+    /// next block rather than the next trigger, because between blocks
+    /// nothing new owes the release.
+    ///
+    /// Returns whether anything was queued, so the caller marks the slot as
+    /// holding block-local MIDI exactly as every other enqueue does.
+    #[inline]
+    fn pay_owed_releases(&mut self, diagnostics: &mut ActiveMidiRtDiagnostics) -> bool {
+        let Some(mut owed) = self.owed_releases.take() else {
+            return false;
+        };
+        let Self {
+            sounding,
+            live_sounding,
+            pending_midi,
+            ..
+        } = self;
+        let mut delivered = false;
+        let mut refused = false;
+        let mut pay = |channel: i16, note: u8| {
+            if !sounding.is_held(channel, note) && !live_sounding.is_held(channel, note) {
+                // Answered already this drain — the clear settlement releases
+                // its candidates before this runs, and a key it lifted is not
+                // released a second time.
+                return true;
+            }
+            if !pending_midi.try_push(release_note(channel, note, 0)) {
+                diagnostics.record_scheduler_event_buffer_overflow(1);
+                refused = true;
+                return false;
+            }
+            sounding.release(channel, note);
+            live_sounding.release(channel, note);
+            delivered = true;
+            true
+        };
+        owed.drain(&mut pay);
+        if refused {
+            self.owed_releases = Some(owed);
+        }
+        delivered
     }
 
     /// Clear a window of this device's store, recording every sounding note
@@ -5208,6 +5324,16 @@ impl ActiveEffect {
     /// A release the full buffer refuses leaves the note both sounding and a
     /// candidate, so it is owed again rather than lost.
     ///
+    /// Nothing is decided while the device [`Self::receives_no_block`]: the
+    /// release a settlement queues would sit in `pending_midi` unread and the
+    /// sounding bit recording the debt would already be spent. The candidates
+    /// stay put — both sets, bit and candidate — and the caller keeps the slot
+    /// flagged, so the answer is taken against the store of the first drain
+    /// whose block reaches the device. A note-on owed nothing is dropped at
+    /// that point instead: a candidate a later rewrite covered is answered by
+    /// the note-off that covers it, which is the same answer a fresh clear
+    /// against that store would take.
+    ///
     /// Returns whether anything was queued, so the caller marks the slot as
     /// holding block-local MIDI exactly as every other enqueue does.
     #[inline]
@@ -5216,6 +5342,9 @@ impl ActiveEffect {
         playhead_frames: u64,
         diagnostics: &mut ActiveMidiRtDiagnostics,
     ) -> bool {
+        if self.receives_no_block() {
+            return false;
+        }
         let Self {
             midi_notes,
             pending_midi,
@@ -5637,6 +5766,14 @@ impl AudioScheduler {
         // together, so only the store the whole drain leaves behind can tell a
         // release that was deleted from one that merely moved.
         self.settle_stripped_note_offs();
+        // After the settlement, for the same after-the-drain reason: every
+        // release trigger this drain carried is answered here, for exactly the
+        // devices the drain has left receiving a block. A trigger that paid at
+        // its own command instead could have its note-offs taken away by any
+        // later command in the same drain — a bypass, a teardown — whose arm
+        // discards `pending_midi` unread with the sounding bits already
+        // spent. See [`Self::pay_owed_releases`].
+        self.pay_owed_releases();
         // After the drain rather than inside it: a batch that adds a bus, its
         // devices and every send into it passes through states no mix should
         // ever be aligned against, and re-aiming per command would also make a
@@ -5782,9 +5919,13 @@ impl AudioScheduler {
                         self.pdc_dirty |= moved_latency;
                         // Un-bypassing is where the device starts reading its
                         // queued MIDI again, so it is where the releases it
-                        // banked while nothing handed it a block are paid.
+                        // banked while nothing handed it a block are recorded
+                        // for payment. The record is paid at the end of this
+                        // drain — unless a later command in it bypasses the
+                        // device again, which leaves both record and bits
+                        // standing for the next un-bypass.
                         if was_bypassed && !bypassed {
-                            self.release_notes_owed_on_resume(slot);
+                            self.owe_releases_on_resume(slot);
                         }
                     }
                     None
@@ -5909,8 +6050,10 @@ impl AudioScheduler {
                         // sounding note's note-off was written for, so the
                         // note is released here or it is held for good. A live
                         // key goes with it: a stop is where a player expects
-                        // the instrument to fall silent.
-                        self.release_sounding_notes(0, ReleaseScope::All);
+                        // the instrument to fall silent. The release is
+                        // recorded here and paid at the end of the drain —
+                        // see `Self::owe_all_releases`.
+                        self.owe_all_releases();
                     }
                     self.transport = state;
                     None
@@ -5929,7 +6072,7 @@ impl AudioScheduler {
                     // (seconds, beats) pair.
                     if self.transport.is_playing && !is_playing {
                         self.timeline.hold_automation(self.playhead_frames);
-                        self.release_sounding_notes(0, ReleaseScope::All);
+                        self.owe_all_releases();
                     }
                     self.transport.is_playing = is_playing;
                     self.transport.song_pos_seconds = song_pos_seconds;
@@ -6155,7 +6298,11 @@ impl AudioScheduler {
                     // player's own frames are behind the playhead too. A
                     // stopped transport sounded nothing to release.
                     if self.transport.is_playing {
-                        self.release_sounding_notes(0, ReleaseScope::All);
+                        // Same law as the stop above, and the same record-now,
+                        // pay-at-the-end-of-the-drain route: a command later
+                        // in this drain can still take the device away before
+                        // its block.
+                        self.owe_all_releases();
                     }
                     self.timeline.seek(frame);
                     self.playhead_frames = frame;
@@ -6432,9 +6579,9 @@ impl AudioScheduler {
     /// line and [`ActiveEffect::take_input_hold`] installs it unconditionally,
     /// so the line a re-placed generator runs is the one that arrived with it.
     ///
-    /// Every route *out* of `Detached` pays what the device banked while it ran
-    /// nowhere, because leaving is where it starts reading its queued MIDI
-    /// again — see [`Self::release_notes_owed_on_resume`].
+    /// Every route *out* of `Detached` records what the device banked while it
+    /// ran nowhere, because leaving is where it starts reading its queued MIDI
+    /// again — see [`Self::owe_releases_on_resume`].
     fn place_effect(&mut self, effect_id: usize, placement: EffectPlacement) {
         let Some(slot) = self.effect_index.lookup(effect_id) else {
             return;
@@ -6456,7 +6603,7 @@ impl AudioScheduler {
             }
         }
         if prior == EffectPlacement::Detached {
-            self.release_notes_owed_on_resume(slot);
+            self.owe_releases_on_resume(slot);
         }
     }
 
@@ -6691,14 +6838,29 @@ impl AudioScheduler {
     /// replacement in a single drain — so the store as the drain left it is
     /// what decides, and the work set keeps the cost to the devices a clear
     /// actually touched.
+    ///
+    /// A device nothing hands a block to keeps its flag and its candidates
+    /// both: a settlement queued for it would be discarded unread with the
+    /// sounding bit already spent, so the answer waits for the first drain
+    /// whose block reaches the device.
     fn settle_stripped_note_offs(&mut self) {
-        while let Some(slot) = self.stripped_note_work.slots.last().copied() {
+        let mut index = 0;
+        while index < self.stripped_note_work.slots.len() {
+            let slot = self.stripped_note_work.slots[index];
+            if self.effects[slot].receives_no_block() {
+                // Stays flagged; the settlement is taken at the first drain
+                // whose block reaches the device.
+                index += 1;
+                continue;
+            }
             self.stripped_note_work.remove(slot);
             if self.effects[slot]
                 .settle_stripped_note_offs(self.playhead_frames, &mut self.midi_rt_diagnostics)
             {
                 self.pending_midi_work.insert(slot);
             }
+            // No index step: `remove` swapped an unvisited slot into this
+            // position.
         }
     }
 
@@ -6735,28 +6897,29 @@ impl AudioScheduler {
         }
     }
 
-    /// Release the notes `scope` names across the graph, at the head of
-    /// whatever renders next.
+    /// Release the notes `scope` names across the graph, on the seam of the
+    /// loop wrap now closing.
     ///
-    /// A stop, a locate and a loop wrap all leave the frame a stored note's
-    /// note-off was written for behind: nothing is going to render it, so the
-    /// instrument would hold that key. A stop and a locate leave the player's
-    /// own frames behind too and pass [`ReleaseScope::All`], because a live
-    /// note never had a written note-off and they are the only thing besides
-    /// the player's hands that lifts one. The loop wrap passes
-    /// [`ReleaseScope::Stored`]: the seam strands a scheduled note-off and
-    /// strands nothing a player is holding, and interrupting live input where
-    /// a region starts again is what no DAW does. Every trigger runs on the
-    /// audio thread and ahead of the next delivery, so the release reaches the
-    /// instrument before anything the new position schedules.
+    /// This is the loop wrap's payment, and the only one made at its trigger:
+    /// the wrap runs mid-callback, on the audio thread, inside a block the
+    /// device is being handed, so the note-offs it queues are delivered by
+    /// that same block and nothing can interpose a bypass between the
+    /// payment and the delivery. A device nothing hands a block to keeps what
+    /// it holds and stays owed the release — the wrap's guard refuses it, and
+    /// the next trigger to name the device records the debt on its
+    /// `owed_releases` set for [`Self::pay_owed_releases`].
     ///
-    /// A device nothing will hand a block to keeps what it holds and stays
-    /// owed the release — see [`ActiveEffect::release_sounding_notes`].
+    /// The seam takes [`ReleaseScope::Stored`]: it strands a scheduled
+    /// note-off and strands nothing a player is holding, and interrupting
+    /// live input where a region starts again is what no DAW does. The
+    /// transport triggers — a stop and a locate — owe releases too, but at
+    /// the head of a block still in the drain's future, so they record
+    /// instead of paying here; see [`Self::owe_all_releases`].
     ///
-    /// `seam_offset` is where that "next" begins inside the callback's
-    /// buffers, which is what a master insert's stamps are measured from; a
-    /// chain device is handed the span itself, so its release sits at the
-    /// span's own head.
+    /// `seam_offset` is where the seam sits inside the callback's buffers,
+    /// which is what a master insert's stamps are measured from; a chain
+    /// device is handed the span itself, so its release sits at the span's
+    /// own head.
     fn release_sounding_notes(&mut self, seam_offset: usize, scope: ReleaseScope) {
         for slot in 0..self.effects.len() {
             let frame_offset = match self.effects[slot].placement {
@@ -6773,31 +6936,68 @@ impl AudioScheduler {
         }
     }
 
-    /// Pay the releases one device banked while nothing handed it a block, at
-    /// the head of the first block it is handed again.
+    /// Record, on every device, the releases its sounding bits owe at the
+    /// head of the first block it is handed after a stop or a locate.
+    ///
+    /// A stop and a locate leave the frame a stored note's note-off was
+    /// written for behind: nothing is going to render it, so the instrument
+    /// would hold that key. They leave the player's own frames behind too,
+    /// so a live key goes with it. Every trigger runs on the audio thread and
+    /// ahead of the next delivery, so the release reaches the instrument
+    /// before anything the new position schedules — but the payment itself
+    /// does not happen here. A command later in the same drain can still
+    /// bypass or detach a device, and the arms that skip such a device
+    /// discard `pending_midi` unread; releases paid into it now, with the
+    /// sounding bits already spent, would be lost with nothing left to re-owe
+    /// them. [`Self::pay_owed_releases`] pays the record at the end of the
+    /// drain, for exactly the devices the drain has left receiving a block.
+    fn owe_all_releases(&mut self) {
+        for slot in 0..self.effects.len() {
+            self.effects[slot].owe_releases();
+        }
+    }
+
+    /// Record the releases one device banked while nothing handed it a block,
+    /// for payment at the head of the first block it is handed again.
     ///
     /// A bypassed or detached device has its queued MIDI discarded unread, so
     /// every trigger that ran while it stood there left its keys down rather
     /// than spending their releases on a buffer nobody reads. Un-bypassing it,
     /// or placing it back on a chain, is where it starts reading again — and
-    /// so where those note-offs are finally handed over. Without this a
-    /// resumed instrument goes on holding a key the player let go of, with no
-    /// written note-off anywhere that could ever lift it.
+    /// the transition records what it holds so the payment follows on the
+    /// first block that reaches it. Without this a resumed instrument goes on
+    /// holding a key the player let go of, with no written note-off anywhere
+    /// that could ever lift it.
     ///
     /// Both sets, because both were kept. A note-off for a key the instance
     /// never heard pressed is a message it ignores; a key left down is one
     /// nothing can lift.
+    fn owe_releases_on_resume(&mut self, slot: usize) {
+        self.effects[slot].owe_releases();
+    }
+
+    /// Pay every device's owed releases that this callback's block will
+    /// reach, at the head of it.
     ///
-    /// The releases go into the same fixed-capacity buffer every other
-    /// delivery uses, on the same audio thread and in the same command drain,
-    /// so an overflow is counted here exactly as it is there.
-    fn release_notes_owed_on_resume(&mut self, slot: usize) {
-        if self.effects[slot].release_sounding_notes(
-            0,
-            ReleaseScope::All,
-            &mut self.midi_rt_diagnostics,
-        ) {
-            self.pending_midi_work.insert(slot);
+    /// Runs after the command drain and the clear settlement, before anything
+    /// renders. That is the one point in the callback where the answer to
+    /// "will a block reach this device" is final for the block about to run:
+    /// every bypass and placement command the drain carried has applied, so a
+    /// device paid here reads its note-offs this very block, and a device
+    /// skipped here keeps its record and its sounding bits until the first
+    /// drain that leaves it reachable — which is the payment issue the
+    /// trigger-time payment could not answer. A device's first block after
+    /// the trigger is the one this pays into, so the release still lands at
+    /// the head of whatever renders next.
+    fn pay_owed_releases(&mut self) {
+        for slot in 0..self.effects.len() {
+            if self.effects[slot].owed_releases.is_none() || self.effects[slot].receives_no_block()
+            {
+                continue;
+            }
+            if self.effects[slot].pay_owed_releases(&mut self.midi_rt_diagnostics) {
+                self.pending_midi_work.insert(slot);
+            }
         }
     }
 
@@ -7379,18 +7579,21 @@ fn process_device(
             effect.pending_midi.clear();
         }
         PluginCore::Native(plugin) => {
-            if effect.pending_midi.is_empty() {
-                plugin.process_audio(left, right, frames);
-            } else {
-                plugin.process_with_events(
-                    left,
-                    right,
-                    frames,
-                    effect.pending_midi.as_slice(),
-                    transport,
-                );
-                effect.pending_midi.clear();
-            }
+            // Every block goes through `process_with_events`, whatever the
+            // MIDI density: an audio effect that never sees a note still needs
+            // tempo, position and play state, and a transport cached from the
+            // last note-bearing block goes stale the moment the tempo or the
+            // playhead moves. The event slice is the block's honest set —
+            // empty most blocks for an effect — so transport delivery never
+            // rides a dummy note.
+            plugin.process_with_events(
+                left,
+                right,
+                frames,
+                effect.pending_midi.as_slice(),
+                transport,
+            );
+            effect.pending_midi.clear();
         }
     }
 }
@@ -11774,6 +11977,13 @@ mod timeline_tests {
         Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES))
     }
 
+    /// The frames one callback renders to let a 5 ms mute glide finish. The
+    /// gate covers all but a millionth of the distance in ~3316 frames at
+    /// 48 kHz and then snaps exactly onto its target, so a test that mutes a
+    /// strip to take its direct arm out of the mix renders this much and
+    /// asserts on the settled tail — never on the glide itself.
+    const MUTE_SETTLE_FRAMES: usize = 4_096;
+
     /// The command the control thread builds for a declared latency: the figure
     /// and the dry line that holds a bypassed pass at it travel together, so no
     /// caller can publish one without the other.
@@ -12145,7 +12355,7 @@ mod timeline_tests {
     fn a_pre_fader_send_survives_the_mute_that_silences_the_tracks_own_output() {
         let mut harness = Harness::new(16);
         harness.playing();
-        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
@@ -12159,8 +12369,10 @@ mod timeline_tests {
         // The mute sits after the fader and before the panner, so the muted
         // track contributes nothing directly while its pre-fader send keeps
         // feeding the bus — the whole reason a cue mix is taken pre-fader.
-        let (left, _) = harness.render(4);
-        assert_eq!(left, vec![1.0; 4]);
+        // The gate declicks, so the strip's own arm glides away across the
+        // callback; settled, the master reads the send alone.
+        let (left, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(left[MUTE_SETTLE_FRAMES - 96..], [1.0; 96]);
         assert_eq!(
             harness.scheduler.timeline().send_tap(1, 50),
             Some(SendTap::PreFader)
@@ -12171,7 +12383,7 @@ mod timeline_tests {
     fn a_post_fader_send_is_silenced_by_the_same_mute() {
         let mut harness = Harness::new(16);
         harness.playing();
-        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
@@ -12182,8 +12394,11 @@ mod timeline_tests {
         });
         harness.send(GraphCommand::SetTrackMute(1, true));
 
-        let (left, _) = harness.render(4);
-        assert_eq!(left, vec![0.0; 4]);
+        // The post-fader tap sits behind the mute gate, so the mute silences
+        // the send exactly as it silences the strip: settled, both arms are
+        // exactly gone. A tap ahead of the gate would leave this at 1.0.
+        let (left, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(left[MUTE_SETTLE_FRAMES - 96..], [0.0; 96]);
     }
 
     #[test]
@@ -12262,7 +12477,7 @@ mod timeline_tests {
             None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
-        track_with_constant_clip(&mut harness, 2, 9, 1.0, 4);
+        track_with_constant_clip(&mut harness, 2, 9, 1.0, MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::SetTrackMute(2, true));
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         harness.send(GraphCommand::AddSend {
@@ -12278,8 +12493,11 @@ mod timeline_tests {
             harness.scheduler.timeline().bus(50).map(|bus| bus.output()),
             Some(RouteTarget::Track(1))
         );
-        let (left, _) = harness.render(4);
-        assert_eq!(left, vec![0.5; 4]);
+        // The mute gate declicks, so the read comes from the settled tail:
+        // track 2's own arm is exactly gone and the bus's contribution has
+        // been through track 1's insert alone.
+        let (left, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(left[MUTE_SETTLE_FRAMES - 96..], [0.5; 96]);
     }
 
     #[test]
@@ -13539,7 +13757,7 @@ mod timeline_tests {
     fn a_removed_send_stops_feeding_its_bus() {
         let mut harness = Harness::new(32);
         harness.playing();
-        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4);
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 2 * MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
@@ -13549,19 +13767,20 @@ mod timeline_tests {
             delay: uncompensated(),
         });
         // Muted, so the bus hears the send alone and nothing of the track's
-        // own output.
+        // own output. The gate declicks, so both reads come from the settled
+        // tail of their callback.
         harness.send(GraphCommand::SetTrackMute(1, true));
 
-        let (before, _) = harness.render(4);
-        assert_eq!(before, vec![1.0; 4]);
+        let (before, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(before[MUTE_SETTLE_FRAMES - 96..], [1.0; 96]);
 
         harness.send(GraphCommand::RemoveSend {
             track_id: 1,
             bus_id: 50,
         });
         harness.send(GraphCommand::SeekFrames(0));
-        let (after, _) = harness.render(4);
-        assert_eq!(after, vec![0.0; 4]);
+        let (after, _) = harness.render(MUTE_SETTLE_FRAMES);
+        assert_eq!(after[MUTE_SETTLE_FRAMES - 96..], [0.0; 96]);
         assert_eq!(harness.scheduler.timeline().send_tap(1, 50), None);
     }
 
@@ -14521,6 +14740,112 @@ mod timeline_tests {
         assert_eq!(right, left);
     }
 
+    /// Records the block length every pass hands it, so a divergence between
+    /// the ask a callback made and the frames the master chain ran over is
+    /// readable off the device rather than inferred from the mix.
+    struct BlockLengthRecordingPlugin {
+        frames_seen: Arc<AtomicUsize>,
+    }
+
+    impl NativePlugin for BlockLengthRecordingPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], num_samples: usize) {
+            self.frames_seen.fetch_add(num_samples, Ordering::Relaxed);
+        }
+
+        fn name(&self) -> &str {
+            "block-length-recording-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// The master insert chain runs on the same clock domain as the strip
+    /// render: an ask past [`MAX_CALLBACK_FRAMES`] renders exactly that many
+    /// frames of timeline, so the master chain over the same callback must run
+    /// over exactly those frames — the unclamped ask would process a tail the
+    /// timeline never wrote.
+    #[test]
+    fn a_master_insert_processes_exactly_the_clamped_frames_when_the_ask_exceeds_the_callback_ceiling(
+    ) {
+        const ASK: usize = MAX_CALLBACK_FRAMES + 64;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, ASK);
+
+        let frames_seen = Arc::new(AtomicUsize::new(0));
+        harness.send(GraphCommand::AddEffect(
+            900,
+            PluginCore::Native(Box::new(BlockLengthRecordingPlugin {
+                frames_seen: Arc::clone(&frames_seen),
+            })),
+            None,
+        ));
+
+        let (left, right) = harness.render(ASK);
+
+        assert_eq!(
+            frames_seen.load(Ordering::Relaxed),
+            MAX_CALLBACK_FRAMES,
+            "the master insert runs over exactly the frames the timeline rendered, \
+             never the unclamped ask"
+        );
+        // Nothing may touch the tail the clamped render never wrote: the
+        // timeline stopped at the ceiling and the master chain followed it.
+        assert_eq!(
+            &left[MAX_CALLBACK_FRAMES..],
+            &[0.0; ASK - MAX_CALLBACK_FRAMES][..]
+        );
+        assert_eq!(
+            &right[MAX_CALLBACK_FRAMES..],
+            &[0.0; ASK - MAX_CALLBACK_FRAMES][..]
+        );
+    }
+
+    /// A bypassed master insert's dry line walks only the frames the buffers
+    /// hold: the ask is a request, and the line indexes the pair it was handed
+    /// by the clamped count rather than past it.
+    #[test]
+    fn a_bypassed_master_inserts_dry_line_walks_only_the_frames_the_buffers_hold() {
+        const LATENCY: usize = 5;
+        const BUFFER: usize = 256;
+        const ASK: usize = 1024;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, BUFFER);
+
+        harness.send(GraphCommand::AddEffect(
+            900,
+            PluginCore::Native(Box::new(LatentPlugin::new(
+                Arc::new(AtomicUsize::new(LATENCY)),
+                LATENT_PLUGIN_CAPACITY,
+            ))),
+            None,
+        ));
+        harness.send(set_latency(900, LATENCY));
+        harness.send(GraphCommand::SetBypass(900, true));
+
+        // An ask larger than the pair itself, the shape of a callback whose
+        // sample count outruns the buffers: only the clamped count exists in
+        // them, so a pass indexing the ask would run past the slice.
+        let mut left = vec![0.0; BUFFER];
+        let mut right = vec![0.0; BUFFER];
+        harness.scheduler.process_block(&mut left, &mut right, ASK);
+
+        // Returning is the pin; the content says the line walked exactly the
+        // frames the buffers hold — the constant, delayed by the declared
+        // latency, reading silence ahead of it.
+        let mut expected = vec![0.0; BUFFER];
+        expected[LATENCY..].fill(1.0);
+        assert_eq!(left, expected);
+        assert_eq!(right, expected);
+    }
+
     /// A route line holding nothing is written all the same. Skipped, it
     /// freezes with the audio it held when its hold was dropped, and the next
     /// hold the graph aims it at bursts that era into every sibling route.
@@ -15010,7 +15335,7 @@ mod timeline_tests {
         let mut harness = Harness::new(64);
         harness.playing();
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
-        track_with_ramp_clip(&mut harness, 1, 101, 256);
+        track_with_ramp_clip(&mut harness, 1, 101, 2 * MUTE_SETTLE_FRAMES);
         harness.send(GraphCommand::AddSend {
             track_id: 1,
             bus_id: 50,
@@ -15019,8 +15344,13 @@ mod timeline_tests {
             delay: uncompensated(),
         });
         // Muted, so the master reads the bus alone and every assertion is
-        // about the send's own line rather than the strip's output.
+        // about the send's own line rather than the strip's output. The gate
+        // declicks, so one callback settles it before any window the send
+        // line is read on; every window below is shifted past it, and the
+        // ramp clip is long enough to still be sounding through all of them.
         harness.send(GraphCommand::SetTrackMute(1, true));
+        harness.render(MUTE_SETTLE_FRAMES);
+
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
         insert_latent_device(&mut harness, 2, 900, FIRST);
         harness.send(GraphCommand::AddSend {
@@ -15035,7 +15365,7 @@ mod timeline_tests {
         let (held, _) = harness.render(16);
         assert_eq!(
             held,
-            delayed_ramp(0, 16, FIRST),
+            delayed_ramp(MUTE_SETTLE_FRAMES, 16, FIRST),
             "the send off the dry track waits for the send off the latent one"
         );
 
@@ -15043,7 +15373,7 @@ mod timeline_tests {
         let (unheld, _) = harness.render(32);
         assert_eq!(
             unheld,
-            delayed_ramp(16, 32, 0),
+            delayed_ramp(MUTE_SETTLE_FRAMES + 16, 32, 0),
             "with nothing left to wait for the send lands where it is taken"
         );
 
@@ -15060,7 +15390,7 @@ mod timeline_tests {
         let (re_aimed, _) = harness.render(16);
         assert_eq!(
             re_aimed,
-            delayed_ramp(48, 16, SECOND),
+            delayed_ramp(MUTE_SETTLE_FRAMES + 48, 16, SECOND),
             "the re-aimed send line reads on from the passage it was just written with"
         );
 
@@ -15069,7 +15399,7 @@ mod timeline_tests {
         let (deeper, _) = harness.render(16);
         assert_eq!(
             deeper,
-            delayed_ramp(64, 16, THIRD),
+            delayed_ramp(MUTE_SETTLE_FRAMES + 64, 16, THIRD),
             "deepening the hold reads further back into current audio, never into the \
              era the line spent at zero"
         );
@@ -15083,8 +15413,18 @@ mod timeline_tests {
         const LATENCY: usize = 7;
         let mut harness = Harness::new(64);
         harness.playing();
-        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
-        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 2 * MUTE_SETTLE_FRAMES);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 2 * MUTE_SETTLE_FRAMES);
+        // Muted so the only thing reaching the master is the bus, and the
+        // assertion is about the sends rather than the direct outputs. The
+        // gates declick, so the mutes land before anything is placed on the
+        // bus and one callback settles both strips to exact silence — the
+        // send lines the assertion reads are placed after that, so the
+        // latency hole they pin sits at the head of the asserted window.
+        harness.send(GraphCommand::SetTrackMute(1, true));
+        harness.send(GraphCommand::SetTrackMute(2, true));
+        harness.render(MUTE_SETTLE_FRAMES);
+
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         insert_latent_device(&mut harness, 1, 900, LATENCY);
         for track_id in [1, 2] {
@@ -15096,10 +15436,6 @@ mod timeline_tests {
                 delay: uncompensated(),
             });
         }
-        // Muted so the only thing reaching the master is the bus, and the
-        // assertion is about the sends rather than the direct outputs.
-        harness.send(GraphCommand::SetTrackMute(1, true));
-        harness.send(GraphCommand::SetTrackMute(2, true));
 
         let (left, _) = harness.render(16);
         let mut expected = vec![1.0; 16];
@@ -16878,7 +17214,7 @@ mod timeline_tests {
     /// same check `enqueue_midi` and `release_sounding_notes` already state,
     /// so the note-off is neither delivered nor cleared from `sounding` — the
     /// bit stays held, and the release stays owed to
-    /// [`AudioScheduler::release_notes_owed_on_resume`], which pays it at the
+    /// [`AudioScheduler::pay_owed_releases`], which pays it at the
     /// head of the first block the device runs again.
     #[test]
     fn a_bypassed_device_keeps_the_stored_note_release_it_owes_until_it_runs_again() {
@@ -16919,6 +17255,305 @@ mod timeline_tests {
             "the owed release lands at the head of the first block the device runs again, exactly \
              once — the bypassed block was never processed, so the recording instrument's own \
              frame counter never advanced past it"
+        );
+    }
+
+    /// A stop's release survives a bypass landing later in the same drain.
+    ///
+    /// `update_graph` drains the whole command ring before anything renders,
+    /// so the drain that carries the stop can carry a `SetBypass` after it.
+    /// Paying the release at the stop's own command would push the note-offs
+    /// into `pending_midi` with the sounding bits already spent; the bypassed
+    /// arm then discards the buffer unread and the key stays held for the
+    /// life of the device — sounding again, with no note-on, the moment the
+    /// device comes back. The release is recorded at the trigger and paid at
+    /// the end of the drain, for exactly the devices the drain has left
+    /// receiving a block.
+    #[test]
+    fn a_stop_release_survives_a_bypass_later_in_the_same_drain() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the live note is sounding when the drain under test runs"
+        );
+
+        // One drain: the stop owes the release, the bypass takes the device
+        // away before anything renders.
+        harness.send_in_one_drain([
+            GraphCommand::SetTransport(TransportState::default()),
+            GraphCommand::SetBypass(7, true),
+        ]);
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the bypassed arm delivers nothing, and the stop's release is not spent on it"
+        );
+
+        // Un-bypassing hands the device its first block since the stop, and
+        // the release it owed is answered at the head of it.
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true), (BLOCK as u64, 60, false)],
+            "the stop's release survives the same-drain bypass and lifts the key on un-bypass"
+        );
+    }
+
+    /// A release owed on un-bypass is not spent by a re-bypass in the same
+    /// drain.
+    ///
+    /// The un-bypass and the re-bypass are both in one command ring, and the
+    /// ring drains whole before the block runs: paying the owed releases at
+    /// the un-bypass transition would push them into `pending_midi` with the
+    /// sounding bits already cleared, the bypassed arm would discard the
+    /// buffer unread, and the key would stay held for the life of the device.
+    /// The record a transition leaves pays only where the device is actually
+    /// handed a block, so a device taken away again before it renders keeps
+    /// record and bits alike.
+    #[test]
+    fn a_resume_release_survives_a_re_bypass_in_the_same_drain() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the live note is sounding when the device is bypassed"
+        );
+
+        // The device is taken away while the key is down...
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.render(BLOCK);
+        // ...and handed back, then taken away again, inside one drain.
+        harness.send_in_one_drain([
+            GraphCommand::SetBypass(7, false),
+            GraphCommand::SetBypass(7, true),
+        ]);
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the release is not spent on a drain whose block the device never received"
+        );
+
+        // The un-bypass that finally sticks pays the release exactly once.
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true), (BLOCK as u64, 60, false)],
+            "exactly one note-off reaches the instrument, at the head of the block it is \
+             finally handed"
+        );
+    }
+
+    /// A stripped note's release survives its device being bypassed when the
+    /// clear lands.
+    ///
+    /// The settlement answers its candidates once the whole drain has applied,
+    /// but a device the drain has left bypassed is handed no block, and the
+    /// bypassed arm discards `pending_midi` unread. Spending the sounding bit
+    /// at the settlement would throw the note-off away with nothing left to
+    /// re-owe it, so candidate and bit both wait for the first drain whose
+    /// block reaches the device.
+    #[test]
+    fn a_stripped_notes_release_survives_its_device_being_bypassed() {
+        const BLOCK: usize = 64;
+        const NOTE_OFF: u64 = 1_024;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(0, 60, true), (NOTE_OFF, 60, false)]));
+
+        // The note-on is delivered and sounds; the playhead is nowhere near
+        // its note-off.
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the stored note-on is delivered while the device runs"
+        );
+
+        // Bypassed, then cleared: the window takes the note-off out of the
+        // store, so the sounding note is owed a release the settlement can
+        // only pay once a block reaches the device.
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::ClearMidiNotes {
+            plugin_id: 7,
+            from_frame: NOTE_OFF - 1,
+            to_frame: NOTE_OFF + 1,
+        });
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the settlement is not spent on the bypassed block that cannot read it"
+        );
+
+        // Un-bypassing hands the device its first block since the clear, and
+        // the release is answered at its head.
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true), (BLOCK as u64, 60, false)],
+            "the owed release reaches the instrument after un-bypass"
+        );
+    }
+
+    /// A hosted plugin that records the transport every process call carries,
+    /// and whether any block reached it through the audio-only path.
+    struct TransportRecordingPlugin {
+        transports: Arc<Mutex<Vec<RecordedTransport>>>,
+        audio_only_calls: Arc<AtomicUsize>,
+    }
+
+    /// The transport facts the assertion reads, at a precision that compares.
+    #[derive(Clone, Copy, PartialEq, Debug)]
+    struct RecordedTransport {
+        tempo: f64,
+        is_playing: bool,
+        song_pos_beats: f64,
+    }
+
+    impl RecordedTransport {
+        fn of(state: &TransportState) -> Self {
+            Self {
+                tempo: state.tempo,
+                is_playing: state.is_playing,
+                song_pos_beats: state.song_pos_beats,
+            }
+        }
+    }
+
+    impl NativePlugin for TransportRecordingPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {
+            self.audio_only_calls.fetch_add(1, Ordering::Relaxed);
+        }
+
+        fn process_with_events(
+            &mut self,
+            _left: &mut [f32],
+            _right: &mut [f32],
+            _num_samples: usize,
+            _midi_events: &[MidiNoteEvent],
+            transport: &TransportState,
+        ) {
+            self.transports
+                .lock()
+                .expect("the transport log")
+                .push(RecordedTransport::of(transport));
+        }
+
+        fn name(&self) -> &str {
+            "transport-recording-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// Every processed block carries the current transport, whatever the MIDI
+    /// density.
+    ///
+    /// An audio effect that never sees a note is dispatched through the same
+    /// `process_with_events` seam a note-bearing block is, on both arms that
+    /// run a native body — the track chain and the master insert. A plugin
+    /// that stages transport metadata must not have to wait for a note to
+    /// arrive, or it keeps playing against the tempo and position of the last
+    /// note-bearing block.
+    #[test]
+    fn an_audio_only_block_still_carries_the_current_transport() {
+        const BLOCK: usize = 64;
+        const CHAIN_DEVICE: usize = 8;
+        const MASTER_DEVICE: usize = 9;
+
+        fn recording_plugin() -> (
+            Box<dyn NativePlugin>,
+            Arc<Mutex<Vec<RecordedTransport>>>,
+            Arc<AtomicUsize>,
+        ) {
+            let transports = Arc::new(Mutex::new(Vec::new()));
+            let audio_only_calls = Arc::new(AtomicUsize::new(0));
+            let plugin = Box::new(TransportRecordingPlugin {
+                transports: Arc::clone(&transports),
+                audio_only_calls: Arc::clone(&audio_only_calls),
+            });
+            (plugin, transports, audio_only_calls)
+        }
+
+        let playing_at = |tempo: f64, beats: f64| TransportState {
+            tempo,
+            is_playing: true,
+            song_pos_beats: beats,
+            song_pos_seconds: beats * 60.0 / tempo,
+            ..TransportState::default()
+        };
+        // The exact states the test sends, in the order it renders them: a
+        // call whose transport is not the one in force when the block ran is
+        // the staleness this exists to catch.
+        let sent = [
+            TransportState::default(),
+            playing_at(132.0, 3.5),
+            playing_at(90.0, 9.75),
+            TransportState::default(),
+        ];
+
+        let mut harness = Harness::new(32);
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 8_192);
+        let (chain_plugin, chain_transports, chain_audio_only) = recording_plugin();
+        harness.send(GraphCommand::AddPlugin(CHAIN_DEVICE, chain_plugin, None));
+        harness.send(insert_track_device(1, effect(CHAIN_DEVICE), 0));
+        let (master_plugin, master_transports, master_audio_only) = recording_plugin();
+        harness.send(GraphCommand::AddPlugin(MASTER_DEVICE, master_plugin, None));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::SetTransport(sent[1]));
+        harness.render(BLOCK);
+        harness.send(GraphCommand::SetTransport(sent[2]));
+        harness.render(BLOCK);
+        harness.send(GraphCommand::SetTransport(sent[3]));
+        harness.render(BLOCK);
+
+        let expected: Vec<RecordedTransport> = sent.iter().map(RecordedTransport::of).collect();
+        assert_eq!(
+            *chain_transports.lock().expect("the transport log"),
+            expected,
+            "every track-chain block carries the transport in force when it ran"
+        );
+        assert_eq!(
+            *master_transports.lock().expect("the transport log"),
+            expected,
+            "every master-insert block carries the transport in force when it ran"
+        );
+        assert_eq!(
+            chain_audio_only.load(Ordering::Relaxed),
+            0,
+            "no block reached the track-chain device through the transport-less path"
+        );
+        assert_eq!(
+            master_audio_only.load(Ordering::Relaxed),
+            0,
+            "no block reached the master insert through the transport-less path"
         );
     }
 

@@ -108,7 +108,19 @@ type AcceptedCompilation = {
     snapshotRevision: string;
 };
 
-type RejectedCompilation = { status: 'rejected'; reason: string };
+type RejectedCompilation = {
+    status: 'rejected';
+    reason: string;
+    /** Structured target-resolution evidence, present only for selector failures. */
+    detail?: {
+        kind: 'missing-target' | 'ambiguous-target';
+        itemId: string;
+        entity: string;
+        resolvedCount: number;
+        expectedCount: number;
+        candidateIds: string[];
+    };
+};
 
 type DeclaredBatchLocalProducer = BatchLocalBindingProducer & { itemId: string };
 
@@ -221,9 +233,20 @@ function resolveSelector(input: {
     const excludedIds = new Set(explicitlyExcludedIds);
     const stableIds = candidates.filter((candidate) => !excludedIds.has(candidate.id)).map((candidate) => candidate.id);
     if (stableIds.length !== input.selector.quantity.exactly) {
+        // Structured target evidence: zero resolutions is a missing target, any
+        // other mismatch means the provider saw different candidates than it
+        // meant — the correction names them instead of rerolling blind.
         return {
             status: 'rejected',
             reason: `Bulk selector ${input.itemId} resolved ${String(stableIds.length)} targets, not its exact quantity.`,
+            detail: {
+                kind: stableIds.length === 0 ? 'missing-target' : 'ambiguous-target',
+                itemId: input.itemId,
+                entity: input.selector.entity,
+                resolvedCount: stableIds.length,
+                expectedCount: input.selector.quantity.exactly,
+                candidateIds: stableIds.slice(0, 8),
+            },
         };
     }
     return {

@@ -21,7 +21,7 @@ const FAUST_INSTRUMENT_DESCRIPTOR_IDS: ReadonlySet<string> = new Set([
 const PRE_EXISTING_VERSION_PINS: Readonly<Record<string, string>> = {
     'builtin-eq': 'descriptor-v1:81231c16',
     'builtin-compressor': 'descriptor-v1:6d4efc97',
-    'builtin-reverb': 'descriptor-v1:6aeebcb2',
+    'builtin-reverb': 'descriptor-v1:4dbdc75c',
     'builtin-delay': 'descriptor-v1:dad2288d',
     'builtin-gain': 'descriptor-v1:b921b6d4',
     'builtin-sidechain-compressor': 'descriptor-v1:b3aa42b3',
@@ -66,7 +66,7 @@ const PRE_EXISTING_VERSION_PINS: Readonly<Record<string, string>> = {
     toaster: 'descriptor-v1:ef8943ce',
     levain: 'descriptor-v1:7b9657aa',
     gluten: 'descriptor-v1:868d9641',
-    bacteria: 'descriptor-v1:2abc1121',
+    bacteria: 'descriptor-v1:14838614',
     grinder: 'descriptor-v1:fe7c1d7a',
     proof: 'descriptor-v1:db946290',
     yeast: 'descriptor-v1:de4ebeb7',

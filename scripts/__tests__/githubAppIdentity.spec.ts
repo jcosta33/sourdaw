@@ -12,10 +12,11 @@ import {
     authenticateOrchestrator,
     isHistoricalMergerActor,
     isOrchestratorUserNodeId,
-    AUTHOR_WORKFLOW_MINT_PERMISSIONS,
     TRACKER_AUTHOR_MINT_PERMISSIONS,
     isAuthorBotNodeId,
     AUTHOR_MINT_PERMISSIONS,
+    PUBLISH_AUTHOR_MINT_PERMISSIONS,
+    PUBLISH_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
     GITHUB_HTTPS_REMOTE,
     REVIEWER_BOT_NODE_ID,
     REVIEWER_MINT_PERMISSIONS,
@@ -378,7 +379,7 @@ describe('installation mint', () => {
             repository(hostile, '.github/workflows/hostile.yml');
             const { requests, request } = mintClient({
                 login: RENAMED_AUTHOR_LOGIN,
-                permissions: { contents: 'write', pull_requests: 'write' },
+                permissions: { contents: 'write', pull_requests: 'write', issues: 'write' },
             });
             const auth = await authenticatePublishingAuthor({
                 primaryRoot: '/repo',
@@ -394,7 +395,9 @@ describe('installation mint', () => {
             });
 
             try {
-                expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: AUTHOR_MINT_PERMISSIONS });
+                expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({
+                    permissions: PUBLISH_AUTHOR_MINT_PERMISSIONS,
+                });
                 expect(requests[0]?.body).not.toContain('workflows');
             } finally {
                 auth.session.dispose();
@@ -504,7 +507,7 @@ describe('installation mint', () => {
         const order: string[] = [];
         const { requests, request } = mintClient({
             login: RENAMED_AUTHOR_LOGIN,
-            permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
+            permissions: { contents: 'write', pull_requests: 'write', issues: 'write', workflows: 'write' },
         });
         const auth = await authenticatePublishingAuthor({
             primaryRoot: '/repo',
@@ -521,17 +524,17 @@ describe('installation mint', () => {
         try {
             expect(order[0]).toBe('diff');
             expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({
-                permissions: AUTHOR_WORKFLOW_MINT_PERMISSIONS,
+                permissions: PUBLISH_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
             });
         } finally {
             auth.session.dispose();
         }
     });
 
-    it('keeps ordinary publishing lanes on the existing least-privilege author mint', async () => {
+    it('keeps ordinary publishing lanes on the least-privilege publish mint', async () => {
         const { requests, request } = mintClient({
             login: RENAMED_AUTHOR_LOGIN,
-            permissions: { contents: 'write', pull_requests: 'write' },
+            permissions: { contents: 'write', pull_requests: 'write', issues: 'write' },
         });
         const auth = await authenticatePublishingAuthor({
             primaryRoot: '/repo',
@@ -543,17 +546,43 @@ describe('installation mint', () => {
             capture: publishingCapture('scripts/publishLane.ts\0'),
         });
         try {
-            expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: AUTHOR_MINT_PERMISSIONS });
+            expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({
+                permissions: PUBLISH_AUTHOR_MINT_PERMISSIONS,
+            });
             expect(requests[0]?.body).not.toContain('workflows');
         } finally {
             auth.session.dispose();
         }
     });
 
+    it('scopes the publish mint to the author set plus issues write only', async () => {
+        const { requests, request } = mintClient({
+            login: RENAMED_AUTHOR_LOGIN,
+            permissions: { contents: 'write', pull_requests: 'write', issues: 'write' },
+        });
+        await mintInstallationToken({
+            appId: '4650613',
+            installationId: '1',
+            privateKey: pem,
+            permissions: PUBLISH_AUTHOR_MINT_PERMISSIONS,
+            expectedActorNodeId: AUTHOR_BOT_NODE_ID,
+            request,
+        });
+        expect(PUBLISH_AUTHOR_MINT_PERMISSIONS).toEqual({
+            ...AUTHOR_MINT_PERMISSIONS,
+            issues: 'write',
+        });
+        expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({
+            permissions: PUBLISH_AUTHOR_MINT_PERMISSIONS,
+        });
+        expect(requests[0]?.body).not.toContain('administration');
+        expect(requests[0]?.body).not.toContain('workflows');
+    });
+
     it('refuses workflow write returned for an ordinary publishing lane', async () => {
         const { requests, request } = mintClient({
             login: RENAMED_AUTHOR_LOGIN,
-            permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
+            permissions: { contents: 'write', pull_requests: 'write', issues: 'write', workflows: 'write' },
         });
 
         await expect(
@@ -573,7 +602,7 @@ describe('installation mint', () => {
     it('refuses a workflow publishing token that omits workflow write', async () => {
         const { requests, request } = mintClient({
             login: RENAMED_AUTHOR_LOGIN,
-            permissions: { contents: 'write', pull_requests: 'write' },
+            permissions: { contents: 'write', pull_requests: 'write', issues: 'write' },
         });
 
         await expect(

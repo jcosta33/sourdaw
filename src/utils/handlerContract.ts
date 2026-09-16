@@ -294,6 +294,11 @@ export type ClipAutomationLaneSnapshot = {
     readonly color?: string;
 };
 export type TakeLaneSnapshot = { readonly id: string; readonly trackId: string };
+export type CompSelectionSpanSnapshot = {
+    readonly startBeat: number;
+    readonly endBeat: number;
+    readonly takeId: string;
+};
 export type MidiNotesSnapshot = readonly { readonly id: string }[];
 export type MidiClipNoteSnapshot = {
     readonly id: string;
@@ -1081,11 +1086,18 @@ export type AppAction =
     | { type: 'muteTrack'; payload: { trackId: string; muted: boolean; expectedMuted: boolean } }
     | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean } }
     | {
-          /** Guarded self-inverse of comp take selection. `expectedSelectedTakeId`
+          /** Guarded self-inverse of comp take selection. Fresh intent carries a
+           *  non-null `takeId`; replay also binds the captured lane owner and may
+           *  use `null` to restore an empty selection. `expectedSelectedTakeId`
            *  optimistic-locks the lane's current selection: `undefined` asserts
-           *  nothing (fresh user intent), `null` asserts no take is selected. */
+           *  nothing, `null` asserts no take is selected. */
           type: 'selectTake';
-          payload: { trackId: string; takeId: string; expectedSelectedTakeId?: string | null };
+          payload: {
+              trackId: string;
+              takeId: string | null;
+              expectedLaneId?: string;
+              expectedSelectedTakeId?: string | null;
+          };
       }
     | { type: 'toggleSoloSafe'; payload: { trackId: string } }
     | { type: 'setSoloSafe'; payload: { trackId: string; soloSafe: boolean } }
@@ -1194,7 +1206,10 @@ export type AppAction =
     | { type: 'setMetronomeEnabled'; payload: { enabled: boolean } }
     | {
           type: 'restoreLoopRegion';
-          payload: { loopStart: number; loopEnd: number; isLooping: boolean };
+          payload: {
+              expected: { loopStart: number; loopEnd: number; isLooping: boolean };
+              replacement: { loopStart: number; loopEnd: number; isLooping: boolean };
+          };
       }
     | {
           type: 'addClip';
@@ -1820,6 +1835,31 @@ export type AppAction =
               replacement: ClipGlueActionSnapshot;
           };
       }
+    | {
+          type: 'setCompRegion';
+          payload: {
+              trackId: string;
+              startBeat: number;
+              endBeat: number;
+              takeId: string;
+              /** Internal identity and state guards captured before Command's first await. */
+              laneId?: string;
+              expected?: readonly CompSelectionSpanSnapshot[];
+              replacement?: readonly CompSelectionSpanSnapshot[];
+          };
+      }
+    | {
+          /** Guarded interval replay emitted by `setCompRegion`. */
+          type: 'restoreCompRegionInterval';
+          payload: {
+              laneId: string;
+              trackId: string;
+              startBeat: number;
+              endBeat: number;
+              expected: readonly CompSelectionSpanSnapshot[];
+              replacement: readonly CompSelectionSpanSnapshot[];
+          };
+      }
     | { type: 'nudgeClip'; payload: { clipId: string; beats: number } }
     | { type: 'crossfadeClips'; payload: { clipAId: string; clipBId: string; durationBeats?: number } }
     | {
@@ -1832,12 +1872,16 @@ export type AppAction =
                   clipAFadeOutBeats: number;
                   clipBStartBeat: number;
                   clipBFadeInBeats: number;
+                  clipBAudioOffsetBeats?: number;
+                  clipBMidiOffsetBeats?: number;
               };
               replacement: {
                   clipAEndBeat: number;
                   clipAFadeOutBeats: number;
                   clipBStartBeat: number;
                   clipBFadeInBeats: number;
+                  clipBAudioOffsetBeats?: number;
+                  clipBMidiOffsetBeats?: number;
               };
           };
       }
@@ -2102,6 +2146,8 @@ export type AppAction =
               clipId: string;
               segments: PitchEditSegmentSnapshot[];
               contour: PitchContourSnapshot;
+              retuneSpeedMs?: number;
+              formantPreserve?: boolean;
           };
       }
     | {
@@ -2288,6 +2334,17 @@ export type AppAction =
               expectedRevision: number;
               brief: unknown;
           };
+      }
+    | {
+          /**
+           * User-initiated repair of a repair-required project (issue #3573):
+           * closes the document's unresolved conflicts by keeping the value each
+           * already resolved to and re-projects every slot. The one action type
+           * the repair-required admission gate admits while it holds; a
+           * user route only, deliberately absent from the agent surface.
+           */
+          type: 'repairProjectData';
+          payload?: undefined;
       }
     | {
           type: 'createVcaGroup';
@@ -2655,6 +2712,8 @@ export type HandlerValidationContext = {
     readonly executionMode?: 'isolated-preview';
 };
 
+export type HandlerMaterializationContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'>;
+
 /** Neutral persisted-history shape supplied to an owning handler after Command
  *  has validated each action against its current operation contract. */
 export type HandlerSessionActionEntry = {
@@ -2698,7 +2757,9 @@ type ActionHandlerCommon<Action extends AppAction> = {
      */
     canReportConflict?: boolean;
     /** Resolve deterministic application-owned payload fields, without project/runtime writes, before hashing. */
-    materializeCommandArguments?: (action: Action) => void;
+    materializeCommandArguments?: (action: Action, context?: HandlerMaterializationContext) => void;
+    /** Capture read-only project authority synchronously when a batch is admitted, before its snapshot wait. */
+    materializeCommandArgumentsAt?: 'admission';
     /** Owner-provided strict validation for a payload after application-owned materialization. */
     validateMaterializedCommandArguments?: (payload: unknown) => boolean;
     /** Owner-provided strict validation for an internal persisted replay payload. */

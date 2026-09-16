@@ -110,7 +110,7 @@ describe('handleCrossfadeClips', () => {
             payload: {
                 clipAId: 'c1',
                 clipBId: 'c2',
-                expected: { clipAEndBeat: 4.5, clipAFadeOutBeats: 1, clipBStartBeat: 3.5, clipBFadeInBeats: 1 },
+                expected: { clipAEndBeat: 4.5, clipAFadeOutBeats: 0.5, clipBStartBeat: 4, clipBFadeInBeats: 0.5 },
                 replacement: { clipAEndBeat: 4, clipAFadeOutBeats: 0, clipBStartBeat: 4, clipBFadeInBeats: 0 },
             },
         });
@@ -120,7 +120,7 @@ describe('handleCrossfadeClips', () => {
                 clipAId: 'c1',
                 clipBId: 'c2',
                 expected: { clipAEndBeat: 4, clipAFadeOutBeats: 0, clipBStartBeat: 4, clipBFadeInBeats: 0 },
-                replacement: { clipAEndBeat: 4.5, clipAFadeOutBeats: 1, clipBStartBeat: 3.5, clipBFadeInBeats: 1 },
+                replacement: { clipAEndBeat: 4.5, clipAFadeOutBeats: 0.5, clipBStartBeat: 4, clipBFadeInBeats: 0.5 },
             },
         });
     });
@@ -168,5 +168,352 @@ describe('handleCrossfadeClips', () => {
 
         expect(result).toEqual({ status: 'conflict' });
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+    });
+
+    it('describes compensating undo and redo snapshots with clipBAudioOffsetBeats when clip B has audio offset', () => {
+        const trackState = {
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    clips: [
+                        ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4, fadeInBeats: 0, fadeOutBeats: 0 }),
+                        ClipDummy.create({
+                            id: 'c2',
+                            startBeat: 4,
+                            endBeat: 8,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                            audioOffsetBeats: 2,
+                        }),
+                    ],
+                }),
+            ],
+            selectedTrackId: 'track-1',
+        };
+        mocks.getTrackStoreState.mockReturnValue(trackState);
+
+        const desc = handleCrossfadeClips.describe({
+            type: 'crossfadeClips',
+            payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+        });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: 1,
+                    clipBStartBeat: 3.5,
+                    clipBFadeInBeats: 1,
+                    clipBAudioOffsetBeats: 1.5,
+                },
+                replacement: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBAudioOffsetBeats: 2,
+                },
+            },
+        });
+        expect(desc.redoAction).toEqual({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBAudioOffsetBeats: 2,
+                },
+                replacement: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: 1,
+                    clipBStartBeat: 3.5,
+                    clipBFadeInBeats: 1,
+                    clipBAudioOffsetBeats: 1.5,
+                },
+            },
+        });
+    });
+
+    it('describes compensating undo and redo snapshots with clipBMidiOffsetBeats when clip B has midi offset', () => {
+        const trackState = {
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    clips: [
+                        ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4, fadeInBeats: 0, fadeOutBeats: 0 }),
+                        ClipDummy.create({
+                            id: 'c2',
+                            startBeat: 4,
+                            endBeat: 8,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                            type: 'midi',
+                            midiOffsetBeats: 2,
+                        }),
+                    ],
+                }),
+            ],
+            selectedTrackId: 'track-1',
+        };
+        mocks.getTrackStoreState.mockReturnValue(trackState);
+
+        const desc = handleCrossfadeClips.describe({
+            type: 'crossfadeClips',
+            payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+        });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: 1,
+                    clipBStartBeat: 3.5,
+                    clipBFadeInBeats: 1,
+                    clipBMidiOffsetBeats: 1.5,
+                },
+                replacement: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBMidiOffsetBeats: 2,
+                },
+            },
+        });
+        expect(desc.redoAction).toEqual({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBMidiOffsetBeats: 2,
+                },
+                replacement: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: 1,
+                    clipBStartBeat: 3.5,
+                    clipBFadeInBeats: 1,
+                    clipBMidiOffsetBeats: 1.5,
+                },
+            },
+        });
+    });
+
+    it('describes compensating undo and redo snapshots with pre-roll handle clamping when clip B pre-roll handle is smaller than halfDuration', () => {
+        const trackState = {
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    clips: [
+                        ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4, fadeInBeats: 0, fadeOutBeats: 0 }),
+                        ClipDummy.create({
+                            id: 'c2',
+                            startBeat: 4,
+                            endBeat: 8,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                            audioOffsetBeats: 0.1,
+                        }),
+                    ],
+                }),
+            ],
+            selectedTrackId: 'track-1',
+        };
+        mocks.getTrackStoreState.mockReturnValue(trackState);
+
+        const desc = handleCrossfadeClips.describe({
+            type: 'crossfadeClips',
+            payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+        });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: expect.closeTo(0.6),
+                    clipBStartBeat: 3.9,
+                    clipBFadeInBeats: expect.closeTo(0.6),
+                    clipBAudioOffsetBeats: 0,
+                },
+                replacement: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBAudioOffsetBeats: 0.1,
+                },
+            },
+        });
+        expect(desc.redoAction).toEqual({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBAudioOffsetBeats: 0.1,
+                },
+                replacement: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: expect.closeTo(0.6),
+                    clipBStartBeat: 3.9,
+                    clipBFadeInBeats: expect.closeTo(0.6),
+                    clipBAudioOffsetBeats: 0,
+                },
+            },
+        });
+    });
+
+    it('describes compensating undo and redo snapshots with handle clamping on a stretched clip B', () => {
+        const trackState = {
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    clips: [
+                        ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4, fadeInBeats: 0, fadeOutBeats: 0 }),
+                        ClipDummy.create({
+                            id: 'c2',
+                            startBeat: 4,
+                            endBeat: 8,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                            stretchMode: 'timestretch',
+                            stretchRatio: 2.0,
+                            audioOffsetBeats: 0.2,
+                        }),
+                    ],
+                }),
+            ],
+            selectedTrackId: 'track-1',
+        };
+        mocks.getTrackStoreState.mockReturnValue(trackState);
+
+        const desc = handleCrossfadeClips.describe({
+            type: 'crossfadeClips',
+            payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+        });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: expect.closeTo(0.6),
+                    clipBStartBeat: 3.9,
+                    clipBFadeInBeats: expect.closeTo(0.6),
+                    clipBAudioOffsetBeats: 0,
+                },
+                replacement: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBAudioOffsetBeats: 0.2,
+                },
+            },
+        });
+        expect(desc.redoAction).toEqual({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBAudioOffsetBeats: 0.2,
+                },
+                replacement: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: expect.closeTo(0.6),
+                    clipBStartBeat: 3.9,
+                    clipBFadeInBeats: expect.closeTo(0.6),
+                    clipBAudioOffsetBeats: 0,
+                },
+            },
+        });
+    });
+
+    it('restores audioOffsetBeats on clip B when executing compensation', () => {
+        const trackState = {
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    clips: [
+                        ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4.5, fadeInBeats: 0, fadeOutBeats: 1 }),
+                        ClipDummy.create({
+                            id: 'c2',
+                            startBeat: 3.5,
+                            endBeat: 8,
+                            fadeInBeats: 1,
+                            fadeOutBeats: 0,
+                            audioOffsetBeats: 1.5,
+                        }),
+                    ],
+                }),
+            ],
+            selectedTrackId: 'track-1',
+        };
+        mocks.getTrackStoreState.mockReturnValue(trackState);
+        mocks.getTrackState.mockReturnValue(trackState);
+
+        const result = handleRestoreCrossfadeClips.execute({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'c1',
+                clipBId: 'c2',
+                expected: {
+                    clipAEndBeat: 4.5,
+                    clipAFadeOutBeats: 1,
+                    clipBStartBeat: 3.5,
+                    clipBFadeInBeats: 1,
+                    clipBAudioOffsetBeats: 1.5,
+                },
+                replacement: {
+                    clipAEndBeat: 4,
+                    clipAFadeOutBeats: 0,
+                    clipBStartBeat: 4,
+                    clipBFadeInBeats: 0,
+                    clipBAudioOffsetBeats: 2,
+                },
+            },
+        });
+
+        expect(result).toEqual({ status: 'written' });
+        expect(mocks.mapAllTracks).toHaveBeenCalledTimes(1);
+        const mapper = mocks.mapAllTracks.mock.calls[0]?.[0];
+        const track = trackState.tracks[0];
+        if (!mapper || !track) {
+            throw new Error('Expected mapAllTracks mapper and track fixture');
+        }
+        expect(mapper(track)).toMatchObject({
+            clips: [
+                { id: 'c1', endBeat: 4, fadeOutBeats: 0 },
+                { id: 'c2', startBeat: 4, fadeInBeats: 0, audioOffsetBeats: 2 },
+            ],
+        });
     });
 });

@@ -186,4 +186,143 @@ describe('resolveClipsWithComping', () => {
         expect(out[0]!.startBeat).toBe(0);
         expect(out[0]!.endBeat).toBe(8);
     });
+
+    it('resolves each loop-recorded take to its own pass inside the shared recording clip', () => {
+        // Two complete loop passes recorded into ONE continuous clip: every
+        // wrap take references the same clipId and the same loop bounds, and
+        // only `sourceOffsetBeats` distinguishes which pass's PCM it addresses.
+        // Sentinel PCM: pass 1 fills buffer beats [0,4) with A, pass 2 fills
+        // [4,8) with B — choosing take-3 must resolve the segment that reads
+        // B (four beats into the source), not A.
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [
+                        { id: 'take-1', clipId: 'rec', name: 'Take 1', startBeat: 0, endBeat: 8, selected: false },
+                        {
+                            id: 'take-2',
+                            clipId: 'rec',
+                            name: 'Take 2',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                            sourceOffsetBeats: 0,
+                        },
+                        {
+                            id: 'take-3',
+                            clipId: 'rec',
+                            name: 'Take 3',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                            sourceOffsetBeats: 4,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-3' }],
+                },
+            ],
+        };
+
+        const recording = testClip({ id: 'rec', type: 'audio', startBeat: 0, endBeat: 8, audioBufferId: 'rec-buf' });
+        const out = resolveClipsWithComping('t1', [recording]);
+
+        // The chosen segment plus the uncovered tail, which still reads the
+        // clip origin (pass 1's sentinel A). The tail spreads the raw clip, so
+        // its media-entry offset stays whatever the clip carries (absent here).
+        expect(out.map((clip) => [clip.startBeat, clip.endBeat, clip.sourceStartBeat, clip.audioOffsetBeats])).toEqual([
+            [0, 4, -4, 4],
+            [4, 8, 0, undefined],
+        ]);
+        // Same continuous recording — take selection never mints new media.
+        expect(out[0]!.id).toBe('rec');
+        expect(out[0]!.audioBufferId).toBe('rec-buf');
+    });
+
+    it('resolves a first-pass loop take at the clip origin exactly like a flat take', () => {
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [
+                        // The take `startRecording` mints: no offset field, and
+                        // the wrap take of pass 1 carrying the explicit origin.
+                        { id: 'take-1', clipId: 'rec', name: 'Take 1', startBeat: 0, endBeat: 8, selected: false },
+                        {
+                            id: 'take-2',
+                            clipId: 'rec',
+                            name: 'Take 2',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                            sourceOffsetBeats: 0,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-2' }],
+                },
+            ],
+        };
+
+        const recording = testClip({
+            id: 'rec',
+            type: 'audio',
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'rec-buf',
+            audioOffsetBeats: 0.5,
+        });
+        const out = resolveClipsWithComping('t1', [recording]);
+
+        // The chosen segment reads exactly like a flat take at the clip
+        // origin; the clip's own slip offset passes through untouched. The
+        // uncovered tail keeps both numbers, too.
+        expect(out.map((clip) => [clip.startBeat, clip.endBeat, clip.sourceStartBeat, clip.audioOffsetBeats])).toEqual([
+            [0, 4, 0, 0.5],
+            [4, 8, 0, 0.5],
+        ]);
+    });
+
+    it('keeps a partial final pass readable through the whole-recording take', () => {
+        // Two full passes plus a partial third: the finalized whole-recording
+        // take (no offset) still resolves a comp region against the clip
+        // origin — the first occurrence — while the buffer holds all of it.
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [
+                        { id: 'take-1', clipId: 'rec', name: 'Take 1', startBeat: 0, endBeat: 10, selected: false },
+                        {
+                            id: 'take-3',
+                            clipId: 'rec',
+                            name: 'Take 3',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                            sourceOffsetBeats: 4,
+                        },
+                    ],
+                    activeCompRegions: [
+                        { startBeat: 0, endBeat: 4, takeId: 'take-1' },
+                        { startBeat: 4, endBeat: 8, takeId: 'take-3' },
+                    ],
+                },
+            ],
+        };
+
+        const recording = testClip({ id: 'rec', type: 'audio', startBeat: 0, endBeat: 10, audioBufferId: 'rec-buf' });
+        const out = resolveClipsWithComping('t1', [recording]);
+
+        // Both comp regions resolve to their own take's pass, and the partial
+        // pass's uncovered tail [8,10) falls through as a gap reading the clip
+        // origin.
+        expect(out.map((clip) => [clip.startBeat, clip.endBeat, clip.sourceStartBeat])).toEqual([
+            [0, 4, 0],
+            [4, 8, -4],
+            [8, 10, 0],
+        ]);
+    });
 });

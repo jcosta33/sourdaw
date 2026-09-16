@@ -5,14 +5,21 @@ type CompleteMixAnalysisInput = {
     token: number;
     result: {
         timestamp: number;
+        status:
+            | { availability: 'measured'; provenance: 'live-analyser-snapshot' }
+            | {
+                  availability: 'insufficient';
+                  reason: 'audio-context-suspended' | 'no-signal';
+                  provenance: 'live-analyser-snapshot';
+              };
         overallLevel: { peakDb: number; rmsDb: number };
         frequencyBalance: {
-            sub: number;
-            bass: number;
-            lowMid: number;
-            mid: number;
-            highMid: number;
-            high: number;
+            sub: number | null;
+            bass: number | null;
+            lowMid: number | null;
+            mid: number | null;
+            highMid: number | null;
+            high: number | null;
         };
         trackLevels: Array<{
             trackId: string;

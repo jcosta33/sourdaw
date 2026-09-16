@@ -50,6 +50,7 @@ import { isOnboardingCompleted, startOnboardingTour } from '#/modules/Onboarding
 import { PreferencesDialog } from '#/modules/Preferences/presentations/views';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { repairProjectData, unlockProjectScopedBrief } from '#/modules/Project/useCases';
 import { ProofPanel } from '#/modules/Proof/presentations/views';
 import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views';
 import { RoutingMatrix } from '#/modules/Routing/presentations/views';
@@ -68,20 +69,8 @@ import { clamp } from '#/utils/Math/clamp';
 
 import { alphaNoticeStore } from '../../stores/alphaNoticeStore';
 import { dismissAlphaNotice } from '../../useCases/dismissAlphaNotice';
-import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
-import { showBacteriaPanel } from '../../useCases/panels/devicePanels/showBacteriaPanel';
-import { showCrumbsPanel } from '../../useCases/panels/devicePanels/showCrumbsPanel';
-import { showCrustPanel } from '../../useCases/panels/devicePanels/showCrustPanel';
+import { onShowDevicePanel } from '../../useCases/panels/devicePanels/onShowDevicePanel';
 import { showDevicePanel } from '../../useCases/panels/devicePanels/showDevicePanel';
-import { showDutchOvenPanel } from '../../useCases/panels/devicePanels/showDutchOvenPanel';
-import { showFermenterPanel } from '../../useCases/panels/devicePanels/showFermenterPanel';
-import { showGlutenPanel } from '../../useCases/panels/devicePanels/showGlutenPanel';
-import { showGrandBoulePanel } from '../../useCases/panels/devicePanels/showGrandBoulePanel';
-import { showLevainPanel } from '../../useCases/panels/devicePanels/showLevainPanel';
-import { showProofPanel } from '../../useCases/panels/devicePanels/showProofPanel';
-import { showScoringPanel } from '../../useCases/panels/devicePanels/showScoringPanel';
-import { showToasterPanel } from '../../useCases/panels/devicePanels/showToasterPanel';
-import { showYeastPanel } from '../../useCases/panels/devicePanels/showYeastPanel';
 import { closeBranchManager } from '../../useCases/togglePanel/panelToggles/closeBranchManager';
 import { openMixer } from '../../useCases/togglePanel/panelToggles/openMixer';
 import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
@@ -89,6 +78,7 @@ import { toggleSidebar } from '../../useCases/togglePanel/panelToggles/toggleSid
 import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
 import { updateWorkspaceState } from '../../useCases/workspaceState';
 import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
+import { EngineFallbackNotice } from '../components/EngineFallbackNotice';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { ProjectLoadFailureOverlay } from '../components/ProjectLoadFailureOverlay';
@@ -98,6 +88,7 @@ import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { useAppInitialization } from '../hooks/useAppInitialization';
+import { useEngineFallbackNotice } from '../hooks/useEngineFallbackNotice';
 import { useNativeApplicationMenu } from '../hooks/useNativeApplicationMenu';
 import { useProjectLoadFailure } from '../hooks/useProjectLoadFailure';
 import { useProjectMutationRefusal } from '../hooks/useProjectMutationRefusal';
@@ -113,20 +104,22 @@ import { VirtualKeyboard } from './VirtualKeyboard';
 // Device-panel emitters injected into the ContentBrowser Sidebar. The panel
 // system is owned by Workspace; the browser only triggers it, so these stable
 // singletons are passed in as callbacks (module-level — no per-render alloc).
+// Each callback rides the single generic `panel.showDevice` event, naming the
+// device type the browser button stands for.
 const SIDEBAR_PANEL_ACTIONS: SidebarPanelActions = {
-    showBacteria: showBacteriaPanel,
-    showCrust: showCrustPanel,
+    showBacteria: (deviceId) => showDevicePanel('bacteria', deviceId),
+    showCrust: (deviceId) => showDevicePanel('crust', deviceId),
     showDevice: showDevicePanel,
-    showDutchOven: showDutchOvenPanel,
-    showGluten: showGlutenPanel,
-    showProof: showProofPanel,
-    showScoring: showScoringPanel,
-    showYeast: showYeastPanel,
-    showCrumbs: showCrumbsPanel,
-    showFermenter: showFermenterPanel,
-    showGrandBoule: showGrandBoulePanel,
-    showLevain: showLevainPanel,
-    showToaster: showToasterPanel,
+    showDutchOven: (deviceId) => showDevicePanel('dutch-oven', deviceId),
+    showGluten: (deviceId) => showDevicePanel('gluten', deviceId),
+    showProof: (deviceId) => showDevicePanel('proof', deviceId),
+    showScoring: (deviceId) => showDevicePanel('native-scoring', deviceId),
+    showYeast: (deviceId) => showDevicePanel('yeast', deviceId),
+    showCrumbs: (deviceId) => showDevicePanel('builtin-crumbs', deviceId),
+    showFermenter: (deviceId) => showDevicePanel('fermenter', deviceId),
+    showGrandBoule: (deviceId) => showDevicePanel('grand-boule', deviceId),
+    showLevain: (deviceId) => showDevicePanel('levain', deviceId),
+    showToaster: (deviceId) => showDevicePanel('toaster', deviceId),
 };
 const CollaborationPanelLazy = lazy(() =>
     import('#/modules/Collaboration/presentations/views').then((m) => ({
@@ -231,6 +224,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const project = useProjectState();
     const projectLoadFailure = useProjectLoadFailure();
     const projectMutationRefusal = useProjectMutationRefusal();
+    const { showNotice: showEngineFallbackNotice, dismissNotice: dismissEngineFallbackNotice } =
+        useEngineFallbackNotice();
     const prefs = useStore(preferencesStore, defaultPreferences);
     const tracksSnapshot = useStore(trackStore, { tracks: [], selectedTrackId: null });
     const isAudioClipSelected =
@@ -360,9 +355,14 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         }
     }, [selectedClipId]);
 
-    // Listen for automation tab activation (from 'A' key)
+    // Listen for automation tab activation (from 'A' key). Automation is not a
+    // device panel — it rides the same generic `panel.showDevice` event, and
+    // this subscriber is the only consumer of its `automation` device type.
     useEffect(() => {
-        return onPanelShowAutomation(() => {
+        return onShowDevicePanel(({ deviceType }) => {
+            if (deviceType !== 'automation') {
+                return;
+            }
             setBottomTabState({ value: 'automation', selectedClipId });
             if (!mixerOpen) {
                 openMixer();
@@ -662,8 +662,17 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     lives in the workspace it sits above. It is deliberately absent
                     from `anyDialogOpen` and from the `inert` set. */}
                 {project.initialized && projectMutationRefusal !== null ? (
-                    <ProjectMutationRefusedBanner refusal={projectMutationRefusal} />
+                    <ProjectMutationRefusedBanner
+                        refusal={projectMutationRefusal}
+                        onRepair={repairProjectData}
+                        onUnlock={unlockProjectScopedBrief}
+                    />
                 ) : null}
+
+                {/* Whole-engine failure, not a per-device problem: mounted once at
+                    the shell (issue #3871) and non-modal like the refusal banner —
+                    the silent workspace it explains stays usable. */}
+                {showEngineFallbackNotice ? <EngineFallbackNotice onDismiss={dismissEngineFallbackNotice} /> : null}
 
                 {/* ─── Main horizontal layout ─── */}
                 <Row align="stretch" grow className="overflow-hidden">

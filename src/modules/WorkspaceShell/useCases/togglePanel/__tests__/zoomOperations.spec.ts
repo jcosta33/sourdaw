@@ -48,10 +48,13 @@ describe('zoomOperations', () => {
         expect(mocks.mockEventBus.emit).toHaveBeenCalledWith('zoom.toFit', undefined);
     });
 
-    it('should emit panel.showAutomation when cycleAutomationVisibility is called', () => {
+    it('should emit the generic panel.showDevice event for automation when cycleAutomationVisibility is called', () => {
         cycleAutomationVisibility();
 
-        expect(mocks.mockEventBus.emit).toHaveBeenCalledWith('panel.showAutomation', undefined);
+        expect(mocks.mockEventBus.emit).toHaveBeenCalledWith('panel.showDevice', {
+            deviceType: 'automation',
+            deviceId: null,
+        });
     });
 
     it('should subscribe via onZoomToFit, onZoomToSelection, onScrollToPlayhead', () => {

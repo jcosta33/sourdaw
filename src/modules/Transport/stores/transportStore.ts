@@ -384,6 +384,14 @@ export const transportStore = createStore<TransportState>({
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => defaultTransportState,
+        projectCommittedLocalState: ({ authorityValue, localValue }) => ({
+            ...authorityValue,
+            isPlaying: localValue.isPlaying,
+            isRecording: localValue.isRecording,
+            overdubEnabled: localValue.overdubEnabled,
+            playheadPosition: localValue.playheadPosition,
+            scheduleGrainMs: localValue.scheduleGrainMs,
+        }),
         toCrdt: ({
             tempo,
             timeSignatureNumerator,

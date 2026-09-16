@@ -92,6 +92,71 @@ describe('restoreAdjustmentLayerMutation', () => {
         expect(mocks.layerSet).not.toHaveBeenCalled();
     });
 
+    it('restores when equivalent layer and parameter keys were serialized in a different order', () => {
+        const expectedLayer: AdjustmentLayer = {
+            id: 'L',
+            name: 'EQ',
+            effectType: 'eq',
+            parameters: [{ name: 'Gain', value: 6, min: -12, max: 12, unit: 'dB' }],
+            affectedTrackIds: ['t1'],
+            insertionIndex: 0,
+            regions: [],
+            enabled: true,
+            mix: 1,
+            color: '#fff',
+        };
+        mocks.layerValue.value = {
+            layers: [
+                {
+                    color: '#fff',
+                    mix: 1,
+                    enabled: true,
+                    regions: [],
+                    insertionIndex: 0,
+                    affectedTrackIds: ['t1'],
+                    parameters: [{ unit: 'dB', max: 12, min: -12, value: 6, name: 'Gain' }],
+                    effectType: 'eq',
+                    name: 'EQ',
+                    id: 'L',
+                },
+            ],
+        };
+
+        restoreAdjustmentLayerMutation({
+            layers: [],
+            expectedLayersFingerprint: JSON.stringify([expectedLayer]),
+            freezeTransitions: [],
+        });
+
+        expect(mocks.layerSet).toHaveBeenCalledWith({ layers: [] });
+    });
+
+    it('refuses changed layer values before either store write', () => {
+        const layer: AdjustmentLayer = {
+            id: 'L',
+            name: 'EQ',
+            effectType: 'eq',
+            parameters: [],
+            affectedTrackIds: [],
+            insertionIndex: 0,
+            regions: [],
+            enabled: true,
+            mix: 0.5,
+            color: '#fff',
+        };
+        mocks.layerValue.value = { layers: [layer] };
+
+        expect(() =>
+            restoreAdjustmentLayerMutation({
+                layers: [],
+                expectedLayersFingerprint: JSON.stringify([{ ...layer, mix: 1 }]),
+                freezeTransitions: [],
+            })
+        ).toThrow('changed after this action');
+        expect(mocks.layerSet).not.toHaveBeenCalled();
+        expect(mocks.trackSet).not.toHaveBeenCalled();
+    });
+
     it('restores layers and returns early when there is no track state', () => {
         mocks.layerValue.value = { layers: [] };
         mocks.trackValue.value = null;

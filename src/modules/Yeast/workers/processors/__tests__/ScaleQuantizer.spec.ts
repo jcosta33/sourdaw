@@ -189,6 +189,60 @@ describe('ScaleQuantizer', () => {
             expect(offs).toHaveLength(1);
             expect(offs[0]?.kind.note).toBe(70);
         });
+
+        it('keeps identified overlapping remaps paired when releases arrive out of order', () => {
+            const gen = new ScaleQuantizer('sq-overlap');
+            const out: MidiEvent[] = [];
+            gen.setParam('remap_mode', 2); // down: C# -> C
+            gen.processMidi(
+                [
+                    {
+                        timeSamples: 0,
+                        trackId: 'track-a',
+                        noteInstanceId: 'voice-a',
+                        kind: { type: 'noteOn', channel: 0, note: 61, velocity: 100 },
+                    },
+                ],
+                out,
+                transport
+            );
+            gen.setParam('remap_mode', 1); // up: C# -> D
+            gen.processMidi(
+                [
+                    {
+                        timeSamples: 1,
+                        trackId: 'track-a',
+                        noteInstanceId: 'voice-b',
+                        kind: { type: 'noteOn', channel: 0, note: 61, velocity: 100 },
+                    },
+                ],
+                out,
+                transport
+            );
+            gen.processMidi(
+                [
+                    {
+                        timeSamples: 2,
+                        trackId: 'track-a',
+                        noteInstanceId: 'voice-b',
+                        kind: { type: 'noteOff', channel: 0, note: 61 },
+                    },
+                    {
+                        timeSamples: 3,
+                        trackId: 'track-a',
+                        noteInstanceId: 'voice-a',
+                        kind: { type: 'noteOff', channel: 0, note: 61 },
+                    },
+                ],
+                out,
+                transport
+            );
+
+            expect(out.filter(isNoteOff)).toMatchObject([
+                { noteInstanceId: 'voice-b', kind: { type: 'noteOff', note: 62 } },
+                { noteInstanceId: 'voice-a', kind: { type: 'noteOff', note: 60 } },
+            ]);
+        });
     });
 
     describe('non-note events pass through unchanged', () => {

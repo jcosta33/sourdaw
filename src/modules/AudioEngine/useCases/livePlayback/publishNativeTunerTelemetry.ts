@@ -44,6 +44,7 @@ function projectNativeReading(reading: NativeTunerReading): TunerTelemetry {
             octave: 0,
             midiNote: 0,
             noteName: '',
+            polyStrings: [],
         };
     }
     return {
@@ -55,6 +56,9 @@ function projectNativeReading(reading: NativeTunerReading): TunerTelemetry {
         octave: reading.octave,
         midiNote: reading.midiNote,
         noteName: NOTE_NAMES[reading.noteIndex % 12] ?? 'C',
+        // The native tuner body publishes no polyphonic tracker yet; the Poly
+        // display renders its rows as silent, which is truthful here.
+        polyStrings: [],
     };
 }
 

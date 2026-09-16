@@ -17,6 +17,8 @@ import {
     assertHostedWasmWorkflow,
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
+    CONDITIONAL_STEP_ALLOWLIST,
+    type ConditionalStepPin,
     HEALTH_GATE_WORKFLOW_FILES,
     JOB_LEVEL_PERMISSION_FREE_FILES,
     parseHealthGateWorkflows,
@@ -320,10 +322,7 @@ const COLLAB_SERVER_GATE_COMMAND = 'sh scripts/health-gates-server.sh';
 // The failed shard is already fatal, so these reporters are the one reason a
 // step may carry a condition at all; `!cancelled()` replaces the implicit
 // `success()` that would skip the annotation over the very failure it names.
-const SHARD_FAILURE_REPORT_CONDITION = "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}";
 const E2E_BLOB_UPLOAD_CONDITION = '${{ !cancelled() }}';
-const DEPLOY_MISSING_CREDENTIAL_REPORT_CONDITION = "env.DEPLOY_CREDENTIAL_PRESENT != 'true'";
-const DEPLOY_SKIP_REPORT_CONDITION = `${DEPLOY_CREDENTIAL_CONDITION} && steps.production.outputs.deploy != 'true'`;
 // The decide job's changed-paths filter lists a pull request's files through
 // the GitHub REST API on its shallow checkout, and that API intermittently
 // answers 500 (#3592). The first attempt may fail softly so the retry step can
@@ -348,89 +347,6 @@ const PATHS_FILTER_VERDICT_ENV: ReadonlyArray<readonly [string, string]> = [
     ['E2E', 'e2e'],
     ['WEB', 'web'],
     ['UNCLASSIFIED', 'unclassified'],
-];
-// Every step condition in the registered workflows, keyed by file, job, and step
-// name. A step condition is legitimate only when it is one of these exact,
-// individually pinned exceptions — the shard-failure reporters, the blob
-// uploads that must outlive their shard, and the deploy legs already pinned
-// beside the job that owns them. An `if` anywhere else retires a proof by
-// flipping the condition while every other pin stays green.
-type ConditionalStepPin = Readonly<{ workflow: string; job: string; step: string; condition: string }>;
-const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
-    ...['Install pinned generation toolchain', 'Build and qualify complete artifact', 'Upload qualified artifact'].map(
-        (step) => ({
-            workflow: 'wasm-artifacts.yml',
-            job: 'build-artifacts',
-            step,
-            condition: "steps.plan.outputs.selected == 'true'",
-        })
-    ),
-    {
-        workflow: 'validation.yml',
-        job: 'decide',
-        step: PATHS_FILTER_RETRY_STEP,
-        condition: PATHS_FILTER_RETRY_CONDITION,
-    },
-    {
-        workflow: 'validation.yml',
-        job: 'unit',
-        step: 'Report shard failure',
-        condition: SHARD_FAILURE_REPORT_CONDITION,
-    },
-    {
-        workflow: 'heavy-gates.yml',
-        job: 'e2e',
-        step: 'Report shard failure',
-        condition: SHARD_FAILURE_REPORT_CONDITION,
-    },
-    { workflow: 'heavy-gates.yml', job: 'e2e', step: 'Upload blob report', condition: E2E_BLOB_UPLOAD_CONDITION },
-    { workflow: 'nightly.yml', job: 'unit', step: 'Report shard failure', condition: SHARD_FAILURE_REPORT_CONDITION },
-    // The measurement record is the diagnostic for a failed latency run, so it
-    // uploads even when the measurement itself failed.
-    { workflow: 'nightly.yml', job: 'desktop-measure', step: 'Upload the measurement record', condition: 'always()' },
-    // The proof answers a different question than the latency measurement, so a
-    // FAILED measurement must not skip it; it is guarded on the build step alone
-    // because without a packaged app there is nothing to drive.
-    {
-        workflow: 'nightly.yml',
-        job: 'desktop-measure',
-        step: 'Prove the agent workspace in the packaged app',
-        condition: "always() && steps.build-packaged-app.outcome == 'success'",
-    },
-    // The proof record is the diagnostic for a failing run, so it uploads
-    // whatever the verdict.
-    {
-        workflow: 'nightly.yml',
-        job: 'desktop-measure',
-        step: 'Upload the agent workspace proof record',
-        condition: 'always()',
-    },
-    { workflow: 'nightly.yml', job: 'e2e', step: 'Report shard failure', condition: SHARD_FAILURE_REPORT_CONDITION },
-    { workflow: 'nightly.yml', job: 'e2e', step: 'Upload blob report', condition: E2E_BLOB_UPLOAD_CONDITION },
-    {
-        workflow: 'nightly.yml',
-        job: DEPLOY_WEB_JOB,
-        step: DEPLOY_WEB_CREDENTIAL_REPORT_STEP,
-        condition: DEPLOY_MISSING_CREDENTIAL_REPORT_CONDITION,
-    },
-    ...DEPLOY_CREDENTIAL_GATED_STEPS.map((step) => ({
-        workflow: 'nightly.yml',
-        job: DEPLOY_WEB_JOB,
-        step,
-        condition: DEPLOY_CREDENTIAL_CONDITION,
-    })),
-    {
-        workflow: 'nightly.yml',
-        job: DEPLOY_WEB_JOB,
-        step: DEPLOY_WEB_SKIP_REPORT_STEP,
-        condition: DEPLOY_SKIP_REPORT_CONDITION,
-    },
-    ...DEPLOY_REVISION_GATED_STEPS.map((step) => ({
-        workflow: 'nightly.yml',
-        job: DEPLOY_WEB_JOB,
-        step,
-        condition: DEPLOY_CHANGED_REVISION_CONDITION,
-    })),
 ];
 // The one continue-on-error the lane admits. The first filter attempt defers
 // to the retry that re-runs it, and `Resolve scope` fails the job when neither
@@ -709,6 +625,14 @@ function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     const smoke = jobAt(candidate, 'smoke');
     if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
         throw new Error('the offline smoke job must run on every pull-request run that touches the browser surface');
+    }
+    const installStep = stepNamed(smoke, 'Install Playwright browsers');
+    const installRun = stringAt(installStep, 'run');
+    if (!installRun.includes('pnpm exec playwright install --with-deps chromium')) {
+        throw new Error('the offline smoke job must install Playwright chromium with system dependencies');
+    }
+    if (!installRun.includes('for attempt in 1 2 3')) {
+        throw new Error('the offline smoke job must retry browser and dependency installation against mirror outages');
     }
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
@@ -1133,7 +1057,7 @@ function assertNoContinueOnError(set: WorkflowSet): void {
 // entry that matches no live step is a condition nobody pins any more, so the
 // sweep refuses that too rather than letting the list rot beside the file.
 function assertUnconditionalSteps(set: WorkflowSet): void {
-    const pinned = new Map(
+    const pinned = new Map<string, ConditionalStepPin>(
         CONDITIONAL_STEP_ALLOWLIST.map((entry) => [`${entry.workflow}${entry.job}${entry.step}`, entry] as const)
     );
     const seen = new Set<string>();
@@ -2275,6 +2199,23 @@ describe('health gates workflow contract', () => {
         jobAt(eventGatedSmoke, 'smoke').if = EVENT_GATED_SMOKE_CONDITION;
         expect(() => assertOfflineSmokeJob(eventGatedSmoke)).toThrow(
             'the offline smoke job must run on every pull-request run that touches the browser surface'
+        );
+
+        const unretriedInstall = asRecord(structuredClone(validationWorkflow), 'unretried install validationWorkflow');
+        stepNamed(jobAt(unretriedInstall, 'smoke'), 'Install Playwright browsers').run =
+            'pnpm exec playwright install --with-deps chromium';
+        expect(() => assertOfflineSmokeJob(unretriedInstall)).toThrow(
+            'the offline smoke job must retry browser and dependency installation against mirror outages'
+        );
+
+        const missingDepsInstall = asRecord(
+            structuredClone(validationWorkflow),
+            'missing deps install validationWorkflow'
+        );
+        stepNamed(jobAt(missingDepsInstall, 'smoke'), 'Install Playwright browsers').run =
+            'for attempt in 1 2 3; do pnpm exec playwright install chromium; done';
+        expect(() => assertOfflineSmokeJob(missingDepsInstall)).toThrow(
+            'the offline smoke job must install Playwright chromium with system dependencies'
         );
 
         const eventGatedDiffScan = asRecord(

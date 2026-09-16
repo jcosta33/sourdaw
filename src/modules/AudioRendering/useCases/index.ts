@@ -1,5 +1,6 @@
 // AudioRendering/useCases — public contract surface for audio encoding/export.
 export { audioBufferToWav } from './audioBufferToWav';
+export { stageAudioBufferAsset } from './stageAudioBufferAsset';
 export { audioBufferToMp3 } from './audioBufferToMp3';
 export { audioBufferToFlac } from './audioBufferToFlac';
 export { normalizeExportBuffer } from './normalizeExportBuffer';

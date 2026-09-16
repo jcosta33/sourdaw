@@ -27,6 +27,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
     return { ...actual, persistCrdtProject: mocks.persistCrdtProject };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
     analyzePitchForClip: vi.fn(),

@@ -36,8 +36,9 @@ export class ScaleQuantizer extends BaseMidiProcessor {
     private scaleName = 'major';
     private remapMode: RemapMode = 'nearest';
     private transpose = 0; // diatonic degrees
-    // Track note mapping for proper Note Off
-    private noteVoices = new BoundedNoteVoiceQueue<number>(); // ch*128+inNote → FIFO outNote voices
+    // Track note mapping for proper Note Off. Identified voices use their own
+    // instance key; identityless input retains route-scoped channel/pitch FIFO.
+    private noteVoices = new BoundedNoteVoiceQueue<number>();
 
     constructor(id?: string) {
         super(id ?? `scale-${Date.now()}`);
@@ -59,7 +60,8 @@ export class ScaleQuantizer extends BaseMidiProcessor {
                 }
                 note = Math.max(0, Math.min(127, note));
 
-                this.noteVoices.push(event.trackId, event.kind.channel * 128 + event.kind.note, note);
+                const key = event.noteInstanceId ?? event.kind.channel * 128 + event.kind.note;
+                this.noteVoices.push(event.trackId, key, note);
                 const transformed: MidiEvent = {
                     ...event,
                     kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
@@ -67,7 +69,7 @@ export class ScaleQuantizer extends BaseMidiProcessor {
                 output.push(transformed);
                 preview?.transferDecisionLineage(event, transformed);
             } else if (event.kind.type === 'noteOff') {
-                const key = event.kind.channel * 128 + event.kind.note;
+                const key = event.noteInstanceId ?? event.kind.channel * 128 + event.kind.note;
                 const mappedNote = this.noteVoices.shift(event.trackId, key) ?? event.kind.note;
                 const transformed: MidiEvent = {
                     ...event,

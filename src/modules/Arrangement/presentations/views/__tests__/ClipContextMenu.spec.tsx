@@ -12,7 +12,6 @@ import { duplicateClip } from '../../../useCases/clip/duplicateClip';
 import { removeClip } from '../../../useCases/clip/removeClip';
 import { cutSelectedClip } from '../../../useCases/clipboard/cutSelectedClip';
 import { normalizeClip } from '../../../useCases/clipEditing/normalizeClip';
-import { renameClip } from '../../../useCases/clipEditing/renameClip';
 import { reverseClip } from '../../../useCases/clipEditing/reverseClip';
 import { ClipContextMenu } from '../ClipContextMenu';
 
@@ -143,10 +142,6 @@ vi.mock('../../../useCases/clip/duplicateClip', () => ({
 
 vi.mock('../../../useCases/clipboard/cutSelectedClip', () => ({
     cutSelectedClip: vi.fn(),
-}));
-
-vi.mock('../../../useCases/clipEditing/renameClip', () => ({
-    renameClip: vi.fn(),
 }));
 
 vi.mock('../../../useCases/clipEditing/normalizeClip', () => ({
@@ -613,8 +608,10 @@ describe('ClipContextMenu', () => {
         const changeInput = screen.getByTestId('inline-editor').querySelector('input') as HTMLInputElement;
         fireEvent.change(changeInput, { target: { value: '  Renamed  ' } });
         fireEvent.click(screen.getByText('Submit'));
-        // renameClip fires only when the trimmed name is non-empty.
-        expect(renameClip).toHaveBeenCalledWith('clip1', 'Renamed');
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'renameClip',
+            payload: { clipId: 'clip1', name: 'Renamed' },
+        });
     });
 
     it('does not rename when the submitted name is blank', () => {
@@ -623,7 +620,7 @@ describe('ClipContextMenu', () => {
         const changeInput = screen.getByTestId('inline-editor').querySelector('input') as HTMLInputElement;
         fireEvent.change(changeInput, { target: { value: '   ' } });
         fireEvent.click(screen.getByText('Submit'));
-        expect(renameClip).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'renameClip' }));
         expect(mockOnClose).toHaveBeenCalled();
     });
 
@@ -631,7 +628,7 @@ describe('ClipContextMenu', () => {
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: 'Rename Clip' }));
         fireEvent.click(screen.getByText('Cancel'));
-        expect(renameClip).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'renameClip' }));
     });
 
     it('shows Unmute/Lock toggles and dispatches the inverse state for a muted+locked clip', async () => {
@@ -878,6 +875,54 @@ describe('ClipContextMenu', () => {
         expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'fitClipToBeats',
             payload: { clipId: 'clip1', targetBeats: 16 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches splitClip through executeUserAppAction and closes menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Split at Cursor' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'splitClip',
+            payload: { clipId: 'clip1', beat: 4 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches duplicateClipToNextBar through executeUserAppAction and closes menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Duplicate to Next Bar' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'duplicateClipToNextBar',
+            payload: { clipId: 'clip1' },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches setClipColor through executeUserAppAction and closes menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Default color' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setClipColor',
+            payload: { clipId: 'clip1', color: expect.any(String) },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches stripSilence through executeUserAppAction and closes menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Strip Silence' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'stripSilence',
+            payload: { clipId: 'clip1' },
         });
         expect(mockOnClose).toHaveBeenCalled();
     });

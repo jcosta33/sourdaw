@@ -6,47 +6,53 @@ import { collaborationAssetOwnership } from './getCollaborationAssetOwnerId';
 import { joinAttemptAuthority } from './joinAttemptAuthority';
 import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
-export function createSession(name: string): string {
-    const outgoingOwner = runtime.captureOwner();
-    const outgoingRequestWitness = joinAttemptAuthority.capture();
-    joinAttemptAuthority.invalidate();
-    runtime.cleanup(outgoingOwner, outgoingRequestWitness);
+export function createSession(name: string): Promise<string> {
+    return runtime.runLifecycle(async () => {
+        const outgoingOwner = runtime.captureOwner();
+        const outgoingRequestWitness = joinAttemptAuthority.capture();
+        joinAttemptAuthority.invalidate();
+        runtime.cleanup(outgoingOwner, outgoingRequestWitness);
+        await runtime.settleRetainedTeardown();
 
-    const peerId = runtime.generatePeerId();
-    const sessionId = runtime.generateSessionId();
-    const color = runtime.pickPeerColor([]);
-    // The room capability every later joiner has to present. `cleanup` above
-    // cleared the previous one, so this is the only secret this session has.
-    runtime.state.sessionSecret = runtime.generateSessionSecret();
+        const peerId = runtime.generatePeerId();
+        const sessionId = runtime.generateSessionId();
+        const color = runtime.pickPeerColor([]);
+        // The room capability every later joiner has to present. `cleanup` above
+        // cleared the previous one, so this is the only secret this session has.
+        runtime.state.sessionSecret = runtime.generateSessionSecret();
 
-    let owner: ReturnType<typeof runtime.captureOwner> = null;
-    try {
-        runtime.initialize(collaborationAssetOwnership.getOwnerId());
-        owner = runtime.captureOwner();
-        runtime.startPlayheadBroadcast();
-        runtime.startBranchSync(true);
-    } catch (error) {
-        runtime.retire(owner);
+        let owner: ReturnType<typeof runtime.captureOwner> = null;
         try {
-            runtime.cleanup(owner);
-        } catch (cleanupError) {
-            logger.warn('[Collaboration] Failed to clean up host session setup:', cleanupError);
+            await runtime.initialize(collaborationAssetOwnership.getOwnerId());
+            owner = runtime.captureOwner();
+            runtime.startPlayheadBroadcast();
+            runtime.startBranchSync(true);
+        } catch (error) {
+            try {
+                runtime.cleanup(owner);
+                await runtime.settleRetainedTeardown();
+            } catch (cleanupError) {
+                logger.warn('[Collaboration] Failed to clean up host session setup:', cleanupError);
+                throw new AggregateError([error, cleanupError], 'Host setup and durable cleanup both failed', {
+                    cause: cleanupError,
+                });
+            }
+            throw error;
         }
-        throw error;
-    }
 
-    collaborationStore.set({
-        isEnabled: true,
-        sessionId,
-        localPeerId: peerId,
-        localName: name,
-        localColor: color,
-        isHost: true,
-        peers: [],
-        connectionStatus: 'disconnected',
-        error: null,
-        quarantinedPeerIds: [],
+        collaborationStore.set({
+            isEnabled: true,
+            sessionId,
+            localPeerId: peerId,
+            localName: name,
+            localColor: color,
+            isHost: true,
+            peers: [],
+            connectionStatus: 'disconnected',
+            error: null,
+            quarantinedPeerIds: [],
+        });
+
+        return sessionId;
     });
-
-    return sessionId;
 }

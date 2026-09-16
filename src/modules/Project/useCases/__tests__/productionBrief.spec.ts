@@ -358,6 +358,79 @@ describe('production brief', () => {
         expect(projectStore.value?.productionBrief).toEqual(locked);
     });
 
+    it('accepts a valid revision when locked intent and scopes were decoded with different key order', () => {
+        const current = projectStore.value!.productionBrief;
+        const decision: ProductionBrief['decisions'][number] = {
+            id: 'decision-order',
+            scope: { kind: 'track', trackId: 'track-guitar' },
+            statement: 'Keep the guitar narrow',
+            rationale: null,
+            status: 'accepted',
+            sourceRunId: null,
+            relatedBatchId: null,
+            supersededByDecisionId: null,
+            createdAt: 110,
+        };
+        const locked: ProductionBrief = {
+            ...current,
+            revision: 1,
+            decisions: [decision],
+            locks: [
+                {
+                    id: 'lock-order',
+                    scope: { kind: 'decision', decisionId: decision.id },
+                    statement: 'Keep it',
+                    createdAt: 111,
+                },
+            ],
+            updatedAt: 111,
+        };
+        expect(
+            handleSetProductionBrief.execute({
+                type: 'setProductionBrief',
+                payload: { expectedRevision: 0, brief: locked },
+            })
+        ).toEqual({
+            status: 'written',
+        });
+
+        const reordered: ProductionBrief = {
+            ...locked,
+            revision: 2,
+            decisions: [
+                {
+                    createdAt: 110,
+                    supersededByDecisionId: null,
+                    relatedBatchId: null,
+                    sourceRunId: null,
+                    status: 'accepted',
+                    rationale: null,
+                    statement: 'Keep the guitar narrow',
+                    scope: { trackId: 'track-guitar', kind: 'track' },
+                    id: 'decision-order',
+                },
+            ],
+            locks: [
+                {
+                    createdAt: 111,
+                    statement: 'Keep it',
+                    scope: { decisionId: 'decision-order', kind: 'decision' },
+                    id: 'lock-order',
+                },
+            ],
+            updatedAt: 112,
+        };
+
+        expect(
+            handleSetProductionBrief.execute({
+                type: 'setProductionBrief',
+                payload: { expectedRevision: 1, brief: reordered },
+            })
+        ).toEqual({
+            status: 'written',
+        });
+    });
+
     it('persists accepted creative intent through the application Command path', async () => {
         registerHandlerMap(getProjectHandlers());
 

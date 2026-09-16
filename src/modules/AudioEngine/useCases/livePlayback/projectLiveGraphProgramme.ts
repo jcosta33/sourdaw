@@ -63,7 +63,7 @@
  * voicing the material out of the mix.
  */
 
-import { type Track } from '#/modules/Arrangement/stores';
+import { clipHasActiveGainEnvelope, type Track } from '#/modules/Arrangement/stores';
 import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 
 import { type AudioGraphClipPlayback } from '../../models/AudioGraphBackend';
@@ -275,6 +275,16 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
                 webVoicedStripIds.add(track.id);
                 exclusions.push({ stripId: track.id, subjectId: clip.id, reason });
             };
+
+            // #2865 — the native wire has no envelope vocabulary, so a clip
+            // carrying an active gain envelope stays on the Web Audio carrier,
+            // which schedules the drawn curve. Sending it here would sound the
+            // clip at one flat level beside a gated-shut web twin that holds
+            // the real curve.
+            if (clipHasActiveGainEnvelope(clip.id)) {
+                excludeClip(`clip "${clipLabel}" carries a gain envelope only the Web Audio carrier applies`);
+                continue;
+            }
 
             const buffer = readBuffer(bufferId);
             if (!buffer) {

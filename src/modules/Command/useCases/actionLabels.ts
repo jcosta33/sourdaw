@@ -35,6 +35,7 @@ export const ACTION_LABELS: Record<string, string> = {
     setTrackColor: 'Set color',
     setWorkspaceMode: 'Switch view',
     saveProject: 'Save project',
+    repairProjectData: 'Repair project data',
     openPreferencesDialog: 'Open preferences',
     toggleSidebar: 'Toggle sidebar',
     toggleInspector: 'Toggle inspector',

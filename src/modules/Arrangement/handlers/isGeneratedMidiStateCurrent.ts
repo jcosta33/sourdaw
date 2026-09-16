@@ -3,6 +3,8 @@ import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { type projectMidiNotesByClipIdThroughRestores, serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
+import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { collectTrackClipIds } from '../services/collectTrackClipIds';
 import { serializeClipSatelliteEntries, serializeProjectedClipSatelliteEntries } from '../stores/clipSatelliteState';
@@ -13,7 +15,6 @@ import { serializeClipScopedAutomationLanes } from '../useCases/clip/serializeCl
 import { serializeProjectedClipScopedAutomationLanes } from '../useCases/clip/serializeProjectedClipScopedAutomationLanes';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
-import { isJsonEntityEqual } from './isJsonEntityEqual';
 import { type ProjectedClipState } from './projectClipThroughPriorBatchActions';
 
 type IsGeneratedMidiStateCurrentInput = {
@@ -43,6 +44,16 @@ function hasClipScopedAutomationLane(clipIds: readonly string[]): boolean {
 
 function hasClipSatelliteState(clipIds: readonly string[]): boolean {
     return hasEnvelopeOrWarpState(clipIds) || hasClipScopedAutomationLane(clipIds);
+}
+
+function serializedValuesEqual(left: string, right: string): boolean {
+    try {
+        const leftValue: unknown = JSON.parse(left);
+        const rightValue: unknown = JSON.parse(right);
+        return valuesEqual(leftValue, rightValue);
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -119,13 +130,13 @@ function clipAutomationLanesMatch(
         if (captured === undefined) {
             return !hasClipScopedAutomationLane(clipIds);
         }
-        return serializeClipScopedAutomationLanes(clipIds) === captured;
+        return serializedValuesEqual(serializeClipScopedAutomationLanes(clipIds), captured);
     }
     const projectedSerialization = serializeProjectedClipScopedAutomationLanes(projected.clipScopedLanes);
     if (captured === undefined) {
         return projected.clipScopedLanes.length === 0;
     }
-    return projectedSerialization === captured;
+    return serializedValuesEqual(projectedSerialization, captured);
 }
 
 type GuardedEntity = {
@@ -191,11 +202,14 @@ export function isGeneratedMidiStateCurrent({
     }
     const { entity, clipIds } = guarded;
 
-    if (!isJsonEntityEqual(entity, guard.entityJson)) {
+    if (!matchesJsonFingerprint(entity, guard.entityJson)) {
         return false;
     }
     if (
-        serializeMidiStateForClips(clipIds, projectedMidiNotesByClipId) !== guard.midiByClipIdJson ||
+        !serializedValuesEqual(
+            serializeMidiStateForClips(clipIds, projectedMidiNotesByClipId),
+            guard.midiByClipIdJson
+        ) ||
         !clipSatelliteStateMatches(clipIds, guard, projectedClipState)
     ) {
         return false;

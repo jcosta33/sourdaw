@@ -76,6 +76,22 @@ const PLUGIN_LIFECYCLE_ACTIVE: u8 = 0;
 const PLUGIN_LIFECYCLE_UNLOADING: u8 = 1;
 const PLUGIN_LIFECYCLE_RETIRED: u8 = 2;
 
+/// The retention queue's filler value. `MidiNoteEvent` has no `Default`, so the
+/// inert note-off stands in; its fields are never read past
+/// `retained_event_count`.
+const EMPTY_RETAINED_EVENT: MidiNoteEvent = MidiNoteEvent {
+    note: 0,
+    velocity: 0,
+    channel: 0,
+    is_note_on: false,
+    probability_cutoff: 0,
+    project_probability_seed: 0,
+    clip_id_hash: 0,
+    event_id_hash: 0,
+    absolute_occurrence_index: 0,
+    frame_offset: 0,
+};
+
 /// Run one of the non-RT control path's blocking bodies — lock acquisition,
 /// seam wait, or the plugin operation itself — without parking an async worker
 /// thread.
@@ -632,6 +648,24 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         self.ensure_active_lifecycle()
     }
 
+    /// The one control visit a latency re-query makes: poll the plugin, and
+    /// read both figures the answer travels with while the seam is still held.
+    ///
+    /// Shared by [`Self::poll_latency_change`] and the latency watcher's
+    /// hint-driven sweep, so the two paths cannot drift into answering the
+    /// same ask with different conversions.
+    pub(crate) fn refresh_latency_change(
+        plugin: &mut Runtime,
+    ) -> Result<Option<LatencyChange>, String> {
+        match plugin.poll_latency_change()? {
+            Some(_) => Ok(Some(LatencyChange {
+                latency_ms: plugin.latency_ms(),
+                latency_frames: plugin.latency_samples() as usize,
+            })),
+            None => Ok(None),
+        }
+    }
+
     /// Apply any pending latency change the plugin flagged (via
     /// `clap_host_latency.changed()` / `request_restart()`) and report the new
     /// latency, or `None` when nothing was pending.
@@ -645,13 +679,7 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// the deactivate/reactivate a latency change requires cannot race the RT
     /// `process` path — and it adds no new audio-thread calls.
     pub fn poll_latency_change(&self, timeout: Duration) -> Result<Option<LatencyChange>, String> {
-        self.with_control(timeout, |plugin| match plugin.poll_latency_change()? {
-            Some(_) => Ok(Some(LatencyChange {
-                latency_ms: plugin.latency_ms(),
-                latency_frames: plugin.latency_samples() as usize,
-            })),
-            None => Ok(None),
-        })
+        self.with_control(timeout, |plugin| Self::refresh_latency_change(plugin))
     }
 
     /// Read the plugin's *current* parameter values, or `None` when the host's
@@ -822,7 +850,10 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
 
     /// Take the control side of the RT/control access seam, or `None` when the
     /// audio thread holds it. Never waits.
-    fn try_claim_control(&self) -> Option<PluginAccessGuard<'_>> {
+    ///
+    /// Crate-visible because the sibling control paths (the latency watcher's
+    /// busy-instance test) hold the same seam a command operation would.
+    pub(crate) fn try_claim_control(&self) -> Option<PluginAccessGuard<'_>> {
         self.access_state
             .compare_exchange(
                 PLUGIN_ACCESS_IDLE,
@@ -937,7 +968,10 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     }
 }
 
-struct PluginAccessGuard<'a> {
+/// The control side of the access seam, held for the duration of one control
+/// visit. Crate-visible because sibling control paths claim the seam through
+/// [`SharedHostedPlugin::try_claim_control`].
+pub(crate) struct PluginAccessGuard<'a> {
     access_state: &'a AtomicU8,
 }
 
@@ -957,6 +991,19 @@ pub struct HostedPluginSlot<Runtime = HostedRuntime> {
     out_r_scratch: Box<[f32; MAX_BUFFER]>,
     /// Preallocated pending parameter drain scratch.
     pending_parameter_scratch: [PendingParameterUpdate; PENDING_PARAMETER_CAPACITY],
+    /// Events accepted for this plugin but not yet delivered to it, oldest
+    /// first, with their count.
+    ///
+    /// The scheduler clears the buffer it hands over the moment the dispatch
+    /// returns, so this slot is the only place an unconsumed event can survive
+    /// in. Two things put one here: a block the plugin could not be handed
+    /// (non-RT control owned the access seam, or the instance is unloading or
+    /// inactive), and a block whose events did not all fit the delivery
+    /// scratch. Both drain at the head of the first block the plugin actually
+    /// receives — the note-off a stuck key is waiting for is the event this
+    /// exists for.
+    retained_events: [MidiNoteEvent; MAX_MIDI_EVENTS],
+    retained_event_count: usize,
 }
 
 impl<Runtime: HostedPluginRuntime> HostedPluginSlot<Runtime> {
@@ -969,7 +1016,34 @@ impl<Runtime: HostedPluginRuntime> HostedPluginSlot<Runtime> {
             out_l_scratch: Box::new([0.0f32; MAX_BUFFER]),
             out_r_scratch: Box::new([0.0f32; MAX_BUFFER]),
             pending_parameter_scratch,
+            retained_events: [EMPTY_RETAINED_EVENT; MAX_MIDI_EVENTS],
+            retained_event_count: 0,
         }
+    }
+
+    /// Copy events onto the retention queue, oldest first.
+    ///
+    /// An event kept here is already late — its block has passed — so it is
+    /// re-stamped to the head of whichever block finally delivers it. Keeping
+    /// the original offset would name a sample inside a block that no longer
+    /// exists, and the plugin is entitled to reject an event past its frame
+    /// count. The queue is exactly one engine buffer deep, which is everything
+    /// one dispatch can hand over declined; nothing from the scheduler can
+    /// arrive past that bound.
+    fn retain_events(&mut self, events: &[MidiNoteEvent]) {
+        let room = MAX_MIDI_EVENTS - self.retained_event_count;
+        let kept = events.len().min(room);
+        for (slot, event) in self.retained_events[self.retained_event_count..]
+            .iter_mut()
+            .zip(events)
+            .take(kept)
+        {
+            *slot = MidiNoteEvent {
+                frame_offset: 0,
+                ..*event
+            };
+        }
+        self.retained_event_count += kept;
     }
 }
 
@@ -1026,13 +1100,19 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
     ) {
         let n = num_samples.min(MAX_BUFFER);
 
-        // Convert MidiNoteEvent → HostMidiEvent using a stack array — no Vec
-        // alloc. The engine's per-event frame offset travels with the note:
-        // dropping it here would collapse a block's timing onto its first
-        // frame, whatever the wrapper below does with it.
-        let count = midi_events.len().min(MAX_MIDI_EVENTS);
+        // Stage the block's deliverable set, oldest first: events kept over
+        // from a block this plugin could not be handed or that could not all
+        // fit, then this block's own events up to the room left. The engine's
+        // per-event frame offset travels with the note: dropping it here would
+        // collapse a block's timing onto its first frame, whatever the wrapper
+        // below does with it.
+        let retained_count = self.retained_event_count;
+        let fresh_capacity = MAX_MIDI_EVENTS - retained_count;
+        let fresh_staged_count = midi_events.len().min(fresh_capacity);
+
         let mut event_buf = [HostMidiEvent::default(); MAX_MIDI_EVENTS];
-        for (slot, event) in event_buf.iter_mut().zip(midi_events).take(count) {
+        for (index, slot) in event_buf.iter_mut().enumerate().take(retained_count) {
+            let event = &self.retained_events[index];
             *slot = HostMidiEvent {
                 note: event.note,
                 velocity: event.velocity,
@@ -1041,6 +1121,20 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
                 frame_offset: event.frame_offset,
             };
         }
+        for (slot, event) in event_buf[retained_count..]
+            .iter_mut()
+            .zip(midi_events)
+            .take(fresh_staged_count)
+        {
+            *slot = HostMidiEvent {
+                note: event.note,
+                velocity: event.velocity,
+                channel: event.channel,
+                is_note_on: event.is_note_on,
+                frame_offset: event.frame_offset,
+            };
+        }
+        let count = retained_count + fresh_staged_count;
 
         let host_transport = host_transport_from(transport);
 
@@ -1068,8 +1162,24 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
             right[..n].copy_from_slice(&out_r[..n]);
         });
 
-        if processed.is_none() {
-            // Non-RT state/editor control owns the plugin. Leave the block as-is.
+        match processed {
+            Some(()) => {
+                // Everything staged was delivered. What was staged over is the
+                // tail of a dispatch longer than one block's delivery scratch,
+                // and it drains the same way: at the head of the next block.
+                self.retained_event_count = 0;
+                self.retain_events(&midi_events[fresh_staged_count..]);
+            }
+            None => {
+                // Non-RT state/editor control owns the plugin, or the instance
+                // is unloading or inactive: the block was bypassed and the
+                // runtime consumed nothing. The scheduler has already cleared
+                // the buffer it handed over, so this queue is the events' only
+                // remaining copy — the staged prefix is still exactly what the
+                // retention array holds, and this block's staged events go
+                // back behind it.
+                self.retain_events(&midi_events[..fresh_staged_count]);
+            }
         }
     }
 
@@ -1105,7 +1215,7 @@ mod tests {
     use super::*;
     // The engine's own figure, not the bridge's alias for it: the point of
     // these specs is that the two agree.
-    use daw_engine::midi_fx::MIDI_EVENT_BUFFER_CAPACITY;
+    use daw_engine::midi_fx::{MidiEventBuffer, MIDI_EVENT_BUFFER_CAPACITY};
     use daw_plugin_host::{AudioPlugin, ClapWrapper};
 
     /// A backend that records only what the runtime owner asked of its editor.
@@ -2748,6 +2858,302 @@ mod tests {
         assert_eq!(
             offsets,
             (0..MIDI_EVENT_BUFFER_CAPACITY as u32).collect::<Vec<u32>>()
+        );
+    }
+
+    // ── The adapter consumes everything the scheduler hands it ─────────────
+    //
+    // The scheduler clears the buffer it hands over the moment the dispatch
+    // returns, so this slot is the only place an accepted-but-undelivered
+    // event can survive in. #3654 was a silent truncation here; these tests
+    // are what fails if the delivery path ever drops an event again.
+
+    /// The issue's own sequence: 64 note-ons and the first key's note-off in
+    /// one callback window, through the engine's buffer and the real adapter
+    /// to a capturing runtime. All 65 must reach the plugin on that block —
+    /// the off last of all — and a second, empty block must add nothing,
+    /// because nothing was left queued anywhere.
+    #[test]
+    fn the_65_event_callback_sequence_reaches_the_host_and_releases_key_0() {
+        const FRAMES: usize = 256;
+
+        let (mut slot, notes) = recording_slot();
+
+        let mut block = MidiEventBuffer::new();
+        for key in 0..64u8 {
+            assert!(block.try_push(engine_note(key, 100, 0, true, 0)));
+        }
+        assert!(block.try_push(engine_note(0, 0, 0, false, 64)));
+        assert_eq!(block.len(), 65, "the whole sequence fits one buffer");
+
+        let mut left = [0.0f32; FRAMES];
+        let mut right = [0.0f32; FRAMES];
+        slot.process_with_events(
+            &mut left,
+            &mut right,
+            FRAMES,
+            block.as_slice(),
+            &TransportState::default(),
+        );
+
+        let delivered = notes.lock().expect("the note log");
+        assert_eq!(
+            delivered.len(),
+            65,
+            "every event the buffer accepted reaches the plugin on its own block"
+        );
+        assert_eq!(
+            delivered.last(),
+            Some(&(0, 0, 0, false, 64)),
+            "key 0's note-off is delivered, so the key does not stick"
+        );
+
+        drop(delivered);
+        let mut empty_left = [0.0f32; FRAMES];
+        let mut empty_right = [0.0f32; FRAMES];
+        slot.process_with_events(
+            &mut empty_left,
+            &mut empty_right,
+            FRAMES,
+            &[],
+            &TransportState::default(),
+        );
+        assert_eq!(
+            notes.lock().expect("the note log").len(),
+            65,
+            "a second empty block delivers nothing new: nothing was held back"
+        );
+    }
+
+    /// One engine buffer's worth of events is the dispatch the scheduler can
+    /// produce, at every size its boundaries name. A truncation at any count
+    /// under the buffer's capacity fails a run of this loop.
+    #[test]
+    fn every_engine_buffer_capacity_boundary_reaches_the_host() {
+        const FRAMES: usize = 256;
+
+        for boundary in [64usize, 65, MIDI_EVENT_BUFFER_CAPACITY] {
+            let (mut slot, notes) = recording_slot();
+
+            let mut block = MidiEventBuffer::new();
+            for index in 0..boundary {
+                assert!(block.try_push(engine_note(60, 100, 0, true, index as u32)));
+            }
+
+            let mut left = [0.0f32; FRAMES];
+            let mut right = [0.0f32; FRAMES];
+            slot.process_with_events(
+                &mut left,
+                &mut right,
+                FRAMES,
+                block.as_slice(),
+                &TransportState::default(),
+            );
+
+            assert_eq!(
+                notes.lock().expect("the note log").len(),
+                boundary,
+                "all {boundary} events of a full buffer reach the plugin intact"
+            );
+        }
+    }
+
+    /// The overflow policy is drain-in-chunks, observable: a dispatch longer
+    /// than one block's delivery scratch delivers a full block's worth, keeps
+    /// the tail, and the next block hands the tail over first. Nothing is
+    /// dropped and order is preserved. Identity is carried by velocity here,
+    /// because an event that had to wait for a later block is re-stamped to
+    /// that block's head — its original frame offset named a sample inside a
+    /// block that no longer exists.
+    #[test]
+    fn a_dispatch_longer_than_one_block_drains_in_chunks_across_blocks() {
+        const FRAMES: usize = 256;
+        const DISPATCH_LEN: usize = MIDI_EVENT_BUFFER_CAPACITY + 3;
+
+        let (mut slot, notes) = recording_slot();
+        let dispatch: Vec<MidiNoteEvent> = (0..DISPATCH_LEN)
+            .map(|index| engine_note(60, (index + 1) as u8, 0, true, index as u32))
+            .collect();
+
+        let mut left = [0.0f32; FRAMES];
+        let mut right = [0.0f32; FRAMES];
+        slot.process_with_events(
+            &mut left,
+            &mut right,
+            FRAMES,
+            &dispatch,
+            &TransportState::default(),
+        );
+        slot.process_with_events(
+            &mut left,
+            &mut right,
+            FRAMES,
+            &[],
+            &TransportState::default(),
+        );
+
+        let received = notes.lock().expect("the note log");
+        assert_eq!(received.len(), DISPATCH_LEN, "nothing is dropped");
+        let identities: Vec<u8> = received.iter().map(|note| note.1).collect();
+        let expected: Vec<u8> = (1..=DISPATCH_LEN as u8).collect();
+        assert_eq!(
+            identities, expected,
+            "the tail is delivered on the next block, in order"
+        );
+        assert!(
+            received[..MIDI_EVENT_BUFFER_CAPACITY]
+                .iter()
+                .enumerate()
+                .all(|(index, note)| note.4 == index as u32),
+            "events delivered inside their own block keep their frame offsets"
+        );
+        assert!(
+            received[MIDI_EVENT_BUFFER_CAPACITY..]
+                .iter()
+                .all(|note| note.4 == 0),
+            "a retained event is re-stamped to the head of the block that delivers it"
+        );
+    }
+
+    // ── Retention across a bypassed block ──────────────────────────────────
+    //
+    // A block the runtime could not be handed — non-RT control owning the
+    // access seam, an unloading or inactive instance — is bypassed, and the
+    // scheduler clears the buffer it handed over all the same. #3655 was the
+    // note-off that clearing destroyed. The slot's retention queue is the
+    // defined recovery, and these tests are what fails if it stops keeping
+    // what a declined block owed.
+
+    /// A slot whose note log and control seam the test drives directly.
+    fn seam_recording_slot() -> (
+        HostedPluginSlot<MidiRecordingPlugin>,
+        Arc<SharedHostedPlugin<MidiRecordingPlugin>>,
+        Arc<Mutex<Vec<RecordedNote>>>,
+    ) {
+        let notes = Arc::new(Mutex::new(Vec::new()));
+        let shared = Arc::new(SharedHostedPlugin::new(MidiRecordingPlugin {
+            processing: Arc::new(ProcessingGate::default()),
+            notes: Arc::clone(&notes),
+        }));
+        (HostedPluginSlot::new(Arc::clone(&shared)), shared, notes)
+    }
+
+    fn render_block_with_events(
+        slot: &mut HostedPluginSlot<MidiRecordingPlugin>,
+        events: &[MidiNoteEvent],
+    ) {
+        let mut left = [0.0f32; 64];
+        let mut right = [0.0f32; 64];
+        slot.process_with_events(
+            &mut left,
+            &mut right,
+            64,
+            events,
+            &TransportState::default(),
+        );
+    }
+
+    /// The issue's own interleaving: the note-off is queued while a control
+    /// operation holds the access seam, so the block is bypassed and the
+    /// scheduler's clear takes the buffer. Once access is released, the off is
+    /// delivered exactly once, and the runtime holds no active note.
+    #[test]
+    fn a_note_off_queued_while_control_owns_the_seam_is_delivered_once_access_is_released() {
+        let (mut slot, shared, notes) = seam_recording_slot();
+
+        render_block_with_events(&mut slot, &[engine_note(60, 100, 0, true, 0)]);
+        assert_eq!(
+            *notes.lock().expect("the note log"),
+            vec![(60, 100, 0, true, 0)],
+            "the note-on is delivered while the seam is free"
+        );
+
+        // Non-RT control owns the seam for the duration of this guard.
+        let _control_guard = shared
+            .try_claim_control()
+            .expect("the control path takes a free seam");
+
+        render_block_with_events(&mut slot, &[engine_note(60, 100, 0, false, 0)]);
+        assert_eq!(
+            notes.lock().expect("the note log").len(),
+            1,
+            "the bypassed block invokes no runtime and delivers nothing"
+        );
+        drop(_control_guard);
+
+        render_block_with_events(&mut slot, &[]);
+        assert_eq!(
+            *notes.lock().expect("the note log"),
+            vec![(60, 100, 0, true, 0), (60, 100, 0, false, 0)],
+            "the held note-off is delivered once access is back, and no active note remains"
+        );
+    }
+
+    /// Two bypassed blocks in a row each owe their events, and the recovery
+    /// owes each of them once: held twice is a stuck key released twice as
+    /// well as a double-delivered off, and lost once is the original defect.
+    #[test]
+    fn two_declined_blocks_deliver_their_events_once_in_order() {
+        let (mut slot, shared, notes) = seam_recording_slot();
+
+        render_block_with_events(&mut slot, &[engine_note(60, 100, 0, true, 0)]);
+
+        let _control_guard = shared.try_claim_control().expect("a free seam");
+        render_block_with_events(&mut slot, &[engine_note(60, 100, 0, false, 0)]);
+        render_block_with_events(&mut slot, &[engine_note(62, 100, 0, true, 0)]);
+        drop(_control_guard);
+
+        render_block_with_events(&mut slot, &[]);
+        assert_eq!(
+            *notes.lock().expect("the note log"),
+            vec![
+                (60, 100, 0, true, 0),
+                (60, 100, 0, false, 0),
+                (62, 100, 0, true, 0),
+            ],
+            "each bypassed block's events are delivered once, in arrival order"
+        );
+    }
+
+    /// The recovery must not reintroduce a wait: the audio path declines a
+    /// held seam and returns, and the control path's release is what unblocks
+    /// it. The barrier here is causal — the control thread holds the seam
+    /// until the process call has already returned — so a callback that ever
+    /// waited on the seam hangs this test instead of passing it.
+    #[test]
+    fn the_audio_path_does_not_wait_for_a_control_path_barrier() {
+        let (mut slot, shared, notes) = seam_recording_slot();
+        let (callback_done_tx, callback_done_rx) = std::sync::mpsc::channel::<()>();
+        let control = std::thread::spawn(move || {
+            let _guard = shared
+                .try_claim_control()
+                .expect("the control path takes a free seam");
+            callback_done_tx
+                .send(())
+                .expect("the audio path is still running");
+            // Hold the seam until after the audio path was observed to return.
+            std::thread::sleep(Duration::from_millis(50));
+        });
+
+        callback_done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the control thread takes the seam");
+
+        render_block_with_events(&mut slot, &[engine_note(60, 100, 0, false, 0)]);
+        assert_eq!(
+            notes.lock().expect("the note log").len(),
+            0,
+            "the bypassed block returned without invoking the runtime"
+        );
+
+        control
+            .join()
+            .expect("the control thread releases the seam");
+        render_block_with_events(&mut slot, &[]);
+        assert_eq!(
+            *notes.lock().expect("the note log"),
+            vec![(60, 100, 0, false, 0)],
+            "the retained note-off is delivered on the first block after release"
         );
     }
 }

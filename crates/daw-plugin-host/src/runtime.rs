@@ -194,6 +194,12 @@ impl HostedPluginRuntime for HostedRuntime {
         delegate!(self, backend => backend.poll_latency_change())
     }
 
+    /// CLAP-only today: VST3 has no `request_callback`, so its backend keeps
+    /// the trait's empty default and this arm never finds anything pending.
+    fn service_main_thread_callback(&mut self) {
+        delegate!(self, backend => backend.service_main_thread_callback())
+    }
+
     fn latency_ms(&self) -> f64 {
         delegate!(self, backend => backend.latency_ms())
     }
@@ -208,6 +214,10 @@ impl HostedPluginRuntime for HostedRuntime {
 
     fn take_tail_change(&mut self) -> Option<u32> {
         delegate!(self, backend => backend.take_tail_change())
+    }
+
+    fn is_tail_active(&self) -> bool {
+        delegate!(self, backend => backend.is_tail_active())
     }
 
     fn report_plugin_observations(&mut self) {

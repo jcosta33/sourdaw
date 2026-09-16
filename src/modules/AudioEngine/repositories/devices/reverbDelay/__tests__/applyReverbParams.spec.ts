@@ -1,7 +1,22 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    asBaseAudioContext,
+    createMockAudioContext,
+    MockAudioBuffer,
+} from '../../../../../../helpers/__tests__/audioContext.mock';
 import { type OfflineDeviceNode } from '../../types';
 import { applyReverbParams } from '../applyReverbParams';
+import { createReverb } from '../createReverb';
+import { DEFAULT_REVERB_SHAPE } from '../reverbImpulse';
+
+beforeEach(() => {
+    vi.stubGlobal('AudioBuffer', MockAudioBuffer);
+});
+
+afterEach(() => {
+    vi.unstubAllGlobals();
+});
 
 function mockAudioParam(initial = 0) {
     return { value: initial };
@@ -34,30 +49,34 @@ describe('applyReverbParams', () => {
         expect(lowcut.frequency.value).toBe(120);
     });
 
-    it('does not consume rev-decay (gated on Architecture-decision #1)', () => {
-        // The builtin reverb has no decay param yet, so `applyReverbParams`
-        // deliberately has no `rev-decay` branch. This test pins that boundary:
-        // if real decay support lands (Architecture-decision #1), wire it here and
-        // re-add the adjustment-layer `Decay` map entry in the same change. Until
-        // then nothing may emit `rev-decay` into this device expecting an effect.
-        const splitter = {};
-        const dry = { gain: mockAudioParam(0.7) };
-        const wet = { gain: mockAudioParam(0.3) };
-        const convolver = {};
-        const merger = {};
-        const predelay = { delayTime: mockAudioParam(0.01) };
-        const lowcut = { frequency: mockAudioParam(80) };
-        const dn: OfflineDeviceNode = {
-            inputNode: splitter as GainNode,
-            outputNode: merger as GainNode,
-            nodes: [splitter, dry, wet, convolver, merger, predelay, lowcut] as OfflineDeviceNode['nodes'],
-        };
+    it('rebuilds the convolver impulse when rev-size, rev-decay or rev-damping move', () => {
+        const ctx = createMockAudioContext();
+        const dn = createReverb(asBaseAudioContext(ctx));
+        const convolver = dn.namedNodes!.convolver as ConvolverNode;
+        const defaultBuffer = convolver.buffer;
+        expect(defaultBuffer).not.toBeNull();
+        // Descriptor default decay is 2 s at a 48 kHz mock context.
+        expect(defaultBuffer!.length).toBe(ctx.sampleRate * DEFAULT_REVERB_SHAPE.decay);
 
         applyReverbParams(dn, { 'rev-decay': 5 });
+        expect(convolver.buffer!.length).toBe(ctx.sampleRate * 5);
+        expect(convolver.buffer).not.toBe(defaultBuffer);
 
-        expect(dry.gain.value).toBe(0.7);
-        expect(wet.gain.value).toBe(0.3);
-        expect(predelay.delayTime.value).toBe(0.01);
-        expect(lowcut.frequency.value).toBe(80);
+        applyReverbParams(dn, { 'rev-size': 1 });
+        expect(convolver.buffer).not.toBe(defaultBuffer);
+
+        applyReverbParams(dn, { 'rev-damping': 0 });
+        expect(convolver.buffer).not.toBe(defaultBuffer);
+    });
+
+    it('leaves the impulse alone when no shape parameter is present', () => {
+        const ctx = createMockAudioContext();
+        const dn = createReverb(asBaseAudioContext(ctx));
+        const convolver = dn.namedNodes!.convolver as ConvolverNode;
+        const before = convolver.buffer;
+
+        applyReverbParams(dn, { 'rev-mix': 0.4, 'rev-predelay': 20, 'rev-lowcut': 150 });
+
+        expect(convolver.buffer).toBe(before);
     });
 });

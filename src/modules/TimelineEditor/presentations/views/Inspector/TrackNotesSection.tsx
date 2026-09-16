@@ -1,7 +1,7 @@
 import { type ReactElement, useState } from 'react';
 
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
-import { setTrackNotes } from '#/modules/Arrangement/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
@@ -50,7 +50,10 @@ export const TrackNotesSection = ({ track }: TrackNotesSectionProps): ReactEleme
                 onChange={(event) => setDraft({ trackId: track.id, lastSeen: track.notes, value: event.target.value })}
                 onBlur={() => {
                     if (notesValue !== track.notes) {
-                        setTrackNotes(track.id, notesValue);
+                        void executeUserAppAction({
+                            type: 'setTrackNotes',
+                            payload: { trackId: track.id, notes: notesValue },
+                        });
                     }
                 }}
                 aria-label={`Notes for ${track.name}`}

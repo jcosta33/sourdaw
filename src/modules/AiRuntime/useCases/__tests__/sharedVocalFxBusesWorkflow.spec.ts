@@ -878,8 +878,27 @@ function installSharedVocalFxFixture(): {
         ghostClips: [],
     });
     flushFixtureStorageOwner('tracks');
-    ensureRealTrackStrips([lead, leadDouble, backing, backingLow, drums, parallel].map((track) => track.id));
-    return { lead, leadDouble, backing, backingLow, drums, parallel };
+    const committedTracks = trackStore.value?.tracks ?? [];
+    const committedById = new Map(committedTracks.map((track) => [track.id, track]));
+    const committed = (trackId: string): Track => {
+        const track = committedById.get(trackId);
+        if (!track) {
+            throw new Error(`Expected committed fixture track ${trackId}`);
+        }
+        return track;
+    };
+    const committedFixture = {
+        lead: committed(lead.id),
+        leadDouble: committed(leadDouble.id),
+        backing: committed(backing.id),
+        backingLow: committed(backingLow.id),
+        drums: committed(drums.id),
+        parallel: committed(parallel.id),
+    };
+    ensureRealTrackStrips(Object.values(committedFixture).map((track) => track.id));
+    return {
+        ...committedFixture,
+    };
 }
 
 function getConfirmationId(): string {
@@ -1161,7 +1180,14 @@ describe('shared vocal FX buses workflow', () => {
 
     it('rejects specialized actions when the provider omits or delays semantic capability selection', async () => {
         installSharedVocalFxFixture();
+        // An omitted selection is a correctable rejection, so the first prompt's
+        // provider spends its one bounded correction attempt repeating the same
+        // capability-less plan — which the app refuses again. A delayed selection
+        // (after the batch it belongs to) is terminal on its own, so the second
+        // prompt needs no correction round. Neither prompt may ever reach a
+        // confirmation.
         runtimeMocks.generateWebLlmCompletion
+            .mockResolvedValueOnce(JSON.stringify(sharedVocalFxProviderPlan))
             .mockResolvedValueOnce(JSON.stringify(sharedVocalFxProviderPlan))
             .mockResolvedValueOnce(JSON.stringify([...sharedVocalFxProviderPlan, sharedVocalFxWorkflowSelection]));
 

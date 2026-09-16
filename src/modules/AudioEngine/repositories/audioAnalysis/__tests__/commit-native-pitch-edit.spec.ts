@@ -24,14 +24,20 @@ describe('commitNativePitchEdit', () => {
             outputAudioPath: 'test_pitch.wav',
             segments,
             contour,
+            retuneSpeedMs: 25,
+            formantPreserve: true,
         });
 
+        // The request envelope keys stay camelCase — the native request struct
+        // renames — and the live settings ride along (#2058).
         expect(desktopInvoke).toHaveBeenCalledWith('commit_pitch_edit', {
             request: {
                 inputAudioPath: 'test.wav',
                 outputAudioPath: 'test_pitch.wav',
                 segments,
                 contour,
+                retuneSpeedMs: 25,
+                formantPreserve: true,
             },
         });
         expect(result).toBe(true);
@@ -45,6 +51,8 @@ describe('commitNativePitchEdit', () => {
             outputAudioPath: 'test_pitch.wav',
             segments: [],
             contour: { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' },
+            retuneSpeedMs: 25,
+            formantPreserve: true,
         });
 
         expect(result).toBe(false);

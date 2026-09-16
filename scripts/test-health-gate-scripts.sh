@@ -186,6 +186,7 @@ const {
     assertHostedWasmWorkflow,
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
+    CONDITIONAL_STEP_ALLOWLIST,
     JOB_LEVEL_PERMISSION_FREE_FILES,
     parseHealthGateWorkflows,
     readRecordedWorkflowSnapshot,
@@ -1430,78 +1431,6 @@ expect(
 // shard-failure reporters and blob uploads above, and the deploy legs pinned
 // beside their job. An `if` anywhere else retires a proof by flipping the
 // condition while every other pin stays green.
-const allowedStepConditions = [
-    ...['Install pinned generation toolchain', 'Build and qualify complete artifact', 'Upload qualified artifact'].map((step) => ['wasm-artifacts.yml', 'build-artifacts', step, "steps.plan.outputs.selected == 'true'"]),
-    ['validation.yml', 'decide', 'Retry changed-paths filter after a transient API failure', "steps.filter.outcome == 'failure'"],
-    ['validation.yml', 'unit', 'Report shard failure', shardFailureCondition],
-    ['heavy-gates.yml', 'e2e', 'Report shard failure', shardFailureCondition],
-    ['heavy-gates.yml', 'e2e', 'Upload blob report', '${{ !cancelled() }}'],
-    ['nightly.yml', 'unit', 'Report shard failure', shardFailureCondition],
-    ['nightly.yml', 'e2e', 'Report shard failure', shardFailureCondition],
-    ['nightly.yml', 'e2e', 'Upload blob report', '${{ !cancelled() }}'],
-    ['nightly.yml', 'deploy-web', 'Report the missing deployment credential', "env.DEPLOY_CREDENTIAL_PRESENT != 'true'"],
-    ['nightly.yml', 'deploy-web', 'Checkout the validated revision', credentialCondition],
-    ['nightly.yml', 'deploy-web', 'Enable Corepack', credentialCondition],
-    ['nightly.yml', 'deploy-web', 'Set up pnpm', credentialCondition],
-    ['nightly.yml', 'deploy-web', 'Set up Node', credentialCondition],
-    ['nightly.yml', 'deploy-web', 'Resolve the current production revision', credentialCondition],
-    [
-        'nightly.yml',
-        'deploy-web',
-        'Report why nothing was deployed',
-        `${credentialCondition} && steps.production.outputs.deploy != 'true'`,
-    ],
-    [
-        'nightly.yml',
-        'deploy-web',
-        'Install dependencies',
-        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
-    ],
-    [
-        'nightly.yml',
-        'deploy-web',
-        'Link the Vercel CLI to the production project',
-        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
-    ],
-    [
-        'nightly.yml',
-        'deploy-web',
-        'Build the validated revision',
-        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
-    ],
-    [
-        'nightly.yml',
-        'deploy-web',
-        'Deploy the prebuilt revision',
-        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
-    ],
-    [
-        'nightly.yml',
-        'deploy-web',
-        'Assert cross-origin isolation on the deployment',
-        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
-    ],
-    [
-        'nightly.yml',
-        'deploy-web',
-        'Resolve the aliases of the deployment',
-        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
-    ],
-    // The measurement record is the diagnostic for a failed latency run, so it
-    // uploads even when the measurement itself failed.
-    ['nightly.yml', 'desktop-measure', 'Upload the measurement record', 'always()'],
-    // The proof step runs only when the packaged build succeeded, because
-    // there is nothing to drive otherwise.
-    [
-        'nightly.yml',
-        'desktop-measure',
-        'Prove the agent workspace in the packaged app',
-        "always() && steps.build-packaged-app.outcome == 'success'",
-    ],
-    // The upload runs always, because the record is the diagnostic for a
-    // failed proof.
-    ['nightly.yml', 'desktop-measure', 'Upload the agent workspace proof record', 'always()'],
-];
 const seenAllowedSteps = new Set();
 for (const [file, parsed] of [
     ['health-gates.yml', workflow],
@@ -1517,12 +1446,12 @@ for (const [file, parsed] of [
                 continue;
             }
             const label = `${file} job ${id} step ${step?.name ?? '<unnamed>'}`;
-            const pin = allowedStepConditions.find(
-                ([pinFile, pinJob, pinStep]) => pinFile === file && pinJob === id && pinStep === step?.name
+            const pin = CONDITIONAL_STEP_ALLOWLIST.find(
+                (entry) => entry.workflow === file && entry.job === id && entry.step === step?.name
             );
             expect(pin !== undefined, `${label} must stay unconditional`);
             if (pin !== undefined) {
-                expect(step?.if === pin[3], `${label} must retain its pinned condition`);
+                expect(step?.if === pin.condition, `${label} must retain its pinned condition`);
                 seenAllowedSteps.add(`${file}${id}${step?.name}`);
             }
         }
@@ -1530,10 +1459,10 @@ for (const [file, parsed] of [
 }
 // An allowlist entry that matches no live step is a condition nobody pins any
 // more, so the sweep refuses the orphan rather than letting the list rot.
-for (const [pinFile, pinJob, pinStep] of allowedStepConditions) {
+for (const entry of CONDITIONAL_STEP_ALLOWLIST) {
     expect(
-        seenAllowedSteps.has(`${pinFile}${pinJob}${pinStep}`),
-        `${pinFile} job ${pinJob} step ${pinStep} must carry its pinned condition`
+        seenAllowedSteps.has(`${entry.workflow}${entry.job}${entry.step}`),
+        `${entry.workflow} job ${entry.job} step ${entry.step} must carry its pinned condition`
     );
 }
 for (const precondition of [

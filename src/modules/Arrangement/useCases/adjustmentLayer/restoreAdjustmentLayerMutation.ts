@@ -1,5 +1,6 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { type AppAction } from '#/utils/handlerContract';
+import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 
 import { createEffectiveAdjustmentLayerSignature } from '../../services/createEffectiveAdjustmentLayerSignature';
 import { createTrackFreezeSourceSignature } from '../../services/createTrackFreezeSourceSignature';
@@ -23,7 +24,7 @@ export function restoreAdjustmentLayerMutation(payload: RestoreAdjustmentLayerMu
     const beforeLayers = beforeLayerState?.layers ?? [];
     const restoredLayers = payload.layers.map(cloneLayer);
 
-    if (JSON.stringify(beforeLayers) !== payload.expectedLayersFingerprint) {
+    if (!matchesJsonFingerprint(beforeLayers, payload.expectedLayersFingerprint)) {
         throw new Error('Adjustment-layer state changed after this action was committed');
     }
 

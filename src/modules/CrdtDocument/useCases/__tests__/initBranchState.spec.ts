@@ -125,4 +125,23 @@ describe('initBranchState', () => {
         expect(readBranchIds()).toEqual([MAIN_BRANCH_ID, localOnlyBranch.branchId]);
         expect(mockLogger.error.mock.calls[0]?.[0]?.message).toContain('could not be cleared');
     });
+
+    it('leaves branch state untouched and reports when durable storage cannot be read', async () => {
+        window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(backupState));
+
+        const { initBranchState, readBranchIds } = await loadInitBranchState();
+        const refusedRead = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+            throw new DOMException('The operation is insecure.', 'SecurityError');
+        });
+
+        expect(() => {
+            initBranchState();
+        }).not.toThrow();
+
+        expect(readBranchIds()).toEqual([MAIN_BRANCH_ID]);
+        expect(mockLogger.error.mock.calls[0]?.[0]?.message).toContain('could not be read');
+
+        refusedRead.mockRestore();
+        expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(backupState));
+    });
 });

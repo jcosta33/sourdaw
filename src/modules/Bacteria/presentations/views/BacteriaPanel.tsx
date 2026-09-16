@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useTransition } from 'react';
+import { type ReactElement, useEffect, useState, useTransition } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -6,6 +6,7 @@ import { DawSearchInput } from '#/components/daw/DawSearchInput';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { type BacteriaPatch } from '../../models/BacteriaPatch';
 import {
@@ -17,10 +18,14 @@ import {
     setBacteriaActiveModule,
     setBacteriaUiLevel,
 } from '../../stores/bacteriaStore';
+import { applyBacteriaMorphWithAudio } from '../../useCases/bacteriaParamBridge/applyBacteriaMorph';
+import { captureBacteriaSnapshot } from '../../useCases/bacteriaParamBridge/captureBacteriaSnapshot';
 import { loadBacteriaPatchWithAudio } from '../../useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio';
 import { setBacteriaBandParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio';
+import { setBacteriaModAssignmentsWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaModAssignmentsWithAudio';
 import { setBacteriaParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaParamWithAudio';
 import { BACTERIA_PRESETS } from '../../useCases/bacteriaPresets';
+import { hydrateBacteriaPatchFromProject } from '../../useCases/hydrateBacteriaPatchFromProject';
 import { BandStrip } from '../components/BandStrip';
 import { BezierLfoEditor } from '../components/BezierLfoEditor';
 import { CrossoverDisplay } from '../components/CrossoverDisplay';
@@ -450,20 +455,26 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                 <XYMorphPad
                     x={state.patch.morphX}
                     y={state.patch.morphY}
-                    onChangeX={(value) => setGlobalParam(deviceId, 'morphX', value)}
-                    onChangeY={(value) => setGlobalParam(deviceId, 'morphY', value)}
+                    onChange={(x, y) => applyBacteriaMorphWithAudio(deviceId, x, y)}
                     snapshots={state.patch.snapshots}
                     width={264}
                     height={212}
                 />
             </Stack>
             <Grid cols={4} gap={2}>
-                {state.patch.snapshots.slice(0, 4).map((snapshot) => (
+                {state.patch.snapshots.slice(0, 4).map((snapshot, index) => (
                     <Stack key={snapshot.id} gap={1} className="bacteria-window px-3 py-2">
                         <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">
                             Snap {snapshot.id}
                         </span>
                         <span className="truncate text-compact text-foreground">{snapshot.name}</span>
+                        <BChip
+                            active={Object.keys(snapshot.paramValues).length > 0}
+                            aria-label={`Capture snapshot ${snapshot.id}`}
+                            onClick={() => captureBacteriaSnapshot(deviceId, index)}
+                        >
+                            Capture
+                        </BChip>
                     </Stack>
                 ))}
             </Grid>
@@ -582,26 +593,34 @@ const PlayDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                 description="Fine-tune the resting position without dragging the pad."
             />
             <Row wrap gap={4}>
-                <K
-                    deviceId={deviceId}
-                    v={state.patch.morphX}
-                    k="morphX"
-                    label="X"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    def={0.5}
-                />
-                <K
-                    deviceId={deviceId}
-                    v={state.patch.morphY}
-                    k="morphY"
-                    label="Y"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    def={0.5}
-                />
+                <Stack align="center" gap={1} className="min-w-[58px]">
+                    <RotaryKnob
+                        value={state.patch.morphX}
+                        onChange={(value) => applyBacteriaMorphWithAudio(deviceId, value, state.patch.morphY)}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        defaultValue={0.5}
+                        size="sm"
+                        tone="mint"
+                        aria-label="Morph X"
+                    />
+                    <span className="text-micro leading-none text-muted-foreground">X</span>
+                </Stack>
+                <Stack align="center" gap={1} className="min-w-[58px]">
+                    <RotaryKnob
+                        value={state.patch.morphY}
+                        onChange={(value) => applyBacteriaMorphWithAudio(deviceId, state.patch.morphX, value)}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        defaultValue={0.5}
+                        size="sm"
+                        tone="mint"
+                        aria-label="Morph Y"
+                    />
+                    <span className="text-micro leading-none text-muted-foreground">Y</span>
+                </Stack>
             </Row>
         </Stack>
     </Stack>
@@ -1488,7 +1507,19 @@ const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                 title="Source dock"
                 description="Still compact, still visible, and less stranded than before."
             />
-            <ModulationDock patch={state.patch} modValues={[]} onAssignmentRemove={() => {}} />
+            <ModulationDock
+                patch={state.patch}
+                modValues={[]}
+                onAssignmentAdd={(assignment) =>
+                    setBacteriaModAssignmentsWithAudio(deviceId, [...state.patch.modAssignments, assignment])
+                }
+                onAssignmentRemove={(index) =>
+                    setBacteriaModAssignmentsWithAudio(
+                        deviceId,
+                        state.patch.modAssignments.filter((_, current) => current !== index)
+                    )
+                }
+            />
         </Stack>
     </Stack>
 );
@@ -1754,9 +1785,24 @@ function renderDeck(deviceId: string, state: BacteriaState): ReactElement {
     return <LabDeck deviceId={deviceId} state={state} />;
 }
 
+const defaultTrackState = { tracks: [], selectedTrackId: null, ghostClips: [] };
+
 export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const allInstances = useStore(bacteriaStore, {});
     const state: BacteriaState = allInstances?.[deviceId] ?? getBacteriaState(deviceId);
+    // Project hydration follows the Fermenter/Gluten pattern (#3673): the store
+    // slice is re-projected from the device's persisted parameterValues on
+    // mount and on every relevant project change, so commands, undo, and
+    // collaborator writes that bypass this panel's setter still arrive.
+    const trackState = useStore(trackStore, defaultTrackState);
+    const projectParameterValues = trackState.tracks
+        .flatMap((track) => track.devices)
+        .find((device) => device.id === deviceId)?.parameterValues;
+
+    useEffect(() => {
+        hydrateBacteriaPatchFromProject(deviceId);
+    }, [deviceId, projectParameterValues]);
+
     const [presetQuery, setPresetQuery] = useState('');
     const [presetCategory, setPresetCategory] = useState('All');
     const [, startFilterTransition] = useTransition();

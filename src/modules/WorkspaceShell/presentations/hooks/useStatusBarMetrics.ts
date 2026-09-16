@@ -7,6 +7,7 @@ import {
     getEngineHealth,
     getEngineState,
     getMasterPeakLevel,
+    readNativeEngineStatus,
     readNativeOutputLatency,
     refreshEngineRtDiagnostics,
 } from '#/modules/AudioEngine/useCases';
@@ -109,11 +110,13 @@ function describeDeadlineCoverage(evidence: DeadlineEvidence): string {
 
 type DescribeOutputLatencyInput = {
     native: ReturnType<typeof readNativeOutputLatency>;
+    nativeStatus: ReturnType<typeof readNativeEngineStatus>;
     engineInfo: ReturnType<typeof getEngineState>;
 };
 
 type OutputLatencyDescription = {
-    outputLatencyMs: number;
+    /** Milliseconds, or `null` when the audible engine has published no figure. */
+    outputLatencyMs: number | null;
     title: string;
 };
 
@@ -134,24 +137,35 @@ function outputLatencyTitle(bufferLabel: string, bufferMs: number, deviceMs: num
 }
 
 /**
- * The output-latency readout and its tooltip breakdown, from whichever side
- * is actually the audible carrier.
+ * The output-latency readout and its tooltip breakdown.
  *
- * The native session becoming the audible carrier does not stop Web Audio's
- * own `AudioContext` from running — it just stops being what the listener
- * hears — so `engineInfo.baseLatency + engineInfo.outputLatency` would keep
- * reporting a real number that describes a path nobody is on. `native`
- * (`readNativeOutputLatency`) is `null` in exactly the cases where that
- * fallback is the right answer: Web Audio is the carrier, or the native
- * engine has not published a figure yet.
+ * The readout follows the audible carrier. When Web Audio carries the
+ * monitor, its `baseLatency + outputLatency` sum is the delay the listener
+ * hears, so it is the readout. When the native session carries the monitor,
+ * Web Audio's context figures describe a path nobody is on: they are real
+ * numbers about the wrong engine, and showing them while the native figure
+ * has not landed would substitute a healthy context's latency for the
+ * native engine's absent one — so the readout says n/a instead (#3706).
  */
-function describeOutputLatency({ native, engineInfo }: DescribeOutputLatencyInput): OutputLatencyDescription {
-    if (native) {
-        const contextMs = native.contextSeconds * 1000;
-        const deviceMs = native.deviceSeconds * 1000;
+function describeOutputLatency({
+    native,
+    nativeStatus,
+    engineInfo,
+}: DescribeOutputLatencyInput): OutputLatencyDescription {
+    if (nativeStatus.audibleCarrier) {
+        if (native) {
+            const contextMs = native.contextSeconds * 1000;
+            const deviceMs = native.deviceSeconds * 1000;
+            return {
+                outputLatencyMs: contextMs + deviceMs,
+                title: outputLatencyTitle('native engine buffer', contextMs, deviceMs),
+            };
+        }
         return {
-            outputLatencyMs: contextMs + deviceMs,
-            title: outputLatencyTitle('native engine buffer', contextMs, deviceMs),
+            outputLatencyMs: null,
+            title:
+                'Native engine is the audible output; its output latency has not been published.' +
+                ' Web Audio figures would describe a path nobody hears.',
         };
     }
     const baseLatencyMs = engineInfo.baseLatency * 1000;
@@ -159,6 +173,65 @@ function describeOutputLatency({ native, engineInfo }: DescribeOutputLatencyInpu
     return {
         outputLatencyMs: baseLatencyMs + deviceLatencyMs,
         title: outputLatencyTitle('context', baseLatencyMs, deviceLatencyMs),
+    };
+}
+
+type DescribeEngineIndicatorInput = {
+    nativeStatus: ReturnType<typeof readNativeEngineStatus>;
+    engineInfo: ReturnType<typeof getEngineState>;
+    diagnosticsSummary: string;
+};
+
+type EngineIndicator = {
+    tone: 'muted' | 'success' | 'warning' | 'danger';
+    title: string;
+};
+
+/**
+ * The engine dot's tone and tooltip, named for the engine they describe.
+ *
+ * The dot answers "is the engine I am hearing healthy", so its source follows
+ * the audible carrier: while the native session is what a musician hears, its
+ * running state and output-stream fault decide the tone and Web Audio's
+ * context state is named but never substituted for them (#3706). `warning`
+ * keeps a running engine visible as degraded; a carrier that stopped
+ * rendering is `danger`, and a carrier with no diagnostics reading yet is
+ * `muted` — no reading is not a failure.
+ */
+function describeEngineIndicator({
+    nativeStatus,
+    engineInfo,
+    diagnosticsSummary,
+}: DescribeEngineIndicatorInput): EngineIndicator {
+    const webAudioSuffix = ` · Web Audio: ${engineInfo.state}`;
+    if (nativeStatus.audibleCarrier) {
+        const diagnostics = nativeStatus.diagnostics;
+        if (!diagnostics) {
+            return {
+                tone: 'muted',
+                title: `Engine: native (no reading yet)${webAudioSuffix}${diagnosticsSummary}`,
+            };
+        }
+        if (!diagnostics.running) {
+            return {
+                tone: 'danger',
+                title: `Engine: native stopped${webAudioSuffix}${diagnosticsSummary}`,
+            };
+        }
+        if (diagnostics.outputStreamFault) {
+            return {
+                tone: 'warning',
+                title: `Engine: native running · native output stream fault: ${diagnostics.outputStreamFault}${webAudioSuffix}${diagnosticsSummary}`,
+            };
+        }
+        return {
+            tone: 'success',
+            title: `Engine: native running${webAudioSuffix}${diagnosticsSummary}`,
+        };
+    }
+    return {
+        tone: engineInfo.state === 'running' ? 'success' : 'muted',
+        title: `Engine: Web Audio ${engineInfo.state}${diagnosticsSummary}`,
     };
 }
 
@@ -176,6 +249,16 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
     const cpuHeadRef = useRef(0);
     const cpuFilledRef = useRef(0);
     const idleDeadlineRef = useRef(-1);
+    // The display's own cadence, approximated by the smallest recent
+    // inter-tick interval; see the load estimate below for why a fixed
+    // 60 Hz budget cannot be the reference.
+    const FRAME_CADENCE_WINDOW = 30;
+    const frameDeltasRef = useRef<Float32Array>(new Float32Array(FRAME_CADENCE_WINDOW));
+    const frameDeltasHeadRef = useRef(0);
+    const frameDeltasFilledRef = useRef(0);
+    // False until the first idle callback proves the idle loop is being
+    // serviced; frames observed before that say nothing about busyness.
+    const hasSeenIdleSampleRef = useRef(false);
     const lastDiagnosticsAtRef = useRef(Number.NEGATIVE_INFINITY);
     const engineDiagnosticsTitleRef = useRef('');
 
@@ -238,32 +321,58 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                 lastDiagnosticsAtRef.current = now;
             }
 
-            // ── CPU load estimate ───────────────────────────────────────
-            // Uses requestIdleCallback to measure how much of each frame is
-            // consumed by work. If the browser has no idle time, CPU is high.
-            // This is the most accurate browser-available method short of
-            // AudioWorklet self-timing.
-            const targetFrameMs = 1000 / 60;
-
-            // Frame overrun: how much we exceeded the 16.67ms budget
-            const frameOverrun = Math.max(0, frameDelta - targetFrameMs);
-            const frameLoad = Math.min(100, (frameOverrun / targetFrameMs) * 120);
-
-            // Idle time measurement: if the browser reports idle time via
-            // the idleDeadline ref, use it to estimate how busy the main thread is.
-            // No idle time = 100% busy. Full idle time (~50ms) = 0% busy.
-            let idleLoad = 0;
-            const deadline = idleDeadlineRef.current;
-            if (deadline >= 0) {
-                // deadline is the remaining idle ms (0 = fully busy, 50 = fully idle)
-                idleLoad = Math.min(100, Math.max(0, (1 - deadline / 50) * 100));
-                idleDeadlineRef.current = -1; // consumed
+            // ── Main-thread load estimate ───────────────────────────────
+            // A busyness estimate for the main thread, from two observables.
+            // It is not CPU utilization and says nothing about the audio
+            // thread; the engine dot owns audio health.
+            //
+            // - Idle occupancy. With a page that keeps requesting animation
+            //   frames, W3C requestidlecallback bounds an idle period by the
+            //   next frame — the 50 ms figure in the spec is a cap for
+            //   otherwise unbounded idle periods, not a per-frame budget.
+            //   `timeRemaining()` of the sample that landed in a frame,
+            //   divided by that frame's own interval, is the idle share; its
+            //   complement is the busy share. A frame in which no idle
+            //   callback was dispatched had no idle time at all — full
+            //   scheduling pressure for that frame. Before the first idle
+            //   sample arrives the loop is unproven, and a missing sample
+            //   means nothing.
+            // - Frame overrun. Against the display's own cadence, not a fixed
+            //   60 Hz budget: the smallest recent inter-tick interval
+            //   approximates the refresh interval, so time above it is jank
+            //   whether the display runs at 30, 60, or 120 Hz. A fixed budget
+            //   here classified a normally paced 30 Hz display as fully
+            //   loaded, and the old fixed 50 ms idle budget read an
+            //   almost-idle 60 Hz UI as ~70% loaded purely from cadence.
+            const deltas = frameDeltasRef.current;
+            deltas[frameDeltasHeadRef.current] = frameDelta;
+            frameDeltasHeadRef.current = (frameDeltasHeadRef.current + 1) % FRAME_CADENCE_WINDOW;
+            if (frameDeltasFilledRef.current < FRAME_CADENCE_WINDOW) {
+                frameDeltasFilledRef.current++;
+            }
+            let cadenceMs = frameDelta;
+            for (let index = 0; index < frameDeltasFilledRef.current; index++) {
+                const sample = deltas[index]!;
+                if (sample > 0 && sample < cadenceMs) {
+                    cadenceMs = sample;
+                }
             }
 
-            // Combine: higher of frame jank or idle pressure
-            const isPlaying = engineInfo.state === 'running';
-            const floor = isPlaying ? 3 : 0;
-            const load = Math.max(floor, frameLoad, idleLoad);
+            const frameOverrunMs = Math.max(0, frameDelta - cadenceMs);
+            const overrunLoad = cadenceMs > 0 ? Math.min(100, (frameOverrunMs / cadenceMs) * 100) : 0;
+
+            const deadline = idleDeadlineRef.current;
+            idleDeadlineRef.current = -1; // consumed
+            let idleLoad = 0;
+            if (deadline >= 0) {
+                hasSeenIdleSampleRef.current = true;
+                const idleWindowMs = Math.max(frameDelta, 1);
+                idleLoad = Math.min(100, Math.max(0, (1 - deadline / idleWindowMs) * 100));
+            } else if (hasSeenIdleSampleRef.current) {
+                idleLoad = 100;
+            }
+
+            const load = Math.max(overrunLoad, idleLoad);
             const samples = cpuSamplesRef.current;
             samples[cpuHeadRef.current] = Math.max(0, load);
             cpuHeadRef.current = (cpuHeadRef.current + 1) % CPU_SAMPLE_WINDOW;
@@ -303,8 +412,25 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                 }
             }
 
-            // ── Audio engine info ───────────────────────────────────────
-            updateTextNode(refs.sampleRate.current, `${engineInfo.sampleRate / 1000}kHz`);
+            // ── Sample rate ─────────────────────────────────────────────
+            // The rate readout names its source. While the native session is
+            // the audible carrier, the Web Audio context's rate describes the
+            // engine nobody hears — the native output stream's own opened rate
+            // is the honest figure, and until the diagnostics publish one the
+            // readout says n/a rather than borrowing the context's (#3706).
+            const nativeStatus = readNativeEngineStatus();
+            const rateTitle = nativeStatus.audibleCarrier
+                ? 'Native engine output stream rate'
+                : 'Web Audio context sample rate';
+            if (nativeStatus.audibleCarrier) {
+                const nativeSampleRate = nativeStatus.diagnostics?.sampleRate ?? 0;
+                updateTextNode(refs.sampleRate.current, nativeSampleRate > 0 ? `${nativeSampleRate / 1000}kHz` : 'n/a');
+            } else {
+                updateTextNode(refs.sampleRate.current, `${engineInfo.sampleRate / 1000}kHz`);
+            }
+            if (refs.sampleRate.current && refs.sampleRate.current.title !== rateTitle) {
+                refs.sampleRate.current.title = rateTitle;
+            }
 
             // ── Output latency ──────────────────────────────────────────
             // Web Audio splits the output path into two *disjoint, successive*
@@ -338,8 +464,12 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             // nobody is hearing — `describeOutputLatency` reads whichever side
             // is actually carrying the monitor.
             const native = readNativeOutputLatency();
-            const { outputLatencyMs, title: latencyTitle } = describeOutputLatency({ native, engineInfo });
-            updateTextNode(refs.latency.current, `${outputLatencyMs.toFixed(1)}ms`);
+            const { outputLatencyMs, title: latencyTitle } = describeOutputLatency({
+                native,
+                nativeStatus,
+                engineInfo,
+            });
+            updateTextNode(refs.latency.current, outputLatencyMs === null ? 'n/a' : `${outputLatencyMs.toFixed(1)}ms`);
             // Compare before writing, the same way `updateTextNode` does: this
             // tick runs at animation-frame rate and the tooltip only moves when
             // the device buffer does, so an unguarded assignment would be ~60
@@ -356,11 +486,20 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                 refs.latency.current.title = latencyTitle;
             }
 
+            const indicator = describeEngineIndicator({
+                nativeStatus,
+                engineInfo,
+                diagnosticsSummary: engineDiagnosticsTitleRef.current,
+            });
             if (refs.engineState.current) {
-                refs.engineState.current.className = getDawStatusDotClassName({
-                    tone: engineInfo.state === 'running' ? 'success' : 'muted',
-                });
-                refs.engineState.current.title = `Engine: ${engineInfo.state}${engineDiagnosticsTitleRef.current}`;
+                const dot = refs.engineState.current;
+                const nextClassName = getDawStatusDotClassName({ tone: indicator.tone });
+                if (dot.className !== nextClassName) {
+                    dot.className = nextClassName;
+                }
+                if (dot.title !== indicator.title) {
+                    dot.title = indicator.title;
+                }
             }
 
             // ── Master level ────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { render, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach, type MockInstance } from 'vitest';
 
 import { DEFAULT_PATCH, type ProofPatch, type ProofPatchEdit } from '../../../models/ProofPatch';
 import {
@@ -516,6 +516,76 @@ describe('ProofEqCurve', () => {
             expect(edits).toHaveLength(3);
             expect(edits.map((edit) => edit.isTransient)).toEqual([true, true, false]);
             expect(edits[2]).toMatchObject({ key: 'eqBands', value: edits[1]?.value });
+        });
+    });
+
+    describe('pointer mapping under display scale', () => {
+        // At 200% UI scale (the browserDisplayScale e2e environment) the
+        // canvas's bounding box is twice its layout size: pointer events
+        // arrive in visual pixels while band positions are layout pixels.
+        // Without normalizing by the rect the hit test measures twice the
+        // real distance, never picks up a band, and the drag silently does
+        // nothing — aria-valuenow freezes.
+        const LAYOUT_WIDTH = 200;
+        const LAYOUT_HEIGHT = 100;
+        const DISPLAY_SCALE = 2;
+        const DRAG_DX_LAYOUT_PX = 20;
+        const DRAG_UP_LAYOUT_PX = 20;
+
+        let rectSpy: MockInstance;
+
+        afterEach(() => {
+            rectSpy?.mockRestore();
+        });
+
+        it('drags a band when the canvas renders at twice its layout size', () => {
+            // jsdom has no layout: report the bounding box the browser shows
+            // at 200% display scale — visual size = layout size x scale.
+            rectSpy = vi
+                .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+                .mockReturnValue(new DOMRect(0, 0, LAYOUT_WIDTH * DISPLAY_SCALE, LAYOUT_HEIGHT * DISPLAY_SCALE));
+
+            const onPatchChange = vi.fn();
+            const { container } = render(
+                <ProofEqCurve
+                    patch={DEFAULT_PATCH}
+                    width={LAYOUT_WIDTH}
+                    height={LAYOUT_HEIGHT}
+                    gestureOwner={0}
+                    onPatchChange={onPatchChange}
+                />
+            );
+            const canvas = getCanvas(container);
+
+            // Band 2 of DEFAULT_PATCH is an enabled peak at 250 Hz, 0 dB —
+            // its dot sits at these layout coordinates, which read double in
+            // visual pixels at 200% scale.
+            const dotX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * LAYOUT_WIDTH;
+            const dotY = LAYOUT_HEIGHT / 2;
+            const toVisual = (x: number, y: number): { clientX: number; clientY: number } => ({
+                clientX: x * DISPLAY_SCALE,
+                clientY: y * DISPLAY_SCALE,
+            });
+
+            fireEvent.pointerDown(canvas, { pointerId: 21, ...toVisual(dotX, dotY) });
+            fireEvent.pointerMove(canvas, {
+                pointerId: 21,
+                ...toVisual(dotX + DRAG_DX_LAYOUT_PX, dotY - DRAG_UP_LAYOUT_PX),
+            });
+            fireEvent.pointerUp(canvas, { pointerId: 21 });
+
+            // A 20 px rightward drag lands at xToFreq(dotX + 20): the same
+            // formula the component maps layout x with.
+            const expectedFreq = Math.round(20 * (20000 / 20) ** ((dotX + DRAG_DX_LAYOUT_PX) / LAYOUT_WIDTH));
+            // A 20 px upward drag from centre: 20/50 of the ±18 dB range, quantized to 0.5 dB.
+            const expectedGain = Math.round((DRAG_UP_LAYOUT_PX / (LAYOUT_HEIGHT / 2)) * 18 * 2) / 2;
+
+            expect(onPatchChange).toHaveBeenCalledTimes(2);
+            const transientEdit = onPatchChange.mock.calls[0]?.[0] as ProofPatchEdit;
+            expect(transientEdit).toMatchObject({ key: 'eqBands', isTransient: true });
+            if (transientEdit.key === 'eqBands') {
+                expect(transientEdit.value[2]).toMatchObject({ freq: expectedFreq, gain: expectedGain });
+            }
         });
     });
 

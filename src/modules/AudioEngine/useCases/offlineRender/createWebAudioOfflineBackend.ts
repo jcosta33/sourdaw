@@ -232,6 +232,7 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
             playDuration: playback.durationSeconds,
             playbackRate: playback.playbackRate,
             clipGainValue: playback.gain,
+            envelope: playback.envelope,
             // A fade with no absolute time on it is the anti-click micro-fade;
             // the scheduler reads an absent time as exactly that, so the
             // contract's optional time passes straight through.
@@ -346,6 +347,11 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
                 // An immediate patch load addresses a native built-in, and only
                 // a strip the native engine carries holds one — so a producer
                 // never aims one here.
+                return null;
+            case 'set-device-bypass':
+                // A live bypass toggle addresses the engine's carried body, and
+                // this carrier builds each device's bypass from the strip's
+                // devices at creation — so a producer never aims one here.
                 return null;
             case 'schedule-clip':
                 scheduleClip(command.playback);

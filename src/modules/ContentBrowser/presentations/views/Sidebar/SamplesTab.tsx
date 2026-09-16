@@ -8,7 +8,10 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { addTrack, addClip } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
+import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 
 import { PreviewButton } from '../../components/Sidebar/PreviewButton';
@@ -32,7 +35,7 @@ export const SamplesTab = ({
 }: SamplesTabProps): ReactElement => {
     const categories = [...new Set(samples.map((state) => state.category))];
 
-    const handleAdd = (sample: SampleItem) => {
+    const handleAdd = async (sample: SampleItem): Promise<void> => {
         let trackId = selectedTrackId;
         if (!trackId) {
             const newTrack = addTrack({ name: sample.name, kind: 'audio' });
@@ -51,14 +54,36 @@ export const SamplesTab = ({
         if (durationSeconds !== undefined) {
             durationBeats = Math.max(1, Math.ceil((durationSeconds / 60) * tempo));
         }
-        addClip({
+        // A clicked sample becomes a shareable clip, so its cached PCM is
+        // staged before publication: the clip's assetHash is the identity a
+        // receiving peer requests and verifies the bytes against (#3759).
+        let stagedAsset: Awaited<ReturnType<typeof stageAudioBufferAsset>> = null;
+        if (cachedBuffer) {
+            try {
+                stagedAsset = await stageAudioBufferAsset(cachedBuffer, sample.name);
+            } catch {
+                notifyUser(`Failed to add "${sample.name}" — asset registration failed`, 'error');
+                return;
+            }
+        }
+        const clip = addClip({
             trackId,
             startBeat: 0,
             endBeat: durationBeats,
             name: sample.name,
             type: 'audio',
             audioBufferId: sample.audioBufferId,
+            assetHash: stagedAsset?.hash,
         });
+        if (!clip) {
+            if (stagedAsset) {
+                getAssetTransfer()?.releaseStagedAsset(stagedAsset.leaseId);
+            }
+            return;
+        }
+        if (stagedAsset) {
+            getAssetTransfer()?.promoteStagedAsset(stagedAsset.leaseId);
+        }
     };
 
     return (
@@ -97,9 +122,7 @@ export const SamplesTab = ({
                                     event.dataTransfer.setData('application/x-sourdaw-sample', JSON.stringify(data));
                                     event.dataTransfer.effectAllowed = 'copy';
                                 }}
-                                onClick={() => {
-                                    handleAdd(sample);
-                                }}
+                                onClick={() => void handleAdd(sample)}
                                 title="Drag to timeline or click to add"
                             >
                                 <DawPickerRow

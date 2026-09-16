@@ -8,6 +8,8 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { stopAutomationRecording } from '#/modules/Automation/useCases';
 
+import { captureGestureBeat } from '../../stores/captureGestureBeat';
+import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 
@@ -15,7 +17,13 @@ import { schedulerSession, stopActiveSources } from './schedulerSession';
 
 export function stopPlayheadScheduler(): void {
     schedulerSession.generation += 1;
-    stopAutomationRecording();
+    // The transport boundary the recorded automation pass must be committed
+    // through: where the audible transport actually stands at this stop. Read
+    // BEFORE any teardown resets the clock — every caller (stop, pause, seek)
+    // reaches here while the position is still live, and each of them assigns
+    // the next position only after this returns.
+    const boundaryBeat = captureGestureBeat();
+    stopAutomationRecording(boundaryBeat);
     if (schedulerSession.worker) {
         schedulerSession.worker.postMessage({ type: 'stop' });
         schedulerSession.worker.terminate();
@@ -36,6 +44,8 @@ export function stopPlayheadScheduler(): void {
     }
     schedulerSession.lastTickTime = 0;
     schedulerSession.accumulatedPosition = 0;
+    playheadClockRef.beat = 0;
+    playheadClockRef.audioTimeSeconds = 0;
     schedulerSession.lastScheduledBeat = -1;
     schedulerSession.tickInFlight = false;
     resetMetronomeBeat(0);

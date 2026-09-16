@@ -340,8 +340,29 @@ export type AudioGraphClipPlayback = Readonly<{
     playbackRate: number;
     /** The clip's own level, as a linear amplitude. */
     gain: number;
+    /**
+     * The clip's gain-envelope curve, in destination seconds (#2865). Absent
+     * when the clip carries no envelope — or when the producer addresses a
+     * backend that cannot apply one: the native wire has no envelope
+     * vocabulary, its serializer **refuses** a playback that carries this
+     * field rather than silently printing the clip without its curve, and the
+     * native producers gate envelope-carrying clips back onto the Web Audio
+     * carrier instead of sending them at all.
+     */
+    envelope?: readonly AudioGraphClipEnvelopeAnchor[];
     /** Per-clip fades, and the anti-click floor both of them are held to. */
     fade: AudioGraphClipFade;
+}>;
+
+/**
+ * One anchor of a clip's gain-envelope curve: when the curve reaches this
+ * level, as a linear amplitude. Unfolded — a backend folds the series to its
+ * own audible start, exactly as the Web Audio scheduler does at
+ * `max(soundStartTime, now)`.
+ */
+export type AudioGraphClipEnvelopeAnchor = Readonly<{
+    timeSec: number;
+    gain: number;
 }>;
 
 /**
@@ -526,6 +547,26 @@ export type AudioGraphSetDeviceParametersCommand = Readonly<{
  * through the same projection the wire uses and reads the key count.
  */
 export const MAX_IMMEDIATE_DEVICE_PARAMETERS = 128;
+
+/**
+ * Set a device's bypass on the engine's own chain, at the next audio callback.
+ *
+ * The live counterpart of the `bypassed` field a device's topology carries: the
+ * engine learns a mid-roll toggle when the toggle happens, rather than at the
+ * next strip rebuild that re-sends the whole topology. Addresses the chain slot
+ * the device is spliced into — the same address
+ * {@link AudioGraphSetDeviceParametersCommand} writes values through — so the
+ * carrier skips the device's pass and runs its dry line in place of it.
+ *
+ * It addresses a **native built-in** only. An externally hosted plugin's bypass
+ * is owned by the plugin host's own control path, which the plugin's device node
+ * writes directly; a second live writer would race that ordered path.
+ */
+export type AudioGraphSetDeviceBypassCommand = Readonly<{
+    kind: 'set-device-bypass';
+    target: AudioGraphDeviceTarget;
+    bypassed: boolean;
+}>;
 
 export type AudioGraphScheduleClipCommand = Readonly<{
     kind: 'schedule-clip';
@@ -724,6 +765,7 @@ export type AudioGraphCommand =
     | AudioGraphWriteParameterCommand
     | AudioGraphWriteDeviceParameterCommand
     | AudioGraphSetDeviceParametersCommand
+    | AudioGraphSetDeviceBypassCommand
     | AudioGraphScheduleClipCommand
     | AudioGraphScheduleMidiCommand
     | AudioGraphSendMidiNoteCommand
