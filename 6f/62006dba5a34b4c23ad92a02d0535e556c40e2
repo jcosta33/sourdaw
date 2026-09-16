@@ -1,0 +1,44 @@
+src/utils/audioMetering/__tests__/measureMaxWindowedLoudness.spec.ts
+  s_914af328b3988f::t_047a5087c820b1 146-181
+src/modules/AudioAnalysis/services/agentObjectiveAnalysis/compareAgentObjectiveMeasurements.ts
+  s_914af328b3988f::t_f08f402c0b9ce0 50
+  s_914af328b3988f::t_2481fcc9475baf 29-37
+  s_914af328b3988f::t_dcd0e1478b8c37 7
+src/modules/AudioAnalysis/services/agentObjectiveAnalysis/measureRenderSpectrum.ts
+  s_914af328b3988f::t_f4231e523431c3 52
+  s_914af328b3988f::t_22ef335f915858 3-4,6-12,14-18,21-26,31-32,36,41-51,53-137,139-142,145,149,157-159,166-171,174-176,184-185,190-192
+src/utils/audioMetering/measureMaxWindowedLoudness.ts
+  s_914af328b3988f::t_08052fe55323eb 18-38
+  s_914af328b3988f::t_1c6b1e60553bc8 84-85
+  s_914af328b3988f::t_bd4d4e41ef79af 68,72
+src/modules/AudioAnalysis/services/agentObjectiveAnalysis/buildAgentObjectiveMeasurements.ts
+  s_914af328b3988f::t_23f7afada2b9a4 14
+  s_914af328b3988f::t_f4d32af9ce6de2 32-35
+  s_914af328b3988f::t_81e8fb758c7e12 171-179,184
+src/modules/AudioAnalysis/useCases/__tests__/agentObjectiveAnalysis.spec.ts
+  s_914af328b3988f::t_740be00ab48c2c 269-304
+  s_914af328b3988f::t_e7faa11139e3ae 81-88
+  s_914af328b3988f::t_038cc0e3857789 7
+  s_914af328b3988f::t_433082c2193315 382,541-563
+  s_914af328b3988f::t_4ede9a6744bec1 190-195,200,203-207
+  s_914af328b3988f::t_f5920171180081 196-199,201-202,208-209
+  s_914af328b3988f::t_a56cec8625a180 367-369,377-381
+  s_914af328b3988f::t_afa7b35bb1a1a9 305,373
+  s_914af328b3988f::t_2dcf828ea749cd 383
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6f62006dba5a34b4c23ad92a02d0535e556c40e2",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
