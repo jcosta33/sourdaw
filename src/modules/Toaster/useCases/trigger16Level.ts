@@ -1,6 +1,9 @@
 import { get16LevelsTarget } from './get16LevelsTarget';
 import { setPadParamImmediate } from './setPadParamImmediate';
 import { triggerToasterPad } from './triggerPad';
+import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
+
+import { TOASTER_PAD_COUNT } from '../models/ToasterKit';
 
 export function trigger16Level(gridIndex: number, deviceId: string): void {
     const session = get16LevelsTarget(deviceId);
@@ -8,7 +11,7 @@ export function trigger16Level(gridIndex: number, deviceId: string): void {
         return;
     }
 
-    const normalized = (gridIndex + 1) / 16; // 0.0625 to 1.0
+    const normalized = (gridIndex + 1) / TOASTER_PAD_COUNT; // 0.0625 to 1.0
 
     const { padIndex: targetPad, target } = session;
 
@@ -25,8 +28,8 @@ export function trigger16Level(gridIndex: number, deviceId: string): void {
             triggerToasterPad(deviceId, targetPad, 127);
             break;
         case 'filter': {
-            const minHz = 20;
-            const maxHz = 20000;
+            const minHz = MIN_AUDIBLE_FREQ_HZ;
+            const maxHz = MAX_AUDIBLE_FREQ_HZ;
             const freq = minHz * (maxHz / minHz) ** normalized;
             setPadParamImmediate({ deviceId, padIndex: targetPad, key: 'filterCutoff', value: freq });
             triggerToasterPad(deviceId, targetPad, 127);

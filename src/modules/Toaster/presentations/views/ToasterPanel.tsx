@@ -20,7 +20,7 @@ import { getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
-import { type PadState, withActivePatternId } from '../../models/ToasterKit';
+import { TOASTER_PAD_COUNT, type PadState, withActivePatternId } from '../../models/ToasterKit';
 import {
     defaultToasterState,
     selectPad,
@@ -275,10 +275,10 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
         if (isRepeatActive) {
             if (is16Levels) {
                 if (sixteenLevelsTarget === 'velocity') {
-                    const velocity = Math.round(((index + 1) / 16) * 127);
+                    const velocity = Math.round(((index + 1) / TOASTER_PAD_COUNT) * 127);
                     startNoteRepeat(deviceId, selectedPadIndex, velocity, bpm, repeatRate);
                 } else {
-                    const fraction = (index + 1) / 16;
+                    const fraction = (index + 1) / TOASTER_PAD_COUNT;
                     if (sixteenLevelsTarget === 'tune') {
                         setPadParamImmediate({
                             deviceId,

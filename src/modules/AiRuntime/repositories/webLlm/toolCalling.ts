@@ -5,6 +5,8 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { parseToolPlanningOutcome, type ToolPlanningOutcome } from '../../transformers/toolCallParser';
 
+import { TOOL_CALLING_TEMPERATURE } from '../../models/LlmSamplingTemperatures';
+
 import { generateWebLlmCompletion } from './generateWebLlmCompletion';
 
 /**
@@ -42,7 +44,7 @@ export const generateWebLlmToolCalls = inject({ logger })(
             ].join('\n');
 
             const response = await generateWebLlmCompletion(fullSystemPrompt, userMessage, {
-                temperature: 0.1,
+                temperature: TOOL_CALLING_TEMPERATURE,
                 maxTokens,
                 signal: actualSignal,
                 requireComplete: true,
