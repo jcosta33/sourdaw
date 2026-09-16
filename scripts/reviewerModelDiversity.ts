@@ -35,17 +35,21 @@ export function assertReviewerModelDiversity(input: {
                 'e.g. "glm-5.3-flash"); the reviewer-diversity rule cannot be checked without it'
         );
     }
-    const authorModel = input.authorLabels
+    const authorModels = input.authorLabels
         .map(authorModelFromLabel)
-        .find((model): model is string => model !== undefined);
-    if (authorModel === undefined) {
+        .filter((model): model is string => model !== undefined);
+    if (authorModels.length === 0) {
         return;
     }
-    if (authorModel === input.reviewerModel.trim()) {
+    // Every fenced label is a model some lane publish declared as the author. Metadata edits are
+    // add-only, so republishing a lane with a different --model leaves the previous fence on the
+    // PR; a reviewer matching any declared author is the collusion this check exists to refuse.
+    const reviewerModel = input.reviewerModel.trim();
+    if (authorModels.includes(reviewerModel)) {
         fail(
-            `reviewer model "${input.reviewerModel}" matches the PR's authoring model; ` +
-                'assign the review stance to a different model (AGENTS.md: "Assign reviewers a model ' +
-                'different from the author\'s")'
+            `reviewer model "${input.reviewerModel}" matches one of the PR's authoring models ` +
+                `(${authorModels.join(', ')}); assign the review stance to a different model ` +
+                '(AGENTS.md: "Assign reviewers a model different from the author\'s")'
         );
     }
 }

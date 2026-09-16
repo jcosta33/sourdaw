@@ -1210,7 +1210,7 @@ describe('review publish', () => {
             ],
         });
 
-        expect(() => publishReview(42, port)).toThrow(/matches the PR's authoring model/u);
+        expect(() => publishReview(42, port)).toThrow(/matches one of the PR's authoring models/u);
         expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
     });
 
@@ -2066,6 +2066,81 @@ describe('shellPort postReview state verification', () => {
             port.postReview({ number: 42, commitId: 'sha', event: 'REQUEST_CHANGES', body: 'no', comments: [] })
         ).toEqual({ id: 42, actorNodeId: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' });
         expect(events).toEqual(['attempt', 'post']);
+    });
+
+    it('fetches label names and descriptions for the diversity fence from gh pr view', () => {
+        const requests: string[] = [];
+        const capture = (command: string, args: string[]): string => {
+            if (command === 'git' && args[0] === 'rev-parse') {
+                return `${process.cwd()}/.git`;
+            }
+            if (command === 'gh' && args[0] === 'pr') {
+                requests.push(args.join(' '));
+                return JSON.stringify({
+                    state: 'OPEN',
+                    headRefOid: 'headsha',
+                    labels: [
+                        { name: 'bug', description: 'Something is broken' },
+                        { name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' },
+                        { name: 'no-description' },
+                    ],
+                });
+            }
+            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+        };
+        const port = shellPort(session, process.cwd(), capture);
+
+        expect(port.pullRequest(42)).toEqual({
+            state: 'OPEN',
+            head: 'headsha',
+            labels: [
+                { name: 'bug', description: 'Something is broken' },
+                { name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' },
+                { name: 'no-description' },
+            ],
+        });
+        // The field list is the acquisition path itself: dropping `labels` from it silently
+        // disables the diversity enforcement in production while every fake-port test stays green.
+        expect(requests).toEqual([`pr view 42 --repo jcosta33/sourdaw --json state,headRefOid,labels`]);
+    });
+
+    it('refuses a same-model review end to end through the production shellPort label fetch', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-diversity-shell-'));
+        runGit(root, ['init', '-b', 'main']);
+        const head = 'f'.repeat(40);
+        const bundle = join(root, '.agents', 'review-bundles', `42-${head}`);
+        mkdirSync(bundle, { recursive: true });
+        writeFileSync(
+            join(bundle, 'review.json'),
+            JSON.stringify({
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'Attacked; held.',
+                comments: [],
+                evidence: approvalEvidence(head),
+                reviewerModel: 'glm-5.3-flash',
+            })
+        );
+        writeFileSync(join(bundle, 'diff.patch'), '');
+        try {
+            const port = shellPort(session, root, (command, args) => {
+                if (command === 'git' && args[0] === 'rev-parse') {
+                    return `${root}/.git`;
+                }
+                if (command === 'gh' && args[0] === 'pr') {
+                    return JSON.stringify({
+                        state: 'OPEN',
+                        headRefOid: head,
+                        labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+                    });
+                }
+                throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+            });
+
+            expect(() => publishReview(42, port)).toThrow(/matches one of the PR's authoring models/u);
+        } finally {
+            removeTemporaryDirectory(root);
+        }
     });
 
     it('retains the exact shared owner when the production review POST becomes indeterminate', async () => {

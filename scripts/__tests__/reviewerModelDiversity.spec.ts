@@ -83,7 +83,23 @@ describe('assertReviewerModelDiversity', () => {
                 authorLabels: [{ name: 'bug', description: 'Something is broken' }, authorLabel],
                 reviewerModel: ' glm-5.3 ',
             })
-        ).toThrow(/matches the PR's authoring model/u);
+        ).toThrow(/matches one of the PR's authoring models/u);
+    });
+
+    it('refuses when the reviewer model matches any fenced authoring model, not just the first', () => {
+        // lane:publish metadata edits are add-only, so republishing with a different --model
+        // leaves the previous fenced label on the PR; matching either fence must refuse.
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [
+                    { name: 'glm-5.3', description: 'Authored by glm-5.3' },
+                    { name: 'bug', description: 'Something is broken' },
+                    { name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' },
+                ],
+                reviewerModel: 'glm-5.3-flash',
+            })
+        ).toThrow(/matches one of the PR's authoring models/u);
     });
 
     it('passes when the reviewer model differs from the authoring model', () => {
