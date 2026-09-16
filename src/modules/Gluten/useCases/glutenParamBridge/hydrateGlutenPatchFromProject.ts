@@ -1,4 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
+import { GAIN_TRIM_DB } from '#/utils/audioLevelLaw';
 
 import { GLUTEN_PARAM_IDS } from '../../models/GlutenParamIds';
 import { clampOversampling, DEFAULT_PATCH, SC_LPF_FREQ_RANGE, type GlutenPatch, type GlutenTopology } from '../../models/GlutenPatch';
@@ -82,7 +83,7 @@ const NUMERIC_NORMALIZERS = {
     scEqGain: (value) => clamp(value, -18, 18),
     scEqQ: (value) => clamp(value, 0.1, 10),
     inputGain: (value) => clamp(value, -12, 24),
-    outputGain: (value) => clamp(value, -24, 24),
+    outputGain: (value) => clamp(value, GAIN_TRIM_DB.min, GAIN_TRIM_DB.max),
     xfmrDrive: (value) => clamp(value, 0, 3),
     recovery: (value) => clamp(rustU8(value), 1, 5),
     vcaType: (value) => clamp(rustU8(value), 0, 2),

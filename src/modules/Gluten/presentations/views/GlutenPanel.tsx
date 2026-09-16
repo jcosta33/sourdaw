@@ -17,6 +17,8 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { GAIN_TRIM_DB } from '#/utils/audioLevelLaw';
+import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
 import { GLUTEN_PARAM_IDS } from '../../models/GlutenParamIds';
 import {
@@ -1109,9 +1111,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 param={GLUTEN_PARAM_IDS.scLpfFreq}
                                 label="SC LPF"
                                 min={1000}
-                                max={20000}
+                                max={MAX_AUDIBLE_FREQ_HZ}
                                 step={100}
-                                defaultValue={20000}
+                                defaultValue={MAX_AUDIBLE_FREQ_HZ}
                                 unit="Hz"
                                 gate={gateFor(GLUTEN_PARAM_IDS.scLpfFreq, 'SC LPF')}
                             />
@@ -1120,8 +1122,8 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 value={patch.scEqFreq}
                                 param={GLUTEN_PARAM_IDS.scEqFreq}
                                 label="SC EQ"
-                                min={20}
-                                max={20000}
+                                min={MIN_AUDIBLE_FREQ_HZ}
+                                max={MAX_AUDIBLE_FREQ_HZ}
                                 step={10}
                                 defaultValue={1000}
                                 unit="Hz"
@@ -1296,8 +1298,8 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         value={patch.outputGain}
                                         param={GLUTEN_PARAM_IDS.outputGain}
                                         label="Output"
-                                        min={-24}
-                                        max={24}
+                                        min={GAIN_TRIM_DB.min}
+                                        max={GAIN_TRIM_DB.max}
                                         step={0.5}
                                         defaultValue={0}
                                         unit="dB"

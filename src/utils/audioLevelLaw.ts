@@ -239,3 +239,14 @@ export const R128_TARGET_LUFS = -14;
 
 /** EBU R 128 recommends −1 dBTP true peak for lossy delivery. */
 export const R128_CEILING_DB_TP = -1;
+
+/**
+ * Travel of every device-level gain trim — the input/output gain knobs and the
+ * clamp their persisted patch values pass through on hydration. The devices
+ * that carry one (Gluten, Bacteria, Proof today) all stop at ±24 dB: far
+ * enough to rescue a quiet or hot source, narrow enough that a slip cannot
+ * take a mix fully out. A panel knob and the hydrate clamp that disagrees
+ * with it would let a stored value a control cannot reach reappear on reload,
+ * so both read this pair.
+ */
+export const GAIN_TRIM_DB = { min: -24, max: 24 } as const;

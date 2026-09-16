@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
 import { type PadState } from '../../models/ToasterKit';
 
@@ -27,7 +28,7 @@ function getLevelText(target: SixteenLevelsTarget, index: number): string {
         case 'decay':
             return `${Math.round(fraction * 100)}%`;
         case 'filter':
-            return `${Math.round(20 * (20000 / 20) ** fraction)}Hz`;
+            return `${Math.round(MIN_AUDIBLE_FREQ_HZ * (MAX_AUDIBLE_FREQ_HZ / MIN_AUDIBLE_FREQ_HZ) ** fraction)}Hz`;
         default:
             return '';
     }

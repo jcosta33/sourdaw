@@ -4,6 +4,7 @@ import { getMidiLearnDependencies } from './getMidiLearnDependencies';
 import { scaleMidiValue } from './scaleMidiValue';
 
 import type { Track } from '#/modules/Arrangement/stores';
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
 /**
  * Apply one incoming controller value to every mapping learned for it.
@@ -62,7 +63,7 @@ export function handleMidiMessage(channel: number, cc: number, value: number, no
                     let targetTrack: Track | undefined;
                     let fermenterDeviceId: string | undefined;
                     for (const track of deps.getAllTracks()) {
-                        const fermenter = track.devices.find((device) => device.type === 'fermenter');
+                        const fermenter = track.devices.find((device) => device.type === DEVICE_TYPE_IDS.fermenter);
                         if (fermenter) {
                             targetTrack = track;
                             fermenterDeviceId = fermenter.id;

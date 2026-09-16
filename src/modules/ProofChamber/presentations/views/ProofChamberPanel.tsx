@@ -18,6 +18,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppActionBatch, executeUserAppAction, generateGroupId } from '#/modules/Command/useCases';
+import { MAX_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
@@ -997,7 +998,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     value={params.highCut}
                                     onChange={(value) => setParam('highCut', value)}
                                     min={1000}
-                                    max={20000}
+                                    max={MAX_AUDIBLE_FREQ_HZ}
                                     step={100}
                                     defaultValue={12000}
                                     size="md"
