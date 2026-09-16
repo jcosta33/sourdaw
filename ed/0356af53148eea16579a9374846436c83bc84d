@@ -1,0 +1,76 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/creativeAuthorityGrounding.spec.ts
+  s_914af328b3988f::t_7de892c5306f4b 1012-1067
+  s_914af328b3988f::t_4d72c96f1a6b2d 416,429
+  s_914af328b3988f::t_214ec57ed1f960 328-341,368-415,417-428,430-435
+  s_914af328b3988f::t_53ccfd46c11d21 342-367
+src/modules/AiRuntime/useCases/agentReference/creativeAuthorityReasons.ts
+  s_914af328b3988f::t_1c4d1214d2274a 19,26
+  s_914af328b3988f::t_003b3a0f346f83 12-18
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  s_914af328b3988f::t_97ef1d6428c7bf 515-517
+  s_914af328b3988f::t_30748462d5fff0 479-514,518-570
+  s_914af328b3988f::t_6cd9be38e3a646 359
+  s_914af328b3988f::t_e8cd62ecee55db 922-940
+src/modules/AiRuntime/useCases/agentReference/__tests__/admitCreativeCommandBatch.spec.ts
+  s_914af328b3988f::t_2092cb34ad02e2 7
+  s_914af328b3988f::t_991056278f47f9 119-149
+  s_914af328b3988f::t_d34f112ba9ae11 429-497
+  s_914af328b3988f::t_a0a2c2a2df9842 150,498
+src/modules/AiRuntime/useCases/__tests__/admitCreativeInterpretation.spec.ts
+  s_914af328b3988f::t_51346179b4bfd7 42
+  s_914af328b3988f::t_75427aef4881b4 187-222
+src/modules/AiRuntime/useCases/admitCreativeInterpretation.ts
+  s_914af328b3988f::t_f81267e6ba42d8 180,182-185,191-196
+  s_914af328b3988f::t_753a8777c96e8f 261-263
+  s_914af328b3988f::t_a4ece9d4952c09 197,216-238,249
+  s_914af328b3988f::t_abe8dfab71d163 198
+src/modules/AiRuntime/models/CreativeInterpretation.ts
+  s_914af328b3988f::t_e8f3f54ccbd6d9 41
+  s_914af328b3988f::t_e1a46aaf126cda 98-99
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentWorkflowFixture.ts
+  s_914af328b3988f::t_f9a42066aae490 332
+  s_914af328b3988f::t_c8b6d760a56512 448-455
+  s_914af328b3988f::t_e4d37ebb1d891a 404-415
+  s_914af328b3988f::t_36088bde25b579 375
+  s_914af328b3988f::t_9d5c0711fc058e 432
+src/modules/AiRuntime/useCases/prepareCreativeInterpretationCatalog.ts
+  s_914af328b3988f::t_79fbcbd204d201 187,189-194
+  s_914af328b3988f::t_8b0f39e1923049 229-243
+src/modules/AiRuntime/useCases/agentReference/admitCreativeCommandBatch.ts
+  s_914af328b3988f::t_ca590f9ebbf817 155
+  s_914af328b3988f::t_a124fd6ec64a41 371-373,523
+  s_914af328b3988f::t_63c4ff601f2f5c 454-456
+  s_914af328b3988f::t_4a96dbe9a901c9 207-210
+  s_914af328b3988f::t_7d963979c66643 263
+  s_914af328b3988f::t_3a7fe293a4e5cd 8
+  s_914af328b3988f::t_9834bb500a26cb 53-60
+  s_914af328b3988f::t_0825a5047fe0ce 280,294
+  s_914af328b3988f::t_74f9f5c94321b2 311-312,316-317,319,323,325,333-336,339-342,347-354,524
+  s_914af328b3988f::t_f65ea1c8394a3f 238
+  s_914af328b3988f::t_b3b0750a54d5ba 343-346
+  s_914af328b3988f::t_4b648a4edd6b77 355,374-375,382-383,390,419,458,502,509,525
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationCatalog.spec.ts
+  s_914af328b3988f::t_0389d18428bd31 199-200
+  s_914af328b3988f::t_9de34f2dd4b5eb 216-223
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_914af328b3988f::t_c71d1c4185f274 3310-3312,3320-3322
+  s_914af328b3988f::t_7068093866ef70 3271-3274,3276
+  s_914af328b3988f::t_9da4ed476ff2c4 3301-3305
+  s_914af328b3988f::t_c6d5088ad8a6f0 50-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ed0356af53148eea16579a9374846436c83bc84d",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
