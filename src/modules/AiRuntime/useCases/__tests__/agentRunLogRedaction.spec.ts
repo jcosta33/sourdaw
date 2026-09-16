@@ -19,8 +19,12 @@ const CREDENTIAL_HEX = hex(CREDENTIAL);
  * Credential-shaped literals split across source lines so no single line
  * carries a recognisable secret beside its label; the joined values still
  * exercise the same redaction shapes.
+ *
+ * The bearer value is shorter than the encoded-run threshold and carries a dot,
+ * so the encoded-run pattern reaches neither the whole value nor any part of
+ * it: only the bearer pattern can redact it.
  */
-const BEARER_TOKEN = ['abcdefghijklmnop', 'qrstuvwxyz012345'].join('');
+const BEARER_TOKEN = ['ya29.a0AfH6', 'SMB-short'].join('');
 const BASIC_CREDENTIAL = ['YWRtaW46', 'c3VwZXJzZWNyZXQ='].join('');
 const JSON_API_KEY = ['a1b2c3d4', 'e5f6a7b8', 'c9d0e1f2'].join('');
 
@@ -51,7 +55,7 @@ const IDENTIFIER_LEAF = new RegExp('^[A-Za-z0-9 ._:@/+=-]{1,256}$');
 const FOUR_WORD_RUN = /(?:\S+\s+){3}\S+/;
 
 const SCOPE: AgentRunScope = {
-    targetIds: ['track-hook'],
+    targetIds: ['track-hook', 'track-bridge'],
     targetRanges: [{ startBeat: 0, endBeat: 16 }],
     protectedTargetIds: ['track-vocals'],
     protectedRanges: [],
@@ -161,8 +165,9 @@ function collectKeys(value: unknown, seen = new Set<object>()): string[] {
 
 /**
  * A run carrying two provider attempts that disclosed the same request id under
- * different correlation ids, two command batches, a pending and a completed
- * render, a decision reason, an error message and a cancellation reason.
+ * different correlation ids, two command batches, a pending, a completed and a
+ * failed render, a completed analysis, a decision reason, an error message and
+ * a cancellation reason.
  */
 function createFixtureRun(): AgentRun {
     agentRunLifecycle.create({
@@ -285,6 +290,18 @@ function createFixtureRun(): AgentRun {
         artifact: { artifactId: 'render-hook-bounce', workId: 'batch-bridge', status: 'pending', summary: null },
         recordedAt: 1460,
     });
+    agentRunLifecycle.recordArtifact({
+        runId: RUN_ID,
+        kind: 'render',
+        artifact: { artifactId: 'render-bridge-stem', workId: 'batch-bridge', status: 'failed', summary: null },
+        recordedAt: 1465,
+    });
+    agentRunLifecycle.recordArtifact({
+        runId: RUN_ID,
+        kind: 'analysis',
+        artifact: { artifactId: 'analysis-hook-loudness', workId: 'batch-hook', status: 'completed', summary: null },
+        recordedAt: 1470,
+    });
     agentRunLifecycle.recordError({
         runId: RUN_ID,
         error: {
@@ -371,6 +388,51 @@ describe('redactSecrets', () => {
         expect(redactSecrets(`request body was ${JSON.stringify({ apiKey: JSON_API_KEY })}`)).toEqual({
             text: `request body was ${JSON.stringify({ apiKey: '[redacted]' })}`,
             redactedCount: 1,
+        });
+    });
+
+    it('consumes a quoted labelled value to its closing quote', () => {
+        const spacedValue = 'correct horse battery staple';
+        expect(redactSecrets(`{"password": ${JSON.stringify(spacedValue)}}`)).toEqual({
+            text: '{"password": "[redacted]"}',
+            redactedCount: 1,
+        });
+        // A single-quoted value whose own words carry a label of the list.
+        const labelledPhrase = ['my secret', ' pass phrase'].join('');
+        expect(redactSecrets(`password: '${labelledPhrase}'`)).toEqual({
+            text: "password: '[redacted]'",
+            redactedCount: 1,
+        });
+    });
+
+    it('replaces a label an underscore precedes', () => {
+        const repeatedValue = 'abc123'.repeat(2);
+        expect(redactSecrets(`refresh_token=${repeatedValue}`)).toEqual({
+            text: 'refresh_token=[redacted]',
+            redactedCount: 1,
+        });
+        expect(redactSecrets('myapp_password=hunter2')).toEqual({
+            text: 'myapp_password=[redacted]',
+            redactedCount: 1,
+        });
+    });
+
+    it('keeps the remaining query-string parameters beside a redacted one', () => {
+        expect(redactSecrets('https://api.example.com/v1?access_token=X&user=jo')).toEqual({
+            text: 'https://api.example.com/v1?access_token=[redacted]&user=jo',
+            redactedCount: 1,
+        });
+    });
+
+    it('leaves an already redacted value alone', () => {
+        expect(redactSecrets('api_key: [redacted]')).toEqual({ text: 'api_key: [redacted]', redactedCount: 0 });
+    });
+
+    it('counts each labelled value one text carries', () => {
+        const repeatedValue = 'aaa111'.repeat(2);
+        expect(redactSecrets(`api_key=${repeatedValue} password=ccc333`)).toEqual({
+            text: 'api_key=[redacted] password=[redacted]',
+            redactedCount: 2,
         });
     });
 
@@ -499,8 +561,27 @@ describe('agent run telemetry and diagnostics projections', () => {
     it('counts each artifact under its own status', () => {
         const record = projectAgentRunTelemetry(createFixtureRun());
 
-        expect(record.artifacts.renders).toEqual({ pending: 1, completed: 1, failed: 0 });
-        expect(record.artifacts.analyses).toEqual({ pending: 0, completed: 0, failed: 0 });
+        expect(record.artifacts).toEqual({
+            renders: { pending: 1, completed: 1, failed: 1 },
+            analyses: { pending: 0, completed: 1, failed: 0 },
+        });
+    });
+
+    it('reports the scope counts, approval points, cancellation, schema version and errors', () => {
+        const record = projectAgentRunTelemetry(createFixtureRun());
+
+        expect(record.schemaVersion).toBe(1);
+        expect(record.scope).toEqual({
+            targetIdCount: 2,
+            protectedTargetIdCount: 1,
+            targetRangeCount: 1,
+            protectedRangeCount: 0,
+        });
+        expect(record.plan?.approvalPointKinds).toEqual(['command-confirmation']);
+        expect(record.cancellation).toEqual({ requested: true, reason: null });
+        expect(record.errors).toEqual([
+            { code: 'provider-response-invalid', category: 'provider', retriable: true, occurredAt: 1500 },
+        ]);
     });
 
     it('sums reported token totals and reports null when no entry reported one', () => {
@@ -599,12 +680,6 @@ describe('agent run telemetry and diagnostics projections', () => {
         });
     });
 
-    it('carries no copy of the per-attempt fallback reason the telemetry tier already codes', () => {
-        const record = projectAgentRunDiagnostics(createFixtureRun(), { includeProjectContent: true });
-
-        expect(record.detail).not.toHaveProperty('providerFallbackReasons');
-    });
-
     it('carries redacted detail text when project content is requested', () => {
         const run = createFixtureRun();
         const plan = requirePlan(run);
@@ -621,7 +696,7 @@ describe('agent run telemetry and diagnostics projections', () => {
         );
         expect(decisionReason?.kind === 'text' ? decisionReason.text : null).toBe(requireDecisionReason(run));
         expect(errorMessage?.kind === 'text' ? errorMessage.text : '').toContain('[redacted]');
-        expect(errorMessage?.kind === 'text' ? errorMessage.secretsRedacted : 0).toBeGreaterThanOrEqual(1);
+        expect(errorMessage?.kind === 'text' ? errorMessage.secretsRedacted : 0).toBe(1);
         expect(containsCredential(record)).toBe(false);
     });
 

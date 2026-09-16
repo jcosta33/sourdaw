@@ -2,6 +2,22 @@ import { type RedactedText } from '../../models/AgentRunTelemetry';
 
 const REDACTION_PLACEHOLDER = '[redacted]';
 
+/** The labels both labelled patterns recognise, held once so the two cannot drift apart. */
+const LABEL_ALTERNATION =
+    'api[_-]?key|apikey|x-api-key|access[_-]?token|auth[_-]?token|client[_-]?secret|secret[_-]?key|password|token|secret';
+
+/**
+ * One label, the quote that may close it as a JSON key, and its separator, kept
+ * as group 1 so a replacement can put all three back.
+ *
+ * The lookbehind admits a label an underscore or a hyphen precedes and rejects
+ * one a letter or a digit precedes. `\b` counts an underscore as an identifier
+ * character, so it finds the label in neither `myapp_password` nor
+ * `refresh_token`; a letter still precedes the label in `inputTokens`, which
+ * both forms reject.
+ */
+const LABELLED_PREFIX = `(?<![A-Za-z0-9])((?:${LABEL_ALTERNATION})["']?\\s*[:=]\\s*)`;
+
 /**
  * Credential shapes replaced in any text a diagnostics record carries, in the
  * order they are applied.
@@ -14,14 +30,20 @@ const REDACTION_PLACEHOLDER = '[redacted]';
  *
  * Order is part of the contract: the labelled forms keep their label and run
  * first, so the encoded-run pattern below cannot also match a value they
- * already replaced and count it twice. The placeholder survives the later
- * patterns because its brackets are outside every character class here.
+ * already replaced and count it twice. A quoted labelled value is consumed to
+ * its closing quote, so a space or a separator inside the quotes cannot end the
+ * value early; that entry therefore runs before the unquoted one. The unquoted
+ * value class excludes `&`, `[`, both quotes and the separators, so a query
+ * string keeps its remaining parameters and the bracketed placeholder is never
+ * matched again by a later pass.
  *
  * The final pattern is the base64 and base64url alphabets with optional
  * padding, so a slash or a plus inside a credential no longer splits it into
  * runs too short to match; that alphabet contains hexadecimal's, so one run
  * covers a hashed credential too. Thirty-two characters is the shortest such
- * run a credential digest produces; ordinary prose words are far shorter.
+ * run a credential digest produces; it also swallows a path segment or an
+ * identifier of that length, an over-redaction accepted so a digest cannot slip
+ * under the threshold.
  *
  * A credential outside these shapes passes through unchanged. A record
  * carrying redacted text therefore states that the text was screened for these
@@ -31,8 +53,11 @@ const SECRET_PATTERNS: readonly { readonly pattern: RegExp; readonly replacement
     { pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]+/g, replacement: `Bearer ${REDACTION_PLACEHOLDER}` },
     { pattern: /\bBasic\s+[A-Za-z0-9+/=_-]+/g, replacement: `Basic ${REDACTION_PLACEHOLDER}` },
     {
-        pattern:
-            /\b((?:api[_-]?key|apikey|x-api-key|access[_-]?token|auth[_-]?token|client[_-]?secret|secret[_-]?key|password|token|secret)["']?\s*[:=]\s*["']?)[^\s,;"'}]+/gi,
+        pattern: new RegExp(`${LABELLED_PREFIX}(["'])[^"']*\\2`, 'gi'),
+        replacement: `$1$2${REDACTION_PLACEHOLDER}$2`,
+    },
+    {
+        pattern: new RegExp(`${LABELLED_PREFIX}[^\\s,;"'&\\[}]+`, 'gi'),
         replacement: `$1${REDACTION_PLACEHOLDER}`,
     },
     { pattern: /\bAKIA[0-9A-Z]{16}\b/g, replacement: REDACTION_PLACEHOLDER },
