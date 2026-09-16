@@ -23,6 +23,7 @@ import {
     type AudioGraphCommandBatch,
 } from '../../../models/AudioGraphBackend';
 import { stoppedEngineTransportPosition } from '../../../models/EngineTransportPosition';
+import { noteLiveMidiControl } from '../../../services/liveMidiControlLatch';
 import { mirrorDeviceChainDelta } from '../mirrorDeviceChainDelta';
 import { nativeEnginePlayheadFeed } from '../nativeEnginePlayheadFeedState';
 import { nativeLiveAutomationWriter, type LiveAutomationWriterPass } from '../nativeLiveAutomationWriterState';
@@ -96,7 +97,32 @@ function passWritesParameterOf(deviceId: string): void {
     } as unknown as LiveAutomationWriterPass;
 }
 
+const CC_SUSTAIN_PEDAL = 64;
+const CC_RESET_ALL_CONTROLLERS = 121;
+
+/** Every address a case here presses a pedal on. */
+const PEDALLED_ADDRESSES = [
+    { trackId: 'audio-1', deviceId: 'gb' },
+    { trackId: 'audio-2', deviceId: 'gb-elsewhere' },
+] as const;
+
+/**
+ * Forgets every pedal the cases here press. The latch is module state with no
+ * reset of its own, and Reset All Controllers is the message that discharges it
+ * — so one case's remembered foot cannot reach the next.
+ */
+function forgetPressedPedals(): void {
+    for (const address of PEDALLED_ADDRESSES) {
+        noteLiveMidiControl({ ...address, controller: CC_RESET_ALL_CONTROLLERS, value: 0, channel: 0 });
+    }
+}
+
+function pressDamper(address: (typeof PEDALLED_ADDRESSES)[number]): void {
+    noteLiveMidiControl({ ...address, controller: CC_SUSTAIN_PEDAL, value: 127, channel: 0 });
+}
+
 beforeEach(() => {
+    forgetPressedPedals();
     apply.mockReset();
     apply.mockResolvedValue(APPLIED);
     mocks.notifyUser.mockReset();
@@ -261,6 +287,58 @@ describe('mirrorDeviceChainDelta', () => {
             { kind: 'insert-device', trackId: 'audio-1', device: device('comp'), index: 0 },
             { kind: 'insert-device', trackId: 'audio-1', device: device('eq'), index: 1 },
         ]);
+    });
+
+    /**
+     * A rebuild builds every body again with its pedals up, and the engine
+     * never lifts one itself — so a damper held while an effect is dragged past
+     * the Grand Boule has to ride the rebuild's own batch, behind the
+     * `insert-device` that puts the body back. Without it the native body damps
+     * the next key the player releases while the Web Audio twin, whose nodes a
+     * reorder reuses, goes on sustaining.
+     *
+     * The other track's remembered pedal stays where it is: this batch rebuilds
+     * one strip, and a controller addressed at a strip it does not touch would
+     * press a pedal onto a body that never lost it.
+     */
+    it('presses the remembered pedals of the rebuilt track back inside the rebuild batch', async () => {
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['eq', 'gb']]]);
+        const grandBoule = device('gb', { type: 'grand-boule' });
+        pressDamper({ trackId: 'audio-1', deviceId: 'gb' });
+        pressDamper({ trackId: 'audio-2', deviceId: 'gb-elsewhere' });
+
+        await mirrorDeviceChainDelta({
+            before: track([device('eq'), grandBoule]),
+            after: track([grandBoule, device('eq')]),
+        });
+
+        expect(sentCommands()).toEqual([
+            { kind: 'remove-device', trackId: 'audio-1', deviceId: 'eq' },
+            { kind: 'remove-device', trackId: 'audio-1', deviceId: 'gb' },
+            { kind: 'insert-device', trackId: 'audio-1', device: grandBoule, index: 0 },
+            { kind: 'insert-device', trackId: 'audio-1', device: device('eq'), index: 1 },
+            {
+                kind: 'send-midi-control',
+                target: { trackId: 'audio-1', deviceId: 'gb' },
+                controller: 64,
+                value: 127,
+                channel: 0,
+            },
+        ]);
+    });
+
+    // A foot on no pedal is nothing to press back, and a controller sent for
+    // one would latch a pedal the player is not standing on.
+    it('appends no controller to a rebuild when no pedal is remembered', async () => {
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['eq', 'gb']]]);
+        const grandBoule = device('gb', { type: 'grand-boule' });
+
+        await mirrorDeviceChainDelta({
+            before: track([device('eq'), grandBoule]),
+            after: track([grandBoule, device('eq')]),
+        });
+
+        expect(sentCommands().filter((command) => command.kind === 'send-midi-control')).toEqual([]);
     });
 
     /**

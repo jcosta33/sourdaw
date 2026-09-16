@@ -36,6 +36,7 @@
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 
 import { type AudioGraphCommand } from '../../models/AudioGraphBackend';
+import { readLatchedLiveMidiControls } from '../../services/liveMidiControlLatch';
 
 import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { nativeBuiltinBody } from './nativeBuiltinBodies';
@@ -94,6 +95,30 @@ function survivorsWereReordered(before: readonly Device[], after: readonly Devic
 }
 
 /**
+ * The pedals the player is standing on, as controllers this rebuild's own batch
+ * can carry, for the devices it is about to build again on this track.
+ *
+ * A rebuilt body comes up with its pedals raised and the engine never lifts one
+ * itself, so the foot the renderer remembered (`liveMidiControlLatch.ts`) has to
+ * be pressed back or a damper held across a reorder is a damper the new body
+ * never hears. In the latch's own order, which is first-press order: two pedals
+ * on one body are independent positions, so no order between them changes what
+ * the body ends up holding.
+ */
+function latchedPedalsFor(track: Track): readonly AudioGraphCommand[] {
+    const deviceIds = new Set(idsOf(track.devices));
+    return readLatchedLiveMidiControls()
+        .filter((control) => control.trackId === track.id && deviceIds.has(control.deviceId))
+        .map((control) => ({
+            kind: 'send-midi-control',
+            target: { trackId: control.trackId, deviceId: control.deviceId },
+            controller: control.controller,
+            value: control.value,
+            channel: control.channel,
+        }));
+}
+
+/**
  * Take the whole chain down and build it back in project order, in one batch.
  *
  * The batch applies at a single block boundary, so the strip is never observed
@@ -105,6 +130,14 @@ function survivorsWereReordered(before: readonly Device[], after: readonly Devic
  * Indices are project positions here, and that is correct: the mapper clamps an
  * index to the chain it has, so devices it omits leave the ones behind them
  * clamped to the end, in order.
+ *
+ * The remembered pedals ride this same batch, behind every insert. `map_batch`
+ * maps a batch's commands in order against one mutable registry, so the
+ * `insert-device` ahead of a controller has already registered the device the
+ * controller names, and the engine applies a batch's ops inside a single drain
+ * — so the rebuilt body takes the pedal before it renders its first block,
+ * never a block with the foot lifted. `replaceNativeChains` cannot serve this
+ * change: only a whole-topology batch reaches it.
  */
 function rebuildChain(track: Track, nativeChain: readonly string[]): readonly AudioGraphCommand[] {
     return [
@@ -115,6 +148,7 @@ function rebuildChain(track: Track, nativeChain: readonly string[]): readonly Au
             device: projectDeviceForNativeBody(device),
             index,
         })),
+        ...latchedPedalsFor(track),
     ];
 }
 
@@ -169,6 +203,10 @@ function passWritesDevice(trackId: string, deviceId: string): boolean {
  * device` — and testing the pass rather than the device's kind is both the
  * narrower rule and the exact one, because the pass's own targets are the only
  * devices a pump can name.
+ *
+ * A replayed pedal is neither shape, and needs no third arm: it names a device
+ * an `insert-device` in the same batch has just put back, and that insert is
+ * what the rule already answers for.
  */
 function changesWhatThePassCarries(commands: readonly AudioGraphCommand[]): boolean {
     return commands.some(

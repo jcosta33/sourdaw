@@ -9,8 +9,9 @@
  * player's hands off the keys and leaves their foot where it was
  * (`AudioScheduler::release_sounding_notes`). So a damper pressed before play,
  * or held across a chain reorder, reaches a fresh body only if something on this
- * side remembers it. This is that memory, and
- * `replaceNativeChains` is where it is spent.
+ * side remembers it. This is that memory; `replaceNativeChains` spends it onto
+ * the bodies a whole-topology batch builds, and `mirrorDeviceChainDelta` spends
+ * it inside the batch that rebuilds one strip mid-roll.
  *
  * Module state rather than a parameter for the reason
  * `nativeLiveGraphSessionState` is: the foot is one physical thing, and the
@@ -28,7 +29,7 @@ const CC_SOSTENUTO_PEDAL = 66;
 const CC_UNA_CORDA_PEDAL = 67;
 const CC_RESET_ALL_CONTROLLERS = 121;
 
-/** The pedals this record keeps, in the order a body is best told them. */
+/** The pedals this record keeps. */
 const LATCHED_CONTROLLERS: readonly number[] = [CC_SUSTAIN_PEDAL, CC_SOSTENUTO_PEDAL, CC_UNA_CORDA_PEDAL];
 
 /** One remembered pedal position, addressed the way a graph command addresses one. */

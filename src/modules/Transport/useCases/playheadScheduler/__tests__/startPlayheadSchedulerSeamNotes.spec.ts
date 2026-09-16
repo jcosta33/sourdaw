@@ -140,7 +140,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // scheduler's own integration.
     readNativeEnginePlayheadSeconds: (): number | null => null,
     isDeviceCarriedByNativeSession: () => false,
-    isDeviceHeldByNativeSession: () => false,
     sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));

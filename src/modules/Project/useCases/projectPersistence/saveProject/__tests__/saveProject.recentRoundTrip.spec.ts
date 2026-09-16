@@ -87,7 +87,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getFactoryDrumKitByIndex: vi.fn(),
     ensureCachedAudioBuffersDurable: mocks.ensureCachedAudioBuffersDurable,
     isDeviceCarriedByNativeSession: () => false,
-    isDeviceHeldByNativeSession: () => false,
     sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));

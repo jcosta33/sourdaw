@@ -16,9 +16,6 @@ const grand_boule_controls = vi.hoisted(() => {
         setUnaCorda: vi.fn((engaged: boolean) => void calls.push(`setUnaCorda ${engaged}`)),
     };
 });
-const is_device_held_by_native_session = vi.hoisted(() =>
-    vi.fn<(trackId: string, deviceId: string) => boolean>(() => false)
-);
 const track_store = vi.hoisted(() => ({ value: null as { tracks: unknown[] } | null }));
 
 vi.mock('../../../repositories/webMidi/releaseAllActiveNotes', () => ({
@@ -35,7 +32,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         context: { currentTime: 7 },
         getTrackStrip: get_track_strip,
     },
-    isDeviceHeldByNativeSession: is_device_held_by_native_session,
     sendNativeLiveMidiControl: send_native_live_midi_control,
     sendNativeLiveMidiNote: send_native_live_midi_note,
 }));
@@ -80,8 +76,6 @@ describe('panicLiveNotes', () => {
         grand_boule_controls.setSustain.mockClear();
         grand_boule_controls.setSostenuto.mockClear();
         grand_boule_controls.setUnaCorda.mockClear();
-        is_device_held_by_native_session.mockReset();
-        is_device_held_by_native_session.mockReturnValue(false);
         track_store.value = null;
     });
 
@@ -129,45 +123,18 @@ describe('panicLiveNotes', () => {
         expect(send_panic_to_midi_outputs).not.toHaveBeenCalled();
     });
 
-    it('sends every held Grand Boule body All Sound Off and then Reset All Controllers', () => {
+    it('sends every Grand Boule body All Sound Off and then Reset All Controllers, session or no session', () => {
         // Note-offs alone leave a damper-held voice ringing: the engine's body
         // routes a note-off to release_key while the pedal is down, so a panic
         // needs the two channel-mode messages to reach silence and lift the
         // pedal behind it. Reset All Controllers is also what discharges the
         // renderer's memory of that pedal, so the body the next play builds does
         // not come up standing on it — `liveMidiControlLatch.ts` owns that half,
-        // and its own spec pins it.
+        // and its own spec pins it. The send is unconditional for that second
+        // reason: after a stop the native chains are already gone, and a panic
+        // that skipped a device nothing holds would leave the latch standing for
+        // the next play's `replaceNativeChains` to replay.
         track_store.value = grand_boule_tracks();
-        is_device_held_by_native_session.mockImplementation(
-            (trackId: string, deviceId: string) => trackId === 'track-1' && deviceId === 'gb-1'
-        );
-
-        panicLiveNotes();
-
-        expect(send_native_live_midi_control).toHaveBeenCalledTimes(2);
-        expect(send_native_live_midi_control).toHaveBeenNthCalledWith(1, {
-            trackId: 'track-1',
-            deviceId: 'gb-1',
-            controller: CC_ALL_SOUND_OFF,
-            value: 0,
-            channel: 0,
-        });
-        expect(send_native_live_midi_control).toHaveBeenNthCalledWith(2, {
-            trackId: 'track-1',
-            deviceId: 'gb-1',
-            controller: CC_RESET_ALL_CONTROLLERS,
-            value: 0,
-            channel: 0,
-        });
-    });
-
-    it('still discharges the latch via a stopped-transport panic when no native session holds the device', () => {
-        // A stop has already cleared the native chains, so nothing holds the
-        // device — but the panic must still reach sendNativeLiveMidiControl so
-        // the latch is cleared before the next play's replaceNativeChains
-        // replays a pedal the panic was meant to lift.
-        track_store.value = grand_boule_tracks();
-        is_device_held_by_native_session.mockReturnValue(false);
 
         panicLiveNotes();
 
@@ -193,9 +160,6 @@ describe('panicLiveNotes', () => {
         // echo off, and that is exactly the panic a player reaches for when a
         // pedalled note hangs.
         track_store.value = grand_boule_tracks();
-        is_device_held_by_native_session.mockImplementation(
-            (trackId: string, deviceId: string) => trackId === 'track-1' && deviceId === 'gb-1'
-        );
 
         panicLiveNotes({ notifyOutputs: false });
 

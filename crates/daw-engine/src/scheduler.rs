@@ -1413,7 +1413,11 @@ impl PluginCore {
     /// Exhaustive for the reason [`Self::control_change`] is: a body that grows
     /// a held controller and is not given an arm here is one a stop leaves
     /// sounding.
-    fn silence_pedal_held_voices(&mut self) {
+    ///
+    /// Answers whether this instance was silenced outright, which is what
+    /// decides whether the slot still owes note-offs
+    /// ([`AudioScheduler::owe_all_releases`]).
+    fn silence_pedal_held_voices(&mut self) -> bool {
         match self {
             Self::GrandBoule(body) => body.silence_pedal_held_voices(),
             // The same bodies that take no controller in
@@ -1429,7 +1433,7 @@ impl PluginCore {
             | Self::DutchOven(_)
             | Self::Toaster(_)
             | Self::Scoring(_)
-            | Self::Native(_) => {}
+            | Self::Native(_) => false,
         }
     }
 
@@ -2048,10 +2052,16 @@ impl GrandBouleBody {
     /// Nothing happens on an unpedalled body: its queued note-offs damp the
     /// strings the way the player's own hands would, and that soft release is
     /// the better sound.
-    fn silence_pedal_held_voices(&mut self) {
-        if self.holds_released_keys() {
-            self.instance.all_notes_off();
+    ///
+    /// Answers whether the kill ran. A killed instrument is left holding
+    /// nothing, so the caller has note-offs to owe only when it did not — see
+    /// [`AudioScheduler::owe_all_releases`].
+    fn silence_pedal_held_voices(&mut self) -> bool {
+        if !self.holds_released_keys() {
+            return false;
         }
+        self.instance.all_notes_off();
+        true
     }
 
     /// Render one run into the instrument's own buffers and sum them out.
@@ -5448,6 +5458,29 @@ impl ActiveEffect {
         self.owed_releases = Some(owed);
     }
 
+    /// Drop every key this device holds, and any release standing for it,
+    /// queueing nothing.
+    ///
+    /// The counterpart of [`Self::owe_releases`] for a body the trigger
+    /// silenced outright ([`PluginCore::silence_pedal_held_voices`]). A killed
+    /// instrument holds no voice a note-off could release, and on a Grand
+    /// Boule a note-off into that silence is worse than redundant: with the
+    /// damper up and no capture standing, the instrument's `note_off` finds no
+    /// voice to release and fires its damper-lift noise instead, so paying the
+    /// record would print one felt thud per key under a stopped transport.
+    ///
+    /// Both sets, because the kill silenced the voices of both, and any record
+    /// an earlier trigger left standing, whose keys this kill has silenced
+    /// too. `drain` accepting every entry clears the bits in place — no
+    /// allocation, no lock, and a walk of the same fixed sets
+    /// [`Self::owe_releases`] walks.
+    #[inline]
+    fn forget_sounding(&mut self) {
+        self.sounding.drain(|_, _| true);
+        self.live_sounding.drain(|_, _| true);
+        self.owed_releases = None;
+    }
+
     /// Pay the releases the owed record names, into `pending_midi` at the
     /// head of this block.
     ///
@@ -7241,6 +7274,14 @@ impl AudioScheduler {
     /// exactly as the Web Audio carrier's stop kills it. An unpedalled body is
     /// untouched and keeps the softer release its owed note-offs give it.
     ///
+    /// A kill leaves nothing to release, so a body that took one forgets its
+    /// keys instead of owing their note-offs
+    /// ([`ActiveEffect::forget_sounding`]). The two answers are exclusive:
+    /// note-offs paid into a killed Grand Boule would find no voice to release
+    /// and fire the instrument's damper-lift noise instead — one felt thud per
+    /// key, into the silence the stop just made. Only a body the kill passed
+    /// over still owes the soft release its note-offs give it.
+    ///
     /// No trigger lifts the pedal itself, here or anywhere: a stop takes the
     /// player's hands off the keys, not their foot off the pedal, and an
     /// upward damper crossing would fire the Grand Boule's pedal-down thump on
@@ -7248,8 +7289,11 @@ impl AudioScheduler {
     /// onto a body the engine builds again (`liveMidiControlLatch.ts`).
     fn owe_all_releases(&mut self) {
         for slot in 0..self.effects.len() {
-            self.effects[slot].instance.silence_pedal_held_voices();
-            self.effects[slot].owe_releases();
+            if self.effects[slot].instance.silence_pedal_held_voices() {
+                self.effects[slot].forget_sounding();
+            } else {
+                self.effects[slot].owe_releases();
+            }
         }
     }
 
@@ -20209,6 +20253,147 @@ mod timeline_tests {
                  pedals renders"
             );
         }
+    }
+
+    /// A stop of a piano held by sostenuto alone leaves silence behind it, not
+    /// a felt thud per key.
+    ///
+    /// The state that exposes it: sostenuto engaged with the damper up. The
+    /// stop kills the voices the capture was holding, and a release paid into
+    /// that killed body afterwards finds no voice to release and no capture
+    /// standing — so the instrument reads it as felt landing back on the
+    /// string and fires its damper-lift noise, once per key, into the silence
+    /// the stop just made. With the damper down instead the same releases are
+    /// swallowed as sustained, which is why only the sostenuto-only state says
+    /// anything here.
+    ///
+    /// The key is still down at the stop, deliberately: the sounding bits are
+    /// what a release is owed against, and a key already let go leaves none —
+    /// so a programme that released it first would render the same silence
+    /// whether the engine forgot the keys or paid them.
+    ///
+    /// The second render is the discriminating half, and it asks about the
+    /// foot rather than the thud. Sostenuto captures on its rising edge alone,
+    /// so pressing it again after the stop is the only read of whether it was
+    /// already down: with the foot where the player left it that press is no
+    /// edge at all and the second key damps when it is let go, while the same
+    /// press onto a pedal something lifted captures the key and leaves it
+    /// ringing. The two renders differ in nothing but a sostenuto lift sent
+    /// right behind the stop, so an engine that lifted the pedal itself
+    /// renders them alike and fails the comparison.
+    #[test]
+    fn a_transport_stop_of_a_sostenuto_held_grand_boule_leaves_no_damper_thud() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 96;
+        const NOTE: u8 = 60;
+        /// Where sostenuto goes down, capturing the key the player is holding.
+        const PEDAL_CALLBACK: usize = 1;
+        /// Where the stop arrives, well after the capture took the note.
+        const EDGE_CALLBACK: usize = 8;
+        /// A second key struck past the stop, to read the pedal it left.
+        const SECOND_NOTE_CALLBACK: usize = 12;
+        /// Sostenuto pressed again, behind that key so a rising edge would
+        /// capture it.
+        const REPRESS_CALLBACK: usize = 14;
+        const SECOND_RELEASE_CALLBACK: usize = 16;
+        /// The note ringing under the capture, past the attack and before the
+        /// stop.
+        const BEFORE: std::ops::Range<usize> =
+            (PEDAL_CALLBACK + 2) * CALLBACK..EDGE_CALLBACK * CALLBACK;
+        /// What the stop left, from the block after it until the second key is
+        /// struck.
+        const AFTER: std::ops::Range<usize> =
+            (EDGE_CALLBACK + 1) * CALLBACK..SECOND_NOTE_CALLBACK * CALLBACK;
+        /// What the second key left long after it was let go. Late enough
+        /// that a damped string has decayed to nothing while a string the
+        /// pedal is still holding up has barely begun: read at the release the
+        /// two are within a factor of two of each other, which decides
+        /// nothing.
+        const SECOND_TAIL_CALLBACK: usize = 64;
+        const SECOND_AFTER: std::ops::Range<usize> =
+            SECOND_TAIL_CALLBACK * CALLBACK..CALLBACKS * CALLBACK;
+        /// How far below a lifted pedal's ringing tail the damped one has to
+        /// sit.
+        const DECISIVE: f32 = 20.0;
+        /// The loudest sample the stopped window may carry.
+        ///
+        /// A stop that forgets its killed keys renders exact zeros there, so
+        /// this is a token above silence rather than a tuned figure. The thud
+        /// a paid release prints instead peaks at `1.3e-6` in this window,
+        /// which is an order of magnitude above the bound — quiet in absolute
+        /// terms, and a noise the instrument had no reason to make.
+        const SILENT: f32 = 1.0e-7;
+
+        let render = |lifts_pedal: bool| {
+            let mut harness = Harness::new(32);
+            track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+            harness.playing();
+            harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+            render_master_at_callback_heads(
+                &mut harness,
+                CALLBACK,
+                CALLBACKS,
+                move |callback, harness| match callback {
+                    PEDAL_CALLBACK => {
+                        harness.send(pedal(CC_SOSTENUTO, 127));
+                    }
+                    EDGE_CALLBACK => {
+                        harness.send(stop_transport());
+                        if lifts_pedal {
+                            // Behind the stop, so both renders reach the stop
+                            // in the same state and differ only in where the
+                            // pedal stands after it.
+                            harness.send(pedal(CC_SOSTENUTO, 0));
+                        }
+                    }
+                    SECOND_NOTE_CALLBACK => {
+                        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+                    }
+                    REPRESS_CALLBACK => {
+                        harness.send(pedal(CC_SOSTENUTO, 127));
+                    }
+                    SECOND_RELEASE_CALLBACK => {
+                        harness.send(GraphCommand::SendMidiNote(
+                            GRAND_BOULE_ID,
+                            grand_boule_release(NOTE),
+                        ));
+                    }
+                    _ => {}
+                },
+            )
+        };
+
+        let (kept_left, kept_right) = render(false);
+        let (lifted_left, _lifted_right) = render(true);
+
+        assert!(
+            peak(&kept_left[BEFORE]) > 0.0,
+            "the capture was holding nothing before the stop, so the window behind it proves \
+             nothing"
+        );
+        assert!(
+            peak(&kept_left[AFTER]) < SILENT,
+            "the stop left a loudest sample of {} in the window behind it, so a release was paid \
+             into the killed body and the instrument answered it with its damper-lift noise",
+            peak(&kept_left[AFTER])
+        );
+        assert!(
+            peak(&kept_right[AFTER]) < SILENT,
+            "the stop left a loudest sample of {} in the right channel behind it",
+            peak(&kept_right[AFTER])
+        );
+        assert!(
+            peak(&lifted_left[SECOND_AFTER]) > 0.0,
+            "the second key left nothing ringing even under a pedal this render lifted, so the \
+             comparison below says nothing about the foot"
+        );
+        assert!(
+            peak(&kept_left[SECOND_AFTER]) * DECISIVE < peak(&lifted_left[SECOND_AFTER]),
+            "the second key let go left {} where the same key left {} in the render whose \
+             sostenuto was lifted behind the stop, so the stop moved the player's foot",
+            peak(&kept_left[SECOND_AFTER]),
+            peak(&lifted_left[SECOND_AFTER])
+        );
     }
 
     /// A stop with no pedal down releases the key softly rather than killing

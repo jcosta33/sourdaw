@@ -9,15 +9,18 @@
  * nothing can address.
  *
  * Every body in those chains is therefore brand new, with its pedals up. This
- * is where a session start, a rebind and a chain rebuild all land, so it is
- * where the foot the renderer remembered (`liveMidiControlLatch.ts`) is spent:
- * one controller per remembered pedal whose device the new chain holds.
+ * is where a session start and a rebind land — every batch that replaces the
+ * whole topology — so it is where the foot the renderer remembered
+ * (`liveMidiControlLatch.ts`) is spent: one controller per remembered pedal
+ * whose device the new chain holds. A mid-roll chain rebuild never comes
+ * through here: it edits one strip rather than replacing the topology, and it
+ * carries the same remembered pedals inside its own batch
+ * (`mirrorDeviceChainDelta.ts`).
  * `sendNativeLiveMidiControl` latches synchronously and defers the actual send
  * — and its read of the chain record — onto the session queue, so by the time
  * that read runs, this function's synchronous record write above has already
  * happened regardless of statement order. Without this replay a damper pressed
- * before play, or held across a chain reorder, would be a pedal the engine
- * never heard.
+ * before play would be a pedal the engine never heard.
  */
 
 import { type AudioGraphStripReport } from '../../models/AudioGraphBackend';
