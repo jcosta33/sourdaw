@@ -1,4 +1,6 @@
-import { createKWeightingFilters, type LoudnessBiquad } from './createKWeightingFilters';
+import { applyBiquad } from './applyBiquad';
+import { createKWeightingFilters } from './createKWeightingFilters';
+import { LOUDNESS_OFFSET, loudnessChannelWeight } from './loudnessScale';
 
 /**
  * Gated integrated loudness — ITU-R BS.1770-4 / EBU R 128.
@@ -8,38 +10,9 @@ import { createKWeightingFilters, type LoudnessBiquad } from './createKWeighting
  * statistics.
  */
 
-function applyBiquad(samples: Float64Array, filter: LoudnessBiquad): void {
-    let x1 = 0;
-    let x2 = 0;
-    let y1 = 0;
-    let y2 = 0;
-
-    for (let index = 0; index < samples.length; index++) {
-        const x0 = samples[index]!;
-        const y0 = filter.b0 * x0 + filter.b1 * x1 + filter.b2 * x2 - filter.a1 * y1 - filter.a2 * y2;
-        samples[index] = y0;
-        x2 = x1;
-        x1 = x0;
-        y2 = y1;
-        y1 = y0;
-    }
-}
-
-/**
- * Per-channel weights (BS.1770-4 Table 4). Only the first five are defined;
- * anything beyond a 5.0 layout is weighted as a surround channel.
- */
-function channelWeight(channelIndex: number): number {
-    if (channelIndex < 3) {
-        return 1;
-    }
-    return 1.41;
-}
-
 const BLOCK_SECONDS = 0.4;
 /** 75% overlap, as the recommendation specifies. */
 const BLOCK_STEP_SECONDS = 0.1;
-const LOUDNESS_OFFSET = -0.691;
 const ABSOLUTE_GATE_LUFS = -70;
 const RELATIVE_GATE_LU = -10;
 
@@ -82,7 +55,7 @@ export function measureIntegratedLoudness({
         applyBiquad(weighted, shelf);
         applyBiquad(weighted, highPass);
 
-        const weight = channelWeight(channelIndex);
+        const weight = loudnessChannelWeight(channelIndex);
         for (let block = 0; block < blockCount; block++) {
             const start = block * stepFrames;
             let sumSquares = 0;
