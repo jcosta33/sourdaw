@@ -67,10 +67,11 @@ export type AgentRunTelemetryError = {
  * Bounded operational evidence about one agent run.
  *
  * Every string leaf is an identifier, an enum literal, or a revision the run
- * already owns. The run's free text — its request, plan step descriptions,
- * decision reason, error messages, cancellation reason and artifact summaries —
- * has no field here, so no project content and no provider output reaches a
- * telemetry sink through this record.
+ * already owns. The free text the diagnostics tier carries — the request,
+ * plan step descriptions, decision reason, error messages and cancellation
+ * reason — has no field here, so no project content and no provider output
+ * reaches a telemetry sink through this record. Plan and artifact summaries
+ * reach neither tier.
  */
 export type AgentRunTelemetryRecord = {
     readonly schemaVersion: typeof AGENT_RUN_TELEMETRY_SCHEMA_VERSION;
