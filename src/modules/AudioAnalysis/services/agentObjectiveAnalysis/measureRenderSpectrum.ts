@@ -41,7 +41,7 @@ export function measureRenderSpectrum({
     }
 
     // Meyda reads its sample rate and window size off the module singleton;
-    // restore the caller's values so one analysis never reconfigures the next.
+    // both are restored below to the values this call found them at.
     const previousSampleRate = Meyda.sampleRate;
     const previousBufferSize = Meyda.bufferSize;
     let centroidBinSum = 0;

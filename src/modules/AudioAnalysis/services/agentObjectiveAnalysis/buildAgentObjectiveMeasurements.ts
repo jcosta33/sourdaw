@@ -28,6 +28,15 @@ const MINIMUM_LOUDNESS_SECONDS = 0.4;
 /** EBU Tech 3341 short-term and momentary windows. */
 const SHORT_TERM_WINDOW_SECONDS = 3;
 const MOMENTARY_WINDOW_SECONDS = 0.4;
+/**
+ * `measureProgramAudio` fills both of its windows with a stand-in rather than
+ * refusing: a render below its 8192-sample spectrum window comes back with every
+ * band at `1 / bandCount`, and one below its 2048-sample frame window comes back
+ * with a dynamic range of 0 because no frame was measured. Both read as figures,
+ * so the receipt refuses them at the same lengths instead of publishing them.
+ */
+const PROFILE_SPECTRUM_FRAMES = 8192;
+const DYNAMIC_RANGE_FRAMES = 2048;
 
 export type BuildAgentObjectiveMeasurementsInput = {
     readonly channels: readonly Float32Array[];
@@ -63,12 +72,39 @@ function unavailable(reason: AgentObjectiveMetricUnavailableReason): AgentObject
     return { status: 'unavailable', reason };
 }
 
-/** A null loudness is either too little material to gate or nothing above the gate. */
-function loudnessEntry(lufs: number | null, durationSeconds: number): AgentObjectiveMetricEntry {
+/**
+ * A null integrated reading over material long enough to gate is programme the
+ * BS.1770 absolute gate rejected, not silence: the render carries samples, they
+ * are simply quieter than -70 LUFS. Silence is caught before this is reached.
+ */
+function integratedLoudnessEntry(lufs: number | null, durationSeconds: number): AgentObjectiveMetricEntry {
     if (lufs === null) {
-        return unavailable(durationSeconds < MINIMUM_LOUDNESS_SECONDS ? 'too-short' : 'silent');
+        return unavailable(durationSeconds < MINIMUM_LOUDNESS_SECONDS ? 'too-short' : 'below-gate');
     }
     return measured('LUFS', lufs, 'exact');
+}
+
+/** A windowed maximum reads null only when the render is shorter than its window. */
+function windowedLoudnessEntry(
+    lufs: number | null,
+    durationSeconds: number,
+    windowSeconds: number
+): AgentObjectiveMetricEntry {
+    if (lufs === null) {
+        return unavailable(durationSeconds < windowSeconds ? 'too-short' : 'silent');
+    }
+    return measured('LUFS', lufs, 'exact');
+}
+
+/** The frame-percentile estimate needs one whole frame; a shorter render has none. */
+function dynamicRangeEntry(length: number, dynamicRangeDb: number | null): AgentObjectiveMetricEntry {
+    if (length < DYNAMIC_RANGE_FRAMES) {
+        return unavailable('too-short');
+    }
+    if (dynamicRangeDb === null) {
+        return unavailable('silent');
+    }
+    return measured('dB', dynamicRangeDb, 'estimated');
 }
 
 type LoudnessMetricId =
@@ -101,34 +137,59 @@ function buildLoudnessEntries(context: RenderMeasurementContext): MetricEntries<
     return {
         samplePeak: measured('dBFS', levels.samplePeakDbfs, 'exact'),
         truePeak: measured('dBTP', 20 * Math.log10(measureTruePeak({ channels, length })), 'exact'),
-        integratedLoudness: loudnessEntry(measureIntegratedLoudness(window), durationSeconds),
-        shortTermLoudnessMax: loudnessEntry(
+        integratedLoudness: integratedLoudnessEntry(measureIntegratedLoudness(window), durationSeconds),
+        shortTermLoudnessMax: windowedLoudnessEntry(
             measureMaxWindowedLoudness({ ...window, windowSeconds: SHORT_TERM_WINDOW_SECONDS }),
-            durationSeconds
+            durationSeconds,
+            SHORT_TERM_WINDOW_SECONDS
         ),
-        momentaryLoudnessMax: loudnessEntry(
+        momentaryLoudnessMax: windowedLoudnessEntry(
             measureMaxWindowedLoudness({ ...window, windowSeconds: MOMENTARY_WINDOW_SECONDS }),
-            durationSeconds
+            durationSeconds,
+            MOMENTARY_WINDOW_SECONDS
         ),
         rms: measured('dBFS', levels.rmsDbfs, 'exact'),
         crestFactor: measured('dB', levels.samplePeakDbfs - levels.rmsDbfs, 'exact'),
-        dynamicRangeEstimate: dynamicRangeDb === null ? silence : measured('dB', dynamicRangeDb, 'estimated'),
+        dynamicRangeEstimate: dynamicRangeEntry(length, dynamicRangeDb),
     };
 }
 
 type LevelMetricId = 'dcOffset' | 'clippingCount' | 'silentFraction' | 'tailTruncation';
 
-function buildLevelEntries({ levels, silent }: RenderMeasurementContext): MetricEntries<LevelMetricId> {
+function buildLevelEntries({ length, levels, silent }: RenderMeasurementContext): MetricEntries<LevelMetricId> {
     const tail = measured('boolean', levels.tailEnergetic, 'estimated');
     return {
         dcOffset: measured('ratio', levels.dcOffset, 'exact'),
         clippingCount: measured('count', levels.clippingCount, 'exact'),
-        silentFraction: measured('ratio', levels.silentFraction, 'exact'),
+        // A render with no frames has no silent fraction: the zero the frame
+        // counter returns there means "no frames", not "no silence".
+        silentFraction: length > 0 ? measured('ratio', levels.silentFraction, 'exact') : unavailable('too-short'),
         tailTruncation: silent ? unavailable('silent') : tail,
     };
 }
 
 type SpectralMetricId = 'spectralCentroid' | 'spectralRolloff' | 'frequencyBandEnergy';
+
+/**
+ * A render below the profile's spectrum window produces an evenly split profile
+ * rather than no profile, which would read as a measured flat balance.
+ */
+function bandEnergyEntry(
+    length: number,
+    silent: boolean,
+    frequencyProfile: Readonly<Record<string, number>> | null
+): AgentObjectiveMetricEntry {
+    if (silent) {
+        return unavailable('silent');
+    }
+    if (length < PROFILE_SPECTRUM_FRAMES) {
+        return unavailable('too-short');
+    }
+    if (!frequencyProfile) {
+        return unavailable('silent');
+    }
+    return measured('ratio', frequencyProfile, 'estimated');
+}
 
 function buildSpectralEntries(context: RenderMeasurementContext): MetricEntries<SpectralMetricId> {
     const { channels, length, sampleRate, frequencyProfile, silent } = context;
@@ -136,12 +197,11 @@ function buildSpectralEntries(context: RenderMeasurementContext): MetricEntries<
     const spectrum = !silent && channel ? measureRenderSpectrum({ channel, length, sampleRate }) : null;
     /** A non-silent render with no analysis frame is too short to have a spectrum. */
     const missing = silent ? unavailable('silent') : unavailable('too-short');
-    const noProgramme = unavailable('silent');
 
     return {
         spectralCentroid: spectrum ? measured('hertz', spectrum.centroidHz, 'estimated') : missing,
         spectralRolloff: spectrum ? measured('hertz', spectrum.rolloffHz, 'estimated') : missing,
-        frequencyBandEnergy: frequencyProfile ? measured('ratio', frequencyProfile, 'estimated') : noProgramme,
+        frequencyBandEnergy: bandEnergyEntry(length, silent, frequencyProfile),
     };
 }
 

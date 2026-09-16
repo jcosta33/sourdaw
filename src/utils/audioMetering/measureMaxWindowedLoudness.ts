@@ -24,12 +24,13 @@ export type MeasureMaxWindowedLoudnessInput = {
 
 /**
  * Maximum window loudness in LUFS, or `null` when there is nothing to measure:
- * no samples, no channels, or every window at digital silence (which has no
- * defined loudness).
+ * no samples, no channels, every window at digital silence (which has no
+ * defined loudness), or material shorter than the requested window.
  *
- * Material shorter than the requested window is measured as one window over the
- * whole signal rather than refused — a 1.5 s render still has a short-term
- * maximum, it is simply taken over everything there is.
+ * Shorter material is refused rather than measured over a shrunken window. A
+ * 3 s short-term maximum taken over 1.5 s carries the 3 s label while averaging
+ * half as much material, so a caller comparing two renders would be subtracting
+ * two different meters. The caller reports that meter as unavailable instead.
  */
 export function measureMaxWindowedLoudness({
     channels,
@@ -37,12 +38,11 @@ export function measureMaxWindowedLoudness({
     sampleRate,
     windowSeconds,
 }: MeasureMaxWindowedLoudnessInput): number | null {
-    const requestedWindowFrames = Math.round(windowSeconds * sampleRate);
-    if (length <= 0 || channels.length === 0 || requestedWindowFrames <= 0) {
+    const windowFrames = Math.round(windowSeconds * sampleRate);
+    if (length <= 0 || channels.length === 0 || windowFrames <= 0 || length < windowFrames) {
         return null;
     }
 
-    const windowFrames = Math.min(requestedWindowFrames, length);
     const stepFrames = Math.max(1, Math.round(WINDOW_STEP_SECONDS * sampleRate));
     const windowCount = Math.floor((length - windowFrames) / stepFrames) + 1;
     const { shelf, highPass } = createKWeightingFilters(sampleRate);

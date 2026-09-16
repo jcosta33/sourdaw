@@ -13,40 +13,15 @@
  *   still describes the project in front of them.
  */
 
-/** Every metric a receipt reports on, whether or not this build can measure it. */
-export type AgentObjectiveMetricId =
-    | 'samplePeak'
-    | 'truePeak'
-    | 'integratedLoudness'
-    | 'shortTermLoudnessMax'
-    | 'momentaryLoudnessMax'
-    | 'rms'
-    | 'crestFactor'
-    | 'dynamicRangeEstimate'
-    | 'dcOffset'
-    | 'clippingCount'
-    | 'silentFraction'
-    | 'tailTruncation'
-    | 'spectralCentroid'
-    | 'spectralRolloff'
-    | 'frequencyBandEnergy'
-    | 'stereoCorrelation'
-    | 'sideEnergyFraction'
-    | 'lowFrequencyStereoContent'
-    | 'transientDensity'
-    | 'onsetTimes'
-    | 'tempoAlignment'
-    | 'phasePolarity'
-    | 'interTrackMasking'
-    | 'busHeadroom'
-    | 'gainStagingAnomalies';
-
 /**
+ * Every metric a receipt reports on, whether or not this build can measure it.
+ *
  * Declaration order is the receipt's key order: readers and diffs see the same
  * sequence every time, and a receipt missing an id is malformed rather than
- * quietly short.
+ * quietly short. The id union is read off this list, so the list is the single
+ * place a metric is added or withdrawn.
  */
-export const AGENT_OBJECTIVE_METRIC_IDS: readonly AgentObjectiveMetricId[] = [
+export const AGENT_OBJECTIVE_METRIC_IDS = [
     'samplePeak',
     'truePeak',
     'integratedLoudness',
@@ -72,7 +47,9 @@ export const AGENT_OBJECTIVE_METRIC_IDS: readonly AgentObjectiveMetricId[] = [
     'interTrackMasking',
     'busHeadroom',
     'gainStagingAnomalies',
-];
+] as const;
+
+export type AgentObjectiveMetricId = (typeof AGENT_OBJECTIVE_METRIC_IDS)[number];
 
 export type AgentObjectiveMetricUnit =
     | 'dBFS'
@@ -91,10 +68,12 @@ export type AgentObjectiveMetricUnit =
  * Why a metric carries no number. `not-implemented` is this build's own gap;
  * the `needs-` reasons are inputs the receipt's subject cannot supply (one
  * rendered stereo file cannot expose per-track phase or bus headroom); the rest
- * are properties of the audio itself.
+ * are properties of the audio itself. `below-gate` separates programme the
+ * BS.1770 absolute gate rejected from `silent`: the render carries samples, they
+ * are simply quieter than -70 LUFS.
  */
 export type AgentObjectiveMetricUnavailableReason =
-    'not-implemented' | 'needs-project-state' | 'needs-multitrack' | 'too-short' | 'silent' | 'mono';
+    'not-implemented' | 'needs-project-state' | 'needs-multitrack' | 'too-short' | 'silent' | 'below-gate' | 'mono';
 
 /** Scalars, flags, series and per-band maps are all measurable; each metric fixes one. */
 export type AgentObjectiveMetricValue = number | boolean | readonly number[] | Readonly<Record<string, number>>;

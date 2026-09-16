@@ -27,6 +27,19 @@ import { type MixAnalysis, FREQUENCY_RANGES, type FrequencyBand } from '../../..
  *   contribute levels but no profile.
  */
 
+/**
+ * Everything this module reads off a buffer. Stated structurally so a caller
+ * holding channels it has already prepared — a render whose non-finite samples
+ * were zeroed, say — can be measured through the same code as a decoded file; an
+ * `AudioBuffer` satisfies it as it stands.
+ */
+export type ProgramAudioSource = {
+    readonly numberOfChannels: number;
+    readonly length: number;
+    readonly sampleRate: number;
+    getChannelData(channel: number): Float32Array;
+};
+
 const FRAME_WINDOW = 2048;
 const FRAME_HOP = 512;
 const SPECTRUM_WINDOW = 8192;
@@ -42,7 +55,7 @@ function percentile(values: readonly number[], fraction: number): number {
     return sorted[index]!;
 }
 
-function monoChannelAverage(buffer: AudioBuffer): Float32Array {
+function monoChannelAverage(buffer: ProgramAudioSource): Float32Array {
     const left = buffer.getChannelData(0);
     if (buffer.numberOfChannels < 2) {
         return left;
@@ -55,7 +68,7 @@ function monoChannelAverage(buffer: AudioBuffer): Float32Array {
     return mono;
 }
 
-function measureFrequencyProfile(buffers: readonly AudioBuffer[]): Record<FrequencyBand, number> {
+function measureFrequencyProfile(buffers: readonly ProgramAudioSource[]): Record<FrequencyBand, number> {
     const profile = {} as Record<FrequencyBand, number>;
     for (const band of Object.keys(FREQUENCY_RANGES) as FrequencyBand[]) {
         profile[band] = 0;
@@ -123,7 +136,7 @@ function measureFrequencyProfile(buffers: readonly AudioBuffer[]): Record<Freque
  * Measure the supplied program audio, or return `null` when it is silent —
  * silence is a real measured state the caller must surface, not numbers.
  */
-export function measureProgramAudio(programAudio: readonly AudioBuffer[]): MixAnalysis | null {
+export function measureProgramAudio(programAudio: readonly ProgramAudioSource[]): MixAnalysis | null {
     let peak = 0;
     let sumSquares = 0;
     let sampleCount = 0;

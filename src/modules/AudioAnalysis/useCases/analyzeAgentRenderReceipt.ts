@@ -14,7 +14,7 @@ import { readRenderChannels } from '../services/agentObjectiveAnalysis/readRende
 import { refineOnsetTimes } from '../services/agentObjectiveAnalysis/refineOnsetTimes';
 
 import { detectOnsets } from './detectOnsets';
-import { measureProgramAudio } from './referenceMixComparison/analyzeMix/measureProgramAudio';
+import { measureProgramAudio, type ProgramAudioSource } from './referenceMixComparison/analyzeMix/measureProgramAudio';
 
 /**
  * Objective analysis of one retained section render.
@@ -47,19 +47,55 @@ type ResolvedComparison = {
     readonly warnings: readonly string[];
 };
 
-/** Onset times read from the first channel, empty when the render has no channels. */
-function readOnsetTimes(buffer: AudioBuffer, channel: Float32Array | undefined): number[] {
-    if (!channel) {
+/** Equal-weight sum of every channel, the whole render as one signal. */
+function monoSum(channels: readonly Float32Array[], length: number): Float32Array {
+    const mono = new Float32Array(length);
+    for (const channel of channels) {
+        for (let index = 0; index < length; index++) {
+            mono[index] = (mono[index] ?? 0) + (channel[index] ?? 0) / channels.length;
+        }
+    }
+    return mono;
+}
+
+/**
+ * Onset times over the whole render, empty when it has no channels.
+ *
+ * Detection runs on the summed channels rather than the first one: a transient
+ * that lives only in another channel — a hard-panned percussion overdub, a
+ * mid-side-widened hit — is absent from channel 0 entirely, so a receipt read
+ * there would report an onset list and a transient density describing one
+ * channel while naming the render.
+ */
+function readOnsetTimes(channels: readonly Float32Array[], length: number, sampleRate: number): number[] {
+    if (channels.length === 0) {
         return [];
     }
+    const mono = monoSum(channels, length);
     return refineOnsetTimes({
-        channel,
-        length: buffer.length,
-        sampleRate: buffer.sampleRate,
-        onsetTimesSec: detectOnsets(buffer, ONSET_SENSITIVITY, ONSET_MIN_INTERVAL_SECONDS).map(
-            (onset) => onset.timeSec
-        ),
+        channel: mono,
+        length,
+        sampleRate,
+        onsetTimesSec: detectOnsets(
+            { sampleRate, getChannelData: () => mono },
+            ONSET_SENSITIVITY,
+            ONSET_MIN_INTERVAL_SECONDS
+        ).map((onset) => onset.timeSec),
     });
+}
+
+/**
+ * The channels this analysis already read, presented to `measureProgramAudio` in
+ * the shape it takes, so the programme figures are read from the same sanitised
+ * samples as every other metric rather than from the raw render.
+ */
+function programAudioSource(channels: readonly Float32Array[], length: number, sampleRate: number): ProgramAudioSource {
+    return {
+        numberOfChannels: channels.length,
+        length,
+        sampleRate,
+        getChannelData: (channel: number) => channels[channel] ?? new Float32Array(length),
+    };
 }
 
 function resolveComparison(
@@ -114,8 +150,9 @@ export function analyzeAgentRenderReceipt({
     // the one the samples describe; the receipt's subject reports the artifact's
     // own record of the render alongside it.
     const durationSeconds = sampleRate > 0 ? length / sampleRate : 0;
-    const programAnalysis = channels.length > 0 ? measureProgramAudio([buffer]) : null;
-    const onsetTimesSec = readOnsetTimes(buffer, channels[0]);
+    const programAnalysis =
+        channels.length > 0 ? measureProgramAudio([programAudioSource(channels, length, sampleRate)]) : null;
+    const onsetTimesSec = readOnsetTimes(channels, length, sampleRate);
 
     const measurements = buildAgentObjectiveMeasurements({
         channels,

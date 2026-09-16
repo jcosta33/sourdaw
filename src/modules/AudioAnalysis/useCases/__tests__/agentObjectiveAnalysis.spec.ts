@@ -63,17 +63,37 @@ const EXPECTED_METRIC_IDS = [
 ];
 
 /**
- * A 1 kHz sine at a given dBFS peak. BS.1770 is calibrated so a stereo 1 kHz
- * sine reads its own peak level in LUFS, which is what lets these expectations
- * be absolute figures rather than comparisons against the code's own output.
+ * A sine at a given dBFS peak, 1 kHz unless told otherwise. BS.1770 is
+ * calibrated so a stereo 1 kHz sine reads its own peak level in LUFS, which is
+ * what lets these expectations be absolute figures rather than comparisons
+ * against the code's own output.
  */
-function sineChannel(peakDbfs: number, length: number): Float32Array {
+function sineChannel(peakDbfs: number, length: number, toneHz = TONE_HZ, phase = 0): Float32Array {
     const amplitude = 10 ** (peakDbfs / 20);
     const samples = new Float32Array(length);
     for (let index = 0; index < length; index++) {
+        samples[index] = amplitude * Math.sin((2 * Math.PI * toneHz * index) / SAMPLE_RATE + phase);
+    }
+    return samples;
+}
+
+/** A 1 kHz sine that steps from one level to another at `switchFrame`. */
+function levelStepChannel(firstDbfs: number, secondDbfs: number, switchFrame: number, length: number): Float32Array {
+    const first = 10 ** (firstDbfs / 20);
+    const second = 10 ** (secondDbfs / 20);
+    const samples = new Float32Array(length);
+    for (let index = 0; index < length; index++) {
+        const amplitude = index < switchFrame ? first : second;
         samples[index] = amplitude * Math.sin((2 * Math.PI * TONE_HZ * index) / SAMPLE_RATE);
     }
     return samples;
+}
+
+/** The same channel with one sample replaced by a value no meter can read. */
+function corruptSample(channel: Float32Array, index: number, value: number): Float32Array {
+    const corrupted = Float32Array.from(channel);
+    corrupted[index] = value;
+    return corrupted;
 }
 
 function invert(channel: Float32Array): Float32Array {
@@ -189,7 +209,6 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
 
         expect(metric(receipt, 'integratedLoudness')).toBeCloseTo(-23, 1);
         expect(metric(receipt, 'momentaryLoudnessMax')).toBeCloseTo(-23, 1);
-        expect(metric(receipt, 'shortTermLoudnessMax')).toBeCloseTo(-23, 1);
         expect(Math.abs(metric(receipt, 'samplePeak') - -23)).toBeLessThan(0.01);
         expect(Math.abs(metric(receipt, 'rms') - -26.01)).toBeLessThan(0.02);
         expect(Math.abs(metric(receipt, 'crestFactor') - 3.01)).toBeLessThan(0.02);
@@ -251,8 +270,19 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
         expect(entry(receipt, 'integratedLoudness')).toEqual({ status: 'unavailable', reason: 'silent' });
         expect(entry(receipt, 'samplePeak')).toEqual({ status: 'unavailable', reason: 'silent' });
         expect(entry(receipt, 'stereoCorrelation')).toEqual({ status: 'unavailable', reason: 'silent' });
+        expect(entry(receipt, 'spectralCentroid')).toEqual({ status: 'unavailable', reason: 'silent' });
         expect(metric(receipt, 'silentFraction')).toBe(1);
         expect(metric(receipt, 'clippingCount')).toBe(0);
+    });
+
+    it('separates programme below the absolute gate from silence', () => {
+        // -90 dBFS carries samples a peak meter reads, but BS.1770's -70 LUFS
+        // absolute gate accepts no block, so there is no integrated figure.
+        const faint = sineChannel(-90, SAMPLE_RATE * 2);
+        const receipt = analyze([faint, faint]);
+
+        expect(entry(receipt, 'integratedLoudness')).toEqual({ status: 'unavailable', reason: 'below-gate' });
+        expect(Math.abs(metric(receipt, 'samplePeak') - -90)).toBeLessThan(0.01);
     });
 
     it('reports material too short to gate as too short, not as silent', () => {
@@ -260,6 +290,28 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
         const receipt = analyze([fragment, fragment]);
 
         expect(entry(receipt, 'integratedLoudness')).toEqual({ status: 'unavailable', reason: 'too-short' });
+        expect(entry(receipt, 'shortTermLoudnessMax')).toEqual({ status: 'unavailable', reason: 'too-short' });
+        expect(entry(receipt, 'momentaryLoudnessMax')).toEqual({ status: 'unavailable', reason: 'too-short' });
+        expect(entry(receipt, 'spectralCentroid')).toEqual({ status: 'unavailable', reason: 'too-short' });
+        // `measureProgramAudio` reads no frame at this length and returns a
+        // dynamic range of 0, which is a missing measurement, not a flat render.
+        expect(entry(receipt, 'dynamicRangeEstimate')).toEqual({ status: 'unavailable', reason: 'too-short' });
+    });
+
+    it('refuses a band profile the spectrum window was too short to measure', () => {
+        // Below 8192 frames `measureProgramAudio` splits its profile evenly
+        // across the bands, which reads as a measured flat balance.
+        const fragment = sineChannel(-23, 4800);
+        const receipt = analyze([fragment, fragment]);
+
+        expect(entry(receipt, 'frequencyBandEnergy')).toEqual({ status: 'unavailable', reason: 'too-short' });
+        expect(Math.abs(metric(receipt, 'spectralCentroid') - TONE_HZ)).toBeLessThan(60);
+    });
+
+    it('has no silent fraction to report for a render with no frames', () => {
+        const receipt = analyze([new Float32Array(0), new Float32Array(0)]);
+
+        expect(entry(receipt, 'silentFraction')).toEqual({ status: 'unavailable', reason: 'too-short' });
     });
 
     it('has no stereo relationship to report for a mono render', () => {
@@ -267,6 +319,81 @@ describe('analyzeAgentRenderReceipt — level, loudness and spectral measurement
 
         expect(entry(receipt, 'stereoCorrelation')).toEqual({ status: 'unavailable', reason: 'mono' });
         expect(entry(receipt, 'sideEnergyFraction')).toEqual({ status: 'unavailable', reason: 'mono' });
+    });
+});
+
+describe('analyzeAgentRenderReceipt — windowed loudness maxima', () => {
+    it('reads each windowed maximum over its own window, not over the whole render', () => {
+        // 3.6 s at -30 dBFS then 0.4 s at -14 dBFS. The loudest 3 s window holds
+        // 0.4 s of the loud passage and 2.6 s of the quiet one; the loudest
+        // 400 ms window holds the loud passage alone.
+        const length = SAMPLE_RATE * 4;
+        const channel = levelStepChannel(-30, -14, Math.round(3.6 * SAMPLE_RATE), length);
+        const receipt = analyze([channel, channel]);
+
+        const shortTerm = 10 * Math.log10(0.4 / 3 + (2.6 / 3) * 10 ** -1.6) - 14;
+        expect(Math.abs(metric(receipt, 'shortTermLoudnessMax') - shortTerm)).toBeLessThan(0.15);
+        expect(Math.abs(metric(receipt, 'momentaryLoudnessMax') - -14)).toBeLessThan(0.1);
+    });
+
+    it('refuses a short-term maximum over a render shorter than its 3 s window', () => {
+        // Taken over 2 s the figure would be a momentary-scale reading wearing a
+        // short-term label, and 2 s of -23 dBFS would agree with it by accident.
+        const tone = sineChannel(-23, SAMPLE_RATE * 2);
+        const receipt = analyze([tone, tone]);
+
+        expect(entry(receipt, 'shortTermLoudnessMax')).toEqual({ status: 'unavailable', reason: 'too-short' });
+        expect(Math.abs(metric(receipt, 'momentaryLoudnessMax') - -23)).toBeLessThan(0.05);
+    });
+});
+
+describe('analyzeAgentRenderReceipt — peaks, pooled level and correlation', () => {
+    it('reads a true peak above the sample peak for a tone the samples miss', () => {
+        // 12 kHz at a 45 degree phase offset: every sample lands 3 dB below the
+        // waveform's own peak, which only a reconstructing meter recovers.
+        const tone = sineChannel(-23, SAMPLE_RATE * 2, 12_000, Math.PI / 4);
+        const receipt = analyze([tone, tone]);
+
+        expect(Math.abs(metric(receipt, 'samplePeak') - -26.02)).toBeLessThan(0.05);
+        expect(Math.abs(metric(receipt, 'truePeak') - -23)).toBeLessThan(0.6);
+        expect(metric(receipt, 'truePeak') - metric(receipt, 'samplePeak')).toBeGreaterThan(2);
+    });
+
+    it('pools rms over every channel, so a silent channel lowers the reading', () => {
+        // One -23 dBFS sine and one silent channel: the sine's own rms is
+        // -26.01 dBFS, and pooling it with silence halves the power.
+        const receipt = analyze([sineChannel(-23, SAMPLE_RATE * 2), new Float32Array(SAMPLE_RATE * 2)]);
+
+        expect(Math.abs(metric(receipt, 'rms') - -29.02)).toBeLessThan(0.02);
+        expect(Math.abs(metric(receipt, 'crestFactor') - 6.02)).toBeLessThan(0.02);
+    });
+
+    it('reads channels of unequal level but identical shape as fully correlated', () => {
+        const length = SAMPLE_RATE * 2;
+        const receipt = analyze([sineChannel(-23, length), sineChannel(-29, length)]);
+
+        expect(Math.abs(metric(receipt, 'stereoCorrelation') - 1)).toBeLessThan(1e-6);
+    });
+
+    it('reads two identical DC channels as fully correlated rather than undefined', () => {
+        const receipt = analyze([constantChannel(0.5, SAMPLE_RATE * 2), constantChannel(0.5, SAMPLE_RATE * 2)]);
+
+        expect(Math.abs(metric(receipt, 'stereoCorrelation') - 1)).toBeLessThan(1e-6);
+    });
+});
+
+describe('analyzeAgentRenderReceipt — non-finite samples', () => {
+    it.each([
+        ['an infinity', Number.POSITIVE_INFINITY],
+        ['a NaN', Number.NaN],
+    ])('reads every metric off finite samples when the render carries %s', (_label, corruption) => {
+        const tone = sineChannel(-23, SAMPLE_RATE * 2);
+        const receipt = analyze([corruptSample(tone, 1000, corruption), tone]);
+
+        expect(Math.abs(metric(receipt, 'samplePeak') - -23)).toBeLessThan(0.01);
+        expect(Number.isFinite(metric(receipt, 'rms'))).toBe(true);
+        expect(Math.abs(metric(receipt, 'rms') - -26.01)).toBeLessThan(0.05);
+        expect(metric(receipt, 'dcOffset')).toBeLessThan(1e-4);
     });
 });
 
@@ -286,6 +413,22 @@ describe('analyzeAgentRenderReceipt — transients', () => {
             value: [expect.closeTo(0.5, 2), expect.closeTo(1.5, 2)],
         });
         expect(Math.abs(metric(receipt, 'transientDensity') - 1)).toBeLessThan(0.05);
+    });
+
+    it('hears an attack that lives in one channel only', () => {
+        // A hard-panned hit is absent from channel 0, so onsets read there alone
+        // would report an empty list for a render that plainly has one.
+        const length = SAMPLE_RATE * 2;
+        const receipt = analyze([new Float32Array(length), clickChannel(length, [SAMPLE_RATE])]);
+
+        expect(entry(receipt, 'onsetTimes')).toEqual({
+            status: 'measured',
+            metricVersion: 1,
+            unit: 'seconds',
+            confidence: 'estimated',
+            value: [expect.closeTo(1, 2)],
+        });
+        expect(Math.abs(metric(receipt, 'transientDensity') - 0.5)).toBeLessThan(0.05);
     });
 });
 
@@ -314,6 +457,7 @@ describe('analyzeAgentRenderReceipt — comparison against a baseline receipt', 
             delta: expect.closeTo(3, 2),
             unit: 'dB',
         });
+        expect(Object.keys(comparison.metrics)).toEqual(EXPECTED_METRIC_IDS);
         expect(comparison.metrics.onsetTimes).toEqual({ status: 'incomparable', reason: 'non-scalar' });
         expect(comparison.metrics.tempoAlignment).toEqual({
             status: 'incomparable',
