@@ -4416,6 +4416,95 @@ mod tests {
         assert_eq!(left, vec![2.0; 4]);
     }
 
+    /// A generator's own material leaves its strip through the strip's fader,
+    /// its sends and its mute — the whole reason a sampler belongs on a track
+    /// chain rather than on the master insert chain.
+    ///
+    /// The track carries no clip, so every sample asserted here is the
+    /// generator's. Homed on the master chain instead, the same material would
+    /// arrive past all three: the fader would not scale it, the send would not
+    /// carry it, and the mute would not silence it.
+    #[test]
+    fn a_hosted_generator_is_summed_through_its_strips_fader_and_mute() {
+        const FRAMES: usize = 4;
+
+        let mut graph = TimelineGraph::new();
+        assert!(graph.add_track(TimelineTrack::new(1)).is_none());
+        assert!(graph.insert_track_device(1, generator(11), 0));
+        // No scaler on this chain: `usize::MAX` is an id no entry carries, so
+        // `run_device` is a no-op and the only material is the generator's.
+        let mut devices = TestDevices {
+            scaler_id: usize::MAX,
+            factor: 1.0,
+            generator_id: 11,
+            emits: 0.5,
+        };
+
+        let mut left = vec![0.0; FRAMES];
+        let mut right = vec![0.0; FRAMES];
+        graph.render(0, FRAMES, true, &mut devices, &mut left, &mut right);
+        assert_eq!(
+            left,
+            vec![0.5; FRAMES],
+            "at unity the generator's own material reaches the mix whole"
+        );
+
+        // The fader scales it, because the chain runs ahead of the gain.
+        graph.automate(
+            AutomationTarget::TrackGain(1),
+            AutomationWrite::Append(ramp(0, 0, 0.25, RampShape::Step)),
+        );
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(0, FRAMES, true, &mut devices, &mut left, &mut right);
+        assert_eq!(
+            left,
+            vec![0.125; FRAMES],
+            "the strip's fader has to scale the generator like anything else on the chain"
+        );
+        assert_eq!(right, vec![0.125; FRAMES]);
+
+        // A post-fader send carries that same faded material to a bus.
+        assert!(graph.add_bus(TimelineBus::new(50)).is_none());
+        assert!(graph
+            .add_send(1, 50, SendTap::PostFader, 1.0, uncompensated())
+            .is_none());
+        left.fill(0.0);
+        right.fill(0.0);
+        graph.render(0, FRAMES, true, &mut devices, &mut left, &mut right);
+        assert_eq!(
+            left,
+            vec![0.25; FRAMES],
+            "the track's faded generator output plus the same material through its send"
+        );
+
+        // And the mute silences it. The gate glides rather than stepping, so
+        // the assertion is taken once it has settled.
+        graph.set_track_mute(1, true);
+        let mut settled_left = vec![0.0; GATE_PROBE_BLOCK];
+        let mut settled_right = vec![0.0; GATE_PROBE_BLOCK];
+        let mut start = FRAMES as u64;
+        for _ in 0..2 {
+            settled_left.fill(0.0);
+            settled_right.fill(0.0);
+            graph.render(
+                start,
+                GATE_PROBE_BLOCK,
+                true,
+                &mut devices,
+                &mut settled_left,
+                &mut settled_right,
+            );
+            start += GATE_PROBE_BLOCK as u64;
+        }
+        assert_eq!(
+            settled_left,
+            vec![0.0; GATE_PROBE_BLOCK],
+            "a muted strip contributes exact silence, its generator included"
+        );
+        assert_eq!(settled_right, vec![0.0; GATE_PROBE_BLOCK]);
+    }
+
     #[test]
     fn a_generator_joins_the_chain_and_what_follows_it_processes_the_sum() {
         let mut graph = graph_with_constant_clip(1, 1.0, 4);

@@ -35,8 +35,16 @@ use super::graph::GraphRegistry;
 /// rather than refused: it parks the panel's writes command-side and takes
 /// its rings on the engine [`attach_dormant_crumbs`] finds.
 pub enum CrumbsEngineSlot {
-    /// Registered on the engine's master chain and capture bus under this
+    /// Registered detached on the engine, and on its capture bus, under this
     /// plugin id, and holding the command side of the rings that reach it.
+    ///
+    /// Detached is where the instance waits until a strip chain borrows it:
+    /// `commands::graph` splices a `builtin-crumbs` device onto this very
+    /// plugin id, so the pads sound inside that track's fader, pan, mute,
+    /// inserts and sends. Homed on the master insert chain instead — which is
+    /// what `AddPlugin` does — they would sound outside every one of them, and
+    /// taking the device off the strip would leave the sampler rendering over
+    /// the whole mix.
     Attached {
         plugin_id: usize,
         ends: CrumbsInstanceEnds,
@@ -383,7 +391,15 @@ fn ensure_crumbs_capture_headroom(
 }
 
 /// Build the audio-thread slot from ring ends the command side already holds
-/// and publish it, returning the engine plugin id both commands name.
+/// and publish it detached, returning the engine plugin id both commands name.
+///
+/// Detached, never `AddPlugin`: a slot homed on the master insert chain renders
+/// the whole mix and sounds outside the track's own fader, pan, mute, inserts
+/// and sends. The instance is published where a chain can borrow it instead,
+/// and `commands::graph` splices the `builtin-crumbs` device carrying this
+/// instance's id onto this plugin id — exactly as it splices a hosted plugin
+/// the engine already owns. An instance no chain holds runs nowhere, which is
+/// the same answer a hosted plugin taken off a strip gets.
 ///
 /// The slot and its record feed cross as one fenced batch. Admission checks
 /// the effect table and the capture ledger for the whole batch and provisions
@@ -412,8 +428,8 @@ fn register_crumbs_slot(
     // A reserved id is an opaque handle, never a dense index, so a refused
     // batch below simply leaves this one unused.
     let id = engine_handle.reserve_plugin_id();
-    // The device's rate, not the caller's: this engine renders on the
-    // master chain and records the tap the same device feeds.
+    // The device's rate, not the caller's: this engine renders on the strip
+    // chain that borrows it and records the tap the same device feeds.
     let mut engine = CrumbsEngine::with_metering(engine_handle.sample_rate(), Arc::clone(metering));
     engine.enable_commit_handoff();
     let CrumbsSlotEnds {
@@ -434,8 +450,15 @@ fn register_crumbs_slot(
             // The sampler is an instrument, so its slot arrives holding the
             // note store a producer schedules against. Block-granular delivery
             // is the wrapper's own answer, not a reason to register it without
-            // one.
-            GraphCommand::AddPlugin(id, Box::new(slot), Some(MidiNoteStore::new())),
+            // one. `AddHostedPlugin` carries that store unconditionally, which
+            // is the same registration every engine-owned device takes.
+            GraphCommand::AddHostedPlugin(id, Box::new(slot), MidiNoteStore::new()),
+            // Independent of where the instance sits in the graph: the engine
+            // delivers capture by effect id through its own consumer ledger
+            // (`AudioScheduler::deliver_capture`,
+            // `crates/daw-engine/src/scheduler.rs:7061-7072`), which looks the
+            // id up in the effect index and never reads its chain placement.
+            // So a detached slot records exactly as a master-homed one did.
             GraphCommand::RegisterCaptureConsumer(id),
         ])
         .map_err(|error| match error {
@@ -523,12 +546,15 @@ fn replay_parked_writes(instance: &mut CrumbsInstanceData, parked: DormantCrumbs
 /// every dormant instance attached, and a caller cannot be left reading a
 /// failure as that. Otherwise returns one `(instance_id, reason)` per
 /// instance the engine refused — not the graph batch's business, because the
-/// instance keeps its parked writes and the next batch tries again.
+/// instance keeps its parked writes and the next batch tries again — beside
+/// the ids that did take a slot, which the batch reports to the caller: a
+/// `create_crumbs` that found no engine answered `attached: false`, and this
+/// report is the only correction the caller gets.
 pub fn attach_dormant_crumbs(
     state: &CrumbsState,
     registry: &mut GraphRegistry,
     engine: &Mutex<Option<EngineHandle>>,
-) -> Result<Vec<(String, String)>, String> {
+) -> Result<CrumbsAttachReport, String> {
     let mut instances = state
         .instances
         .lock()
@@ -537,10 +563,10 @@ pub fn attach_dormant_crumbs(
         .lock()
         .map_err(|e| format!("Failed to lock engine: {e}"))?;
     let Some(engine_handle) = engine_guard.as_mut() else {
-        return Ok(Vec::new());
+        return Ok(CrumbsAttachReport::default());
     };
 
-    let mut refusals = Vec::new();
+    let mut report = CrumbsAttachReport::default();
     for (instance_id, instance) in instances.iter_mut() {
         let CrumbsEngineSlot::Dormant(parked) = &mut instance.engine_slot else {
             continue;
@@ -555,7 +581,7 @@ pub fn attach_dormant_crumbs(
                 Err(reason) => {
                     // The parked writes are untouched: still dormant, still
                     // holding what the panel set, still attachable next batch.
-                    refusals.push((instance_id.clone(), reason));
+                    report.refusals.push((instance_id.clone(), reason));
                     continue;
                 }
             };
@@ -563,8 +589,48 @@ pub fn attach_dormant_crumbs(
         let parked = std::mem::take(parked);
         instance.engine_slot = CrumbsEngineSlot::Attached { plugin_id, ends };
         replay_parked_writes(instance, parked);
+        report.attached.push(instance_id.clone());
     }
-    Ok(refusals)
+    // Map iteration order is arbitrary and the report crosses to a caller, so
+    // one batch's attach reads the same whichever order the map drew.
+    report.attached.sort_unstable();
+    Ok(report)
+}
+
+/// What one [`attach_dormant_crumbs`] pass did: the instances that took a slot
+/// on the engine, and the ones it refused with the reason each carries.
+#[derive(Debug, Default)]
+pub struct CrumbsAttachReport {
+    pub attached: Vec<String>,
+    pub refusals: Vec<(String, String)>,
+}
+
+/// Every instance holding a slot on the live engine, as the graph mapper reads
+/// it: instance id → engine plugin id.
+///
+/// The instance id is the device id. A Crumbs device carries no
+/// `externalInstanceId` — the panel creates its runtime under the device's own
+/// id — so this lookup is keyed by exactly what `map_device` reads off the
+/// device, and the id it answers with is the effect the strip chain borrows.
+///
+/// A dormant instance is absent by construction: it owns no engine plugin id,
+/// so there is nothing for a chain to splice and the mapper's own degradation
+/// law is what answers for it.
+///
+/// Takes only the instances lock, so a caller already holding the registry
+/// guard keeps the registry -> instances order every other path here follows.
+pub fn attached_crumbs_instances(state: &CrumbsState) -> Result<HashMap<String, usize>, String> {
+    let instances = state
+        .instances
+        .lock()
+        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
+    Ok(instances
+        .iter()
+        .filter_map(|(instance_id, instance)| match instance.engine_slot {
+            CrumbsEngineSlot::Attached { plugin_id, .. } => Some((instance_id.clone(), plugin_id)),
+            CrumbsEngineSlot::Dormant(_) => None,
+        })
+        .collect())
 }
 
 /// Put every attached instance back to dormant, because the engine holding
@@ -637,10 +703,15 @@ pub(crate) fn instance_is_attached(state: &CrumbsState, instance_id: &str) -> bo
 /// Create a new crumbs engine instance.
 ///
 /// Takes no sample rate: the sampler records the engine's own input tap and
-/// renders on the engine's master chain, so its only correct rate is the
+/// renders on the engine's own callback, so its only correct rate is the
 /// device's, read from the engine handle. A rate supplied by a caller would
 /// stamp every committed take — and clamp `record_max_samples` — against a
 /// number the device never ran at.
+///
+/// Answers whether the instance took an engine slot. `attached` is false for
+/// the dormant case below, and the next graph batch is what turns it true —
+/// the caller has no other way to tell a sampler the engine is rendering from
+/// one still waiting for its first batch.
 ///
 /// A missing engine degrades rather than refuses (#2265). The engine starts
 /// lazily on the first graph batch, which the app sends on play, so refusing
@@ -652,7 +723,7 @@ pub async fn create_crumbs(
     instance_id: String,
     state: &CrumbsState,
     app_state: &AppState,
-) -> Result<(), String> {
+) -> Result<CrumbsCreateResult, String> {
     // Three locks, taken registry -> instances -> engine. `apply_graph_commands`
     // already establishes that order — it holds the registry guard, then its
     // attach locks instances then engine — so a create cannot invert against a
@@ -715,6 +786,7 @@ pub async fn create_crumbs(
         }
     };
 
+    let attached = matches!(engine_slot, CrumbsEngineSlot::Attached { .. });
     instances.insert(
         instance_id,
         CrumbsInstanceData {
@@ -725,15 +797,40 @@ pub async fn create_crumbs(
             pending_mirror: Vec::new(),
         },
     );
-    Ok(())
+    Ok(CrumbsCreateResult { attached })
+}
+
+/// What a create left behind, as the caller reads it: whether the instance
+/// holds a slot on a running engine, or is dormant until the next graph batch
+/// attaches it.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CrumbsCreateResult {
+    pub attached: bool,
 }
 
 /// Destroy a crumbs engine instance.
+///
+/// The instance's chain entries go before its retirement, for the reason
+/// `release_then_retire_engine_plugin` states for a hosted plugin: a chain
+/// entry naming a retired effect is counted nowhere — the scheduler's
+/// `run_device` and `run_generator` both return on a failed effect-table
+/// lookup — so it stands as a silent passthrough until a topology replacement
+/// clears it, and a rolling engine never gets one. Releasing first closes that
+/// hole before it can exist.
+///
+/// Three locks, taken registry -> instances -> engine, the order
+/// [`create_crumbs`] and `apply_graph_commands` already establish.
 pub async fn destroy_crumbs(
     instance_id: String,
     state: &CrumbsState,
     app_state: &AppState,
 ) -> Result<(), String> {
+    let mut registry_guard = app_state
+        .graph
+        .lock()
+        .map_err(|error| format!("Failed to lock graph registry: {error}"))?;
+
     let mut instances = state
         .instances
         .lock()
@@ -744,7 +841,8 @@ pub async fn destroy_crumbs(
     };
 
     // A dormant instance owns nothing engine-side — its slot was never
-    // published — so the map entry is the whole of it.
+    // published, so no chain can hold it — and the map entry is the whole of
+    // it.
     let CrumbsEngineSlot::Attached { plugin_id, .. } = instance.engine_slot else {
         instances.remove(&instance_id);
         return Ok(());
@@ -753,13 +851,14 @@ pub async fn destroy_crumbs(
     // Keep the ownership ledger intact until every fallible lock and the
     // scheduler-removal admission succeed. A full command ring means the
     // runtime is still live, so its map entry must remain reachable for
-    // retry. Lock order stays instances -> engine.
+    // retry.
     let mut engine_guard = app_state
         .engine
         .lock()
         .map_err(|e| format!("Failed to lock engine: {e}"))?;
 
     if let Some(ref mut engine_handle) = *engine_guard {
+        release_chain_entries(&mut registry_guard, engine_handle, plugin_id);
         // No matching unregister: removal takes the id off the capture ledger
         // and off the callback's input bus with the slot it belongs to, so an
         // unregister here would be a second release of a consumer that is
@@ -771,6 +870,36 @@ pub async fn destroy_crumbs(
     // follow before command-side ownership is erased.
     instances.remove(&instance_id);
     Ok(())
+}
+
+/// Take every strip chain entry naming `plugin_id` out of the live graph,
+/// ahead of the retirement that follows.
+///
+/// Computed on a working clone and committed only once the ring has taken the
+/// batch, the law `map_batch` follows: a registry that had already forgotten a
+/// chain entry the engine still holds could never name it again. A refused
+/// release is logged and the retirement still goes — refusing here would
+/// abandon a destroy the caller has already begun, and the entry the registry
+/// keeps is what lets a later batch unlink it.
+fn release_chain_entries(
+    registry: &mut GraphRegistry,
+    engine_handle: &mut EngineHandle,
+    plugin_id: usize,
+) {
+    let mut working = registry.clone();
+    let release = working.release_engine_plugin(plugin_id);
+    if release.ops.is_empty() {
+        return;
+    }
+    // The reserved slot is the `RemovePlugin` push the caller makes next: the
+    // retirement must not find the ring full behind this release.
+    match engine_handle.send_graph_batch_with_headroom(release.ops, 1) {
+        Ok(()) => {
+            working.record_fenced_batch();
+            *registry = working;
+        }
+        Err(error) => eprintln!("[Crumbs] chain release before destroy was refused: {error:?}"),
+    }
 }
 
 /// Load a sample from disk into a crumbs instance.
@@ -1458,8 +1587,8 @@ mod tests {
     }
 
     /// Pop the fenced batch one successful create queues — the two-command
-    /// fence, the master-chain slot, then its registration on the engine's
-    /// input bus — and return the engine plugin id both commands name.
+    /// fence, the detached slot, then its registration on the engine's input
+    /// bus — and return the engine plugin id both commands name.
     fn pop_create_commands(command_rx: &mut rtrb::Consumer<GraphCommand>) -> usize {
         match command_rx.pop() {
             Ok(GraphCommand::BeginBatch { commands }) => assert_eq!(
@@ -1470,7 +1599,7 @@ mod tests {
             Err(_) => panic!("a create must queue its batch fence"),
         }
         let id = match command_rx.pop() {
-            Ok(GraphCommand::AddPlugin(id, _, Some(_))) => id,
+            Ok(GraphCommand::AddHostedPlugin(id, _, _)) => id,
             Ok(_) => panic!("the batch's first command must register the crumbs slot"),
             Err(_) => panic!("a create must queue the slot registration"),
         };
@@ -1570,6 +1699,88 @@ mod tests {
                 .expect("crumbs state lock should be available")
                 .contains_key(instance_id),
             "destroy must remove the original map entry"
+        );
+    }
+
+    /// A destroy takes the instance out of every chain that borrowed it before
+    /// it retires the runtime.
+    ///
+    /// The strip splice is what makes this reachable: the instance now sits in
+    /// a track's chain, and a chain entry naming a retired effect is counted
+    /// nowhere — `run_device` and `run_generator` both return on a failed
+    /// effect-table lookup — so it would stand as a silent passthrough until a
+    /// topology replacement cleared it, and a rolling engine never gets one.
+    #[test]
+    fn destroying_a_spliced_instance_releases_its_chain_entries_before_removal() {
+        const INSTANCE_ID: &str = "d-spliced-crumbs";
+
+        let state = CrumbsState::default();
+        let app_state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(256);
+        *app_state
+            .engine
+            .lock()
+            .expect("engine lock should be available") = Some(engine);
+
+        crate::block_on_test(create_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
+            .expect("a create against a running engine attaches the slot");
+        let plugin_id = attached_plugin_id(&state, INSTANCE_ID);
+
+        crate::block_on_test(crate::commands::graph::apply_graph_commands(
+            serde_json::json!({
+                "schemaVersion": 1,
+                "commands": [{
+                    "kind": "create-track-strip",
+                    "trackId": "pads",
+                    "name": "Pads",
+                    "state": { "gain": 0.8, "pan": 0, "muted": false,
+                               "soloGated": false, "vcaMultiplier": 1 },
+                    "devices": [
+                        { "id": INSTANCE_ID, "name": "Crumbs", "type": "builtin-crumbs",
+                          "bypassed": false, "parameterValues": {} }
+                    ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                }]
+            }),
+            &app_state,
+            &state,
+        ))
+        .expect("the batch splices the instance onto the strip");
+
+        // Everything up to here is setup; the destroy's own ops are what this
+        // test reads.
+        while command_rx.pop().is_ok() {}
+
+        crate::block_on_test(destroy_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
+            .expect("the destroy is admitted");
+
+        let mut ops = Vec::new();
+        while let Ok(command) = command_rx.pop() {
+            ops.push(command);
+        }
+
+        let released = ops
+            .iter()
+            .position(|op| {
+                matches!(op, GraphCommand::RemoveTrackDevice { effect_id, .. }
+                    if *effect_id == plugin_id)
+            })
+            .expect("the destroy must take the instance off the chain that borrowed it");
+        let retired = ops
+            .iter()
+            .position(|op| matches!(op, GraphCommand::RemovePlugin(id) if *id == plugin_id))
+            .expect("the destroy must still retire the runtime");
+        assert!(
+            released < retired,
+            "the chain release has to reach the ring ahead of the retirement, or a callback \
+             between the two runs a chain entry whose effect is already gone"
+        );
+        assert!(
+            !ops.iter()
+                .any(|op| matches!(op, GraphCommand::RemoveTrackDeviceRetired { .. })),
+            "the chain releases the entry; the retirement is the destroy's own, separate op"
         );
     }
 
@@ -2116,11 +2327,17 @@ mod tests {
         );
     }
 
-    /// A create publishes the sampler twice: once on the master chain, once on
-    /// the engine's input tap. Both name the same reserved id, and the slot
-    /// goes first — a registration for an id the graph has not been told about
-    /// is admitted, but the pair is what makes the sampler both audible and
-    /// able to record.
+    /// A create publishes the sampler twice: once as a detached hosted slot,
+    /// once on the engine's input tap. Both name the same reserved id, and the
+    /// slot goes first — a registration for an id the graph has not been told
+    /// about is admitted, but the pair is what makes the sampler both
+    /// spliceable and able to record.
+    ///
+    /// `AddHostedPlugin` and not `AddPlugin`: the first homes the instance
+    /// detached, where the strip chain that carries the `builtin-crumbs`
+    /// device borrows it; the second would home it on the master insert chain,
+    /// outside the track's fader, pan, mute, inserts and sends, and over the
+    /// whole mix.
     #[test]
     fn create_crumbs_registers_the_slot_and_its_capture_feed() {
         let state = CrumbsState::default();
@@ -2144,7 +2361,7 @@ mod tests {
             Err(_) => panic!("a create must queue its batch fence"),
         }
         let registered_engine_plugin_id = match command_rx.pop() {
-            Ok(GraphCommand::AddPlugin(id, plugin, Some(_))) => {
+            Ok(GraphCommand::AddHostedPlugin(id, plugin, _)) => {
                 let slot = plugin
                     .as_any()
                     .downcast_ref::<CrumbsPluginSlot>()
@@ -2155,6 +2372,9 @@ mod tests {
                     "the slot must be built at the engine handle's rate, not the caller's"
                 );
                 id
+            }
+            Ok(GraphCommand::AddPlugin(..)) => {
+                panic!("the slot must be homed detached, never on the master insert chain")
             }
             Ok(_) => panic!("the batch's first command must register the crumbs slot"),
             Err(_) => panic!("a create must queue the slot registration"),
@@ -2332,7 +2552,8 @@ mod tests {
 
         let refusals =
             attach_dormant_crumbs(&state, &mut GraphRegistry::default(), &app_state.engine)
-                .expect("both locks are free, so the attach reports refusals rather than an error");
+                .expect("both locks are free, so the attach reports refusals rather than an error")
+                .refusals;
         assert!(
             refusals.is_empty(),
             "the engine had room for this slot: {refusals:?}"
@@ -2347,7 +2568,7 @@ mod tests {
             Err(_) => panic!("an attach must queue its batch fence"),
         }
         let registered_engine_plugin_id = match command_rx.pop() {
-            Ok(GraphCommand::AddPlugin(id, mut plugin, Some(_))) => {
+            Ok(GraphCommand::AddHostedPlugin(id, mut plugin, _)) => {
                 let slot = plugin
                     .as_any_mut()
                     .downcast_mut::<CrumbsPluginSlot>()
@@ -2431,7 +2652,8 @@ mod tests {
 
         let refusals =
             attach_dormant_crumbs(&state, &mut GraphRegistry::default(), &app_state.engine)
-                .expect("both locks are free, so the attach reports refusals rather than an error");
+                .expect("both locks are free, so the attach reports refusals rather than an error")
+                .refusals;
         assert_eq!(refusals.len(), 1, "one dormant instance, one refusal");
         let (refused_instance_id, reason) = &refusals[0];
         assert_eq!(refused_instance_id, INSTANCE_ID);
@@ -2522,7 +2744,8 @@ mod tests {
             .expect("engine lock should be available") = Some(engine);
         let refusals =
             attach_dormant_crumbs(&state, &mut GraphRegistry::default(), &app_state.engine)
-                .expect("both locks are free, so the attach reports refusals rather than an error");
+                .expect("both locks are free, so the attach reports refusals rather than an error")
+                .refusals;
         assert!(refusals.is_empty(), "the engine had room: {refusals:?}");
 
         assert!(
@@ -2530,7 +2753,7 @@ mod tests {
             "an attach must publish its registration behind a batch fence"
         );
         let mut plugin = match command_rx.pop() {
-            Ok(GraphCommand::AddPlugin(_, plugin, Some(_))) => plugin,
+            Ok(GraphCommand::AddHostedPlugin(_, plugin, _)) => plugin,
             Ok(_) => panic!("the batch's first command must register the crumbs slot"),
             Err(_) => panic!("an attach must queue the slot registration"),
         };
@@ -2623,7 +2846,8 @@ mod tests {
         assert_eq!(registry.fenced_batches(), 0, "no fence sent yet");
 
         let refusals = attach_dormant_crumbs(&state, &mut registry, &app_state.engine)
-            .expect("both locks are free, so the attach reports refusals rather than an error");
+            .expect("both locks are free, so the attach reports refusals rather than an error")
+            .refusals;
         assert!(
             refusals.is_empty(),
             "the engine had room for this slot: {refusals:?}"
@@ -2744,7 +2968,8 @@ mod tests {
 
         let mut registry = GraphRegistry::default();
         let refusals = attach_dormant_crumbs(&state, &mut registry, &app_state.engine)
-            .expect("both locks are free, so the attach reports refusals rather than an error");
+            .expect("both locks are free, so the attach reports refusals rather than an error")
+            .refusals;
         assert_eq!(refusals.len(), 1, "one dormant instance, one refusal");
         assert!(
             refusals[0].1.starts_with("capture-bus-full:"),

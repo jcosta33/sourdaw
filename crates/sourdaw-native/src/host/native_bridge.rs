@@ -2470,6 +2470,76 @@ mod tests {
         tx.push(CrumbsCommand::SetActiveSample(1)).unwrap();
     }
 
+    /// The wrapper is transparent: what the slot voices from the engine's note
+    /// store is sample-for-sample what the bare `CrumbsEngine` voices from the
+    /// same note at the same frame.
+    ///
+    /// This is the claim the strip splice rests on. The slot now renders inside
+    /// a track's chain rather than on the master insert chain, so the audio a
+    /// musician hears is whatever this wrapper puts into the generator scratch
+    /// the chain hands it — and nothing between the note store and
+    /// `CrumbsEngine::process_block` may colour, delay, or gate it.
+    ///
+    /// One block of 512 frames, the note at offset 0, so the wrapper's own
+    /// segmenting reduces to the single unconditional tail render and the two
+    /// paths are comparable at all.
+    #[test]
+    fn the_crumbs_slot_voices_its_note_store_events_like_the_bare_engine() {
+        use daw_dsp::crumbs::sample::SampleData;
+
+        const FRAMES: usize = 512;
+
+        let sample = Arc::new(SampleData::from_mono(vec![0.1; 4800], 48_000));
+
+        let (mut slot, mut tx, _commit, _recycle) = crumbs_slot_with_rings();
+        tx.push(CrumbsCommand::AddSample {
+            id: 1,
+            data: Arc::clone(&sample),
+        })
+        .unwrap();
+        tx.push(CrumbsCommand::SetActiveSample(1)).unwrap();
+
+        let mut slot_left = vec![0.0f32; FRAMES];
+        let mut slot_right = vec![0.0f32; FRAMES];
+        slot.process_with_events(
+            &mut slot_left,
+            &mut slot_right,
+            FRAMES,
+            &[engine_note(60, 100, 0, true, 0)],
+            &TransportState::default(),
+        );
+
+        // The same engine, built the same way, driven by the commands the
+        // wrapper's own `dispatch_note` would have issued.
+        let mut bare = CrumbsEngine::with_metering(48_000.0, Arc::new(CrumbsMetering::default()));
+        bare.enable_commit_handoff();
+        bare.handle_command(CrumbsCommand::AddSample {
+            id: 1,
+            data: sample,
+        });
+        bare.handle_command(CrumbsCommand::SetActiveSample(1));
+        bare.handle_command(CrumbsCommand::NoteOn {
+            note: 60,
+            velocity: 100,
+        });
+        let mut bare_left = vec![0.0f32; FRAMES];
+        let mut bare_right = vec![0.0f32; FRAMES];
+        bare.process_block(&mut bare_left, &mut bare_right);
+
+        assert!(
+            bare_left.iter().any(|&sample| sample != 0.0),
+            "two silent blocks would make the comparison vacuous"
+        );
+        assert_eq!(
+            slot_left, bare_left,
+            "the wrapper must add nothing of its own to the left channel"
+        );
+        assert_eq!(
+            slot_right, bare_right,
+            "the wrapper must add nothing of its own to the right channel"
+        );
+    }
+
     /// A note the engine stamps for a frame inside the block sounds from that
     /// frame, not from the block's head.
     ///
@@ -3184,10 +3254,19 @@ pub struct CrumbsPluginSlot {
 impl CrumbsPluginSlot {
     /// Shared block body for every render path.
     ///
-    /// The slot adds its voice into the mix it is handed. On the master chain
-    /// the buffers carry the native sum every member ordered ahead of this one
-    /// has already written, and `CrumbsEngine::process_block` sums into them,
-    /// so nothing here may zero them: doing so erases those members outright.
+    /// The slot adds its voice into the mix it is handed, and nothing here may
+    /// zero the buffers.
+    ///
+    /// On the strip chain that borrows this instance the slot is a
+    /// `DeviceKind::Generator`: the chain hands it generator scratch it has
+    /// already zeroed, renders it, then sums the result into the strip's own
+    /// buffer and carries that on through the rest of the chain
+    /// (`crates/daw-engine/src/timeline.rs:2954-2982`). Zeroing here would cost
+    /// that chain nothing, but the law is not about the caller: wherever the
+    /// slot is handed a buffer it did not get exclusively — a chain member
+    /// ordered ahead of it on a shared buffer — zeroing erases that member
+    /// outright, and `CrumbsEngine::process_block` sums rather than writes
+    /// precisely so this slot never has to know which case it is in.
     ///
     /// The buffers carry no input audio either way. Record input reaches the
     /// engine only through [`NativePlugin::process_capture_input`], from the

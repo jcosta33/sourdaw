@@ -835,6 +835,22 @@ pub struct GraphApplyResultPayload {
     /// id at all, and there is no later event.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attached_plugins: Option<Vec<AttachedPluginPayload>>,
+    /// Crumbs instances that were created before any engine was running and
+    /// that this batch took over — see [`crate::commands::crumbs::attach_dormant_crumbs`].
+    ///
+    /// Present on an applied batch and empty when it attached nothing, exactly
+    /// like `attachedPlugins` and for the same reason: only an applied payload
+    /// can honestly report an attach.
+    ///
+    /// Reported separately from `attachedPlugins` because the two name
+    /// different populations — a hosted plugin's instance id and a Crumbs
+    /// device's own id — and a caller acts on them differently.
+    ///
+    /// The caller needs it because nothing else corrects `create_crumbs`'s
+    /// `attached: false`: the create told it the sampler had no engine, and
+    /// there is no later event.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attached_crumbs: Option<Vec<AttachedCrumbsPayload>>,
 }
 
 /// One instance an engine start took over, as the caller reads it.
@@ -850,6 +866,17 @@ pub struct AttachedPluginPayload {
     pub instance_id: String,
 }
 
+/// One Crumbs instance a batch's attach took over, as the caller reads it.
+///
+/// The instance id is the whole payload, and it is the device id too: the
+/// panel creates a Crumbs runtime under the id of the device it belongs to, so
+/// the caller needs nothing else to know which device just became audible.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachedCrumbsPayload {
+    pub instance_id: String,
+}
+
 impl GraphApplyResultPayload {
     fn rejected(reason: String) -> Self {
         Self {
@@ -862,6 +889,7 @@ impl GraphApplyResultPayload {
             admitted_batch: None,
             reports: None,
             attached_plugins: None,
+            attached_crumbs: None,
         }
     }
 
@@ -871,6 +899,7 @@ impl GraphApplyResultPayload {
         admitted_batch: u64,
         reports: Vec<StripReportPayload>,
         attached_plugins: Vec<AttachedPluginPayload>,
+        attached_crumbs: Vec<AttachedCrumbsPayload>,
     ) -> Self {
         Self {
             acceptance: "accepted",
@@ -882,6 +911,7 @@ impl GraphApplyResultPayload {
             admitted_batch: Some(admitted_batch),
             reports: Some(reports),
             attached_plugins: Some(attached_plugins),
+            attached_crumbs: Some(attached_crumbs),
         }
     }
 
@@ -902,6 +932,7 @@ impl GraphApplyResultPayload {
             admitted_batch: None,
             reports: Some(reports),
             attached_plugins: None,
+            attached_crumbs: None,
         }
     }
 
@@ -921,6 +952,7 @@ impl GraphApplyResultPayload {
             admitted_batch: None,
             reports: Some(reports),
             attached_plugins: None,
+            attached_crumbs: None,
         }
     }
 }
@@ -998,9 +1030,11 @@ impl DeviceEntry {
     /// Store presence is decided at registration, by the command that built
     /// the device, so this reads what was registered rather than guessing from
     /// what the device might do with what lands in it. Every engine-owned
-    /// device is registered through `EngineHandle::add_hosted_plugin`, which
-    /// attaches a store unconditionally; a built-in is registered with one
-    /// exactly when its type sounds notes.
+    /// device is registered by an `AddHostedPlugin`, which attaches a store
+    /// unconditionally — whether that registration came from
+    /// `EngineHandle::add_hosted_plugin` for a hosted plugin or from
+    /// `commands::crumbs::register_crumbs_slot` for a sampler; a built-in is
+    /// registered with one exactly when its type sounds notes.
     fn note_sink(&self) -> bool {
         match self.builtin {
             None => true,
@@ -1701,17 +1735,17 @@ fn hosted_parameter_id(parameter_id: &str) -> Result<u32, String> {
 ///
 /// That third one reads [`DeviceEntry::note_sink`], because *store presence is
 /// decided at registration* rather than by what the device does with what
-/// lands in it. Every engine-owned device is registered through
-/// `EngineHandle::add_hosted_plugin`, which attaches a note store
-/// unconditionally — a hosted reverb or a CLAP note effect gets one
-/// exactly as an instrument does. The drain reaches every hosted slot, and
+/// lands in it. Every engine-owned device is registered by an
+/// `AddHostedPlugin`, which attaches a note store unconditionally — a hosted
+/// reverb or a CLAP note effect gets one exactly as an instrument does, and so
+/// does a Crumbs slot, which `commands::crumbs::register_crumbs_slot`
+/// registers the same way. The drain reaches every hosted slot, and
 /// the wrapper decides from there: CLAP hands every plugin the events, so a
 /// reverb ignores them and a note effect reads them while its note output
 /// has no route in this host; VST3 withholds them from a plugin with no
 /// event input bus (`stage_midi`). Neither is a refusal the mapping makes.
 /// A built-in is an `AddDetachedEffect`, which carries a store exactly when
-/// the type sounds notes, and the crumbs capture slot is not in
-/// `registry.devices` at all.
+/// the type sounds notes.
 ///
 /// So ownership no longer stands in for store presence: a built-in instrument
 /// holds one while a built-in effect does not, and the registered type is what
@@ -1887,7 +1921,10 @@ fn push_automation(
 ///
 /// A device whose `externalInstanceId` the engine *does* own never reaches here:
 /// [`map_device`] splices it by that instance's effect id, and a lookup miss
-/// there carries its own reason naming the instance.
+/// there carries its own reason naming the instance. A Crumbs device never
+/// reaches here either, for the same shape of reason: the sampler is an
+/// engine-owned instance the mapper splices rather than a body it builds, so
+/// [`map_device`] answers it ahead of this.
 fn no_native_body(device: &DevicePayload) -> Option<String> {
     if device.external_instance_id.is_some() || device.external_plugin_id.is_some() {
         return Some(format!(
@@ -2086,6 +2123,15 @@ struct EngineOwnedDevice {
     chain_kind: DeviceKind,
 }
 
+/// The project's device type for the Crumbs sampler.
+///
+/// Mirrors `src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptor.ts`'s
+/// `id`, which is the value the renderer writes into every Crumbs device it
+/// creates. Not a `BuiltinEffectType` arm: the engine builds no Crumbs body,
+/// because `commands::crumbs` already owns one instance per device and the
+/// mapper borrows it.
+const CRUMBS_DEVICE_TYPE: &str = "builtin-crumbs";
+
 /// What one device maps onto natively, and who owns the effect it names.
 ///
 /// Two populations reach a strip chain. A built-in device is *built* here, on
@@ -2133,6 +2179,7 @@ fn map_device(
     contributes_audio: bool,
     sample_rate: f32,
     engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
+    attached_crumbs: &HashMap<String, usize>,
     levain_banks: &mut LevainBankStore,
     ops: &mut Vec<GraphCommand>,
 ) -> Result<Option<MappedDevice>, String> {
@@ -2168,6 +2215,52 @@ fn map_device(
             effect_id,
             builtin: None,
             chain_kind,
+            scoring_telemetry: None,
+        }));
+    }
+
+    // Crumbs is spliced, never built. `commands::crumbs` owns one engine
+    // instance per device — created by the panel under the device's own id and
+    // registered detached — so the chain borrows that instance exactly as it
+    // borrows a hosted plugin, under the same `builtin: None` ownership: it is
+    // released from a chain rather than retired, its parameters travel on
+    // `set_crumbs_param` rather than through the engine's built-in vocabulary,
+    // and its note store came with `AddHostedPlugin`.
+    //
+    // A device carrying external ids is not this one whichever type it names:
+    // those belong to the plugin host, and the arm above has already answered
+    // an `externalInstanceId`.
+    if device.device_type == CRUMBS_DEVICE_TYPE
+        && device.external_instance_id.is_none()
+        && device.external_plugin_id.is_none()
+    {
+        let Some(&plugin_id) = attached_crumbs.get(&device.id) else {
+            let reason = format!(
+                "device '{}' is a Crumbs sampler whose native instance is not attached to the \
+                 engine",
+                device.id
+            );
+            if contributes_audio {
+                return Err(reason);
+            }
+            // The same degradation law every unbindable device takes: a strip
+            // built only to keep the routing graph faithful contributes
+            // silence, so the device is omitted and its absence is what the
+            // strip report says.
+            return Ok(None);
+        };
+        charge_chain_slot(registry, &device.id)?;
+        if device.bypassed {
+            ops.push(GraphCommand::SetBypass(plugin_id, true));
+        }
+        return Ok(Some(MappedDevice {
+            effect_id: plugin_id,
+            builtin: None,
+            // A sampler sounds material of its own, so the chain sums it in at
+            // the device's place rather than running it over the signal: the
+            // strip hands it zeroed generator scratch and sums the result
+            // (`run_device_chain`, `crates/daw-engine/src/timeline.rs:2954-2982`).
+            chain_kind: DeviceKind::Generator,
             scoring_telemetry: None,
         }));
     }
@@ -2609,12 +2702,20 @@ pub(crate) fn strip_reports(
 /// those render with no live engine, so no instance exists for a device to
 /// bind to and an external device on a sounding strip refuses there exactly
 /// as it did before binding existed.
+///
+/// `attached_crumbs` is device id → engine plugin id for every Crumbs instance
+/// the engine holds. Kept apart from `engine_owned_devices` rather than merged
+/// into it: the two are different id spaces — a hosted plugin's instance id
+/// against a Crumbs device's own id — and a miss in each carries its own
+/// reason. It is empty for every offline path, for the same reason the hosted
+/// lookup is.
 fn map_batch(
     batch: &GraphBatchPayload,
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     sample_rate: f32,
     engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
+    attached_crumbs: &HashMap<String, usize>,
     levain_banks: &mut LevainBankStore,
 ) -> Result<MappedBatch, String> {
     if batch.schema_version != 1 {
@@ -2649,6 +2750,7 @@ fn map_batch(
             samples,
             sample_rate,
             engine_owned_devices,
+            attached_crumbs,
             levain_banks,
             &mut budgets,
             &mut ops,
@@ -2714,6 +2816,7 @@ fn map_command(
     samples: &TimelineSamplePool,
     sample_rate: f32,
     engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
+    attached_crumbs: &HashMap<String, usize>,
     levain_banks: &mut LevainBankStore,
     budgets: &mut QueueBudgets,
     ops: &mut Vec<GraphCommand>,
@@ -2777,6 +2880,7 @@ fn map_command(
                     *contributes_audio,
                     sample_rate,
                     engine_owned_devices,
+                    attached_crumbs,
                     levain_banks,
                     ops,
                 )?
@@ -2885,6 +2989,7 @@ fn map_command(
                     *contributes_audio,
                     sample_rate,
                     engine_owned_devices,
+                    attached_crumbs,
                     levain_banks,
                     ops,
                 )?
@@ -3079,6 +3184,7 @@ fn map_command(
                 strip.contributes_audio,
                 sample_rate,
                 engine_owned_devices,
+                attached_crumbs,
                 levain_banks,
                 ops,
             )?
@@ -4064,16 +4170,21 @@ pub async fn apply_graph_commands(
     // ahead of `working`'s clone below, so the batch fence that follows
     // inherits the count in the order the two fences take on the ring — the
     // registration first, then the batch it precedes.
-    match crumbs::attach_dormant_crumbs(crumbs, &mut registry_guard, &state.engine) {
-        Ok(refusals) => {
-            for (instance_id, reason) in refusals {
-                eprintln!(
+    let attached_crumbs_this_batch =
+        match crumbs::attach_dormant_crumbs(crumbs, &mut registry_guard, &state.engine) {
+            Ok(report) => {
+                for (instance_id, reason) in report.refusals {
+                    eprintln!(
                     "[Crumbs] instance '{instance_id}' could not attach to the engine: {reason}"
                 );
+                }
+                report.attached
             }
-        }
-        Err(error) => eprintln!("[Crumbs] dormant instances could not be attached: {error}"),
-    }
+            Err(error) => {
+                eprintln!("[Crumbs] dormant instances could not be attached: {error}");
+                Vec::new()
+            }
+        };
 
     // Read outside the engine lock, in the load path's order, and spent as both
     // the batch's reservation and the attach's limit.
@@ -4105,6 +4216,23 @@ pub async fn apply_graph_commands(
             )
         })
         .collect();
+
+    // The Crumbs instances a device may be spliced onto, read here for the
+    // same reason. Unlike hosted plugins, the attach that can add to this
+    // lookup has already run above — so an instance this very batch took over
+    // binds in this batch rather than waiting for the next one. A panel opened
+    // before the first play therefore becomes audible on the batch that starts
+    // the engine, with no silent block in between.
+    let attached_crumbs = match crumbs::attached_crumbs_instances(crumbs) {
+        Ok(attached) => attached,
+        Err(error) => {
+            // A lock this cannot take is not the batch's failure: an empty
+            // lookup falls back on the degradation law every unbindable device
+            // already takes, and the next batch reads it again.
+            eprintln!("[Crumbs] attached instances could not be read: {error}");
+            HashMap::new()
+        }
+    };
 
     let mut engine_guard = state
         .engine
@@ -4144,6 +4272,7 @@ pub async fn apply_graph_commands(
         &samples,
         engine.sample_rate(),
         &engine_owned_devices,
+        &attached_crumbs,
         &mut levain_banks,
     ) {
         Ok(mapped) => mapped,
@@ -4228,6 +4357,14 @@ pub async fn apply_graph_commands(
             instance_id: attached.instance_id,
         })
         .collect();
+    // Reported from the attach that ran ahead of the mapping, unlike the
+    // plugins above: the crumbs attach has to precede `map_batch` for the
+    // same-batch binding, and this batch is `applied` by the time the payload
+    // is built, so the report is honest either way.
+    let attached_crumbs: Vec<AttachedCrumbsPayload> = attached_crumbs_this_batch
+        .into_iter()
+        .map(|instance_id| AttachedCrumbsPayload { instance_id })
+        .collect();
 
     working.runtime_revision = registry_guard.runtime_revision + 1;
     let revision = working.runtime_revision;
@@ -4242,6 +4379,7 @@ pub async fn apply_graph_commands(
         admitted_batch,
         mapped.reports,
         attached_plugins,
+        attached_crumbs,
     ))
 }
 
@@ -4375,6 +4513,7 @@ fn replay_prior_commands(
             registry,
             samples,
             sample_rate,
+            &HashMap::new(),
             &HashMap::new(),
             levain_banks,
         )
@@ -4517,6 +4656,7 @@ pub async fn map_graph_batch(
         &samples,
         sample_rate as f32,
         &HashMap::new(),
+        &HashMap::new(),
         &mut levain_banks,
     );
     drop(levain_banks);
@@ -4570,6 +4710,7 @@ fn map_offline_batch(
         &mut registry,
         samples,
         sample_rate,
+        &HashMap::new(),
         &HashMap::new(),
         levain_banks,
     )?
@@ -4728,6 +4869,28 @@ mod tests {
             samples,
             sample_rate,
             engine_owned_devices,
+            &HashMap::new(),
+            &mut LevainBankStore::default(),
+        )
+    }
+
+    /// Map a batch against a given Crumbs lookup — device id → the engine
+    /// plugin id `commands::crumbs` registered for that device's instance —
+    /// and against an engine holding no hosted plugin.
+    fn map_crumbs_batch(
+        batch: &GraphBatchPayload,
+        registry: &mut GraphRegistry,
+        samples: &TimelineSamplePool,
+        sample_rate: f32,
+        attached_crumbs: &HashMap<String, usize>,
+    ) -> Result<MappedBatch, String> {
+        map_batch(
+            batch,
+            registry,
+            samples,
+            sample_rate,
+            &HashMap::new(),
+            attached_crumbs,
             &mut LevainBankStore::default(),
         )
     }
@@ -5590,7 +5753,7 @@ mod tests {
 
         let alien_device = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
-              "devices": [ { "id": "d1", "type": "builtin-crumbs", "bypassed": false, "parameterValues": {} } ],
+              "devices": [ { "id": "d1", "type": "builtin-eq", "bypassed": false, "parameterValues": {} } ],
               "honorMuted": true, "contributesAudio": true }
         ]));
         let refusal = map_unbound_batch(
@@ -5608,7 +5771,7 @@ mod tests {
         let batch = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
               "devices": [
-                  { "id": "d1", "type": "builtin-crumbs", "bypassed": false, "parameterValues": {} },
+                  { "id": "d1", "type": "builtin-eq", "bypassed": false, "parameterValues": {} },
                   { "id": "d2", "type": "knead", "bypassed": false, "parameterValues": {} }
               ],
               "honorMuted": true, "contributesAudio": false }
@@ -5652,7 +5815,7 @@ mod tests {
         let degraded = map_unbound_batch(
             &batch(json!([
                 { "kind": "insert-device", "trackId": "t1", "index": 0,
-                  "device": { "id": "d-alien", "type": "builtin-crumbs", "bypassed": false,
+                  "device": { "id": "d-alien", "type": "builtin-eq", "bypassed": false,
                               "parameterValues": {} } }
             ])),
             &mut registry,
@@ -6917,7 +7080,7 @@ mod tests {
 
         let mut crumbs_slots = 0;
         while let Ok(command) = command_rx.pop() {
-            if let GraphCommand::AddPlugin(_, plugin, Some(_)) = command {
+            if let GraphCommand::AddHostedPlugin(_, plugin, _) = command {
                 if plugin.as_any().downcast_ref::<CrumbsPluginSlot>().is_some() {
                     crumbs_slots += 1;
                 }
@@ -8117,6 +8280,9 @@ mod tests {
             vec![AttachedPluginPayload {
                 instance_id: "i1".to_string(),
             }],
+            vec![AttachedCrumbsPayload {
+                instance_id: "d-crumbs".to_string(),
+            }],
         ))
         .expect("applied serializes");
         assert_eq!(
@@ -8124,7 +8290,8 @@ mod tests {
             concat!(
                 r#"{"acceptance":"accepted","application":"applied","runtimeRevision":3,"#,
                 r#""admittedBatch":5,"reports":[{"kind":"track","id":"t1","deviceIds":["d1"]}],"#,
-                r#""attachedPlugins":[{"instanceId":"i1"}]}"#
+                r#""attachedPlugins":[{"instanceId":"i1"}],"#,
+                r#""attachedCrumbs":[{"instanceId":"d-crumbs"}]}"#
             )
         );
 
@@ -10669,6 +10836,355 @@ mod tests {
         );
     }
 
+    // ── A Crumbs device splices its engine-owned instance ────────────────
+
+    /// The engine plugin id the fixture's Crumbs instance was registered
+    /// under. It is deliberately outside the graph's own allocation: the
+    /// splice borrows the engine's id, so the registry must never mint one
+    /// beside it.
+    const CRUMBS_PLUGIN_ID: usize = 41;
+
+    /// One strip carrying one Crumbs device, parameterised on the two things
+    /// the splice turns on and on the parameter names the panel writes.
+    ///
+    /// The device carries no external ids at all — a Crumbs runtime is created
+    /// by `crumbs_create`, not loaded by the plugin host — which is exactly
+    /// what parts this arm from the hosted-plugin one.
+    fn crumbs_strip(contributes_audio: bool, bypassed: bool, parameter_values: Value) -> Value {
+        json!([{
+            "kind": "create-track-strip",
+            "trackId": "pads",
+            "name": "Pads",
+            "state": strip_state(0.8),
+            "devices": [
+                { "id": "d-crumbs", "name": "Crumbs", "type": "builtin-crumbs",
+                  "bypassed": bypassed, "parameterValues": parameter_values }
+            ],
+            "honorMuted": true,
+            "contributesAudio": contributes_audio
+        }])
+    }
+
+    /// The lookup `apply_graph_commands` reads out of `CrumbsState`: the
+    /// device's own id against the engine plugin id its instance holds. The
+    /// instance id *is* the device id, so there is no second name to map.
+    fn attached_crumbs_lookup() -> HashMap<String, usize> {
+        HashMap::from([("d-crumbs".to_string(), CRUMBS_PLUGIN_ID)])
+    }
+
+    /// The splice itself. The device takes the instance's own engine plugin id
+    /// — nothing is registered and nothing is allocated — and it joins the
+    /// chain as a generator, because a sampler feeds its strip rather than
+    /// processing it.
+    ///
+    /// Before this, `register_crumbs_slot` homed the instance on the master
+    /// insert chain, so the pads sounded outside the track's fader, pan, mute,
+    /// inserts and sends.
+    #[test]
+    fn a_crumbs_device_splices_the_attached_instance_as_a_strip_generator() {
+        let mut registry = GraphRegistry::default();
+        let mapped = map_crumbs_batch(
+            &batch(crumbs_strip(true, false, json!({}))),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("an attached Crumbs instance splices onto a sounding strip");
+
+        assert_eq!(mapped.reports[0].device_ids, vec!["d-crumbs".to_string()]);
+        assert_eq!(inserted_effect_ids(&mapped.ops), vec![CRUMBS_PLUGIN_ID]);
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Generator],
+            "spliced as an effect the sampler would process the strip instead of feeding it"
+        );
+        assert!(
+            !mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddPlugin(..)
+                    | GraphCommand::AddHostedPlugin(..)
+                    | GraphCommand::AddDetachedEffect(..)
+            )),
+            "the instance is borrowed, never registered a second time"
+        );
+        assert!(
+            registry
+                .devices
+                .get("d-crumbs")
+                .expect("the splice registers the device")
+                .builtin
+                .is_none(),
+            "the registry entry has to read engine-owned, or the release, bypass and \
+             parameter laws all fall to the built-in side"
+        );
+        // The registry never allocated for it, so the next built device still
+        // takes the first graph effect id.
+        assert_eq!(registry.next_effect_id, FIRST_GRAPH_EFFECT_ID);
+    }
+
+    /// A Crumbs device whose instance the engine does not hold takes the
+    /// degradation law every unbound device takes: a strip the mix is short of
+    /// refuses the batch whole, a silent one drops the device and reports the
+    /// gap.
+    ///
+    /// The reason names the device and says what is missing, because a caller
+    /// that reads "no native realisation" would go looking for a body the
+    /// engine does have.
+    #[test]
+    fn a_crumbs_device_with_no_attached_instance_refuses_a_contributing_strip_and_degrades_a_silent_one(
+    ) {
+        const UNATTACHED: &str = "device 'd-crumbs' is a Crumbs sampler whose native instance is \
+                                  not attached to the engine";
+
+        let refusal = map_crumbs_batch(
+            &batch(crumbs_strip(true, false, json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &HashMap::new(),
+        )
+        .expect_err("a sounding strip is short of the sampler, so the batch refuses whole");
+        assert!(
+            refusal.contains(UNATTACHED),
+            "the refusal must name the device and what is missing, got: {refusal}"
+        );
+
+        let mut registry = GraphRegistry::default();
+        let degraded = map_crumbs_batch(
+            &batch(crumbs_strip(false, false, json!({}))),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &HashMap::new(),
+        )
+        .expect("a silent strip degrades the sampler rather than refusing the batch");
+        assert_eq!(
+            degraded.reports[0].device_ids,
+            Vec::<String>::new(),
+            "the report is an observation: the degraded device is visibly absent"
+        );
+        assert!(inserted_effect_ids(&degraded.ops).is_empty());
+        assert!(!registry.devices.contains_key("d-crumbs"));
+    }
+
+    /// A spliced Crumbs device is a MIDI sink, because the registration that
+    /// homed it carried a note store unconditionally — so both MIDI commands
+    /// address the instance's own plugin id rather than refusing for want of a
+    /// store.
+    #[test]
+    fn a_spliced_crumbs_device_takes_schedule_midi_and_a_live_note() {
+        let mut registry = GraphRegistry::default();
+        map_crumbs_batch(
+            &batch(crumbs_strip(true, false, json!({}))),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("the strip splices the sampler");
+
+        let scheduled = map_crumbs_batch(
+            &schedule_midi_batch("pads", "d-crumbs", json!([note_at(0.25, 60, 1)])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("a spliced sampler holds a note store, so scheduling at it maps");
+        let GraphCommand::ScheduleMidiNotes { plugin_id, notes } = &scheduled.ops[0] else {
+            panic!("schedule-midi must map onto ScheduleMidiNotes");
+        };
+        assert_eq!(*plugin_id, CRUMBS_PLUGIN_ID);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].event.note, 60);
+
+        let live = map_crumbs_batch(
+            &send_midi_note_batch("pads", "d-crumbs", 60, 100, 0, true),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("a live note at a spliced sampler maps");
+        let (plugin_id, event) = only_note_op(&live.ops);
+        assert_eq!(plugin_id, CRUMBS_PLUGIN_ID);
+        assert_eq!(event.note, 60);
+        assert!(event.is_note_on);
+    }
+
+    /// Crumbs parameter names are the sampler's own vocabulary and travel over
+    /// `set_crumbs_param`, so a batch naming one must map rather than refuse —
+    /// holding them against `DeviceParam::from_name` would decline every batch
+    /// a Crumbs panel writes into.
+    #[test]
+    fn a_spliced_crumbs_parameter_write_is_not_a_refusal() {
+        let mapped = map_crumbs_batch(
+            &batch(crumbs_strip(
+                true,
+                false,
+                json!({ "grainSize": 0.2, "spray": 0.75, "pitch": -12.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("a Crumbs parameter name must not be held against the built-in vocabulary");
+        assert!(
+            !mapped
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::SetParam(CRUMBS_PLUGIN_ID, ..))),
+            "the graph carries the sampler's place in the chain and its bypass, never its \
+             parameters: those travel over set_crumbs_param"
+        );
+    }
+
+    /// Bypass is the one graph-owned thing on a spliced sampler, because the
+    /// chain is what skips the instance.
+    #[test]
+    fn a_bypassed_crumbs_device_carries_its_bypass_to_the_engine() {
+        let mapped = map_crumbs_batch(
+            &batch(crumbs_strip(true, true, json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("a bypassed Crumbs device splices like any other");
+        assert!(
+            mapped
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::SetBypass(CRUMBS_PLUGIN_ID, true))),
+            "the bypass must reach the effect the chain runs"
+        );
+    }
+
+    /// Taking the device off the strip releases the instance and retires
+    /// nothing: the runtime belongs to the `crumbs_create` that made it, and a
+    /// panel, a sample and an armed take are all still holding it. Retiring it
+    /// here would free the sampler out from under all three.
+    #[test]
+    fn removing_a_spliced_crumbs_device_releases_it_without_retiring_the_instance() {
+        let mut registry = GraphRegistry::default();
+        map_crumbs_batch(
+            &batch(crumbs_strip(true, false, json!({}))),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("the strip splices the sampler");
+
+        let removed = map_crumbs_batch(
+            &batch(json!([
+                { "kind": "remove-device", "trackId": "pads", "deviceId": "d-crumbs" }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("the removal maps");
+
+        assert_eq!(
+            removed
+                .ops
+                .iter()
+                .filter(|op| matches!(
+                    op,
+                    GraphCommand::RemoveTrackDevice {
+                        effect_id: CRUMBS_PLUGIN_ID,
+                        ..
+                    }
+                ))
+                .count(),
+            1,
+            "the device leaves its chain by being released"
+        );
+        assert!(
+            !removed
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::RemoveTrackDeviceRetired { .. })),
+            "retiring the effect would free a live Crumbs runtime"
+        );
+        assert!(
+            !removed
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::RemovePlugin(..))),
+            "only destroy_crumbs removes the instance from the engine"
+        );
+        assert_eq!(removed.reports[0].device_ids, Vec::<String>::new());
+    }
+
+    /// An instance this very batch took over binds in this very batch.
+    ///
+    /// The attach runs ahead of the lookup `map_batch` is handed, so the
+    /// sampler a musician created before the engine started is audible on the
+    /// first batch that starts it — rather than silent for one batch and then
+    /// spliced by the next. The applied payload names the instance, which is
+    /// what corrects the `attached: false` its create reported.
+    #[test]
+    fn a_dormant_crumbs_instance_binds_in_the_batch_that_attaches_it() {
+        use crate::host::native_bridge::CrumbsPluginSlot;
+
+        let state = AppState::default();
+        let crumbs = CrumbsState::default();
+        block_on_test(crumbs::create_crumbs(
+            "d-crumbs".to_string(),
+            &crumbs,
+            &state,
+        ))
+        .expect("a create before the engine runs holds a dormant instance");
+
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(256);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": crumbs_strip(true, false, json!({})) }),
+            &state,
+            &crumbs,
+        ))
+        .expect("the batch resolves to a result");
+
+        assert_eq!(
+            result["application"], "applied",
+            "the sounding strip would have refused had the sampler still been unattached"
+        );
+        assert_eq!(
+            result["attachedCrumbs"],
+            json!([{ "instanceId": "d-crumbs" }]),
+            "the batch reports the instance it took over"
+        );
+
+        let mut attached_plugin_id = None;
+        let mut spliced = Vec::new();
+        while let Ok(command) = command_rx.pop() {
+            match command {
+                GraphCommand::AddHostedPlugin(id, plugin, _) => {
+                    if plugin.as_any().downcast_ref::<CrumbsPluginSlot>().is_some() {
+                        attached_plugin_id = Some(id);
+                    }
+                }
+                GraphCommand::InsertTrackDevice { entry, .. } => spliced.push(entry),
+                _ => {}
+            }
+        }
+
+        let attached_plugin_id = attached_plugin_id.expect("the batch attached the dormant slot");
+        assert_eq!(spliced.len(), 1, "the strip holds exactly the one device");
+        assert_eq!(
+            spliced[0].effect_id, attached_plugin_id,
+            "the splice borrows the very id the attach registered in this same batch"
+        );
+        assert_eq!(spliced[0].kind, DeviceKind::Generator);
+    }
+
     /// An offline render has no engine, so it has no instances: the binding
     /// path cannot open there, and an external device on a sounding strip
     /// refuses exactly as it did before binding existed.
@@ -11079,7 +11595,7 @@ mod tests {
     #[test]
     fn an_unbuildable_device_type_refuses_a_contributing_strip_naming_the_device_and_type() {
         let refusal = map_unbound_batch(
-            &batch(strip_with_device("d-crumbs", "builtin-crumbs", json!({}))),
+            &batch(strip_with_device("d-unbuildable", "builtin-eq", json!({}))),
             &mut GraphRegistry::default(),
             &sample_pool(),
             48_000.0,
@@ -11087,7 +11603,7 @@ mod tests {
         .expect_err("a type with no native body must refuse a contributing strip");
 
         assert!(
-            refusal.contains("d-crumbs") && refusal.contains("builtin-crumbs"),
+            refusal.contains("d-unbuildable") && refusal.contains("builtin-eq"),
             "the refusal must name the device and the type it read, got: {refusal}"
         );
     }
@@ -11210,6 +11726,7 @@ mod tests {
             &mut GraphRegistry::default(),
             &sample_pool(),
             48_000.0,
+            &HashMap::new(),
             &HashMap::new(),
             &mut banks,
         )
