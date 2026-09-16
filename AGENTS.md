@@ -180,6 +180,8 @@ locally at other lanes' expense.
 | Prove wasm freshness      | `pnpm wasm:verify`                           |
 | Restamp a dependency bump | `pnpm release:restamp`                       |
 
+Structural code search uses the pinned read-only `ast-grep` (`pnpm exec ast-grep run`) per [`.agents/skills/ast-grep/`](./.agents/skills/ast-grep/); rewrite modes are forbidden.
+
 Tests use at most two workers. Playwright uses one. See [testing](./docs/06-testing.md).
 
 Never rerun a failed check to obtain green, bump a head to reroll it, or treat retry passes as
