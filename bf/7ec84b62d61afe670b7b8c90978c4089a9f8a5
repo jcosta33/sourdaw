@@ -1,0 +1,19 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredRangeVsKnobTravel.spec.ts
+  s_914af328b3988f::t_0cf9b0da2321b3 2,30,62,66-77,829-1047,1051,1058-1065,1072-1079,1086-1090,1093-1096,1098-1099,1103,1110-1127,1752-1755,1780-1791,1836,1871,2269-2270,2273-2280,2376-2381,2909
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bf7ec84b62d61afe670b7b8c90978c4089a9f8a5",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
