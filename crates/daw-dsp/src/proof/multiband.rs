@@ -1,6 +1,9 @@
 //! Multiband dynamics — per-band feed-forward compressor with LR-4 crossover.
 
 use super::crossover::FourBandSplitter;
+use super::metering::SILENCE_DB;
+use crate::params::{ATTACK, RELEASE, THRESHOLD, THRESHOLD_MAX_DB, THRESHOLD_MIN_DB};
+use crate::primitives::LINEAR_TO_DB_FLOOR;
 
 const NUM_BANDS: usize = 4;
 
@@ -29,7 +32,7 @@ impl BandCompressor {
             knee_width: 6.0,
             makeup_db: 0.0,
             auto_makeup: true,
-            envelope: -100.0,
+            envelope: SILENCE_DB,
             bypassed: false,
             solo: false,
             sample_rate: sr,
@@ -148,10 +151,10 @@ impl MultibandDynamics {
         let band = &mut self.bands[idx];
 
         match param {
-            "threshold" => band.threshold = value.clamp(-60.0, 0.0),
+            THRESHOLD => band.threshold = value.clamp(THRESHOLD_MIN_DB, THRESHOLD_MAX_DB),
             "ratio" => band.ratio = value.clamp(1.0, 20.0),
-            "attack" => band.set_attack(value.clamp(1.0, 200.0)),
-            "release" => band.set_release(value.clamp(10.0, 2000.0)),
+            ATTACK => band.set_attack(value.clamp(1.0, 200.0)),
+            RELEASE => band.set_release(value.clamp(10.0, 2000.0)),
             "knee" => band.knee_width = value.clamp(0.0, 12.0),
             "makeup" => band.makeup_db = value.clamp(-12.0, 24.0),
             "auto_makeup" => band.auto_makeup = value > 0.5,
@@ -181,10 +184,10 @@ impl MultibandDynamics {
                 if !band.bypassed {
                     // Detect level (peak of L/R)
                     let peak = l.abs().max(r.abs());
-                    let level_db = if peak > 1e-10 {
+                    let level_db = if peak > LINEAR_TO_DB_FLOOR {
                         20.0 * peak.log10()
                     } else {
-                        -100.0
+                        SILENCE_DB
                     };
 
                     let gr_lin = {

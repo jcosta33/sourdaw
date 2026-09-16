@@ -31,6 +31,11 @@ use wasm_bindgen::prelude::*;
 /// frames per call — `LevainInstance::new` sizes `left_buf` and `right_buf` at
 /// exactly this length, and `process` clamps its requested size to it to
 /// avoid audio-thread allocation.
+///
+/// Restatement of the engine's callback ceiling,
+/// `daw_engine::audio_thread::MAX_CALLBACK_FRAMES`: `daw-dsp` cannot depend
+/// on the engine, so the figure is restated here and every copy must move
+/// with the ceiling.
 pub const LEVAIN_BLOCK_FRAMES: usize = 4096;
 
 /// WASM-exported Levain instance for AudioWorklet.

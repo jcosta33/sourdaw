@@ -31,7 +31,18 @@ use std::thread;
 use std::time::Duration;
 use triple_buffer::Input;
 
-pub(crate) const MAX_CALLBACK_FRAMES: usize = 4096;
+/// Largest block the audio callback renders in one call: every scratch the
+/// callback owns is sized for this, and the device negotiation never asks for
+/// more. `daw-plugin-host` activates its plugins against the same figure —
+/// that crate cannot depend on this one, so it restates the value as
+/// `clap_wrapper::MAX_BUFFER` under the TS↔Rust-style lockstep rule, and
+/// `sourdaw-native` welds the pair with a compile-time equality assert. On
+/// the wasm side the `daw-dsp` instance wrappers and the TS worklet
+/// processors restate the same figure for their entry clamps and scratch
+/// buffers — as named consts (`GRAND_BOULE_BLOCK_FRAMES`,
+/// `LEVAIN_BLOCK_FRAMES`, the two `MAX_BLOCK_SIZE`s, `MAX_SCRATCH_FRAMES`)
+/// and as raw 4096 literals — none of which can depend on the engine either.
+pub const MAX_CALLBACK_FRAMES: usize = 4096;
 /// The period the engine asks a device for when the device lets it choose.
 /// 512 frames is the common professional default (Live, Logic, Reaper all ship
 /// a buffer of this order): low enough for playable monitoring latency, high

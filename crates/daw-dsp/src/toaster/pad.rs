@@ -1,6 +1,7 @@
 //! Pad configuration for a single drum pad in the Toaster drum machine.
 
 use super::engines::DrumEngineType;
+use crate::params::{DECAY, DRIVE, TONE, TUNE};
 use crate::primitives::{normalized_cutoff_from_hz, normalized_resonance_from_q};
 
 /// One drum pad's configuration. Does not contain DSP state —
@@ -91,10 +92,10 @@ impl Pad {
             "pan" => self.pan = value.clamp(-1.0, 1.0),
             "muted" => self.muted = value > 0.5,
             "soloed" => self.soloed = value > 0.5,
-            "tune" => self.tune = value.clamp(-24.0, 24.0),
-            "decay" => self.decay = value.clamp(0.0, 1.0),
-            "tone" => self.tone = value.clamp(0.0, 1.0),
-            "drive" => self.drive = value.clamp(0.0, 10.0),
+            TUNE => self.tune = value.clamp(-24.0, 24.0),
+            DECAY => self.decay = value.clamp(0.0, 1.0),
+            TONE => self.tone = value.clamp(0.0, 1.0),
+            DRIVE => self.drive = value.clamp(0.0, 10.0),
             "filter_cutoff" => {
                 // Accept the 20-20000 Hz range `ToasterKit.filterCutoff` carries,
                 // normalize to 0-1. `SvfFilter::tick` re-expands with the exact

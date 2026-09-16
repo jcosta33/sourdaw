@@ -461,6 +461,9 @@ impl ConvolutionEngine {
         self.loaded = true;
     }
 
+    // Param-name arms here restate the wire vocabulary daw-dsp owns in
+    // `crates/daw-dsp/src/params.rs` (this crate cannot depend on that one);
+    // keep the names in step with it.
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "mix" => self.mix = value.clamp(0.0, 1.0),

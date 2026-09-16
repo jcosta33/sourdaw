@@ -1103,7 +1103,7 @@
         "99432f2bf443219b3eb77e65e1a18583faad422e"
       ],
       "digests": [
-        "sha256:f537ba6b1f49b00f2d11b2c64d4335ee73dfa697273570a43710e2cd14f92bb6:crates/daw-dsp/src/toaster/engines/kick_808.rs",
+        "sha256:fc5c55a78a47850670451df87c25effe81da940bbc13fd49ffe79d2eab3bd6f3:crates/daw-dsp/src/toaster/engines/kick_808.rs",
         "sha256:f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949:release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs",
         "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:LICENSE.txt",
         "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt",
@@ -1194,14 +1194,14 @@
         "current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners"
       ],
       "digests": [
-        "tracked-set-sha256:0f8dc0394c50a1ef88370d90b797a89c3f860218c3c2755b4ac5f1f2723b958d:grand-boule-native-rust",
+        "tracked-set-sha256:d74e79104ca9422313743b9619f4b9b5577789d7f5f1c5519ac237ae7d68849c:grand-boule-native-rust",
         "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
         "tracked-set-sha256:2daad4fe71162dbeab4e9f716fc805e5cea1a22133f07d4550b9202718abb1de:grand-boule-discovery-catalog",
         "tracked-set-sha256:d7fc8b8a840827f945dd0350ed3d757004743e7bcec88ab926991268fc1124a8:grand-boule-factory-admission",
         "tracked-set-sha256:38f73a1917af658194f63d7966c5f0338b893fb4835e576ac99c16c512394e24:grand-boule-live-runtime",
         "tracked-set-sha256:39981a3f4495b2604d00abae1b69f1d5c03057028314d3b507346209ffaf18fe:grand-boule-project-state",
         "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-        "tracked-set-sha256:4e3b7cbb2f2058c3d9efbe5be596bcda8b1a811b5e9129abee5e58f7d1730c5f:grand-boule-release-proof"
+        "tracked-set-sha256:12f941a83ae6eba419551a3b745bfc9f60561d0f6f9eca232230e4968966914a:grand-boule-release-proof"
       ],
       "licenses": [
         "Apache-2.0"
@@ -1332,13 +1332,13 @@
         "wasm-pack 0.14.0",
         "wasm-bindgen 0.2.127",
         "wasm-opt bundled-by-wasm-pack@0.14.0",
-        "daw-dsp sha256:93284832870b7c57fc7d562816a3dee388b847cdbba1c7b43210fb43b7c95aef",
+        "daw-dsp sha256:307360119903cdba5feb78ca42ee378f7488018291d66066865fb55f0845ce6d",
         "daw-wasm-decoder sha256:216f742f3bba1ebd053748f16f9c269468cdfe3c5d22f854107e4b7992931daa",
-        "proof-chamber sha256:afeba7697945b457f3974c6619769f410203cf09e82c02087559e948b9b1440a",
-        "scoring sha256:504f849118d5eb79c89dc5e91bcd4c993bb42ca3208086c8e3f02af8c45a17ce"
+        "proof-chamber sha256:4c758585040152c383c4befa8ab5667f620384610b9dcc97c7dd65b911eb7596",
+        "scoring sha256:7a62b22c4f4dccb8fa44c6936fc7dd071b0dfcdfcd395fbf4380434bc60e5047"
       ],
       "digests": [
-        "sha256:6cebcf5dbdc6730dc1e3397039f710ab173820f7bd90a3a51286f50a41a00b11:public/wasm/manifest.json"
+        "sha256:94a47fc06d176612225f1f1b97454ba6e3443186ca8498fd83c83a96fabf451e:public/wasm/manifest.json"
       ],
       "licenses": [
         "Apache-2.0",
@@ -1719,7 +1719,7 @@
     },
     {
       "path": "public/wasm/manifest.json",
-      "sha256": "6cebcf5dbdc6730dc1e3397039f710ab173820f7bd90a3a51286f50a41a00b11"
+      "sha256": "94a47fc06d176612225f1f1b97454ba6e3443186ca8498fd83c83a96fabf451e"
     }
   ],
   "externalReferences": [

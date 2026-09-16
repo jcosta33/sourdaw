@@ -1,6 +1,9 @@
 //! Gain computer — core static characteristic shared by all topologies.
 //! Implements the Giannoulis/Massberg/Reiss soft-knee algorithm.
 
+use crate::primitives::LINEAR_TO_DB_FLOOR;
+use crate::proof::metering::SILENCE_DB;
+
 /// Compute gain reduction in dB given input level in dB.
 /// Returns a value <= 0 (negative = more compression).
 #[inline]
@@ -45,8 +48,8 @@ pub fn db_to_linear(db: f32) -> f32 {
 /// Fast linear to dB.
 #[inline]
 pub fn linear_to_db(linear: f32) -> f32 {
-    if linear < 1e-10 {
-        -100.0
+    if linear < LINEAR_TO_DB_FLOOR {
+        SILENCE_DB
     } else {
         20.0 * linear.log10()
     }

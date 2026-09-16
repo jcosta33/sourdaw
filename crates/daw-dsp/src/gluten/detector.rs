@@ -1,7 +1,8 @@
 //! Level detection — RMS and peak detectors for sidechain analysis.
 
 use super::stereo::stereo_link;
-use crate::primitives::flush_denormal;
+use crate::primitives::{flush_denormal, LINEAR_TO_DB_FLOOR};
+use crate::proof::metering::SILENCE_DB;
 
 /// One-pole IIR RMS estimator.
 pub struct RmsDetector {
@@ -56,7 +57,7 @@ impl RmsDetector {
         if mean_square > 1e-20 {
             10.0 * mean_square.log10()
         } else {
-            -100.0
+            SILENCE_DB
         }
     }
 
@@ -72,10 +73,10 @@ impl PeakDetector {
     #[inline]
     pub fn detect(sample: f32) -> f32 {
         let abs = sample.abs();
-        if abs > 1e-10 {
+        if abs > LINEAR_TO_DB_FLOOR {
             20.0 * abs.log10()
         } else {
-            -100.0
+            SILENCE_DB
         }
     }
 }

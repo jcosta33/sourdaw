@@ -4,6 +4,7 @@
 //! two bandpass filters for that characteristic shimmer. Supports both
 //! closed (short decay) and open (long decay) modes.
 
+use crate::params::{DECAY, DRIVE, TONE, TUNE};
 use std::f32::consts::TAU;
 
 /// Metallic frequency ratios (inharmonic overtones of metal shells).
@@ -164,14 +165,14 @@ impl HiHatEngine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "tune" => self.tune = value.clamp(-24.0, 24.0),
-            "decay" => {
+            TUNE => self.tune = value.clamp(-24.0, 24.0),
+            DECAY => {
                 // Normalize 0-1 to amp decay range 0.01-0.8s
                 let v = value.clamp(0.0, 1.0);
                 self.decay = 0.01 + v * 0.79;
             }
-            "tone" => self.tone = value.clamp(0.0, 1.0),
-            "drive" => self.drive = value.clamp(0.0, 10.0),
+            TONE => self.tone = value.clamp(0.0, 1.0),
+            DRIVE => self.drive = value.clamp(0.0, 10.0),
             "open" => self.is_open = value > 0.5,
             _ => {}
         }

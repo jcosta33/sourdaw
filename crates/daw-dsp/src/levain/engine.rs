@@ -21,6 +21,7 @@ use super::tone::ToneTilt;
 use super::types::*;
 use super::voice::VoicePool;
 use super::zone::{SamplePool, ZoneMap, ZoneMapBuildError};
+use crate::params::{ATTACK, MASTER_GAIN, RELEASE, TONE};
 
 thread_local! {
     static SHARED_SAMPLE_BANKS: RefCell<HashMap<String, Weak<SamplePool>>> =
@@ -769,7 +770,7 @@ impl LevainEngine {
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             // ── Master ───────────────────────────────────────────────
-            "master_gain" => self.master_gain = value.clamp(0.0, 2.0),
+            MASTER_GAIN => self.master_gain = value.clamp(0.0, 2.0),
 
             // ── Humanization ─────────────────────────────────────────
             "humanize" | "humanize_amount" => self.humanizer.set_amount(value),
@@ -835,13 +836,13 @@ impl LevainEngine {
             // patch's own voicing — the panel's macro strip defaults them there
             // and resets them there, so a patch that never touches these knobs
             // renders exactly as it did before they existed.
-            "tone" => self.tone.set_position(value),
-            "attack" => {
+            TONE => self.tone.set_position(value),
+            ATTACK => {
                 self.envelope_scaling.attack = macro_time_scale(value);
                 self.voice_pool
                     .set_envelope_scaling(self.effective_envelope_scaling());
             }
-            "release" => {
+            RELEASE => {
                 self.envelope_scaling.release = macro_time_scale(value);
                 self.voice_pool
                     .set_envelope_scaling(self.effective_envelope_scaling());
