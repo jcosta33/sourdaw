@@ -1,0 +1,37 @@
+release/open-source-inventory.json
+  s_9b530f08172a54::t_962ab803f54147 349,785,794-795,798,807
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_914af328b3988f::t_88b4f81de0767b 130-131
+src/modules/AiRuntime/useCases/agentReference/__tests__/prepareStemImportBudget.spec.ts
+  s_914af328b3988f::t_c27f5620665392 39-40
+src/modules/Arrangement/useCases/__tests__/importAudioClipToTrack.spec.ts
+  s_914af328b3988f::t_49a04f383471fb 40-41
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceTrack.spec.ts
+  s_914af328b3988f::t_20bc8588fd930e 82-83
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/snapToZeroCrossing.spec.ts
+  s_914af328b3988f::t_89b99498a44da6 18-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "43314c1734ddbacaad4a52f92966f6992d478c6d",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
