@@ -314,12 +314,13 @@ export function searchAgentCatalog(input: AgentCatalogSearchInput): AgentCatalog
     }
 
     const state = libraryStore.value;
+    const entries = collectIndexedEntries(state);
     const anchorId = getQueryAnchorId(query);
-    if (anchorId !== null && !(state?.samples ?? []).some((record) => record.id === anchorId)) {
+    if (anchorId !== null && !entries.some((entry) => entry.record.id === anchorId)) {
         return { status: 'rejected', reason: 'unknown-catalog-id' };
     }
 
-    const outcome = matchEntries(collectIndexedEntries(state), query);
+    const outcome = matchEntries(entries, query);
     if (outcome.status === 'similarity-unavailable') {
         return toResults({ query, limit, candidates: [], warnings: ['similarity-unavailable'] });
     }

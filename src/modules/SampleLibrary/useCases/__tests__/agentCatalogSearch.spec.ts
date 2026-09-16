@@ -140,6 +140,41 @@ describe('searchAgentCatalog', () => {
                 reason: 'unknown-catalog-id',
             });
         });
+
+        it('should reject an anchor whose backing file no longer exists', () => {
+            seedLibrary([
+                buildRecord({ id: 'anchor-gone', displayName: 'Anchor Gone', exists: false }),
+                buildRecord({ id: 'neighbour-1', displayName: 'Closed Hat' }),
+            ]);
+            seedEmbeddings([
+                ['anchor-gone', new Float32Array([1, 0])],
+                ['neighbour-1', new Float32Array([0.9, 0.1])],
+            ]);
+
+            expect(searchAgentCatalog({ similarTo: 'anchor-gone' })).toEqual({
+                status: 'rejected',
+                reason: 'unknown-catalog-id',
+            });
+        });
+
+        it('should reject an anchor whose library root is no longer connected', () => {
+            seedLibrary(
+                [
+                    buildRecord({ id: 'anchor-orphan', displayName: 'Anchor Orphan', libraryRootId: 'detached-root' }),
+                    buildRecord({ id: 'neighbour-1', displayName: 'Closed Hat' }),
+                ],
+                [nativeRoot]
+            );
+            seedEmbeddings([
+                ['anchor-orphan', new Float32Array([1, 0])],
+                ['neighbour-1', new Float32Array([0.9, 0.1])],
+            ]);
+
+            expect(searchAgentCatalog({ similarTo: 'anchor-orphan' })).toEqual({
+                status: 'rejected',
+                reason: 'unknown-catalog-id',
+            });
+        });
     });
 
     describe('bounding', () => {
@@ -168,6 +203,16 @@ describe('searchAgentCatalog', () => {
             const result = expectResults(searchAgentCatalog({ text: 'kick', limit: 24 }));
 
             expect(result.items).toHaveLength(10);
+            expect(result.truncated).toBe(false);
+        });
+
+        it('should report no truncation when the match count exactly equals the default limit', () => {
+            seedLibrary(buildKickPool(8));
+
+            const result = expectResults(searchAgentCatalog({ text: 'kick' }));
+
+            expect(result.items).toHaveLength(8);
+            expect(result.total).toBe(8);
             expect(result.truncated).toBe(false);
         });
 
@@ -204,6 +249,23 @@ describe('searchAgentCatalog', () => {
             expect(factoryItem?.provenance.origin).toBe('factory');
             expect(factoryItem?.licensing.source).toBe('factory');
             expect(factoryItem?.licensing.rightsHolder).toBe('sourdaw');
+        });
+
+        it('should carry the full licensing object matching each origin', () => {
+            const result = expectResults(searchAgentCatalog({ text: 'kick' }));
+            const factoryItem = result.items.find((item) => item.id === 'factory-kick');
+            const nativeItem = result.items.find((item) => item.id === 'native-kick');
+
+            expect(factoryItem?.licensing).toEqual({
+                source: 'factory',
+                rightsHolder: 'sourdaw',
+                terms: 'bundled-with-sourdaw',
+            });
+            expect(nativeItem?.licensing).toEqual({
+                source: 'user-library',
+                rightsHolder: 'user',
+                terms: 'as-licensed-to-the-user',
+            });
         });
 
         it("should mark a connected-root record with the root's own provider", () => {
@@ -290,6 +352,31 @@ describe('searchAgentCatalog', () => {
             expect(result.items[1]?.evidence).toEqual([{ kind: 'tag', term: 'snare', matched: 'snare' }]);
         });
 
+        it('should rank a tag match above a path-only match and score each', () => {
+            seedLibrary([
+                buildRecord({ id: 'tag-hit', displayName: 'Kick Only', tags: ['thump'] }),
+                buildRecord({ id: 'path-hit', displayName: 'Kick Also', folder: 'thump-kit' }),
+            ]);
+
+            const result = expectResults(searchAgentCatalog({ text: 'thump' }));
+
+            expect(result.items.map((item) => item.id)).toEqual(['tag-hit', 'path-hit']);
+            expect(result.items[0]?.score).toBe(2);
+            expect(result.items[1]?.score).toBe(1);
+        });
+
+        it('should order equal-score matches alphabetically by display name', () => {
+            seedLibrary([
+                buildRecord({ id: 'k-3', displayName: 'Kick Charlie' }),
+                buildRecord({ id: 'k-1', displayName: 'Kick Alpha' }),
+                buildRecord({ id: 'k-2', displayName: 'Kick Bravo' }),
+            ]);
+
+            const result = expectResults(searchAgentCatalog({ text: 'kick' }));
+
+            expect(result.items.map((item) => item.displayName)).toEqual(['Kick Alpha', 'Kick Bravo', 'Kick Charlie']);
+        });
+
         it('should report a measured figure and a null where the record has none', () => {
             seedLibrary([
                 buildRecord({
@@ -327,6 +414,19 @@ describe('searchAgentCatalog', () => {
             expect(result.items.map((item) => item.id)).toEqual(['neighbour-1', 'neighbour-2']);
             expect(result.items[0]?.evidence).toEqual([{ kind: 'similar-to', anchorId: 'anchor-1', rank: 1 }]);
             expect(result.items[1]?.evidence).toEqual([{ kind: 'similar-to', anchorId: 'anchor-1', rank: 2 }]);
+        });
+
+        it('should score similarity evidence by rank distance from the limit ceiling', () => {
+            seedEmbeddings([
+                ['anchor-1', new Float32Array([1, 0])],
+                ['neighbour-1', new Float32Array([0.9, 0.1])],
+                ['neighbour-2', new Float32Array([0, 1])],
+            ]);
+
+            const result = expectResults(searchAgentCatalog({ similarTo: 'anchor-1' }));
+
+            expect(result.items[0]?.score).toBe(24);
+            expect(result.items[1]?.score).toBe(23);
         });
 
         it('should keep only the neighbours that also match the text, merging both evidences', () => {
