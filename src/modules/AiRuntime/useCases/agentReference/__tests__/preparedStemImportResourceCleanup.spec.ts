@@ -34,6 +34,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    projectDeviceForNativeBody: vi.fn((device) => device),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
     addMidiFxToStrip: vi.fn(),

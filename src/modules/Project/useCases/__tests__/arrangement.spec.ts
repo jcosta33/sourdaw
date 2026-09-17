@@ -65,6 +65,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     isDeviceCarriedByNativeSession: vi.fn(),
     matchesRuntimeDeviceChainTopology: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(),
+    projectDeviceForNativeBody: vi.fn((device) => device),
     nativeLiveGraphSessionSplice: vi.fn(),
     prepareCachedAudioBuffersFromIdb,
     readNativeEnginePlayheadSeconds: vi.fn(),

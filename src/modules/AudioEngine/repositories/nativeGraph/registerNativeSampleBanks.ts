@@ -23,9 +23,15 @@
  *
  * Only a topology replacement releases. A `replaceTopology` batch states the
  * whole graph, so a key it does not name is an instrument nothing plays any
- * more and `release_levain_bank` reclaims its PCM and every rate conversion of
- * it. An incremental batch states only a change: a key missing from it says
- * nothing about the strips the batch did not mention, so nothing is released.
+ * more *for that backend* and `release_levain_bank` reclaims its PCM and every
+ * rate conversion of it — but only once no other backend still claims it. The
+ * live backend and an offline bounce both stage into this one process-wide
+ * store, so a live replacement's whole graph says nothing about a bank a
+ * concurrent bounce is still mapping; `claimedNativeSampleBankKeysByBackend`
+ * is what keeps a release scoped to keys no backend speaks for, rather than to
+ * keys the one backend replacing its topology happens to name. An incremental
+ * batch states only a change: a key missing from it says nothing about the
+ * strips the batch did not mention, so nothing is released.
  */
 
 import { type AudioGraphCommand } from '../../models/AudioGraphBackend';
@@ -33,7 +39,11 @@ import { type NativeSampleBankLease } from '../../models/NativeSampleBank';
 
 import { collectNativeSampleBankKeys } from './collectNativeSampleBankKeys';
 import { type NativeGraphTransport } from './nativeGraphTransport';
-import { inFlightNativeSampleBankShipments, registeredNativeSampleBankKeys } from './registeredNativeSampleBankKeys';
+import {
+    claimedNativeSampleBankKeysByBackend,
+    inFlightNativeSampleBankShipments,
+    registeredNativeSampleBankKeys,
+} from './registeredNativeSampleBankKeys';
 
 /** Leases the bank one key names, or `null` for a key no module owns. */
 export type AcquireNativeSampleBank = (bankKey: string) => Promise<NativeSampleBankLease | null>;
@@ -49,6 +59,15 @@ export type RegisterNativeSampleBanksInput = Readonly<{
     acquire: AcquireNativeSampleBank;
     /** The batch's own `replaceTopology`, which is what licenses a release. */
     replaceTopology?: boolean;
+    /**
+     * Which backend this batch belongs to, so its claim on the process-wide
+     * store — {@link claimedNativeSampleBankKeysByBackend} — can be told apart
+     * from every other backend's. A bounce staging `levain:trumpet` and a live
+     * session replacing its topology without naming it are two different
+     * callers of this one store, and only the bounce's own claim says the key
+     * is still spoken for.
+     */
+    backendId: string;
 }>;
 
 /**
@@ -131,9 +150,19 @@ async function shipBank(
     await shipment;
 }
 
-async function releaseUnnamedBanks(transport: NativeGraphTransport, named: readonly string[]): Promise<void> {
+/** Whether any backend's current claim still names this key. */
+function isClaimedByAnyBackend(bankKey: string): boolean {
+    for (const claim of claimedNativeSampleBankKeysByBackend.values()) {
+        if (claim.has(bankKey)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+async function releaseUnnamedBanks(transport: NativeGraphTransport): Promise<void> {
     for (const bankKey of [...registeredNativeSampleBankKeys]) {
-        if (named.includes(bankKey)) {
+        if (isClaimedByAnyBackend(bankKey) || inFlightNativeSampleBankShipments.has(bankKey)) {
             continue;
         }
         try {
@@ -155,7 +184,7 @@ async function releaseUnnamedBanks(transport: NativeGraphTransport, named: reado
  * that did work from a call that found nothing to do.
  */
 export async function registerNativeSampleBanks(input: RegisterNativeSampleBanksInput): Promise<readonly string[]> {
-    const { transport, commands, acquire, replaceTopology } = input;
+    const { transport, commands, acquire, replaceTopology, backendId } = input;
     const named = collectNativeSampleBankKeys(commands);
     const committed: string[] = [];
 
@@ -185,8 +214,17 @@ export async function registerNativeSampleBanks(input: RegisterNativeSampleBanks
         }
     }
 
+    // Replace rather than union: a `replaceTopology` batch states this
+    // backend's *whole* graph, so a key it no longer names must stop being
+    // this backend's claim, not merely gain company in it — otherwise a
+    // device a musician removed from a live session would keep its bank alive
+    // through every later replacement that also forgot to drop it.
+    const previousClaim = claimedNativeSampleBankKeysByBackend.get(backendId) ?? new Set<string>();
+    const nextClaim = replaceTopology === true ? new Set(named) : new Set([...previousClaim, ...named]);
+    claimedNativeSampleBankKeysByBackend.set(backendId, nextClaim);
+
     if (replaceTopology === true) {
-        await releaseUnnamedBanks(transport, named);
+        await releaseUnnamedBanks(transport);
     }
 
     return committed;
