@@ -1,0 +1,22 @@
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeLiveGraphBackend.spec.ts
+  s_9b530f08172a54::t_6c3571f46f2604 499
+  s_9b530f08172a54::t_210362b7421da6 513
+  s_9b530f08172a54::t_a3032697ffbbb7 22
+  s_9b530f08172a54::t_d5500ee56f857a 507-509
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f3541b7fbd02a7b06b1ff476a466db5ea90492eb",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
