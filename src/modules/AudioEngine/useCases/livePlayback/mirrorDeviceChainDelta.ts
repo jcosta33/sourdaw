@@ -25,6 +25,19 @@
  * the caller fires it and forgets it, and nothing here throws into a project
  * mutation.
  *
+ * ── A changed bank key rebuilds the device in place (#4203) ───────────────
+ *
+ * A device that keeps its id and position but now projects a different
+ * `sampleBankKey` — a musician picked another Levain instrument mid-take — is
+ * neither an insert nor a removal by id, so the ordinary diff sees no change
+ * to mirror. But the engine's instance was built from the bank its `insert-
+ * device` named, and holds no door to change which bank that is: the only way
+ * to give a held strip a different instrument is to tear its device down and
+ * build it again, from the bank the new choice names. `editChain` therefore
+ * treats such a device as swapped — a `remove-device` immediately followed by
+ * an `insert-device` at the position it already holds — rather than leaving
+ * it to the next play.
+ *
  * ── Indices are the engine's, not the project's ───────────────────────────
  *
  * Every index is counted against the chain the engine reports it holds, never
@@ -50,6 +63,7 @@ import { notifyDeferredChainChange } from './notifyDeferredChainChange';
 // not hold a vocabulary for — every `insert-device` this file builds carries a
 // projected device, not the raw project one.
 import { projectDeviceForNativeBody } from './projectDeviceForNativeBody';
+import { projectsToDifferentNativeBank } from './projectsToDifferentNativeBank';
 import { readNativeChain } from './readNativeChain';
 import { rearmNativeLiveAutomationWriterInPlace } from './rearmNativeLiveAutomationWriterInPlace';
 import { rearmNativeLiveMidiWriterInPlace } from './rearmNativeLiveMidiWriterInPlace';
@@ -103,6 +117,20 @@ function latchedPedalsFor(track: Track): readonly AudioGraphCommand[] {
 }
 
 /**
+ * The `after` devices this edit rebuilds because their projected sample bank
+ * key changed, even though the device itself neither joined nor left the
+ * chain — the one change an insert-and-remove-by-id diff cannot see on its
+ * own (see this file's header).
+ */
+function swappedDevices(before: readonly Device[], after: readonly Device[]): readonly Device[] {
+    const beforeById = new Map(before.map((device) => [device.id, device]));
+    return after.filter((device) => {
+        const priorDevice = beforeById.get(device.id);
+        return priorDevice !== undefined && projectsToDifferentNativeBank(priorDevice, device);
+    });
+}
+
+/**
  * Take the whole chain down and build it back in project order, in one batch.
  *
  * The batch applies at a single block boundary, so the strip is never observed
@@ -132,10 +160,15 @@ function rebuildChain(track: Track, nativeChain: readonly string[]): readonly Au
     ];
 }
 
-function editChain(input: MirrorDeviceChainDeltaInput, nativeChain: readonly string[]): readonly AudioGraphCommand[] {
+function editChain(
+    input: MirrorDeviceChainDeltaInput,
+    nativeChain: readonly string[],
+    swapped: readonly Device[]
+): readonly AudioGraphCommand[] {
     const { before, after } = input;
     const afterIds = new Set(idsOf(after.devices));
     const beforeIds = new Set(idsOf(before.devices));
+    const swappedIds = new Set(idsOf(swapped));
     const removed = idsOf(before.devices).filter((id) => !afterIds.has(id) && nativeChain.includes(id));
     const commands: AudioGraphCommand[] = removed.map((deviceId) => ({
         kind: 'remove-device',
@@ -147,8 +180,19 @@ function editChain(input: MirrorDeviceChainDeltaInput, nativeChain: readonly str
     // the pre-removal chain would sit one slot too far along.
     let projected = nativeChain.filter((id) => !removed.includes(id));
     for (const device of after.devices) {
-        if (beforeIds.has(device.id)) {
+        const isNew = !beforeIds.has(device.id);
+        // Held natively and its bank key changed: the instance the engine
+        // built for it names the old bank and has no door to change which one
+        // that is, so this device is torn down and built again — at the same
+        // position, immediately, rather than left to the next play.
+        const isSwapped = !isNew && swappedIds.has(device.id) && projected.includes(device.id);
+        const unchanged = !isNew && !isSwapped;
+        if (unchanged) {
             continue;
+        }
+        if (isSwapped) {
+            commands.push({ kind: 'remove-device', trackId: after.id, deviceId: device.id });
+            projected = projected.filter((id) => id !== device.id);
         }
         const index = nativeInsertIndex(idsOf(after.devices), device.id, projected);
         commands.push({ kind: 'insert-device', trackId: after.id, device: projectDeviceForNativeBody(device), index });
@@ -202,23 +246,29 @@ function changesWhatThePassCarries(commands: readonly AudioGraphCommand[]): bool
     );
 }
 
-function changedDeviceNames(input: MirrorDeviceChainDeltaInput): readonly string[] {
+function changedDeviceNames(input: MirrorDeviceChainDeltaInput, swapped: readonly Device[]): readonly string[] {
     const { before, after } = input;
     const afterIds = new Set(idsOf(after.devices));
     const beforeIds = new Set(idsOf(before.devices));
     return [
         ...before.devices.filter((device) => !afterIds.has(device.id)),
         ...after.devices.filter((device) => !beforeIds.has(device.id)),
+        ...swapped,
     ].map((device) => device.name);
 }
 
 function planMirror(input: MirrorDeviceChainDeltaInput, nativeChain: readonly string[]): MirrorPlan {
     const reordered = survivorsWereReordered(input.before.devices, input.after.devices);
+    // Computed once and shared: the edit path and the decline notice both ask
+    // which survivors changed instrument, and asking twice would cost a
+    // second `projectDeviceForNativeBody` pass over every survivor for no
+    // reason — the answer cannot differ between the two callers.
+    const swapped = swappedDevices(input.before.devices, input.after.devices);
     return {
-        commands: reordered ? rebuildChain(input.after, nativeChain) : editChain(input, nativeChain),
+        commands: reordered ? rebuildChain(input.after, nativeChain) : editChain(input, nativeChain, swapped),
         // Empty for a pure reorder, which is what makes the notice name the
         // chain rather than a device that did not change.
-        changedDeviceNames: changedDeviceNames(input),
+        changedDeviceNames: changedDeviceNames(input, swapped),
     };
 }
 

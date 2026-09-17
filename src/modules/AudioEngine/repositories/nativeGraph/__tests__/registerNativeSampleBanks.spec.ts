@@ -6,6 +6,11 @@
  * left believing after each way it can fail. Staging never refuses the batch of
  * its own accord — that is the whole reason a failure has to leave the memo
  * clean.
+ *
+ * The claim cases below pin the scoping rule that keeps a release from a live
+ * `replaceTopology` batch from reclaiming a bank an offline bounce is still
+ * mapping (#4203): a release consults every backend's claim, not only the one
+ * replacing its topology.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,8 +19,15 @@ import { type AudioGraphCommand, type AudioGraphDevice } from '../../../models/A
 import { type NativeSampleBank, type NativeSampleBankLease } from '../../../models/NativeSampleBank';
 import { collectNativeSampleBankKeys } from '../collectNativeSampleBankKeys';
 import { type NativeGraphTransport } from '../nativeGraphTransport';
-import { inFlightNativeSampleBankShipments, registeredNativeSampleBankKeys } from '../registeredNativeSampleBankKeys';
+import {
+    claimedNativeSampleBankKeysByBackend,
+    inFlightNativeSampleBankShipments,
+    registeredNativeSampleBankKeys,
+} from '../registeredNativeSampleBankKeys';
 import { registerNativeSampleBanks } from '../registerNativeSampleBanks';
+import { releaseNativeSampleBankClaims } from '../releaseNativeSampleBankClaims';
+
+const LIVE_BACKEND_ID = 'live';
 
 function device(overrides: Partial<AudioGraphDevice> = {}): AudioGraphDevice {
     return {
@@ -50,6 +62,11 @@ function createBus(busId: string, devices: readonly AudioGraphDevice[]): AudioGr
         honorMuted: true,
         contributesAudio: true,
     };
+}
+
+/** A single strip naming one bank key, the shape most cases below need. */
+function commandsNaming(bankKey: string): readonly AudioGraphCommand[] {
+    return [createStrip('audio-1', [device({ sampleBankKey: bankKey })])];
 }
 
 function bank(overrides: Partial<NativeSampleBank> = {}): NativeSampleBank {
@@ -149,6 +166,7 @@ describe('registerNativeSampleBanks', () => {
     beforeEach(() => {
         registeredNativeSampleBankKeys.clear();
         inFlightNativeSampleBankShipments.clear();
+        claimedNativeSampleBankKeysByBackend.clear();
     });
 
     const commands = [createStrip('audio-1', [device({ sampleBankKey: 'levain:violin-1' })])];
@@ -160,6 +178,7 @@ describe('registerNativeSampleBanks', () => {
             transport,
             commands,
             acquire: () => Promise.resolve(lease(vi.fn())),
+            backendId: LIVE_BACKEND_ID,
         });
 
         expect(calls).toEqual([
@@ -187,6 +206,7 @@ describe('registerNativeSampleBanks', () => {
                         numMics: 3,
                     })
                 ),
+            backendId: LIVE_BACKEND_ID,
         });
 
         // `LevainBankLayout` is deserialized with `deny_unknown_fields`, so
@@ -201,7 +221,12 @@ describe('registerNativeSampleBanks', () => {
         const release = vi.fn();
         const { transport } = recordingTransport();
 
-        await registerNativeSampleBanks({ transport, commands, acquire: () => Promise.resolve(lease(release)) });
+        await registerNativeSampleBanks({
+            transport,
+            commands,
+            acquire: () => Promise.resolve(lease(release)),
+            backendId: LIVE_BACKEND_ID,
+        });
 
         expect(release).toHaveBeenCalledTimes(1);
     });
@@ -210,8 +235,8 @@ describe('registerNativeSampleBanks', () => {
         const { transport, calls } = recordingTransport();
         const acquire = vi.fn(() => Promise.resolve(lease(vi.fn())));
 
-        await registerNativeSampleBanks({ transport, commands, acquire });
-        const second = await registerNativeSampleBanks({ transport, commands, acquire });
+        await registerNativeSampleBanks({ transport, commands, acquire, backendId: LIVE_BACKEND_ID });
+        const second = await registerNativeSampleBanks({ transport, commands, acquire, backendId: LIVE_BACKEND_ID });
 
         expect(acquire).toHaveBeenCalledTimes(1);
         expect(calls.filter((call) => call.startsWith('begin:'))).toHaveLength(1);
@@ -225,6 +250,7 @@ describe('registerNativeSampleBanks', () => {
             transport,
             commands,
             acquire: () => Promise.resolve(null),
+            backendId: LIVE_BACKEND_ID,
         });
 
         expect(calls).toEqual([]);
@@ -244,10 +270,14 @@ describe('registerNativeSampleBanks', () => {
         // decides what the missing bank costs: the gesture declines native
         // carriage on an audible strip and the device is dropped on a silent
         // one. Throwing here would only take the batch's other strips down too.
-        await expect(registerNativeSampleBanks({ transport, commands, acquire })).resolves.toEqual([]);
+        await expect(
+            registerNativeSampleBanks({ transport, commands, acquire, backendId: LIVE_BACKEND_ID })
+        ).resolves.toEqual([]);
         expect(registeredNativeSampleBankKeys.has('levain:violin-1')).toBe(false);
 
-        await expect(registerNativeSampleBanks({ transport, commands, acquire })).resolves.toEqual(['levain:violin-1']);
+        await expect(
+            registerNativeSampleBanks({ transport, commands, acquire, backendId: LIVE_BACKEND_ID })
+        ).resolves.toEqual(['levain:violin-1']);
         expect(release).toHaveBeenCalledTimes(1);
     });
 
@@ -261,6 +291,7 @@ describe('registerNativeSampleBanks', () => {
             transport,
             commands,
             acquire: () => Promise.resolve(lease(release)),
+            backendId: LIVE_BACKEND_ID,
         });
 
         expect(committed).toEqual([]);
@@ -277,6 +308,7 @@ describe('registerNativeSampleBanks', () => {
             commands,
             acquire: () => Promise.resolve(lease(vi.fn())),
             replaceTopology: true,
+            backendId: LIVE_BACKEND_ID,
         });
 
         // A replacement states the whole graph, so an unnamed bank is an
@@ -294,6 +326,7 @@ describe('registerNativeSampleBanks', () => {
             transport,
             commands,
             acquire: () => Promise.resolve(lease(vi.fn())),
+            backendId: LIVE_BACKEND_ID,
         });
 
         // An incremental batch says nothing about the strips it did not mention.
@@ -312,8 +345,8 @@ describe('registerNativeSampleBanks', () => {
         const { transport, calls } = recordingTransport({ beginLevainBank });
         const acquire = vi.fn(() => Promise.resolve(lease(vi.fn())));
 
-        const first = registerNativeSampleBanks({ transport, commands, acquire });
-        const second = registerNativeSampleBanks({ transport, commands, acquire });
+        const first = registerNativeSampleBanks({ transport, commands, acquire, backendId: LIVE_BACKEND_ID });
+        const second = registerNativeSampleBanks({ transport, commands, acquire, backendId: LIVE_BACKEND_ID });
         begun.settle();
 
         // The key was staged by the first call, so only it takes credit — the
@@ -339,8 +372,8 @@ describe('registerNativeSampleBanks', () => {
         const { transport } = recordingTransport({ beginLevainBank, commitLevainBank });
         const acquire = vi.fn(() => Promise.resolve(lease(vi.fn())));
 
-        const first = registerNativeSampleBanks({ transport, commands, acquire });
-        const second = registerNativeSampleBanks({ transport, commands, acquire });
+        const first = registerNativeSampleBanks({ transport, commands, acquire, backendId: LIVE_BACKEND_ID });
+        const second = registerNativeSampleBanks({ transport, commands, acquire, backendId: LIVE_BACKEND_ID });
 
         // A waiter inherits the failure as an uncommitted key, not as a throw:
         // staging never refuses the batch of its own accord.
@@ -349,7 +382,204 @@ describe('registerNativeSampleBanks', () => {
         expect(registeredNativeSampleBankKeys.has('levain:violin-1')).toBe(false);
         expect(inFlightNativeSampleBankShipments.size).toBe(0);
 
-        await expect(registerNativeSampleBanks({ transport, commands, acquire })).resolves.toEqual(['levain:violin-1']);
+        await expect(
+            registerNativeSampleBanks({ transport, commands, acquire, backendId: LIVE_BACKEND_ID })
+        ).resolves.toEqual(['levain:violin-1']);
         expect(beginLevainBank).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('registerNativeSampleBanks — claims scoped by backend (#4203)', () => {
+    beforeEach(() => {
+        registeredNativeSampleBankKeys.clear();
+        inFlightNativeSampleBankShipments.clear();
+        claimedNativeSampleBankKeysByBackend.clear();
+    });
+
+    it('never releases a bank an offline backend still claims, on a live replaceTopology batch that does not name it', async () => {
+        const { transport, calls } = recordingTransport();
+
+        await registerNativeSampleBanks({
+            transport,
+            commands: commandsNaming('levain:trumpet'),
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            backendId: 'off-1',
+        });
+
+        await registerNativeSampleBanks({
+            transport,
+            commands: commandsNaming('levain:violin'),
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            replaceTopology: true,
+            backendId: LIVE_BACKEND_ID,
+        });
+
+        expect(calls.filter((call) => call.startsWith('release:'))).not.toContain('release:levain:trumpet');
+        expect(registeredNativeSampleBankKeys.has('levain:trumpet')).toBe(true);
+    });
+
+    it('releases a bank once the backend that alone claimed it drops its claim', async () => {
+        const { transport, calls } = recordingTransport();
+
+        await registerNativeSampleBanks({
+            transport,
+            commands: commandsNaming('levain:trumpet'),
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            backendId: 'off-1',
+        });
+        await registerNativeSampleBanks({
+            transport,
+            commands: commandsNaming('levain:violin'),
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            replaceTopology: true,
+            backendId: LIVE_BACKEND_ID,
+        });
+
+        releaseNativeSampleBankClaims('off-1');
+
+        await registerNativeSampleBanks({
+            transport,
+            commands: commandsNaming('levain:violin'),
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            replaceTopology: true,
+            backendId: LIVE_BACKEND_ID,
+        });
+
+        expect(calls).toContain('release:levain:trumpet');
+        expect(registeredNativeSampleBankKeys.has('levain:trumpet')).toBe(false);
+    });
+
+    it('never releases a key with a shipment in flight, even when no backend claims it', async () => {
+        const { transport, calls } = recordingTransport();
+        registeredNativeSampleBankKeys.add('levain:trumpet');
+        // Never settles inside this case: the release pass must see it in
+        // flight without waiting for it.
+        inFlightNativeSampleBankShipments.set('levain:trumpet', new Promise<void>(() => undefined));
+
+        await registerNativeSampleBanks({
+            transport,
+            commands: commandsNaming('levain:violin'),
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            replaceTopology: true,
+            backendId: LIVE_BACKEND_ID,
+        });
+
+        expect(calls.filter((call) => call.startsWith('release:'))).toEqual([]);
+        expect(registeredNativeSampleBankKeys.has('levain:trumpet')).toBe(true);
+    });
+
+    it('never releases a bank already committed while a sibling in the same batch is still shipping', async () => {
+        // The offline batch names two banks. Trumpet stages and commits
+        // through ordinary microtask ticks; violin's `begin_levain_bank` is
+        // held open on a deferred that this case controls, so the offline
+        // call's own loop cannot reach its post-loop code — and with the
+        // claim write sited after that loop, its backend would still be
+        // unclaimed for a bank it already shipped. A foreign backend's
+        // `replaceTopology` naming nothing races in once trumpet is
+        // genuinely committed (observed, not counted in ticks) but before
+        // offline's own batch has finished: it must find trumpet claimed by
+        // offline's still-in-flight batch, not free to reclaim.
+        const violinBegin = deferred();
+        const beginLevainBank = vi.fn(({ bankKey }: { bankKey: string }) =>
+            bankKey === 'levain:violin' ? violinBegin.promise.then(() => null) : Promise.resolve(null)
+        );
+        const { transport, calls } = recordingTransport({ beginLevainBank });
+
+        const offline = registerNativeSampleBanks({
+            transport,
+            commands: [
+                createStrip('audio-1', [
+                    device({ id: 'device-a', sampleBankKey: 'levain:trumpet' }),
+                    device({ id: 'device-b', sampleBankKey: 'levain:violin' }),
+                ]),
+            ],
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            backendId: 'off-1',
+        });
+
+        await vi.waitFor(() => {
+            expect(registeredNativeSampleBankKeys.has('levain:trumpet')).toBe(true);
+        });
+
+        // Trumpet is committed; violin's begin is still held open, so
+        // offline's own batch has not reached its post-loop code. A foreign
+        // backend's replaceTopology naming nothing must still find trumpet
+        // spoken for.
+        await registerNativeSampleBanks({
+            transport,
+            commands: [],
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            replaceTopology: true,
+            backendId: 'foreign',
+        });
+
+        expect(calls.filter((call) => call.startsWith('release:'))).not.toContain('release:levain:trumpet');
+        expect(registeredNativeSampleBankKeys.has('levain:trumpet')).toBe(true);
+
+        violinBegin.settle();
+        await offline;
+
+        expect(registeredNativeSampleBankKeys.has('levain:violin')).toBe(true);
+    });
+
+    it("unions a later non-replace batch onto the same backend's claim rather than replacing it", async () => {
+        const { transport, calls } = recordingTransport();
+
+        await registerNativeSampleBanks({
+            transport,
+            commands: commandsNaming('levain:trumpet'),
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            replaceTopology: true,
+            backendId: LIVE_BACKEND_ID,
+        });
+        await registerNativeSampleBanks({
+            transport,
+            commands: commandsNaming('levain:violin'),
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            backendId: LIVE_BACKEND_ID,
+        });
+        // A foreign backend's replaceTopology naming neither must not read
+        // this backend's claim as having dropped trumpet just because a later
+        // incremental batch on the same backend named only violin.
+        await registerNativeSampleBanks({
+            transport,
+            commands: [],
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            replaceTopology: true,
+            backendId: 'foreign',
+        });
+
+        expect(calls.filter((call) => call.startsWith('release:'))).toEqual([]);
+        expect(registeredNativeSampleBankKeys.has('levain:trumpet')).toBe(true);
+        expect(registeredNativeSampleBankKeys.has('levain:violin')).toBe(true);
+    });
+
+    it('replaces its claim on replaceTopology rather than unioning it, so a dropped device releases', async () => {
+        const { transport, calls } = recordingTransport();
+
+        await registerNativeSampleBanks({
+            transport,
+            commands: [
+                createStrip('audio-1', [
+                    device({ id: 'device-a', sampleBankKey: 'levain:violin' }),
+                    device({ id: 'device-b', sampleBankKey: 'levain:trumpet' }),
+                ]),
+            ],
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            replaceTopology: true,
+            backendId: LIVE_BACKEND_ID,
+        });
+
+        await registerNativeSampleBanks({
+            transport,
+            commands: commandsNaming('levain:violin'),
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            replaceTopology: true,
+            backendId: LIVE_BACKEND_ID,
+        });
+
+        expect(calls).toContain('release:levain:trumpet');
+        expect(registeredNativeSampleBankKeys.has('levain:trumpet')).toBe(false);
+        expect(registeredNativeSampleBankKeys.has('levain:violin')).toBe(true);
     });
 });

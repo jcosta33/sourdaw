@@ -39,6 +39,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     stopTrackInputMonitoring: vi.fn(),
 
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    projectsToDifferentNativeBank: vi.fn(() => false),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     discardDecodedAudioFile: vi.fn(),
     cancelPendingAudioBufferImport: vi.fn(),
