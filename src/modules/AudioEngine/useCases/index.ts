@@ -132,6 +132,8 @@ export { isTunerTelemetryNativelyOwned } from './livePlayback/isTunerTelemetryNa
 // Published because the MIDI module's live note sink needs the same answer the session's own sink reads.
 export { soundsNativeNotes } from './livePlayback/soundsNativeNotes';
 export { mirrorDeviceChainDelta } from './livePlayback/mirrorDeviceChainDelta';
+// Published because handleSetDeviceState needs the same bank-key-changed law mirrorDeviceChainDelta swaps on (#4203).
+export { projectsToDifferentNativeBank } from './livePlayback/projectsToDifferentNativeBank';
 // Published because the transport has to know, before it can await anything, whether a play here is offered a session.
 export { nativeLiveGraphSessionOffered } from './livePlayback/nativeLiveGraphSessionOffered';
 export { nativeLiveGraphSessionSplice } from './livePlayback/nativeLiveGraphSessionSplice';

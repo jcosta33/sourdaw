@@ -177,6 +177,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     initializeTrackStripFromSnapshot: vi.fn(),
     matchesRuntimeDeviceChainTopology: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(),
+    projectsToDifferentNativeBank: vi.fn(() => false),
     nativeLiveGraphSessionSplice: vi.fn(),
     removeBusStrip: vi.fn(),
     removeMidiFxFromStrip: vi.fn(),

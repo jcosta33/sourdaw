@@ -14,7 +14,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
 import { createNativeLiveGraphBackend } from '../createNativeLiveGraphBackend';
 import { type NativeGraphTransport } from '../nativeGraphTransport';
-import { inFlightNativeSampleBankShipments, registeredNativeSampleBankKeys } from '../registeredNativeSampleBankKeys';
+import {
+    claimedNativeSampleBankKeysByBackend,
+    inFlightNativeSampleBankShipments,
+    registeredNativeSampleBankKeys,
+} from '../registeredNativeSampleBankKeys';
+import { type AcquireNativeSampleBank, registerNativeSampleBanks } from '../registerNativeSampleBanks';
 
 const BATCH: AudioGraphCommandBatch = {
     schemaVersion: 1,
@@ -427,5 +432,121 @@ describe('createNativeLiveGraphBackend', () => {
 
             expect(calls).toEqual(['apply_graph_commands']);
         });
+    });
+});
+
+/** A replaceTopology batch naming one bank on one device, for the claim cases below. */
+function claimBatch(bankKey: string): AudioGraphCommandBatch {
+    return {
+        schemaVersion: 1,
+        replaceTopology: true,
+        commands: [
+            {
+                kind: 'create-track-strip',
+                trackId: 'audio-1',
+                name: 'Track 1',
+                state: { gain: 1, pan: 0, muted: false, soloGated: false, vcaMultiplier: 1 },
+                devices: [
+                    {
+                        id: 'device-a',
+                        name: 'Levain',
+                        type: 'levain',
+                        bypassed: false,
+                        parameterValues: {},
+                        sampleBankKey: bankKey,
+                    },
+                ],
+                honorMuted: true,
+                contributesAudio: true,
+            },
+        ],
+    };
+}
+
+function claimTransport(calls: string[]): NativeGraphTransport {
+    return {
+        applyGraphCommands: () => {
+            calls.push('apply_graph_commands');
+            return Promise.resolve({
+                acceptance: 'accepted',
+                application: 'applied',
+                runtimeRevision: 1,
+                reports: [],
+            });
+        },
+        beginLevainBank: ({ bankKey }) => {
+            calls.push(`begin:${bankKey}`);
+            return Promise.resolve(null);
+        },
+        registerLevainSample: ({ bankKey, sampleId }) => {
+            calls.push(`sample:${bankKey}:${sampleId}`);
+            return Promise.resolve(null);
+        },
+        commitLevainBank: ({ bankKey }) => {
+            calls.push(`commit:${bankKey}`);
+            return Promise.resolve(null);
+        },
+        releaseLevainBank: ({ bankKey }) => {
+            calls.push(`release:${bankKey}`);
+            return Promise.resolve(null);
+        },
+        registerTimelineSample: () => Promise.reject(new Error('unexpected register_timeline_sample')),
+        renderGraphOffline: () => Promise.reject(new Error('unexpected render_graph_offline')),
+        mapGraphBatch: () => Promise.reject(new Error('unexpected map_graph_batch')),
+    };
+}
+
+const acquireViolinBank: AcquireNativeSampleBank = () => {
+    return Promise.resolve({
+        bank: {
+            instrumentId: 'violin-1',
+            numArticulations: 1,
+            numMics: 1,
+            zones: [],
+            legatoTransitions: [],
+            samples: [
+                { sampleId: '0', sampleRate: 48_000, channels: 1, frameCount: 1, pcm: new Uint8Array([1, 2, 3, 4]) },
+            ],
+        },
+        release: vi.fn(),
+    });
+};
+
+describe('createNativeLiveGraphBackend — claims scoped per instance (#4203)', () => {
+    beforeEach(() => {
+        registeredNativeSampleBankKeys.clear();
+        inFlightNativeSampleBankShipments.clear();
+        claimedNativeSampleBankKeysByBackend.clear();
+    });
+
+    // A held instrument can swap live backends mid-roll (#4203): two
+    // instances of this same implementation can be staging and disposing
+    // concurrently. Claiming under the shared `NATIVE_LIVE_BACKEND_ID` would
+    // let one instance's dispose erase every instance's claim, including one
+    // a sibling instance still relies on to keep its bank alive.
+    it('keeps a bank claimed by a second live instance alive after the first disposes', async () => {
+        const calls: string[] = [];
+        const transport = claimTransport(calls);
+
+        const backendA = createNativeLiveGraphBackend({ transport, acquireNativeSampleBank: acquireViolinBank });
+        await backendA.apply(claimBatch('levain:violin-1'));
+
+        const backendB = createNativeLiveGraphBackend({ transport, acquireNativeSampleBank: acquireViolinBank });
+        await backendB.apply(claimBatch('levain:violin-1'));
+
+        backendA.dispose();
+
+        // A foreign backend's replaceTopology naming nothing runs the release
+        // pass: it must still find the bank claimed by backend B.
+        await registerNativeSampleBanks({
+            transport,
+            commands: [],
+            acquire: acquireViolinBank,
+            replaceTopology: true,
+            backendId: 'foreign',
+        });
+
+        expect(calls.filter((call) => call.startsWith('release:'))).not.toContain('release:levain:violin-1');
+        expect(registeredNativeSampleBankKeys.has('levain:violin-1')).toBe(true);
     });
 });
