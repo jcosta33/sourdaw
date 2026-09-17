@@ -476,6 +476,14 @@ export const AGENT_RUN_ACTIVE_PHASES: ReadonlySet<AgentRunPhase> = new Set<Agent
     'executing',
 ]);
 
+/** Phases from which a run proposes no further mutation, so nothing it holds can still be claimed. */
+export const AGENT_RUN_TERMINAL_PHASES: ReadonlySet<AgentRunPhase> = new Set<AgentRunPhase>([
+    'completed',
+    'failed',
+    'cancelled',
+    'partially-completed',
+]);
+
 /**
  * Anchors `activeSince` at the moment the run entered the active stretch it is in. Moving between
  * active phases keeps the anchor already held; leaving the active set drops it, so the time a run

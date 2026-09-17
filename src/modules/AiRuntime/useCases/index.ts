@@ -84,6 +84,7 @@ export { revertAiActionGroup } from './aiHistoryActions';
 export { agentChangeComparison, getAgentChangeComparisonView } from './agentChangeComparison';
 export { getProviderRouteView } from './getProviderRouteView';
 export { deleteAgentRunArtifacts } from './deleteAgentRunArtifacts';
+export { deleteAgentRun } from './deleteAgentRun';
 export { getAgentRunSagaProjection } from './getAgentRunSagaProjection';
 export { projectAgentRunTelemetry } from './projectAgentRunTelemetry';
 export { projectAgentRunDiagnostics } from './projectAgentRunDiagnostics';
