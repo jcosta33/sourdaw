@@ -1,0 +1,20 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredDefaultConsensus.spec.ts
+  s_9b530f08172a54::t_8a745846f373e2 886-893
+  s_9b530f08172a54::t_ff1bfe85f8b70f 885
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cb345c9b47045a8f00d30d6e9fd39b632f0aa0e3",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
