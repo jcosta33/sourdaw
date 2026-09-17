@@ -256,7 +256,7 @@ function fakePort(input: FakeInput = {}) {
             calls.push(
                 `metaEdit:${number}:${plan.addLabels.join(',') || '-'}:${plan.milestoneTitle ?? '-'}:${
                     plan.addProjectTitles.join(',') || '-'
-                }`
+                }:${plan.removeLabels.join(',') || '-'}`
             );
         },
         // Logging is ordered against the mutating calls, so it shares their ledger.
@@ -1890,7 +1890,7 @@ describe('lane publish', () => {
             expect(calls).toContain(`saveModel:${LEGACY_BRANCH}:kimi-k2.5`);
             expect(calls).toContain('label:kimi-k2.5');
             expect(calls).toContain('prMeta:2275');
-            expect(calls).toContain('metaEdit:2275:kimi-k2.5:-:-');
+            expect(calls).toContain('metaEdit:2275:kimi-k2.5:-:-:-');
             expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
             expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
             expect(bodies).toEqual([]);
@@ -2201,6 +2201,14 @@ describe('lane publish', () => {
                 projectTitles: [],
             });
             expect(plan).toEqual({ addLabels: [], removeLabels: ['glm-5.3-flash'], addProjectTitles: [] });
+            // Every stale fence goes, not just the first.
+            expect(
+                metadataEditPlan(target, {
+                    labels: ['glm-5.3', 'glm-5.3-flash', 'claude-opus-5'],
+                    fencedAuthorLabels: ['glm-5.3', 'glm-5.3-flash', 'claude-opus-5'],
+                    projectTitles: [],
+                })?.removeLabels
+            ).toEqual(['glm-5.3-flash', 'claude-opus-5']);
             if (plan === undefined) {
                 throw new Error('expected a metadata edit plan');
             }
@@ -2333,7 +2341,7 @@ describe('lane publish', () => {
             expect(labelIndex).toBeGreaterThan(calls.indexOf('push:agent/12/work'));
             expect(labelIndex).toBeLessThan(createIndex);
             expect(calls).toContain('prMeta:88');
-            expect(calls).toContain('metaEdit:88:glm-5.3:-:-');
+            expect(calls).toContain('metaEdit:88:glm-5.3:-:-:-');
         });
 
         it('makes no metadata call at all when the pull request is already complete', () => {
@@ -2353,7 +2361,7 @@ describe('lane publish', () => {
 
             expect(calls).toContain('saveModel:agent/12/work:kimi-k2.5');
             expect(calls).toContain('label:kimi-k2.5');
-            expect(calls).toContain('metaEdit:88:kimi-k2.5:-:-');
+            expect(calls).toContain('metaEdit:88:kimi-k2.5:-:-:-');
             expect(calls.some((call) => call.startsWith('label:glm-5.3'))).toBe(false);
         });
 
@@ -2384,7 +2392,7 @@ describe('lane publish', () => {
             expect(logs).toContain(
                 'milestone "v1.2" on the lane\'s issue is no longer open; leaving the pull request milestone unset'
             );
-            expect(calls).toContain('metaEdit:88:glm-5.3:-:Roadmap,Triage');
+            expect(calls).toContain('metaEdit:88:glm-5.3:-:Roadmap,Triage:-');
         });
 
         it('carries an open inherited milestone onto the pull request', () => {
@@ -2396,7 +2404,7 @@ describe('lane publish', () => {
 
             publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
-            expect(calls).toContain('metaEdit:88:glm-5.3:v1.2:-');
+            expect(calls).toContain('metaEdit:88:glm-5.3:v1.2:-:-');
         });
 
         it('lets --milestone and --project flags override what the issue carries', () => {
@@ -2412,7 +2420,7 @@ describe('lane publish', () => {
                 projects: ['Backlog'],
             });
 
-            expect(calls).toContain('metaEdit:88:glm-5.3:v1.3:Backlog');
+            expect(calls).toContain('metaEdit:88:glm-5.3:v1.3:Backlog:-');
         });
 
         it('resolves flag titles to the canonical spelling the tracker reports', () => {
@@ -2434,7 +2442,7 @@ describe('lane publish', () => {
 
             // The edit carries the canonical 'v1.2', so a pull request that already stores it is
             // complete and the second publish issues no metadata edit at all.
-            expect(calls).toContain('metaEdit:88:glm-5.3:v1.2:-');
+            expect(calls).toContain('metaEdit:88:glm-5.3:v1.2:-:-');
             const afterFirst = calls.length;
             port.readPullRequestMetadata = () => ({
                 labels: ['glm-5.3'],
@@ -2460,8 +2468,8 @@ describe('lane publish', () => {
                 projects: ['Roadmap', 'ROADMAP'],
             });
 
-            expect(calls).toContain('metaEdit:88:glm-5.3:-:Roadmap');
-            expect(calls).not.toContain('metaEdit:88:glm-5.3:-:Roadmap,Roadmap');
+            expect(calls).toContain('metaEdit:88:glm-5.3:-:Roadmap:-');
+            expect(calls).not.toContain('metaEdit:88:glm-5.3:-:Roadmap,Roadmap:-');
         });
 
         it('does not persist the model when a metadata validation refuses the run', () => {
@@ -2499,7 +2507,7 @@ describe('lane publish', () => {
             // Exactly bug joins the model label — once: the boards' namespaces stay on the issue,
             // and an authorship label is this lane's own record, never inherited, so the issue's
             // authorship labels contribute nothing and the head of the list is not duplicated.
-            expect(calls).toContain('metaEdit:88:glm-5.3,bug:-:-');
+            expect(calls).toContain('metaEdit:88:glm-5.3,bug:-:-:-');
             expect(calls.some((call) => call.includes('priority:'))).toBe(false);
             expect(calls.some((call) => call.includes('status:'))).toBe(false);
             expect(calls.some((call) => call.includes('kimi'))).toBe(false);
@@ -2515,7 +2523,7 @@ describe('lane publish', () => {
             expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
 
             expect(calls.some((call) => call.startsWith('issueView:'))).toBe(false);
-            expect(calls).toContain('metaEdit:88:glm-5.3,enhancement:-:-');
+            expect(calls).toContain('metaEdit:88:glm-5.3,enhancement:-:-:-');
         });
 
         it('derives from the frozen existing title on a republish, not the newest subject', () => {
@@ -2533,7 +2541,7 @@ describe('lane publish', () => {
 
             expect(publishLane(undefined, port)).toBe(41);
 
-            expect(calls).toContain('metaEdit:41:glm-5.3,enhancement:-:-');
+            expect(calls).toContain('metaEdit:41:glm-5.3,enhancement:-:-:-');
             expect(calls.some((call) => call.includes('bug'))).toBe(false);
         });
 
@@ -2549,7 +2557,7 @@ describe('lane publish', () => {
 
             expect(publishLane(undefined, port)).toBe(41);
 
-            expect(calls).toContain('metaEdit:41:glm-5.3:-:-');
+            expect(calls).toContain('metaEdit:41:glm-5.3:-:-:-');
         });
 
         it('refuses a --label that resolves to an authored-by label before any write', () => {
@@ -2615,7 +2623,7 @@ describe('lane publish', () => {
 
             expect(publishLane(12, own.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
             expect(own.calls).toContain('label:glm-5.3');
-            expect(own.calls).toContain('metaEdit:88:glm-5.3:-:-');
+            expect(own.calls).toContain('metaEdit:88:glm-5.3:-:-:-');
 
             const fresh = fakePort({
                 repositoryLabels: [{ name: 'security', description: 'Something is not working' }],
@@ -2624,7 +2632,7 @@ describe('lane publish', () => {
 
             expect(publishLane(12, fresh.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
             expect(fresh.calls).toContain('label:glm-5.3');
-            expect(fresh.calls).toContain('metaEdit:88:glm-5.3:-:-');
+            expect(fresh.calls).toContain('metaEdit:88:glm-5.3:-:-:-');
         });
 
         it('refuses an unknown --label before writing anything, naming the live list', () => {
@@ -2663,7 +2671,7 @@ describe('lane publish', () => {
             expect(calls).toContain('labelList');
             // bug is inherited, enhancement arrives as a case-variant flag and dedupes against the
             // inherited spelling, security comes from the flag: all missing labels in ONE edit.
-            expect(calls).toContain('metaEdit:88:glm-5.3,bug,enhancement,security:-:-');
+            expect(calls).toContain('metaEdit:88:glm-5.3,bug,enhancement,security:-:-:-');
             expect(calls.filter((call) => call.startsWith('metaEdit:'))).toHaveLength(1);
         });
 
@@ -2717,7 +2725,7 @@ describe('lane publish', () => {
             );
             // Label and milestone still asserted, with no --add-project piece: the skip must not
             // drop the whole metadata assertion.
-            expect(calls).toContain('metaEdit:88:glm-5.3:v1.2:-');
+            expect(calls).toContain('metaEdit:88:glm-5.3:v1.2:-:-');
         });
 
         it('applies no projects and stays quiet when a bound issue reads empty and the list succeeds', () => {
@@ -2730,7 +2738,7 @@ describe('lane publish', () => {
 
             expect(calls).toContain('projectList');
             expect(logs.some((line) => line.startsWith("cannot list the owner's projects"))).toBe(false);
-            expect(calls).toContain('metaEdit:88:glm-5.3:-:-');
+            expect(calls).toContain('metaEdit:88:glm-5.3:-:-:-');
         });
 
         it('skips the project-list probe entirely on an issueless lane without flags', () => {
@@ -2767,7 +2775,7 @@ describe('lane publish', () => {
             expect(calls.some((call) => call.startsWith('issueView:'))).toBe(false);
             // The default fixture subject is feat(...), so the derived enhancement label rides in
             // the same single edit as the model label and the canonicalized project.
-            expect(calls).toContain('metaEdit:88:glm-5.3,enhancement:-:Roadmap');
+            expect(calls).toContain('metaEdit:88:glm-5.3,enhancement:-:Roadmap:-');
         });
 
         it("fails an explicit --project on an issueless lane when the App cannot list the owner's projects", () => {
@@ -2800,7 +2808,7 @@ describe('lane publish', () => {
             publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
             expect(calls).toContain('projectList');
-            expect(calls).toContain('metaEdit:88:glm-5.3:-:Roadmap');
+            expect(calls).toContain('metaEdit:88:glm-5.3:-:Roadmap:-');
         });
 
         it('refuses an unknown --milestone or --project before writing anything', () => {
