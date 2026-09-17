@@ -24,6 +24,7 @@ import {
     type ModelProviderSession,
     type ModelProviderStreamIdentity,
 } from '../../models/ModelProviderProtocol';
+import { MODEL_TEXT_MAX_INPUT_TOKENS } from '../../models/ModelTextRequestLimits';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
@@ -414,9 +415,9 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     limits: { maxOutputTokens },
                     controls: { cache: 'provider-default', reasoning: 'provider-default' },
                     budget: {
-                        maxInputTokens: 32_768,
+                        maxInputTokens: MODEL_TEXT_MAX_INPUT_TOKENS,
                         maxOutputTokens,
-                        maxTotalTokens: 32_768 + maxOutputTokens,
+                        maxTotalTokens: MODEL_TEXT_MAX_INPUT_TOKENS + maxOutputTokens,
                     },
                     dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
                     ...(remoteDisclosure === undefined

@@ -522,6 +522,8 @@ function createSession(input: {
     const toolCalls: ModelProviderResult['output']['toolCalls'] = [];
     const ignoredProviderEvents: string[] = [];
     const toolCallIds = new Set<string>();
+    /** One session is admitted by the ceiling configured when it started, never by a later edit. */
+    const maxProviderToolCalls = readAgentResourceLimits().maxProviderToolCalls;
     let nextSequence = 0;
     let streamBytes = 0;
     let eventCount = 0;
@@ -594,7 +596,7 @@ function createSession(input: {
                 !isValidIdentityPart(event.call.id) ||
                 !isValidIdentityPart(event.call.name) ||
                 toolCallIds.has(event.call.id) ||
-                toolCalls.length >= readAgentResourceLimits().maxProviderToolCalls ||
+                toolCalls.length >= maxProviderToolCalls ||
                 !matchesJsonSchema(event.call.arguments, advertisedTool.parameters)
             ) {
                 throw new TypeError('Provider stream tool arguments are incomplete or invalid.');

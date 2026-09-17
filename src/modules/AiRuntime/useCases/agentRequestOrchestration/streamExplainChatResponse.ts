@@ -21,6 +21,7 @@ import {
     type ModelProviderResult,
     type ModelProviderSession,
 } from '../../models/ModelProviderProtocol';
+import { MODEL_TEXT_MAX_INPUT_TOKENS } from '../../models/ModelTextRequestLimits';
 import {
     type CloudChatCompletionOutcome,
     streamCloudChatCompletion,
@@ -55,8 +56,6 @@ import { AGENT_RUN_STALE_COMPLETION_WARNING, settleAgentRunWorkLeaseSafely } fro
 
 /** The explain route's own output ceiling; the configured model ceiling can only lower it. */
 const EXPLAIN_MAX_OUTPUT_TOKENS = 2_048;
-
-const EXPLAIN_MAX_INPUT_TOKENS = 32_768;
 
 type StreamExplainChatResponseInput = {
     userText: string;
@@ -228,9 +227,9 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
             limits: { maxOutputTokens: explainMaxOutputTokens },
             controls: { cache: 'provider-default', reasoning: 'provider-default' },
             budget: {
-                maxInputTokens: EXPLAIN_MAX_INPUT_TOKENS,
+                maxInputTokens: MODEL_TEXT_MAX_INPUT_TOKENS,
                 maxOutputTokens: explainMaxOutputTokens,
-                maxTotalTokens: EXPLAIN_MAX_INPUT_TOKENS + explainMaxOutputTokens,
+                maxTotalTokens: MODEL_TEXT_MAX_INPUT_TOKENS + explainMaxOutputTokens,
             },
             dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
             ...(remoteDisclosure === undefined

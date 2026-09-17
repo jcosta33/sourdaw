@@ -377,4 +377,38 @@ describe('model provider protocol', () => {
 
         expect(pushTwoToolCalls).toThrow('Provider stream tool arguments are incomplete or invalid.');
     });
+
+    it('admits a started stream by the loop ceiling it captured, not by one configured mid-stream', () => {
+        const tools = [
+            {
+                name: 'setTempo',
+                description: 'Set the project tempo.',
+                parameters: {
+                    type: 'object',
+                    properties: { tempo: { type: 'number' } },
+                    required: ['tempo'],
+                    additionalProperties: false,
+                },
+            },
+        ];
+        const { protocol, request } = readyRequest({ operation: 'tools', tools });
+        const session = protocol.start(request);
+        session.push(
+            eventEnvelope(request, 0, {
+                type: 'tool-call',
+                call: { id: 'call-1', name: 'setTempo', arguments: { tempo: 120 } },
+            })
+        );
+
+        expect(configureAgentResourceLimits({ maxProviderToolCalls: 1 })).toMatchObject({ status: 'configured' });
+
+        expect(() =>
+            session.push(
+                eventEnvelope(request, 1, {
+                    type: 'tool-call',
+                    call: { id: 'call-2', name: 'setTempo', arguments: { tempo: 90 } },
+                })
+            )
+        ).not.toThrow();
+    });
 });
