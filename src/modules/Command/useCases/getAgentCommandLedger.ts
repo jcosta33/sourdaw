@@ -3,10 +3,9 @@ import {
     AGENT_COMMAND_LEDGER_SCHEMA_VERSION,
     AGENT_COMMAND_LEDGER_UNCOVERED_CATEGORIES,
     AGENT_COMMAND_MINIMUM_WRITE_SET_RULE,
-    isInterimPacketReference,
+    assertPacketMatchesClosure,
     type AgentCommandLedgerCategory,
     type AgentCommandLedgerClosure,
-    type AgentCommandLedgerEntry,
     type AgentCommandLedgerOwner,
 } from '../models/AgentCommandLedger';
 
@@ -47,22 +46,6 @@ function readPreviewExecution(operationId: string): AgentCommandLedgerEntryDto['
         return 'unknown';
     }
     return getAppActionPreviewExecution(operationId);
-}
-
-/**
- * Fails fast when a ledger entry's packet format disagrees with its closure, so the published
- * ledger never carries a `supported` entry pointing at a tracker packet or an `interim-unsupported`
- * entry pointing at a handler factory name.
- */
-function assertPacketMatchesClosure(entry: AgentCommandLedgerEntry): AgentCommandLedgerEntry {
-    const packetIsTrackerReference = isInterimPacketReference(entry.packet);
-    const shouldBeTrackerReference = entry.closure === 'interim-unsupported';
-    if (packetIsTrackerReference !== shouldBeTrackerReference) {
-        throw new Error(
-            `AGENT_COMMAND_LEDGER entry '${entry.operationId}' has packet '${entry.packet}', which disagrees with its closure '${entry.closure}'.`
-        );
-    }
-    return entry;
 }
 
 /**

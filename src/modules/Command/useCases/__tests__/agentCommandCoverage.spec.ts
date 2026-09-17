@@ -10,6 +10,7 @@ import { getYeastHandlers } from '#/modules/Yeast/useCases';
 
 import {
     AGENT_COMMAND_LEDGER_CATEGORIES,
+    assertPacketMatchesClosure,
     isInterimPacketReference,
     type AgentCommandLedgerCategory,
     type AgentCommandLedgerClosure,
@@ -137,6 +138,63 @@ describe('agent command ledger coverage', () => {
 
         expect(isInterimPacketReference(supportedEntry.packet)).toBe(false);
         expect(isInterimPacketReference(interimEntry.packet)).toBe(true);
+    });
+
+    it('classifies packet reference syntax on boundary inputs', () => {
+        expect(isInterimPacketReference('#')).toBe(false);
+        expect(isInterimPacketReference('#2372x')).toBe(false);
+        expect(isInterimPacketReference('2372')).toBe(false);
+        expect(isInterimPacketReference('#2372')).toBe(true);
+    });
+
+    it('rejects a supported entry whose packet is a tracker reference, naming the operationId', () => {
+        const mismatchedEntry: AgentCommandLedgerEntry = {
+            operationId: 'addTrack',
+            category: 'track',
+            owner: 'Arrangement',
+            descriptorVersion: 1,
+            packet: '#2372',
+            closure: 'supported',
+        };
+
+        expect(() => assertPacketMatchesClosure(mismatchedEntry)).toThrowError(/addTrack/);
+    });
+
+    it('rejects an interim-unsupported entry whose packet names a handler factory, naming the operationId', () => {
+        const mismatchedEntry: AgentCommandLedgerEntry = {
+            operationId: 'addTrack',
+            category: 'track',
+            owner: 'Arrangement',
+            descriptorVersion: 1,
+            packet: 'getArrangementHandlers',
+            closure: 'interim-unsupported',
+        };
+
+        expect(() => assertPacketMatchesClosure(mismatchedEntry)).toThrowError(/addTrack/);
+    });
+
+    it('reads a literal operationId-to-category mapping for every populated category', () => {
+        const entriesByOperationId = new Map(
+            getAgentCommandLedger().entries.map((entry) => [entry.operationId, entry.category])
+        );
+        const expectedCategoryByOperationId: Record<string, AgentCommandLedgerCategory> = {
+            addMarker: 'project-timeline',
+            addTrack: 'track',
+            addClip: 'clip',
+            transposeNotes: 'midi',
+            setClipFade: 'audio-editing',
+            addDevice: 'device',
+            setDeviceParameter: 'parameter',
+            addAdjustmentRegion: 'automation',
+            createBus: 'routing',
+            importStemSet: 'asset',
+            renderProjectSections: 'render-freeze-export',
+            createDrumPreviewBranches: 'branch',
+        };
+
+        for (const [operationId, expectedCategory] of Object.entries(expectedCategoryByOperationId)) {
+            expect(entriesByOperationId.get(operationId)).toBe(expectedCategory);
+        }
     });
 
     it('carries previewExecution equal to getAppActionPreviewExecution for every entry, and the field discriminates', () => {

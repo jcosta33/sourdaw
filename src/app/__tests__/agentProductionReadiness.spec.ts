@@ -425,6 +425,52 @@ describe('agent production readiness', () => {
         });
     });
 
+    it('reports no completion claim when every phase gate passes but the ledger has an uncovered category', () => {
+        const ledgerFixture = buildPassingLedgerFixture();
+        const ledger = {
+            ...ledgerFixture,
+            uncoveredCategories: [{ category: 'macro' as const, packet: '#2372', reason: 'fixture' }],
+        };
+        const result = evaluateAgentProductionReadiness({
+            manifest: buildPassingManifestFixture(),
+            ledger,
+            catalog: buildPassingCatalogFixture(),
+        });
+
+        expect(result.phases.every((phase) => phase.status === 'passed')).toBe(true);
+        expect(result.completionClaim).toBe(false);
+        expect(result.completionBlockers).toContain('ledger:uncovered:macro');
+    });
+
+    it('reports no completion claim when every phase gate passes but an entry outside the minimum write set is interim-unsupported', () => {
+        const ledgerFixture = buildPassingLedgerFixture();
+        const ledger = {
+            ...ledgerFixture,
+            entries: [
+                ...ledgerFixture.entries,
+                {
+                    operationId: 'renameTrack',
+                    category: 'track' as const,
+                    owner: 'Arrangement' as const,
+                    descriptorVersion: 1,
+                    packet: '#2372',
+                    closure: 'interim-unsupported' as const,
+                    minimumWriteSet: false,
+                    previewExecution: 'unknown' as const,
+                },
+            ],
+        };
+        const result = evaluateAgentProductionReadiness({
+            manifest: buildPassingManifestFixture(),
+            ledger,
+            catalog: buildPassingCatalogFixture(),
+        });
+
+        expect(result.phases.every((phase) => phase.status === 'passed')).toBe(true);
+        expect(result.completionClaim).toBe(false);
+        expect(result.completionBlockers).toContain('ledger:interim-unsupported:renameTrack');
+    });
+
     it('fails media-autonomy-exclusion and blocks external-adapters when a deferred capability becomes available', () => {
         const catalogFixture = buildPassingCatalogFixture();
         const catalog = {

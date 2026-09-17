@@ -72,6 +72,22 @@ export function isInterimPacketReference(packet: string): boolean {
     return /^#\d+$/.test(packet);
 }
 
+/**
+ * Fails fast when a ledger entry's packet format disagrees with its closure, so the published
+ * ledger never carries a `supported` entry pointing at a tracker packet or an `interim-unsupported`
+ * entry pointing at a handler factory name.
+ */
+export function assertPacketMatchesClosure(entry: AgentCommandLedgerEntry): AgentCommandLedgerEntry {
+    const packetIsTrackerReference = isInterimPacketReference(entry.packet);
+    const shouldBeTrackerReference = entry.closure === 'interim-unsupported';
+    if (packetIsTrackerReference !== shouldBeTrackerReference) {
+        throw new Error(
+            `AGENT_COMMAND_LEDGER entry '${entry.operationId}' has packet '${entry.packet}', which disagrees with its closure '${entry.closure}'.`
+        );
+    }
+    return entry;
+}
+
 /** The registering handler factory name for each owner, reused so every supported entry agrees. */
 const SUPPORTED_ENTRY_PACKETS: Record<AgentCommandLedgerOwner, string> = {
     Arrangement: 'getArrangementHandlers',
