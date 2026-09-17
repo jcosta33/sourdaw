@@ -5,7 +5,9 @@ import {
     getAgentActionRiskPolicy,
     parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { resolveAgentDomainPreviewSupport } from './agentDomainPreview/resolveAgentDomainPreviewSupport';
 import { getExactAgentActionHash } from './getExactAgentActionHash';
 
 // Thrown when the active project no longer matches the batch's project, which
@@ -59,6 +61,13 @@ export function compileAgentRiskApproval(input: CompileAgentRiskApprovalInput) {
         maxRenderJobs: envelope.budgets.maxRenderJobs,
         remoteGeneration: envelope.grants.remoteGeneration,
     };
+    // Derived from the envelope rather than taken from the caller, because the
+    // revalidator recompiles this approval from the batch alone and compares
+    // the whole policy: a signal only the compiling caller knows would make
+    // every escalated proposal fail its own confirmation.
+    const unsupportedPreviewDomains = resolveAgentDomainPreviewSupport(
+        envelope.commands.map((command) => ({ type: command.operation, payload: command.arguments }) as AppAction)
+    ).flatMap((support) => (support.status === 'unsupported' ? [support.domain] : []));
     const unexpectedlyBroad =
         input.signals?.unexpectedlyBroad === true ||
         envelope.commands.length > 1 ||
@@ -72,7 +81,7 @@ export function compileAgentRiskApproval(input: CompileAgentRiskApprovalInput) {
         },
         consequences,
         operationTypes: envelope.commands.map((command) => command.operation),
-        signals: { ...input.signals, unexpectedlyBroad },
+        signals: { ...input.signals, unexpectedlyBroad, unsupportedPreviewDomains },
     });
     if (registryPolicy.decision === 'reject') {
         throw new Error(registryPolicy.reasons.join(' '));
