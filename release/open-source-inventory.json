@@ -1338,7 +1338,7 @@
         "scoring sha256:7a62b22c4f4dccb8fa44c6936fc7dd071b0dfcdfcd395fbf4380434bc60e5047"
       ],
       "digests": [
-        "sha256:94a47fc06d176612225f1f1b97454ba6e3443186ca8498fd83c83a96fabf451e:public/wasm/manifest.json"
+        "sha256:78d5c025e0ae097df37eedb79a6e957c6de2433ce60f31b3fe1e4bc194b642da:public/wasm/manifest.json"
       ],
       "licenses": [
         "Apache-2.0",
@@ -1719,7 +1719,7 @@
     },
     {
       "path": "public/wasm/manifest.json",
-      "sha256": "94a47fc06d176612225f1f1b97454ba6e3443186ca8498fd83c83a96fabf451e"
+      "sha256": "78d5c025e0ae097df37eedb79a6e957c6de2433ce60f31b3fe1e4bc194b642da"
     }
   ],
   "externalReferences": [

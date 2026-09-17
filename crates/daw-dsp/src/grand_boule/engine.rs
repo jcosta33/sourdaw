@@ -653,7 +653,31 @@ impl GrandBouleEngine {
         }
     }
 
+    /// Render a whole block: its samples, then the quiet accounting the
+    /// lifecycle reads.
+    ///
+    /// A host with no pending events calls this and nothing else, so the path
+    /// every measurement was taken on is unchanged. One that splits a block at
+    /// an event offset calls [`Self::render_segment`] per segment and
+    /// [`Self::account_quiet_block`] once over the whole block instead — the
+    /// accounting counts *blocks*, so running it per segment would age a
+    /// sleeping instrument several times faster than the block rate.
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.render_segment(left, right);
+        self.account_quiet_block(left, right);
+    }
+
+    /// Render one contiguous stretch of a block, re-running the per-block
+    /// preamble for it.
+    ///
+    /// The preamble is re-run per segment rather than once per block because a
+    /// note struck part-way through a block must be struck against the damper
+    /// state its own frame stands in: the CC smoother advances by this
+    /// segment's frame count, and the damper coefficients are rebuilt from the
+    /// position that reaches. Summed across the segments of one block the
+    /// smoother advances exactly the block's frames, so a split block and a
+    /// whole one leave the pedal in the same place.
+    pub fn render_segment(&mut self, left: &mut [f32], right: &mut [f32]) {
         let frames = left.len().min(right.len());
         // Advance the continuous-CC smoother before the damper coefficients
         // are rebuilt from it, so a block never renders with a pedal position
@@ -744,7 +768,16 @@ impl GrandBouleEngine {
             left[frame] += sample_l;
             right[frame] += sample_r;
         }
+    }
 
+    /// Count this block towards the run of consecutive quiet ones
+    /// [`Self::lifecycle`] falls asleep on, or reset that run.
+    ///
+    /// Exactly once per block the host rendered, whatever that block was split
+    /// into: the figure is "consecutive complete output blocks", and a block
+    /// split at three note offsets is still one block.
+    pub fn account_quiet_block(&mut self, left: &[f32], right: &[f32]) {
+        let frames = left.len().min(right.len());
         let output_quiet = left[..frames]
             .iter()
             .chain(&right[..frames])

@@ -1780,28 +1780,25 @@ fn member_channel(channel: i16) -> Option<u8> {
 
 /// Frames one hosted Grand Boule run renders.
 ///
-/// The web runtime's render quantum: the offline processor drives the
-/// instrument 128 frames at a time, and `receiveGrandBouleMessage` voices a
-/// framed message as soon as the block about to render is the one holding its
-/// frame — so a scheduled note sounds there from the start of the 128-frame
-/// block that holds it, counted from the timeline's absolute frame 0. The
-/// instrument takes no per-note sample offset, so the run length *is* the
-/// timing resolution, and the host splits a callback into runs this long to
-/// land a note on the same run the worklet lands it on.
+/// The web runtime's block-rate control quantum, and no longer the timing
+/// resolution of a note: the instrument takes a per-note sample offset, so a
+/// scheduled note sounds on its own frame inside whatever run holds it, on
+/// every span. What the run still fixes is everything the instrument does once
+/// per `process` call — the CC smoother's advance, the damper rebuild it feeds,
+/// and the parameter writes a host makes between calls — and the offline
+/// processor drives the instrument 128 frames at a time, so matching that here
+/// is what keeps a hosted render and a worklet render bit-identical.
 ///
-/// That parity holds exactly only when the span being split itself starts on
-/// the absolute 128-frame grid the worklet grids from — the host counts its
-/// own runs from the span's own frame 0, not from that absolute origin. A
-/// span starting off it, after a loop seam or under a device callback whose
-/// period is not a multiple of 128 (`GRAND_BOULE_RUN_FRAMES` does not divide
-/// it), voices a note up to
-/// `GRAND_BOULE_RUN_FRAMES - 1` frames away from where the worklet lands it,
-/// because the instrument has no offset-aware note API to close the gap.
-/// Tracked as #3997.
+/// The honest residual is that a span starting off the absolute 128-frame grid
+/// the worklet grids from — after a loop seam, or under a device callback whose
+/// period is not a multiple of 128 — advances that pedal smoothing and damper
+/// rebuild on a phase 0..`GRAND_BOULE_RUN_FRAMES - 1` frames from the worklet's,
+/// because the host counts its runs from the span's own frame 0. Notes are
+/// unaffected. It is audible only while a pedal is actually moving, and only as
+/// that pedal's travel landing a fraction of a block early or late.
 ///
 /// Well inside [`GRAND_BOULE_BLOCK_FRAMES`], the ceiling the instrument's own
-/// channel buffers impose: the run is the finer of the two figures, and the
-/// only one note timing depends on.
+/// channel buffers impose: the run is the finer of the two figures.
 const GRAND_BOULE_RUN_FRAMES: usize = 128;
 
 /// The bound `GrandBouleBody::render_run` reads the instrument's channel
@@ -1907,38 +1904,34 @@ impl GrandBouleBody {
     }
 
     /// Render this instrument's material for the block and sum it into the
-    /// pair, sounding each queued note in the run that holds its frame.
+    /// pair, delivering each queued note on the sample it was stamped for.
     ///
     /// Summed rather than written because an instrument is a generator: what
     /// it produces joins whatever already stands at its place in the chain.
     ///
     /// The block is split into runs of at most [`GRAND_BOULE_RUN_FRAMES`],
-    /// each one a whole `process` call, and every event whose frame falls
-    /// inside a run is delivered before that run renders. The instrument has
-    /// no note API carrying a sample offset, so the run boundary is the whole
-    /// of the timing resolution available — and it is exactly the resolution
-    /// the web runtime has, which is why the run is that runtime's quantum
-    /// rather than the far longer block the instrument's buffers would allow.
+    /// each one a whole `process` call with its own events rebased onto the
+    /// run's first frame. The run is kept although the instrument now takes a
+    /// sample offset because it is the web runtime's block-rate control
+    /// quantum — the CC smoother's advance and the damper rebuild it feeds —
+    /// and matching it keeps a hosted render and a worklet render
+    /// bit-identical for a span on the absolute grid.
     ///
-    /// This block is one span, and the runs above are counted from that
-    /// span's own frame 0 — not from the timeline's absolute frame 0 the
-    /// worklet grids its own runs from. Parity with the worklet is exact only
-    /// when the span itself starts on the absolute 128-frame grid; a span
-    /// starting off it, after a loop seam or under a device callback whose
-    /// period is not a multiple of 128 (`GRAND_BOULE_RUN_FRAMES` does not
-    /// divide it), sounds a note up to
-    /// `GRAND_BOULE_RUN_FRAMES - 1` frames away from where the worklet lands
-    /// it, because the instrument has no offset-aware note API to close the
-    /// gap (#3997).
+    /// The residual is the one [`GRAND_BOULE_RUN_FRAMES`] states: this block is
+    /// one span, and the runs are counted from that span's own frame 0, so a
+    /// span starting off the absolute grid advances that block-rate control on
+    /// a phase of its own. Note timing is unaffected — a stamped note sounds on
+    /// its own frame on every span.
     ///
     /// Nothing here allocates: the runs write into buffers the instrument
-    /// already owns, and a note is a call rather than a queued message.
+    /// already owns, and the events are pushed into its fixed block list.
     fn process(
         &mut self,
         left: &mut [f32],
         right: &mut [f32],
         frames: usize,
         events: &[MidiNoteEvent],
+        diagnostics: &mut ActiveMidiRtDiagnostics,
     ) {
         let mut next_event = 0;
         let mut rendered = 0;
@@ -1952,7 +1945,11 @@ impl GrandBouleBody {
                 if at >= run_end {
                     break;
                 }
-                self.deliver(event);
+                // Non-decreasing by the block's own contract; saturating so a
+                // producer that broke it lands its event on the first frame of
+                // the run that reaches it — late by up to one run — rather
+                // than panicking on the callback.
+                self.push_event(event, at.saturating_sub(rendered) as u32, diagnostics);
                 next_event += 1;
             }
             self.render_run(&mut left[rendered..run_end], &mut right[rendered..run_end]);
@@ -1960,8 +1957,8 @@ impl GrandBouleBody {
         }
     }
 
-    /// Sound one note on the instrument, at the head of the run about to
-    /// render.
+    /// Queue one note on the instrument at `offset` samples into the run about
+    /// to render.
     ///
     /// A note-off narrows to the member channel its note-on sounded on, so
     /// releasing one key cannot silence a different note holding the same
@@ -1969,19 +1966,35 @@ impl GrandBouleBody {
     /// nothing, and the note-off then releases every voice at that pitch, for
     /// the reason given on [`FermenterBody::push_event`]: a key nothing can
     /// ever lift is the one outcome worse than releasing more than was asked.
-    fn deliver(&mut self, event: &MidiNoteEvent) {
+    fn push_event(
+        &mut self,
+        event: &MidiNoteEvent,
+        offset: u32,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) {
         let channel = member_channel(event.channel);
-        match (event.is_note_on, channel) {
+        let queued = match (event.is_note_on, channel) {
             // An unaddressable channel still sounds: the key went down, and
             // the base member channel is where a note with no channel of its
             // own belongs.
-            (true, channel) => self.instance.note_on_with_channel(
+            (true, channel) => self.instance.push_note_on(
                 event.note,
                 f32::from(event.velocity) / MIDI_VELOCITY_FULL_SCALE,
                 channel.unwrap_or(0),
+                offset,
             ),
-            (false, Some(channel)) => self.instance.note_off_on_channel(event.note, channel),
-            (false, None) => self.instance.note_off(event.note),
+            (false, Some(channel)) => self
+                .instance
+                .push_note_off_on_channel(event.note, channel, offset),
+            (false, None) => self.instance.push_note_off(event.note, offset),
+        };
+        // Unreachable as the two capacities stand: a block carries at most
+        // `MIDI_EVENT_BUFFER_CAPACITY` events and the instrument's own list
+        // takes twice that per run, emptying on every `process`. The count is
+        // kept as a guard against either capacity moving, not because a
+        // refusal can happen today.
+        if !queued {
+            diagnostics.record_scheduler_event_buffer_overflow(1);
         }
     }
 
@@ -3462,12 +3475,12 @@ const TOASTER_PAD_COUNT: u32 = 16;
 
 /// Frames one hosted Toaster run renders.
 ///
-/// The web runtime's render quantum, on the reason given at
-/// [`GRAND_BOULE_RUN_FRAMES`]: the worklet drives the instrument 128 frames at
-/// a time and voices a framed message as soon as the block about to render is
-/// the one holding its frame. The instrument takes no per-hit sample offset, so
-/// the run length *is* the timing resolution, and the host splits a callback
-/// into runs this long to land a hit on the run the worklet lands it on.
+/// The web runtime's render quantum: the worklet drives the instrument 128
+/// frames at a time and voices a framed message as soon as the block about to
+/// render is the one holding its frame. The instrument takes no per-hit sample
+/// offset — unlike Grand Boule's, which gained one — so the run length *is* the
+/// timing resolution, and the host splits a callback into runs this long to
+/// land a hit on the run the worklet lands it on.
 ///
 /// Unlike [`GRAND_BOULE_RUN_FRAMES`] this figure cannot be refused against the
 /// instrument's own ceiling at compile time: `ToasterInstance` keeps its
@@ -3631,18 +3644,19 @@ impl ToasterBody {
     ///
     /// The block is split into runs of at most [`TOASTER_RUN_FRAMES`], each one
     /// a whole `process` call, and every event whose frame falls inside a run is
-    /// delivered before that run renders — the split
-    /// [`GrandBouleBody::process`] takes, for the same reason: the instrument
-    /// has no note API carrying a sample offset, so the run boundary is the
-    /// whole of the timing resolution available, and it is exactly the
-    /// resolution the web runtime has.
+    /// delivered before that run renders. The instrument has no note API
+    /// carrying a sample offset, so the run boundary is the whole of the timing
+    /// resolution available, and it is exactly the resolution the web runtime
+    /// has.
     ///
     /// This block is one span, and the runs are counted from that span's own
     /// frame 0 rather than from the timeline's absolute frame 0 the worklet
     /// grids its own runs from, so parity with the worklet is exact only when
     /// the span itself starts on the absolute 128-frame grid; a span starting
     /// off it sounds a hit up to `TOASTER_RUN_FRAMES - 1` frames from where the
-    /// worklet lands it (#3997).
+    /// worklet lands it. [`GrandBouleBody::process`] takes the same split but no
+    /// longer pays that cost on its notes: its instrument gained an offset-aware
+    /// note API, and this one has none.
     ///
     /// Nothing here allocates: the runs write into buffers the instrument
     /// already owns, and a hit is a call rather than a queued message.
@@ -3830,11 +3844,13 @@ const LEVAIN_MAX_VOICES: u32 = 64;
 /// the timing resolution, and the host splits a callback into runs this long to
 /// land a note on the run the worklet lands it on.
 ///
-/// The #3997 caveat on [`GRAND_BOULE_RUN_FRAMES`] applies here for the same
-/// reason: the runs are counted from the span's own frame 0 rather than from
-/// the absolute origin the worklet grids from, so a span starting off that grid
-/// sounds a note up to `LEVAIN_RUN_FRAMES - 1` frames from where the worklet
-/// lands it.
+/// The runs are counted from the span's own frame 0 rather than from the
+/// absolute origin the worklet grids from, so a span starting off that grid —
+/// after a loop seam, or under a device callback whose period is not a multiple
+/// of 128 — sounds a note up to `LEVAIN_RUN_FRAMES - 1` frames from where the
+/// worklet lands it. Grand Boule closed that gap by gaining an offset-aware
+/// note API; this instrument still has none, so the run boundary remains the
+/// whole of its timing resolution.
 ///
 /// Well inside [`LEVAIN_BLOCK_FRAMES`], the ceiling the instrument's own
 /// channel buffers impose: the run is the finer of the two figures, and the
@@ -8114,7 +8130,13 @@ fn process_device(
         // On the same law as the Fermenter above: always processed, and its
         // MIDI always cleared.
         PluginCore::GrandBoule(body) => {
-            body.process(left, right, frames, effect.pending_midi.as_slice());
+            body.process(
+                left,
+                right,
+                frames,
+                effect.pending_midi.as_slice(),
+                midi_rt_diagnostics,
+            );
             effect.pending_midi.clear();
         }
         PluginCore::Gluten(body) => {
@@ -11005,18 +11027,22 @@ mod tests {
                 ..note
             };
 
+            let mut diagnostics = ActiveMidiRtDiagnostics::new();
+
             assert_no_alloc(|| {
                 body.process(
                     &mut sounding_left,
                     &mut sounding_right,
                     FRAMES,
                     std::slice::from_ref(&note),
+                    &mut diagnostics,
                 );
                 body.process(
                     &mut released_left,
                     &mut released_right,
                     FRAMES,
                     std::slice::from_ref(&release),
+                    &mut diagnostics,
                 );
             });
 
@@ -11100,14 +11126,21 @@ mod tests {
                 left: &mut [f32],
                 right: &mut [f32],
                 release: &MidiNoteEvent,
+                diagnostics: &mut ActiveMidiRtDiagnostics,
             ) -> f32 {
                 let frames = left.len();
-                body.process(left, right, frames, std::slice::from_ref(release));
+                body.process(
+                    left,
+                    right,
+                    frames,
+                    std::slice::from_ref(release),
+                    diagnostics,
+                );
                 let mut window = 0.0;
                 for _ in 0..RELEASE_BLOCKS {
                     left.fill(0.0);
                     right.fill(0.0);
-                    body.process(left, right, frames, &[]);
+                    body.process(left, right, frames, &[], diagnostics);
                     let power: f32 = left.iter().map(|sample| sample * sample).sum();
                     window = (power / frames as f32).sqrt();
                 }
@@ -11140,10 +11173,17 @@ mod tests {
             let mut right = vec![0.0_f32; FRAMES];
             let mut held = GrandBouleBody::new(48_000.0);
             let mut pedal_free = GrandBouleBody::new(48_000.0);
+            let mut diagnostics = ActiveMidiRtDiagnostics::new();
             for body in [&mut held, &mut pedal_free] {
                 left.fill(0.0);
                 right.fill(0.0);
-                body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&note));
+                body.process(
+                    &mut left,
+                    &mut right,
+                    FRAMES,
+                    std::slice::from_ref(&note),
+                    &mut diagnostics,
+                );
                 assert!(
                     left.iter().any(|sample| *sample != 0.0),
                     "the instrument never sounded, so the guard below covers an idle body"
@@ -11155,28 +11195,34 @@ mod tests {
 
             assert_no_alloc(|| {
                 held.control_change(control(CC_SUSTAIN, 127));
-                held.process(&mut left, &mut right, FRAMES, &[]);
-                held_window = release_and_read(&mut held, &mut left, &mut right, &release);
-                pedal_free_window =
-                    release_and_read(&mut pedal_free, &mut left, &mut right, &release);
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
+                held_window =
+                    release_and_read(&mut held, &mut left, &mut right, &release, &mut diagnostics);
+                pedal_free_window = release_and_read(
+                    &mut pedal_free,
+                    &mut left,
+                    &mut right,
+                    &release,
+                    &mut diagnostics,
+                );
 
                 held.control_change(control(CC_SUSTAIN, 0));
-                held.process(&mut left, &mut right, FRAMES, &[]);
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
                 for controller in [CC_SOSTENUTO, CC_UNA_CORDA] {
                     held.control_change(control(controller, 127));
-                    held.process(&mut left, &mut right, FRAMES, &[]);
+                    held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
                     held.control_change(control(controller, 0));
-                    held.process(&mut left, &mut right, FRAMES, &[]);
+                    held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
                 }
                 held.reset_controllers();
-                held.process(&mut left, &mut right, FRAMES, &[]);
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
 
                 // The stop's own route on a body standing on the damper, which
                 // is the one that kills rather than releasing.
                 held.control_change(control(CC_SUSTAIN, 127));
-                held.process(&mut left, &mut right, FRAMES, &[]);
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
                 held.silence_pedal_held_voices();
-                held.process(&mut left, &mut right, FRAMES, &[]);
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
             });
 
             assert!(
@@ -20242,10 +20288,10 @@ mod timeline_tests {
         let (worklet_left, worklet_right) =
             render_grand_boule_reference(RENDERED / GRAND_BOULE_RUN_FRAMES, |run, instance| {
                 if run == 0 {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == RELEASE_RUN {
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             });
 
@@ -20265,22 +20311,98 @@ mod timeline_tests {
         );
     }
 
-    /// A note sounds from the run that holds the frame it was stamped for, and
-    /// the runs ahead of it are silent.
+    /// A span the absolute 128-frame grid does not divide still renders the
+    /// worklet's own samples.
     ///
-    /// The instrument has no note API carrying a sample offset, so the run is
-    /// the whole of the timing resolution — and it is the resolution the web
-    /// runtime has too, which is why the note is expected at the head of its
-    /// run rather than on its own frame. A body that delivered every event at
-    /// the head of the callback would sound this note in the first run, where
-    /// the leading assertion reads silence.
+    /// The callback is 192 frames, so every span after the first starts off the
+    /// grid the worklet counts its blocks from: span 1 begins at frame 192,
+    /// and the body's own run 0 covers frames 192..320 while the worklet's
+    /// block 1 covers 128..256. Before the instrument took a sample offset the
+    /// body could only sound a note at the head of one of its own runs, which
+    /// put this note-on at frame 192 — 8 frames early, and 200 frames into a
+    /// window the equality below requires to be silent. With the offset the
+    /// body rebases the stamp onto its run and the two renders agree sample for
+    /// sample.
     #[test]
-    fn a_grand_boule_note_on_sounds_from_the_run_that_holds_its_frame() {
+    fn a_hosted_grand_boule_off_grid_span_renders_the_worklet_samples() {
+        /// Deliberately not a multiple of [`GRAND_BOULE_RUN_FRAMES`]: this is
+        /// what puts every later span off the worklet's absolute grid.
+        const CALLBACK: usize = 192;
+        const CALLBACKS: usize = 8;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const NOTE: u8 = 60;
+        const ONSET_FRAME: u64 = 200;
+        const RELEASE_FRAME: u64 = 1_000;
+        /// The worklet's own block and offset for frame 200: 200 = 1 * 128 + 72.
+        const ONSET_BLOCK: usize = 1;
+        const ONSET_OFFSET: u32 =
+            ONSET_FRAME as u32 - (ONSET_BLOCK * GRAND_BOULE_RUN_FRAMES) as u32;
+        /// And for frame 1000: 1000 = 7 * 128 + 104.
+        const RELEASE_BLOCK: usize = 7;
+        const RELEASE_OFFSET: u32 =
+            RELEASE_FRAME as u32 - (RELEASE_BLOCK * GRAND_BOULE_RUN_FRAMES) as u32;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(ONSET_FRAME, NOTE, true), (RELEASE_FRAME, NOTE, false)],
+        ));
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let (worklet_left, worklet_right) =
+            render_grand_boule_reference(RENDERED / GRAND_BOULE_RUN_FRAMES, |block, instance| {
+                if block == ONSET_BLOCK {
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, ONSET_OFFSET));
+                }
+                if block == RELEASE_BLOCK {
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, RELEASE_OFFSET));
+                }
+            });
+
+        assert!(
+            hosted_left[..ONSET_FRAME as usize]
+                .iter()
+                .all(|sample| *sample == 0.0),
+            "the hosted body sounded before the frame the note was stamped for"
+        );
+        assert!(
+            worklet_left[ONSET_FRAME as usize..]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "the reference render is silent past the onset, so an equality against it \
+             proves nothing"
+        );
+        assert_eq!(
+            hosted_left, worklet_left,
+            "the hosted body's left channel is not the signal the worklet renders across \
+             off-grid spans"
+        );
+        assert_eq!(
+            hosted_right, worklet_right,
+            "the hosted body's right channel is not the signal the worklet renders across \
+             off-grid spans"
+        );
+    }
+
+    /// A note sounds from the frame it was stamped for, and every frame ahead
+    /// of it is silent.
+    ///
+    /// The instrument takes a per-note sample offset, so the frame — not the
+    /// run holding it — is where the note is expected. Two bodies fail the
+    /// leading assertion: one delivering every event at the head of the
+    /// callback sounds this note at frame 0, and one delivering it at the head
+    /// of its own run sounds it at frame 128, both inside the window this reads
+    /// as exact silence.
+    #[test]
+    fn a_grand_boule_note_on_sounds_from_its_stamped_frame() {
         const CALLBACK: usize = 512;
         const STAMPED_FRAME: u32 = 200;
-        /// The run holding frame 200, which is where the note is expected.
+        /// The run holding frame 200, and the offset inside it the worklet
+        /// pushes the note at.
         const SOUNDING_RUN: usize = 1;
-        const ONSET: usize = SOUNDING_RUN * GRAND_BOULE_RUN_FRAMES;
+        const OFFSET_IN_RUN: u32 = STAMPED_FRAME - (SOUNDING_RUN * GRAND_BOULE_RUN_FRAMES) as u32;
 
         let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
         let mut event = note_on(60);
@@ -20288,26 +20410,37 @@ mod timeline_tests {
         event.frame_offset = STAMPED_FRAME;
         let mut hosted_left = vec![0.0_f32; CALLBACK];
         let mut hosted_right = vec![0.0_f32; CALLBACK];
+        let mut diagnostics = ActiveMidiRtDiagnostics::new();
         body.process(
             &mut hosted_left,
             &mut hosted_right,
             CALLBACK,
             std::slice::from_ref(&event),
+            &mut diagnostics,
         );
 
         let (reference_left, reference_right) =
             render_grand_boule_reference(CALLBACK / GRAND_BOULE_RUN_FRAMES, |run, instance| {
                 if run == SOUNDING_RUN {
-                    instance.note_on_with_channel(event.note, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(
+                        event.note,
+                        grand_boule_velocity(),
+                        0,
+                        OFFSET_IN_RUN
+                    ));
                 }
             });
 
         assert!(
-            hosted_left[..ONSET].iter().all(|sample| *sample == 0.0),
-            "the body sounded before the run that holds the note's frame"
+            hosted_left[..STAMPED_FRAME as usize]
+                .iter()
+                .all(|sample| *sample == 0.0),
+            "the body sounded before the frame the note was stamped for"
         );
         assert!(
-            reference_left[ONSET..].iter().any(|sample| *sample != 0.0),
+            reference_left[STAMPED_FRAME as usize..]
+                .iter()
+                .any(|sample| *sample != 0.0),
             "the reference is silent past the onset, so the equality below proves nothing"
         );
         assert_eq!(
@@ -20344,16 +20477,19 @@ mod timeline_tests {
         event.frame_offset = STAMPED_FRAME;
         let mut hosted_left = vec![0.0_f32; FRAMES];
         let mut hosted_right = vec![0.0_f32; FRAMES];
+        let mut diagnostics = ActiveMidiRtDiagnostics::new();
         body.process(
             &mut hosted_left,
             &mut hosted_right,
             FRAMES,
             std::slice::from_ref(&event),
+            &mut diagnostics,
         );
 
         // The reference drives the instance the way the worklet would: two
-        // whole runs, with the stamped note (frame 200, inside the second
-        // run) delivered before that run renders, then the 44-frame tail.
+        // whole runs, with the stamped note (frame 200, 72 frames into the
+        // second run) pushed at that offset before the run renders, then the
+        // 44-frame tail.
         let mut instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
         let mut reference_left = Vec::with_capacity(FRAMES);
         let mut reference_right = Vec::with_capacity(FRAMES);
@@ -20362,7 +20498,12 @@ mod timeline_tests {
             .enumerate()
         {
             if run == 1 {
-                instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                assert!(instance.push_note_on(
+                    NOTE,
+                    grand_boule_velocity(),
+                    0,
+                    STAMPED_FRAME - GRAND_BOULE_RUN_FRAMES as u32
+                ));
             }
             let rendered_left = instance.process(run_frames as u32);
             let rendered_right = instance.get_right_ptr();
@@ -20417,6 +20558,7 @@ mod timeline_tests {
         let mut hosted_left = vec![0.0_f32; SPAN];
         let mut hosted_right = vec![0.0_f32; SPAN];
         let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
+        let mut diagnostics = ActiveMidiRtDiagnostics::new();
 
         let mut note_on_channel_1 = note_on(NOTE);
         note_on_channel_1.velocity = GRAND_BOULE_VELOCITY;
@@ -20429,6 +20571,7 @@ mod timeline_tests {
             &mut hosted_right[..GRAND_BOULE_RUN_FRAMES],
             GRAND_BOULE_RUN_FRAMES,
             &[note_on_channel_1, note_on_channel_2],
+            &mut diagnostics,
         );
 
         let mut note_off_channel_2 = note_on(NOTE);
@@ -20439,16 +20582,17 @@ mod timeline_tests {
             &mut hosted_right[GRAND_BOULE_RUN_FRAMES..],
             SPAN - GRAND_BOULE_RUN_FRAMES,
             std::slice::from_ref(&note_off_channel_2),
+            &mut diagnostics,
         );
 
         let mut instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
         let mut reference_left = Vec::with_capacity(SPAN);
         let mut reference_right = Vec::with_capacity(SPAN);
-        instance.note_on_with_channel(NOTE, grand_boule_velocity(), 1);
-        instance.note_on_with_channel(NOTE, grand_boule_velocity(), 2);
+        assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 1, 0));
+        assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 2, 0));
         for run in 0..4 {
             if run == 1 {
-                instance.note_off_on_channel(NOTE, 2);
+                assert!(instance.push_note_off_on_channel(NOTE, 2, 0));
             }
             let rendered_left = instance.process(GRAND_BOULE_RUN_FRAMES as u32);
             let rendered_right = instance.get_right_ptr();
@@ -20523,7 +20667,8 @@ mod timeline_tests {
 
             let mut events = held.to_vec();
             events.push(release);
-            body.process(&mut left, &mut right, RENDERED, &events);
+            let mut diagnostics = ActiveMidiRtDiagnostics::new();
+            body.process(&mut left, &mut right, RENDERED, &events, &mut diagnostics);
             left
         }
 
@@ -20640,10 +20785,10 @@ mod timeline_tests {
                     if damper_down {
                         instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
                     }
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == RELEASE_RUN {
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             })
         };
@@ -20715,13 +20860,13 @@ mod timeline_tests {
             render_grand_boule_reference(RUNS, move |run, instance| {
                 if run == 0 {
                     instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if lifted && run == LIFT_RUN {
                     instance.set_sustain(0.0);
                 }
                 if run == RELEASE_RUN {
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             })
         };
@@ -20781,13 +20926,13 @@ mod timeline_tests {
             render_grand_boule_reference(RUNS, move |run, instance| {
                 if run == 0 {
                     instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if !survives && run == RUNS_PER_CALLBACK {
                     instance.set_sustain(0.0);
                 }
                 if run == RELEASE_RUN {
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             })
         };
@@ -20925,13 +21070,13 @@ mod timeline_tests {
         let reference = |lifts_pedals: bool| {
             render_grand_boule_reference(RUNS, move |run, instance| {
                 if run == 0 {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == PEDAL_RUN {
                     instance.set_sostenuto(true);
                     instance.set_una_corda(true);
                     instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
                 if run == EDGE_RUN {
                     // The whole of what the edge does to a pedalled body: the
@@ -20949,10 +21094,10 @@ mod timeline_tests {
                     }
                 }
                 if run == SECOND_NOTE_RUN {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == SECOND_RELEASE_RUN {
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             })
         };
@@ -21181,13 +21326,13 @@ mod timeline_tests {
         let reference = |kills: bool| {
             render_grand_boule_reference(RUNS, move |run, instance| {
                 if run == 0 {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == STOP_RUN {
                     if kills {
                         instance.all_notes_off();
                     } else {
-                        instance.note_off_on_channel(NOTE, 0);
+                        assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                     }
                 }
             })
@@ -21953,7 +22098,7 @@ mod timeline_tests {
         let reference = |sostenuto: bool| {
             render_grand_boule_reference(RUNS, move |run, instance| {
                 if run == 0 {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == PEDAL_RUN {
                     if sostenuto {
@@ -21961,7 +22106,7 @@ mod timeline_tests {
                     } else {
                         instance.set_una_corda(true);
                     }
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             })
         };
@@ -22041,11 +22186,11 @@ mod timeline_tests {
         let reference = |lifted_at_seam: bool| {
             render_grand_boule_reference(RUNS, move |run, instance| {
                 if run == 0 {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == PEDAL_RUN {
                     instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
                 if lifted_at_seam && run == SEAM_RUN {
                     instance.set_sustain(0.0);
@@ -22135,7 +22280,7 @@ mod timeline_tests {
         let sweep = |positions: [f32; 3]| {
             render_grand_boule_reference(RUNS, move |run, instance| {
                 if run == 0 {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 for (callback, position) in [PRESS_CALLBACK, HALF_CALLBACK, LIFT_CALLBACK]
                     .iter()
@@ -22146,7 +22291,7 @@ mod timeline_tests {
                     }
                 }
                 if run == RELEASE_RUN {
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             })
         };
