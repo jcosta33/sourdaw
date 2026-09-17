@@ -1,0 +1,166 @@
+{
+    "schemaVersion": 1,
+    "examples": [
+        {
+            "id": "EX-01",
+            "disposition": "recovered",
+            "spec": "src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts",
+            "actionTypes": [
+                "removeDevice",
+                "createBus",
+                "addDevice",
+                "setDeviceParameter",
+                "addSend",
+                "automateSendRanges",
+                "renderProjectSections"
+            ],
+            "risk": [
+                "destructive-reversible",
+                "bounded-reversible",
+                "bounded-reversible",
+                "bounded-reversible",
+                "authority-sensitive",
+                "authority-sensitive",
+                "external-effect"
+            ]
+        },
+        {
+            "id": "EX-02",
+            "disposition": "recovered",
+            "spec": "src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts",
+            "actionTypes": ["automateTrackGainRange"],
+            "risk": ["authority-sensitive"]
+        },
+        {
+            "id": "EX-03",
+            "disposition": "recovered",
+            "spec": "src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts",
+            "actionTypes": ["addAdjustmentRegion"],
+            "risk": ["bounded-reversible"]
+        },
+        {
+            "id": "EX-04",
+            "disposition": "recovered",
+            "spec": "src/modules/AiRuntime/useCases/__tests__/midiOverlapPromptWorkflow.spec.ts",
+            "actionTypes": ["removeShortMidiOverlaps"],
+            "risk": ["broad-reversible"]
+        },
+        {
+            "id": "EX-05",
+            "disposition": "recovered",
+            "spec": "src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts",
+            "actionTypes": ["createDrumPreviewBranches"],
+            "risk": ["broad-reversible"]
+        },
+        {
+            "id": "EX-06",
+            "disposition": "recovered",
+            "spec": "src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts",
+            "actionTypes": ["addSidechainRoute"],
+            "risk": ["authority-sensitive"]
+        },
+        {
+            "id": "EX-07",
+            "disposition": "recovered",
+            "spec": "src/modules/AiRuntime/useCases/__tests__/syncopatedArpeggioPromptWorkflow.spec.ts",
+            "actionTypes": ["arpeggiate"],
+            "risk": ["broad-reversible"]
+        },
+        {
+            "id": "EX-08",
+            "disposition": "recovered",
+            "spec": "src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts",
+            "actionTypes": ["removeDevice", "setTrackGain", "createBus", "addDevice", "setDeviceParameter", "addSend"],
+            "risk": [
+                "destructive-reversible",
+                "bounded-reversible",
+                "bounded-reversible",
+                "bounded-reversible",
+                "bounded-reversible",
+                "authority-sensitive"
+            ]
+        },
+        {
+            "id": "EX-09",
+            "disposition": "unrecovered",
+            "spec": null,
+            "actionTypes": [],
+            "risk": [],
+            "reason": "no source definition found in the repository, artifacts or tracker"
+        },
+        {
+            "id": "EX-10",
+            "disposition": "deferred",
+            "spec": "src/app/__tests__/agentSourceExamples.spec.ts",
+            "actionTypes": [],
+            "risk": [],
+            "capability": "agent.project.reconstruct"
+        },
+        {
+            "id": "EX-11",
+            "disposition": "recovered",
+            "spec": "src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts",
+            "actionTypes": [
+                "createBus",
+                "setTrackOutput",
+                "addDevice",
+                "addSend",
+                "setTrackGain",
+                "renderProjectSections"
+            ],
+            "risk": [
+                "bounded-reversible",
+                "authority-sensitive",
+                "bounded-reversible",
+                "authority-sensitive",
+                "bounded-reversible",
+                "external-effect"
+            ]
+        },
+        {
+            "id": "MF-01",
+            "disposition": "recovered",
+            "spec": "src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts",
+            "actionTypes": ["setTrackOutput"],
+            "risk": ["authority-sensitive"]
+        },
+        {
+            "id": "MF-02",
+            "disposition": "unrecovered",
+            "spec": null,
+            "actionTypes": [],
+            "risk": [],
+            "reason": "no source definition found in the repository, artifacts or tracker"
+        },
+        {
+            "id": "MF-03",
+            "disposition": "recovered",
+            "spec": "src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts",
+            "actionTypes": ["copyMidiArticulations"],
+            "risk": ["broad-reversible"]
+        },
+        {
+            "id": "MF-04",
+            "disposition": "unrecovered",
+            "spec": null,
+            "actionTypes": [],
+            "risk": [],
+            "reason": "no source definition found in the repository, artifacts or tracker"
+        },
+        {
+            "id": "MF-05",
+            "disposition": "unrecovered",
+            "spec": null,
+            "actionTypes": [],
+            "risk": [],
+            "reason": "no source definition found in the repository, artifacts or tracker"
+        },
+        {
+            "id": "MF-06",
+            "disposition": "recovered",
+            "spec": "src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts",
+            "actionTypes": ["addSidechainRoute"],
+            "risk": ["authority-sensitive"]
+        }
+    ]
+}

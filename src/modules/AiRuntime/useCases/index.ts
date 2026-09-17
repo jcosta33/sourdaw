@@ -33,6 +33,7 @@ export { getProjectContext } from './getProjectContext';
 export { getAiRuntimeProtocolContracts } from './getAiRuntimeProtocolContracts';
 export { getAgentCapabilityCatalog } from './getAgentCapabilityCatalog';
 export { assertCanonicalLlmActionStrategies } from './assertCanonicalLlmActionStrategies';
+export { parsePromptToActions } from './parsePromptToActions';
 
 export { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 export { isLlmAvailable } from './llmOrchestration/backendResolution/isLlmAvailable';

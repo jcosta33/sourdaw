@@ -307,6 +307,64 @@ export function evaluateRelease(
     return { blockers };
 }
 
+/**
+ * The AC-056 source-examples corpus, read beside the manifest when present. The path is fixed here
+ * rather than derived from `EVIDENCE_SUITE_COMMANDS`: the corpus is data the release evaluation
+ * reads, not a fixture a suite command names.
+ */
+export const SOURCE_EXAMPLES_CORPUS_PATH = 'evidence/agent-campaign/corpora/source-examples.json';
+
+const SOURCE_EXAMPLE_DISPOSITIONS = ['recovered', 'deferred', 'unrecovered'] as const;
+
+type SourceExampleDisposition = (typeof SOURCE_EXAMPLE_DISPOSITIONS)[number];
+
+type SourceExample = { id: string; disposition: SourceExampleDisposition };
+
+function asSourceExamplesRecord(value: unknown, label: string): Record<string, unknown> {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        throw new TypeError(`${label}: expected an object`);
+    }
+    return value as Record<string, unknown>;
+}
+
+function parseSourceExample(value: unknown, label: string): SourceExample {
+    const entry = asSourceExamplesRecord(value, label);
+    if (typeof entry.id !== 'string') {
+        throw new TypeError(`${label}.id: expected a string`);
+    }
+    const disposition = SOURCE_EXAMPLE_DISPOSITIONS.find((candidate) => candidate === entry.disposition);
+    if (disposition === undefined) {
+        throw new Error(`${label}.disposition: unknown disposition ${JSON.stringify(entry.disposition)}`);
+    }
+    return { id: entry.id, disposition };
+}
+
+/** Parses the corpus with the same strict, throw-on-shape-mismatch style as `evidenceManifest.ts`. */
+function parseSourceExamplesCorpus(text: string): readonly SourceExample[] {
+    const root = asSourceExamplesRecord(JSON.parse(text), SOURCE_EXAMPLES_CORPUS_PATH);
+    if (!Array.isArray(root.examples)) {
+        throw new TypeError(`${SOURCE_EXAMPLES_CORPUS_PATH}.examples: expected an array`);
+    }
+    return root.examples.map((example, index) =>
+        parseSourceExample(example, `${SOURCE_EXAMPLES_CORPUS_PATH}.examples[${index}]`)
+    );
+}
+
+/**
+ * One release blocker per source example the AC-056 corpus still records as unrecovered, plus a
+ * standalone blocker when the corpus itself is missing: a release cannot claim AC-056 complete
+ * while an example carries no recoverable definition or the corpus that would say so is absent.
+ */
+export function sourceExampleReleaseBlockers(root: string): readonly string[] {
+    const absolute = resolve(root, SOURCE_EXAMPLES_CORPUS_PATH);
+    if (!existsSync(absolute)) {
+        return ['source examples corpus missing'];
+    }
+    return parseSourceExamplesCorpus(readFileSync(absolute, 'utf8'))
+        .filter((example) => example.disposition === 'unrecovered')
+        .map((example) => `source-example ${example.id}: unrecovered`);
+}
+
 function readRecords(root: string, manifest: EvidenceManifest): readonly EvidenceRecord[] {
     const records: EvidenceRecord[] = [];
     for (const suite of manifest.suites) {
@@ -462,7 +520,7 @@ function runGate(root: string, manifest: EvidenceManifest, taskId: string, gateI
 function runRelease(root: string, manifest: EvidenceManifest): number {
     const release = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest) };
     const { blockers } = evaluateRelease(manifest, readRecords(root, manifest), release);
-    return report(blockers);
+    return report([...blockers, ...sourceExampleReleaseBlockers(root)]);
 }
 
 type EvidenceGateOptions = {

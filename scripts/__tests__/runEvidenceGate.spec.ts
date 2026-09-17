@@ -10,6 +10,7 @@ import { sharedFixturePaths } from '../agent-campaign/evidenceManifest';
 import {
     EVIDENCE_MANIFEST_PATH,
     EVIDENCE_RECORDS_DIRECTORY,
+    SOURCE_EXAMPLES_CORPUS_PATH,
     buildEvidenceManifest,
     compareDigests,
     evaluateRelease,
@@ -18,6 +19,7 @@ import {
     readEnvironmentDigests,
     readLiveDigests,
     selectGate,
+    sourceExampleReleaseBlockers,
     validateEvidenceManifest,
     type EvidenceManifest,
     type EvidenceRecord,
@@ -296,6 +298,59 @@ describe('shared fixture detection', () => {
         };
 
         expect(sharedFixturePaths([suiteA, suiteB, suiteC])).toEqual([{ path: sharedPath, suites: ['Z-A', 'Z-B'] }]);
+    });
+});
+
+describe('source examples corpus', () => {
+    it('blocks release on every example the corpus still records as unrecovered', () => {
+        const { root } = fixture();
+        write(
+            root,
+            SOURCE_EXAMPLES_CORPUS_PATH,
+            JSON.stringify({
+                schemaVersion: 1,
+                examples: [
+                    { id: 'EX-01', disposition: 'recovered' },
+                    { id: 'EX-09', disposition: 'unrecovered' },
+                ],
+            })
+        );
+
+        expect(sourceExampleReleaseBlockers(root)).toEqual(['source-example EX-09: unrecovered']);
+    });
+
+    it('blocks nothing when the corpus records no unrecovered example', () => {
+        const { root } = fixture();
+        write(
+            root,
+            SOURCE_EXAMPLES_CORPUS_PATH,
+            JSON.stringify({
+                schemaVersion: 1,
+                examples: [
+                    { id: 'EX-01', disposition: 'recovered' },
+                    { id: 'EX-10', disposition: 'deferred' },
+                ],
+            })
+        );
+
+        expect(sourceExampleReleaseBlockers(root)).toEqual([]);
+    });
+
+    it('blocks release when the corpus itself is missing', () => {
+        const { root } = fixture();
+
+        expect(sourceExampleReleaseBlockers(root)).toEqual(['source examples corpus missing']);
+    });
+
+    it('wires the corpus blockers into the --release report', async () => {
+        const { manifestPath } = fixture();
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const exitCode = await main(['--release', '--manifest', manifestPath]);
+
+        expect(exitCode).toBe(1);
+        expect(errorSpy.mock.calls.flat()).toContainEqual('source examples corpus missing');
+        errorSpy.mockRestore();
     });
 });
 
