@@ -5,6 +5,7 @@ const {
     mockIsAppError,
     mockLogger,
     mockFlushStorage,
+    mockCaptureTransactionScope,
     mockAutomergeRepo,
     mockBranchStore,
     mockBranchStateAuthority,
@@ -17,6 +18,13 @@ const {
     mockIsAppError: vi.fn(() => false),
     mockLogger: { warn: vi.fn() },
     mockFlushStorage: vi.fn(),
+    // No ambient action transaction in this unit, so the captured scope runs
+    // its callback where it stands — what the real capture returns outside one.
+    mockCaptureTransactionScope: vi.fn(
+        () =>
+            <Result>(run: () => Result) =>
+                run()
+    ),
     mockAutomergeRepo: {
         getDoc: vi.fn(() => null),
         getRootId: vi.fn(() => 'root'),
@@ -44,6 +52,7 @@ vi.mock('@automerge/automerge', () => ({ clone: mockCloneDoc }));
 vi.mock('#/infra/errors/isAppError', () => ({ isAppError: mockIsAppError }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
+    captureAutomergeStorageTransactionScope: mockCaptureTransactionScope,
     flushAutomergeStorageWrites: mockFlushStorage,
 }));
 vi.mock('../../../repositories/automergeRepository', () => ({ automergeRepository: mockAutomergeRepo }));
@@ -87,6 +96,8 @@ describe('runBranchLineageTransition', () => {
 
     it('applies the transition, commits next state, and returns the result', async () => {
         const nextState = { ...previousState, activeBranchId: 'branch-b' };
+        const capturedScope = <Result>(run: () => Result): Result => run();
+        mockCaptureTransactionScope.mockReturnValueOnce(capturedScope);
         const result = await runBranchLineageTransition({
             affectedDocIds: ['doc-1'],
             apply: () => ({ nextState, result: 'success' }),
@@ -96,8 +107,13 @@ describe('runBranchLineageTransition', () => {
         });
         expect(result).toBe('success');
         // The durable commit is the write: it carries the revision the
-        // transition observed, and the authority is what projects it to memory.
-        expect(mockBranchStateAuthority.commit).toHaveBeenCalledWith({ expectedRevision: 4, next: nextState });
+        // transition observed and the storage transaction the caller was still
+        // inside, and the authority is what projects it to memory.
+        expect(mockBranchStateAuthority.commit).toHaveBeenCalledWith({
+            expectedRevision: 4,
+            next: nextState,
+            projectionScope: capturedScope,
+        });
         expect(mockProjectCrdtToStores).toHaveBeenCalledTimes(1);
         expect(mockRunPersistenceOp).toHaveBeenCalledWith({
             type: 'root-lineage-transition',

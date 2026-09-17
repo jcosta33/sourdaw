@@ -2,7 +2,10 @@ import { clone as cloneDoc, type Doc } from '@automerge/automerge';
 
 import { isAppError } from '#/infra/errors/isAppError';
 import { logger } from '#/infra/logger/appLogger';
-import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    captureAutomergeStorageTransactionScope,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 import { createBranchError } from '../../errors/BranchError';
 import { type DocId } from '../../models/CrdtDocumentTypes';
@@ -131,6 +134,13 @@ export async function runBranchTransition<TResult>({
     flushAutomergeStorageWrites();
     const capturedRootIdentity = automergeRepository.getRootIdentityEpoch();
     const expectedRevision = branchStateAuthority.captureRevision();
+    // Captured here, synchronously, because the commit below takes a Web Lock
+    // and an app action's ambient storage transaction ends at the handler's
+    // first await. The branch-list projection has to stay inside the action
+    // that asked for it: unattributed, it and the document writes its
+    // subscribers make count as an outside writer, and a batch that detects one
+    // revokes its own execution authority (Audit CC-10).
+    const projectionScope = captureAutomergeStorageTransactionScope();
     const snapshots = [...new Set(affectedDocIds)].map(createDocumentSnapshot);
     branchTransitionInProgress = true;
 
@@ -144,7 +154,11 @@ export async function runBranchTransition<TResult>({
             // awaited, as the store write it replaces was: a refused commit has
             // to unwind through the same rollback a thrown persistence error
             // does, and the rollback needs the documents still restorable.
-            const committed = await branchStateAuthority.commit({ expectedRevision, next: nextState });
+            const committed = await branchStateAuthority.commit({
+                expectedRevision,
+                next: nextState,
+                projectionScope,
+            });
             if (committed.status === 'refused') {
                 throw createBranchError(`Branch state could not be persisted (${committed.reason})`);
             }

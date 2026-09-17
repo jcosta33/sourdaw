@@ -130,6 +130,7 @@ describe('forkProjectBranch', () => {
         expect(mocks.commit).toHaveBeenCalledWith({
             expectedRevision: 4,
             next: expect.objectContaining({ activeBranchId: branchId }),
+            projectionScope: expect.any(Function),
         });
         expect(mocks.compactProject).toHaveBeenCalledOnce();
         expect(mocks.projectCrdtToStores).toHaveBeenCalled();

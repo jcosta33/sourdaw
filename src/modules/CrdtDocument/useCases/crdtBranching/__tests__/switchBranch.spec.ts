@@ -101,7 +101,13 @@ const mocks = vi.hoisted(() => ({
     },
     storeSet: vi.fn<(state: BranchStoreValue) => void>(),
     captureRevision: vi.fn(() => 4),
-    commit: vi.fn<(input: { expectedRevision: number; next: BranchStoreValue }) => Promise<BranchStateCommitOutcome>>(),
+    commit: vi.fn<
+        (input: {
+            expectedRevision: number;
+            next: BranchStoreValue;
+            projectionScope?: (project: () => void) => void;
+        }) => Promise<BranchStateCommitOutcome>
+    >(),
     projectCrdtToStores: vi.fn(),
     compactProject: vi.fn(() => Promise.resolve()),
     loadCrdtProject: vi.fn(() => Promise.resolve(true)),
@@ -276,6 +282,7 @@ describe('switchBranch', () => {
         expect(mocks.commit).toHaveBeenCalledWith({
             expectedRevision: 4,
             next: expect.objectContaining({ activeBranchId: 'other' }),
+            projectionScope: expect.any(Function),
         });
         expect(mocks.compactProject).toHaveBeenCalled();
     });

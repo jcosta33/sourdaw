@@ -47,6 +47,21 @@ type BranchStateDecision<TRefusal extends BranchStateRefusal> =
 
 type SessionLifetimeHold = { status: 'held'; release: () => void } | { status: 'lock-unavailable' };
 
+/**
+ * How a hydration reaches `branchStore`.
+ *
+ * Every durable write takes a Web Lock, so a caller that started inside an
+ * app action's storage transaction has lost that ambient scope by the time the
+ * projection lands. An unattributed store write — together with the document
+ * writes its subscribers make — reads as an outside writer to the very action
+ * that asked for the branch write, and that revokes the action's own execution
+ * authority. A caller holding a transaction captures it before its first await
+ * and passes it in; everyone else projects directly.
+ */
+export type BranchStateProjectionScope = (project: () => void) => void;
+
+const projectDirectly: BranchStateProjectionScope = (project) => project();
+
 /** The revision of the last envelope hydrated into `branchStore`. */
 let liveRevision = 0;
 let bootSettled: Promise<BranchStateBootOutcome> | null = null;
@@ -66,9 +81,9 @@ function sessionLockName(owner: string): string {
     return `${BRANCH_SESSION_LOCK_PREFIX}${owner}`;
 }
 
-function hydrate(envelope: BranchStateEnvelope): void {
+function hydrate(envelope: BranchStateEnvelope, project: BranchStateProjectionScope = projectDirectly): void {
     liveRevision = envelope.revision;
-    branchStore.set(envelope.current);
+    project(() => branchStore.set(envelope.current));
 }
 
 /**
@@ -95,7 +110,8 @@ function advance(
 }
 
 function runTransaction<TRefusal extends BranchStateRefusal>(
-    decide: (envelope: BranchStateEnvelope) => BranchStateDecision<TRefusal>
+    decide: (envelope: BranchStateEnvelope) => BranchStateDecision<TRefusal>,
+    project: BranchStateProjectionScope
 ): BranchStateCommitResult<TRefusal> {
     let envelope: BranchStateEnvelope;
     try {
@@ -109,11 +125,11 @@ function runTransaction<TRefusal extends BranchStateRefusal>(
         // The caller decided against a stale view, so leave it holding the
         // fresh one — a refusal it cannot see the cause of is a refusal it will
         // retry against the same stale revision forever.
-        hydrate(envelope);
+        hydrate(envelope, project);
         return { status: 'refused', reason: decision.reason };
     }
     if (decision.kind === 'noop') {
-        hydrate(envelope);
+        hydrate(envelope, project);
         return { status: 'committed', revision: envelope.revision };
     }
     if (decision.next.revision !== envelope.revision + 1) {
@@ -128,16 +144,17 @@ function runTransaction<TRefusal extends BranchStateRefusal>(
         // never landed.
         return { status: 'refused', reason: 'write-failed' };
     }
-    hydrate(decision.next);
+    hydrate(decision.next, project);
     return { status: 'committed', revision: decision.next.revision };
 }
 
 async function transact<TRefusal extends BranchStateRefusal>(
-    decide: (envelope: BranchStateEnvelope) => BranchStateDecision<TRefusal>
+    decide: (envelope: BranchStateEnvelope) => BranchStateDecision<TRefusal>,
+    project: BranchStateProjectionScope = projectDirectly
 ): Promise<BranchStateCommitResult<TRefusal>> {
     const outcome = await withBranchStateLock({
         name: BRANCH_STATE_TRANSACTION_LOCK_NAME,
-        run: async () => runTransaction(decide),
+        run: async () => runTransaction(decide, project),
     });
     return outcome.status === 'lock-unavailable' ? { status: 'refused', reason: 'lock-unavailable' } : outcome.value;
 }
@@ -434,9 +451,11 @@ export const branchStateAuthority = {
     async commit({
         expectedRevision,
         next,
+        projectionScope,
     }: {
         expectedRevision: number;
         next: BranchStoreState;
+        projectionScope?: BranchStateProjectionScope;
     }): Promise<BranchStateCommitResult<'conflict' | 'session-active'>> {
         await branchStateAuthority.settleBoot();
         let supersedes = false;
@@ -444,7 +463,7 @@ export const branchStateAuthority = {
             const commit = decideCommit(envelope, expectedRevision, next);
             supersedes = commit.supersedes;
             return commit.decision;
-        });
+        }, projectionScope);
         if (supersedes && result.status === 'committed') {
             capturedForeignSession = null;
         }
