@@ -1,0 +1,98 @@
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_914af328b3988f::t_f0febda263e4e9 628-631
+  s_914af328b3988f::t_626441c45bc714 195
+  s_914af328b3988f::t_07667efbe04410 416
+  s_914af328b3988f::t_8ad1bf0c281bac 1189-1208
+  s_914af328b3988f::t_bf2263be3fd4b3 176
+  s_914af328b3988f::t_99e9f85a64181e 1050-1062
+  s_914af328b3988f::t_e4c05b47517c16 1588-1602
+  s_914af328b3988f::t_1e6a8488b37f4f 10
+  s_914af328b3988f::t_1160d1ecf5e45c 1023
+  s_914af328b3988f::t_583adf8d6b657c 89-92,95-99
+  s_914af328b3988f::t_f493bce8bfcbad 368,374
+  s_914af328b3988f::t_085bd0c36a846a 1466-1485
+  s_914af328b3988f::t_aefb9332e4e9bc 34
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_914af328b3988f::t_879be631e0c4fa 8
+  s_914af328b3988f::t_972355a15132d4 1694
+  s_914af328b3988f::t_6dbd73082dbadb 1398-1400
+  s_914af328b3988f::t_ec0267bc3195f5 1401-1402
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_914af328b3988f::t_c616877cbff93c 156
+  s_914af328b3988f::t_37347813d57b18 74
+  s_914af328b3988f::t_a244ec491b8f67 72-73
+  s_914af328b3988f::t_6645c93bc23e49 93
+  s_914af328b3988f::t_4e0e78d453b6eb 137-155,157-158
+src/modules/AiRuntime/useCases/__tests__/agentResourceLimits.spec.ts
+  s_914af328b3988f::t_878864df1d9de0 3-7
+  s_914af328b3988f::t_a5ca718b96bed5 151
+  s_914af328b3988f::t_bbfb1adf71191e 229-317
+  s_914af328b3988f::t_275cdc59da7658 168-169
+  s_914af328b3988f::t_5f12627c689ba6 202-203
+  s_914af328b3988f::t_af8e95c41c233f 318-321
+src/modules/AiRuntime/AGENTS.md
+  s_914af328b3988f::t_19dab101454ff0 32
+src/modules/AiRuntime/useCases/agentRequestOrchestration/beginConfirmedCommandExecution.ts
+  s_914af328b3988f::t_7bda6fb5cc21b9 194
+  s_914af328b3988f::t_f940871de610fa 7
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_914af328b3988f::t_f1d8351c93f2d8 189
+  s_914af328b3988f::t_d5b429713c5c84 16-20
+  s_914af328b3988f::t_e746ff30e2fe33 188,190-212
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_914af328b3988f::t_38f99f5e4dba30 82
+  s_914af328b3988f::t_b51d5b9b1fc338 7
+src/modules/AiRuntime/models/AgentRun.ts
+  s_914af328b3988f::t_c43993198a4d77 467-468,472-490
+  s_914af328b3988f::t_83a8b30b712055 491
+src/modules/AiRuntime/models/AgentResourceLimits.ts
+  s_914af328b3988f::t_92bc853db84d61 55-60,62-65
+  s_914af328b3988f::t_0be806471d5fa1 61
+src/modules/AiRuntime/useCases/agentRequestOrchestration/recoverInterruptedAgentRunState.ts
+  s_914af328b3988f::t_0981ca3d31a7be 1
+  s_914af328b3988f::t_493fc8c9736d76 87-93,95-112,114-115
+  s_914af328b3988f::t_bf721f6d6cbed0 82-86
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_914af328b3988f::t_d3ff70a3baf8df 853,863-866
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeCommittedSectionRenderRetry.ts
+  s_914af328b3988f::t_dfc189e0ce4cfb 11
+  s_914af328b3988f::t_2bd6d0cb8c1ce2 262
+src/modules/AiRuntime/stores/__tests__/agentRunStore.spec.ts
+  s_914af328b3988f::t_d03d2c2bb25490 231-268
+  s_9b530f08172a54::t_2e9bc78c946acd 230
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_914af328b3988f::t_25fca75701db2c 12
+  s_914af328b3988f::t_29d41990c2f04d 20-21
+  s_914af328b3988f::t_bf7814161f7af5 745,749-757
+  s_9b530f08172a54::t_1fa1ed39f0dc0e 758-759
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_914af328b3988f::t_6558c37d257348 150
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_914af328b3988f::t_80c67a10db7247 2879,2885,2892
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetry.spec.ts
+  s_914af328b3988f::t_d8d3f40979c235 474,478,567
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ac3a1bf30558e89ac6e91be32d146d79650726a6",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
