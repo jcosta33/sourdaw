@@ -432,6 +432,13 @@ impl GrandBouleInstance {
     pub fn block_frames(&self) -> usize {
         self.left_buf.len()
     }
+
+    /// Test-only pass-through to the engine's sleep-run counter (see
+    /// [`GrandBouleEngine::quiet_block_count`]).
+    #[cfg(test)]
+    pub(crate) fn quiet_block_count(&self) -> u8 {
+        self.engine.quiet_block_count()
+    }
 }
 
 #[cfg(test)]
@@ -485,5 +492,34 @@ mod lifecycle_tests {
         assert_eq!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
         instance.process(128);
         assert_eq!(instance.active_voices(), 0);
+    }
+
+    /// A block split at three note-offset events still ages the sleep-run
+    /// counter once, not once per split segment.
+    ///
+    /// The engine's `account_quiet_block` must run once per block the host
+    /// asked `render_segment` to render, however many pieces the queued
+    /// events split it into. Moving the call into `render_segment` itself —
+    /// so it runs once per *segment* — would age a four-way split block four
+    /// times as fast as the real block rate, so an instrument fed nothing but
+    /// note-offset events would report asleep after one rendered block
+    /// instead of four.
+    #[test]
+    fn a_block_split_at_three_offsets_ages_the_sleep_counter_once() {
+        let mut instance = GrandBouleInstance::new(48_000.0, 8);
+
+        for _ in 0..3 {
+            let before = instance.quiet_block_count();
+            assert!(instance.push_note_expression(60, 0, 0.0, 0.0, 0.0, 10));
+            assert!(instance.push_note_expression(60, 0, 0.0, 0.0, 0.0, 50));
+            assert!(instance.push_note_expression(60, 0, 0.0, 0.0, 0.0, 90));
+            instance.process(128);
+            assert_eq!(
+                instance.quiet_block_count(),
+                before.saturating_add(1),
+                "one rendered block split at three offsets aged the sleep \
+                 counter by more than one"
+            );
+        }
     }
 }

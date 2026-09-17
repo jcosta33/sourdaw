@@ -411,7 +411,8 @@ impl GrandBouleEngine {
     }
 
     /// Apply the current pedal-state damping to every active voice. Called
-    /// once per block to avoid rebuilding coefficients every sample.
+    /// once per rendered segment — a whole block when no events are queued
+    /// inside it — to avoid rebuilding coefficients every sample.
     fn apply_damper_state(&mut self) {
         for voice in self.voices.iter_mut() {
             if voice.is_idle() {
@@ -787,6 +788,17 @@ impl GrandBouleEngine {
         } else {
             self.quiet_block_count = 0;
         }
+    }
+
+    /// Test-only reader for the run [`Self::account_quiet_block`] ages.
+    ///
+    /// Product code never reads the counter directly — only
+    /// [`Self::lifecycle`] does — so this exists to pin how many times a
+    /// single rendered block may age it, which the sleep code alone cannot
+    /// distinguish once the count has already crossed the sleep threshold.
+    #[cfg(test)]
+    pub(crate) fn quiet_block_count(&self) -> u8 {
+        self.quiet_block_count
     }
 
     pub fn lifecycle(&self) -> ProcessLifecycle {

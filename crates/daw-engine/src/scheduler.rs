@@ -3834,15 +3834,15 @@ const LEVAIN_MAX_VOICES: u32 = 64;
 
 /// Frames one hosted Levain run renders.
 ///
-/// The web runtime's render quantum, on the reason given at
-/// [`GRAND_BOULE_RUN_FRAMES`]: the worklet drains every message stamped inside
-/// the block about to render and then makes one `process` call for that block
-/// (`LevainProcessor.process`, `levainProcessor.ts`), so a scheduled note
-/// sounds from the head of the 128-frame block holding its frame. The
-/// instrument takes no per-note sample offset — `note_on_with_channel` carries
-/// a note, a velocity and a channel and nothing else — so the run length *is*
-/// the timing resolution, and the host splits a callback into runs this long to
-/// land a note on the run the worklet lands it on.
+/// The web runtime's render quantum: the worklet drains every message stamped
+/// inside the block about to render and then makes one `process` call for
+/// that block (`LevainProcessor.process`, `levainProcessor.ts`), so a
+/// scheduled note sounds from the head of the 128-frame block holding its
+/// frame. The instrument takes no per-note sample offset —
+/// `note_on_with_channel` carries a note, a velocity and a channel and
+/// nothing else — so the run length *is* the timing resolution, and the host
+/// splits a callback into runs this long to land a note on the run the
+/// worklet lands it on.
 ///
 /// The runs are counted from the span's own frame 0 rather than from the
 /// absolute origin the worklet grids from, so a span starting off that grid —
@@ -20255,11 +20255,12 @@ mod timeline_tests {
     /// The hosted body renders exactly what the worklet's own driving of
     /// [`GrandBouleInstance`] renders for the same programme.
     ///
-    /// The worklet hands the instance [`GRAND_BOULE_RUN_FRAMES`] at a time and
-    /// voices a note as soon as the block about to render holds its frame,
-    /// because the instrument takes no per-note sample offset. The scheduler
-    /// hands the body a longer callback, so the run split is the whole of what
-    /// makes the two agree.
+    /// The worklet hands the instance [`GRAND_BOULE_RUN_FRAMES`] at a time,
+    /// and the instrument takes a per-note sample offset through
+    /// `push_note_on`'s and `push_note_off_on_channel`'s last argument.
+    /// Pushing the same note-on and note-off at the same offset on the
+    /// 128-frame reference blocks and on the hosted body's own runs renders
+    /// identical samples.
     ///
     /// Two mutations red this: dividing the velocity by 100 rather than by
     /// [`MIDI_VELOCITY_FULL_SCALE`] sounds the reference note at a different
