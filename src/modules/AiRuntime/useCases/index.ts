@@ -90,3 +90,5 @@ export { projectAgentRunTelemetry } from './projectAgentRunTelemetry';
 export { projectAgentRunDiagnostics } from './projectAgentRunDiagnostics';
 export { settleRetainedSectionRenderManualReview } from './settleRetainedSectionRenderManualReview';
 export { selectRetainedSectionRenderManualReviews } from './selectRetainedSectionRenderManualReviews';
+export { auditionAgentCatalogCandidate } from './agentCatalogAudition/auditionAgentCatalogCandidate';
+export { applyAgentAuditionCandidate } from './agentCatalogAudition/applyAgentAuditionCandidate';

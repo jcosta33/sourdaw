@@ -71,6 +71,7 @@ const mocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
         backend,
+        analyzeAgentAuditionBuffer: vi.fn(),
         analyzeCurrentMix: vi.fn(() => ({ status: 'unavailable', reason: 'no-program-audio' })),
         summarizeFeatures: vi.fn(),
         stageDurableAsset:
@@ -154,6 +155,7 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 // only the ones the spec drives. The mentor lesson generator binds `analyzeCurrentMix` while
 // its module evaluates, so omitting it fails the whole file at import rather than at a call.
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
+    analyzeAgentAuditionBuffer: mocks.analyzeAgentAuditionBuffer,
     analyzeCurrentMix: mocks.analyzeCurrentMix,
     detectTempo: mocks.detectTempo,
     summarizeFeatures: mocks.summarizeFeatures,

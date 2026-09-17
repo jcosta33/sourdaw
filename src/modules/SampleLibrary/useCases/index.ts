@@ -8,3 +8,4 @@ export { findSimilarSamples } from './findSimilarSamples';
 export { projectSpatialMap } from './projectSpatialMap';
 export { seedFactoryLibrary } from './seedFactoryLibrary';
 export { searchAgentCatalog } from './searchAgentCatalog';
+export { resolveAgentCatalogCandidate } from './resolveAgentCatalogCandidate';
