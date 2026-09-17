@@ -1,14 +1,27 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getAgentCapabilityCatalog } from '#/modules/AiRuntime/useCases';
-import { getAgentCommandLedger } from '#/modules/Command/useCases';
+import { clearHandlerRegistry } from '#/modules/Command/stores';
+import { getAgentCommandLedger, registerProductionCommandHandlers } from '#/modules/Command/useCases';
 
-import {
-    AGENT_PRODUCTION_PHASES,
-    evaluateAgentProductionReadiness,
-    getAgentProductionReadiness,
-} from '../getAgentProductionReadiness';
+import { evaluateAgentProductionReadiness, getAgentProductionReadiness } from '../getAgentProductionReadiness';
 import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
+import { getProductionCommandHandlerMaps } from '../getProductionCommandHandlerMaps';
+
+/**
+ * The published phase order, written literally rather than imported from `AGENT_PRODUCTION_PHASES`
+ * so a silent reorder of the production constant cannot also reorder what this file pins.
+ */
+const AGENT_PRODUCTION_PHASE_ORDER = [
+    'command-query-extraction',
+    'read-only-assistance',
+    'previewable-basic-edits',
+    'batches-and-transforms',
+    'offline-render-measurement',
+    'vibe-mix-planning',
+    'media-autonomy-exclusion',
+    'external-adapters',
+] as const;
 
 type ManifestFixtureContract = {
     id: string;
@@ -165,6 +178,7 @@ function buildPassingLedgerFixture(): ReturnType<typeof getAgentCommandLedger> {
                 packet: 'getArrangementHandlers',
                 closure: 'supported',
                 minimumWriteSet: true,
+                previewExecution: 'isolated-project',
             },
             {
                 operationId: 'renderProjectSections',
@@ -174,6 +188,7 @@ function buildPassingLedgerFixture(): ReturnType<typeof getAgentCommandLedger> {
                 packet: 'getAudioRenderingHandlers',
                 closure: 'supported',
                 minimumWriteSet: false,
+                previewExecution: 'unknown',
             },
         ],
         uncoveredCategories: [],
@@ -191,34 +206,87 @@ function markAddTrackInterimUnsupported(entry: LedgerEntryFixture): LedgerEntryF
 }
 
 describe('agent production readiness', () => {
+    // getAgentCommandLedger's previewExecution field reads the currently registered handlers
+    // (getAppActionPreviewExecution), so the live-head assertions below only hold once the real
+    // production handler maps are registered, the same way the app boots them.
+    beforeEach(() => {
+        clearHandlerRegistry();
+        registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
+    });
+
     it('returns phases in exactly the published phase order', () => {
         const result = getAgentProductionReadiness();
 
-        expect(result.phases.map((phase) => phase.id)).toEqual([...AGENT_PRODUCTION_PHASES]);
+        expect(result.phases.map((phase) => phase.id)).toEqual([...AGENT_PRODUCTION_PHASE_ORDER]);
     });
 
-    it('passes every phase on the live head because the discovery contract and the capability catalog agree domain-by-domain', () => {
+    it('fails previewable-basic-edits and external-adapters on the live head, blocking every phase after previewable-basic-edits', () => {
         const result = getAgentProductionReadiness();
 
-        // Verified against live code: `getAgentCapabilityCatalog` (AiRuntime) publishes one entry
-        // per `discovery` contract operation, `id` = `discovery:${operation.name}`, `availability`
-        // `'available'` (`src/app/__tests__/agentProtocolVersioning.spec.ts:51-64`). Every published
-        // discovery domain therefore has a matching catalog entry, so `read-only-assistance` passes
-        // and nothing cascades.
-        expect(result.phases).toEqual(
-            AGENT_PRODUCTION_PHASES.map((id) => ({ id, gate: 'passed', status: 'passed', blockedBy: null }))
-        );
+        // Verified against live code:
+        // - `previewable-basic-edits` requires every minimum-write-set entry to be `supported` AND
+        //   `previewExecution === 'isolated-project'`. Most minimum-write-set handlers (renameTrack,
+        //   muteTrack, setTrackGain, addMarker, addAutomationLane, ...) never declare
+        //   `previewExecution: 'isolated-project'`, so `getAppActionPreviewExecution` reports
+        //   `'unknown'` for them; only a handful (addTrack, createBus, addClip, moveClip, splitClip,
+        //   drawClip, duplicateClipAt, moveClips, addDevice, setDeviceParameter, addNotes) declare it.
+        //   The gate therefore fails independently of any other phase.
+        // - `external-adapters` requires the `external-adapter` contract's `availability ===
+        //   'available'`. `getAiRuntimeProtocolContracts.ts` sets it to `'available'` only when an
+        //   adapter operation is itself `'available'`, else `'runtime-dependent'`
+        //   (getAiRuntimeProtocolContracts.ts:63-65); no provider adapter is registered here, so it
+        //   stays `'runtime-dependent'` and this gate fails too, on top of being blocked.
+        expect(result.phases).toEqual([
+            { id: 'command-query-extraction', gate: 'passed', status: 'passed', blockedBy: null },
+            { id: 'read-only-assistance', gate: 'passed', status: 'passed', blockedBy: null },
+            { id: 'previewable-basic-edits', gate: 'failed', status: 'failed', blockedBy: null },
+            {
+                id: 'batches-and-transforms',
+                gate: 'passed',
+                status: 'blocked',
+                blockedBy: 'previewable-basic-edits',
+            },
+            {
+                id: 'offline-render-measurement',
+                gate: 'passed',
+                status: 'blocked',
+                blockedBy: 'previewable-basic-edits',
+            },
+            { id: 'vibe-mix-planning', gate: 'passed', status: 'blocked', blockedBy: 'previewable-basic-edits' },
+            {
+                id: 'media-autonomy-exclusion',
+                gate: 'passed',
+                status: 'blocked',
+                blockedBy: 'previewable-basic-edits',
+            },
+            {
+                id: 'external-adapters',
+                gate: 'failed',
+                status: 'blocked',
+                blockedBy: 'previewable-basic-edits',
+            },
+        ]);
     });
 
-    it('reports no completion claim on the live head, blocked only by the four uncovered ledger categories', () => {
+    it('reports no completion claim on the live head, blocked by every phase from previewable-basic-edits onward plus the four uncovered ledger categories', () => {
         const result = getAgentProductionReadiness();
 
         expect(result.completionClaim).toBe(false);
         expect(result.completionBlockers).toEqual([
+            'batches-and-transforms',
+            'external-adapters',
             'ledger:uncovered:decision',
             'ledger:uncovered:history',
             'ledger:uncovered:macro',
             'ledger:uncovered:revert',
+            'media-autonomy-exclusion',
+            'offline-render-measurement',
+            'previewable-basic-edits',
+            'vibe-mix-planning',
         ]);
     });
 
@@ -270,7 +338,7 @@ describe('agent production readiness', () => {
         expect(result.completionBlockers).toContain('ledger:interim-unsupported:addTrack');
     });
 
-    it('claims completion against the live manifest and catalog once the ledger has no uncovered category', () => {
+    it('still reports no completion claim against the live manifest and catalog after clearing the uncovered categories, because previewable-basic-edits and external-adapters still fail', () => {
         const liveLedger = getAgentCommandLedger();
         const ledger = { ...liveLedger, uncoveredCategories: [] };
         const manifest = getAgentProtocolManifest();
@@ -278,10 +346,18 @@ describe('agent production readiness', () => {
 
         const result = evaluateAgentProductionReadiness({ manifest, ledger, catalog });
 
-        // Every phase gate already passes on the live head (see the second test in this file), so
-        // clearing the ledger's only remaining blocker — its uncovered categories — flips the claim.
-        expect(result.completionClaim).toBe(true);
-        expect(result.completionBlockers).toEqual([]);
+        // Ledger coverage was never the only live-head blocker: previewable-basic-edits and
+        // external-adapters fail on their own gates (see the second test in this file), so clearing
+        // uncoveredCategories only drops the four ledger:uncovered:* blockers, not the phase ones.
+        expect(result.completionClaim).toBe(false);
+        expect(result.completionBlockers).toEqual([
+            'batches-and-transforms',
+            'external-adapters',
+            'media-autonomy-exclusion',
+            'offline-render-measurement',
+            'previewable-basic-edits',
+            'vibe-mix-planning',
+        ]);
     });
 
     it('fails read-only-assistance and blocks previewable-basic-edits when the catalog omits an entry for one discovery domain', () => {
@@ -307,6 +383,45 @@ describe('agent production readiness', () => {
             gate: 'passed',
             status: 'blocked',
             blockedBy: 'read-only-assistance',
+        });
+    });
+
+    it('claims completion when every phase gate passes and the ledger has no uncovered category', () => {
+        const result = evaluateAgentProductionReadiness({
+            manifest: buildPassingManifestFixture(),
+            ledger: buildPassingLedgerFixture(),
+            catalog: buildPassingCatalogFixture(),
+        });
+
+        expect(result.completionClaim).toBe(true);
+        expect(result.completionBlockers).toEqual([]);
+    });
+
+    it('fails previewable-basic-edits and blocks batches-and-transforms when a minimum-write-set entry has an unknown preview execution', () => {
+        const ledgerFixture = buildPassingLedgerFixture();
+        const ledger = {
+            ...ledgerFixture,
+            entries: ledgerFixture.entries.map((entry) =>
+                entry.operationId === 'addTrack' ? { ...entry, previewExecution: 'unknown' as const } : entry
+            ),
+        };
+        const result = evaluateAgentProductionReadiness({
+            manifest: buildPassingManifestFixture(),
+            ledger,
+            catalog: buildPassingCatalogFixture(),
+        });
+
+        expect(result.phases.find((phase) => phase.id === 'previewable-basic-edits')).toEqual({
+            id: 'previewable-basic-edits',
+            gate: 'failed',
+            status: 'failed',
+            blockedBy: null,
+        });
+        expect(result.phases.find((phase) => phase.id === 'batches-and-transforms')).toEqual({
+            id: 'batches-and-transforms',
+            gate: 'passed',
+            status: 'blocked',
+            blockedBy: 'previewable-basic-edits',
         });
     });
 

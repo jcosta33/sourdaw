@@ -10,13 +10,16 @@ import { getYeastHandlers } from '#/modules/Yeast/useCases';
 
 import {
     AGENT_COMMAND_LEDGER_CATEGORIES,
+    isInterimPacketReference,
     type AgentCommandLedgerCategory,
     type AgentCommandLedgerClosure,
+    type AgentCommandLedgerEntry,
     type AgentCommandLedgerOwner,
 } from '../../models/AgentCommandLedger';
 import { clearHandlerRegistry } from '../../stores/handlerRegistry';
 import { executableAppActionDescriptors, isExecutableAppActionType } from '../executableAppActionRegistry';
 import { getAgentCommandLedger } from '../getAgentCommandLedger';
+import { getAppActionPreviewExecution } from '../getAppActionPreviewExecution';
 import { getExecutableAppActionOperationVersion } from '../getExecutableAppActionOperationVersion';
 import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
 
@@ -109,17 +112,44 @@ describe('agent command ledger coverage', () => {
         }
     });
 
-    it('names an unregistered tracker packet for every interim-unsupported entry', () => {
-        const actionTypeToOwner = buildActionTypeOwnerMap();
-        const interimEntries = getAgentCommandLedger().entries.filter(
-            (entry) => entry.closure === 'interim-unsupported'
-        );
-
+    it('has every live entry supported, each packet naming its owner registering factory', () => {
         expectTypeOf<AgentCommandLedgerClosure>().toEqualTypeOf<'supported' | 'interim-unsupported'>();
-        for (const entry of interimEntries) {
-            expect(entry.packet).toMatch(/^#\d+$/);
-            expect(actionTypeToOwner.has(entry.operationId)).toBe(false);
+        for (const entry of getAgentCommandLedger().entries) {
+            expect(entry.closure).toBe('supported');
+            expect(entry.packet).toBe(OWNER_FACTORY_NAMES[entry.owner]);
         }
+    });
+
+    it('classifies packet format through isInterimPacketReference, matching each closure', () => {
+        const supportedEntry: AgentCommandLedgerEntry = {
+            operationId: 'addTrack',
+            category: 'track',
+            owner: 'Arrangement',
+            descriptorVersion: 1,
+            packet: 'getArrangementHandlers',
+            closure: 'supported',
+        };
+        const interimEntry: AgentCommandLedgerEntry = {
+            ...supportedEntry,
+            packet: '#2372',
+            closure: 'interim-unsupported',
+        };
+
+        expect(isInterimPacketReference(supportedEntry.packet)).toBe(false);
+        expect(isInterimPacketReference(interimEntry.packet)).toBe(true);
+    });
+
+    it('carries previewExecution equal to getAppActionPreviewExecution for every entry, and the field discriminates', () => {
+        const entries = getAgentCommandLedger().entries;
+        for (const entry of entries) {
+            expect(isExecutableAppActionType(entry.operationId)).toBe(true);
+            if (!isExecutableAppActionType(entry.operationId)) {
+                continue;
+            }
+            expect(entry.previewExecution).toBe(getAppActionPreviewExecution(entry.operationId));
+        }
+        expect(entries.some((entry) => entry.previewExecution === 'isolated-project')).toBe(true);
+        expect(entries.some((entry) => entry.previewExecution !== 'isolated-project')).toBe(true);
     });
 
     it('covers every category exactly once, either by a ledger entry or by an uncovered-category record', () => {

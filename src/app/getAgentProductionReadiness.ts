@@ -61,7 +61,7 @@ function findContract(
 }
 
 function hasAvailableOperation(contract: AgentProtocolContractLike | undefined): boolean {
-    return (contract?.operations.some((operation) => operation.availability === 'available') ?? false) === true;
+    return contract?.operations.some((operation) => operation.availability === 'available') ?? false;
 }
 
 function passesCommandQueryExtraction(input: AgentProductionReadinessInput): boolean {
@@ -83,7 +83,12 @@ function passesReadOnlyAssistance(input: AgentProductionReadinessInput): boolean
 
 function passesPreviewableBasicEdits(input: AgentProductionReadinessInput): boolean {
     const minimumWriteSetEntries = input.ledger.entries.filter((entry) => entry.minimumWriteSet);
-    return minimumWriteSetEntries.length > 0 && minimumWriteSetEntries.every((entry) => entry.closure === 'supported');
+    return (
+        minimumWriteSetEntries.length > 0 &&
+        minimumWriteSetEntries.every(
+            (entry) => entry.closure === 'supported' && entry.previewExecution === 'isolated-project'
+        )
+    );
 }
 
 function passesBatchesAndTransforms(input: AgentProductionReadinessInput): boolean {
@@ -119,7 +124,7 @@ function passesMediaAutonomyExclusion(input: AgentProductionReadinessInput): boo
 }
 
 function passesExternalAdapters(input: AgentProductionReadinessInput): boolean {
-    return findContract(input.manifest, 'external-adapter') !== undefined;
+    return findContract(input.manifest, 'external-adapter')?.availability === 'available';
 }
 
 const PHASE_GATES: Record<AgentProductionPhaseId, (input: AgentProductionReadinessInput) => boolean> = {

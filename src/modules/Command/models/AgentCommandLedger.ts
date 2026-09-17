@@ -63,6 +63,15 @@ export type AgentCommandLedgerEntry = {
     closure: AgentCommandLedgerClosure;
 };
 
+/**
+ * Whether a packet string is a tracker reference (e.g. `#2372`) rather than a registering handler
+ * factory name. An `interim-unsupported` entry's packet must satisfy this; a `supported` entry's
+ * packet must not.
+ */
+export function isInterimPacketReference(packet: string): boolean {
+    return /^#\d+$/.test(packet);
+}
+
 /** The registering handler factory name for each owner, reused so every supported entry agrees. */
 const SUPPORTED_ENTRY_PACKETS: Record<AgentCommandLedgerOwner, string> = {
     Arrangement: 'getArrangementHandlers',
