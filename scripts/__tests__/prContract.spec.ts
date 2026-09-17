@@ -134,6 +134,7 @@ describe('pull-request contract', () => {
         expect(issueRelationshipFromBody(`${legacy}Closes #2164`, 2164)).toBe('closes');
         expect(issueRelationshipFromBody(`${legacy}None.`, undefined)).toBeUndefined();
         expect(canonicalIssueReferenceFromBody(`${legacy}Closes #2164`, 'jcosta33/sourdaw')?.issue).toBe(2164);
+        expect(() => issueRelationshipFromBody('Closes #2164', 2164)).toThrow(/exactly one Related issues section/);
         expect(() => issueRelationshipFromBody(`${legacy}Closes #2164\n${legacy}Related #2164`, 2164)).toThrow(
             /exactly one Related issues section/
         );
