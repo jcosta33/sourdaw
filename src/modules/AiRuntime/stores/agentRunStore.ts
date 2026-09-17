@@ -1829,15 +1829,44 @@ export function readAgentRunState(): AgentRunState {
 }
 
 /**
+ * Blanks the content the run owns while keeping the evidence of what it committed to the project:
+ * receipts, committed work, rendered and analysed artifact identities, revisions and timestamps.
+ * Batches survive only where a retained receipt names them, which is what ties a committed work
+ * entry back to the commands that produced it. The caller stamps `updatedAt`.
+ */
+export function purgeAgentRunContent(run: AgentRun): AgentRun {
+    const retainedReceiptIdentities = new Set([
+        ...run.receipts.map((receipt) => receipt.receiptIdentity),
+        ...run.committedWork.map((work) => work.receiptIdentity),
+    ]);
+    return {
+        ...run,
+        request: '',
+        plan: null,
+        decision: null,
+        errors: [],
+        analyses: [],
+        contextEvidence: null,
+        cancellation: { ...run.cancellation, reason: null },
+        batches: run.batches.filter(
+            (batch) => batch.receiptIdentity !== null && retainedReceiptIdentities.has(batch.receiptIdentity)
+        ),
+    };
+}
+
+/**
  * A run is evictable only once nothing can still claim what it holds: it proposes no further
- * mutation, every temporary asset it created has been released, and neither recovery ledger names
- * it. Retention never decides on age or count alone.
+ * mutation, every temporary asset it created has been released, neither recovery ledger names it,
+ * and it asks the user for no manual resume. Retention never decides on age or count alone.
  */
 function isEvictableAgentRun(run: AgentRun, state: AgentRunState): boolean {
     if (!AGENT_RUN_TERMINAL_PHASES.has(run.phase)) {
         return false;
     }
     if (run.temporaryAssets.some((asset) => asset.status !== 'released')) {
+        return false;
+    }
+    if (run.manualResume.required) {
         return false;
     }
     const pendingEffectRecoveries = state.pendingEffectRecoveryLedger ?? [];
@@ -1848,32 +1877,57 @@ function isEvictableAgentRun(run: AgentRun, state: AgentRunState): boolean {
     );
 }
 
+/** Uncommitted runs leave before committed ones; within a tier the oldest update leaves first. */
+function byEvictionPreference(left: AgentRun, right: AgentRun): number {
+    const leftCommitted = left.committedWork.length > 0;
+    const rightCommitted = right.committedWork.length > 0;
+    if (leftCommitted !== rightCommitted) {
+        return leftCommitted ? 1 : -1;
+    }
+    return left.updatedAt - right.updatedAt;
+}
+
 /**
- * Applies the declared local retention policy: first every evictable run older than the age bound,
- * then the oldest evictable runs until the count bound holds. A state whose runs are all
- * unevictable keeps them all, and the hard capacity bound at the persistence boundary still applies.
+ * Applies the declared local retention policy in two tiers. Past the age bound an evictable run
+ * that committed nothing is removed, while one that committed work is purged to the evidence of
+ * that work and kept — its `updatedAt` stands, so the purge is idempotent. The count bound then
+ * evicts from the evictable runs, uncommitted first and oldest within each tier. A state whose runs
+ * all hold a claim keeps them all, and the hard capacity bound at the persistence boundary still applies.
  */
 export function applyAgentRunRetention(state: AgentRunState, now: number): AgentRunState {
-    const evictable = new Set(state.runs.filter((run) => isEvictableAgentRun(run, state)));
-    if (evictable.size === 0) {
+    const evictableRunIds = new Set(
+        state.runs.filter((run) => isEvictableAgentRun(run, state)).map((run) => run.runId)
+    );
+    if (evictableRunIds.size === 0) {
         return state;
     }
     let runs = state.runs;
+    let purgedAny = false;
     if (AGENT_RUN_RETENTION_POLICY.maxAgeMs !== null) {
         const oldestAdmittedUpdate = now - AGENT_RUN_RETENTION_POLICY.maxAgeMs;
-        runs = runs.filter((run) => !evictable.has(run) || run.updatedAt >= oldestAdmittedUpdate);
+        runs = runs.flatMap((run) => {
+            if (!evictableRunIds.has(run.runId) || run.updatedAt >= oldestAdmittedUpdate) {
+                return [run];
+            }
+            if (run.committedWork.length === 0) {
+                return [];
+            }
+            purgedAny = true;
+            return [purgeAgentRunContent(run)];
+        });
     }
     if (runs.length > AGENT_RUN_RETENTION_POLICY.maxCount) {
         const overflow = runs.length - AGENT_RUN_RETENTION_POLICY.maxCount;
-        const evicted = new Set(
+        const evictedRunIds = new Set(
             runs
-                .filter((run) => evictable.has(run))
-                .toSorted((left, right) => left.updatedAt - right.updatedAt)
+                .filter((run) => evictableRunIds.has(run.runId))
+                .toSorted(byEvictionPreference)
                 .slice(0, overflow)
+                .map((run) => run.runId)
         );
-        runs = runs.filter((run) => !evicted.has(run));
+        runs = runs.filter((run) => !evictedRunIds.has(run.runId));
     }
-    if (runs.length === state.runs.length) {
+    if (!purgedAny && runs.length === state.runs.length) {
         return state;
     }
     return { ...state, runs };

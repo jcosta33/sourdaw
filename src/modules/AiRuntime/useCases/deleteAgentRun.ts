@@ -1,5 +1,5 @@
-import { AGENT_RUN_TERMINAL_PHASES, type AgentRun, type AgentRunState } from '../models/AgentRun';
-import { persistAgentRunState, readAgentRunState } from '../stores/agentRunStore';
+import { AGENT_RUN_TERMINAL_PHASES, type AgentRunState } from '../models/AgentRun';
+import { persistAgentRunState, purgeAgentRunContent, readAgentRunState } from '../stores/agentRunStore';
 
 import { deleteAgentRunArtifacts } from './deleteAgentRunArtifacts';
 
@@ -20,32 +20,6 @@ function isNamedByRecoveryLedger(state: AgentRunState, runId: string): boolean {
 }
 
 /**
- * Blanks the content the run owns while keeping the evidence of what it committed to the project:
- * receipts, committed work, rendered and analysed artifact identities, revisions and timestamps.
- * Batches survive only where a retained receipt names them, which is what ties a committed work
- * entry back to the commands that produced it.
- */
-function purgeAgentRunContent(run: AgentRun): AgentRun {
-    const retainedReceiptIdentities = new Set([
-        ...run.receipts.map((receipt) => receipt.receiptIdentity),
-        ...run.committedWork.map((work) => work.receiptIdentity),
-    ]);
-    return {
-        ...run,
-        request: '',
-        plan: null,
-        decision: null,
-        errors: [],
-        analyses: [],
-        contextEvidence: null,
-        cancellation: { ...run.cancellation, reason: null },
-        batches: run.batches.filter(
-            (batch) => batch.receiptIdentity !== null && retainedReceiptIdentities.has(batch.receiptIdentity)
-        ),
-    };
-}
-
-/**
  * Deletes what one agent run owns locally at the user's request. A run that still proposes work, or
  * that a recovery ledger names, is refused rather than partly dismantled; a run that committed work
  * to the project keeps that history and loses only its own content.
@@ -62,7 +36,7 @@ export async function deleteAgentRun(runId: string, now: number = Date.now()): P
     if (isNamedByRecoveryLedger(state, runId)) {
         return { status: 'refused', reason: 'recovery-pending' };
     }
-    const artifacts = await deleteAgentRunArtifacts(runId);
+    const artifacts = await deleteAgentRunArtifacts(runId, now);
     if (artifacts.status === 'missing') {
         return { status: 'missing' };
     }
@@ -70,11 +44,13 @@ export async function deleteAgentRun(runId: string, now: number = Date.now()): P
         return { status: 'partial', failedAssetIds: artifacts.failedAssetIds };
     }
     const current = readAgentRunState();
-    const purgedRun = current.runs.find((candidate) => candidate.runId === runId);
-    if (!purgedRun) {
-        return { status: 'missing' };
+    const cleanedRun = current.runs.find((candidate) => candidate.runId === runId);
+    if (!cleanedRun) {
+        // Only an uncommitted terminal run can leave during cleanup: age retention purges a run
+        // holding committed work instead of removing it, so the record the user asked to delete is gone.
+        return { status: 'deleted' };
     }
-    if (purgedRun.committedWork.length === 0) {
+    if (cleanedRun.committedWork.length === 0) {
         persistAgentRunState({ ...current, runs: current.runs.filter((candidate) => candidate.runId !== runId) }, now);
         return { status: 'deleted' };
     }
@@ -82,7 +58,7 @@ export async function deleteAgentRun(runId: string, now: number = Date.now()): P
         {
             ...current,
             runs: current.runs.map((candidate) =>
-                candidate.runId === runId ? purgeAgentRunContent(candidate) : candidate
+                candidate.runId === runId ? { ...purgeAgentRunContent(candidate), updatedAt: now } : candidate
             ),
         },
         now

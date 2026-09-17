@@ -1853,6 +1853,7 @@ function recordAgentRunPreparedStemImportRecovery(input: {
 }
 
 function forgetAgentRunPreparedStemImportRecovery(input: { runId: string; batchId: string }): AgentRun | null {
+    const forgottenAt = Date.now();
     const state = readAgentRunState();
     const preparedStemImportRecoveryLedger = getPreparedStemImportRecoveryLedger(state).filter(
         (candidate) => !isPreparedStemImportRecovery(candidate, input)
@@ -1862,19 +1863,25 @@ function forgetAgentRunPreparedStemImportRecovery(input: { runId: string; batchI
         if (preparedStemImportRecoveryLedger.length === getPreparedStemImportRecoveryLedger(state).length) {
             return null;
         }
-        persistAgentRunState(withPreparedStemImportRecoveryLedger(state, preparedStemImportRecoveryLedger));
+        persistAgentRunState(
+            withPreparedStemImportRecoveryLedger(state, preparedStemImportRecoveryLedger),
+            forgottenAt
+        );
         return null;
     }
     const next = {
         ...state.runs[index]!,
-        updatedAt: Date.now(),
+        updatedAt: forgottenAt,
         preparedStemImports: state.runs[index]!.preparedStemImports.filter(
             (recovery) => recovery.batchId !== input.batchId
         ),
     } satisfies AgentRun;
     const runs = [...state.runs];
     runs[index] = next;
-    persistAgentRunState(withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger));
+    persistAgentRunState(
+        withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger),
+        forgottenAt
+    );
     return structuredClone(next);
 }
 
@@ -2043,6 +2050,7 @@ function transferAgentRunPreparedStemImportResources(input: {
     if (recoveryBatchIds.size !== input.recoveryBatchIds.length) {
         throw new Error(`Agent prepared stem recoveries contain duplicate batch identities: ${input.runId}`);
     }
+    const transferredAt = Date.now();
     const state = readAgentRunState();
     const index = state.runs.findIndex((run) => run.runId === input.runId);
     if (index < 0) {
@@ -2062,7 +2070,7 @@ function transferAgentRunPreparedStemImportResources(input: {
     if (!assetsStillPresent && !recoveriesStillPresent) {
         // `trySet` keeps a rejected state live. Persisting that exact snapshot
         // retries the transfer without detaching its still-registered cleanup owners.
-        persistAgentRunState(state);
+        persistAgentRunState(state, transferredAt);
         return structuredClone(run);
     }
     for (const asset of input.assets) {
@@ -2073,7 +2081,7 @@ function transferAgentRunPreparedStemImportResources(input: {
     }
     const next = {
         ...run,
-        updatedAt: Date.now(),
+        updatedAt: transferredAt,
         temporaryAssets: run.temporaryAssets.filter(
             (asset) => !assetKeys.has(`${asset.assetId}\u0000${asset.cleanupOwner}`)
         ),
@@ -2084,7 +2092,10 @@ function transferAgentRunPreparedStemImportResources(input: {
     const preparedStemImportRecoveryLedger = getPreparedStemImportRecoveryLedger(state).filter(
         (recovery) => recovery.runId !== input.runId || !recoveryBatchIds.has(recovery.batchId)
     );
-    persistAgentRunState(withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger));
+    persistAgentRunState(
+        withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger),
+        transferredAt
+    );
     return structuredClone(next);
 }
 
