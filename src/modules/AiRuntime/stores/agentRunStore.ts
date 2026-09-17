@@ -4,9 +4,11 @@ import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../models/AgentContext';
 import { AGENT_DATA_CATEGORIES, type AgentDataCategory } from '../models/AgentDataPolicy';
 import { AGENT_EXECUTION_MODES } from '../models/AgentExecutionMode';
+import { AGENT_RUN_RETENTION_POLICY } from '../models/AgentRetentionPolicy';
 import {
     AGENT_RUN_ACTIVE_PHASES,
     AGENT_RUN_PHASES,
+    AGENT_RUN_TERMINAL_PHASES,
     AGENT_RUN_PREPARED_STEM_IMPORT_RECOVERY_SCHEMA_VERSION,
     AGENT_RUN_SCHEMA_VERSION,
     AGENT_RUN_ERROR_CATEGORIES,
@@ -36,7 +38,6 @@ import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
 
-const MAX_RUNS = 50;
 const MAX_PENDING_EFFECT_RECOVERIES = 256;
 const MAX_PREPARED_STEM_IMPORT_RECOVERIES = 256;
 const MAX_COLLECTION_LENGTH = 256;
@@ -55,6 +56,12 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 function readString(value: unknown): string | null {
     return typeof value === 'string' && value.length > 0 && value.length <= MAX_TEXT_LENGTH ? value : null;
+}
+
+// Text a purge blanks in place reads back empty: the record it belongs to keeps the receipts and
+// committed work that outlive its content, so rejecting the empty value would drop that history.
+function readBlankableText(value: unknown): string | null {
+    return typeof value === 'string' && value.length <= MAX_TEXT_LENGTH ? value : null;
 }
 
 function readNullableString(value: unknown): string | null | undefined {
@@ -1374,7 +1381,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         return null;
     }
     const runId = readString(value.runId);
-    const request = readString(value.request);
+    const request = readBlankableText(value.request);
     const createdAt = readTimestamp(value.createdAt);
     const updatedAt = readTimestamp(value.updatedAt);
     const mode = AGENT_EXECUTION_MODES.find((candidate) => candidate === value.mode);
@@ -1702,7 +1709,7 @@ export function sanitizeAgentRunState(value: unknown): AgentRunState {
     }
     const runs: AgentRun[] = [];
     const seenRunIds = new Set<string>();
-    for (const candidate of value.runs.slice(-MAX_RUNS)) {
+    for (const candidate of value.runs.slice(-AGENT_RUN_RETENTION_POLICY.maxCount)) {
         const run = readAgentRun(candidate);
         if (run === null || seenRunIds.has(run.runId)) {
             continue;
@@ -1821,12 +1828,67 @@ export function readAgentRunState(): AgentRunState {
     return structuredClone(agentRunStore.value ?? createEmptyAgentRunState());
 }
 
-export function persistAgentRunState(state: AgentRunState): void {
+/**
+ * A run is evictable only once nothing can still claim what it holds: it proposes no further
+ * mutation, every temporary asset it created has been released, and neither recovery ledger names
+ * it. Retention never decides on age or count alone.
+ */
+function isEvictableAgentRun(run: AgentRun, state: AgentRunState): boolean {
+    if (!AGENT_RUN_TERMINAL_PHASES.has(run.phase)) {
+        return false;
+    }
+    if (run.temporaryAssets.some((asset) => asset.status !== 'released')) {
+        return false;
+    }
+    const pendingEffectRecoveries = state.pendingEffectRecoveryLedger ?? [];
+    const preparedStemImportRecoveries = state.preparedStemImportRecoveryLedger ?? [];
+    return (
+        pendingEffectRecoveries.every((recovery) => recovery.runId !== run.runId) &&
+        preparedStemImportRecoveries.every((recovery) => recovery.runId !== run.runId)
+    );
+}
+
+/**
+ * Applies the declared local retention policy: first every evictable run older than the age bound,
+ * then the oldest evictable runs until the count bound holds. A state whose runs are all
+ * unevictable keeps them all, and the hard capacity bound at the persistence boundary still applies.
+ */
+export function applyAgentRunRetention(state: AgentRunState, now: number): AgentRunState {
+    const evictable = new Set(state.runs.filter((run) => isEvictableAgentRun(run, state)));
+    if (evictable.size === 0) {
+        return state;
+    }
+    let runs = state.runs;
+    if (AGENT_RUN_RETENTION_POLICY.maxAgeMs !== null) {
+        const oldestAdmittedUpdate = now - AGENT_RUN_RETENTION_POLICY.maxAgeMs;
+        runs = runs.filter((run) => !evictable.has(run) || run.updatedAt >= oldestAdmittedUpdate);
+    }
+    if (runs.length > AGENT_RUN_RETENTION_POLICY.maxCount) {
+        const overflow = runs.length - AGENT_RUN_RETENTION_POLICY.maxCount;
+        const evicted = new Set(
+            runs
+                .filter((run) => evictable.has(run))
+                .toSorted((left, right) => left.updatedAt - right.updatedAt)
+                .slice(0, overflow)
+        );
+        runs = runs.filter((run) => !evicted.has(run));
+    }
+    if (runs.length === state.runs.length) {
+        return state;
+    }
+    return { ...state, runs };
+}
+
+export function persistAgentRunState(state: AgentRunState, now: number = Date.now()): void {
     const requestedPreparedStemRecoveries = state.preparedStemImportRecoveryLedger ?? [];
     if (requestedPreparedStemRecoveries.length > MAX_PREPARED_STEM_IMPORT_RECOVERIES) {
         throw new Error('Agent run prepared-stem recovery ledger reached its persistent capacity');
     }
-    const boundedState = { ...state, runs: state.runs.slice(-MAX_RUNS) };
+    const retainedState = applyAgentRunRetention(state, now);
+    const boundedState = {
+        ...retainedState,
+        runs: retainedState.runs.slice(-AGENT_RUN_RETENTION_POLICY.maxCount),
+    };
     const sanitizedState = sanitizeAgentRunState(boundedState);
     if (sanitizedState.runs.length !== boundedState.runs.length) {
         throw new Error('Agent run state contains data outside the persistent schema bounds');
