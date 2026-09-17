@@ -1,0 +1,30 @@
+.agents/decisions/0044-two-carrier-live-playback-until-native-hosts-every-device.md
+  s_9b530f08172a54::t_390d9e632a1340 53-55
+src/modules/AudioEngine/useCases/livePlayback/stripCarriers.ts
+  s_9b530f08172a54::t_797cf6bdb351be 350
+  s_9b530f08172a54::t_13ed174e180394 41
+  s_9b530f08172a54::t_e0d18ed6d0f15d 197-221
+  s_9b530f08172a54::t_1956c47ab0adf3 287-291,305-308
+  s_9b530f08172a54::t_b85a86fd5bd4c6 111
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripCarriers.spec.ts
+  s_9b530f08172a54::t_60813144e19f40 718-770
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphTopology.spec.ts
+  s_9b530f08172a54::t_99d8180695dacc 505-520
+  s_9b530f08172a54::t_811a8a052a2765 503-504
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c5fdbefb959dbcc62523a2aa5e1429a80f188e3b",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
