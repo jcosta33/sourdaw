@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { automationStore } from '#/modules/Automation/stores';
 import { undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, redo, undo } from '#/modules/Command/useCases';
@@ -12,8 +13,18 @@ import { type Clip } from '../../../models/Track';
 import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { restoreClipGlueState } from '../../clipEditing/restoreClipGlueState';
 import { resolveClipsWithComping } from '../../resolveComping';
 import { flattenComp } from '../flattenComp';
+
+// The real transaction, kept observable: the refusal tests have to prove a
+// guard fired BEFORE the clip replacement was attempted, which no store reading
+// can show — the transaction refuses on the same input and leaves the same
+// stores behind.
+vi.mock('../../clipEditing/restoreClipGlueState', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../clipEditing/restoreClipGlueState')>();
+    return { restoreClipGlueState: vi.fn(actual.restoreClipGlueState) };
+});
 
 const TRACK_ID = 'track-1';
 const EMPTY_MIDI = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
@@ -48,8 +59,15 @@ function undoDepth(): number {
     return undoStore.value?.past.length ?? 0;
 }
 
+const warnSpy = vi.spyOn(logger, 'warn');
+
+function warnings(): string[] {
+    return warnSpy.mock.calls.map((call) => String(call[0]));
+}
+
 describe('flattenComp', () => {
     beforeEach(() => {
+        vi.clearAllMocks();
         clearUndoHistory();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
@@ -118,16 +136,15 @@ describe('flattenComp', () => {
         // fragments the resolver plays enter the buffer 0.5, 2.5 and 4.5 beats
         // in. Materialising them with the clip's original 0.5 would replay the
         // same half-second three times.
-        seedTrack([
-            ClipDummy.create({
-                id: 'clip-a',
-                trackId: TRACK_ID,
-                startBeat: 0,
-                endBeat: 8,
-                audioBufferId: 'buf-a',
-                audioOffsetBeats: 0.5,
-            }),
-        ]);
+        const sourceClip = ClipDummy.create({
+            id: 'clip-a',
+            trackId: TRACK_ID,
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'buf-a',
+            audioOffsetBeats: 0.5,
+        });
+        seedTrack([sourceClip]);
         seedLane(
             [{ id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8 }],
             [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }]
@@ -142,6 +159,18 @@ describe('flattenComp', () => {
         ]);
         expect(new Set(liveClips().map((clip) => clip.id)).size).toBe(3);
         expect(liveClips().every((clip) => clip.audioBufferId === 'buf-a')).toBe(true);
+
+        // What reaches the store is a `Clip`, not a resolver row: the resolver's
+        // own region vocabulary is not part of the clip shape, and a clip
+        // carrying it would be persisted, projected and diffed with fields no
+        // consumer reads.
+        for (const key of ['regionStartBeat', 'regionEndBeat', 'sourceStartBeat']) {
+            expect(liveClips().filter((clip) => Object.hasOwn(clip, key))).toEqual([]);
+        }
+        const sourceKeys = new Set(Object.keys(sourceClip));
+        for (const fragment of liveClips()) {
+            expect(new Set(Object.keys(fragment))).toEqual(sourceKeys);
+        }
     });
 
     it('copies each MIDI fragment’s notes under its own id and folds its offset', () => {
@@ -312,9 +341,102 @@ describe('flattenComp', () => {
 
         expect(flattenComp(TRACK_ID)).toBe(false);
 
+        // The satellite guard is what refused, before any clip was touched.
+        // Stores alone cannot show that: with the guard gone the clip
+        // transaction refuses the same input further down and leaves exactly
+        // this state behind, so only the message and the untouched transaction
+        // separate the two.
+        expect(warnings()).toEqual([expect.stringContaining('gain envelope or warp state')]);
+        expect(restoreClipGlueState).not.toHaveBeenCalled();
         expect(liveClips()).toEqual([clip]);
         expect(laneIds()).toEqual([lane.id]);
         expect(undoDepth()).toBe(0);
+    });
+
+    it('leaves the clips and the retired lane alone when the undo transaction is refused', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-a',
+            trackId: TRACK_ID,
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'buf-a',
+        });
+        seedTrack([clip]);
+        seedLane(
+            [{ id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8 }],
+            [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }]
+        );
+
+        expect(flattenComp(TRACK_ID)).toBe(true);
+
+        // One fragment moved after the flatten: the transaction no longer
+        // recognises the clip set it is being asked to retire, so it refuses
+        // and the originals cannot come back. The lane must not come back
+        // either — its takes name clips the track would not hold.
+        const fragments = liveClips();
+        trackStore.set({
+            tracks: [
+                {
+                    ...trackStore.value!.tracks[0]!,
+                    clips: [{ ...fragments[0]!, startBeat: 1 }, ...fragments.slice(1)],
+                },
+            ],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        const clipsBeforeUndo = structuredClone(liveClips());
+        vi.clearAllMocks();
+
+        const result = await undo();
+
+        expect(liveClips()).toEqual(clipsBeforeUndo);
+        expect(laneIds()).toEqual([]);
+        expect(warnings()).toEqual([expect.stringContaining('undoing the flatten was refused')]);
+        // A callback entry reports nothing back to `Command`, so the entry is
+        // consumed either way and moves to `future`, leaving redo reachable
+        // rather than wedging the stack. The refusal shows in the stores.
+        expect(result.headConsumed).toBe(true);
+        expect(undoStore.value!.past).toEqual([]);
+        expect(undoStore.value!.future.map((entry) => entry.label)).toEqual(['Flatten comp']);
+    });
+
+    it('keeps the restored lane in place when the redo transaction is refused', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-a',
+            trackId: TRACK_ID,
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'buf-a',
+        });
+        seedTrack([clip]);
+        const lane = seedLane(
+            [{ id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8 }],
+            [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }]
+        );
+
+        expect(flattenComp(TRACK_ID)).toBe(true);
+        await undo();
+        expect(liveClips()).toEqual([clip]);
+        expect(laneIds()).toEqual([lane.id]);
+
+        // The original clip trimmed after the undo: the redo's transaction no
+        // longer matches the clip set it would retire. A lane added meanwhile
+        // pins where the restored lane belongs.
+        const siblingLane = createTakeLane('track-2');
+        takeLaneStore.set({ lanes: [...takeLaneStore.value!.lanes, siblingLane] });
+        trackStore.set({
+            tracks: [{ ...trackStore.value!.tracks[0]!, clips: [{ ...clip, endBeat: 6 }] }],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        const clipsBeforeRedo = structuredClone(liveClips());
+        vi.clearAllMocks();
+
+        await redo();
+
+        expect(liveClips()).toEqual(clipsBeforeRedo);
+        expect(laneIds()).toEqual([lane.id, siblingLane.id]);
+        expect(warnings()).toEqual([expect.stringContaining('redoing the flatten was refused')]);
     });
 
     it('refuses to flatten a MIDI take whose probability roll depends on its clip id', () => {

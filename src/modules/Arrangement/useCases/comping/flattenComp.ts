@@ -166,16 +166,27 @@ export function flattenComp(trackId: string): boolean {
     }
 
     // Each direction restores the clips while the lane is absent, because the
-    // lane's takes reference the very clips being replaced.
+    // lane's takes reference the very clips being replaced. Either direction can
+    // still be refused — a fragment edited after the flatten, an original clip
+    // edited after the undo — and the lane must follow the clips: a lane whose
+    // takes name clips the track does not hold is a comp no resolver can play.
     pushUndoEntry(
         FLATTEN_LABEL,
         () => {
-            restoreClipGlueState({ expected: plan.next, replacement: plan.previous });
+            if (!restoreClipGlueState({ expected: plan.next, replacement: plan.previous })) {
+                logger.warn(
+                    'flattenComp: undoing the flatten was refused — the clips stand and the lane stays retired'
+                );
+                return;
+            }
             insertTakeLane(lane, laneIndex);
         },
         () => {
             removeTakeLane(lane.id);
-            restoreClipGlueState({ expected: plan.previous, replacement: plan.next });
+            if (!restoreClipGlueState({ expected: plan.previous, replacement: plan.next })) {
+                insertTakeLane(lane, laneIndex);
+                logger.warn('flattenComp: redoing the flatten was refused — the clips and the lane stand');
+            }
         }
     );
     return true;
