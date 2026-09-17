@@ -620,7 +620,7 @@ jobs:
       # daw-engine depends on cpal, whose Linux backend builds against ALSA.
       # apt-get update flakes on transient mirror outages (exit 100), reding
       # this job and Gate on an otherwise-green head (#4085), so the install
-      # retries three times with a 5s then 10s backoff; the last failure
+      # retries three times with a 15s then 30s backoff; the last failure
       # still fails the step. Package list unchanged: libasound2-dev only.
       - name: Install ALSA development headers
         shell: bash
