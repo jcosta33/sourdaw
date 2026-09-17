@@ -21,6 +21,11 @@ allowBuilds:
   # reason as above for stating it at all: an undecided dependency fails every
   # script in the workspace.
   electron-winstaller: false
+  # The postinstall only hard-links the native binary from the already-installed
+  # platform optional dependency over the JS fallback shim — audited as fs
+  # link/copy, no network. Denying it leaves every `pnpm exec ast-grep` spawning
+  # a node shim that prints a stderr warning per invocation.
+  '@ast-grep/cli': true
 
 minimumReleaseAgeExclude:
   - '@vitejs/plugin-react@6.1.0'
