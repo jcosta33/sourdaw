@@ -155,6 +155,20 @@ export async function launch_from_template({ page, template_name }: LaunchFromTe
     await wait_for_workspace_ready(page);
 }
 
+/**
+ * Add a MIDI track from the empty arrangement's own empty-state button. A
+ * fresh project starts with zero tracks (`createArrangement.ts`), so any spec
+ * that needs a track-scoped control (e.g. the per-track arm button) must
+ * create one first through this route or the command-palette equivalent.
+ */
+export async function add_midi_track(page: Page): Promise<void> {
+    const emptyStateMidiButton = page.locator('button').filter({ hasText: 'MIDI' }).filter({ hasText: 'Keys' });
+    await emptyStateMidiButton.waitFor({ state: 'visible' });
+    await emptyStateMidiButton.click();
+    const trackList = page.getByRole('grid', { name: /Track list/i });
+    await trackList.getByRole('row').filter({ hasText: /MIDI/i }).first().waitFor();
+}
+
 const PANEL_OPEN_TIMEOUT_MS = 30_000;
 
 type OpenBrowserInstrumentInput = {
