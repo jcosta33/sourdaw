@@ -128,11 +128,41 @@ const addAudioClip = {
         audioBufferId: 'buffer-1',
     },
 } satisfies AppAction;
-const generateBassline = {
-    type: 'generateBassline',
-    payload: { clipId: 'clip-1', trackId: 'track-1' },
+const addMidiClip = {
+    type: 'addClip',
+    payload: { trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Phrase', type: 'midi' },
 } satisfies AppAction;
-const trimClipEnd = { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 3 } } satisfies AppAction;
+const transposeNotes = {
+    type: 'transposeNotes',
+    payload: { clipId: 'clip-1', semitones: 2 },
+} satisfies AppAction;
+const addSidechainRoute = {
+    type: 'addSidechainRoute',
+    payload: { sourceTrackId: 'track-1', targetTrackId: 'bus-a' },
+} satisfies AppAction;
+const setTrackOutput = {
+    type: 'setTrackOutput',
+    payload: { trackId: 'track-1', outputId: 'bus-a' },
+} satisfies AppAction;
+const duplicateClip = {
+    type: 'duplicateClip',
+    payload: { clipId: 'clip-1', targetClipId: 'clip-1-copy' },
+} satisfies AppAction;
+const automateTrackGainRange = {
+    type: 'automateTrackGainRange',
+    payload: { trackIds: ['track-1'], sectionName: 'Chorus', gainDb: 2 },
+} satisfies AppAction;
+const normalizeClip = { type: 'normalizeClip', payload: { clipId: 'clip-1' } } satisfies AppAction;
+const setDeviceParameter = {
+    type: 'setDeviceParameter',
+    payload: { deviceId: 'dev-comp', paramId: 'threshold', value: 0.4 },
+} satisfies AppAction;
+const setTrackGain = {
+    type: 'setTrackGain',
+    payload: { trackId: 'track-1', gain: 0.8, expectedGain: 1 },
+} satisfies AppAction;
+const setClipGain = { type: 'setClipGain', payload: { clipId: 'clip-1', gain: 0.9 } } satisfies AppAction;
+const trimClipStart = { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 1 } } satisfies AppAction;
 
 function previewableHandler(): ActionHandler {
     return {
@@ -152,14 +182,24 @@ function externalHandler(): ActionHandler {
     };
 }
 
+/** A handler that declares no `previewExecution`, as the production ones under test do. */
+function uncertifiedHandler(): ActionHandler {
+    return {
+        execute: () => undefined,
+        describe: () => ({ label: 'Preview-uncertified action' }),
+        undoable: true,
+    };
+}
+
 function registerPreviewHandlers(): void {
     registerHandlerMap({
         addClip: previewableHandler(),
         addDevice: previewableHandler(),
         addNotes: previewableHandler(),
         addAutomationPoint: previewableHandler(),
-        trimClipEnd: previewableHandler(),
-        generateBassline: externalHandler(),
+        setClipGain: previewableHandler(),
+        trimClipStart: uncertifiedHandler(),
+        transposeNotes: externalHandler(),
     });
 }
 
@@ -187,12 +227,24 @@ describe('agent domain preview adapters', () => {
             ).toEqual([]);
         });
 
-        it('maps a device chain change to the device graph', () => {
+        it('maps a device the chain creates to the device graph', () => {
             expect(resolveAgentPreviewDomains([addDevice])).toEqual(['device-graph']);
+        });
+
+        it('maps a routed operation that creates a route object to the device graph', () => {
+            expect(resolveAgentPreviewDomains([addSidechainRoute])).toEqual(['device-graph']);
+        });
+
+        it('maps a re-pointed output to the device graph although it creates and removes nothing', () => {
+            expect(resolveAgentPreviewDomains([setTrackOutput])).toEqual(['device-graph']);
         });
 
         it('maps an automation write to the automation curve', () => {
             expect(resolveAgentPreviewDomains([addAutomationPoint])).toEqual(['automation-curve']);
+        });
+
+        it('maps an automation range write whose name carries no automation word', () => {
+            expect(resolveAgentPreviewDomains([automateTrackGainRange])).toEqual(['automation-curve']);
         });
 
         it('maps a note write to the midi overlay', () => {
@@ -203,6 +255,30 @@ describe('agent domain preview adapters', () => {
             expect(resolveAgentPreviewDomains([addAudioClip])).toEqual(['audio-audition']);
         });
 
+        it('maps a midi clip placement to no domain', () => {
+            expect(resolveAgentPreviewDomains([addMidiClip])).toEqual([]);
+        });
+
+        it('maps a clip audio rewrite to the audio audition', () => {
+            expect(resolveAgentPreviewDomains([normalizeClip])).toEqual(['audio-audition']);
+        });
+
+        it('maps a clip duplication to every content domain its copy carries', () => {
+            expect(resolveAgentPreviewDomains([duplicateClip])).toEqual([
+                'midi-overlay',
+                'audio-audition',
+                'automation-curve',
+            ]);
+        });
+
+        it('maps a device parameter edit to no domain', () => {
+            expect(resolveAgentPreviewDomains([setDeviceParameter])).toEqual([]);
+        });
+
+        it('maps a track gain edit to no domain', () => {
+            expect(resolveAgentPreviewDomains([setTrackGain])).toEqual([]);
+        });
+
         it('returns the union of touched domains in declaration order', () => {
             expect(resolveAgentPreviewDomains([addNotes, addDevice])).toEqual(['midi-overlay', 'device-graph']);
         });
@@ -210,7 +286,7 @@ describe('agent domain preview adapters', () => {
 
     describe('domain support', () => {
         it('reports a domain unsupported when one of its actions cannot run in the isolated projection', () => {
-            expect(resolveAgentDomainPreviewSupport([generateBassline])).toEqual([
+            expect(resolveAgentDomainPreviewSupport([transposeNotes])).toEqual([
                 { domain: 'midi-overlay', status: 'unsupported', reason: 'external-execution' },
             ]);
         });
@@ -232,7 +308,7 @@ describe('agent domain preview adapters', () => {
         it('refuses an audition of clip audio that only a render could produce', () => {
             vi.mocked(getCachedAudioBuffer).mockReturnValue(cachedBuffer());
 
-            expect(resolveAgentDomainPreviewSupport([trimClipEnd])).toEqual([
+            expect(resolveAgentDomainPreviewSupport([setClipGain])).toEqual([
                 { domain: 'audio-audition', status: 'unsupported', reason: 'isolated-render-unavailable' },
             ]);
         });
@@ -345,7 +421,7 @@ describe('agent domain preview adapters', () => {
         it('returns the unsupported reason for a domain instead of running its adapter', () => {
             expect(
                 buildAgentDomainPreviews({
-                    actions: [generateBassline, addDevice],
+                    actions: [transposeNotes, addDevice],
                     projectDocument: createProjectedDocument(),
                 })
             ).toEqual([
@@ -466,7 +542,7 @@ describe('agent domain preview adapters', () => {
         });
 
         it('escalates an allowed batch whose preview domain is unsupported to explicit confirmation', () => {
-            const compiled = compile(trimClipEnd, 'apply');
+            const compiled = compile(trimClipStart, 'apply');
 
             expect(compiled.requiresConfirmation).toBe(true);
             expect(compiled.allowApproval).toBeNull();
@@ -482,7 +558,7 @@ describe('agent domain preview adapters', () => {
         });
 
         it('leaves preview mode unconfirmed when a domain preview is unsupported', () => {
-            const compiled = compile(trimClipEnd, 'preview');
+            const compiled = compile(trimClipStart, 'preview');
 
             expect(compiled.requiresConfirmation).toBe(false);
             expect(compiled.interactionMode).toBe('preview');

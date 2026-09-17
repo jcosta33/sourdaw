@@ -1,3 +1,4 @@
+import { getExecutableAppActionEffect } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { AGENT_PREVIEW_DOMAINS, type AgentPreviewDomain } from '../../models/AgentDomainPreview';
@@ -5,109 +6,69 @@ import { AGENT_PREVIEW_DOMAINS, type AgentPreviewDomain } from '../../models/Age
 /**
  * Which preview domains a proposed batch touches.
  *
- * The membership contract, by operation:
+ * Membership is read from Command's per-operation effect declaration, traced
+ * through each production handler, rather than restated here: an operation's
+ * name carries no contract, and a second list of operations drifts out of the
+ * first one silently. Each domain owns one effect dimension plus the effect
+ * objects whose creation or removal is that domain's content:
  *
- * - `device-graph`: operations that add, remove, or re-point a node or edge of
- *   the compiled audio graph — track and bus lifecycle, device chain order, and
- *   every routed operation (`createBus`, `addSend`, `setSend`, `removeSend`,
- *   `setTrackOutput`, `addSidechainRoute`, `removeSidechainRoute`). Parameter
- *   edits such as `setTrackGain` or `setDeviceParameter` change no topology and
- *   are deliberately absent.
- * - `automation-curve`: every operation whose lowercase name contains
- *   `automation`, the same law the semantic diff uses to mark a fact automated.
- * - `midi-overlay`: operations that write note content into a clip, including
- *   the generative ones whose notes arrive from outside the project.
- * - `audio-audition`: operations that change what a clip sounds like, plus
- *   `addClip` whose payload declares an audio clip.
+ * - `midi-overlay`: dimension `midi-content`, or `notes` created or removed.
+ * - `audio-audition`: dimension `clip-audio`, or an `addClip` whose payload
+ *   declares an audio clip — the one membership no dimension can express, since
+ *   `addClip` places audio and MIDI through the same `arrangement` write.
+ * - `automation-curve`: dimension `automation`, or an `automation-lane` or
+ *   `automation-point` created or removed.
+ * - `device-graph`: dimension `routing`, or a `track`, `bus`, `device`, `send`
+ *   or `sidechain-route` created or removed. The `processing` dimension is
+ *   deliberately absent: a parameter edit changes no topology.
  *
- * Operations matching none — renames, colours, tempo, transport, selection —
- * map to no domain. The union is returned in `AGENT_PREVIEW_DOMAINS` order.
+ * A `conditional` dimension does not count. It names a write that depends on
+ * live execution-time state — a recording transport, a folder strip activation —
+ * which an isolated preview never exercises, so the preview it would demand
+ * shows nothing. The conditionals that do write content, such as the MIDI a
+ * clip duplication copies, are already carried by the created and removed
+ * objects.
+ *
+ * An operation Command declares no effect for is not executable, so no agent
+ * batch can carry it, and it resolves no domain. The union is returned in
+ * `AGENT_PREVIEW_DOMAINS` order.
  */
 
-const DEVICE_GRAPH_OPERATIONS = new Set<AppAction['type']>([
-    'addTrack',
-    'removeTrack',
-    'duplicateTrack',
-    'createBus',
-    'createFolder',
-    'addDevice',
-    'removeDevice',
-    'reorderDevices',
-    'addSend',
-    'setSend',
-    'removeSend',
-    'setTrackOutput',
-    'addSidechainRoute',
-    'removeSidechainRoute',
-]);
+type ActionEffect = NonNullable<ReturnType<typeof getExecutableAppActionEffect>>;
+type EffectDimension = ActionEffect['dimensions'][number];
+type EffectObject = NonNullable<ActionEffect['creates']>[number];
 
-const MIDI_OVERLAY_OPERATIONS = new Set<AppAction['type']>([
-    'addNotes',
-    'applyGroove',
-    'arpeggiate',
-    'audioToMidi',
-    'completeMidi',
-    'copyMidiArticulations',
-    'generateBassline',
-    'generateChordProgression',
-    'generateDrumPattern',
-    'generateFill',
-    'generateMelody',
-    'humanizeNotes',
-    'importMidiFile',
-    'invertNotes',
-    'quantizeNoteLengths',
-    'quantizeNotes',
-    'removeShortMidiOverlaps',
-    'retrogradeNotes',
-    'scaleAllVelocities',
-    'scaleVelocities',
-    'setAllVelocities',
-    'transposeNotes',
-    'variationMidi',
-]);
+const DOMAIN_RULES: Record<AgentPreviewDomain, { dimension: EffectDimension; objects: readonly EffectObject[] }> = {
+    'midi-overlay': { dimension: 'midi-content', objects: ['notes'] },
+    'audio-audition': { dimension: 'clip-audio', objects: [] },
+    'automation-curve': { dimension: 'automation', objects: ['automation-lane', 'automation-point'] },
+    'device-graph': { dimension: 'routing', objects: ['track', 'bus', 'device', 'send', 'sidechain-route'] },
+};
 
-const AUDIO_AUDITION_OPERATIONS = new Set<AppAction['type']>([
-    'bounceInPlace',
-    'bounceSelection',
-    'bounceToNewTrack',
-    'commitPitchEdit',
-    'consolidateAllTracks',
-    'consolidateSelection',
-    'crossfadeClips',
-    'enableWarping',
-    'freezeTrack',
-    'glueClips',
-    'importAudioFile',
-    'importStemSet',
-    'normalizeClip',
-    'reverseClip',
-    'setClipFade',
-    'setClipGain',
-    'setClipStretchMode',
-    'setClipStretchRatio',
-    'slipClipContent',
-    'stemSeparate',
-    'stripSilence',
-    'trimClipEnd',
-    'trimClipStart',
-]);
+function declaresDimension(effect: ActionEffect, dimension: EffectDimension): boolean {
+    return effect.dimensions.includes(dimension);
+}
+
+function touchesObject(effect: ActionEffect, objects: readonly EffectObject[]): boolean {
+    const created = effect.creates ?? [];
+    const removed = effect.removes ?? [];
+    return objects.some((object) => created.includes(object) || removed.includes(object));
+}
 
 function placesAudioClip(action: AppAction): boolean {
     return action.type === 'addClip' && action.payload.type === 'audio';
 }
 
 function touchesDomain(action: AppAction, domain: AgentPreviewDomain): boolean {
-    if (domain === 'midi-overlay') {
-        return MIDI_OVERLAY_OPERATIONS.has(action.type);
+    if (domain === 'audio-audition' && placesAudioClip(action)) {
+        return true;
     }
-    if (domain === 'audio-audition') {
-        return AUDIO_AUDITION_OPERATIONS.has(action.type) || placesAudioClip(action);
+    const effect = getExecutableAppActionEffect(action.type);
+    if (!effect) {
+        return false;
     }
-    if (domain === 'automation-curve') {
-        return action.type.toLowerCase().includes('automation');
-    }
-    return DEVICE_GRAPH_OPERATIONS.has(action.type);
+    const rule = DOMAIN_RULES[domain];
+    return declaresDimension(effect, rule.dimension) || touchesObject(effect, rule.objects);
 }
 
 export function resolveAgentPreviewDomains(actions: readonly AppAction[]): readonly AgentPreviewDomain[] {
