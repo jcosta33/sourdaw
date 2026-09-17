@@ -1,0 +1,39 @@
+src/app/__tests__/agentCampaignBaseline.spec.ts
+  s_914af328b3988f::t_954799cb212392 2,15-50,59-61,139
+scripts/agent-campaign/run-evidence-gate.ts
+  s_914af328b3988f::t_943db0f4ba944a 405-408
+  s_914af328b3988f::t_dcbef454c8678c 89-109
+  s_914af328b3988f::t_03e6fea15bf428 529
+release/open-source-inventory.json
+  s_914af328b3988f::t_e8413a81a497fa 21
+  s_914af328b3988f::t_d0fdb58409bff7 2-20,22-2572
+scripts/agent-campaign/evidenceManifest.ts
+  s_914af328b3988f::t_36754d1142300b 4-7
+scripts/__tests__/agentCampaignHarness.spec.ts
+  s_914af328b3988f::t_4f2f71c47b2d90 1-51
+  s_914af328b3988f::t_58c21ec204394a 52-55
+scripts/__tests__/runEvidenceGate.spec.ts
+  s_914af328b3988f::t_bc11db804c5946 255-324
+  s_914af328b3988f::t_d1d450ed2fbf33 2,8-9,12
+  s_914af328b3988f::t_cf85b92057f2b6 325
+evidence/agent-campaign/manifest.json
+  s_914af328b3988f::t_8fee7fb594d1c8 801,886,890
+release/dependency-license-proofs.json
+  s_914af328b3988f::t_c511813f8ee594 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "43ead9770907878d46e734d8daf71983df1012bc",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
