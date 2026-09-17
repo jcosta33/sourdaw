@@ -160,6 +160,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     startFaustNote: vi.fn(),
     writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    projectDeviceForNativeBody: vi.fn((device) => device),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     applyRuntimeGraphDelta: vi.fn(),
     cacheAudioBuffer: vi.fn(),
