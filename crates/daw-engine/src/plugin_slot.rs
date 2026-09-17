@@ -25,6 +25,13 @@ pub struct MidiNoteEvent {
     pub clip_id_hash: u32,
     pub event_id_hash: u32,
     pub absolute_occurrence_index: u64,
+    /// The instrument's articulation for this note, as the DSP engine numbers
+    /// it, or `None` for the instrument's current articulation.
+    ///
+    /// Carried on a note-on alone: it selects the sound the key is struck with,
+    /// and a release addresses the key rather than choosing between sounds. An
+    /// instrument with no per-note articulation surface ignores it.
+    pub articulation_id: Option<u16>,
 }
 
 /// A live MIDI controller message to send to a plugin.

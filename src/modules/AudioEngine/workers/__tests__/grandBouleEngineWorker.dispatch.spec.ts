@@ -22,15 +22,21 @@ let processShouldThrow = false;
 let lifecycleState = 3;
 
 class GrandBouleInstanceMock {
-    note_on(note: number, velocity: number): void {
-        calls.push({ method: 'note_on', args: [note, velocity] });
-    }
-    note_on_with_channel(note: number, velocity: number, _channel: number): void {
+    push_note_on(note: number, velocity: number, _channel: number, offset: number): boolean {
         lifecycleState = 0;
-        calls.push({ method: 'note_on', args: [note, velocity] });
+        calls.push({ method: 'push_note_on', args: [note, velocity, offset] });
+        return true;
     }
-    note_off(note: number): void {
-        calls.push({ method: 'note_off', args: [note] });
+    push_note_off(note: number, offset: number): boolean {
+        calls.push({ method: 'push_note_off', args: [note, offset] });
+        return true;
+    }
+    push_note_off_on_channel(note: number, channel: number, offset: number): boolean {
+        calls.push({ method: 'push_note_off_on_channel', args: [note, channel, offset] });
+        return true;
+    }
+    push_note_expression(): boolean {
+        return true;
     }
     set_param(name: string, value: number): void {
         calls.push({ method: 'set_param', args: [name, value] });
@@ -261,9 +267,10 @@ describe('Grand Boule engine worker control plane', () => {
         send({ type: 'noteOff', midiNote: 60, releaseVelocity: 0.5 });
         send({ type: 'allNotesOff' });
 
-        expect(method('note_on')!.args).toEqual([60, 90]);
+        // No frame on either message, so both are the "voice now" case: offset 0.
+        expect(method('push_note_on')!.args).toEqual([60, 90, 0]);
         expect(queuedYields).toHaveLength(1);
-        expect(method('note_off')!.args).toEqual([60]);
+        expect(method('push_note_off')!.args).toEqual([60, 0]);
         expect(calls.some((c) => c.method === 'all_notes_off')).toBe(true);
         const controls = new Int32Array(SAB, 0, 7);
         expect(Atomics.load(controls, 4)).toBe(3);

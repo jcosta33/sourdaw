@@ -12,10 +12,11 @@
  * slot means the compressor lands ahead of the EQ rather than behind it.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type Device, type Track } from '#/modules/Arrangement/stores';
+import { type Device, type DeviceStateChunk, type Track } from '#/modules/Arrangement/stores';
 
+import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
 import {
     type AudioGraphApplyResult,
     type AudioGraphBackend,
@@ -651,5 +652,91 @@ describe('mirrorDeviceChainDelta', () => {
         expect(sentCommands()).toEqual([
             { kind: 'insert-device', trackId: 'audio-1', device: device('knead'), index: 1 },
         ]);
+    });
+
+    /**
+     * Picking another Levain instrument mid-take changes neither the device's
+     * id nor its position, so the insert-and-remove-by-id diff above sees no
+     * change to mirror on its own — yet the engine's instance was built from
+     * the *old* bank and holds no door to change which one it plays from
+     * (#4203). This is the one case `swappedDevices` exists for.
+     */
+    describe('a held Levain device whose bank key changes (#4203)', () => {
+        function bankKeyOf(deviceState: DeviceStateChunk | undefined): string | null {
+            const bank = (deviceState as { data?: { bank?: string } } | undefined)?.data?.bank;
+            return bank === undefined ? null : `levain:${bank}`;
+        }
+
+        const TRUMPET_STATE = { version: 1, data: { bank: 'trumpet' } } as unknown as DeviceStateChunk;
+        const VIOLIN_STATE = { version: 1, data: { bank: 'violin' } } as unknown as DeviceStateChunk;
+
+        function levain(deviceState: DeviceStateChunk): Device {
+            return device('lev', { type: 'levain', deviceState });
+        }
+
+        beforeEach(() => {
+            nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['eq', 'lev', 'comp']]]);
+            setAudioDeviceRuntimeSink({
+                nativeSampleBankKey: ({ deviceType, deviceState }) =>
+                    deviceType === 'levain' ? bankKeyOf(deviceState) : null,
+            });
+        });
+
+        afterEach(() => {
+            setAudioDeviceRuntimeSink({});
+        });
+
+        it('rebuilds the held instance in place, in front of and behind nothing else', async () => {
+            await mirrorDeviceChainDelta({
+                before: track([device('eq'), levain(TRUMPET_STATE), device('comp')]),
+                after: track([device('eq'), levain(VIOLIN_STATE), device('comp')]),
+            });
+
+            expect(sentCommands()).toEqual([
+                { kind: 'remove-device', trackId: 'audio-1', deviceId: 'lev' },
+                {
+                    kind: 'insert-device',
+                    trackId: 'audio-1',
+                    device: { ...levain(VIOLIN_STATE), sampleBankKey: 'levain:violin' },
+                    index: 1,
+                },
+            ]);
+        });
+
+        it('names the swapped device in the deferred-change notice, should the batch decline', async () => {
+            apply.mockResolvedValue({ acceptance: 'rejected', application: 'not-applied', reason: 'chain busy' });
+
+            await mirrorDeviceChainDelta({
+                before: track([device('eq'), levain(TRUMPET_STATE), device('comp')]),
+                after: track([device('eq'), levain(VIOLIN_STATE), device('comp')]),
+            });
+
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                '"lev" on "Lead" takes effect on the next play: chain busy',
+                'warning'
+            );
+        });
+
+        it('sends nothing when the projected bank key is unchanged', async () => {
+            const result = await mirrorDeviceChainDelta({
+                before: track([device('eq'), levain(TRUMPET_STATE), device('comp')]),
+                after: track([device('eq'), levain(TRUMPET_STATE), device('comp')]),
+            });
+
+            expect(result).toEqual({ outcome: 'skipped', reason: 'nothing to mirror' });
+            expect(apply).not.toHaveBeenCalled();
+        });
+
+        it('sends nothing while the session is parked', async () => {
+            nativeLiveGraphSession.rolling = false;
+
+            const result = await mirrorDeviceChainDelta({
+                before: track([device('eq'), levain(TRUMPET_STATE), device('comp')]),
+                after: track([device('eq'), levain(VIOLIN_STATE), device('comp')]),
+            });
+
+            expect(result).toEqual({ outcome: 'skipped', reason: 'parked' });
+            expect(apply).not.toHaveBeenCalled();
+        });
     });
 });

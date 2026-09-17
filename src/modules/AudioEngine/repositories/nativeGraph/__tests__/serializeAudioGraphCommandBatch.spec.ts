@@ -457,6 +457,32 @@ describe('serializeAudioGraphCommandBatch', () => {
         expect(Object.keys(scheduled.notes[1] ?? {})).toEqual(['time', 'note', 'velocity', 'channel', 'isNoteOn']);
     });
 
+    it('carries a stated articulation onto the wire and leaves an unstated one off', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'schedule-midi',
+                    target: { trackId: 'track-1', deviceId: 'dev-plugin' },
+                    probabilitySeed: 0xdecafbad,
+                    notes: [
+                        { time: 0.25, note: 60, velocity: 100, channel: 0, isNoteOn: true, articulationId: 10 },
+                        { time: 0.5, note: 60, velocity: 0, channel: 0, isNoteOn: false },
+                    ],
+                },
+            ],
+        });
+
+        const scheduled = wire.commands[0];
+        if (scheduled?.kind !== 'schedule-midi') {
+            throw new Error('the batch must serialize as schedule-midi');
+        }
+        expect(scheduled.notes[0]?.articulationId).toBe(10);
+        // The key itself: the mapper reads an absent articulation as the
+        // device's own current one, which a stated `undefined` is not.
+        expect(scheduled.notes[1]).not.toHaveProperty('articulationId');
+    });
+
     it('carries a clear-midi window onto the wire with an open end left null', () => {
         const wire = serializeAudioGraphCommandBatch({
             schemaVersion: 1,

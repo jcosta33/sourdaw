@@ -33,7 +33,9 @@ import {
     restoreCachedAudioBuffersFromIdb,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
+import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
+import { listToasterPatternsOutsideArrangement } from '#/modules/Toaster/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -176,6 +178,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const tracksState = useStore(trackStore, defaultTrackState);
     const workspace = useStore(workspaceStore, defaultWorkspaceState);
     const automation = useStore(automationStore, { lanes: [] });
+    const midi = useStore(midiStore, defaultMidiStoreState);
     const [formats, setFormats] = useState<Set<ExportFormat>>(() => new Set(defaults.formats));
     const [mode, setMode] = useState<ExportMode>('mixdown');
     const [range, setRange] = useState<ExportRange>('project');
@@ -196,6 +199,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const loopAvailable = transport.loopEnd > transport.loopStart;
     const marqueeAvailable = clipSelection.marqueeSelection !== null;
     const audioTracks = tracksState.tracks.filter((t) => t.kind === 'audio');
+    // Session-only Toaster sequencer patterns (ADR 0045) never reach export by
+    // themselves — only a `To timeline` bake does — so an active, un-baked
+    // pattern is advisory, non-blocking information the musician needs before
+    // assuming this export includes it.
+    const unbakedToasterPatterns = listToasterPatternsOutsideArrangement({
+        tracks: tracksState.tracks,
+        notesByClipId: midi.notesByClipId,
+    });
 
     const resolveRange = (tracks: readonly Track[]): { startBeat: number; durationBeats: number } => {
         const projectMaxBeat = Math.max(16, ...tracks.flatMap((t) => t.clips.map((c) => c.endBeat)));
@@ -1259,6 +1270,22 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     >
                         <div className="h-10">{renderOvenStatus()}</div>
                     </DawDialogSection>
+
+                    {unbakedToasterPatterns.length > 0 ? (
+                        <Stack gap={1.5}>
+                            {unbakedToasterPatterns.map((entry) => (
+                                <Row
+                                    key={`${entry.trackId}-${entry.deviceName}`}
+                                    role="status"
+                                    className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
+                                >
+                                    Toaster &quot;{entry.deviceName}&quot; on &quot;{entry.trackName}&quot; has a
+                                    sequencer pattern that is not in the arrangement. Use To timeline on the device to
+                                    include it in the export.
+                                </Row>
+                            ))}
+                        </Stack>
+                    ) : null}
                 </DawDialogBody>
 
                 <DawDialogFooter tone="warm" align="end" className="px-6">

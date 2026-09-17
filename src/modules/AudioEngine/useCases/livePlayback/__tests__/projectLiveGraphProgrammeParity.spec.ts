@@ -617,6 +617,7 @@ function projectLiveTopologyBatch(extraTracks: readonly Track[] = []): readonly 
     const stripTracks = fixtureTracks('live', extraTracks);
     return projectLiveGraphTopology({
         stripTracks,
+        projectTracks: stripTracks,
         soloGatedTrackIds: new Set(),
         vcaMultiplierByTrackId: new Map(),
         // The parity fixtures carry no externally hosted plugin, so no engine

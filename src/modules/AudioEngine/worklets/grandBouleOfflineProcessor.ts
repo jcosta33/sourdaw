@@ -267,7 +267,11 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
             instance,
             queue: this._queue,
             msg,
-            blockEndFrame: holdAtCurrentFrame ? currentFrame : currentFrame + RENDER_QUANTUM_FRAMES,
+            block: {
+                startFrame: currentFrame,
+                // An empty block holds nothing, so the hold above enqueues.
+                endFrame: holdAtCurrentFrame ? currentFrame : currentFrame + RENDER_QUANTUM_FRAMES,
+            },
         });
     }
 
@@ -327,11 +331,12 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
         // audible 20 ms glide from defaults at the start of an offline part.
         this._applyAutomation(instance, currentFrame, currentFrame + frames);
 
-        // Voice everything that belongs in the block about to be produced. The
-        // engine has no sub-block note offset, so the block boundary is the only
-        // place a note can be placed at all. Exclusive bound: a note landing
-        // exactly on `currentFrame + frames` belongs to the next block.
-        this._queue.drain(instance, currentFrame + frames);
+        // Hand the engine everything that belongs in the block about to be
+        // produced, each note at its own sample offset inside it. The bound is
+        // this block's real `frames`, never an assumed quantum, and it is
+        // exclusive: a note landing exactly on `currentFrame + frames` belongs
+        // to the next block.
+        this._queue.drain(instance, currentFrame, currentFrame + frames);
 
         try {
             const mem = this._memory?.buffer;

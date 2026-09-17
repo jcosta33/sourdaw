@@ -30,6 +30,13 @@ import { projectStripCarriers } from './stripCarriers';
 export type ReadSessionProgrammeInput = Readonly<{
     /** Every track and bus this session builds a strip for, in project order. */
     stripTracks: readonly Track[];
+    /**
+     * Every track in the project, in project order, including tracks with no
+     * live strip. Fed straight through to the carrier law's Toaster
+     * pad-ordinal binding, which reads it rather than `stripTracks` because
+     * routing binds pads over the same full list.
+     */
+    projectTracks: readonly Track[];
     /** The tracks whose Web Audio strip is receiving a live input signal. */
     inputMonitoredTrackIds: ReadonlySet<string>;
     /** The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}. */
@@ -47,6 +54,7 @@ export function readSessionProgramme(input: ReadSessionProgrammeInput): LiveGrap
     const hostedStripIds = engineHostedStripIds(
         projectStripCarriers({
             stripTracks: input.stripTracks,
+            projectTracks: input.projectTracks,
             attachedInstanceIds: input.attachedInstanceIds,
             programme,
             inputMonitoredTrackIds: input.inputMonitoredTrackIds,

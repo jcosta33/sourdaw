@@ -4293,6 +4293,7 @@ mod compensation_render_alloc_guards {
                 event_id_hash: 0,
                 absolute_occurrence_index: 0,
                 frame_offset: 0,
+                articulation_id: None,
             },
         }
     }

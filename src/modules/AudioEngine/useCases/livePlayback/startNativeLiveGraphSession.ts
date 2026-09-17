@@ -256,6 +256,7 @@ function receivesLiveInput(track: Track): boolean {
  */
 function readSessionTopology(): Readonly<{
     stripTracks: readonly Track[];
+    projectTracks: readonly Track[];
     soloGatedTrackIds: ReadonlySet<string>;
     vcaMultiplierByTrackId: ReadonlyMap<string, number>;
     attachedInstanceIds: ReadonlySet<string>;
@@ -279,6 +280,7 @@ function readSessionTopology(): Readonly<{
     const vcaGroups = getVcaGroupsState();
     return {
         stripTracks,
+        projectTracks,
         soloGatedTrackIds: new Set(
             stripTracks.filter((track) => soloGatedByTrackId.get(track.id) ?? false).map((track) => track.id)
         ),
@@ -370,6 +372,7 @@ function notifySilentHostedPlugins(input: {
 function claimCarriersOf(input: {
     commands: readonly AudioGraphCommand[];
     stripTracks: readonly Track[];
+    projectTracks: readonly Track[];
     attachedInstanceIds: ReadonlySet<string>;
     programme: LiveGraphProgramme;
     inputMonitoredTrackIds: ReadonlySet<string>;
@@ -379,6 +382,7 @@ function claimCarriersOf(input: {
         stripTracks: input.stripTracks,
         carriers: projectStripCarriers({
             stripTracks: input.stripTracks,
+            projectTracks: input.projectTracks,
             attachedInstanceIds: input.attachedInstanceIds,
             programme: input.programme,
             inputMonitoredTrackIds: input.inputMonitoredTrackIds,
@@ -913,6 +917,7 @@ async function bindAttachedPlugins(input: {
         attachedInstanceIds,
         programme: readSessionProgramme({
             stripTracks: topology.stripTracks,
+            projectTracks: topology.projectTracks,
             inputMonitoredTrackIds: topology.inputMonitoredTrackIds,
             attachedInstanceIds,
             sampleRate: input.sampleRate,
@@ -1051,12 +1056,7 @@ export function startNativeLiveGraphSession(
             // (`advance_playhead` returns on `!is_playing`), so nothing can be
             // rendered ahead of the region that governs it.
             const monitor = input.monitor ?? DEFAULT_MONITOR;
-            const programme = readSessionProgramme({
-                stripTracks: topology.stripTracks,
-                inputMonitoredTrackIds: topology.inputMonitoredTrackIds,
-                attachedInstanceIds: topology.attachedInstanceIds,
-                sampleRate: input.sampleRate,
-            });
+            const programme = readSessionProgramme({ ...topology, sampleRate: input.sampleRate });
             // Here, because this is where the programme is applied.
             logProgrammeExclusions(programme);
             // Material before the batch that names it, always: the native side
@@ -1138,11 +1138,10 @@ export function startNativeLiveGraphSession(
                 // was made before the engine held it.
                 if (audible) {
                     claimCarriersOf({
+                        ...topology,
                         commands: rebound.commands,
-                        stripTracks: topology.stripTracks,
                         attachedInstanceIds: installed.attachedInstanceIds,
                         programme: installed.programme,
-                        inputMonitoredTrackIds: topology.inputMonitoredTrackIds,
                     });
                 }
                 await installRolledSession({

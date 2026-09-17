@@ -42,3 +42,22 @@ export const registeredNativeSampleBankKeys = new Set<string>();
  * next case await a promise its own transport never made.
  */
 export const inFlightNativeSampleBankShipments = new Map<string, Promise<void>>();
+
+/**
+ * Which keys each backend currently names, keyed by `backendId` (#4203).
+ *
+ * The live backend and an offline bounce both stage into the one committed set
+ * above, and only a `replaceTopology` batch may reclaim from it — but a batch
+ * only ever states *its own* backend's whole graph. Without this map, a live
+ * session's replacement would read the committed set and conclude every key it
+ * does not itself name is dead, including a bank a concurrent bounce staged and
+ * is still mapping. So a release consults every backend's claim here, not only
+ * the one replacing its topology: a key survives as long as any backend still
+ * names it, and only `releaseNativeSampleBankClaims` may drop a backend's own
+ * entry, when that backend is disposed and can name nothing again.
+ *
+ * Beside the other two for the same reason and cleared by the same tests: a
+ * lingering claim from a previous case would shield a key the current case
+ * expects released, or release one the current case's own backend still names.
+ */
+export const claimedNativeSampleBankKeysByBackend = new Map<string, ReadonlySet<string>>();

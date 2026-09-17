@@ -50,10 +50,14 @@ into it, so it is shared infrastructure rather than a thing one of them owns.
 
 A track is native only when the engine can represent all of it: it has something scheduled to play,
 it is not monitoring live input, every device in its chain has a native body — a `knead` built-in, or
-a plugin the engine reports attached — and every bus its output path and its sends reach is
-representable by the same test, all the way to master. A routing cycle is answered rather than
-recursed. Each of these is a `web` answer with a reason, and the reason is written for a musician
-because it is what a musician is shown.
+a plugin the engine reports attached — every bus its output path and its sends reach is representable
+by the same test, all the way to master, none of its Toaster pads is bound to a child track, and it is
+not itself a child track a Toaster's pad is bound to, since the native graph has no multi-output device
+or child strip to represent either side of that binding. Both halves of the binding are read over the
+full project track list rather than the shorter live-strip list, because routing binds pads over that
+same full list and a child with no live strip still occupies a pad slot in it. A routing cycle is
+answered rather than recursed. Each of these is a `web` answer with a reason, and the reason is written
+for a musician because it is what a musician is shown.
 
 **The producer reads the law; it does not restate it.** `projectLiveGraphTopology` calls the
 projection once and sets `contributesAudio` on a track strip to exactly `carrier === 'native'`. That

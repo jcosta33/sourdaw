@@ -562,6 +562,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // all four compile* references are import, declaration, and call metadata.
         // It neither hydrates devices nor writes project or engine state.
         'src/modules/Command/useCases/compilePartialCommandBatchAcceptance.ts': 4,
+        // Count provenance: new file entry, measured 1 — the exported declaration
+        // of the declarative transform compiler. It lowers a document to command
+        // descriptions only; it hydrates nothing and writes no device or engine
+        // state.
+        'src/modules/Command/useCases/compileDeclarativeTransform.ts': 1,
         'src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts': 1,
         'src/modules/Command/useCases/createExecutionCommandEnvelope.ts': 2,
         'src/modules/Command/useCases/getCommandDivergenceTargetIds.ts': 2,
@@ -688,6 +693,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // adapters and holds no device or AudioEngine write.
         'src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts': 4,
         'src/modules/AiRuntime/repositories/providerAdapterRegistry.ts': 3,
+        // Count provenance: new file entry, measured 2 — one import and one call
+        // of the pure topology compiler, which the domain preview runs over the
+        // isolated projection to report the proposed graph; the file holds no
+        // device or AudioEngine write.
+        'src/modules/AiRuntime/useCases/agentDomainPreview/previewDeviceGraph.ts': 2,
         'src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts': 1,
         // Count provenance: new file entry, measured 1 — the module path in a
         // type-only import of `ArbitraryCommandListEvidence` (the family

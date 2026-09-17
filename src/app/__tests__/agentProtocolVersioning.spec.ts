@@ -3,9 +3,13 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { getAgentCapabilityCatalog } from '#/modules/AiRuntime/useCases';
 import { getDeviceManifestProtocolContract } from '#/modules/Arrangement/useCases';
 
 import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
+
+/** The domains the Project owner publishes discovery over, in its published order. */
+const DISCOVERY_DOMAINS = ['device', 'preset', 'sample', 'asset', 'capability'];
 
 describe('agent protocol versioning', () => {
     it('publishes every independently versioned owner contract without command replay', () => {
@@ -14,6 +18,7 @@ describe('agent protocol versioning', () => {
         expect(manifest.map(({ id }) => id)).toEqual([
             'command',
             'query',
+            'discovery',
             'receipt',
             'provider-protocol',
             'device-manifest',
@@ -40,6 +45,21 @@ describe('agent protocol versioning', () => {
             );
             expect(contract.compatibility.behavior.length).toBeGreaterThan(0);
             expect(contract.compatibility.canonicalProjectRequiresCommandReplay).toBe(false);
+        }
+    });
+
+    it('carries the discovery contract through the manifest into the capability catalog', () => {
+        const manifest = getAgentProtocolManifest();
+        const discovery = manifest.find(({ id }) => id === 'discovery');
+        const entries = getAgentCapabilityCatalog(manifest).entries;
+
+        expect(discovery?.operations.map(({ name }) => name)).toEqual(DISCOVERY_DOMAINS);
+        for (const domain of DISCOVERY_DOMAINS) {
+            expect(entries.find((entry) => entry.id === `discovery:${domain}`)).toMatchObject({
+                name: domain,
+                availability: 'available',
+                evidence: { surface: 'protocol-contract', owner: 'discovery', contractOwner: 'Project' },
+            });
         }
     });
 

@@ -34,6 +34,7 @@ export { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
 export { getVerifiedBatchReceiptIdentity } from './getVerifiedBatchReceiptIdentity';
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
 export { getAppActionStaticAuthority } from './getAppActionStaticAuthority';
+export { getAppActionPreviewExecution } from './getAppActionPreviewExecution';
 export { getAgentActionRiskPolicy } from './getAgentActionRiskPolicy';
 export { getExecutableAppActionIntentCatalog } from './getExecutableAppActionIntentCatalog';
 export {

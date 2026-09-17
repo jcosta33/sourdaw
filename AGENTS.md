@@ -419,6 +419,13 @@ always disclose material failed, skipped, or incomplete verification, keep discr
 in structured evidence, and report the outcome and material exceptions; do not add a closing
 comment that only repeats the merged state.
 
+Write every approval, acceptance, and review body as a human reviewer would: what the change
+does, what was attacked, what held, and any remaining concerns. Never announce your role,
+identity, or authority chain — the posting identity already carries it. Never cite check
+counts, hash footers, or tool-generated provenance artifacts in the body. The reader is a
+teammate reviewing the work, not an auditor verifying the pipeline ran. If the sentence could
+appear unchanged in a CI log, it does not belong in a review.
+
 Approvals carry no inline comments; `review:publish` rejects APPROVE documents with comments.
 Each inline comment opens a merge-blocking thread; `review:resolve` replies `Done`, asserting a
 repair, so it cannot honestly clear a non-blocking note. Put observations in the approval body

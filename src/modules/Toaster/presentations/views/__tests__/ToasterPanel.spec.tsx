@@ -89,6 +89,15 @@ describe('ToasterPanel', () => {
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });
 
+    it('tells the musician Play is session-only and To timeline is what export/native playback sees', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+        expect(
+            screen.getByText(
+                'Play sounds the pattern live only. To timeline writes it to the arrangement for export and native playback.'
+            )
+        ).toBeInTheDocument();
+    });
+
     it('exposes labeled pattern groove assignment controls', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
 

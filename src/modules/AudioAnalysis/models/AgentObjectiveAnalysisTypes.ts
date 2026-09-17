@@ -157,3 +157,38 @@ export type UnavailableAgentObjectiveAnalysisReceipt = {
 
 export type AgentObjectiveAnalysisReceipt =
     MeasuredAgentObjectiveAnalysisReceipt | UnavailableAgentObjectiveAnalysisReceipt;
+
+/**
+ * The audio an audition receipt read.
+ *
+ * An audition measures a library sample rather than a project render, so it
+ * names the audio by content address and by the catalog candidate it came from:
+ * a library sample has no document revision, and inventing one would claim the
+ * figures describe a project state they never read.
+ */
+export type AgentAuditionAnalysisSubject = {
+    readonly contentAddress: string;
+    readonly candidateId: string;
+    readonly sampleRate: number;
+    readonly frameCount: number;
+    readonly channelCount: number;
+    readonly durationSeconds: number;
+};
+
+export type AgentAuditionComparison = {
+    readonly baseline: {
+        readonly contentAddress: string;
+        readonly candidateId: string;
+    };
+    readonly metrics: Record<AgentObjectiveMetricId, AgentObjectiveMetricComparison>;
+};
+
+export type AgentAuditionAnalysisReceipt = {
+    readonly status: 'measured';
+    readonly schemaVersion: 1;
+    readonly subject: AgentAuditionAnalysisSubject;
+    readonly analyzedAt: string;
+    readonly measurements: Record<AgentObjectiveMetricId, AgentObjectiveMetricEntry>;
+    readonly comparison: AgentAuditionComparison | null;
+    readonly warnings: readonly string[];
+};

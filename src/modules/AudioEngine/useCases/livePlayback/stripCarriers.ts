@@ -38,6 +38,7 @@ import { type Track } from '#/modules/Arrangement/stores';
 
 import { type AudioGraphDeviceChain } from '../../models/AudioGraphBackend';
 import { resolveOutputTarget } from '../offlineRender/resolveOutputTarget';
+import { resolveToasterPadBinding } from '../resolveToasterPadBinding';
 
 import { admittedSendBusIds } from './admittedSendBusIds';
 import { isCrumbsChainDevice } from './isCrumbsChainDevice';
@@ -55,6 +56,20 @@ export type StripCarrier = Readonly<{ carrier: 'native' }> | Readonly<{ carrier:
 export type StripCarriersInput = Readonly<{
     /** Every track and bus the live engine builds a strip for, in project order. */
     stripTracks: readonly Track[];
+    /**
+     * Every track in the project, in project order, including tracks with no
+     * live strip.
+     *
+     * The pad-ordinal law is read over this list rather than over
+     * `stripTracks`, because every routing consumer resolves the same ordinal
+     * over it too (`setTrackOutput.ts`, `refreshToasterPadBindings.ts`,
+     * `compileTrackStripInitializationSnapshot.ts`): a plain folder or a
+     * disabled child drops out of `stripTracks` but still occupies a pad slot
+     * in the list routing counts, and reading the shorter list here would
+     * shift every later child's ordinal out of step with the binding routing
+     * actually made.
+     */
+    projectTracks: readonly Track[];
     /** The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}. */
     attachedInstanceIds: ReadonlySet<string>;
     /** What each strip plays, from {@link projectLiveGraphProgramme}. */
@@ -107,6 +122,8 @@ type PathObstruction =
 
 type CarrierContext = Readonly<{
     stripById: ReadonlyMap<string, Track>;
+    projectTracks: readonly Track[];
+    projectTrackById: ReadonlyMap<string, Track>;
     busStripIds: ReadonlySet<string>;
     trackStripIds: ReadonlySet<string>;
     attachedInstanceIds: ReadonlySet<string>;
@@ -192,6 +209,44 @@ function webReasonWithoutNativePlayback(track: Track, context: CarrierContext): 
     return context.programme.webVoicedStripIds.has(track.id) ? 'its clips play on Web Audio' : null;
 }
 
+/**
+ * The Toaster pad-binding reason a strip stays on Web Audio, or `null` when
+ * neither this track nor its parent is bound the way `resolveToasterPadBinding`
+ * describes.
+ *
+ * The native graph has no multi-output device and no child strip, so a
+ * Toaster whose pads reach child tracks cannot be represented at all: the
+ * parent's own strip only ever plays one output, and `resolveToasterPadBinding`
+ * — the ordinal-under-16 law that decides which child plays which pad — is
+ * reused here rather than restated. It is read over `context.projectTracks`,
+ * the full project track list, rather than `stripTracks`, because every
+ * routing consumer resolves the same ordinal over the full list: a plain
+ * folder or a disabled child still occupies a pad slot for routing even
+ * though it builds no live strip, so a child with no live strip still
+ * occupies its pad slot here too, exactly as routing counts it.
+ *
+ * The parent's name is read the same way, over `context.projectTrackById`
+ * rather than `context.stripById`: a disabled Toaster folder still hosts and
+ * names its bound pads even though `readLiveStripTracks` drops it, so naming
+ * the parent from the live-strip map would answer `null` for a child whose
+ * binding `resolveToasterPadBinding` just resolved.
+ */
+function padBindingReason(track: Track, context: CarrierContext): string | null {
+    const hostsToaster = track.devices.some((device) => device.type === 'toaster');
+    if (hostsToaster && context.projectTracks.some((candidate) => candidate.parentId === track.id)) {
+        return 'its pads route to child tracks';
+    }
+    const binding = resolveToasterPadBinding(context.projectTracks, track.id);
+    if (!binding) {
+        return null;
+    }
+    // `resolveToasterPadBinding` only returns a binding after finding this
+    // same parent id in `context.projectTracks`, so the lookup always
+    // succeeds — the reason is never null for a resolved binding.
+    const parent = context.projectTrackById.get(binding.toasterParentTrackId)!;
+    return `it plays a pad of "${parent.name}"`;
+}
+
 function chainObstruction(track: Track, context: CarrierContext): AudioGraphDeviceChain[number] | null {
     return chainOf(track, context).find((device) => !hasNativeBody(device, context.attachedInstanceIds)) ?? null;
 }
@@ -257,6 +312,11 @@ function obstructionReason(obstruction: PathObstruction, lead: string): string {
  * reads has to be the first thing that is actually wrong, and a track with no
  * clips on it is not "missing a plugin".
  *
+ * The Toaster pad-binding check runs before every other rule, including rule
+ * 1: a Toaster with pads bound to child tracks is unrepresentable however
+ * much or little either strip plays, so a musician who has scheduled nothing
+ * yet is still told the specific reason rather than "nothing scheduled".
+ *
  * Rule 1 reads the programme first, exactly as the code does: a strip the
  * programme scheduled native playback for passes rule 1 outright. Only a
  * strip with no native playback falls to
@@ -270,6 +330,10 @@ function firstFailure(
     context: CarrierContext,
     inputMonitoredTrackIds: ReadonlySet<string>
 ): string | null {
+    const padReason = padBindingReason(track, context);
+    if (padReason) {
+        return padReason;
+    }
     const plays = (context.programme.playbacksByStripId.get(track.id)?.length ?? 0) > 0;
     if (!plays) {
         const webReason = webReasonWithoutNativePlayback(track, context);
@@ -308,9 +372,11 @@ function firstFailure(
  * reads it to say which plugins a musician will not be able to hear.
  */
 export function projectStripCarriers(input: StripCarriersInput): ReadonlyMap<string, StripCarrier> {
-    const { stripTracks, attachedInstanceIds, programme, inputMonitoredTrackIds } = input;
+    const { stripTracks, projectTracks, attachedInstanceIds, programme, inputMonitoredTrackIds } = input;
     const context: CarrierContext = {
         stripById: new Map(stripTracks.map((track): [string, Track] => [track.id, track])),
+        projectTracks,
+        projectTrackById: new Map(projectTracks.map((track): [string, Track] => [track.id, track])),
         busStripIds: new Set(stripTracks.filter((track) => track.kind === 'bus').map((track) => track.id)),
         trackStripIds: new Set(stripTracks.filter((track) => track.kind !== 'bus').map((track) => track.id)),
         attachedInstanceIds,

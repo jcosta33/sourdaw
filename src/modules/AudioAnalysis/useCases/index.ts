@@ -10,6 +10,7 @@ export { isStemSeparationAvailable } from './audioAi/isStemSeparationAvailable';
 export { summarizeFeatures } from './summarizeFeatures';
 
 export { analyzeAgentRenderReceipt } from './analyzeAgentRenderReceipt';
+export { analyzeAgentAuditionBuffer } from './analyzeAgentAuditionBuffer';
 
 export { audioToMidi } from './audioToMidi';
 export { detectOnsets } from './detectOnsets';

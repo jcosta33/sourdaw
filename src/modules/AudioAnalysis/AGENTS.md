@@ -8,7 +8,7 @@ Owns audio feature extraction, pitch/key/tempo detection, monophonic/polyphonic 
 
 ## Public Contract Surface
 
-- **`useCases`**: `getAnalysisHandlers`, `setMixAnalysisDisplayLifecycle`, `separateStems`, `isStemSeparationAvailable`, `summarizeFeatures`, `analyzeAgentRenderReceipt`, `audioToMidi`, `detectOnsets`, `insertPolyphonicMidiNotes`, `detectKey`, `describeDetectedKey`, `detectDominantPitch`, `polyphonicAudioToMidi`, `analyzeCurrentMix`, `compareToReference`, `detectTempo`.
+- **`useCases`**: `getAnalysisHandlers`, `setMixAnalysisDisplayLifecycle`, `separateStems`, `isStemSeparationAvailable`, `summarizeFeatures`, `analyzeAgentRenderReceipt`, `analyzeAgentAuditionBuffer`, `audioToMidi`, `detectOnsets`, `insertPolyphonicMidiNotes`, `detectKey`, `describeDetectedKey`, `detectDominantPitch`, `polyphonicAudioToMidi`, `analyzeCurrentMix`, `compareToReference`, `detectTempo`.
 - **`events`**: None.
 - **`stores`**: None.
 - **`presentations/views`**: None.

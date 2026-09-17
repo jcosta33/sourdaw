@@ -2,11 +2,13 @@
 // instances into module-owned dependency ports before runtime subscribers start.
 import { setRuntimeLogger } from '#/infra/logger/runtimeLogger';
 import { flushDeferredStorageNotice } from '#/infra/store/storage/storageFullNotice';
+import { externalClientManifestPort } from '#/modules/AgentAdapters/useCases';
 import { MIDI_TRANSFORM_IMPLEMENTATIONS } from '#/modules/AiGeneration/useCases';
 import {
     beginMixAnalysis,
     assertCanonicalLlmActionStrategies,
     completeMixAnalysis,
+    getAgentCapabilityCatalog,
     failMixAnalysis,
     initializeVoiceInputAvailability,
     recoverInterruptedAgentRuns,
@@ -149,6 +151,7 @@ import {
     registerReleasedStripReportSink,
 } from '#/modules/PluginHost/useCases';
 import {
+    agentCapabilityDiscoveryPort,
     collectDurableOwnedAudioBufferIds,
     getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
@@ -198,6 +201,7 @@ import {
     captureCommandBatchPreflightState,
 } from './captureCommandBatchPreflightState';
 import { composeGrandBoule } from './composeGrandBoule';
+import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
 import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
@@ -233,6 +237,12 @@ configureRuntimeGraphProjectRevisionValidator(
 );
 configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
 commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+// AiRuntime publishes the capability catalog and imports Project, so capability
+// discovery reaches it through the port the composition root registers.
+agentCapabilityDiscoveryPort.setProvider(() => getAgentCapabilityCatalog(getAgentProtocolManifest()));
+// The same manifest, so an external client is offered the operations this
+// build actually publishes and hears the rest as deferred.
+externalClientManifestPort.setProvider(getAgentProtocolManifest);
 agentProjectInspectionPort.setProvider(captureAgentProjectInspectionState);
 commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
 commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);

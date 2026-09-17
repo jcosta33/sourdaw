@@ -12,6 +12,7 @@ import {
     findQuarantineReason,
     GAUGE_NAMES,
     hasLivePluginOnTrack,
+    isAudibleLatencyReading,
     isRunningEngineTitle,
     MONOTONIC_COUNTER_NAMES,
     parseArgs,
@@ -164,6 +165,51 @@ describe('isRunningEngineTitle', () => {
 
     it('refuses the pre-#3706 single-carrier vocabulary, which no current build writes', () => {
         expect(isRunningEngineTitle('Engine: running · missed render deadlines: 0 (0.0 ms)')).toBe(false);
+    });
+});
+
+describe('isAudibleLatencyReading', () => {
+    const nativeRunning = 'Engine: native running · Web Audio: running · missed render deadlines: 0 (0.0 ms)';
+    const webAudioRunning = 'Engine: Web Audio running · missed render deadlines: 0 (0.0 ms)';
+    const nativeTitle =
+        'Output latency 10.7 ms = native engine buffer 10.7 ms + device 0.0 ms. ' +
+        'Hardware output path only — excludes plug-in delay compensation.';
+    const webAudioTitle =
+        'Output latency 16.3 ms = context 5.3 ms + device 11.0 ms. ' +
+        'Hardware output path only — excludes plug-in delay compensation.';
+
+    it('refuses "n/a" under a native engine — the #4275 readout before the native figure lands', () => {
+        expect(
+            isAudibleLatencyReading({
+                latencyText: 'n/a',
+                latencyTitle:
+                    'Native engine is the audible output; its output latency has not been published.' +
+                    ' Web Audio figures would describe a path nobody hears.',
+                engineTitle: nativeRunning,
+            })
+        ).toBe(false);
+    });
+
+    it('accepts a native-buffer figure under a native engine', () => {
+        expect(
+            isAudibleLatencyReading({ latencyText: '10.7ms', latencyTitle: nativeTitle, engineTitle: nativeRunning })
+        ).toBe(true);
+    });
+
+    it('refuses a Web Audio context figure under a native engine — the path nobody hears', () => {
+        expect(
+            isAudibleLatencyReading({ latencyText: '16.3ms', latencyTitle: webAudioTitle, engineTitle: nativeRunning })
+        ).toBe(false);
+    });
+
+    it('accepts the same Web Audio figure once Web Audio is the audible engine', () => {
+        expect(
+            isAudibleLatencyReading({
+                latencyText: '16.3ms',
+                latencyTitle: webAudioTitle,
+                engineTitle: webAudioRunning,
+            })
+        ).toBe(true);
     });
 });
 

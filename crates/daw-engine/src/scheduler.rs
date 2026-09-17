@@ -1382,13 +1382,11 @@ impl PluginCore {
     fn control_change(&mut self, event: MidiControlEvent) {
         match self {
             Self::GrandBoule(body) => body.control_change(event),
-            // Levain reads controllers through its own `handle_cc`, which is
-            // #4203's route rather than this one.
-            Self::Levain(_)
+            Self::Levain(body) => body.control_change(event),
             // No controller surface: an effect body takes its parameters by
-            // name ([`GraphCommand::SetParam`]), and the two instruments
-            // here take notes alone.
-            | Self::Knead(_)
+            // name ([`GraphCommand::SetParam`]), and the instruments here take
+            // notes alone.
+            Self::Knead(_)
             | Self::Fermenter(_)
             | Self::Gluten(_)
             | Self::Crust(_)
@@ -1422,10 +1420,10 @@ impl PluginCore {
     fn silence_pedal_held_voices(&mut self) -> bool {
         match self {
             Self::GrandBoule(body) => body.silence_pedal_held_voices(),
-            // The same bodies that take no controller in
-            // [`Self::control_change`] hold nothing a note-off cannot release.
-            Self::Levain(_)
-            | Self::Knead(_)
+            Self::Levain(body) => body.silence_pedal_held_voices(),
+            // The bodies that take no controller in [`Self::control_change`]
+            // hold nothing a note-off cannot release.
+            Self::Knead(_)
             | Self::Fermenter(_)
             | Self::Gluten(_)
             | Self::Crust(_)
@@ -1780,28 +1778,25 @@ fn member_channel(channel: i16) -> Option<u8> {
 
 /// Frames one hosted Grand Boule run renders.
 ///
-/// The web runtime's render quantum: the offline processor drives the
-/// instrument 128 frames at a time, and `receiveGrandBouleMessage` voices a
-/// framed message as soon as the block about to render is the one holding its
-/// frame — so a scheduled note sounds there from the start of the 128-frame
-/// block that holds it, counted from the timeline's absolute frame 0. The
-/// instrument takes no per-note sample offset, so the run length *is* the
-/// timing resolution, and the host splits a callback into runs this long to
-/// land a note on the same run the worklet lands it on.
+/// The web runtime's block-rate control quantum, and no longer the timing
+/// resolution of a note: the instrument takes a per-note sample offset, so a
+/// scheduled note sounds on its own frame inside whatever run holds it, on
+/// every span. What the run still fixes is everything the instrument does once
+/// per `process` call — the CC smoother's advance, the damper rebuild it feeds,
+/// and the parameter writes a host makes between calls — and the offline
+/// processor drives the instrument 128 frames at a time, so matching that here
+/// is what keeps a hosted render and a worklet render bit-identical.
 ///
-/// That parity holds exactly only when the span being split itself starts on
-/// the absolute 128-frame grid the worklet grids from — the host counts its
-/// own runs from the span's own frame 0, not from that absolute origin. A
-/// span starting off it, after a loop seam or under a device callback whose
-/// period is not a multiple of 128 (`GRAND_BOULE_RUN_FRAMES` does not divide
-/// it), voices a note up to
-/// `GRAND_BOULE_RUN_FRAMES - 1` frames away from where the worklet lands it,
-/// because the instrument has no offset-aware note API to close the gap.
-/// Tracked as #3997.
+/// The honest residual is that a span starting off the absolute 128-frame grid
+/// the worklet grids from — after a loop seam, or under a device callback whose
+/// period is not a multiple of 128 — advances that pedal smoothing and damper
+/// rebuild on a phase 0..`GRAND_BOULE_RUN_FRAMES - 1` frames from the worklet's,
+/// because the host counts its runs from the span's own frame 0. Notes are
+/// unaffected. It is audible only while a pedal is actually moving, and only as
+/// that pedal's travel landing a fraction of a block early or late.
 ///
 /// Well inside [`GRAND_BOULE_BLOCK_FRAMES`], the ceiling the instrument's own
-/// channel buffers impose: the run is the finer of the two figures, and the
-/// only one note timing depends on.
+/// channel buffers impose: the run is the finer of the two figures.
 const GRAND_BOULE_RUN_FRAMES: usize = 128;
 
 /// The bound `GrandBouleBody::render_run` reads the instrument's channel
@@ -1907,38 +1902,34 @@ impl GrandBouleBody {
     }
 
     /// Render this instrument's material for the block and sum it into the
-    /// pair, sounding each queued note in the run that holds its frame.
+    /// pair, delivering each queued note on the sample it was stamped for.
     ///
     /// Summed rather than written because an instrument is a generator: what
     /// it produces joins whatever already stands at its place in the chain.
     ///
     /// The block is split into runs of at most [`GRAND_BOULE_RUN_FRAMES`],
-    /// each one a whole `process` call, and every event whose frame falls
-    /// inside a run is delivered before that run renders. The instrument has
-    /// no note API carrying a sample offset, so the run boundary is the whole
-    /// of the timing resolution available — and it is exactly the resolution
-    /// the web runtime has, which is why the run is that runtime's quantum
-    /// rather than the far longer block the instrument's buffers would allow.
+    /// each one a whole `process` call with its own events rebased onto the
+    /// run's first frame. The run is kept although the instrument now takes a
+    /// sample offset because it is the web runtime's block-rate control
+    /// quantum — the CC smoother's advance and the damper rebuild it feeds —
+    /// and matching it keeps a hosted render and a worklet render
+    /// bit-identical for a span on the absolute grid.
     ///
-    /// This block is one span, and the runs above are counted from that
-    /// span's own frame 0 — not from the timeline's absolute frame 0 the
-    /// worklet grids its own runs from. Parity with the worklet is exact only
-    /// when the span itself starts on the absolute 128-frame grid; a span
-    /// starting off it, after a loop seam or under a device callback whose
-    /// period is not a multiple of 128 (`GRAND_BOULE_RUN_FRAMES` does not
-    /// divide it), sounds a note up to
-    /// `GRAND_BOULE_RUN_FRAMES - 1` frames away from where the worklet lands
-    /// it, because the instrument has no offset-aware note API to close the
-    /// gap (#3997).
+    /// The residual is the one [`GRAND_BOULE_RUN_FRAMES`] states: this block is
+    /// one span, and the runs are counted from that span's own frame 0, so a
+    /// span starting off the absolute grid advances that block-rate control on
+    /// a phase of its own. Note timing is unaffected — a stamped note sounds on
+    /// its own frame on every span.
     ///
     /// Nothing here allocates: the runs write into buffers the instrument
-    /// already owns, and a note is a call rather than a queued message.
+    /// already owns, and the events are pushed into its fixed block list.
     fn process(
         &mut self,
         left: &mut [f32],
         right: &mut [f32],
         frames: usize,
         events: &[MidiNoteEvent],
+        diagnostics: &mut ActiveMidiRtDiagnostics,
     ) {
         let mut next_event = 0;
         let mut rendered = 0;
@@ -1952,7 +1943,11 @@ impl GrandBouleBody {
                 if at >= run_end {
                     break;
                 }
-                self.deliver(event);
+                // Non-decreasing by the block's own contract; saturating so a
+                // producer that broke it lands its event on the first frame of
+                // the run that reaches it — late by up to one run — rather
+                // than panicking on the callback.
+                self.push_event(event, at.saturating_sub(rendered) as u32, diagnostics);
                 next_event += 1;
             }
             self.render_run(&mut left[rendered..run_end], &mut right[rendered..run_end]);
@@ -1960,8 +1955,8 @@ impl GrandBouleBody {
         }
     }
 
-    /// Sound one note on the instrument, at the head of the run about to
-    /// render.
+    /// Queue one note on the instrument at `offset` samples into the run about
+    /// to render.
     ///
     /// A note-off narrows to the member channel its note-on sounded on, so
     /// releasing one key cannot silence a different note holding the same
@@ -1969,19 +1964,35 @@ impl GrandBouleBody {
     /// nothing, and the note-off then releases every voice at that pitch, for
     /// the reason given on [`FermenterBody::push_event`]: a key nothing can
     /// ever lift is the one outcome worse than releasing more than was asked.
-    fn deliver(&mut self, event: &MidiNoteEvent) {
+    fn push_event(
+        &mut self,
+        event: &MidiNoteEvent,
+        offset: u32,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) {
         let channel = member_channel(event.channel);
-        match (event.is_note_on, channel) {
+        let queued = match (event.is_note_on, channel) {
             // An unaddressable channel still sounds: the key went down, and
             // the base member channel is where a note with no channel of its
             // own belongs.
-            (true, channel) => self.instance.note_on_with_channel(
+            (true, channel) => self.instance.push_note_on(
                 event.note,
                 f32::from(event.velocity) / MIDI_VELOCITY_FULL_SCALE,
                 channel.unwrap_or(0),
+                offset,
             ),
-            (false, Some(channel)) => self.instance.note_off_on_channel(event.note, channel),
-            (false, None) => self.instance.note_off(event.note),
+            (false, Some(channel)) => self
+                .instance
+                .push_note_off_on_channel(event.note, channel, offset),
+            (false, None) => self.instance.push_note_off(event.note, offset),
+        };
+        // Unreachable as the two capacities stand: a block carries at most
+        // `MIDI_EVENT_BUFFER_CAPACITY` events and the instrument's own list
+        // takes twice that per run, emptying on every `process`. The count is
+        // kept as a guard against either capacity moving, not because a
+        // refusal can happen today.
+        if !queued {
+            diagnostics.record_scheduler_event_buffer_overflow(1);
         }
     }
 
@@ -3462,12 +3473,12 @@ const TOASTER_PAD_COUNT: u32 = 16;
 
 /// Frames one hosted Toaster run renders.
 ///
-/// The web runtime's render quantum, on the reason given at
-/// [`GRAND_BOULE_RUN_FRAMES`]: the worklet drives the instrument 128 frames at
-/// a time and voices a framed message as soon as the block about to render is
-/// the one holding its frame. The instrument takes no per-hit sample offset, so
-/// the run length *is* the timing resolution, and the host splits a callback
-/// into runs this long to land a hit on the run the worklet lands it on.
+/// The web runtime's render quantum: the worklet drives the instrument 128
+/// frames at a time and voices a framed message as soon as the block about to
+/// render is the one holding its frame. The instrument takes no per-hit sample
+/// offset — unlike Grand Boule's, which gained one — so the run length *is* the
+/// timing resolution, and the host splits a callback into runs this long to
+/// land a hit on the run the worklet lands it on.
 ///
 /// Unlike [`GRAND_BOULE_RUN_FRAMES`] this figure cannot be refused against the
 /// instrument's own ceiling at compile time: `ToasterInstance` keeps its
@@ -3631,18 +3642,19 @@ impl ToasterBody {
     ///
     /// The block is split into runs of at most [`TOASTER_RUN_FRAMES`], each one
     /// a whole `process` call, and every event whose frame falls inside a run is
-    /// delivered before that run renders — the split
-    /// [`GrandBouleBody::process`] takes, for the same reason: the instrument
-    /// has no note API carrying a sample offset, so the run boundary is the
-    /// whole of the timing resolution available, and it is exactly the
-    /// resolution the web runtime has.
+    /// delivered before that run renders. The instrument has no note API
+    /// carrying a sample offset, so the run boundary is the whole of the timing
+    /// resolution available, and it is exactly the resolution the web runtime
+    /// has.
     ///
     /// This block is one span, and the runs are counted from that span's own
     /// frame 0 rather than from the timeline's absolute frame 0 the worklet
     /// grids its own runs from, so parity with the worklet is exact only when
     /// the span itself starts on the absolute 128-frame grid; a span starting
     /// off it sounds a hit up to `TOASTER_RUN_FRAMES - 1` frames from where the
-    /// worklet lands it (#3997).
+    /// worklet lands it. [`GrandBouleBody::process`] takes the same split but no
+    /// longer pays that cost on its notes: its instrument gained an offset-aware
+    /// note API, and this one has none.
     ///
     /// Nothing here allocates: the runs write into buffers the instrument
     /// already owns, and a hit is a call rather than a queued message.
@@ -3820,21 +3832,23 @@ const LEVAIN_MAX_VOICES: u32 = 64;
 
 /// Frames one hosted Levain run renders.
 ///
-/// The web runtime's render quantum, on the reason given at
-/// [`GRAND_BOULE_RUN_FRAMES`]: the worklet drains every message stamped inside
-/// the block about to render and then makes one `process` call for that block
-/// (`LevainProcessor.process`, `levainProcessor.ts`), so a scheduled note
-/// sounds from the head of the 128-frame block holding its frame. The
-/// instrument takes no per-note sample offset — `note_on_with_channel` carries
-/// a note, a velocity and a channel and nothing else — so the run length *is*
-/// the timing resolution, and the host splits a callback into runs this long to
-/// land a note on the run the worklet lands it on.
+/// The web runtime's render quantum: the worklet drains every message stamped
+/// inside the block about to render and then makes one `process` call for
+/// that block (`LevainProcessor.process`, `levainProcessor.ts`), so a
+/// scheduled note sounds from the head of the 128-frame block holding its
+/// frame. The instrument takes no per-note sample offset —
+/// `note_on_with_channel` carries a note, a velocity and a channel and
+/// nothing else — so the run length *is* the timing resolution, and the host
+/// splits a callback into runs this long to land a note on the run the
+/// worklet lands it on.
 ///
-/// The #3997 caveat on [`GRAND_BOULE_RUN_FRAMES`] applies here for the same
-/// reason: the runs are counted from the span's own frame 0 rather than from
-/// the absolute origin the worklet grids from, so a span starting off that grid
-/// sounds a note up to `LEVAIN_RUN_FRAMES - 1` frames from where the worklet
-/// lands it.
+/// The runs are counted from the span's own frame 0 rather than from the
+/// absolute origin the worklet grids from, so a span starting off that grid —
+/// after a loop seam, or under a device callback whose period is not a multiple
+/// of 128 — sounds a note up to `LEVAIN_RUN_FRAMES - 1` frames from where the
+/// worklet lands it. Grand Boule closed that gap by gaining an offset-aware
+/// note API; this instrument still has none, so the run boundary remains the
+/// whole of its timing resolution.
 ///
 /// Well inside [`LEVAIN_BLOCK_FRAMES`], the ceiling the instrument's own
 /// channel buffers impose: the run is the finer of the two figures, and the
@@ -3906,6 +3920,14 @@ const LEVAIN_PATCH_PRECEDENCE: &[&str] = &[];
 /// instance's own state, reached through the two doors below.
 pub struct LevainBody {
     instance: LevainInstance,
+    /// Whether this instrument's sustain pedal is down.
+    ///
+    /// Mirrored here because the instrument publishes no reader for it and
+    /// [`Self::silence_pedal_held_voices`] has to know: a Levain holding the
+    /// pedal routes every `note_off` into its deferred queue
+    /// (`LevainEngine::note_off`), so the note-offs a stop pays would leave the
+    /// voices ringing with nothing coming to release them.
+    sustain_held: bool,
 }
 
 impl LevainBody {
@@ -3916,7 +3938,10 @@ impl LevainBody {
     /// signature carries nothing a bank could be read from; see
     /// [`PluginCore::levain_with_patch`], the only caller.
     fn new(instance: LevainInstance) -> Self {
-        Self { instance }
+        Self {
+            instance,
+            sustain_held: false,
+        }
     }
 
     /// Render this instrument's material for the block and sum it into the
@@ -3986,20 +4011,86 @@ impl LevainBody {
     /// a release everywhere else in this file, so folding the MIDI running-
     /// status convention in here alone would make the native strip diverge
     /// from the web strip on the same event.
+    ///
+    /// A note-on carrying an articulation takes the articulated door, which is
+    /// the same door the worklet's `noteOn` arm calls for a note whose clip
+    /// states one (`levainProcessor.ts`); one carrying none takes the plain
+    /// door and sounds on the articulation the device already stands on. A
+    /// release addresses a key rather than selecting a sound, so it has no
+    /// articulated form to take.
     fn deliver(&mut self, event: &MidiNoteEvent) {
         let channel = member_channel(event.channel);
         if event.is_note_on {
             // An unaddressable channel still sounds: the key went down, and the
             // base member channel is where a note with no channel of its own
             // belongs.
-            self.instance
-                .note_on_with_channel(event.note, event.velocity, channel.unwrap_or(0));
+            let channel = channel.unwrap_or(0);
+            match event.articulation_id {
+                Some(articulation) => self.instance.note_on_with_channel_and_articulation(
+                    event.note,
+                    event.velocity,
+                    channel,
+                    articulation,
+                ),
+                None => self
+                    .instance
+                    .note_on_with_channel(event.note, event.velocity, channel),
+            }
             return;
         }
         match channel {
             Some(channel) => self.instance.note_off_on_channel(event.note, channel),
             None => self.instance.note_off(event.note),
         }
+    }
+
+    /// Apply one live controller message to this instrument.
+    ///
+    /// Every controller reaches the instrument verbatim, through the same
+    /// `handle_cc` door the browser worklet posts to (`levainProcessor.ts`):
+    /// the engine owns which numbers it understands — expression, dynamics,
+    /// vibrato, the sustain pedal, the articulation switch its bank
+    /// configured — so this body owns no vocabulary of its own to filter by,
+    /// and one it filtered would be a controller the two carriers disagreed
+    /// about.
+    ///
+    /// The value crosses as the raw 7-bit byte the wire carries, because that
+    /// is what `LevainEngine::handle_cc` reads: it divides by full scale and
+    /// compares against the switch threshold itself.
+    ///
+    /// No channel: the instrument's controller surface is per-instrument rather
+    /// than per-member-channel, so there is nothing here for one to address.
+    ///
+    /// Real-time safe: every arm the instrument takes stores or recomputes over
+    /// state its constructor already sized.
+    fn control_change(&mut self, event: MidiControlEvent) {
+        if event.controller == CC_SUSTAIN_PEDAL {
+            self.sustain_held = event.value >= MIDI_SWITCH_THRESHOLD;
+        }
+        self.instance.handle_cc(event.controller, event.value);
+    }
+
+    /// Silence the instrument at a stop or a locate without lifting its pedal.
+    ///
+    /// The same law [`GrandBouleBody::silence_pedal_held_voices`] is held to,
+    /// for the same reason: with the sustain pedal down this instrument's
+    /// `note_off` defers rather than releases, so the note-offs a stop queues
+    /// cannot discharge the voices and the instrument would ring on. The kill
+    /// is what the Web Audio carrier's own stop does, and it clears the
+    /// deferred queue with it, so a later pedal-up fires nothing at a voice
+    /// that is already gone.
+    ///
+    /// The pedal itself is left where it stands: the player's foot has not
+    /// moved.
+    ///
+    /// Nothing happens on an unpedalled body — its queued note-offs release the
+    /// voices on their own envelopes, which is the better sound.
+    fn silence_pedal_held_voices(&mut self) -> bool {
+        if !self.sustain_held {
+            return false;
+        }
+        self.instance.all_notes_off();
+        true
     }
 
     /// Render one run into the instrument's own buffers and sum them out.
@@ -5784,6 +5875,8 @@ fn release_note(channel: i16, note: u8, frame_offset: u32) -> MidiNoteEvent {
         clip_id_hash: 0,
         event_id_hash: 0,
         absolute_occurrence_index: 0,
+        // A release addresses a key; nothing about it selects a sound.
+        articulation_id: None,
     }
 }
 
@@ -8114,7 +8207,13 @@ fn process_device(
         // On the same law as the Fermenter above: always processed, and its
         // MIDI always cleared.
         PluginCore::GrandBoule(body) => {
-            body.process(left, right, frames, effect.pending_midi.as_slice());
+            body.process(
+                left,
+                right,
+                frames,
+                effect.pending_midi.as_slice(),
+                midi_rt_diagnostics,
+            );
             effect.pending_midi.clear();
         }
         PluginCore::Gluten(body) => {
@@ -8707,6 +8806,7 @@ mod tests {
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
                     frame_offset: 0,
+                    articulation_id: None,
                 },
             ))
             .unwrap();
@@ -9105,6 +9205,7 @@ mod tests {
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
                     frame_offset: 0,
+                    articulation_id: None,
                 },
             ))
             .unwrap();
@@ -9712,6 +9813,7 @@ mod tests {
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
                     frame_offset: 0,
+                    articulation_id: None,
                 },
             ))
             .unwrap();
@@ -9778,6 +9880,7 @@ mod tests {
                         event_id_hash: 0,
                         absolute_occurrence_index: 0,
                         frame_offset: 0,
+                        articulation_id: None,
                     },
                 ))
                 .unwrap();
@@ -10458,6 +10561,7 @@ mod tests {
                         event_id_hash: 0,
                         absolute_occurrence_index: 0,
                         frame_offset: 0,
+                        articulation_id: None,
                     },
                 ))
                 .unwrap();
@@ -10999,11 +11103,14 @@ mod tests {
                 event_id_hash: 0,
                 absolute_occurrence_index: 0,
                 frame_offset: 0,
+                articulation_id: None,
             };
             let release = MidiNoteEvent {
                 is_note_on: false,
                 ..note
             };
+
+            let mut diagnostics = ActiveMidiRtDiagnostics::new();
 
             assert_no_alloc(|| {
                 body.process(
@@ -11011,12 +11118,14 @@ mod tests {
                     &mut sounding_right,
                     FRAMES,
                     std::slice::from_ref(&note),
+                    &mut diagnostics,
                 );
                 body.process(
                     &mut released_left,
                     &mut released_right,
                     FRAMES,
                     std::slice::from_ref(&release),
+                    &mut diagnostics,
                 );
             });
 
@@ -11100,14 +11209,21 @@ mod tests {
                 left: &mut [f32],
                 right: &mut [f32],
                 release: &MidiNoteEvent,
+                diagnostics: &mut ActiveMidiRtDiagnostics,
             ) -> f32 {
                 let frames = left.len();
-                body.process(left, right, frames, std::slice::from_ref(release));
+                body.process(
+                    left,
+                    right,
+                    frames,
+                    std::slice::from_ref(release),
+                    diagnostics,
+                );
                 let mut window = 0.0;
                 for _ in 0..RELEASE_BLOCKS {
                     left.fill(0.0);
                     right.fill(0.0);
-                    body.process(left, right, frames, &[]);
+                    body.process(left, right, frames, &[], diagnostics);
                     let power: f32 = left.iter().map(|sample| sample * sample).sum();
                     window = (power / frames as f32).sqrt();
                 }
@@ -11125,6 +11241,7 @@ mod tests {
                 event_id_hash: 0,
                 absolute_occurrence_index: 0,
                 frame_offset: 0,
+                articulation_id: None,
             };
             let release = MidiNoteEvent {
                 is_note_on: false,
@@ -11140,10 +11257,17 @@ mod tests {
             let mut right = vec![0.0_f32; FRAMES];
             let mut held = GrandBouleBody::new(48_000.0);
             let mut pedal_free = GrandBouleBody::new(48_000.0);
+            let mut diagnostics = ActiveMidiRtDiagnostics::new();
             for body in [&mut held, &mut pedal_free] {
                 left.fill(0.0);
                 right.fill(0.0);
-                body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&note));
+                body.process(
+                    &mut left,
+                    &mut right,
+                    FRAMES,
+                    std::slice::from_ref(&note),
+                    &mut diagnostics,
+                );
                 assert!(
                     left.iter().any(|sample| *sample != 0.0),
                     "the instrument never sounded, so the guard below covers an idle body"
@@ -11155,28 +11279,34 @@ mod tests {
 
             assert_no_alloc(|| {
                 held.control_change(control(CC_SUSTAIN, 127));
-                held.process(&mut left, &mut right, FRAMES, &[]);
-                held_window = release_and_read(&mut held, &mut left, &mut right, &release);
-                pedal_free_window =
-                    release_and_read(&mut pedal_free, &mut left, &mut right, &release);
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
+                held_window =
+                    release_and_read(&mut held, &mut left, &mut right, &release, &mut diagnostics);
+                pedal_free_window = release_and_read(
+                    &mut pedal_free,
+                    &mut left,
+                    &mut right,
+                    &release,
+                    &mut diagnostics,
+                );
 
                 held.control_change(control(CC_SUSTAIN, 0));
-                held.process(&mut left, &mut right, FRAMES, &[]);
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
                 for controller in [CC_SOSTENUTO, CC_UNA_CORDA] {
                     held.control_change(control(controller, 127));
-                    held.process(&mut left, &mut right, FRAMES, &[]);
+                    held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
                     held.control_change(control(controller, 0));
-                    held.process(&mut left, &mut right, FRAMES, &[]);
+                    held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
                 }
                 held.reset_controllers();
-                held.process(&mut left, &mut right, FRAMES, &[]);
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
 
                 // The stop's own route on a body standing on the damper, which
                 // is the one that kills rather than releasing.
                 held.control_change(control(CC_SUSTAIN, 127));
-                held.process(&mut left, &mut right, FRAMES, &[]);
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
                 held.silence_pedal_held_voices();
-                held.process(&mut left, &mut right, FRAMES, &[]);
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
             });
 
             assert!(
@@ -12841,6 +12971,7 @@ mod timeline_tests {
             event_id_hash: 0,
             absolute_occurrence_index: 0,
             frame_offset: 0,
+            articulation_id: None,
         }
     }
 
@@ -20209,11 +20340,12 @@ mod timeline_tests {
     /// The hosted body renders exactly what the worklet's own driving of
     /// [`GrandBouleInstance`] renders for the same programme.
     ///
-    /// The worklet hands the instance [`GRAND_BOULE_RUN_FRAMES`] at a time and
-    /// voices a note as soon as the block about to render holds its frame,
-    /// because the instrument takes no per-note sample offset. The scheduler
-    /// hands the body a longer callback, so the run split is the whole of what
-    /// makes the two agree.
+    /// The worklet hands the instance [`GRAND_BOULE_RUN_FRAMES`] at a time,
+    /// and the instrument takes a per-note sample offset through
+    /// `push_note_on`'s and `push_note_off_on_channel`'s last argument.
+    /// Pushing the same note-on and note-off at the same offset on the
+    /// 128-frame reference blocks and on the hosted body's own runs renders
+    /// identical samples.
     ///
     /// Two mutations red this: dividing the velocity by 100 rather than by
     /// [`MIDI_VELOCITY_FULL_SCALE`] sounds the reference note at a different
@@ -20242,10 +20374,10 @@ mod timeline_tests {
         let (worklet_left, worklet_right) =
             render_grand_boule_reference(RENDERED / GRAND_BOULE_RUN_FRAMES, |run, instance| {
                 if run == 0 {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == RELEASE_RUN {
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             });
 
@@ -20265,22 +20397,98 @@ mod timeline_tests {
         );
     }
 
-    /// A note sounds from the run that holds the frame it was stamped for, and
-    /// the runs ahead of it are silent.
+    /// A span the absolute 128-frame grid does not divide still renders the
+    /// worklet's own samples.
     ///
-    /// The instrument has no note API carrying a sample offset, so the run is
-    /// the whole of the timing resolution — and it is the resolution the web
-    /// runtime has too, which is why the note is expected at the head of its
-    /// run rather than on its own frame. A body that delivered every event at
-    /// the head of the callback would sound this note in the first run, where
-    /// the leading assertion reads silence.
+    /// The callback is 192 frames, so every span after the first starts off the
+    /// grid the worklet counts its blocks from: span 1 begins at frame 192,
+    /// and the body's own run 0 covers frames 192..320 while the worklet's
+    /// block 1 covers 128..256. Before the instrument took a sample offset the
+    /// body could only sound a note at the head of one of its own runs, which
+    /// put this note-on at frame 192 — 8 frames early, and 200 frames into a
+    /// window the equality below requires to be silent. With the offset the
+    /// body rebases the stamp onto its run and the two renders agree sample for
+    /// sample.
     #[test]
-    fn a_grand_boule_note_on_sounds_from_the_run_that_holds_its_frame() {
+    fn a_hosted_grand_boule_off_grid_span_renders_the_worklet_samples() {
+        /// Deliberately not a multiple of [`GRAND_BOULE_RUN_FRAMES`]: this is
+        /// what puts every later span off the worklet's absolute grid.
+        const CALLBACK: usize = 192;
+        const CALLBACKS: usize = 8;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const NOTE: u8 = 60;
+        const ONSET_FRAME: u64 = 200;
+        const RELEASE_FRAME: u64 = 1_000;
+        /// The worklet's own block and offset for frame 200: 200 = 1 * 128 + 72.
+        const ONSET_BLOCK: usize = 1;
+        const ONSET_OFFSET: u32 =
+            ONSET_FRAME as u32 - (ONSET_BLOCK * GRAND_BOULE_RUN_FRAMES) as u32;
+        /// And for frame 1000: 1000 = 7 * 128 + 104.
+        const RELEASE_BLOCK: usize = 7;
+        const RELEASE_OFFSET: u32 =
+            RELEASE_FRAME as u32 - (RELEASE_BLOCK * GRAND_BOULE_RUN_FRAMES) as u32;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(ONSET_FRAME, NOTE, true), (RELEASE_FRAME, NOTE, false)],
+        ));
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let (worklet_left, worklet_right) =
+            render_grand_boule_reference(RENDERED / GRAND_BOULE_RUN_FRAMES, |block, instance| {
+                if block == ONSET_BLOCK {
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, ONSET_OFFSET));
+                }
+                if block == RELEASE_BLOCK {
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, RELEASE_OFFSET));
+                }
+            });
+
+        assert!(
+            hosted_left[..ONSET_FRAME as usize]
+                .iter()
+                .all(|sample| *sample == 0.0),
+            "the hosted body sounded before the frame the note was stamped for"
+        );
+        assert!(
+            worklet_left[ONSET_FRAME as usize..]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "the reference render is silent past the onset, so an equality against it \
+             proves nothing"
+        );
+        assert_eq!(
+            hosted_left, worklet_left,
+            "the hosted body's left channel is not the signal the worklet renders across \
+             off-grid spans"
+        );
+        assert_eq!(
+            hosted_right, worklet_right,
+            "the hosted body's right channel is not the signal the worklet renders across \
+             off-grid spans"
+        );
+    }
+
+    /// A note sounds from the frame it was stamped for, and every frame ahead
+    /// of it is silent.
+    ///
+    /// The instrument takes a per-note sample offset, so the frame — not the
+    /// run holding it — is where the note is expected. Two bodies fail the
+    /// leading assertion: one delivering every event at the head of the
+    /// callback sounds this note at frame 0, and one delivering it at the head
+    /// of its own run sounds it at frame 128, both inside the window this reads
+    /// as exact silence.
+    #[test]
+    fn a_grand_boule_note_on_sounds_from_its_stamped_frame() {
         const CALLBACK: usize = 512;
         const STAMPED_FRAME: u32 = 200;
-        /// The run holding frame 200, which is where the note is expected.
+        /// The run holding frame 200, and the offset inside it the worklet
+        /// pushes the note at.
         const SOUNDING_RUN: usize = 1;
-        const ONSET: usize = SOUNDING_RUN * GRAND_BOULE_RUN_FRAMES;
+        const OFFSET_IN_RUN: u32 = STAMPED_FRAME - (SOUNDING_RUN * GRAND_BOULE_RUN_FRAMES) as u32;
 
         let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
         let mut event = note_on(60);
@@ -20288,26 +20496,37 @@ mod timeline_tests {
         event.frame_offset = STAMPED_FRAME;
         let mut hosted_left = vec![0.0_f32; CALLBACK];
         let mut hosted_right = vec![0.0_f32; CALLBACK];
+        let mut diagnostics = ActiveMidiRtDiagnostics::new();
         body.process(
             &mut hosted_left,
             &mut hosted_right,
             CALLBACK,
             std::slice::from_ref(&event),
+            &mut diagnostics,
         );
 
         let (reference_left, reference_right) =
             render_grand_boule_reference(CALLBACK / GRAND_BOULE_RUN_FRAMES, |run, instance| {
                 if run == SOUNDING_RUN {
-                    instance.note_on_with_channel(event.note, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(
+                        event.note,
+                        grand_boule_velocity(),
+                        0,
+                        OFFSET_IN_RUN
+                    ));
                 }
             });
 
         assert!(
-            hosted_left[..ONSET].iter().all(|sample| *sample == 0.0),
-            "the body sounded before the run that holds the note's frame"
+            hosted_left[..STAMPED_FRAME as usize]
+                .iter()
+                .all(|sample| *sample == 0.0),
+            "the body sounded before the frame the note was stamped for"
         );
         assert!(
-            reference_left[ONSET..].iter().any(|sample| *sample != 0.0),
+            reference_left[STAMPED_FRAME as usize..]
+                .iter()
+                .any(|sample| *sample != 0.0),
             "the reference is silent past the onset, so the equality below proves nothing"
         );
         assert_eq!(
@@ -20344,16 +20563,19 @@ mod timeline_tests {
         event.frame_offset = STAMPED_FRAME;
         let mut hosted_left = vec![0.0_f32; FRAMES];
         let mut hosted_right = vec![0.0_f32; FRAMES];
+        let mut diagnostics = ActiveMidiRtDiagnostics::new();
         body.process(
             &mut hosted_left,
             &mut hosted_right,
             FRAMES,
             std::slice::from_ref(&event),
+            &mut diagnostics,
         );
 
         // The reference drives the instance the way the worklet would: two
-        // whole runs, with the stamped note (frame 200, inside the second
-        // run) delivered before that run renders, then the 44-frame tail.
+        // whole runs, with the stamped note (frame 200, 72 frames into the
+        // second run) pushed at that offset before the run renders, then the
+        // 44-frame tail.
         let mut instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
         let mut reference_left = Vec::with_capacity(FRAMES);
         let mut reference_right = Vec::with_capacity(FRAMES);
@@ -20362,7 +20584,12 @@ mod timeline_tests {
             .enumerate()
         {
             if run == 1 {
-                instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                assert!(instance.push_note_on(
+                    NOTE,
+                    grand_boule_velocity(),
+                    0,
+                    STAMPED_FRAME - GRAND_BOULE_RUN_FRAMES as u32
+                ));
             }
             let rendered_left = instance.process(run_frames as u32);
             let rendered_right = instance.get_right_ptr();
@@ -20417,6 +20644,7 @@ mod timeline_tests {
         let mut hosted_left = vec![0.0_f32; SPAN];
         let mut hosted_right = vec![0.0_f32; SPAN];
         let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
+        let mut diagnostics = ActiveMidiRtDiagnostics::new();
 
         let mut note_on_channel_1 = note_on(NOTE);
         note_on_channel_1.velocity = GRAND_BOULE_VELOCITY;
@@ -20429,6 +20657,7 @@ mod timeline_tests {
             &mut hosted_right[..GRAND_BOULE_RUN_FRAMES],
             GRAND_BOULE_RUN_FRAMES,
             &[note_on_channel_1, note_on_channel_2],
+            &mut diagnostics,
         );
 
         let mut note_off_channel_2 = note_on(NOTE);
@@ -20439,16 +20668,17 @@ mod timeline_tests {
             &mut hosted_right[GRAND_BOULE_RUN_FRAMES..],
             SPAN - GRAND_BOULE_RUN_FRAMES,
             std::slice::from_ref(&note_off_channel_2),
+            &mut diagnostics,
         );
 
         let mut instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
         let mut reference_left = Vec::with_capacity(SPAN);
         let mut reference_right = Vec::with_capacity(SPAN);
-        instance.note_on_with_channel(NOTE, grand_boule_velocity(), 1);
-        instance.note_on_with_channel(NOTE, grand_boule_velocity(), 2);
+        assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 1, 0));
+        assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 2, 0));
         for run in 0..4 {
             if run == 1 {
-                instance.note_off_on_channel(NOTE, 2);
+                assert!(instance.push_note_off_on_channel(NOTE, 2, 0));
             }
             let rendered_left = instance.process(GRAND_BOULE_RUN_FRAMES as u32);
             let rendered_right = instance.get_right_ptr();
@@ -20523,7 +20753,8 @@ mod timeline_tests {
 
             let mut events = held.to_vec();
             events.push(release);
-            body.process(&mut left, &mut right, RENDERED, &events);
+            let mut diagnostics = ActiveMidiRtDiagnostics::new();
+            body.process(&mut left, &mut right, RENDERED, &events, &mut diagnostics);
             left
         }
 
@@ -20640,10 +20871,10 @@ mod timeline_tests {
                     if damper_down {
                         instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
                     }
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == RELEASE_RUN {
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             })
         };
@@ -20715,13 +20946,13 @@ mod timeline_tests {
             render_grand_boule_reference(RUNS, move |run, instance| {
                 if run == 0 {
                     instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if lifted && run == LIFT_RUN {
                     instance.set_sustain(0.0);
                 }
                 if run == RELEASE_RUN {
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             })
         };
@@ -20781,13 +21012,13 @@ mod timeline_tests {
             render_grand_boule_reference(RUNS, move |run, instance| {
                 if run == 0 {
                     instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if !survives && run == RUNS_PER_CALLBACK {
                     instance.set_sustain(0.0);
                 }
                 if run == RELEASE_RUN {
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             })
         };
@@ -20925,13 +21156,13 @@ mod timeline_tests {
         let reference = |lifts_pedals: bool| {
             render_grand_boule_reference(RUNS, move |run, instance| {
                 if run == 0 {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == PEDAL_RUN {
                     instance.set_sostenuto(true);
                     instance.set_una_corda(true);
                     instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
                 if run == EDGE_RUN {
                     // The whole of what the edge does to a pedalled body: the
@@ -20949,10 +21180,10 @@ mod timeline_tests {
                     }
                 }
                 if run == SECOND_NOTE_RUN {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == SECOND_RELEASE_RUN {
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             })
         };
@@ -21181,13 +21412,13 @@ mod timeline_tests {
         let reference = |kills: bool| {
             render_grand_boule_reference(RUNS, move |run, instance| {
                 if run == 0 {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == STOP_RUN {
                     if kills {
                         instance.all_notes_off();
                     } else {
-                        instance.note_off_on_channel(NOTE, 0);
+                        assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                     }
                 }
             })
@@ -21953,7 +22184,7 @@ mod timeline_tests {
         let reference = |sostenuto: bool| {
             render_grand_boule_reference(RUNS, move |run, instance| {
                 if run == 0 {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == PEDAL_RUN {
                     if sostenuto {
@@ -21961,7 +22192,7 @@ mod timeline_tests {
                     } else {
                         instance.set_una_corda(true);
                     }
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             })
         };
@@ -22041,11 +22272,11 @@ mod timeline_tests {
         let reference = |lifted_at_seam: bool| {
             render_grand_boule_reference(RUNS, move |run, instance| {
                 if run == 0 {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == PEDAL_RUN {
                     instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
                 if lifted_at_seam && run == SEAM_RUN {
                     instance.set_sustain(0.0);
@@ -22135,7 +22366,7 @@ mod timeline_tests {
         let sweep = |positions: [f32; 3]| {
             render_grand_boule_reference(RUNS, move |run, instance| {
                 if run == 0 {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 for (callback, position) in [PRESS_CALLBACK, HALF_CALLBACK, LIFT_CALLBACK]
                     .iter()
@@ -22146,7 +22377,7 @@ mod timeline_tests {
                     }
                 }
                 if run == RELEASE_RUN {
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             })
         };
@@ -25389,23 +25620,48 @@ mod timeline_tests {
     /// lets an equality below refuse a body that read one channel twice.
     const LEVAIN_SPEC_PAN: f32 = -0.8;
 
-    /// One second of 440 Hz at [`LEVAIN_RATE`], with a 5 ms linear fade at each
-    /// end.
+    /// The pitch the fixture's unarticulated zone is authored at, and — rooted
+    /// at [`LEVAIN_SPEC_NOTE`] and played there — the pitch it comes back at.
+    const LEVAIN_SPEC_HERTZ: f32 = 440.0;
+
+    /// The pitch the fixture's articulated zone is authored at, a fifth above
+    /// the other, so a strike that resolved to the wrong zone comes back as a
+    /// different signal rather than as a scaled one.
+    const LEVAIN_SPEC_ARTICULATION_HERTZ: f32 = 660.0;
+
+    /// The articulation the fixture's second zone is tagged with, and the id
+    /// every articulated strike below carries. It is `pizzicato`'s id in the
+    /// project's own 28-name table, so the fixture numbers an articulation the
+    /// way a clip note does.
+    const LEVAIN_SPEC_ARTICULATION: u16 = 10;
+
+    /// The articulation count the fixture's zone map is built at. The tagged id
+    /// indexes that map, so a map built any shorter resolves no zone for it and
+    /// the instrument degrades the strike back to the articulation the channel
+    /// already stands on — which would make an articulated render equal to an
+    /// unarticulated one and every claim below vacuous.
+    const LEVAIN_SPEC_ARTICULATION_COUNT: u32 = LEVAIN_SPEC_ARTICULATION as u32 + 1;
+
+    /// The controller the gesture fixture moves. 11 is expression, which the
+    /// instrument carries as a gain on what it renders, so closing it is
+    /// audible in the render rather than only in state the instrument keeps to
+    /// itself.
+    const LEVAIN_SPEC_EXPRESSION_CC: u8 = 11;
+
+    /// One second of `hertz` at [`LEVAIN_RATE`], with a 5 ms linear fade at
+    /// each end.
     ///
     /// The fades are what make the sample a usable oracle: a raw sine starting
     /// at full amplitude clicks on every strike, and a click is broadband
     /// enough to survive any filtering a stage might apply, so a comparison
     /// against it would hold even for a body that lost the tone entirely.
-    fn levain_spec_sample() -> Vec<f32> {
+    fn levain_spec_sample(hertz: f32) -> Vec<f32> {
         /// 5 ms at [`LEVAIN_RATE`].
         const FADE_FRAMES: f32 = 240.0;
-        /// The pitch the sample is authored at, and — rooted at
-        /// [`LEVAIN_SPEC_NOTE`] and played there — the pitch it comes back at.
-        const HERTZ: f32 = 440.0;
 
         (0..LEVAIN_SPEC_SAMPLE_FRAMES)
             .map(|frame| {
-                let phase = std::f32::consts::TAU * HERTZ * frame as f32 / LEVAIN_RATE;
+                let phase = std::f32::consts::TAU * hertz * frame as f32 / LEVAIN_RATE;
                 let fade_in = (frame as f32 / FADE_FRAMES).min(1.0);
                 let remaining = (LEVAIN_SPEC_SAMPLE_FRAMES - frame) as f32;
                 let fade_out = (remaining / FADE_FRAMES).min(1.0);
@@ -25414,9 +25670,17 @@ mod timeline_tests {
             .collect()
     }
 
-    /// A sampler holding one committed bank: one mono zone covering the whole
+    /// A sampler holding one committed bank: two mono zones covering the whole
     /// keyboard and the whole velocity range, through one mic position panned
     /// off centre.
+    ///
+    /// The zones differ only in the articulation they are tagged with and the
+    /// pitch their sample is authored at — one untagged, one at
+    /// [`LEVAIN_SPEC_ARTICULATION`] — so which zone a strike resolved to is
+    /// readable in the render itself. A bank with one zone cannot tell an
+    /// articulated strike from a plain one: the instrument degrades an
+    /// articulation it holds no zone for back to the one the channel stands
+    /// on, and the two renders then agree whatever the body did with the id.
     ///
     /// Two calls build two independent instances that render identically. The
     /// bank is loaded into this instance alone — nothing here publishes or
@@ -25430,12 +25694,20 @@ mod timeline_tests {
         instance.begin_sample_bank("spec");
         let sample = instance
             .add_sample(
-                levain_spec_sample(),
+                levain_spec_sample(LEVAIN_SPEC_HERTZ),
                 LEVAIN_SPEC_SAMPLE_FRAMES as u32,
                 1,
                 LEVAIN_RATE,
             )
-            .expect("the staged bank takes the fixture's one sample");
+            .expect("the staged bank takes the fixture's unarticulated sample");
+        let articulated_sample = instance
+            .add_sample(
+                levain_spec_sample(LEVAIN_SPEC_ARTICULATION_HERTZ),
+                LEVAIN_SPEC_SAMPLE_FRAMES as u32,
+                1,
+                LEVAIN_RATE,
+            )
+            .expect("the staged bank takes the fixture's articulated sample");
         instance.add_zone(
             0,
             sample,
@@ -25460,9 +25732,33 @@ mod timeline_tests {
             1.0,
             0.05,
         );
+        instance.add_zone(
+            1,
+            articulated_sample,
+            LEVAIN_SPEC_ARTICULATION,
+            LEVAIN_SPEC_NOTE,
+            0.0,
+            0,
+            127,
+            0,
+            127,
+            0,
+            1,
+            0,
+            false,
+            0,
+            0,
+            0,
+            0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.05,
+        );
         assert!(
-            instance.build_zone_map(1, 1),
-            "the fixture's one zone does not build a zone map, so nothing below would sound"
+            instance.build_zone_map(LEVAIN_SPEC_ARTICULATION_COUNT, 1),
+            "the fixture's zones do not build a zone map, so nothing below would sound"
         );
         assert!(
             instance.commit_sample_bank(),
@@ -25487,6 +25783,49 @@ mod timeline_tests {
             unreachable!("levain_with_patch builds the levain variant");
         };
         body
+    }
+
+    /// The plugin id [`track_with_levain`] registers in the hosted specs
+    /// below, and the track id it places the instrument on.
+    const LEVAIN_ID: usize = 7;
+    const LEVAIN_TRACK: usize = 1;
+
+    /// Place a Levain generator on a track, the way `commands/graph.rs` places
+    /// a built-in instrument: registered detached with its own note store,
+    /// then spliced at the head of the chain.
+    ///
+    /// The instance carries the fixture's committed bank ([`levain_instance`]),
+    /// and the track holds no clip, so every non-zero sample the master
+    /// carries came out of the instrument.
+    fn track_with_levain(harness: &mut Harness, track_id: usize, effect_id: usize) {
+        for command in [
+            GraphCommand::AddTrack(TimelineTrack::new(track_id)),
+            GraphCommand::AddDetachedEffect(
+                effect_id,
+                PluginCore::levain_with_patch(levain_instance(), &[]),
+                Some(MidiNoteStore::new()),
+            ),
+            insert_track_device(track_id, generator(effect_id), 0),
+        ] {
+            harness.send(command);
+        }
+    }
+
+    /// One live controller message for the hosted Levain.
+    ///
+    /// The channel is deliberately not the note's: this instrument's
+    /// controller surface is per-instrument rather than per-channel
+    /// ([`LevainBody::control_change`]), so a body that narrowed a controller
+    /// to a voice's channel would drop this.
+    fn levain_control(controller: u8, value: u8) -> GraphCommand {
+        GraphCommand::SendMidiControl(
+            LEVAIN_ID,
+            MidiControlEvent {
+                controller,
+                value,
+                channel: 9,
+            },
+        )
     }
 
     /// A strike of `note` on `channel`, stamped for `frame`.
@@ -25627,6 +25966,335 @@ mod timeline_tests {
             body_left, body_right,
             "the two channels are identical, so the fixture's panned mic never moved and a body \
              that read one channel twice would pass"
+        );
+    }
+
+    /// A strike carrying an articulation sounds that articulation, through the
+    /// instrument's own articulated door.
+    ///
+    /// A body that dropped the id would still sound: the plain door plays
+    /// whatever articulation the channel was last left on, so the failure is an
+    /// audibly wrong sound rather than silence. That is what the inequality
+    /// against the plain render refuses — it fails if the tagged zone is
+    /// unreachable, or if both doors resolve to the same zone, and with it the
+    /// two equalities say nothing.
+    #[test]
+    fn a_levain_body_sounds_the_articulation_its_note_carries() {
+        let mut strike = levain_hit(LEVAIN_SPEC_NOTE, 0, 0);
+        strike.articulation_id = Some(LEVAIN_SPEC_ARTICULATION);
+        let mut body = levain_body(&[]);
+        let (body_left, body_right) = levain_render(&mut body, LEVAIN_PARITY_FRAMES, &[strike]);
+
+        let (articulated_left, articulated_right) =
+            render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel_and_articulation(
+                        LEVAIN_SPEC_NOTE,
+                        LEVAIN_SPEC_VELOCITY,
+                        0,
+                        LEVAIN_SPEC_ARTICULATION,
+                    );
+                }
+            });
+        let (plain_left, _) = render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+            if run == 0 {
+                instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+            }
+        });
+
+        assert_eq!(
+            body_left, articulated_left,
+            "the body's left channel is not what the instrument renders for a strike on this \
+             articulation"
+        );
+        assert_eq!(
+            body_right, articulated_right,
+            "the body's right channel is not what the instrument renders for a strike on this \
+             articulation"
+        );
+        assert_ne!(
+            articulated_left, plain_left,
+            "the articulated strike renders what a plain one does, so the equalities above would \
+             hold for a body that dropped the id"
+        );
+    }
+
+    /// A controller the instance is handed reaches the instrument before the
+    /// block it arrived on renders.
+    ///
+    /// Addressed at [`PluginCore`] rather than at the body, because the
+    /// instance-side match is where a controller is dispatched or dropped: a
+    /// Levain arm that fell back to the no-op every effect body takes would
+    /// leave the body's own handling unreachable and every gesture inaudible.
+    ///
+    /// Expression closed to zero, so the claim is readable in the render: the
+    /// instrument carries that controller as a gain on what it sounds, and the
+    /// inequality against the render that took no controller is what refuses a
+    /// dropped message. A controller is a state write with no frame, so it
+    /// applies at the head of the block that drained it — which is the run the
+    /// reference hands it to the instrument on.
+    #[test]
+    fn a_levain_body_sounds_the_controller_gestures_it_is_handed() {
+        let events = [levain_hit(LEVAIN_SPEC_NOTE, 0, 0)];
+        let mut core = PluginCore::levain_with_patch(levain_instance(), &[]);
+        core.control_change(MidiControlEvent {
+            controller: LEVAIN_SPEC_EXPRESSION_CC,
+            value: 0,
+            channel: 0,
+        });
+        let PluginCore::Levain(mut body) = core else {
+            unreachable!("levain_with_patch builds the levain variant");
+        };
+        let (body_left, body_right) = levain_render(&mut body, LEVAIN_PARITY_FRAMES, &events);
+
+        let (closed_left, closed_right) =
+            render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+                if run == 0 {
+                    instance.handle_cc(LEVAIN_SPEC_EXPRESSION_CC, 0);
+                    instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+                }
+            });
+        let (open_left, _) = render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+            if run == 0 {
+                instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+            }
+        });
+
+        assert_eq!(
+            body_left, closed_left,
+            "the body's left channel is not what the instrument renders after the same controller"
+        );
+        assert_eq!(
+            body_right, closed_right,
+            "the body's right channel is not what the instrument renders after the same controller"
+        );
+        assert_ne!(
+            closed_left, open_left,
+            "closing expression changed nothing in the render, so the equalities above would hold \
+             for a body that took the controller and dropped it"
+        );
+    }
+
+    /// A transport stop silences the voices a pedalled Levain is holding, and
+    /// leaves its pedal exactly where the player's foot left it.
+    ///
+    /// The programme puts the instrument in the one state a note-off cannot
+    /// discharge: the sustain pedal goes down, the key is struck, and the key
+    /// is let go while the pedal is still down — which the instrument defers
+    /// rather than releasing (`LevainEngine::note_off`). So the note-offs a
+    /// stop pays reach that deferred queue rather than a voice, and what the
+    /// edge has to do is kill the voices without moving the foot.
+    ///
+    /// Every door is the engine's own. The instrument is hosted on a track
+    /// ([`track_with_levain`]), the pedal arrives as
+    /// [`GraphCommand::SendMidiControl`], the key and its release as
+    /// [`GraphCommand::SendMidiNote`], and the edge is the transport parking
+    /// ([`stop_transport`]) — which owes the graph's live keys
+    /// ([`AudioScheduler::owe_all_releases`]) and then asks a pedalled slot's
+    /// instance for the kill where it would otherwise spend them
+    /// ([`AudioScheduler::pay_owed_releases`]). A Levain arm missing from
+    /// either match, and a stop that never reaches one, are both a body a stop
+    /// leaves ringing.
+    ///
+    /// The kill lands at the payment, which runs at the end of the drain that
+    /// carried the stop — before the block that drain precedes, so at the head
+    /// of the edge callback. That is why the reference writes it at that
+    /// callback's own first run.
+    ///
+    /// Three renders. The reference is the instrument driven directly, killed
+    /// at the edge's own run with its pedal never written, and it is what the
+    /// two equalities claim the hosted master renders — the whole of what the
+    /// edge does to a pedalled body. The control is the same hosted programme
+    /// with no stop at all: it rings on at full level right through the tail
+    /// window, which is what refuses a vacuous pass, because a pedalled body
+    /// nothing silenced renders no decay there to mistake for one.
+    ///
+    /// What a kill leaves behind is a decaying tail rather than a zero: it
+    /// hands every voice to its zone's release envelope, which falls
+    /// exponentially (`AdsrEnvelope::tick`). So the tail window is read far
+    /// enough past the edge for that fall to be decisive, and still inside the
+    /// fixture's one-second sample, where the control render is sounding
+    /// rather than out of recording.
+    #[test]
+    fn a_transport_stop_silences_a_pedalled_levain_body() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 176;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / LEVAIN_RUN_FRAMES;
+        /// The pedal press, above [`MIDI_SWITCH_THRESHOLD`] and spelled here
+        /// so the fixture states the byte the wire carries.
+        const PEDAL_DOWN: u8 = 127;
+        /// Where the key is let go, into a pedal that defers the release.
+        const RELEASE_CALLBACK: usize = 2;
+        const RELEASE_RUN: usize = RELEASE_CALLBACK * RUNS_PER_CALLBACK;
+        /// Where the edge arrives, well after the pedal took the note.
+        const EDGE_CALLBACK: usize = 8;
+        const EDGE_RUN: usize = EDGE_CALLBACK * RUNS_PER_CALLBACK;
+        /// The note ringing under the pedal, past its deferred release and
+        /// before the edge.
+        const BEFORE: std::ops::Range<usize> =
+            (RELEASE_CALLBACK + 2) * CALLBACK..EDGE_CALLBACK * CALLBACK;
+        /// Where the tail window opens: far enough past the edge for the
+        /// release envelope to have fallen, and short of the 48 000 frames the
+        /// fixture's sample holds.
+        const TAIL_CALLBACK: usize = 160;
+        /// What the edge left, read out to the end of the render.
+        const AFTER: std::ops::Range<usize> = TAIL_CALLBACK * CALLBACK..CALLBACKS * CALLBACK;
+        /// How far below the pedalled ring the stopped tail has to sit. The
+        /// renders decide it: over this window the stop leaves about 0.009
+        /// where the pedal holding the same note reads about 0.34, a ratio
+        /// near 38, so this is a margin against voice detail moving rather
+        /// than a tuned figure — and still far above the 1.0 a body no stop
+        /// reached would land on.
+        const DECISIVE: f32 = 10.0;
+
+        /// The hosted programme, with the edge taken at [`EDGE_CALLBACK`] or
+        /// not taken at all.
+        fn render(stops: bool) -> (Vec<f32>, Vec<f32>) {
+            let mut harness = Harness::new(32);
+            track_with_levain(&mut harness, LEVAIN_TRACK, LEVAIN_ID);
+            harness.playing();
+            harness.send(levain_control(CC_SUSTAIN_PEDAL, PEDAL_DOWN));
+            harness.send(GraphCommand::SendMidiNote(
+                LEVAIN_ID,
+                levain_hit(LEVAIN_SPEC_NOTE, 0, 0),
+            ));
+            render_master_at_callback_heads(
+                &mut harness,
+                CALLBACK,
+                CALLBACKS,
+                |callback, harness| {
+                    if callback == RELEASE_CALLBACK {
+                        harness.send(GraphCommand::SendMidiNote(
+                            LEVAIN_ID,
+                            levain_release(LEVAIN_SPEC_NOTE, 0, 0),
+                        ));
+                    }
+                    if stops && callback == EDGE_CALLBACK {
+                        harness.send(stop_transport());
+                    }
+                },
+            )
+        }
+
+        let (killed_left, killed_right) = render_levain_reference(RENDERED, |run, instance| {
+            if run == 0 {
+                instance.handle_cc(CC_SUSTAIN_PEDAL, PEDAL_DOWN);
+                instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+            }
+            if run == RELEASE_RUN {
+                instance.note_off_on_channel(LEVAIN_SPEC_NOTE, 0);
+            }
+            if run == EDGE_RUN {
+                // The whole of what the edge does to a pedalled body: the
+                // voices the pedal was holding are killed, and the pedal
+                // itself is not written at all.
+                instance.all_notes_off();
+            }
+        });
+        let (hosted_left, hosted_right) = render(true);
+        let (control_left, _control_right) = render(false);
+
+        assert!(
+            rms(&hosted_left[BEFORE]) > 0.0,
+            "the pedal was holding nothing before the stop, so its tail proves nothing"
+        );
+        assert!(
+            rms(&hosted_left[AFTER]) * DECISIVE < rms(&hosted_left[BEFORE]),
+            "the stop left {} against the {} the pedal was holding, so the pedalled voices rang \
+             on through the tail window",
+            rms(&hosted_left[AFTER]),
+            rms(&hosted_left[BEFORE])
+        );
+        assert!(
+            rms(&hosted_left[AFTER]) * DECISIVE < rms(&control_left[AFTER]),
+            "the same programme without the stop left {} where the stopped render left {}, so the \
+             tail window decays whether or not anything silenced the body and the equalities \
+             below say nothing",
+            rms(&control_left[AFTER]),
+            rms(&hosted_left[AFTER])
+        );
+        assert_eq!(
+            hosted_left, killed_left,
+            "the hosted left channel is not the signal a stop that kills and keeps the pedal \
+             renders"
+        );
+        assert_eq!(
+            hosted_right, killed_right,
+            "the hosted right channel is not the signal a stop that kills and keeps the pedal \
+             renders"
+        );
+    }
+
+    /// A hosted Levain takes a pedal, a strike, a deferred release, the pedal
+    /// coming up and a stop without allocating.
+    ///
+    /// A controller and a stop are both applied on the audio thread, inside the
+    /// command drain, so they are held to ADR 0020 exactly as a render is. The
+    /// pedal has two routes through the instrument — a press that makes every
+    /// later note-off defer, and a lift that fires the whole deferred queue
+    /// (`LevainEngine::handle_cc`) — and `silence_pedal_held_voices` has a
+    /// third that kills the voices and clears that queue, so all three are
+    /// driven here rather than one standing in for the others.
+    ///
+    /// Every controller is followed by a render, because a pedal's cost is
+    /// mostly paid on the block after it: the deferred releases the lift fires
+    /// and the voices the kill retires are state the next `process` walks, and
+    /// a guard holding controllers alone would never enter those paths.
+    ///
+    /// The bank is loaded outside the guard, where a sampler's samples, zone
+    /// map and mic mixer are legitimately allocated (ADR 0020); everything the
+    /// audio thread would do is inside it, first block included, because a
+    /// sampler that grew a buffer on its first tick would otherwise spend that
+    /// growth where nothing was watching.
+    ///
+    /// The sounding reading is taken inside the guard and asserted outside it:
+    /// a failing `assert!` formats its message, and an allocation on the panic
+    /// path would abort the process instead of failing the test.
+    #[test]
+    fn a_levain_control_change_allocates_nothing() {
+        const FRAMES: usize = 256;
+        /// The pedal press, above [`MIDI_SWITCH_THRESHOLD`].
+        const PEDAL_DOWN: u8 = 127;
+        /// The pedal lift.
+        const PEDAL_UP: u8 = 0;
+
+        let strike = levain_hit(LEVAIN_SPEC_NOTE, 0, 0);
+        let lift = levain_release(LEVAIN_SPEC_NOTE, 0, 0);
+        let pedal = |value: u8| MidiControlEvent {
+            controller: CC_SUSTAIN_PEDAL,
+            value,
+            channel: 0,
+        };
+
+        let mut left = vec![0.0_f32; FRAMES];
+        let mut right = vec![0.0_f32; FRAMES];
+        let mut body = levain_body(&[]);
+        let mut sounded = false;
+
+        assert_no_alloc::assert_no_alloc(|| {
+            body.control_change(pedal(PEDAL_DOWN));
+            body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&strike));
+            sounded = left.iter().any(|sample| *sample != 0.0);
+            // The release the pedal defers, and the block that renders behind
+            // it with the voice still held.
+            body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&lift));
+            body.process(&mut left, &mut right, FRAMES, &[]);
+            // The pedal coming up, which fires that deferred release.
+            body.control_change(pedal(PEDAL_UP));
+            body.process(&mut left, &mut right, FRAMES, &[]);
+            // The stop's own route, on a body standing on the pedal with a
+            // voice to kill: a body with the pedal up answers `false` and
+            // reaches nothing.
+            body.control_change(pedal(PEDAL_DOWN));
+            body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&strike));
+            body.silence_pedal_held_voices();
+            body.process(&mut left, &mut right, FRAMES, &[]);
+        });
+
+        assert!(
+            sounded,
+            "the instrument never sounded, so the guard covered a silent path"
         );
     }
 

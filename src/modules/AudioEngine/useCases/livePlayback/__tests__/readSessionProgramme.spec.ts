@@ -80,6 +80,7 @@ function programme(tag: string): LiveGraphProgramme {
 function readEach(stripTracks: readonly Track[]): LiveGraphProgramme {
     return readSessionProgramme({
         stripTracks,
+        projectTracks: stripTracks,
         inputMonitoredTrackIds: new Set(),
         attachedInstanceIds: new Set(),
         sampleRate: SAMPLE_RATE,
