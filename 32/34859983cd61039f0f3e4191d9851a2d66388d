@@ -1,0 +1,182 @@
+src/modules/CrdtDocument/repositories/withBranchStateLock.ts
+  s_9b530f08172a54::t_de1d1c975f5121 14
+  s_9b530f08172a54::t_1962b4fe52cd45 1-13,15-59,64-66
+  s_9b530f08172a54::t_88fb0ec539c153 60-63
+  s_9b530f08172a54::t_4c50f5a6b7ee8a 67-68
+src/modules/CrdtDocument/useCases/crdtBranching/deleteBranch.ts
+  s_9b530f08172a54::t_a62a558f600873 5,12,26,31-34,36-42,44-46,58-60
+src/modules/CrdtDocument/useCases/initBranchState.ts
+  s_9b530f08172a54::t_f57b8c22adcd2b 3,8-14,16-19,22,25-26,29-53,57,60-61,69-70
+src/modules/CrdtDocument/useCases/loadCrdtProject.ts
+  s_9b530f08172a54::t_63e072bbc78625 72-76
+  s_9b530f08172a54::t_b0531e71a4edd6 11
+src/infra/store/storage/LocalStorageKeys.ts
+  s_9b530f08172a54::t_50c97d038172db 124,127-128
+src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx
+  s_9b530f08172a54::t_5725630b9f7531 154
+  s_9b530f08172a54::t_5b4d239e7a8201 102,105
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/deleteBranch.spec.ts
+  s_9b530f08172a54::t_1e8e41f601d77f 15-18,25-27,30,39-40,46,48-57,63-68,70-74,77-79,84,86-88
+src/modules/CrdtDocument/AGENTS.md
+  s_9b530f08172a54::t_c4e822f48f9a54 11
+  s_9b530f08172a54::t_47f78d9809c086 24,32
+src/modules/CrdtDocument/repositories/branchStateEnvelopeStorage.ts
+  s_9b530f08172a54::t_95a0df4f2806a0 1-139
+src/modules/CrdtDocument/repositories/__tests__/branchStateHarness.ts
+  s_9b530f08172a54::t_7251b1bf7104a9 153-165
+  s_9b530f08172a54::t_ac67500629f789 8,12-17
+  s_9b530f08172a54::t_8c8092ea2db40e 102-105
+  s_9b530f08172a54::t_8baa2b6723139a 1-7,9-11,18-101,106-138,188-195
+  s_9b530f08172a54::t_ef64b5d1e0ac6e 139-152
+  s_9b530f08172a54::t_31aa643e987e54 166-187
+src/modules/CrdtDocument/repositories/branchStateAuthority.ts
+  s_9b530f08172a54::t_a8347a8f784674 230-240,242-243,246
+  s_9b530f08172a54::t_7b14741d697e97 3-7
+  s_9b530f08172a54::t_1deb7d429fba14 264-274
+  s_9b530f08172a54::t_e7f7c056271938 1-2,8-194,212,217-229,241,244-245,247-263,275-478
+  s_9b530f08172a54::t_3e29f8870b8e73 195-211,213-216
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_9b530f08172a54::t_9daa0519bdfe4b 150-154
+  s_9b530f08172a54::t_a6829d2c6e10fb 48-63
+  s_9b530f08172a54::t_2a2cf63457ae75 416-417,419,421-424,427-443
+  s_9b530f08172a54::t_5a20bd4dfc7728 885-887
+  s_9b530f08172a54::t_e440c605498473 247,252-272
+  s_9b530f08172a54::t_0839bc08ade5e8 457-458
+  s_9b530f08172a54::t_2f95fc0feef503 358,360-362
+  s_9b530f08172a54::t_627caee52ee3cd 17-19
+  s_9b530f08172a54::t_9314208bb53b29 460-461,469,471,477,479
+  s_9b530f08172a54::t_5f6c35fcf949a2 182
+  s_9b530f08172a54::t_cf3f3c0bbd5735 932-942,944-949
+  s_9b530f08172a54::t_c28429c57a0e77 79-86
+  s_9b530f08172a54::t_bd80040b793801 382-408
+  s_9b530f08172a54::t_cc2d6f3f50e680 854-857
+  s_9b530f08172a54::t_f2399853fe2fca 906-907,910-911
+  s_9b530f08172a54::t_6d0057f66d6500 288-321
+  s_9b530f08172a54::t_8a76d84d1e5163 950-953
+src/modules/CrdtDocument/repositories/__tests__/branchStateAuthority.spec.ts
+  s_9b530f08172a54::t_a9a114b71f0ef3 407
+  s_9b530f08172a54::t_80c0e3bf7f9656 1
+  s_9b530f08172a54::t_5dcca59c710fe2 2-12,14-31,33-35,37-369,371-396,398-406,408-421,423-427
+  s_9b530f08172a54::t_0f3d393c7f516a 36
+  s_9b530f08172a54::t_f2358fad32a9e0 13,32,370,397,422
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchTransition.ts
+  s_9b530f08172a54::t_4eeb17d7a2d99d 76,82,98-114
+  s_9b530f08172a54::t_8e5ed8d1386fcc 10
+  s_9b530f08172a54::t_5921f12b50ac26 133,137-138,140,143-151,159-162
+src/modules/CrdtDocument/useCases/index.ts
+  s_9b530f08172a54::t_ee7c0bbb521ad8 49-52
+src/modules/CrdtDocument/useCases/resetCrdtProjectAuthority.ts
+  s_9b530f08172a54::t_cdd167cdc8a452 9,11
+  s_9b530f08172a54::t_fb7667205a8e67 65-71,74-85
+src/modules/CrdtDocument/stores/__tests__/branchStoreBoot.spec.ts
+  s_9b530f08172a54::t_14036a5041013b 4,6-7,9-13,15-20,22-27,30-32,35,45,49-51,53,55-57,59,61-63,65-66,68,70,73-75,77,79-82,85-89,91,94,96-98,103-107,110-111,113-117,124-125,127-131,133,139-141,143,146-149,152-155,157,159-160,162,164-165,168-169,171,173-174,176,178,185,187,189-190,194,196-198,200,202-208
+  s_9b530f08172a54::t_a5393f4d7e6595 5,8,14,21,33,36,40,69,90,99,102,108,112,118-122,132,135-137,144,181-184,191-193
+  s_9b530f08172a54::t_1197d80835d7fb 109
+  s_9b530f08172a54::t_dbf56ccd0549ac 134
+src/infra/testing/createControlledLockManager.ts
+  s_9b530f08172a54::t_ce5382470decbb 25-28,34-37,59-64
+src/modules/AiRuntime/useCases/__tests__/executePlannedActions.spec.ts
+  s_9b530f08172a54::t_e12a2b4401220a 45,47,50
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_9b530f08172a54::t_163d749cd90031 108,112,115
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_9b530f08172a54::t_89bc62897dab1b 30,35,39
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_9b530f08172a54::t_816a31bfa98e32 191,195,198
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_9b530f08172a54::t_9d8d88eedbf221 40,42,45
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeImmediatePromptCommand.spec.ts
+  s_9b530f08172a54::t_effc79afd935ed 73,76,79
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_9b530f08172a54::t_cc1836c341e4bf 59,64,68
+src/modules/Collaboration/useCases/collaboration/__tests__/createSession.spec.ts
+  s_9b530f08172a54::t_e44aed73e3f86c 20
+src/modules/Collaboration/useCases/collaboration/__tests__/joinSession.spec.ts
+  s_9b530f08172a54::t_32ec54a395371f 27
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_9b530f08172a54::t_3c2b9df52960fb 133-135,297-299,459,963-967,1828,1832-1833,1844,1852,1877,1907,1926,1946,1961,1974,1985-1986,1995-2006,2010,2019-2022,2026,2035,2039,2047,2051,2058-2061,2064,2069,2078-2079,2081,2086,2089,2096,2111,2133
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionTeardownUnderStoragePressure.spec.ts
+  s_9b530f08172a54::t_95ed0021f9b194 3-5,69-72,74-75,77-79,100-114,125,130-136,161,179-190,202,209,227-230,242,259,266,282,289-297,325-336,339-343,350-354,383,392
+src/modules/Collaboration/useCases/collaboration/createSession.ts
+  s_9b530f08172a54::t_73c1ad5f881cc0 29
+src/modules/Collaboration/useCases/collaboration/joinSession.ts
+  s_9b530f08172a54::t_3d3ddb1c7fd4c9 112
+src/modules/CrdtDocument/handlers/previewBranches/__tests__/handleDeleteDrumPreviewBranches.spec.ts
+  s_9b530f08172a54::t_cf3225590bf6d5 1,3,86-92
+src/modules/CrdtDocument/stores/__tests__/branchStore.spec.ts
+  s_9b530f08172a54::t_68f059377a412c 1-2,5-11,13-14,36-42,67-70,75-102,104,118,127,131,169,195-196,200,213,222,231-232,236,241-242,246,251-252,255,261-263
+src/modules/CrdtDocument/stores/branchStore.ts
+  s_9b530f08172a54::t_5063e04eb1b3a2 28,138,140-145,147-148,152,154-160
+src/modules/CrdtDocument/useCases/__tests__/initBranchState.spec.ts
+  s_9b530f08172a54::t_4a58f2b863225c 3-12,16,35-38,45-46,49-51,53,55,59-61,64,67,73-74,78,83,87-88,90,93-97,99,102-110,112-122,124-139,141,143-144,147-148,150,154,156-157,160-161,163-164,169,174-176
+src/modules/CrdtDocument/useCases/__tests__/resetCrdtProjectAuthority.spec.ts
+  s_9b530f08172a54::t_e2b18964b22eed 23-37,40-45,61,64-66,87-88,127-130,240,242-245,248,253-255
+src/modules/CrdtDocument/useCases/beginBranchSession.ts
+  s_9b530f08172a54::t_4fcc2cb30206a8 1-12
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchRootIdentity.integration.spec.ts
+  s_9b530f08172a54::t_cbde5944cc2030 4-5,107-109,117
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchProjectIdentity.integration.spec.ts
+  s_9b530f08172a54::t_7e531c19187473 3-4,20-22,42
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchWritesUnderStoragePressure.spec.ts
+  s_9b530f08172a54::t_0bf7dcfec58f3b 4-7,35-37,77-80,86,93-98,103-106,114-116,122,125-127,140-141
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchingPersistenceAdapter.spec.ts
+  s_9b530f08172a54::t_237090eef0f952 5,61-64
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/forkProjectBranch.spec.ts
+  s_9b530f08172a54::t_a6c61fe2bad327 19-22,53,56-58,81-82,130-133,145-148,153-166
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/mergeBranch.spec.ts
+  s_9b530f08172a54::t_e462c7200f8e61 36-39,61,64-66,103-104,120-122,144-146
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/runBranchDocumentTransition.spec.ts
+  s_9b530f08172a54::t_1fd9246b798dbb 1,3,6,45-47,51-54,93-142
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/runBranchLineageTransition.spec.ts
+  s_9b530f08172a54::t_d9fd0b5377d021 10,30-35,51-53,84-85,88,98-100,172,175-197
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranch.spec.ts
+  s_9b530f08172a54::t_832cfb3df84ccb 15,103-104,133,136-138,211-216,262,276-279,291-297,491,496-513
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchSanitizedPeerBranch.integration.spec.ts
+  s_9b530f08172a54::t_2e26cc2478a977 2-4,25-27,55-58
+src/modules/CrdtDocument/useCases/endBranchSession.ts
+  s_9b530f08172a54::t_ad59e0d0fd3586 1-5,8,10,12-14,16-17
+src/modules/CrdtDocument/useCases/projectBranchSession.ts
+  s_9b530f08172a54::t_5ad7c82ad7f758 1-23
+src/modules/CrdtDocument/useCases/whenBranchStateSettled.ts
+  s_9b530f08172a54::t_d7382c9275ed58 1-14
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_9b530f08172a54::t_d498459d2c6a60 90,94,97
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_9b530f08172a54::t_5e880cd147804e 122,126,130
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_9b530f08172a54::t_ded31f9d17c4a6 131,135,138
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_9b530f08172a54::t_1e58267b0ce9c1 104,108,111
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_9b530f08172a54::t_4fdfa659fca970 122,126,129
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_9b530f08172a54::t_b636841d2f0588 118,122,125
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_9b530f08172a54::t_4527dad109eea8 81,84,87
+src/modules/Project/useCases/projectPersistence/__tests__/newProjectNativeHostAbsent.spec.ts
+  s_9b530f08172a54::t_babb36145ffe01 57,60,63
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_9b530f08172a54::t_68a7e808d91c5f 143,147,151
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_9b530f08172a54::t_6a0b8b564cf7da 194,198,202
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_9b530f08172a54::t_82ac57c96c188d 148,152,156
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_9b530f08172a54::t_915c03b81e3f40 83,86,89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3234859983cd61039f0f3e4191d9851a2d66388d",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
