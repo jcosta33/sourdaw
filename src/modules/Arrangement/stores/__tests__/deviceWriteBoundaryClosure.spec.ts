@@ -562,10 +562,18 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // all four compile* references are import, declaration, and call metadata.
         // It neither hydrates devices nor writes project or engine state.
         'src/modules/Command/useCases/compilePartialCommandBatchAcceptance.ts': 4,
+        // Count provenance: new file entry, measured 1 — the exported declaration
+        // of the declarative transform compiler. It lowers a document to command
+        // descriptions only; it hydrates nothing and writes no device or engine
+        // state.
+        'src/modules/Command/useCases/compileDeclarativeTransform.ts': 1,
         'src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts': 1,
         'src/modules/Command/useCases/createExecutionCommandEnvelope.ts': 2,
         'src/modules/Command/useCases/getCommandDivergenceTargetIds.ts': 2,
-        'src/modules/Command/useCases/index.ts': 4,
+        // Count provenance: measured 6 — three barrel re-exports of compile*
+        // symbols, each naming the symbol and its module path. Was 4 before the
+        // declarative transform compiler joined the barrel.
+        'src/modules/Command/useCases/index.ts': 6,
         'src/modules/Command/useCases/parseVersionedCommandEnvelope.ts': 2,
         'src/modules/Command/useCases/refreshVersionedCommandBatchForApproval.ts': 3,
         'src/modules/Command/useCases/resolveVersionedCommandBatchBindings.ts': 2,

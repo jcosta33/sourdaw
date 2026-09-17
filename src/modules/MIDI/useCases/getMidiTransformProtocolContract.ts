@@ -7,7 +7,12 @@ export function getMidiTransformProtocolContract() {
         id: 'transform' as const,
         owner: 'MIDI' as const,
         schemaVersion: MIDI_TRANSFORM_SCHEMA_VERSION,
-        capabilities: ['guarded-note-snapshots', 'atomic-undo-redo', 'articulation-preservation'] as const,
+        capabilities: [
+            'guarded-note-snapshots',
+            'atomic-undo-redo',
+            'articulation-preservation',
+            'declarative-transform-v1',
+        ] as const,
         operations: Object.keys(getMidiNoteTransformHandlers()).map((name) => ({
             name,
             version: '1',
