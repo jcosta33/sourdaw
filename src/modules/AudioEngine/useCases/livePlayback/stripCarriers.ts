@@ -122,8 +122,8 @@ type PathObstruction =
 
 type CarrierContext = Readonly<{
     stripById: ReadonlyMap<string, Track>;
-    stripTracks: readonly Track[];
     projectTracks: readonly Track[];
+    projectTrackById: ReadonlyMap<string, Track>;
     busStripIds: ReadonlySet<string>;
     trackStripIds: ReadonlySet<string>;
     attachedInstanceIds: ReadonlySet<string>;
@@ -224,6 +224,12 @@ function webReasonWithoutNativePlayback(track: Track, context: CarrierContext): 
  * folder or a disabled child still occupies a pad slot for routing even
  * though it builds no live strip, so a child with no live strip still
  * occupies its pad slot here too, exactly as routing counts it.
+ *
+ * The parent's name is read the same way, over `context.projectTrackById`
+ * rather than `context.stripById`: a disabled Toaster folder still hosts and
+ * names its bound pads even though `readLiveStripTracks` drops it, so naming
+ * the parent from the live-strip map would answer `null` for a child whose
+ * binding `resolveToasterPadBinding` just resolved.
  */
 function padBindingReason(track: Track, context: CarrierContext): string | null {
     const hostsToaster = track.devices.some((device) => device.type === 'toaster');
@@ -234,8 +240,11 @@ function padBindingReason(track: Track, context: CarrierContext): string | null 
     if (!binding) {
         return null;
     }
-    const parent = context.stripById.get(binding.toasterParentTrackId);
-    return parent ? `it plays a pad of "${parent.name}"` : null;
+    // `resolveToasterPadBinding` only returns a binding after finding this
+    // same parent id in `context.projectTracks`, so the lookup always
+    // succeeds — the reason is never null for a resolved binding.
+    const parent = context.projectTrackById.get(binding.toasterParentTrackId)!;
+    return `it plays a pad of "${parent.name}"`;
 }
 
 function chainObstruction(track: Track, context: CarrierContext): AudioGraphDeviceChain[number] | null {
@@ -366,8 +375,8 @@ export function projectStripCarriers(input: StripCarriersInput): ReadonlyMap<str
     const { stripTracks, projectTracks, attachedInstanceIds, programme, inputMonitoredTrackIds } = input;
     const context: CarrierContext = {
         stripById: new Map(stripTracks.map((track): [string, Track] => [track.id, track])),
-        stripTracks,
         projectTracks,
+        projectTrackById: new Map(projectTracks.map((track): [string, Track] => [track.id, track])),
         busStripIds: new Set(stripTracks.filter((track) => track.kind === 'bus').map((track) => track.id)),
         trackStripIds: new Set(stripTracks.filter((track) => track.kind !== 'bus').map((track) => track.id)),
         attachedInstanceIds,

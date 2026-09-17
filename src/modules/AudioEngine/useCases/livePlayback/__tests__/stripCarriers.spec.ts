@@ -810,4 +810,49 @@ describe('projectStripCarriers', () => {
         });
         expect(carriers.get('toaster-1')).toEqual({ carrier: 'web', reason: 'its pads route to child tracks' });
     });
+
+    // The parent-hosts-children check must read `projectTracks`, not
+    // `stripTracks`: a disabled child drops out of the live strip list but
+    // still occupies a pad slot for routing, so the Toaster is still
+    // unrepresentable even though its only child builds no live strip.
+    // Mutation this must catch: reading `stripTracks` instead of
+    // `projectTracks` for this check, which would carry `toaster-1` natively
+    // because it would see no children at all.
+    it('keeps a Toaster on Web Audio when its only child is absent from stripTracks but present in projectTracks', () => {
+        const toaster = createTrack({
+            id: 'toaster-1',
+            name: 'Drum Toaster',
+            devices: [createDevice({ id: 'd', type: 'toaster' })],
+        });
+        const child = createTrack({ id: 'child-1', parentId: 'toaster-1', disabled: true });
+        const carriers = carriersOf({
+            stripTracks: [toaster],
+            projectTracks: [toaster, child],
+        });
+
+        expect(carriers.get('toaster-1')).toEqual({ carrier: 'web', reason: 'its pads route to child tracks' });
+    });
+
+    // The parent's name is likewise read from `projectTracks`, not the
+    // live-strip map: a disabled Toaster folder builds no live strip at all
+    // (`readLiveStripTracks` filters `!track.disabled`), so a bound child
+    // still names it. Mutation this must catch: naming the parent from
+    // `context.stripById` instead of `context.projectTrackById`, which would
+    // answer `null` here because the disabled parent has no live strip.
+    it("names a pad child's disabled Toaster parent from the project track list", () => {
+        const toaster = createTrack({
+            id: 'toaster-1',
+            name: 'Drum Toaster',
+            disabled: true,
+            devices: [createDevice({ id: 'd', type: 'toaster' })],
+        });
+        const pad = createTrack({ id: 'pad-1', parentId: 'toaster-1' });
+        const carriers = carriersOf({
+            stripTracks: [pad],
+            projectTracks: [toaster, pad],
+        });
+
+        expect(carriers.get('pad-1')).toEqual({ carrier: 'web', reason: 'it plays a pad of "Drum Toaster"' });
+        expect(carriers.get('toaster-1')).toBeUndefined();
+    });
 });
