@@ -1,0 +1,71 @@
+src/modules/AudioAnalysis/useCases/__tests__/agentAuditionAnalysis.spec.ts
+  s_914af328b3988f::t_5a1b195c0a186a 1-180
+src/modules/AudioAnalysis/useCases/index.ts
+  s_914af328b3988f::t_1a96a346b493b4 13
+src/modules/AiRuntime/useCases/agentCatalogAudition/applyAgentAuditionCandidate.ts
+  s_914af328b3988f::t_8cd1e5c207127d 146-160
+  s_914af328b3988f::t_f7fc3b0644221f 1-65,74-75,77,79-83,86-89,91-123,161-167,178,207
+  s_914af328b3988f::t_8afc968f9d21d8 66-73,76,78,84-85,90,124-145,168-177,179-206,208-220
+src/modules/AudioAnalysis/AGENTS.md
+  s_914af328b3988f::t_93fd22832d6556 11
+src/modules/SampleLibrary/AGENTS.md
+  s_914af328b3988f::t_f6fb04c1b6fd90 8
+  s_914af328b3988f::t_f181f38f9a77ca 17
+src/modules/SampleLibrary/useCases/searchAgentCatalog.ts
+  s_914af328b3988f::t_4e83c0fbb1feed 184,186
+  s_914af328b3988f::t_f3ee327336b972 13-20
+src/modules/AiRuntime/AGENTS.md
+  s_914af328b3988f::t_1a4763198e6488 23
+  s_914af328b3988f::t_325c1bedac6098 11
+src/modules/AiRuntime/useCases/agentCatalogAudition/__tests__/agentCatalogAudition.spec.ts
+  s_914af328b3988f::t_bcf7300007a4b7 101-104
+  s_914af328b3988f::t_628d850520105c 114-129
+  s_914af328b3988f::t_cd78b9439c1981 39-40,43-44
+  s_914af328b3988f::t_f3b2a50321b0e3 1-8,10-38,41-42,45-100,105-113,130-151,153-213,215-227,229-290
+  s_914af328b3988f::t_8656c0d1ab7278 152,214
+  s_914af328b3988f::t_ad182dd468e2a7 228
+  s_914af328b3988f::t_203ffbf25527ee 9
+src/modules/AudioAnalysis/useCases/analyzeAgentAuditionBuffer.ts
+  s_914af328b3988f::t_83897ed651d7cd 1-91
+src/modules/SampleLibrary/services/agentCatalog/indexedCatalogEntries.ts
+  s_914af328b3988f::t_e3c784d87db7b1 1-57,80-137
+  s_914af328b3988f::t_a44ff3717666b3 58-79
+src/modules/AudioAnalysis/useCases/analyzeAgentRenderReceipt.ts
+  s_914af328b3988f::t_571b898845e171 13,86-88
+src/modules/AiRuntime/useCases/agentCatalogAudition/auditionAgentCatalogCandidate.ts
+  s_914af328b3988f::t_21373247af4de5 1-10,12-41,43,45-48,58,69
+  s_914af328b3988f::t_684b8ac012943d 11,42,44,49-57,59-68,70-79
+src/modules/AudioAnalysis/useCases/measureAgentObjectiveBuffer.ts
+  s_914af328b3988f::t_3720d51720f28a 1-107
+src/modules/SampleLibrary/useCases/resolveAgentCatalogCandidate.ts
+  s_914af328b3988f::t_2e8236682d98ab 3,5-22,24-30,32-35,37,39-43,57
+  s_914af328b3988f::t_43dd41a75bab41 1-2
+  s_914af328b3988f::t_c654f1cfd43b2d 23,36,38,44-56,58-63
+  s_914af328b3988f::t_44fbb39c8e4cdf 31
+  s_914af328b3988f::t_84f9cf184e35b3 4
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_914af328b3988f::t_681212e9b846ee 74
+  s_914af328b3988f::t_381e0c7e00f72d 158
+src/modules/SampleLibrary/useCases/index.ts
+  s_914af328b3988f::t_332fb893f62c05 11
+src/modules/AiRuntime/useCases/index.ts
+  s_914af328b3988f::t_709b0c8d1ca61b 93-94
+src/modules/AudioAnalysis/models/AgentObjectiveAnalysisTypes.ts
+  s_914af328b3988f::t_7ee696841bc2fa 160-194
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ac1e5d8dc190f27d84c107e06d4041cc9a0a6b73",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
