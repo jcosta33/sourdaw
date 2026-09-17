@@ -7,6 +7,7 @@ import { auditionAgentCatalogCandidate } from '../auditionAgentCatalogCandidate'
 
 const mocks = vi.hoisted(() => ({
     tempoBpm: 120,
+    trackStore: { value: { tracks: [] as Array<{ id: string; kind: string }> } },
     resolveAgentCatalogCandidate: vi.fn(),
     decodeAudioFileBuffer: vi.fn(),
     cacheAudioBuffer: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     analyzeAgentAuditionBuffer: mocks.analyzeAgentAuditionBuffer,
 }));
+vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
 vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: mocks.getAssetTransfer }));
 vi.mock('#/modules/Command/useCases', () => ({ executeAppActionBatch: mocks.executeAppActionBatch }));
 vi.mock('#/modules/Transport/stores', () => ({
@@ -44,7 +46,10 @@ const TEMPO_BPM = mocks.tempoBpm;
 const SECONDS_PER_MINUTE = 60;
 const SAMPLE_RATE = 48_000;
 const CANDIDATE_ID = 'sample-42';
-const TRACK_ID = 'track-7';
+const AUDIO_TRACK_ID = 'track-7';
+const BUS_TRACK_ID = 'bus-2';
+const MIDI_TRACK_ID = 'midi-3';
+const ABSENT_TRACK_ID = 'track-absent';
 const START_BEAT = 8;
 const STAGED_HASH = 'asset-hash';
 const STAGED_LEASE = 'lease-1';
@@ -88,6 +93,7 @@ function audioBuffer(amplitude: number, seconds = 1): AudioBuffer {
 
 const AUDITED_BUFFER = audioBuffer(0.25);
 const REPLACED_BUFFER = audioBuffer(0.5);
+const EMPTY_BUFFER = audioBuffer(0, 0);
 const CANDIDATE_FILE = new File([new Uint8Array([1, 2, 3])], 'brushed.wav');
 
 function resolvesCandidate(): void {
@@ -98,21 +104,15 @@ function resolvesCandidate(): void {
     });
 }
 
-type AuditionResult = Awaited<ReturnType<typeof auditionAgentCatalogCandidate>>;
-type AuditionRender = Extract<AuditionResult, { status: 'auditioned' }>['render'];
-
-async function auditioned(): Promise<AuditionRender> {
-    resolvesCandidate();
-    mocks.decodeAudioFileBuffer.mockResolvedValue(AUDITED_BUFFER);
-    const result = await auditionAgentCatalogCandidate({ candidateId: CANDIDATE_ID });
-    if (result.status !== 'auditioned') {
-        throw new Error(`Expected the fixture audition to succeed, got ${result.reason}`);
-    }
-    return result.render;
-}
-
 function armWorkflowMocks(): void {
     vi.clearAllMocks();
+    mocks.trackStore.value = {
+        tracks: [
+            { id: AUDIO_TRACK_ID, kind: 'audio' },
+            { id: BUS_TRACK_ID, kind: 'bus' },
+            { id: MIDI_TRACK_ID, kind: 'midi' },
+        ],
+    };
     mocks.analyzeAgentAuditionBuffer.mockImplementation(({ subject }: { subject: { contentAddress: string } }) => ({
         ...ANALYSIS,
         subject: { ...ANALYSIS.subject, contentAddress: subject.contentAddress },
@@ -125,6 +125,19 @@ function armWorkflowMocks(): void {
         promoteStagedAsset: mocks.promoteStagedAsset,
     });
     mocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
+}
+
+type AuditionResult = Awaited<ReturnType<typeof auditionAgentCatalogCandidate>>;
+type AuditionReceipt = Extract<AuditionResult, { status: 'auditioned' }>['receipt'];
+
+async function auditioned(): Promise<AuditionReceipt> {
+    resolvesCandidate();
+    mocks.decodeAudioFileBuffer.mockResolvedValue(AUDITED_BUFFER);
+    const result = await auditionAgentCatalogCandidate({ candidateId: CANDIDATE_ID });
+    if (result.status !== 'auditioned') {
+        throw new Error(`Expected the fixture audition to succeed, got ${result.reason}`);
+    }
+    return result.receipt;
 }
 
 function dispatchedAddClip(): { type: string; payload: Record<string, unknown> } {
@@ -140,12 +153,12 @@ function dispatchedAddClip(): { type: string; payload: Record<string, unknown> }
     return action;
 }
 
-function dispatchedOptions(): Record<string, unknown> {
+function dispatchedOptions(): { groupLabel?: string; source?: string; requireCompensation?: boolean } {
     const call = mocks.executeAppActionBatch.mock.calls[0];
     if (!call) {
         throw new Error('Expected the placement to dispatch one action batch');
     }
-    return call[1] as Record<string, unknown>;
+    return call[1] as { groupLabel?: string; source?: string; requireCompensation?: boolean };
 }
 
 describe('agent catalog audition', () => {
@@ -178,19 +191,19 @@ describe('agent catalog audition', () => {
     });
 
     it('measures the decoded buffer under its own content address and the candidate id', async () => {
-        const render = await auditioned();
+        const receipt = await auditioned();
 
         expect(mocks.decodeAudioFileBuffer).toHaveBeenCalledWith(CANDIDATE_FILE);
-        expect(render.contentAddress).toBe(await getAudioBufferContentAddress(AUDITED_BUFFER));
-        expect(render.candidate).toEqual(CANDIDATE);
+        expect(receipt.contentAddress).toBe(await getAudioBufferContentAddress(AUDITED_BUFFER));
+        expect(receipt.candidate).toEqual(CANDIDATE);
         expect(mocks.analyzeAgentAuditionBuffer).toHaveBeenCalledWith({
             buffer: AUDITED_BUFFER,
-            subject: { contentAddress: render.contentAddress, candidateId: CANDIDATE_ID },
+            subject: { contentAddress: receipt.contentAddress, candidateId: CANDIDATE_ID },
             baseline: undefined,
         });
     });
 
-    it('compares a new audition against an earlier render of the same candidate', async () => {
+    it('compares a new audition against an earlier receipt for the same candidate', async () => {
         const baseline = await auditioned();
         mocks.analyzeAgentAuditionBuffer.mockClear();
         mocks.decodeAudioFileBuffer.mockResolvedValue(REPLACED_BUFFER);
@@ -213,17 +226,32 @@ describe('agent catalog audition', () => {
 describe('agent audition placement', () => {
     beforeEach(armWorkflowMocks);
 
-    it('reaches the project through exactly one versioned addClip command', async () => {
-        const render = await auditioned();
+    it('refuses a destination that is not an existing audio track, before reading any audio', async () => {
+        const receipt = await auditioned();
 
-        const result = await applyAgentAuditionCandidate({ render, trackId: TRACK_ID, startBeat: START_BEAT });
+        for (const trackId of [BUS_TRACK_ID, MIDI_TRACK_ID, ABSENT_TRACK_ID]) {
+            mocks.decodeAudioFileBuffer.mockClear();
+
+            const result = await applyAgentAuditionCandidate({ receipt, trackId, startBeat: START_BEAT });
+
+            expect(result).toEqual({ status: 'rejected', reason: 'track-not-audio' });
+            expect(mocks.decodeAudioFileBuffer).not.toHaveBeenCalled();
+        }
+        expect(mocks.stageLocalAsset).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+    });
+
+    it('reaches the project through exactly one versioned addClip command', async () => {
+        const receipt = await auditioned();
+
+        const result = await applyAgentAuditionCandidate({ receipt, trackId: AUDIO_TRACK_ID, startBeat: START_BEAT });
 
         expect(result.status).toBe('applied');
         expect(mocks.executeAppActionBatch).toHaveBeenCalledTimes(1);
         expect(dispatchedAddClip()).toEqual({
             type: 'addClip',
             payload: {
-                trackId: TRACK_ID,
+                trackId: AUDIO_TRACK_ID,
                 startBeat: START_BEAT,
                 endBeat: START_BEAT + (AUDITED_BUFFER.duration / SECONDS_PER_MINUTE) * TEMPO_BPM,
                 name: CANDIDATE.displayName,
@@ -232,14 +260,17 @@ describe('agent audition placement', () => {
                 assetHash: STAGED_HASH,
             },
         });
-        expect(dispatchedOptions()).toMatchObject({ source: 'ai', requireCompensation: true });
+        const options = dispatchedOptions();
+        expect(options.source).toBe('ai');
+        expect(options.requireCompensation).toBe(true);
+        expect(options.groupLabel).toContain(CANDIDATE.displayName);
     });
 
     it('refuses audio whose content address is not the audited one, and writes nothing', async () => {
-        const render = await auditioned();
+        const receipt = await auditioned();
         mocks.decodeAudioFileBuffer.mockResolvedValue(REPLACED_BUFFER);
 
-        const result = await applyAgentAuditionCandidate({ render, trackId: TRACK_ID, startBeat: START_BEAT });
+        const result = await applyAgentAuditionCandidate({ receipt, trackId: AUDIO_TRACK_ID, startBeat: START_BEAT });
 
         expect(result).toEqual({ status: 'rejected', reason: 'content-address-mismatch' });
         expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
@@ -247,10 +278,21 @@ describe('agent audition placement', () => {
         expect(mocks.stageLocalAsset).not.toHaveBeenCalled();
     });
 
-    it('promotes the staged asset once the command commits', async () => {
-        const render = await auditioned();
+    it('refuses audio carrying no frames, and writes nothing', async () => {
+        const receipt = await auditioned();
+        mocks.decodeAudioFileBuffer.mockResolvedValue(EMPTY_BUFFER);
 
-        const result = await applyAgentAuditionCandidate({ render, trackId: TRACK_ID, startBeat: START_BEAT });
+        const result = await applyAgentAuditionCandidate({ receipt, trackId: AUDIO_TRACK_ID, startBeat: START_BEAT });
+
+        expect(result).toEqual({ status: 'rejected', reason: 'empty-audio' });
+        expect(mocks.stageLocalAsset).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+    });
+
+    it('promotes the staged asset once the command commits', async () => {
+        const receipt = await auditioned();
+
+        const result = await applyAgentAuditionCandidate({ receipt, trackId: AUDIO_TRACK_ID, startBeat: START_BEAT });
 
         expect(result).toMatchObject({ status: 'applied', assetFinalized: true });
         expect(mocks.promoteStagedAsset).toHaveBeenCalledWith(STAGED_LEASE);
@@ -258,15 +300,37 @@ describe('agent audition placement', () => {
         expect(mocks.discardDecodedAudioFile).not.toHaveBeenCalled();
     });
 
+    it('keeps the media and promotes the asset when the commit is ambiguous', async () => {
+        const receipt = await auditioned();
+        mocks.executeAppActionBatch.mockResolvedValue({
+            status: 'ambiguous',
+            actions: [],
+            reason: 'the commit may have landed',
+        });
+
+        const result = await applyAgentAuditionCandidate({ receipt, trackId: AUDIO_TRACK_ID, startBeat: START_BEAT });
+
+        expect(result).toEqual({
+            status: 'ambiguous',
+            detail: 'the commit may have landed',
+            audioBufferId: CACHED_BUFFER_ID,
+            contentAddress: receipt.contentAddress,
+            assetFinalized: true,
+        });
+        expect(mocks.promoteStagedAsset).toHaveBeenCalledWith(STAGED_LEASE);
+        expect(mocks.discardDecodedAudioFile).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+    });
+
     it('releases the staged asset and evicts the cached buffer when the project refuses the write', async () => {
-        const render = await auditioned();
+        const receipt = await auditioned();
         mocks.executeAppActionBatch.mockResolvedValue({
             status: 'rejected',
             reason: 'project repair required',
             actions: [],
         });
 
-        const result = await applyAgentAuditionCandidate({ render, trackId: TRACK_ID, startBeat: START_BEAT });
+        const result = await applyAgentAuditionCandidate({ receipt, trackId: AUDIO_TRACK_ID, startBeat: START_BEAT });
 
         expect(result).toEqual({
             status: 'rejected',
@@ -278,11 +342,27 @@ describe('agent audition placement', () => {
         expect(mocks.promoteStagedAsset).not.toHaveBeenCalled();
     });
 
+    it('releases the staged asset and evicts the cached buffer when the dispatch throws', async () => {
+        const receipt = await auditioned();
+        mocks.executeAppActionBatch.mockRejectedValue(new Error('storage transaction aborted'));
+
+        const result = await applyAgentAuditionCandidate({ receipt, trackId: AUDIO_TRACK_ID, startBeat: START_BEAT });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'project-write-refused',
+            detail: 'storage transaction aborted',
+        });
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledWith(STAGED_LEASE);
+        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith(CACHED_BUFFER_ID);
+        expect(mocks.promoteStagedAsset).not.toHaveBeenCalled();
+    });
+
     it('refuses to place a candidate the library no longer holds', async () => {
-        const render = await auditioned();
+        const receipt = await auditioned();
         mocks.resolveAgentCatalogCandidate.mockResolvedValue({ status: 'rejected', reason: 'file-unavailable' });
 
-        const result = await applyAgentAuditionCandidate({ render, trackId: TRACK_ID, startBeat: START_BEAT });
+        const result = await applyAgentAuditionCandidate({ receipt, trackId: AUDIO_TRACK_ID, startBeat: START_BEAT });
 
         expect(result).toEqual({ status: 'rejected', reason: 'file-unavailable' });
         expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();

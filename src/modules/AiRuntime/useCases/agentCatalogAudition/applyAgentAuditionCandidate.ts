@@ -1,11 +1,13 @@
-import { cacheAudioBuffer, decodeAudioFileBuffer, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { cacheAudioBuffer, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { resolveAgentCatalogCandidate } from '#/modules/SampleLibrary/useCases';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
 
-import { type AgentAuditionRender } from './auditionAgentCatalogCandidate';
+import { type AgentAuditionReceipt, type AgentAuditionRejectionReason } from './auditionAgentCatalogCandidate';
+import { decodeCatalogCandidateFile } from './decodeCatalogCandidateFile';
 
 /**
  * Place auditioned audio on the timeline.
@@ -29,15 +31,18 @@ type StagedAsset = Awaited<ReturnType<NonNullable<AssetTransfer>['stageLocalAsse
 type BatchResult = Awaited<ReturnType<typeof executeAppActionBatch>>;
 
 type ApplyAgentAuditionCandidateInput = {
-    readonly render: AgentAuditionRender;
+    readonly receipt: AgentAuditionReceipt;
     readonly trackId: string;
     readonly startBeat: number;
 };
 
+/**
+ * `track-not-audio` also answers a track id that names nothing: a destination
+ * the project does not hold is no more able to carry an audio clip than a bus is.
+ */
 type ApplyAgentAuditionRejectionReason =
-    | 'unknown-catalog-id'
-    | 'file-unavailable'
-    | 'undecodable-audio'
+    | AgentAuditionRejectionReason
+    | 'track-not-audio'
     | 'content-address-mismatch'
     | 'empty-audio'
     | 'asset-staging-failed'
@@ -51,6 +56,18 @@ type ApplyAgentAuditionCandidateResult =
           readonly clipName: string;
           readonly startBeat: number;
           readonly endBeat: number;
+          readonly assetFinalized: boolean;
+      }
+    | {
+          /**
+           * The batch may or may not have reached the document. Its media is kept
+           * and its asset promoted exactly as on the committed path, because a
+           * clip that did land must not be left pointing at a discarded buffer.
+           */
+          readonly status: 'ambiguous';
+          readonly detail: string;
+          readonly audioBufferId: string;
+          readonly contentAddress: string;
           readonly assetFinalized: boolean;
       }
     | {
@@ -73,21 +90,32 @@ type AddClipPayload = {
     assetHash?: string;
 };
 
-async function decodeCandidateFile(file: File): Promise<AudioBuffer | null> {
-    try {
-        return await decodeAudioFileBuffer(file);
-    } catch {
-        return null;
-    }
+type PlacementPlan = {
+    readonly buffer: AudioBuffer;
+    readonly trackId: string;
+    readonly startBeat: number;
+    readonly endBeat: number;
+    readonly clipName: string;
+    readonly staged: StagedAsset | undefined;
+    readonly assetTransfer: AssetTransfer;
+};
+
+type PlacementAttempt =
+    | { readonly status: 'dispatched'; readonly audioBufferId: string; readonly batchResult: BatchResult }
+    | { readonly status: 'failed'; readonly detail: string };
+
+function isAudioTrack(trackId: string): boolean {
+    const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+    return track?.kind === 'audio';
 }
 
-async function verifyAuditionedAudio(render: AgentAuditionRender): Promise<VerifiedAudio> {
-    const resolved = await resolveAgentCatalogCandidate({ candidateId: render.candidateId });
+async function verifyAuditionedAudio(receipt: AgentAuditionReceipt): Promise<VerifiedAudio> {
+    const resolved = await resolveAgentCatalogCandidate({ candidateId: receipt.candidateId });
     if (resolved.status === 'rejected') {
         return { status: 'rejected', reason: resolved.reason };
     }
 
-    const buffer = await decodeCandidateFile(resolved.file);
+    const buffer = await decodeCatalogCandidateFile(resolved.file);
     if (!buffer) {
         return { status: 'rejected', reason: 'undecodable-audio' };
     }
@@ -96,7 +124,7 @@ async function verifyAuditionedAudio(render: AgentAuditionRender): Promise<Verif
     }
 
     const contentAddress = await getAudioBufferContentAddress(buffer);
-    if (contentAddress !== render.contentAddress) {
+    if (contentAddress !== receipt.contentAddress) {
         return { status: 'rejected', reason: 'content-address-mismatch' };
     }
     return { status: 'verified', file: resolved.file, buffer };
@@ -121,34 +149,65 @@ function readClipEndBeat(buffer: AudioBuffer, startBeat: number): number {
     return startBeat + (buffer.duration / SECONDS_PER_MINUTE) * tempo;
 }
 
-function buildAddClipPayload(input: {
-    trackId: string;
-    startBeat: number;
-    endBeat: number;
-    clipName: string;
-    audioBufferId: string;
-    staged: StagedAsset | undefined;
-}): AddClipPayload {
+function buildAddClipPayload(plan: PlacementPlan, audioBufferId: string): AddClipPayload {
     const payload: AddClipPayload = {
-        trackId: input.trackId,
-        startBeat: input.startBeat,
-        endBeat: input.endBeat,
-        name: input.clipName,
+        trackId: plan.trackId,
+        startBeat: plan.startBeat,
+        endBeat: plan.endBeat,
+        name: plan.clipName,
         type: 'audio',
-        audioBufferId: input.audioBufferId,
+        audioBufferId,
     };
-    if (!input.staged) {
+    if (!plan.staged) {
         return payload;
     }
-    return { ...payload, assetHash: input.staged.hash };
+    return { ...payload, assetHash: plan.staged.hash };
 }
 
-function finalizeStagedAsset(assetTransfer: AssetTransfer, staged: StagedAsset | undefined): boolean {
-    if (!staged) {
+function releasePreparedMedia(plan: PlacementPlan, audioBufferId: string | undefined): void {
+    if (audioBufferId !== undefined) {
+        discardDecodedAudioFile(audioBufferId);
+    }
+    if (plan.staged) {
+        plan.assetTransfer?.releaseStagedAsset(plan.staged.leaseId);
+    }
+}
+
+function readThrownDetail(error: unknown): string {
+    return error instanceof Error ? error.message : 'the placement batch threw a non-error value';
+}
+
+/**
+ * Caching the buffer and dispatching the batch are one window because the cache
+ * entry exists only to be named by the command. A throw anywhere inside leaves
+ * an orphan buffer and an unreleased lease unless both are undone here.
+ */
+async function attemptPlacement(plan: PlacementPlan): Promise<PlacementAttempt> {
+    let audioBufferId: string | undefined;
+    try {
+        audioBufferId = cacheAudioBuffer({ buffer: plan.buffer });
+        const batchResult = await executeAppActionBatch(
+            [{ type: 'addClip', payload: buildAddClipPayload(plan, audioBufferId) }],
+            {
+                groupId: `agent-audition-${crypto.randomUUID()}`,
+                groupLabel: `Place auditioned sample: ${plan.clipName}`,
+                source: 'ai',
+                requireCompensation: true,
+            }
+        );
+        return { status: 'dispatched', audioBufferId, batchResult };
+    } catch (error) {
+        releasePreparedMedia(plan, audioBufferId);
+        return { status: 'failed', detail: readThrownDetail(error) };
+    }
+}
+
+function finalizeStagedAsset(plan: PlacementPlan): boolean {
+    if (!plan.staged) {
         return false;
     }
     try {
-        assetTransfer?.promoteStagedAsset(staged.leaseId);
+        plan.assetTransfer?.promoteStagedAsset(plan.staged.leaseId);
         return true;
     } catch {
         // The clip is committed and replicated; only the durable copy of its
@@ -167,11 +226,15 @@ function retainsPlacedMedia(result: BatchResult): boolean {
 }
 
 export async function applyAgentAuditionCandidate({
-    render,
+    receipt,
     trackId,
     startBeat,
 }: ApplyAgentAuditionCandidateInput): Promise<ApplyAgentAuditionCandidateResult> {
-    const verified = await verifyAuditionedAudio(render);
+    if (!isAudioTrack(trackId)) {
+        return { status: 'rejected', reason: 'track-not-audio' };
+    }
+
+    const verified = await verifyAuditionedAudio(receipt);
     if (verified.status === 'rejected') {
         return { status: 'rejected', reason: verified.reason };
     }
@@ -182,39 +245,44 @@ export async function applyAgentAuditionCandidate({
         return { status: 'rejected', reason: 'asset-staging-failed' };
     }
 
-    const clipName = render.candidate.displayName;
-    const endBeat = readClipEndBeat(verified.buffer, startBeat);
-    const audioBufferId = cacheAudioBuffer({ buffer: verified.buffer });
-    const batchResult = await executeAppActionBatch(
-        [
-            {
-                type: 'addClip',
-                payload: buildAddClipPayload({ trackId, startBeat, endBeat, clipName, audioBufferId, staged }),
-            },
-        ],
-        {
-            groupId: `agent-audition-${crypto.randomUUID()}`,
-            groupLabel: `Place auditioned sample: ${clipName}`,
-            source: 'ai',
-            requireCompensation: true,
-        }
-    );
+    const plan: PlacementPlan = {
+        buffer: verified.buffer,
+        trackId,
+        startBeat,
+        endBeat: readClipEndBeat(verified.buffer, startBeat),
+        clipName: receipt.candidate.displayName,
+        staged,
+        assetTransfer,
+    };
 
+    const placement = await attemptPlacement(plan);
+    if (placement.status === 'failed') {
+        return { status: 'rejected', reason: 'project-write-refused', detail: placement.detail };
+    }
+
+    const { audioBufferId, batchResult } = placement;
     if (!retainsPlacedMedia(batchResult)) {
-        discardDecodedAudioFile(audioBufferId);
-        if (staged) {
-            assetTransfer?.releaseStagedAsset(staged.leaseId);
-        }
+        releasePreparedMedia(plan, audioBufferId);
         return { status: 'rejected', reason: 'project-write-refused', detail: getBatchRefusalDetail(batchResult) };
+    }
+
+    if (batchResult.status === 'ambiguous') {
+        return {
+            status: 'ambiguous',
+            detail: batchResult.reason,
+            audioBufferId,
+            contentAddress: receipt.contentAddress,
+            assetFinalized: finalizeStagedAsset(plan),
+        };
     }
 
     return {
         status: 'applied',
         audioBufferId,
-        contentAddress: render.contentAddress,
-        clipName,
+        contentAddress: receipt.contentAddress,
+        clipName: plan.clipName,
         startBeat,
-        endBeat,
-        assetFinalized: finalizeStagedAsset(assetTransfer, staged),
+        endBeat: plan.endBeat,
+        assetFinalized: finalizeStagedAsset(plan),
     };
 }

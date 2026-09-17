@@ -1,7 +1,8 @@
 import { analyzeAgentAuditionBuffer } from '#/modules/AudioAnalysis/useCases';
-import { decodeAudioFileBuffer } from '#/modules/AudioEngine/useCases';
 import { resolveAgentCatalogCandidate } from '#/modules/SampleLibrary/useCases';
 import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
+
+import { decodeCatalogCandidateFile } from './decodeCatalogCandidateFile';
 
 /**
  * Hear one catalog candidate without touching the project.
@@ -9,17 +10,17 @@ import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
  * The decoded buffer stays local to this call: it is never handed to
  * `audioBufferCache`, so an audition leaves the engine's shared buffer identity
  * space exactly as it found it, and nothing an agent auditioned can be played,
- * frozen or exported by accident. What survives is a render — a content address
+ * frozen or exported by accident. What survives is a receipt — a content address
  * plus objective measurements — which is data, not audio, and can therefore
  * cross a saga step, a persisted run, or a user approval unchanged.
  */
 
-export const AGENT_AUDITION_SCHEMA_VERSION = 1;
+const AGENT_AUDITION_SCHEMA_VERSION = 1;
 
 type ResolvedCandidate = Extract<Awaited<ReturnType<typeof resolveAgentCatalogCandidate>>, { status: 'resolved' }>;
 
 /** What the audition says about the candidate, apart from the audio itself. */
-export type AgentAuditionRender = {
+export type AgentAuditionReceipt = {
     readonly schemaVersion: typeof AGENT_AUDITION_SCHEMA_VERSION;
     readonly candidateId: string;
     readonly candidate: ResolvedCandidate['candidate'];
@@ -27,25 +28,18 @@ export type AgentAuditionRender = {
     readonly analysis: ReturnType<typeof analyzeAgentAuditionBuffer>;
 };
 
+/** Refusals that belong to reaching the candidate's audio at all. */
 export type AgentAuditionRejectionReason = 'unknown-catalog-id' | 'file-unavailable' | 'undecodable-audio';
 
 type AuditionAgentCatalogCandidateInput = {
     readonly candidateId: string;
-    /** An earlier render the new measurements are compared against. */
-    readonly baseline?: AgentAuditionRender;
+    /** An earlier receipt the new measurements are compared against. */
+    readonly baseline?: AgentAuditionReceipt;
 };
 
 type AuditionAgentCatalogCandidateResult =
-    | { readonly status: 'auditioned'; readonly render: AgentAuditionRender }
+    | { readonly status: 'auditioned'; readonly receipt: AgentAuditionReceipt }
     | { readonly status: 'rejected'; readonly reason: AgentAuditionRejectionReason };
-
-async function decodeAuditionBuffer(file: File): Promise<AudioBuffer | null> {
-    try {
-        return await decodeAudioFileBuffer(file);
-    } catch {
-        return null;
-    }
-}
 
 export async function auditionAgentCatalogCandidate({
     candidateId,
@@ -56,7 +50,7 @@ export async function auditionAgentCatalogCandidate({
         return { status: 'rejected', reason: resolved.reason };
     }
 
-    const buffer = await decodeAuditionBuffer(resolved.file);
+    const buffer = await decodeCatalogCandidateFile(resolved.file);
     if (!buffer) {
         return { status: 'rejected', reason: 'undecodable-audio' };
     }
@@ -64,7 +58,7 @@ export async function auditionAgentCatalogCandidate({
     const contentAddress = await getAudioBufferContentAddress(buffer);
     return {
         status: 'auditioned',
-        render: {
+        receipt: {
             schemaVersion: AGENT_AUDITION_SCHEMA_VERSION,
             candidateId,
             candidate: resolved.candidate,
