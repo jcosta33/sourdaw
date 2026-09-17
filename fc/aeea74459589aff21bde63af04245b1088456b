@@ -1,0 +1,25 @@
+src/modules/AiRuntime/useCases/agentCatalogAudition/__tests__/agentCatalogAudition.spec.ts
+  s_914af328b3988f::t_6b4eb080662104 10,37,49-52,96,109-115,130-142,156,161,194,197-198,201,206,229-243,245,247,254,263-266,270,273,281-291,293,295,303-324,326,333,345-360,362,365
+src/modules/AiRuntime/useCases/agentCatalogAudition/applyAgentAuditionCandidate.ts
+  s_914af328b3988f::t_2c1fd4e8765d00 1-2,9-10,34,39-42,44-45,61-72,93-109,112-113,118,127,152,154-157,159,161,164-202,205-206,210,229,233-237,248-256,258-263,265,269-278,282-283,285-286
+src/modules/AiRuntime/useCases/agentCatalogAudition/decodeCatalogCandidateFile.ts
+  s_914af328b3988f::t_f2ad0c749a2e4d 1-17
+src/modules/AiRuntime/useCases/agentCatalogAudition/auditionAgentCatalogCandidate.ts
+  s_914af328b3988f::t_50f62714480dc4 5-6,13,18,23,31,36-37,41,53,61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fcaeea74459589aff21bde63af04245b1088456b",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
