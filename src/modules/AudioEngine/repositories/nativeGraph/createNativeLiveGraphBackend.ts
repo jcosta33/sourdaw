@@ -216,6 +216,16 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
 export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): AudioGraphBackend {
     const { transport, acquireNativeSampleBank } = deps;
     let disposed = false;
+    /**
+     * This instance's own name in {@link claimedNativeSampleBankKeysByBackend},
+     * suffixed with a per-instance token rather than reused as the public
+     * `backendId`: a held instrument can swap live backends mid-roll (#4203),
+     * so two instances of this same implementation can be claiming banks at
+     * once, and the public id names the implementation for diagnostics and
+     * parity reports, not one running instance of it. Claims only — nothing
+     * that reads `backendId` off this backend compares it to this value.
+     */
+    const claimBackendId = `${NATIVE_LIVE_BACKEND_ID}:${crypto.randomUUID()}`;
 
     return {
         backendId: NATIVE_LIVE_BACKEND_ID,
@@ -236,7 +246,7 @@ export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): 
                     commands: batch.commands,
                     acquire: acquireNativeSampleBank,
                     replaceTopology: batch.replaceTopology,
-                    backendId: NATIVE_LIVE_BACKEND_ID,
+                    backendId: claimBackendId,
                 });
             }
             let raw: unknown;
@@ -257,7 +267,7 @@ export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): 
             // later replacement elsewhere is then free to reclaim a bank this
             // backend used to name.
             disposed = true;
-            releaseNativeSampleBankClaims(NATIVE_LIVE_BACKEND_ID);
+            releaseNativeSampleBankClaims(claimBackendId);
         },
     };
 }

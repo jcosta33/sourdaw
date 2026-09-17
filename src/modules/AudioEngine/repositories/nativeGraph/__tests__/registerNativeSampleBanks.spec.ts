@@ -583,3 +583,77 @@ describe('registerNativeSampleBanks — claims scoped by backend (#4203)', () =>
         expect(registeredNativeSampleBankKeys.has('levain:violin')).toBe(true);
     });
 });
+
+describe('registerNativeSampleBanks — releaseUnnamedBanks drops the key before awaiting release (#4203)', () => {
+    beforeEach(() => {
+        registeredNativeSampleBankKeys.clear();
+        inFlightNativeSampleBankShipments.clear();
+        claimedNativeSampleBankKeysByBackend.clear();
+    });
+
+    // The release pass must forget an unclaimed key *before* asking the
+    // transport to drop it: a registration for the same key that starts
+    // while the release is still in flight must see it unregistered and
+    // re-stage, never believe a bank the store is mid-release on is still
+    // committed.
+    it('re-stages a key whose release is still in flight, rather than skipping it', async () => {
+        const released = deferred();
+        const calls: string[] = [];
+        const acquire = vi.fn(() => Promise.resolve(lease(vi.fn())));
+        const transport: NativeGraphTransport = {
+            beginLevainBank: ({ bankKey }) => {
+                calls.push(`begin:${bankKey}`);
+                return Promise.resolve(null);
+            },
+            registerLevainSample: ({ bankKey, sampleId }) => {
+                calls.push(`sample:${bankKey}:${sampleId}`);
+                return Promise.resolve(null);
+            },
+            commitLevainBank: ({ bankKey }) => {
+                calls.push(`commit:${bankKey}`);
+                return Promise.resolve(null);
+            },
+            releaseLevainBank: ({ bankKey }) => {
+                calls.push(`release-requested:${bankKey}`);
+                return released.promise.then(() => null);
+            },
+            registerTimelineSample: () => Promise.reject(new Error('unexpected register_timeline_sample')),
+            renderGraphOffline: () => Promise.reject(new Error('unexpected render_graph_offline')),
+            applyGraphCommands: () => Promise.reject(new Error('unexpected apply_graph_commands')),
+            mapGraphBatch: () => Promise.reject(new Error('unexpected map_graph_batch')),
+        };
+
+        // Committed and unclaimed by any backend, so a live replaceTopology
+        // naming nothing tries to release it.
+        registeredNativeSampleBankKeys.add('levain:violin');
+
+        const live = registerNativeSampleBanks({
+            transport,
+            commands: [],
+            acquire,
+            replaceTopology: true,
+            backendId: 'live',
+        });
+
+        await vi.waitFor(() => {
+            expect(calls).toContain('release-requested:levain:violin');
+        });
+
+        // An offline registration naming the same key, arriving mid-release,
+        // must ship it again rather than believe the store still holds it.
+        const offline = registerNativeSampleBanks({
+            transport,
+            commands: commandsNaming('levain:violin'),
+            acquire,
+            backendId: 'off-1',
+        });
+
+        await expect(offline).resolves.toEqual(['levain:violin']);
+        expect(calls).toContain('begin:levain:violin');
+
+        released.settle();
+        await live;
+
+        expect(registeredNativeSampleBankKeys.has('levain:violin')).toBe(true);
+    });
+});

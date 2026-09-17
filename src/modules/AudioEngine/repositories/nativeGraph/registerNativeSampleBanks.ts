@@ -165,14 +165,22 @@ async function releaseUnnamedBanks(transport: NativeGraphTransport): Promise<voi
         if (isClaimedByAnyBackend(bankKey) || inFlightNativeSampleBankShipments.has(bankKey)) {
             continue;
         }
+        // Dropped before the await, not after: a registration for this key
+        // that begins while the release is in flight must see it unregistered
+        // and re-stage, rather than believe a bank the store is about to drop
+        // is still committed.
+        registeredNativeSampleBankKeys.delete(bankKey);
         try {
             await transport.releaseLevainBank({ bankKey });
         } catch {
-            // The store holds the bank either way; a release that did not land
-            // costs memory, never correctness, and re-staging replaces it.
+            // The store may still hold the bank, but the key stays
+            // unregistered either way: the next batch that names it re-stages
+            // (the store holds the bank meanwhile), which costs a redundant
+            // stage, never correctness — believing a release that did not
+            // land would risk mapping a device against a bank the store went
+            // on to drop regardless.
             continue;
         }
-        registeredNativeSampleBankKeys.delete(bankKey);
     }
 }
 
