@@ -1,0 +1,23 @@
+.agents/decisions/0045-toaster-sequencer-is-a-session-performance-tool.md
+  s_9b530f08172a54::t_06eb4e6c74204f 13
+  s_9b530f08172a54::t_ce99cffff02ecb 33,35-41
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_9b530f08172a54::t_fd23c13e5ce473 761
+  s_9b530f08172a54::t_61ced0f905e743 777
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a5f46969a5dadd28014acd480ef743047518165b",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
