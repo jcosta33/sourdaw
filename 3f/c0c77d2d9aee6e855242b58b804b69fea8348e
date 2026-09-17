@@ -1,0 +1,58 @@
+src/modules/Toaster/useCases/__tests__/listToasterPatternsOutsideArrangement.spec.ts
+  s_9b530f08172a54::t_5f342883018a14 69,72-80
+  s_9b530f08172a54::t_06ae366111cd0e 1-68,70-71,81-178
+  s_9b530f08172a54::t_1b61565b9357fd 179-183
+src/modules/Toaster/useCases/index.ts
+  s_9b530f08172a54::t_254ca3d288ab1a 4
+src/modules/MIDI/stores/midiStore.ts
+  s_9b530f08172a54::t_9e7c627b6e1c62 14-15
+.agents/decisions/README.md
+  s_9b530f08172a54::t_e0440831d65c65 61
+.agents/decisions/open-decision-docket.md
+  s_9b530f08172a54::t_48c3f61912ad72 707-712
+src/modules/MIDI/stores/index.ts
+  s_9b530f08172a54::t_a87edc77f5e620 4-5
+  s_9b530f08172a54::t_84f97cde626152 6-10
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_9b530f08172a54::t_319b2a2a2588a7 181
+  s_9b530f08172a54::t_597c7860cbe5be 36,38
+  s_9b530f08172a54::t_0090717620a289 1273-1288
+  s_9b530f08172a54::t_ac5eb812b800ad 202-209
+.agents/decisions/0045-toaster-sequencer-is-a-session-performance-tool.md
+  s_9b530f08172a54::t_240a25a5c08c6a 1-97
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  s_9b530f08172a54::t_06f6fc6827b85e 6
+  s_9b530f08172a54::t_9223be785e2e7c 721-724
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_9b530f08172a54::t_9f5f1aac7a5270 68-75
+  s_9b530f08172a54::t_b6b84c0c4e0400 82-84,87
+  s_9b530f08172a54::t_f3c55256b5d045 119,127-129,132
+  s_9b530f08172a54::t_1700661967ab3a 195-200
+  s_9b530f08172a54::t_7f56d10ccfb56f 432-433
+  s_9b530f08172a54::t_9bde7e461b85cb 760-783
+  s_9b530f08172a54::t_5ef88b5ee0af8f 192-194,201-219
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  s_9b530f08172a54::t_2f67a323da7e14 92-100
+docs/manual/devices/16-toaster.md
+  s_9b530f08172a54::t_91a686224178ad 86
+  s_9b530f08172a54::t_1169320a943044 22-23
+  s_9b530f08172a54::t_e67a55a1dfce20 84-85,87
+src/modules/Toaster/useCases/listToasterPatternsOutsideArrangement.ts
+  s_9b530f08172a54::t_813a0dfc0871dc 1-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3fc0c77d2d9aee6e855242b58b804b69fea8348e",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
