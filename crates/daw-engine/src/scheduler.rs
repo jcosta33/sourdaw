@@ -25785,6 +25785,49 @@ mod timeline_tests {
         body
     }
 
+    /// The plugin id [`track_with_levain`] registers in the hosted specs
+    /// below, and the track id it places the instrument on.
+    const LEVAIN_ID: usize = 7;
+    const LEVAIN_TRACK: usize = 1;
+
+    /// Place a Levain generator on a track, the way `commands/graph.rs` places
+    /// a built-in instrument: registered detached with its own note store,
+    /// then spliced at the head of the chain.
+    ///
+    /// The instance carries the fixture's committed bank ([`levain_instance`]),
+    /// and the track holds no clip, so every non-zero sample the master
+    /// carries came out of the instrument.
+    fn track_with_levain(harness: &mut Harness, track_id: usize, effect_id: usize) {
+        for command in [
+            GraphCommand::AddTrack(TimelineTrack::new(track_id)),
+            GraphCommand::AddDetachedEffect(
+                effect_id,
+                PluginCore::levain_with_patch(levain_instance(), &[]),
+                Some(MidiNoteStore::new()),
+            ),
+            insert_track_device(track_id, generator(effect_id), 0),
+        ] {
+            harness.send(command);
+        }
+    }
+
+    /// One live controller message for the hosted Levain.
+    ///
+    /// The channel is deliberately not the note's: this instrument's
+    /// controller surface is per-instrument rather than per-channel
+    /// ([`LevainBody::control_change`]), so a body that narrowed a controller
+    /// to a voice's channel would drop this.
+    fn levain_control(controller: u8, value: u8) -> GraphCommand {
+        GraphCommand::SendMidiControl(
+            LEVAIN_ID,
+            MidiControlEvent {
+                controller,
+                value,
+                channel: 9,
+            },
+        )
+    }
+
     /// A strike of `note` on `channel`, stamped for `frame`.
     fn levain_hit(note: u8, channel: i16, frame: u32) -> MidiNoteEvent {
         let mut event = note_on(note);
@@ -26042,16 +26085,25 @@ mod timeline_tests {
     /// stop pays reach that deferred queue rather than a voice, and what the
     /// edge has to do is kill the voices without moving the foot.
     ///
-    /// Both doors are the instance-side ones the engine really uses: the pedal
-    /// arrives through [`PluginCore::control_change`] and the stop through
-    /// [`PluginCore::silence_pedal_held_voices`], which is what
-    /// [`AudioScheduler::pay_owed_releases`] asks a slot's instance at the
-    /// edge. A Levain arm missing from either match is a body a stop leaves
-    /// ringing.
+    /// Every door is the engine's own. The instrument is hosted on a track
+    /// ([`track_with_levain`]), the pedal arrives as
+    /// [`GraphCommand::SendMidiControl`], the key and its release as
+    /// [`GraphCommand::SendMidiNote`], and the edge is the transport parking
+    /// ([`stop_transport`]) — which owes the graph's live keys
+    /// ([`AudioScheduler::owe_all_releases`]) and then asks a pedalled slot's
+    /// instance for the kill where it would otherwise spend them
+    /// ([`AudioScheduler::pay_owed_releases`]). A Levain arm missing from
+    /// either match, and a stop that never reaches one, are both a body a stop
+    /// leaves ringing.
+    ///
+    /// The kill lands at the payment, which runs at the end of the drain that
+    /// carried the stop — before the block that drain precedes, so at the head
+    /// of the edge callback. That is why the reference writes it at that
+    /// callback's own first run.
     ///
     /// Three renders. The reference is the instrument driven directly, killed
     /// at the edge's own run with its pedal never written, and it is what the
-    /// two equalities claim the hosted body renders — the whole of what the
+    /// two equalities claim the hosted master renders — the whole of what the
     /// edge does to a pedalled body. The control is the same hosted programme
     /// with no stop at all: it rings on at full level right through the tail
     /// window, which is what refuses a vacuous pass, because a pedalled body
@@ -26099,33 +26151,30 @@ mod timeline_tests {
         /// The hosted programme, with the edge taken at [`EDGE_CALLBACK`] or
         /// not taken at all.
         fn render(stops: bool) -> (Vec<f32>, Vec<f32>) {
-            let strike = [levain_hit(LEVAIN_SPEC_NOTE, 0, 0)];
-            let lift = [levain_release(LEVAIN_SPEC_NOTE, 0, 0)];
-            let mut core = PluginCore::levain_with_patch(levain_instance(), &[]);
-            core.control_change(MidiControlEvent {
-                controller: CC_SUSTAIN_PEDAL,
-                value: PEDAL_DOWN,
-                channel: 0,
-            });
-            let mut left = Vec::with_capacity(RENDERED);
-            let mut right = Vec::with_capacity(RENDERED);
-            for callback in 0..CALLBACKS {
-                if stops && callback == EDGE_CALLBACK {
-                    core.silence_pedal_held_voices();
-                }
-                let events: &[MidiNoteEvent] = match callback {
-                    0 => &strike,
-                    RELEASE_CALLBACK => &lift,
-                    _ => &[],
-                };
-                let PluginCore::Levain(body) = &mut core else {
-                    unreachable!("levain_with_patch builds the levain variant");
-                };
-                let (block_left, block_right) = levain_render(body, CALLBACK, events);
-                left.extend(block_left);
-                right.extend(block_right);
-            }
-            (left, right)
+            let mut harness = Harness::new(32);
+            track_with_levain(&mut harness, LEVAIN_TRACK, LEVAIN_ID);
+            harness.playing();
+            harness.send(levain_control(CC_SUSTAIN_PEDAL, PEDAL_DOWN));
+            harness.send(GraphCommand::SendMidiNote(
+                LEVAIN_ID,
+                levain_hit(LEVAIN_SPEC_NOTE, 0, 0),
+            ));
+            render_master_at_callback_heads(
+                &mut harness,
+                CALLBACK,
+                CALLBACKS,
+                |callback, harness| {
+                    if callback == RELEASE_CALLBACK {
+                        harness.send(GraphCommand::SendMidiNote(
+                            LEVAIN_ID,
+                            levain_release(LEVAIN_SPEC_NOTE, 0, 0),
+                        ));
+                    }
+                    if stops && callback == EDGE_CALLBACK {
+                        harness.send(stop_transport());
+                    }
+                },
+            )
         }
 
         let (killed_left, killed_right) = render_levain_reference(RENDERED, |run, instance| {
