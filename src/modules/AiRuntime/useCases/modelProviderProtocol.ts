@@ -17,6 +17,7 @@ import {
     type ModelProviderSession,
     type ModelProviderUsage,
 } from '../models/ModelProviderProtocol';
+import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 
 import { remoteTransmissionDisclosure } from './discloseRemoteTransmission';
 
@@ -25,7 +26,6 @@ const MAX_MODEL_PROVIDER_REQUEST_BYTES = 1_024 * 1_024;
 const MAX_MODEL_PROVIDER_STREAM_BYTES = 1_024 * 1_024;
 const MAX_MODEL_PROVIDER_EVENTS = 4_096;
 const MAX_IGNORED_PROVIDER_EVENTS = 64;
-const MAX_PROVIDER_TOOL_CALLS = 64;
 const MAX_PROVIDER_ID_LENGTH = 256;
 
 function hasAdmissibleRemoteDataCategories(categories: unknown): categories is AgentDataCategory[] {
@@ -594,7 +594,7 @@ function createSession(input: {
                 !isValidIdentityPart(event.call.id) ||
                 !isValidIdentityPart(event.call.name) ||
                 toolCallIds.has(event.call.id) ||
-                toolCalls.length >= MAX_PROVIDER_TOOL_CALLS ||
+                toolCalls.length >= readAgentResourceLimits().maxProviderToolCalls ||
                 !matchesJsonSchema(event.call.arguments, advertisedTool.parameters)
             ) {
                 throw new TypeError('Provider stream tool arguments are incomplete or invalid.');

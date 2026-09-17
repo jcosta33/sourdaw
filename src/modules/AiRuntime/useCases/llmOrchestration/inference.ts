@@ -10,7 +10,6 @@ import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedEr
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../models/CreativeInterpretation';
-import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../models/HostedToolPlanLimits';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import {
@@ -32,6 +31,7 @@ import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProvid
 import { initWebLlmEngine } from '../../repositories/webLlm/initWebLlmEngine';
 import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
 import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
+import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
@@ -395,6 +395,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                               requestId,
                           })
                         : undefined;
+                const maxOutputTokens = readAgentResourceLimits().maxModelOutputTokens;
                 const compiledRequest = providerProtocol.compileRequest({
                     correlationId,
                     ...(streamIdentity ?? {}),
@@ -410,12 +411,12 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         parameters: tool.function.parameters,
                     })),
                     stream: false,
-                    limits: { maxOutputTokens: TOOL_PLAN_MAX_OUTPUT_TOKENS },
+                    limits: { maxOutputTokens },
                     controls: { cache: 'provider-default', reasoning: 'provider-default' },
                     budget: {
                         maxInputTokens: 32_768,
-                        maxOutputTokens: TOOL_PLAN_MAX_OUTPUT_TOKENS,
-                        maxTotalTokens: 32_768 + TOOL_PLAN_MAX_OUTPUT_TOKENS,
+                        maxOutputTokens,
+                        maxTotalTokens: 32_768 + maxOutputTokens,
                     },
                     dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
                     ...(remoteDisclosure === undefined

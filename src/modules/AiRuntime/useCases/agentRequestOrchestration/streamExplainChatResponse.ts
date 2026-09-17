@@ -29,6 +29,7 @@ import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProvid
 import { isCloudAvailable } from '../../repositories/cloudLlm/isCloudAvailable';
 import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
 import { getLlmEngine } from '../../repositories/webLlm/getLlmEngine';
+import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import {
     chatStore,
@@ -51,6 +52,11 @@ import { createModelProviderProtocol } from '../modelProviderProtocol';
 import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 
 import { AGENT_RUN_STALE_COMPLETION_WARNING, settleAgentRunWorkLeaseSafely } from './settleAgentRunWorkLeaseSafely';
+
+/** The explain route's own output ceiling; the configured model ceiling can only lower it. */
+const EXPLAIN_MAX_OUTPUT_TOKENS = 2_048;
+
+const EXPLAIN_MAX_INPUT_TOKENS = 32_768;
 
 type StreamExplainChatResponseInput = {
     userText: string;
@@ -206,6 +212,10 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
             provider: getModelProviderName(backend),
             model: getBackendModelId(backend),
         });
+        const explainMaxOutputTokens = Math.min(
+            EXPLAIN_MAX_OUTPUT_TOKENS,
+            readAgentResourceLimits().maxModelOutputTokens
+        );
         const compiledProviderRequest = providerProtocol.compileRequest({
             correlationId: providerReceiptIdentity,
             runId,
@@ -215,9 +225,13 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
             modality: 'text',
             messages: [{ role: 'system', content: agentContext.message }, ...conversationHistory],
             stream: true,
-            limits: { maxOutputTokens: 2_048 },
+            limits: { maxOutputTokens: explainMaxOutputTokens },
             controls: { cache: 'provider-default', reasoning: 'provider-default' },
-            budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
+            budget: {
+                maxInputTokens: EXPLAIN_MAX_INPUT_TOKENS,
+                maxOutputTokens: explainMaxOutputTokens,
+                maxTotalTokens: EXPLAIN_MAX_INPUT_TOKENS + explainMaxOutputTokens,
+            },
             dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
             ...(remoteDisclosure === undefined
                 ? {}

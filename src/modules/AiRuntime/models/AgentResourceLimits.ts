@@ -1,9 +1,18 @@
+import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from './HostedToolPlanLimits';
+
 /**
  * The hard resource ceilings one agent run may never cross. Every value is a positive integer.
  *
  * `requestChars`, `concurrentRuns` and `runDurationMs` are enforced by the run lifecycle itself:
- * the first two refuse creation, the third refuses further budget reservations. Every remaining
- * category arms the run's budgets at creation, where the reservation path already spends them.
+ * the first two refuse creation, the third refuses further budget reservations.
+ *
+ * `maxProviderToolCalls` and `maxModelOutputTokens` are enforced at the provider boundary, read
+ * from the configured limits on every request rather than armed on a run. Run creation therefore
+ * excludes them from the budgets it copies, exactly as it excludes the three lifecycle-enforced
+ * categories.
+ *
+ * Every remaining category arms the run's budgets at creation, where the reservation path already
+ * spends them.
  */
 export const AGENT_RESOURCE_LIMIT_CATEGORIES = [
     'requestChars',
@@ -21,6 +30,10 @@ export const AGENT_RESOURCE_LIMIT_CATEGORIES = [
     'localTextPlanningTokens',
     'downloadBytes',
     'storageBytes',
+    /** How many tool calls one provider stream may carry before the protocol refuses it. */
+    'maxProviderToolCalls',
+    /** The output token ceiling every compiled provider request carries. */
+    'maxModelOutputTokens',
 ] as const;
 
 export type AgentResourceLimitCategory = (typeof AGENT_RESOURCE_LIMIT_CATEGORIES)[number];
@@ -42,6 +55,8 @@ export const DEFAULT_AGENT_RESOURCE_LIMITS: AgentResourceLimits = {
     localTextPlanningTokens: 400_000,
     downloadBytes: 1024 * 1024 * 1024,
     storageBytes: 1024 * 1024 * 1024,
+    maxProviderToolCalls: 64,
+    maxModelOutputTokens: TOOL_PLAN_MAX_OUTPUT_TOKENS,
 };
 
 /** Why the lifecycle refused to create a run, named by the resource limit that refused it. */

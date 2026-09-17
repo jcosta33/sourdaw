@@ -4,7 +4,6 @@ import {
     type AgentResourceLimitCategory,
     type AgentResourceLimits,
     type AgentRunCreationRefusalReason,
-    DEFAULT_AGENT_RESOURCE_LIMITS,
 } from '../models/AgentResourceLimits';
 import {
     AGENT_RUN_ACTIVE_PHASES,
@@ -37,7 +36,7 @@ import {
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
 import { type AiBackendPreference } from '../models/LlmOrchestrationTypes';
-import { agentResourceLimitsStore } from '../stores/agentResourceLimitsStore';
+import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 import { persistAgentRunState, readAgentRunState, resetAgentRunState } from '../stores/agentRunStore';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
 
@@ -86,6 +85,12 @@ const LIFECYCLE_ENFORCED_LIMIT_CATEGORIES: ReadonlySet<string> = new Set<AgentRe
     'runDurationMs',
 ]);
 
+/** Limits the provider boundary reads on every request; a run's budgets never carry them either. */
+const PROVIDER_BOUNDARY_LIMIT_CATEGORIES: ReadonlySet<string> = new Set<AgentResourceLimitCategory>([
+    'maxProviderToolCalls',
+    'maxModelOutputTokens',
+]);
+
 /**
  * A run counts toward `concurrentRuns` only while it can still reserve work. Once its current active
  * stretch exceeds `runDurationMs`, `reserveAgentRunBudgetBatch` refuses every further reservation for
@@ -100,14 +105,10 @@ function isRunHoldingCapacity(run: AgentRun, now: number, limits: AgentResourceL
     );
 }
 
-function getConfiguredAgentResourceLimits(): AgentResourceLimits {
-    return agentResourceLimitsStore.value ?? DEFAULT_AGENT_RESOURCE_LIMITS;
-}
-
 function armConfiguredAgentRunBudgets(limits: AgentResourceLimits): AgentRunBudgets {
     const armed: Record<string, number> = {};
     for (const [category, limit] of Object.entries(limits)) {
-        if (!LIFECYCLE_ENFORCED_LIMIT_CATEGORIES.has(category)) {
+        if (!LIFECYCLE_ENFORCED_LIMIT_CATEGORIES.has(category) && !PROVIDER_BOUNDARY_LIMIT_CATEGORIES.has(category)) {
             armed[category] = limit;
         }
     }
@@ -353,7 +354,7 @@ function createAgentRun(input: CreateAgentRunInput): CreateAgentRunResult {
     if (state.runs.some((run) => run.runId === input.runId)) {
         throw new Error(`Agent run already exists: ${input.runId}`);
     }
-    const configuredLimits = getConfiguredAgentResourceLimits();
+    const configuredLimits = readAgentResourceLimits();
     const createdAt = input.createdAt ?? Date.now();
     if (input.request.length > configuredLimits.requestChars) {
         return { status: 'hard-limit-reached', reason: 'requestChars' };
@@ -627,7 +628,7 @@ function reserveAgentRunBudgetBatch(input: {
     // The wall-clock limit bounds the stretch a run is actually working, not the wall time since it
     // was created: a run parked for approval spends no machine resources, and its approval must still
     // be able to reserve the work it was parked for.
-    if (run.activeSince !== null && reservedAt - run.activeSince > getConfiguredAgentResourceLimits().runDurationMs) {
+    if (run.activeSince !== null && reservedAt - run.activeSince > readAgentResourceLimits().runDurationMs) {
         return { status: 'hard-limit-reached', reason: 'runDurationMs' };
     }
     const attemptIds = new Set<string>();

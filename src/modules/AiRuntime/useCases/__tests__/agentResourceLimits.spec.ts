@@ -5,7 +5,8 @@ import {
     DEFAULT_AGENT_RESOURCE_LIMITS,
     describeAgentRunHardLimit,
 } from '../../models/AgentResourceLimits';
-import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../models/HostedToolPlanLimits';
+import { agentResourceLimitsStore, readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentWorkBudget } from '../agentWorkBudget';
 import { configureAgentResourceLimits } from '../configureAgentResourceLimits';
@@ -37,6 +38,26 @@ describe('agent resource limits', () => {
         expect(agentResourceLimitsStore.value).toEqual(DEFAULT_AGENT_RESOURCE_LIMITS);
     });
 
+    it('carries the provider-boundary ceilings as configurable categories seeded from their defaults', () => {
+        expect(AGENT_RESOURCE_LIMIT_CATEGORIES).toContain('maxProviderToolCalls');
+        expect(AGENT_RESOURCE_LIMIT_CATEGORIES).toContain('maxModelOutputTokens');
+        expect(DEFAULT_AGENT_RESOURCE_LIMITS.maxProviderToolCalls).toBe(64);
+        expect(DEFAULT_AGENT_RESOURCE_LIMITS.maxModelOutputTokens).toBe(TOOL_PLAN_MAX_OUTPUT_TOKENS);
+
+        expect(configureAgentResourceLimits({ maxProviderToolCalls: 8 })).toMatchObject({ status: 'configured' });
+        expect(readAgentResourceLimits().maxProviderToolCalls).toBe(8);
+    });
+
+    it('refuses a provider loop ceiling that is not a positive integer', () => {
+        expect(configureAgentResourceLimits({ maxProviderToolCalls: 0 })).toEqual({
+            status: 'rejected',
+            reason: 'invalid-limit',
+            category: 'maxProviderToolCalls',
+        });
+
+        expect(readAgentResourceLimits()).toEqual(DEFAULT_AGENT_RESOURCE_LIMITS);
+    });
+
     it('writes a valid limit and leaves every other category standing', () => {
         expect(configureAgentResourceLimits({ maxCommands: 3 })).toMatchObject({ status: 'configured' });
 
@@ -66,10 +87,13 @@ describe('agent resource limits', () => {
         expect(agentResourceLimitsStore.value).toEqual(DEFAULT_AGENT_RESOURCE_LIMITS);
     });
 
-    it('arms a created run with the configured budget categories and no lifecycle-enforced ceiling', () => {
+    it('arms a created run with the configured budget categories and no lifecycle or provider ceiling', () => {
         createRun('armed-limits-run');
 
-        expect(agentRunLifecycle.get('armed-limits-run')?.budgets).toEqual({
+        const armed = agentRunLifecycle.get('armed-limits-run')?.budgets;
+        expect(armed?.limits).not.toHaveProperty('maxProviderToolCalls');
+        expect(armed?.limits).not.toHaveProperty('maxModelOutputTokens');
+        expect(armed).toEqual({
             limits: {
                 maxCommands: DEFAULT_AGENT_RESOURCE_LIMITS.maxCommands,
                 maxAutomationPoints: DEFAULT_AGENT_RESOURCE_LIMITS.maxAutomationPoints,
