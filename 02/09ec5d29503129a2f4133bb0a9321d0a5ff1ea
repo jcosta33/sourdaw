@@ -1,0 +1,122 @@
+crates/daw-engine/src/midi_fx.rs
+  s_9b530f08172a54::t_986bb94ba627a9 551-553
+  s_9b530f08172a54::t_257a1adf5f2ae4 400
+  s_9b530f08172a54::t_990925482cfe6d 666-669
+  s_9b530f08172a54::t_57525618954c67 383-385
+  s_9b530f08172a54::t_e450f702532be3 770
+  s_9b530f08172a54::t_61141b4ce75c15 17
+  s_9b530f08172a54::t_7f754a00468564 604
+src/modules/AudioEngine/useCases/livePlayback/readLiveMidiProgramme.ts
+  s_9b530f08172a54::t_2b55eb534b77d4 64-65
+  s_9b530f08172a54::t_208da83f45f96c 87
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/serializeAudioGraphCommandBatch.spec.ts
+  s_9b530f08172a54::t_60c74d30373c1e 460-485
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_73a069e3b1b0a2 5878-5879
+  s_9b530f08172a54::t_bd5fe6230a2b73 3923-3930,3941-3944
+  s_9b530f08172a54::t_4a215d00593808 1423-1426
+  s_9b530f08172a54::t_4f02917b66729f 12974
+  s_9b530f08172a54::t_02b82bd55236c2 1387-1389
+  s_9b530f08172a54::t_2d3ea1a4c89e91 25623-25652,25658,25664
+  s_9b530f08172a54::t_9deb2f69c099ff 4014-4020,4027-4038
+  s_9b530f08172a54::t_ce3751a69838d0 4047-4095
+  s_9b530f08172a54::t_ee3e834adee119 25673,25677-25683
+  s_9b530f08172a54::t_f11ea5dbe05a44 25697,25702-25710
+  s_9b530f08172a54::t_b11f06ea96016f 1385
+  s_9b530f08172a54::t_226349da9b5e91 25735-25758,25760-25761
+  s_9b530f08172a54::t_ad12f9ff04b625 25684,25929-26026
+  s_4a6e26b3cc33d4::t_8ccc8ccbac4cea 8809,9208,9816,9883,10564,11106,11244
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  s_9b530f08172a54::t_909ec51680381a 246
+  s_9b530f08172a54::t_e43021b7edc9de 98
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_9b530f08172a54::t_ef236e0969ecb0 104-129
+  s_9b530f08172a54::t_7f10a8e987e756 351-355,357,360,363
+  s_9b530f08172a54::t_915fa139728d6e 7
+  s_9b530f08172a54::t_90631c481440c5 48-56
+crates/sourdaw-native/src/host/native_bridge.rs
+  s_9b530f08172a54::t_7a234cb48c6791 2859
+  s_9b530f08172a54::t_5ac28255d09f57 101
+src/modules/Levain/useCases/levainParamBridge/levainBridgeDependencies.ts
+  s_9b530f08172a54::t_d92cb359d6d8ec 21
+  s_9b530f08172a54::t_f98c72699575fe 7
+crates/sourdaw-native/src/commands/graph.rs
+  s_9b530f08172a54::t_69fde39b6f9e45 9641-9684
+  s_9b530f08172a54::t_056e572b269b0a 736-742
+  s_9b530f08172a54::t_75ab57bf083990 1978
+  s_914af328b3988f::t_cb432da8c4c186 3623
+src/modules/AudioEngine/useCases/livePlayback/projectLiveMidiProgramme.ts
+  s_9b530f08172a54::t_6dc616682eb27a 234-237,243
+  s_9b530f08172a54::t_74c184c67b491b 339
+  s_9b530f08172a54::t_939d813a5c46ef 188-195,197-202,208-209
+  s_9b530f08172a54::t_aedee9f578fe50 60
+  s_9b530f08172a54::t_84f090f2492363 196,203-207
+  s_9b530f08172a54::t_a024244b3fd26d 279-285
+  s_9b530f08172a54::t_896c50af4e44f0 406-408
+  s_9b530f08172a54::t_e55044defb8970 124-137,148-149
+  s_9b530f08172a54::t_56b6e881985608 265,272-273
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_9b530f08172a54::t_76f830f0ba747e 26
+  s_9b530f08172a54::t_2dc6dcfcbf2168 509,524-533
+src/modules/Levain/useCases/__tests__/levainInstrumentPersistenceRoundTrip.spec.ts
+  s_9b530f08172a54::t_b045af4164c7c4 208
+  s_9b530f08172a54::t_528d291ac2a987 309
+crates/daw-engine/src/plugin_slot.rs
+  s_9b530f08172a54::t_2a79a683043b83 28-34
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  s_9b530f08172a54::t_7758f767632d93 514-542
+src/modules/Levain/useCases/__tests__/levainParamBridge.spec.ts
+  s_9b530f08172a54::t_51250d22b99be4 30
+src/modules/Levain/presentations/views/__tests__/levainPanelReachesTheEngine.spec.tsx
+  s_9b530f08172a54::t_104b011151d508 161,219
+  s_9b530f08172a54::t_ec064152161b07 41
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_9b530f08172a54::t_bc6a0208ece518 602-611
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiCC.ts
+  s_9b530f08172a54::t_f0a6a689a30339 131-143
+crates/daw-engine/src/midi/rt_contract.rs
+  s_9b530f08172a54::t_a53d6837e46e6e 82
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveMidiProgramme.spec.ts
+  s_9b530f08172a54::t_c0a0b714457ee5 167-177
+  s_9b530f08172a54::t_5341b2e71ce6d5 23
+  s_9b530f08172a54::t_d72d19027223d4 156
+  s_9b530f08172a54::t_3a03b3ae294393 200-267
+crates/daw-engine/src/audio_thread.rs
+  s_9b530f08172a54::t_0665d6b385cecf 4296
+crates/daw-engine/src/midi/note_store.rs
+  s_9b530f08172a54::t_bde93fb20dc773 287
+crates/sourdaw-native/src/commands/plugins.rs
+  s_9b530f08172a54::t_a1354cd22b1021 2805
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0209ec5d29503129a2f4133bb0a9321d0a5ff1ea",
+  "prompts": {},
+  "sessions": {
+    "s_4a6e26b3cc33d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a77a3e7797c0b0ab8",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
