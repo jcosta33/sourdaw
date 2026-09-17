@@ -1,0 +1,79 @@
+src/modules/AiRuntime/models/HostedToolPlanLimits.ts
+  s_914af328b3988f::t_9c8303d5e039f8 8-13
+src/modules/AiRuntime/useCases/__tests__/agentResourceLimits.spec.ts
+  s_914af328b3988f::t_12ad0b45feff23 90,93-96
+  s_914af328b3988f::t_88910be9e8a24c 8-9
+  s_914af328b3988f::t_4db7056fab5efe 41-60
+src/modules/AiRuntime/useCases/mixHealthAnalysis.ts
+  s_914af328b3988f::t_c249c140f30093 117
+  s_914af328b3988f::t_749e9b24f7b75f 23-25
+  s_914af328b3988f::t_7820019f9a5494 4-5
+src/modules/AiRuntime/stores/agentResourceLimitsStore.ts
+  s_914af328b3988f::t_65a59fbdc86898 8-12
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_914af328b3988f::t_536871afddd149 88-93
+  s_914af328b3988f::t_66b79736bc7dca 111
+  s_40469bb3f1b111::t_f66846fb2bef7f 39,357,631
+src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts
+  s_914af328b3988f::t_5d2a3c089257b7 215-218
+  s_914af328b3988f::t_df51455da23f5c 228,230-234
+  s_914af328b3988f::t_9107cbc26e40f9 32
+  s_914af328b3988f::t_1556ba24e6065d 56-60
+src/modules/AiRuntime/AGENTS.md
+  s_914af328b3988f::t_0dcba40fc84459 32
+src/modules/AiRuntime/useCases/__tests__/mixHealthAnalysis.spec.ts
+  s_914af328b3988f::t_1f5b15af187e68 17
+  s_914af328b3988f::t_87a805face9bf1 1,3,5-6
+  s_914af328b3988f::t_77a7b6b33bbb4a 87-90
+  s_914af328b3988f::t_73989fd4936acc 208-221
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/streamExplainChatResponse.spec.ts
+  s_914af328b3988f::t_f3697e12b4196a 1-3,6-19,21-126,128-160
+  s_914af328b3988f::t_9237264991683f 20
+  s_914af328b3988f::t_dd54725adb7f80 127
+  s_914af328b3988f::t_edeb79d4b826cf 5
+  s_914af328b3988f::t_8fa3028e76f22a 4
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts
+  s_914af328b3988f::t_abe1088ff956f2 347-379
+  s_914af328b3988f::t_cee4cb70525dea 103-106
+  s_914af328b3988f::t_b447d5957f855f 1,4,11-12
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_914af328b3988f::t_08cd14268d2e26 14-15
+  s_914af328b3988f::t_8677886fc790a7 223-258
+  s_914af328b3988f::t_6b069f620f51bd 1,5
+  s_914af328b3988f::t_7bc49a7a67fee5 159-162
+src/modules/AiRuntime/models/AgentResourceLimits.ts
+  s_914af328b3988f::t_86add3184e5e2b 1-2,7-15
+  s_914af328b3988f::t_040a5112749662 33-36
+  s_914af328b3988f::t_32f10da703b398 58-59
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_914af328b3988f::t_88373de945b9d0 34
+  s_914af328b3988f::t_4052e5b9448af0 398
+  s_914af328b3988f::t_35a9205a9c1983 414,418-419
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  s_914af328b3988f::t_880fb89108ac5d 20
+  s_914af328b3988f::t_42c064c396703b 597
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "362f86268a81758acab57ad17b4dfdc483f7c20d",
+  "prompts": {},
+  "sessions": {
+    "s_40469bb3f1b111": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a31e3569290c246c7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
