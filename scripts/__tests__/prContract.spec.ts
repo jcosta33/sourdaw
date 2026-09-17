@@ -129,6 +129,27 @@ describe('pull-request contract', () => {
         );
     });
 
+    it('reads the pre-rename Related tickets heading exactly once, for recomposition', () => {
+        const legacy = '### 📌 Related tickets & additional notes\n';
+        expect(issueRelationshipFromBody(`${legacy}Closes #2164`, 2164)).toBe('closes');
+        expect(issueRelationshipFromBody(`${legacy}None.`, undefined)).toBeUndefined();
+        expect(canonicalIssueReferenceFromBody(`${legacy}Closes #2164`, 'jcosta33/sourdaw')?.issue).toBe(2164);
+        expect(() => issueRelationshipFromBody(`${legacy}Closes #2164\n${legacy}Related #2164`, 2164)).toThrow(
+            /exactly one Related issues section/
+        );
+        expect(() =>
+            issueRelationshipFromBody(`${legacy}Closes #2164\n### 📌 Related issues & additional notes\nNone.`, 2164)
+        ).toThrow(/exactly one Related issues section/);
+        // Reading tolerates the legacy spelling; the merge gate never does.
+        expect(() =>
+            assertPullRequestBody(
+                '### 🎯 What does this PR do?\nsummary\n### 🧪 How to test\nsteps\n### 🖼️ Screenshots\nNone.\n' +
+                    `${legacy}None.`,
+                'body'
+            )
+        ).toThrow(/is missing: .*Related issues/);
+    });
+
     it('tolerates extra Related lines for other issues once exactly one line names the lane issue', () => {
         const prefix = '### 📌 Related issues & additional notes\n';
         expect(issueRelationshipFromBody(`${prefix}Closes #2857\nRelated #2854\nRelated #2856`, 2857)).toBe('closes');
