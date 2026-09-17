@@ -1,0 +1,25 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_9b530f08172a54::t_aafeb8bbef7d4c 1,28-35,138-143,176,619-630,873,887-927,929-946,950-964,969,981,1042-1055
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_9b530f08172a54::t_1d584c7452adca 1,5-45,47-64,68-82,87,99,160-173
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_9b530f08172a54::t_afcbb96bf668bf 1,28-35,138-143,176,619-630,873,887-927,929-946,950-964,969,981,1042-1055
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_9b530f08172a54::t_03d8e7bc67d834 222-231,413-422,486,1535-1553,2179-2180,2183,2190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dc866c072a1c97dccc4d3243e8ef74bdd4564725",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
