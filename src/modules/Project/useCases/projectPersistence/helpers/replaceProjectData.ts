@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import {
     clearRuntimeCachedAudioBuffers,
+    forgetProjectLatchedPedals,
     getAudioContext,
     importCachedAudioBuffers,
     prepareCachedAudioBuffersFromIdb,
@@ -265,6 +266,9 @@ export async function replaceProjectData({
         resetCrdtProjectAuthority(data.meta.name, () => {
             authorityReplaced = true;
         });
+        // Point of no return: the loaded project now owns the document, so the
+        // pedals latched under the old one can never be replayed back into it.
+        forgetProjectLatchedPedals();
         projectActionHistoryToStore();
     } catch (error) {
         logPreparationFailure(context, error);

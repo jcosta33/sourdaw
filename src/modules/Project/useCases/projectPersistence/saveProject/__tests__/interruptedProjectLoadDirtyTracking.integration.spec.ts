@@ -103,6 +103,7 @@ vi.mock('#/infra/store/createStore', async (importOriginal) => {
 });
 // Four hoisted bindings stay live; newly listed names are unread graph-coverage stubs.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    forgetProjectLatchedPedals: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
 
     startFaustNote: vi.fn(),
@@ -165,6 +166,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({

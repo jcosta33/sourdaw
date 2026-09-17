@@ -108,6 +108,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxParam: vi.fn(),
     updateNativeLiveGraphSessionTransportMaps: vi.fn(),
     wireSidechainRoute: vi.fn(),
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 

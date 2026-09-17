@@ -471,11 +471,11 @@ describe('executeCommittedSectionRenderRetry', () => {
 
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
             status: 'failed',
-            reason: 'The missing section renders exceed the user budget for maxRenderJobs.',
+            reason: 'The missing section render retry exceeds the user budget for maxRenderJobs.',
         });
         expect(mocks.updateFollowUp).toHaveBeenCalledWith({
             confirmationId: 'confirmation-retry',
-            error: 'The missing section renders exceed the user budget for maxRenderJobs.',
+            error: 'The missing section render retry exceeds the user budget for maxRenderJobs.',
             status: 'retryable',
         });
         expect(mocks.retryRenders).not.toHaveBeenCalled();
@@ -564,7 +564,7 @@ describe('executeCommittedSectionRenderRetry', () => {
 
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
             status: 'failed',
-            reason: 'The missing section renders exceed the user budget for maxRenderJobs.',
+            reason: 'The missing section render retry exceeds the user budget for maxRenderJobs.',
         });
         expect(mocks.retryRenders).toHaveBeenCalledOnce();
     });

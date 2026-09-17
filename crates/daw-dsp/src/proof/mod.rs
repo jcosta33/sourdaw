@@ -23,6 +23,7 @@ pub mod true_peak;
 
 use crate::primitives::sanitize_block;
 use chain::ProofChain;
+use metering::SILENCE_DB;
 use wasm_bindgen::prelude::*;
 
 /// Bring a wire parameter value into `[min, max]`, answering `fallback` when it
@@ -174,13 +175,13 @@ impl ProofInstance {
         self.chain
             .get_tap(tap_idx as usize)
             .map(|t| t.peak_db_l())
-            .unwrap_or(-100.0)
+            .unwrap_or(SILENCE_DB)
     }
     pub fn get_tap_peak_r(&self, tap_idx: u32) -> f32 {
         self.chain
             .get_tap(tap_idx as usize)
             .map(|t| t.peak_db_r())
-            .unwrap_or(-100.0)
+            .unwrap_or(SILENCE_DB)
     }
 
     pub fn get_module_order(&self) -> Vec<u8> {

@@ -19,6 +19,7 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
+import { DEFAULT_TEMPO_BPM } from '../../stores/transportStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 
 import { recordingLifecycle } from './recordingLifecycle';
@@ -79,7 +80,7 @@ async function beginActualRecording(
                 cacheAudioBuffer({ buffer, bufferId });
 
                 const transport = getTransportState();
-                const defaultTempo = transport?.tempo ?? 120;
+                const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
                 const tempoChanges = tempoMapStore.value?.changes ?? [];
                 // The capture is open before the transport is asked to roll, and
                 // on a desktop build the roll waits for the native session, so

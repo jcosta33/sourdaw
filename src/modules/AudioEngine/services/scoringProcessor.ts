@@ -19,9 +19,17 @@ import { initSync, ScoringInstance } from '../wasm/scoring.js';
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 
+/**
+ * Port message discriminant, restated from the app-side owner
+ * `src/infra/audioWorklet/workletPortMessages.ts` because this processor runs
+ * in the isolated worklet realm and must not import app-side code; pinned
+ * equal by `__tests__/workletPortMessageParity.spec.ts`.
+ */
+export const INIT_SAB_MESSAGE_TYPE = 'init-sab';
+
 type ScoringMsg =
     | { type: 'init' }
-    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
+    | { type: typeof INIT_SAB_MESSAGE_TYPE; sab: SharedArrayBuffer; byteOffset: number }
     | { type: 'param'; name: string; value: number }
     | { type: 'bypass'; bypassed: boolean }
     | { type: 'import-scala'; id: string; text: string }
@@ -88,7 +96,7 @@ class ScoringProcessor extends AudioWorkletProcessor {
                     }
                     this._initWasm(wasmModule);
                     wasmModule = null;
-                } else if (msg.type === 'init-sab') {
+                } else if (msg.type === INIT_SAB_MESSAGE_TYPE) {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                     this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
                 } else if (msg.type === 'bypass') {

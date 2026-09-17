@@ -14,7 +14,7 @@ import {
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
-import { composeReviewCommentBody, fail } from './prContract.ts';
+import { composeReviewCommentBody, fail, PR_STATE } from './prContract.ts';
 import { reviewBundlePath, type ReviewBundleContext } from './prepareReview.ts';
 import {
     type PullRequestRemoteMutationBoundary,
@@ -208,7 +208,7 @@ function publishPreparedReviewForActor(
     boundary?: PullRequestReviewPublicationMutationBoundary
 ): number {
     const pullRequest = port.pullRequest(number);
-    if (pullRequest.state !== 'OPEN') {
+    if (pullRequest.state !== PR_STATE.OPEN) {
         fail(`pull request is ${pullRequest.state}; refusing to post a review`);
     }
     if (pullRequest.head !== prepared.head) {

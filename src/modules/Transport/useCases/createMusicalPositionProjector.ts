@@ -2,13 +2,13 @@ import { getTempoAtBeat } from '../models/TempoMap';
 import { getBarBeatAtPosition, getTimeSignatureAtBeat } from '../models/TimeSignatureMap';
 import { tempoMapStore } from '../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../stores/timeSignatureMapStore';
-import { transportStore } from '../stores/transportStore';
+import { DEFAULT_TEMPO_BPM, transportStore } from '../stores/transportStore';
 
 export function createMusicalPositionProjector() {
     const transport = structuredClone(transportStore.value);
     const tempoChanges = structuredClone(tempoMapStore.value?.changes ?? []);
     const timeSignatureChanges = structuredClone(timeSignatureMapStore.value?.changes ?? []);
-    const defaultTempo = transport?.tempo ?? 120;
+    const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
     const defaultNumerator = transport?.timeSignatureNumerator ?? 4;
     const defaultDenominator = transport?.timeSignatureDenominator ?? 4;
     const loopStartPpq = transport?.loopStart ?? 0;

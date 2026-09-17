@@ -30,8 +30,6 @@ vi.mock('../../stores/transportStore', async (importOriginal) => {
 });
 
 vi.mock('../../stores/tempoMapStore', () => ({
-    MIN_TEMPO_MAP_TEMPO: 20,
-    MAX_TEMPO_MAP_TEMPO: 999,
     tempoMapStore: {
         get value() {
             return tempoMapRef.value;

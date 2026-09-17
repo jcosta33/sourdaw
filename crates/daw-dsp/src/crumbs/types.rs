@@ -1,4 +1,5 @@
 /// Core types and constants for the Unified Crumbs Suite.
+use crate::params::{ATTACK, DECAY, RELEASE, TUNE};
 
 // ── DSP Constants ──────────────────────────────────────────────────────
 
@@ -333,11 +334,11 @@ pub enum CrumbsParam {
 pub fn parse_crumbs_param(name: &str) -> Option<CrumbsParam> {
     match name {
         "masterGain" => Some(CrumbsParam::MasterGain),
-        "attack" => Some(CrumbsParam::Attack),
+        ATTACK => Some(CrumbsParam::Attack),
         "hold" => Some(CrumbsParam::Hold),
-        "decay" => Some(CrumbsParam::Decay),
+        DECAY => Some(CrumbsParam::Decay),
         "sustain" => Some(CrumbsParam::Sustain),
-        "release" => Some(CrumbsParam::Release),
+        RELEASE => Some(CrumbsParam::Release),
         "filterCutoff" => Some(CrumbsParam::FilterCutoff),
         "filterResonance" => Some(CrumbsParam::FilterResonance),
         "filterType" => Some(CrumbsParam::FilterType),
@@ -347,7 +348,7 @@ pub fn parse_crumbs_param(name: &str) -> Option<CrumbsParam> {
         "loopCrossfade" => Some(CrumbsParam::LoopCrossfade),
         "playbackMode" => Some(CrumbsParam::PlaybackMode),
         "rootNote" => Some(CrumbsParam::RootNote),
-        "tune" => Some(CrumbsParam::Tune),
+        TUNE => Some(CrumbsParam::Tune),
         "pan" => Some(CrumbsParam::Pan),
         "stackCount" => Some(CrumbsParam::StackCount),
         "detuneSpread" => Some(CrumbsParam::DetuneSpread),

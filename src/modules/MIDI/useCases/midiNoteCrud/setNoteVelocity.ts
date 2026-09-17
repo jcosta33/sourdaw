@@ -1,3 +1,5 @@
+import { clampVelocity } from '#/utils/midiData';
+
 import { updateNotesForClip } from './updateNotesForClip';
 
 export function setNoteVelocity(clipId: string, noteId: string, velocity: number): void {
@@ -6,7 +8,7 @@ export function setNoteVelocity(clipId: string, noteId: string, velocity: number
     // whole step. A velocity of 0 is a silent note (effectively a note-off);
     // enforcing the velocity >= 1 invariant here keeps this in step with
     // addMidiNote/batchAddMidiNotes/duplicateClipNotes/stampChord.
-    const clamped = Math.round(Math.max(1, Math.min(127, velocity)));
+    const clamped = Math.round(clampVelocity(velocity));
     updateNotesForClip(clipId, (notes) =>
         notes.map((node) => (node.id === noteId ? { ...node, velocity: clamped } : node))
     );

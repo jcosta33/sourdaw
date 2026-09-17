@@ -6,7 +6,8 @@ const transportState: { value: Record<string, unknown> | null } = { value: null 
 const tempoMapState: { value: { changes: unknown[] } | null } = { value: null };
 const timeSigState: { value: { changes: unknown[] } | null } = { value: null };
 
-vi.mock('../../stores/transportStore', () => ({
+vi.mock('../../stores/transportStore', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../stores/transportStore')>()),
     transportStore: {
         get value() {
             return transportState.value;

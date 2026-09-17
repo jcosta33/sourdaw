@@ -48,6 +48,7 @@
 //! exceed the target either. The applied gain therefore satisfies
 //! `g[n] <= ceiling / peak(x[n - D])` at every step.
 
+use crate::proof::limiter::GAIN_AVERAGE_MS;
 use crate::proof::true_peak::TruePeakUpsampler;
 
 /// Group delay of the BS.1770-4 4x reconstruction, in base-rate samples.
@@ -160,10 +161,6 @@ fn fast_release_ms(nominal_ms: f32) -> f32 {
 /// its own average every cycle; those dips are shallow where an isolated
 /// transient's are deep.
 const TRANSIENT_DEADBAND: f32 = 0.05;
-
-/// Time constant of the running gain average that separates "isolated
-/// transient" from "sustained limiting".
-const GAIN_AVERAGE_MS: f32 = 250.0;
 
 /// Per-channel gain state.
 #[derive(Clone, Copy)]

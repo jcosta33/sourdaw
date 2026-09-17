@@ -1,6 +1,8 @@
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases';
 
+import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
+
 import { streamHostedModelText } from './streamHostedModelText';
 
 /**
@@ -17,6 +19,9 @@ type MixHealthAnalysisInput = {
 };
 
 const MIX_DATA_TAG = 'mix_data';
+
+/** The mix report's own output ceiling; the configured model ceiling can only lower it. */
+const MIX_HEALTH_MAX_OUTPUT_TOKENS = 1_000;
 
 /**
  * Track names and kinds are user- and peer-supplied (DAWproject import,
@@ -109,7 +114,7 @@ Keep your response concise. Do not mention the raw numbers heavily unless necess
             { role: 'system', content: systemPrompt },
             { role: 'user', content: buildMixDataEnvelope(tracks) },
         ],
-        maxOutputTokens: 1_000,
+        maxOutputTokens: Math.min(MIX_HEALTH_MAX_OUTPUT_TOKENS, readAgentResourceLimits().maxModelOutputTokens),
         onToken,
         signal,
     });

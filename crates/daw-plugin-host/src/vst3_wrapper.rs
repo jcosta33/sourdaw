@@ -50,8 +50,9 @@ use vst3::{Class, ComPtr, ComRef, ComWrapper, Interface};
 pub use crate::vst3_class_id::{format_class_id, parse_class_id};
 
 /// Largest block this host hands a plugin, and the `maxSamplesPerBlock` every
-/// instance is set up with.
-const MAX_BUFFER: usize = 4096;
+/// instance is set up with. One figure for both wrapper formats, owned by the
+/// CLAP wrapper's declaration.
+use crate::clap_wrapper::MAX_BUFFER;
 /// Channels the seam carries, and therefore the scratch a main bus is mapped
 /// onto. The negotiated bus layout decides how many of them a given plugin
 /// actually reads or writes.

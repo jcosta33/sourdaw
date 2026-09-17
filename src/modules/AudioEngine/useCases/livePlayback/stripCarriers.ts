@@ -40,6 +40,7 @@ import { type AudioGraphDeviceChain } from '../../models/AudioGraphBackend';
 import { resolveOutputTarget } from '../offlineRender/resolveOutputTarget';
 
 import { admittedSendBusIds } from './admittedSendBusIds';
+import { isCrumbsChainDevice } from './isCrumbsChainDevice';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { nativeBuiltinBody } from './nativeBuiltinBodies';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
@@ -54,7 +55,7 @@ export type StripCarrier = Readonly<{ carrier: 'native' }> | Readonly<{ carrier:
 export type StripCarriersInput = Readonly<{
     /** Every track and bus the live engine builds a strip for, in project order. */
     stripTracks: readonly Track[];
-    /** The external plugin instances the native engine currently owns. */
+    /** The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}. */
     attachedInstanceIds: ReadonlySet<string>;
     /** What each strip plays, from {@link projectLiveGraphProgramme}. */
     programme: LiveGraphProgramme;
@@ -76,6 +77,13 @@ export type StripCarriersInput = Readonly<{
  * native side already holds, so such a device has a body exactly when the
  * engine reports the instance attached — which is why the attach state is an
  * input rather than a rule.
+ *
+ * Crumbs is answered the same way and for the same reason (#4204). It is a
+ * built-in the engine does not *build*: `commands::crumbs` owns one instance per
+ * device and `map_device` splices it in exactly as it splices a hosted plugin,
+ * refusing the device by name when it holds none. So its body is the attach
+ * state too — under the device's own id, which is the id the renderer created
+ * the instance with.
  */
 function hasNativeBody(device: AudioGraphDeviceChain[number], attachedInstanceIds: ReadonlySet<string>): boolean {
     const externalInstanceId = device.externalInstanceId;
@@ -86,6 +94,9 @@ function hasNativeBody(device: AudioGraphDeviceChain[number], attachedInstanceId
     // the engine could be holding, so no attach state can answer for it.
     if (device.externalPluginId !== undefined) {
         return false;
+    }
+    if (isCrumbsChainDevice(device.type)) {
+        return attachedInstanceIds.has(device.id);
     }
     return nativeBuiltinBody(device.type) !== null;
 }
@@ -102,15 +113,30 @@ type CarrierContext = Readonly<{
     programme: LiveGraphProgramme;
 }>;
 
-/** How a device that stops a route is named to the musician. */
+/**
+ * How a device that stops a route is named to the musician.
+ *
+ * A Crumbs device gets its own wording rather than the device-type fallback,
+ * because "device builtin-crumbs has no native body" would be untrue in the only
+ * way that matters here: the engine has a body for it, this session just is not
+ * holding that instance yet.
+ */
 function deviceLabel(device: AudioGraphDeviceChain[number]): string {
-    return isHostedPluginDevice(device) ? `plugin "${device.name}", not attached to the engine` : device.type;
+    if (isHostedPluginDevice(device)) {
+        return `plugin "${device.name}", not attached to the engine`;
+    }
+    return isCrumbsChainDevice(device.type)
+        ? `Crumbs sampler "${device.name}", not attached to the engine`
+        : device.type;
 }
 
 /** Why a device on this strip's own chain has no native body. */
 function chainReason(device: AudioGraphDeviceChain[number]): string {
-    return isHostedPluginDevice(device)
-        ? `plugin "${device.name}" is not attached to the engine`
+    if (isHostedPluginDevice(device)) {
+        return `plugin "${device.name}" is not attached to the engine`;
+    }
+    return isCrumbsChainDevice(device.type)
+        ? `Crumbs sampler "${device.name}" is not attached to the engine`
         : `device ${device.type} has no native body`;
 }
 

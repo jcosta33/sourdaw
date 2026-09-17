@@ -10,6 +10,7 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 import { Row, Stack } from '#/components/layout';
+import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
 import { FILTER_MODE_NAMES, FILTER_MODEL_NAMES } from '../../models/FermenterPatch';
 
@@ -133,8 +134,8 @@ export const FilterSection = ({
                         paramId="filterCutoff"
                         value={cutoff}
                         onChange={onCutoffChange}
-                        min={20}
-                        max={20000}
+                        min={MIN_AUDIBLE_FREQ_HZ}
+                        max={MAX_AUDIBLE_FREQ_HZ}
                         step={10}
                         defaultValue={5000}
                         scale="log"

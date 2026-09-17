@@ -2,7 +2,7 @@ import { createHandler } from '#/utils/createHandler';
 
 import { type Clip } from '../../models/Track';
 import { consumedStretchFactor } from '../../useCases/clipEditing/consumedStretchFactor';
-import { crossfadeClips } from '../../useCases/clipEditing/crossfadeClips';
+import { crossfadeClips, DEFAULT_CROSSFADE_BEATS } from '../../useCases/clipEditing/crossfadeClips';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
@@ -122,7 +122,7 @@ export const handleCrossfadeClips = createHandler<'crossfadeClips'>({
         const clips = getTrackStoreState()?.tracks.flatMap((track) => track.clips) ?? [];
         const clipA = clips.find((clip) => clip.id === action.payload.clipAId);
         const clipB = clips.find((clip) => clip.id === action.payload.clipBId);
-        const durationBeats = action.payload.durationBeats ?? 0.5;
+        const durationBeats = action.payload.durationBeats ?? DEFAULT_CROSSFADE_BEATS;
         if (!clipA || !clipB || clipA.id === clipB.id || !Number.isFinite(durationBeats) || durationBeats < 0) {
             return { label: 'Crossfade clips', inverseAction: null };
         }

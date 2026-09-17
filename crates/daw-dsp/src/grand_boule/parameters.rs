@@ -16,7 +16,17 @@ pub const MIDI_C8: u8 = 108;
 pub const NUM_KEYS: usize = 88;
 
 /// Reference tuning frequency for A4 (MIDI 69, key 49).
+///
+/// 12-TET anchor, restated per the TS↔Rust lockstep rule (daw-dsp has no edge
+/// to the owners): `daw_core::tuning::STANDARD_A4_HZ`/`A4_MIDI_NOTE`/
+/// `SEMITONES_PER_OCTAVE` own the Rust figures and `src/utils/pitch.ts` owns
+/// the TypeScript ones; every copy must stay equal.
 pub const A4_HZ: f32 = 440.0;
+
+/// MIDI note number of concert A on the 12-TET grid `A4_HZ` anchors.
+const A4_MIDI_NOTE: f32 = 69.0;
+/// Semitones per octave in twelve-tone equal temperament.
+const SEMITONES_PER_OCTAVE: f32 = 12.0;
 
 /// Historical temperament index. Used to select a tuning system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,8 +97,8 @@ pub fn midi_to_key(midi_note: u8) -> Option<u32> {
 
 /// Twelve-tone equal-tempered frequency for a MIDI note (no Railsback applied).
 pub fn midi_to_hz_equal_tempered(midi_note: u8) -> f32 {
-    let semitones = midi_note as f32 - 69.0;
-    A4_HZ * (2.0_f32).powf(semitones / 12.0)
+    let semitones = midi_note as f32 - A4_MIDI_NOTE;
+    A4_HZ * (2.0_f32).powf(semitones / SEMITONES_PER_OCTAVE)
 }
 
 /// Project-authored hammer-stiffness curve. It rises non-linearly through the

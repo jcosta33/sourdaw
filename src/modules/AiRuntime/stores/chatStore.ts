@@ -1,5 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 
+import { AGENT_CHAT_RETENTION_POLICY } from '../models/AgentRetentionPolicy';
 import { type ChatMessage, type ChatState } from '../models/Chat';
 
 let activeAborter: AbortController | null = null;
@@ -16,7 +17,7 @@ export const chatStore = createStore<ChatState>({
 });
 
 /**
- * Appends a new message to the chat history array.
+ * Appends a new message to the chat history array, keeping the newest the policy retains.
  */
 export function appendChatMessage(message: ChatMessage): void {
     const currentState = chatStore.value;
@@ -26,7 +27,7 @@ export function appendChatMessage(message: ChatMessage): void {
 
     chatStore.set({
         ...currentState,
-        messages: [...currentState.messages, message],
+        messages: [...currentState.messages, message].slice(-AGENT_CHAT_RETENTION_POLICY.maxCount),
     });
 }
 

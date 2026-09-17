@@ -5,7 +5,7 @@ Local and native sample collection indexing, folder tree hierarchies, sample met
 ## Public Contract Surface
 
 - `stores`: `libraryStore` (`LibraryState`), `embeddingStore`.
-- `useCases`: `buildFolderTree`, `requestPermission`, `readNativeLibrarySampleFile`, `resolveDroppedSampleFile`, `restoreLibrary`, `searchSamples`, `findSimilarSamples`, `projectSpatialMap`, `seedFactoryLibrary`.
+- `useCases`: `buildFolderTree`, `requestPermission`, `readNativeLibrarySampleFile`, `resolveDroppedSampleFile`, `restoreLibrary`, `searchSamples`, `findSimilarSamples`, `searchAgentCatalog`, `projectSpatialMap`, `seedFactoryLibrary`.
 - `presentations/views`: `LibraryBrowser`, `SpatialMapRenderer`.
 
 ## Key Subsystems
@@ -13,6 +13,7 @@ Local and native sample collection indexing, folder tree hierarchies, sample met
 - **Sample Database & Persistence**: IndexedDB persistence for library root directories, sample file paths, and metadata (`stores/libraryStore.ts`, `repositories/libraryPersistence/`).
 - **Native & Browser Filesystem Access**: `repositories/` (`readNativeDirectory.ts`, `readNativeAudioFileBytes.ts`, `pickNativeSampleFolder.ts`, `readBrowserLibrarySampleFile.ts`) provide dual-runtime directory scanning.
 - **Similarity & Spatial Projection**: `useCases/findSimilarSamples.ts`, `useCases/projectSpatialMap.ts`, and `stores/embeddingStore.ts` compute audio similarity distances and project multidimensional embeddings into 2D coordinates.
+- **Agent Catalog Search**: `useCases/searchAgentCatalog.ts` answers an agent's query only with entries built from indexed records already in `libraryStore`, each carrying the provenance and licensing derived from its library root, so an agent can never supply or invent a catalog entry.
 
 ## Invariants & Traps
 

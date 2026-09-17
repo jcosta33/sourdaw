@@ -13,7 +13,7 @@ import {
     removalLockPid,
     resolvePrimaryRoot,
 } from './githubAppIdentity.ts';
-import { supersessionReplacement } from './prContract.ts';
+import { PR_STATE, supersessionReplacement } from './prContract.ts';
 import { clearGuardFailureReceipt } from './resourceGuard.ts';
 
 export type Worktree = {
@@ -302,7 +302,7 @@ function supersededReplacement(number: number, port: LaneRemovalPort): number {
         fail(`PR #${number} names itself as its replacement`);
     }
     const landed = port.replacement(replacement);
-    if (landed.number !== replacement || landed.state !== 'MERGED' || landed.mergedAt === null) {
+    if (landed.number !== replacement || landed.state !== PR_STATE.MERGED || landed.mergedAt === null) {
         fail(`PR #${number} was superseded by #${replacement}, which is not merged`);
     }
     return replacement;
@@ -372,10 +372,10 @@ function validateOwnership(
         if (pullRequest.headRepository?.toLowerCase() !== repository.toLowerCase()) {
             fail(`PR #${pullRequest.number} is foreign`);
         }
-        const merged = pullRequest.state === 'MERGED' && pullRequest.mergedAt !== null;
+        const merged = pullRequest.state === PR_STATE.MERGED && pullRequest.mergedAt !== null;
         if (!merged) {
             fail(
-                pullRequest.state === 'OPEN'
+                pullRequest.state === PR_STATE.OPEN
                     ? `PR #${pullRequest.number} is still active`
                     : `PR #${pullRequest.number} is not merged`
             );
@@ -406,14 +406,14 @@ function validateOwnership(
     if (pullRequest.headRepository?.toLowerCase() !== repository.toLowerCase()) {
         fail(`PR #${pullRequest.number} is foreign`);
     }
-    const merged = pullRequest.state === 'MERGED' && pullRequest.mergedAt !== null;
+    const merged = pullRequest.state === PR_STATE.MERGED && pullRequest.mergedAt !== null;
     // The draft flag says nothing about whether the work landed: an OPEN draft is already refused
     // below because it is neither merged nor closed, and GitHub cannot merge a pull request while
     // it is still a draft, so a MERGED pull request is never a draft either. A CLOSED draft is the
     // one state a standalone `isDraft` refusal here would wrongly block — `pr:supersede` can close
     // a draft pull request against a genuinely merged replacement, and that lane must still be able
     // to prove it through the receipt path below.
-    if (!merged && pullRequest.state !== 'CLOSED') {
+    if (!merged && pullRequest.state !== PR_STATE.CLOSED) {
         fail(`PR #${pullRequest.number} is still active`);
     }
     const supersededBy = merged ? undefined : supersededReplacement(pullRequest.number, port);
@@ -554,7 +554,7 @@ function validateStrand(target: string, expected: Worktree, port: LaneRemovalPor
     }
     const open = port
         .pullRequests(expected.branch)
-        .find((pullRequest) => pullRequest.state !== 'MERGED' && pullRequest.state !== 'CLOSED');
+        .find((pullRequest) => pullRequest.state !== PR_STATE.MERGED && pullRequest.state !== PR_STATE.CLOSED);
     if (open !== undefined) {
         fail(`PR #${open.number} is still active`);
     }
@@ -774,7 +774,7 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
             );
             return pages.flat().map((pullRequest) => ({
                 number: pullRequest.number,
-                state: pullRequest.merged_at === null ? pullRequest.state.toUpperCase() : 'MERGED',
+                state: pullRequest.merged_at === null ? pullRequest.state.toUpperCase() : PR_STATE.MERGED,
                 isDraft: pullRequest.draft,
                 headRefName: pullRequest.head.ref,
                 headRefOid: pullRequest.head.sha,
@@ -806,7 +806,7 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
                 );
                 return pages.flat().map((pullRequest) => ({
                     number: pullRequest.number,
-                    state: pullRequest.merged_at === null ? pullRequest.state.toUpperCase() : 'MERGED',
+                    state: pullRequest.merged_at === null ? pullRequest.state.toUpperCase() : PR_STATE.MERGED,
                     isDraft: pullRequest.draft,
                     headRefName: pullRequest.head.ref,
                     headRefOid: pullRequest.head.sha,
@@ -847,7 +847,7 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
             );
             return {
                 number: pullRequest.number,
-                state: pullRequest.merged_at === null ? pullRequest.state.toUpperCase() : 'MERGED',
+                state: pullRequest.merged_at === null ? pullRequest.state.toUpperCase() : PR_STATE.MERGED,
                 mergedAt: pullRequest.merged_at,
             };
         },

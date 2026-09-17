@@ -34,10 +34,12 @@ describe('measureIntegratedLoudness — surround channel weighting (×1.41)', ()
         expect(stereo).not.toBeNull();
         expect(surround).not.toBeNull();
         // 5 channels: 3 at weight 1.0 + 2 at weight 1.41 = 5.82 total weight.
-        // 2 channels: 2 at weight 1.0 = 2.0 total weight.
-        // Power ratio = 5.82/2.0 = 2.91 → 10*log10(2.91) ≈ 4.64 dB higher.
-        expect(surround!).toBeGreaterThan(stereo!);
-        expect(surround! - stereo!).toBeGreaterThan(3);
+        // 2 channels: 2 at weight 1.0 = 2.0 total weight. Identical content in
+        // every channel, so the gating is identical on both sides and the
+        // difference is exactly the weight ratio: 10*log10(5.82/2.0) = 4.639 dB.
+        // Dropping the 1.41 to 1.0 gives 10*log10(5/2) = 3.979 dB, which this
+        // tolerance excludes — "louder than stereo" alone does not.
+        expect(Math.abs(surround! - stereo! - 10 * Math.log10(5.82 / 2))).toBeLessThan(0.02);
     });
 
     it('channels 0-2 have weight 1.0, channels 3+ have weight 1.41', () => {
@@ -49,9 +51,11 @@ describe('measureIntegratedLoudness — surround channel weighting (×1.41)', ()
         const three = measureIntegratedLoudness({ channels: [sine, sine, sine], length, sampleRate: SR });
         const four = measureIntegratedLoudness({ channels: [sine, sine, sine, sine], length, sampleRate: SR });
 
-        expect(four!).toBeGreaterThan(three!);
-        // Power ratio = 4.41/3.0 = 1.47 → 10*log10(1.47) ≈ 1.67 dB.
-        expect(four! - three!).toBeGreaterThan(1);
+        // Identical content in every channel, so the difference is exactly the
+        // weight ratio: 10*log10(4.41/3.0) = 1.673 dB. Dropping the 1.41 to 1.0
+        // gives 10*log10(4/3) = 1.249 dB, which passed the previous
+        // "greater than 1 dB" assertion.
+        expect(Math.abs(four! - three! - 10 * Math.log10(4.41 / 3))).toBeLessThan(0.02);
     });
 });
 

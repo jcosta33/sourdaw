@@ -10,6 +10,7 @@ import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 import { Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
@@ -121,8 +122,8 @@ export const ProofEqSection = ({ patch, gestureOwner, gestureAuthority, onPatchC
                             onChange={(value, isTransient) => updatePatch(i, 'freq', value, isTransient)}
                             gestureOwner={gestureOwner}
                             gestureAuthority={gestureAuthority}
-                            min={20}
-                            max={20000}
+                            min={MIN_AUDIBLE_FREQ_HZ}
+                            max={MAX_AUDIBLE_FREQ_HZ}
                             step={1}
                             defaultValue={band.freq}
                             size="sm"

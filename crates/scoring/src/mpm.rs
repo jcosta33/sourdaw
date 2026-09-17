@@ -2,7 +2,7 @@
 ///
 /// NSDF(τ) = 2r(τ) / m₀(τ) — values in [-1, 1] with built-in clarity.
 /// Used as secondary confidence validation and fallback when YIN is uncertain.
-use crate::yin::{fft_autocorrelation, max_analysis_window};
+use crate::yin::{fft_autocorrelation, max_analysis_window, MAX_TAU};
 
 fn next_pow2(n: usize) -> usize {
     let mut v = n.max(1) - 1;
@@ -42,9 +42,9 @@ impl MpmDetector {
             fmin,
             fmax,
             k_rel: 0.8,
-            max_tau: max_tau.min(4096),
+            max_tau: max_tau.min(MAX_TAU),
             min_tau: min_tau.max(2),
-            nsdf: vec![0.0; max_tau.min(4096) + 1],
+            nsdf: vec![0.0; max_tau.min(MAX_TAU) + 1],
             autocorr: vec![0.0; fft_size],
             scratch_re: vec![0.0; fft_size],
             scratch_im: vec![0.0; fft_size],

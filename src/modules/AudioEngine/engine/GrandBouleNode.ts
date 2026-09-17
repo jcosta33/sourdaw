@@ -30,6 +30,7 @@
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
+import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import {
     GRAND_BOULE_CONTROL_HEADER_BYTES,
     GRAND_BOULE_CONTROL_INT_COUNT,
@@ -207,8 +208,8 @@ function createWorkerRingTransport({ ctx, wasmModule, onFault }: CreateGrandBoul
     const node = new AudioWorkletNode(ctx, 'grand-boule-processor', {
         numberOfInputs: 0,
         numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
+        outputChannelCount: [STEREO_CHANNEL_COUNT],
+        channelCount: STEREO_CHANNEL_COUNT,
         channelCountMode: 'explicit',
     });
 
@@ -407,8 +408,8 @@ function createInlineWorkletTransport({
     const node = new AudioWorkletNode(ctx, 'grand-boule-offline-processor', {
         numberOfInputs: 0,
         numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
+        outputChannelCount: [STEREO_CHANNEL_COUNT],
+        channelCount: STEREO_CHANNEL_COUNT,
         channelCountMode: 'explicit',
         processorOptions: { wasmModule },
     });

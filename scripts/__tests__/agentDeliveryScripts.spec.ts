@@ -34,6 +34,16 @@ import {
     REVIEWER_BOT_NODE_ID,
 } from '../githubAppIdentity.ts';
 import {
+    TRUSTED_COMMON_DIR_ENV,
+    TRUSTED_GATE_WORKFLOW_ENV,
+    TRUSTED_GH_PATH_ENV,
+    TRUSTED_GIT_PATH_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV,
+    TRUSTED_POWERSHELL_PATH_ENV,
+    TRUSTED_PRIMARY_ROOT_ENV,
+    TRUSTED_PS_PATH_ENV,
+} from '../prContract.ts';
+import {
     coordinatePublishReview,
     runPublishReviewCli,
     type PublishReviewCoordinatorDependencies,
@@ -407,6 +417,25 @@ try {
     }
 }
 
+/**
+ * The real loader imports its trusted env names from `prContract.ts`, so any
+ * fixture that copies the loader verbatim must give its `prContract` stub
+ * those exports or Node refuses the import mid-launcher. Generated from the
+ * real constants so a renamed binding fails this spec, not a delivery.
+ */
+const PR_CONTRACT_TRUSTED_ENV_STUB = [
+    ['TRUSTED_PRIMARY_ROOT_ENV', TRUSTED_PRIMARY_ROOT_ENV],
+    ['TRUSTED_COMMON_DIR_ENV', TRUSTED_COMMON_DIR_ENV],
+    ['TRUSTED_GIT_PATH_ENV', TRUSTED_GIT_PATH_ENV],
+    ['TRUSTED_GH_PATH_ENV', TRUSTED_GH_PATH_ENV],
+    ['TRUSTED_PS_PATH_ENV', TRUSTED_PS_PATH_ENV],
+    ['TRUSTED_POWERSHELL_PATH_ENV', TRUSTED_POWERSHELL_PATH_ENV],
+    ['TRUSTED_ORIGIN_COMMIT_ENV', TRUSTED_ORIGIN_COMMIT_ENV],
+    ['TRUSTED_GATE_WORKFLOW_ENV', TRUSTED_GATE_WORKFLOW_ENV],
+]
+    .map(([name, value]) => `export const ${name} = ${JSON.stringify(value)};\n`)
+    .join('');
+
 function runPackageRoute(repository: string, args: string[]): string {
     const pnpmCli = process.env.npm_execpath;
     if (!pnpmCli) {
@@ -444,7 +473,7 @@ function trustedPublishFixture(root: string, policy: string): void {
             `export async function runPublishLaneCli(args) { appendFileSync(args.at(-1), ${JSON.stringify(policy)} + ':' + publishingPermission + '\\n'); return 0; }\n`
     );
     writeFileSync(join(root, 'scripts/githubAppIdentity.ts'), 'export const publishingPermission = "ordinary";\n');
-    writeFileSync(join(root, 'scripts/prContract.ts'), 'export {};\n');
+    writeFileSync(join(root, 'scripts/prContract.ts'), PR_CONTRACT_TRUSTED_ENV_STUB);
     for (const path of stackSummarySources) {
         writeFileSync(join(root, path), 'export {};\n');
     }
@@ -527,9 +556,9 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
             '}',
         ].join('\n')
     );
+    writeFileSync(join(root, 'scripts/prContract.ts'), PR_CONTRACT_TRUSTED_ENV_STUB);
     for (const path of [
         'githubAppIdentity.ts',
-        'prContract.ts',
         'reviewPublicationLegacyIncidents.ts',
         'prepareReview.ts',
         'recoverPublishReviewLock.ts',

@@ -1,4 +1,5 @@
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
 import { PROOF_PATCH_RANGES, TARGET_LUFS, type DitherMode, type ProofPatch } from '../../models/ProofPatch';
 import { getProofPatchParameterValues } from '../../services/getProofPatchParameterValues';
@@ -61,7 +62,9 @@ function getRestoredProofParameterValues(deviceId: string): Record<string, numbe
     }
 
     for (const track of trackState.tracks) {
-        const device = track.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'proof');
+        const device = track.devices.find(
+            (candidate) => candidate.id === deviceId && candidate.type === DEVICE_TYPE_IDS.proof
+        );
         if (device) {
             return device.parameterValues;
         }

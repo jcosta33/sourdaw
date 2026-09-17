@@ -59,7 +59,7 @@ vi.mock('../../repositories/readRenderCache', () => ({ readRenderCache }));
 vi.mock('../../repositories/writeRenderCache', () => ({ writeRenderCache }));
 vi.mock('../../repositories/sha256ArrayBuffer', () => ({ sha256ArrayBuffer }));
 vi.mock('../../services/kokoroTokenizer', () => ({ textToKokoroInputIds }));
-vi.mock('../../services/audioResampler', () => ({ resampleTo44100, applyFades }));
+vi.mock('../../services/audioResampler', () => ({ resampleTo44100, applyFades, TARGET_SAMPLE_RATE: 44100 }));
 
 import { KOKORO_MODEL_ARTIFACT, KOKORO_VOICE_ARTIFACTS } from '../../models/KokoroArtifactManifest';
 import { renderRequestCancellation } from '../../repositories/renderRequestCancellation';

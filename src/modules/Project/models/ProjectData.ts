@@ -808,6 +808,9 @@ export type ProjectArrangementSnapshot = {
 
 export const RECENT_PROJECTS_KEY = 'sourdaw-recent-projects';
 
+/** Filename extension of a Sourdaw project file (save and open dialogs). */
+export const PROJECT_FILE_EXTENSION = '.sourdaw';
+
 /**
  * Prefix of the per-project storage key, completed with the project's stable
  * `createdAt` id. Shared by the writer, the reader, and the localStorage

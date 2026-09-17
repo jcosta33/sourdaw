@@ -4,6 +4,47 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 export const TITLE_PATTERN = /^(?:feat|fix|chore|docs|test|refactor|perf|build|ci)(?:\([^)]+\))?!?: .+/;
 
 /**
+ * GitHub pull-request states as the delivery scripts compare them. GraphQL and
+ * the normalized snapshots use these exact tokens; raw REST payloads arrive
+ * lowercase and are uppercased on ingest before any compare, so one vocabulary
+ * covers every script. A compare against a literal copy of one of these is a
+ * second spelling of the same wire token — import it instead. Tracker issues
+ * are a different vocabulary (`OPEN`/`CLOSED` with state reasons) and are not
+ * owned here.
+ */
+export const PR_STATE = {
+    OPEN: 'OPEN',
+    MERGED: 'MERGED',
+    CLOSED: 'CLOSED',
+} as const;
+
+export type PullRequestState = (typeof PR_STATE)[keyof typeof PR_STATE];
+
+/**
+ * Branch prefix of an author lane. `lane:open` mints it, the delivery scripts
+ * recognize it, and the stack machinery requires it, so the prefix is a
+ * contract of this module rather than a local of whichever script needs it.
+ */
+export const AUTHOR_LANE_BRANCH_PREFIX = 'agent/';
+
+/**
+ * Environment variable names the trusted launcher binds for a GitHub-writing
+ * command. They live in this leaf rather than in
+ * `trustedGithubWriteBootstrap.ts` because the trusted snapshot's import rule
+ * forbids every pinned script from importing the loader — so the scripts
+ * (publish, deliver, the mutation lock, the identity module) and the loader
+ * itself share these spellings through the one module both may depend on.
+ */
+export const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
+export const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
+export const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
+export const TRUSTED_GH_PATH_ENV = 'SOURDAW_TRUSTED_GH_PATH';
+export const TRUSTED_PS_PATH_ENV = 'SOURDAW_TRUSTED_PS_PATH';
+export const TRUSTED_POWERSHELL_PATH_ENV = 'SOURDAW_TRUSTED_POWERSHELL_PATH';
+export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
+export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
+
+/**
  * The headings a body must carry to merge. Screenshots is deliberately not among them: its
  * canonical content is the literal `None.` that `composePublishBody` writes into every body, and a
  * section whose required content states that it has nothing to say gates nothing. It remains in the
@@ -512,7 +553,7 @@ export function assertLaneSlug(slug: string): void {
 }
 
 export function laneBranchName(issue: number | undefined, slug: string): string {
-    return issue === undefined ? `agent/${slug}` : `agent/${issue}/${slug}`;
+    return issue === undefined ? `${AUTHOR_LANE_BRANCH_PREFIX}${slug}` : `${AUTHOR_LANE_BRANCH_PREFIX}${issue}/${slug}`;
 }
 
 /**

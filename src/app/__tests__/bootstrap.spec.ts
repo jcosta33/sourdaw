@@ -62,6 +62,7 @@ type RuntimeSinkUnderTest = {
         signal?: AbortSignal;
     }) => Promise<void>;
     projectNativeDeviceState: (input: {
+        deviceId: string;
         deviceType: string;
         deviceState: { version: number; data: Record<string, unknown> } | undefined;
     }) => Readonly<Record<string, number>> | null;
@@ -474,6 +475,7 @@ vi.mock('#/modules/Gluten/stores', () => ({
 vi.mock('#/modules/GrandBoule/useCases', () => ({
     getGrandBouleHandlers: sentinelHandlers('GrandBoule'),
     prepareOfflineGrandBoule: noop,
+    projectGrandBouleCalibrationToNativePatch: () => null,
 }));
 
 vi.mock('#/modules/Grinder/stores', () => ({ updateGrinderTelemetry: noop }));
@@ -1014,10 +1016,12 @@ describe('bootstrap', () => {
             }
             const chunk = { ...stored, data: { kit: { ...stored.data.kit, masterGain: 0.4 } } };
 
-            expect(getSink().projectNativeDeviceState({ deviceType: 'toaster', deviceState: chunk })).toEqual(
-                expect.objectContaining({ master_gain: 0.4 })
-            );
-            expect(getSink().projectNativeDeviceState({ deviceType: 'gluten', deviceState: chunk })).toBeNull();
+            expect(
+                getSink().projectNativeDeviceState({ deviceId: 'device-a', deviceType: 'toaster', deviceState: chunk })
+            ).toEqual(expect.objectContaining({ master_gain: 0.4 }));
+            expect(
+                getSink().projectNativeDeviceState({ deviceId: 'device-a', deviceType: 'gluten', deviceState: chunk })
+            ).toBeNull();
         });
 
         /**
@@ -1028,7 +1032,9 @@ describe('bootstrap', () => {
         it('projects a levain device’s articulation through the Levain module', () => {
             const chunk = { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'staccato' } };
 
-            expect(getSink().projectNativeDeviceState({ deviceType: 'levain', deviceState: chunk })).toEqual({
+            expect(
+                getSink().projectNativeDeviceState({ deviceId: 'device-a', deviceType: 'levain', deviceState: chunk })
+            ).toEqual({
                 current_articulation: 4,
             });
             expect(projectLevainDeviceStateToNativePatchMock).toHaveBeenCalledWith({ deviceState: chunk });

@@ -14,7 +14,7 @@ import {
     spawnRun,
     type GhSession,
 } from './githubAppIdentity.ts';
-import { fail } from './prContract.ts';
+import { fail, PR_STATE } from './prContract.ts';
 import { isAncestorCommit, parsePublishWorktrees, resolveAuthorLane, trustedPublishRuntime } from './publishLane.ts';
 import {
     assertStackAcyclic,
@@ -87,7 +87,7 @@ export function syncParentLane(descriptor: LaneStack, port: SyncParentPort): str
     // Persist the PR identity before a possible conflict so a retry cannot adopt a reused branch.
     port.save(pinned);
     const targets = [parent.headSha];
-    if (parent.state === 'MERGED') {
+    if (parent.state === PR_STATE.MERGED) {
         const main = port.main();
         if (parent.mergeCommit === undefined || !port.isAncestor(parent.mergeCommit, main)) {
             fail('stack parent landed commit is not on main');

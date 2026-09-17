@@ -19,14 +19,21 @@
  * play's topology batch is built against the attach state written just above
  * and binds the instance by itself. Rolling, no such batch is coming: the strip
  * went out with no body for that device, and only a chain edit puts one there.
+ *
+ * Crumbs instances ride the same report (#4204). The engine splices them the
+ * same way and reports them in the same applied payload, so the mirror the
+ * carrier law reads for them is written from the same one place; a second route
+ * would be a second chance to miss the correction.
  */
 
 import { type AudioGraphApplyResult } from '../../models/AudioGraphBackend';
 
+import { markAttachedCrumbsInstances } from './markAttachedCrumbsInstances';
 import { markAttachedInstances } from './markAttachedInstances';
 import { spliceInstancesAttachedBy } from './spliceInstancesAttachedBy';
 
 export function reportAttachedPlugins(result: AudioGraphApplyResult): void {
     markAttachedInstances(result);
+    markAttachedCrumbsInstances(result);
     spliceInstancesAttachedBy(result);
 }

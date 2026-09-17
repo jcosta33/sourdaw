@@ -10,6 +10,7 @@
 //! leaving it to be rediscovered.
 
 use super::stft::SmudgeProcessor;
+use crate::params::DRIVE;
 
 /// Channels the band chain runs through one `DistortionProcessor`.
 const CHANNELS: usize = 2;
@@ -158,7 +159,7 @@ impl DistortionProcessor {
                 }
                 self.mode = next;
             }
-            "drive" => self.drive = value,
+            DRIVE => self.drive = value,
             "asymmetry" => self.asymmetry = value,
             "foldbackThreshold" => self.fold_threshold = value.max(0.01),
             "bitDepth" => self.bit_depth = (value as u32).clamp(1, 24),

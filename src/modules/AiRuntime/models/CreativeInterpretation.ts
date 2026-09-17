@@ -38,6 +38,7 @@ export type CreativeConstraintCandidate =
 export type CreativeCreationSlot = {
     candidateId: string;
     objectType: 'track' | 'clip' | 'notes' | 'device';
+    /** A target candidate id, or a creation slot candidate id when the parent is created this batch. */
     parentCandidateId: string | null;
     budget: number;
 };
@@ -94,6 +95,8 @@ export type CreativeRequestAuthority = Readonly<{
     creationSlots: readonly Readonly<{
         objectType: 'track' | 'clip' | 'notes' | 'device';
         parentObjectId: string | null;
+        /** Present when the slot hangs under a track this batch creates, which no project id names. */
+        parentCreatedObjectType?: 'track';
         budget: number;
     }>[];
     uncertainty: 'none' | 'artistic';

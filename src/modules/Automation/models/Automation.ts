@@ -1,4 +1,21 @@
-export type AutomationCurveType = 'linear' | 'exponential' | 'step' | 's-curve' | 'stairs' | 'smooth' | 'bezier';
+/**
+ * The curve vocabulary every automation surface speaks. Declared as a const
+ * array so runtime consumers (curve pickers, shape generators, drag code) and
+ * the {@link AutomationCurveType} union derive from one roster — the type
+ * alone cannot be iterated, so a second hand-typed list is how a new curve
+ * reaches the union but not the picker.
+ */
+export const AUTOMATION_CURVE_TYPES = [
+    'linear',
+    'exponential',
+    'step',
+    's-curve',
+    'stairs',
+    'smooth',
+    'bezier',
+] as const;
+
+export type AutomationCurveType = (typeof AUTOMATION_CURVE_TYPES)[number];
 
 export type AutomationPoint = {
     id?: string;

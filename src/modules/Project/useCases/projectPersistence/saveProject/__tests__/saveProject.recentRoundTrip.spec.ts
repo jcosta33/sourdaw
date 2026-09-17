@@ -70,6 +70,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    forgetProjectLatchedPedals: vi.fn(),
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
@@ -87,6 +88,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getFactoryDrumKitByIndex: vi.fn(),
     ensureCachedAudioBuffersDurable: mocks.ensureCachedAudioBuffersDurable,
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({

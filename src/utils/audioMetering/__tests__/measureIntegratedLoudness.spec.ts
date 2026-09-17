@@ -118,8 +118,11 @@ describe('measureIntegratedLoudness', () => {
 
         expect(monoLufs).not.toBeNull();
         expect(fourChLufs).not.toBeNull();
-        // 4 channels (with surround boost) must read louder than 1 channel.
-        expect(fourChLufs!).toBeGreaterThan(monoLufs!);
+        // Identical content in every channel, so the difference is exactly the
+        // weight ratio: 10*log10(4.41/1.0) = 6.444 dB. Weighting channel 3 as a
+        // front channel gives 10*log10(4) = 6.021 dB, which "reads louder than
+        // mono" alone does not exclude.
+        expect(Math.abs(fourChLufs! - monoLufs! - 10 * Math.log10(4.41))).toBeLessThan(0.02);
     });
 
     it('works at 44.1 kHz sample rate', () => {

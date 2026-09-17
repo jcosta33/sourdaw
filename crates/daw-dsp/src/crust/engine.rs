@@ -29,9 +29,13 @@ use super::bands::{MultibandSplitter, MAX_BANDS};
 use super::limiter::{TruePeakLimiter, MAX_LOOKAHEAD_SAMPLES};
 use super::params::{band_count_from_index, Algorithm, DitherKind, StereoMode};
 use super::saturator::{SatAlgorithm, Saturator};
+use crate::params::{ATTACK, RELEASE};
+use crate::primitives::LINEAR_TO_DB_FLOOR;
 use crate::proof::biquad::{BiquadCoeffs, BiquadState};
 use crate::proof::dither::Ditherer;
-use crate::proof::metering::{IntegratedLufs, LoudnessRange, MomentaryLufs, ShortTermLufs};
+use crate::proof::metering::{
+    IntegratedLufs, LoudnessRange, MomentaryLufs, ShortTermLufs, SILENCE_DB,
+};
 use crate::proof::true_peak::TruePeakUpsampler;
 
 /// Longest total delay the engine can impose: a band stage's look-ahead plus
@@ -369,11 +373,11 @@ impl CrustEngine {
                 self.lookahead_ms = value.clamp(0.0, 10.0);
                 self.apply_geometry();
             }
-            "attack" => {
+            ATTACK => {
                 self.attack_ms = value.clamp(0.0, 100.0);
                 self.apply_envelope();
             }
-            "release" => {
+            RELEASE => {
                 self.release_ms = value.clamp(0.0, 1_000.0);
                 self.apply_envelope();
             }
@@ -640,10 +644,10 @@ impl CrustEngine {
 
     pub fn meters(&self) -> CrustMeters {
         let to_db = |linear: f32| {
-            if linear > 1e-10 {
+            if linear > LINEAR_TO_DB_FLOOR {
                 20.0 * linear.log10()
             } else {
-                -100.0
+                SILENCE_DB
             }
         };
         let true_peak_db = to_db(self.meter_true_peak);

@@ -1,0 +1,109 @@
+/**
+ * Where every live pedal the renderer has sent is remembered, so a body the
+ * engine builds later can be told the position the player's foot is actually in
+ * (#3998).
+ *
+ * A pedal is held state with no second message coming to clear it. The engine
+ * builds a native body at every session start and again at every chain rebuild,
+ * always with its pedals up, and it never lifts one itself — a stop takes the
+ * player's hands off the keys and leaves their foot where it was
+ * (`AudioScheduler::release_sounding_notes`). So a damper pressed before play,
+ * or held across a chain reorder, reaches a fresh body only if something on this
+ * side remembers it. This is that memory; `latchedPedalCommands.ts` spends it,
+ * inside whichever batch builds the bodies — a session start's whole-topology
+ * batch, or the one `mirrorDeviceChainDelta` sends for one strip mid-roll.
+ *
+ * Module state rather than a parameter for the reason
+ * `nativeLiveGraphSessionState` is: the foot is one physical thing, and the
+ * engine it is being mirrored onto is process-wide.
+ *
+ * Only the pedals are kept. A channel-mode message is an event rather than held
+ * state — replaying All Sound Off onto a rebuilt body would silence a key the
+ * player is still holding — so the only one that touches this record is Reset
+ * All Controllers, which says every held controller is now released and
+ * therefore discharges what is remembered for that device.
+ *
+ * The record is scoped to one project, and `forgetLatchedLiveMidiControls`
+ * empties it at the commit point of a load, a new project or a template —
+ * `forgetProjectLatchedPedals`, called once the CRDT authority has been
+ * replaced. Never at a graph reset: one also runs inside a project, for a
+ * runtime repair and for the teardown an aborted load then restores.
+ */
+
+const CC_SUSTAIN_PEDAL = 64;
+const CC_SOSTENUTO_PEDAL = 66;
+const CC_UNA_CORDA_PEDAL = 67;
+const CC_RESET_ALL_CONTROLLERS = 121;
+
+/** The pedals this record keeps. */
+const LATCHED_CONTROLLERS: readonly number[] = [CC_SUSTAIN_PEDAL, CC_SOSTENUTO_PEDAL, CC_UNA_CORDA_PEDAL];
+
+/** One remembered pedal position, addressed the way a graph command addresses one. */
+export type LatchedLiveMidiControl = Readonly<{
+    trackId: string;
+    deviceId: string;
+    /** Controller number, as the wire carries it. */
+    controller: number;
+    /** Controller position, as the wire carries it: `0` through `127`. */
+    value: number;
+    /** MIDI channel, as the engine addresses it: `0` through `15`. */
+    channel: number;
+}>;
+
+const latchedByAddress = new Map<string, LatchedLiveMidiControl>();
+
+function addressOf(trackId: string, deviceId: string, controller: number): string {
+    return JSON.stringify([trackId, deviceId, controller]);
+}
+
+/**
+ * Take note of one live controller the renderer is sending.
+ *
+ * A pedal replaces whatever was remembered for that device's controller, and a
+ * Reset All Controllers forgets every pedal on that device: it is the message
+ * that lifts them, so remembering them past it would press one back onto the
+ * next body built.
+ */
+export function noteLiveMidiControl(control: LatchedLiveMidiControl): void {
+    if (control.controller === CC_RESET_ALL_CONTROLLERS) {
+        for (const controller of LATCHED_CONTROLLERS) {
+            latchedByAddress.delete(addressOf(control.trackId, control.deviceId, controller));
+        }
+        return;
+    }
+    if (!LATCHED_CONTROLLERS.includes(control.controller)) {
+        return;
+    }
+    latchedByAddress.set(addressOf(control.trackId, control.deviceId, control.controller), control);
+}
+
+/**
+ * Every pedal position currently remembered, as a snapshot.
+ *
+ * A snapshot rather than the live map because the replay sends through the same
+ * route that writes this record, so an iteration over the record itself would be
+ * walking a collection its own body mutates.
+ */
+export function readLatchedLiveMidiControls(): readonly LatchedLiveMidiControl[] {
+    return [...latchedByAddress.values()];
+}
+
+/**
+ * Forget every remembered pedal.
+ *
+ * The foot is remembered for the engine's bodies of one project, and track and
+ * device ids outlive a project: a load, a new project or a template starts with
+ * every pedal up on both carriers, so a position latched under the project
+ * being left would otherwise be pressed onto the first body the next one
+ * builds while its Web Audio node comes up released.
+ *
+ * Called from the commit point of those three transitions only, never from a
+ * graph reset. A reset happens inside a project too — a runtime repair rebuilds
+ * the strips and resumes playback in the same one, and a load that aborts after
+ * its teardown restores the old graph — and there the held pedal must survive,
+ * or the rebuilt bodies come up raised and damp every note at release until the
+ * player's foot physically moves.
+ */
+export function forgetLatchedLiveMidiControls(): void {
+    latchedByAddress.clear();
+}

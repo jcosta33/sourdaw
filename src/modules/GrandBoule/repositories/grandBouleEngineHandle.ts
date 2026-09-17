@@ -20,6 +20,13 @@ export type GrandBouleEngineHandle = {
     noteOff: (input: { midiNote: number }) => void;
     /** Set a global parameter by name (`master_gain`, `soundboard_send`, …). */
     setParam: (input: { name: string; value: number }) => void;
+    /**
+     * Push the two engine-consumed MIDI calibration values to both bodies:
+     * the Web Audio node directly, and the native session's body when this
+     * device is carried there. Mirrors `setSustain`'s dual-carrier write for
+     * a value that is calibration state rather than a pedal gesture.
+     */
+    setCalibration: (input: { sustainThreshold: number; ccSmoothingMs: number }) => void;
     /** Continuous sustain pedal (CC64). 0 = released, 1 = fully engaged. */
     setSustain: (input: { position: number }) => void;
     /** Una corda (CC67) pedal state. */
@@ -55,6 +62,7 @@ export function createDisconnectedGrandBouleEngineHandle(): GrandBouleEngineHand
         noteOnMidi2: () => {},
         noteOff: () => {},
         setParam: () => {},
+        setCalibration: () => {},
         setSustain: () => {},
         setUnaCorda: () => {},
         setSostenuto: () => {},

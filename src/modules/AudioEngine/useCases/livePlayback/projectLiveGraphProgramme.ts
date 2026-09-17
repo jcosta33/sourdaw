@@ -91,7 +91,7 @@ export type LiveGraphProgrammeInput = Readonly<{
     /** Every track and bus the session builds a strip for, in project order. */
     stripTracks: readonly Track[];
     /**
-     * The external plugin instances the native engine currently owns.
+     * The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}.
      *
      * What decides whether a MIDI strip's notes are still Web Audio's: the
      * engine takes them only when it already holds the instrument they address

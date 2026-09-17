@@ -2876,20 +2876,20 @@ describe('drum bus prompt workflow', () => {
 
         expect(deniedRetry).toEqual({
             status: 'failed',
-            reason: 'The missing section renders exceed the user budget for maxRenderJobs.',
+            reason: 'The missing section render retry exceeds the user budget for maxRenderJobs.',
         });
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallCount);
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'executed',
             followUpStatus: 'retryable',
-            error: 'The missing section renders exceed the user budget for maxRenderJobs.',
+            error: 'The missing section render retry exceeds the user budget for maxRenderJobs.',
         });
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation.id)
         ).toMatchObject({
             pendingActionConfirmationStatus: 'executed',
             pendingActionFollowUpStatus: 'retryable',
-            error: 'The missing section renders exceed the user budget for maxRenderJobs.',
+            error: 'The missing section render retry exceeds the user budget for maxRenderJobs.',
             content: expect.stringMatching(/project changes remain committed.*renders were not retried.*budget/iu),
         });
     });

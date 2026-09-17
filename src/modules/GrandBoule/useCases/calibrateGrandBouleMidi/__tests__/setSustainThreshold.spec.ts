@@ -22,36 +22,38 @@ describe('setSustainThreshold', () => {
     it('dispatches the threshold to the engine damper curve', () => {
         // The whole point of the knob: `sustainThreshold` is `threshold_low`
         // of the DSP half-pedal smoothstep, so a store write that never
-        // reaches the engine leaves the control inert.
+        // reaches the engine leaves the control inert. `ccSmoothingMs` rides
+        // along at its untouched default (5 ms) because `setCalibration`
+        // always carries both values.
         const engine = createDisconnectedGrandBouleEngineHandle();
-        const setParam = vi.spyOn(engine, 'setParam');
+        const setCalibration = vi.spyOn(engine, 'setCalibration');
 
         setSustainThreshold({ engine, store: makeStore(), value: 0.32 });
 
-        expect(setParam).toHaveBeenCalledWith({ name: 'sustain_threshold', value: 0.32 });
+        expect(setCalibration).toHaveBeenCalledExactlyOnceWith({ sustainThreshold: 0.32, ccSmoothingMs: 5 });
     });
 
     it('dispatches the clamped value, not the requested one', () => {
         const engine = createDisconnectedGrandBouleEngineHandle();
-        const setParam = vi.spyOn(engine, 'setParam');
+        const setCalibration = vi.spyOn(engine, 'setCalibration');
         const store = makeStore();
 
         // sustainThreshold maxes out at 0.5.
         setSustainThreshold({ engine, store, value: 9 });
 
         expect(store.value?.midiCalibration.sustainThreshold).toBe(0.5);
-        expect(setParam).toHaveBeenCalledWith({ name: 'sustain_threshold', value: 0.5 });
+        expect(setCalibration).toHaveBeenCalledExactlyOnceWith({ sustainThreshold: 0.5, ccSmoothingMs: 5 });
     });
 
     it('leaves the engine alone when the device has no state', () => {
         const engine = createDisconnectedGrandBouleEngineHandle();
-        const setParam = vi.spyOn(engine, 'setParam');
+        const setCalibration = vi.spyOn(engine, 'setCalibration');
         const store = createGrandBouleStore(`test-${Math.random()}`);
         store.clear();
 
         setSustainThreshold({ engine, store, value: 0.32 });
 
         expect(store.value).toBeNull();
-        expect(setParam).not.toHaveBeenCalled();
+        expect(setCalibration).not.toHaveBeenCalled();
     });
 });

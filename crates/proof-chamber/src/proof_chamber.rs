@@ -942,6 +942,9 @@ impl ProofChamber {
         self.smooth_coeff = 1.0 - (-1.0 / (0.030 * sample_rate)).exp();
     }
 
+    // Param-name arms here restate the wire vocabulary daw-dsp owns in
+    // `crates/daw-dsp/src/params.rs` (this crate cannot depend on that one);
+    // keep the names in step with it.
     pub fn set_param(&mut self, name: &str, value: f32) {
         // The shared wet-path stage owns the two tone ids, and reports whether
         // it took the write rather than swallowing everything.

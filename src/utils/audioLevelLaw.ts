@@ -17,11 +17,11 @@
  *   below spends the travel evenly in **decibels** instead, which is what a
  *   first-class mixer does.
  *
- * Pan is deliberately absent. `StereoPannerNode` — used by both the live strip
- * and the offline strip — already implements the constant-power law in the
- * Web Audio spec's own rendering algorithm; the `pan / 50` seen at the call
- * sites is the unit conversion from this app's −50…+50 pan scale onto the
- * node's −1…+1 input, not a linear pan law. Replacing it with a hand-rolled
+ * Pan appears here only as a unit conversion (`toStereoPan` /
+ * `fromStereoPan`). `StereoPannerNode` — used by both the live strip and the
+ * offline strip — already implements the constant-power law in the Web Audio
+ * spec's own rendering algorithm; converting this app's −50…+50 pan scale onto
+ * the node's −1…+1 input is not a pan law, and replacing it with a hand-rolled
  * cos/sin pair would double-apply the taper and re-image every existing mix.
  */
 
@@ -188,3 +188,65 @@ export function levelToSendPosition(level: number): number {
     const position = 100 * (1 - db / SEND_MIN_DB);
     return Math.max(0, Math.min(100, position));
 }
+
+/**
+ * Top of the app's stored pan scale: control and stored pan positions run
+ * −50 (full left) through 0 (center) to +50 (full right). `StereoPannerNode`
+ * takes −1…+1, so every strip converts through {@link toStereoPan} /
+ * {@link fromStereoPan} rather than restating the ratio — the live strip and
+ * the offline strip must convert identically or a render re-images the mix.
+ */
+export const PAN_SCALE_MAX = 50;
+
+/**
+ * Convert a stored pan position (±{@link PAN_SCALE_MAX}) onto the −1…+1 input
+ * a `StereoPannerNode` takes. Unit conversion only — the node applies the
+ * constant-power pan law itself.
+ */
+export function toStereoPan(lanePan: number): number {
+    return Math.max(-1, Math.min(1, lanePan / PAN_SCALE_MAX));
+}
+
+/**
+ * Inverse of {@link toStereoPan}: the stored pan position a node's −1…+1 pan
+ * value represents. Clamped to ±{@link PAN_SCALE_MAX} so an out-of-range node
+ * value (an imported project, a stray automation write) cannot pin a control
+ * past its travel.
+ */
+export function fromStereoPan(nodePan: number): number {
+    return Math.max(-PAN_SCALE_MAX, Math.min(PAN_SCALE_MAX, nodePan * PAN_SCALE_MAX));
+}
+
+/**
+ * Floor of every level *display*: a value at or below −60 dB renders as the
+ * meter's empty state rather than as an ever-smaller number.
+ *
+ * Deliberately not `SEND_MIN_DB`, even though the two agree today. That
+ * constant is a *stored-level* law — the bottom of a send control's travel in
+ * dB — while this one only says how far down a readout bothers to draw. A
+ * wider meter could move this floor without touching what a closed send
+ * stores, and merging them would silently make that impossible.
+ */
+export const METER_FLOOR_DB = -60;
+
+/**
+ * EBU R 128 broadcast loudness target, also the common streaming delivery
+ * level. The export normalizer aims here, the LUFS meter's over-target color
+ * fires against it, and a reference-mix analysis defaults to it — one number,
+ * so the meter does not flag a level the exporter just produced.
+ */
+export const R128_TARGET_LUFS = -14;
+
+/** EBU R 128 recommends −1 dBTP true peak for lossy delivery. */
+export const R128_CEILING_DB_TP = -1;
+
+/**
+ * Travel of every device-level gain trim — the input/output gain knobs and the
+ * clamp their persisted patch values pass through on hydration. The devices
+ * that carry one (Gluten, Bacteria, Proof today) all stop at ±24 dB: far
+ * enough to rescue a quiet or hot source, narrow enough that a slip cannot
+ * take a mix fully out. A panel knob and the hydrate clamp that disagrees
+ * with it would let a stored value a control cannot reach reappear on reload,
+ * so both read this pair.
+ */
+export const GAIN_TRIM_DB = { min: -24, max: 24 } as const;

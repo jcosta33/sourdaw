@@ -7,10 +7,12 @@
  * signals without an AudioContext.
  */
 
+import { STANDARD_A4_HZ } from '#/utils/pitch';
+
 const PITCH_CLASSES = 12;
 const LOWEST_OCTAVE = 2;
 const HIGHEST_OCTAVE = 7;
-const A4_HZ = 440;
+const A4_HZ = STANDARD_A4_HZ;
 
 export type ChromaFromSamplesInput = {
     samples: Float32Array;

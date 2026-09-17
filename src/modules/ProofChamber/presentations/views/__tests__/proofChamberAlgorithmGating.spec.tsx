@@ -44,6 +44,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(() => Promise.resolve({ status: 'committed', actions: [] })),
     // The real one returns `{ groupId, groupLabel }`; a mock returning a bare

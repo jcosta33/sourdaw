@@ -1,4 +1,4 @@
-import { SAMPLE_RATE, TWO_PI } from './constants';
+import { BUTTERWORTH_Q, SAMPLE_RATE, TWO_PI } from './constants';
 
 import type { BiquadSpec, MonoBuffer } from './types';
 
@@ -83,7 +83,13 @@ function biquadCoeffs(
 }
 
 export function biquad(buf: MonoBuffer, spec: BiquadSpec, sampleRate: number = SAMPLE_RATE): void {
-    const { b0, b1, b2, a1, a2 } = biquadCoeffs(spec.type, spec.freq, spec.q ?? 0.707, spec.gainDb ?? 0, sampleRate);
+    const { b0, b1, b2, a1, a2 } = biquadCoeffs(
+        spec.type,
+        spec.freq,
+        spec.q ?? BUTTERWORTH_Q,
+        spec.gainDb ?? 0,
+        sampleRate
+    );
     let x1 = 0;
     let x2 = 0;
     let y1 = 0;
@@ -104,7 +110,7 @@ export function biquadSweep(
     spec: { type: BiquadSpec['type']; q?: number; freqStart: number; freqEnd: number },
     sampleRate: number = SAMPLE_RATE
 ): void {
-    const q = spec.q ?? 0.707;
+    const q = spec.q ?? BUTTERWORTH_Q;
     let x1 = 0;
     let x2 = 0;
     let y1 = 0;

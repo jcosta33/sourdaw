@@ -1,5 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
 import { readGrandBouleMorphState, toGrandBouleDeviceState } from '../models/GrandBouleDeviceState';
 import { type GrandBouleMorphState } from '../models/GrandBouleMorphState';
@@ -9,7 +10,7 @@ import { reconcileGrandBouleDeviceStateFromProject } from './reconcileGrandBoule
 export function commitGrandBouleDeviceState(deviceId: string, morph: GrandBouleMorphState): void {
     const device = trackStore.value?.tracks
         .flatMap((track) => track.devices)
-        .find((candidate) => candidate.id === deviceId && candidate.type === 'grand-boule');
+        .find((candidate) => candidate.id === deviceId && candidate.type === DEVICE_TYPE_IDS.grandBoule);
     if (!device) {
         return;
     }

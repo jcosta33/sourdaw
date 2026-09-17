@@ -1,6 +1,7 @@
 import { type ReactElement, type RefObject } from 'react';
 
 import { setNoteProbability } from '#/modules/MIDI/useCases';
+import { DEFAULT_NOTE_PROBABILITY } from '#/utils/midiData';
 
 import { NotePropertyLane } from './NotePropertyLane';
 
@@ -13,7 +14,7 @@ type ProbabilityLaneProps = {
     scrollRef: RefObject<HTMLElement | null>;
 };
 
-const getProbability = (note: { probability?: number }): number => note.probability ?? 100;
+const getProbability = (note: { probability?: number }): number => note.probability ?? DEFAULT_NOTE_PROBABILITY;
 
 export const ProbabilityLane = (props: ProbabilityLaneProps): ReactElement => (
     <NotePropertyLane
