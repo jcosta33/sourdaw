@@ -33,10 +33,12 @@ export async function repairRuntimeGraphFromProject(): Promise<void> {
     }
 
     await resetExternalPluginRuntimeForGraphRebuild();
-    // The engine's Crumbs instances go with the runtime this rebuild replaces,
-    // exactly as its hosted instances do. A mirror left claiming them attached
-    // would build the next topology naming instances the engine no longer
-    // holds, and the mapper refuses that batch whole.
+    // The repair does not release the engine: the reset above unloads the
+    // hosted plugin runtime and nothing else, so every Crumbs instance the
+    // engine holds stays attached across the rebuild. The mirror is emptied
+    // here all the same, because the rebuild is what refills it — every graph
+    // result names the instances that batch found the engine holding, not only
+    // the ones it attached, so the strips mapped below restore it.
     retractEveryCrumbsEngineAttachment();
     resetAudioGraph();
     const rebuild = ensureTrackStrips({ collectExternalPluginActivations: true });

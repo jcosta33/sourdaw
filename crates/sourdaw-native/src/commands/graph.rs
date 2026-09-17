@@ -167,7 +167,7 @@ use daw_engine::timeline::{
 use daw_engine::GraphBatchError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 /// Headroom the fader allows above unity, in decibels — the mirror of
@@ -835,32 +835,40 @@ pub struct GraphApplyResultPayload {
     /// id at all, and there is no later event.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attached_plugins: Option<Vec<AttachedPluginPayload>>,
-    /// Crumbs instances that were created before any engine was running and
-    /// that this call took over — see [`crate::commands::crumbs::attach_dormant_crumbs`].
+    /// The Crumbs instances the engine holds that this batch named: the ones
+    /// this call's own attach pass took over
+    /// ([`crate::commands::crumbs::attach_dormant_crumbs`]) and the ones its
+    /// mapping found already attached, deduplicated.
     ///
     /// Unlike `attachedPlugins`, this is a fact about the *call*, not about the
-    /// batch, and the presence rule follows the attach rather than the outcome:
-    /// present on every payload a call produces after its attach pass has run —
-    /// applied, `rejected` or `needs-reconcile` — and empty when the pass took
-    /// nothing. Absent when the call answered before the pass could run (the
-    /// admission refusals) and on a mapping, which has no engine to attach to.
+    /// batch, and the presence rule follows the attach pass rather than the
+    /// outcome: present on every payload a call produces after that pass has
+    /// run — applied, `rejected` or `needs-reconcile` — and empty when the pass
+    /// took nothing and the mapping named nothing. Absent when the call
+    /// answered before the pass could run (the admission refusals) and on a
+    /// mapping, which has no engine to attach to.
     ///
-    /// It has to read that way because the crumbs attach precedes `map_batch`
-    /// for the same-batch binding: an instance is already engine-owned and out
-    /// of the dormant set by the time a mapping or push refusal is decided, so
-    /// a `rejected` payload that said nothing about it would strand the caller
-    /// forever — `create_crumbs` already answered `attached: false`, no later
-    /// batch reports an instance that is no longer dormant, and there is no
-    /// event.
+    /// Two reasons it reads that way. The attach precedes `map_batch` for the
+    /// same-batch binding, so an instance is already engine-owned and out of
+    /// the dormant set by the time a mapping or push refusal is decided: a
+    /// `rejected` payload silent about it would strand the caller forever —
+    /// `create_crumbs` already answered `attached: false`, no later batch
+    /// attaches an instance that is no longer dormant, and there is no event.
+    /// And a caller that empties its mirror without releasing the engine — the
+    /// graph repair does exactly that
+    /// (`src/modules/Transport/useCases/repairRuntimeGraphFromProject.ts`) —
+    /// has no attach left to hear about: every slot is already `Attached`, so
+    /// only what the rebuild *found* can refill the mirror.
     ///
     /// Reported separately from `attachedPlugins` because the two name
     /// different populations — a hosted plugin's instance id and a Crumbs
     /// device's own id — and a caller acts on them differently.
     ///
-    /// The caller needs it because nothing else corrects `create_crumbs`'s
-    /// `attached: false`: the create told it the sampler had no engine, and
-    /// there is no later event. A caller mirrors it on every variant that
-    /// carries it, refusal included.
+    /// The caller needs it because nothing else says which instances the
+    /// engine is holding: `create_crumbs` answered `attached: false` for one
+    /// loaded before the engine ran, a repair empties the mirror without
+    /// releasing the engine, and no event follows either. A caller mirrors it
+    /// on every variant that carries it, refusal included.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attached_crumbs: Option<Vec<AttachedCrumbsPayload>>,
 }
@@ -878,11 +886,59 @@ pub struct AttachedPluginPayload {
     pub instance_id: String,
 }
 
-/// One Crumbs instance a batch's attach took over, as the caller reads it.
+/// The Crumbs instances the engine holds, and the ones a mapping named.
+///
+/// Device id → engine plugin id, which is the whole lookup a splice needs: the
+/// instance id *is* the device id. It records every hit because the result
+/// payload owes the caller more than the instances this call's own attach pass
+/// took — a repair rebuilds the strips over instances that were attached long
+/// before the call began, and its `retractEveryCrumbsEngineAttachment` empties
+/// the caller's mirror on the way (`repairRuntimeGraphFromProject.ts`). Nothing
+/// re-attaches those: the repair does not release the engine, so the slots stay
+/// `Attached` and no attach pass will ever mention them again. Reporting what
+/// the batch *found* is what refills the mirror.
+///
+/// A hit is recorded even when the strip then omits the device: a non-carried
+/// strip still names the instance, and the caller's mirror is about what the
+/// engine holds, not about what this topology splices.
+#[derive(Default)]
+struct AttachedCrumbs {
+    instances: HashMap<String, usize>,
+    found: BTreeSet<String>,
+}
+
+impl AttachedCrumbs {
+    fn new(instances: HashMap<String, usize>) -> Self {
+        Self {
+            instances,
+            found: BTreeSet::new(),
+        }
+    }
+
+    /// The engine plugin id this device's instance holds, recorded as named.
+    fn find(&mut self, device_id: &str) -> Option<usize> {
+        let plugin_id = *self.instances.get(device_id)?;
+        self.found.insert(device_id.to_string());
+        Some(plugin_id)
+    }
+
+    /// Every instance this call can honestly say the engine holds and this
+    /// batch named: what the mapping found already attached, unioned with what
+    /// the caller's own attach pass took, deduplicated and in a stable order.
+    fn named_with(&self, attached_by_this_call: &[String]) -> Vec<String> {
+        let mut named = self.found.clone();
+        named.extend(attached_by_this_call.iter().cloned());
+        named.into_iter().collect()
+    }
+}
+
+/// One Crumbs instance the engine holds that a batch named, as the caller
+/// reads it.
 ///
 /// The instance id is the whole payload, and it is the device id too: the
 /// panel creates a Crumbs runtime under the id of the device it belongs to, so
-/// the caller needs nothing else to know which device just became audible.
+/// the caller needs nothing else to know which device the engine is holding —
+/// whether this batch attached it or found it attached.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachedCrumbsPayload {
@@ -905,12 +961,13 @@ impl GraphApplyResultPayload {
         }
     }
 
-    /// Record the crumbs instances this call's attach pass took, on whatever
-    /// answer the call went on to give.
+    /// Record the crumbs instances this call found the engine holding, on
+    /// whatever answer the call went on to give
+    /// ([`AttachedCrumbs::named_with`]).
     ///
-    /// Every exit past the pass calls it, which is what makes the empty vector
-    /// meaningful: `[]` says the pass ran and found nothing, and an absent
-    /// field says the call never reached the pass. One writer, so the two
+    /// Every exit past the attach pass calls it, which is what makes the empty
+    /// vector meaningful: `[]` says the call looked and named nothing, and an
+    /// absent field says it never reached the pass. One writer, so the two
     /// cannot drift apart.
     fn reporting_attached_crumbs(mut self, instance_ids: Vec<String>) -> Self {
         self.attached_crumbs = Some(
@@ -2243,7 +2300,7 @@ fn map_device(
     contributes_audio: bool,
     sample_rate: f32,
     engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
-    attached_crumbs: &HashMap<String, usize>,
+    attached_crumbs: &mut AttachedCrumbs,
     levain_banks: &mut LevainBankStore,
     ops: &mut Vec<GraphCommand>,
 ) -> Result<Option<MappedDevice>, String> {
@@ -2298,7 +2355,7 @@ fn map_device(
         && device.external_instance_id.is_none()
         && device.external_plugin_id.is_none()
     {
-        let Some(&plugin_id) = attached_crumbs.get(&device.id) else {
+        let Some(plugin_id) = attached_crumbs.find(&device.id) else {
             let reason = format!(
                 "device '{}' is a Crumbs sampler whose native instance is not attached to the \
                  engine",
@@ -2313,6 +2370,17 @@ fn map_device(
             // strip report says.
             return Ok(None);
         };
+        if !contributes_audio {
+            // Found, recorded as found, and left off the chain. A strip the
+            // renderer kept on Web Audio lists its devices all the same, and
+            // splicing the sampler here would sound it in both engines at once
+            // — the pad IPC is unconditional and the web twin is ungated for a
+            // strip the native side does not carry. The same omission the miss
+            // above takes, for the same reason: a strip built only to keep the
+            // routing graph faithful contributes silence, so its absence from
+            // the report is what the caller reads.
+            return Ok(None);
+        }
         charge_chain_slot(registry, &device.id)?;
         // Written both ways, unlike a built-in body's. The instance outlives
         // every strip that carries it — the engine slot is the same slot it
@@ -2775,19 +2843,19 @@ pub(crate) fn strip_reports(
 /// bind to and an external device on a sounding strip refuses there exactly
 /// as it did before binding existed.
 ///
-/// `attached_crumbs` is device id → engine plugin id for every Crumbs instance
-/// the engine holds. Kept apart from `engine_owned_devices` rather than merged
-/// into it: the two are different id spaces — a hosted plugin's instance id
-/// against a Crumbs device's own id — and a miss in each carries its own
-/// reason. It is empty for every offline path, for the same reason the hosted
-/// lookup is.
+/// `attached_crumbs` is the Crumbs instances the engine holds, and it comes
+/// back carrying the ones this batch named ([`AttachedCrumbs`]). Kept apart
+/// from `engine_owned_devices` rather than merged into it: the two are
+/// different id spaces — a hosted plugin's instance id against a Crumbs
+/// device's own id — and a miss in each carries its own reason. It is empty for
+/// every offline path, for the same reason the hosted lookup is.
 fn map_batch(
     batch: &GraphBatchPayload,
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     sample_rate: f32,
     engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
-    attached_crumbs: &HashMap<String, usize>,
+    attached_crumbs: &mut AttachedCrumbs,
     levain_banks: &mut LevainBankStore,
 ) -> Result<MappedBatch, String> {
     if batch.schema_version != 1 {
@@ -2822,7 +2890,7 @@ fn map_batch(
             samples,
             sample_rate,
             engine_owned_devices,
-            attached_crumbs,
+            &mut *attached_crumbs,
             levain_banks,
             &mut budgets,
             &mut ops,
@@ -2888,7 +2956,7 @@ fn map_command(
     samples: &TimelineSamplePool,
     sample_rate: f32,
     engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
-    attached_crumbs: &HashMap<String, usize>,
+    attached_crumbs: &mut AttachedCrumbs,
     levain_banks: &mut LevainBankStore,
     budgets: &mut QueueBudgets,
     ops: &mut Vec<GraphCommand>,
@@ -2952,7 +3020,7 @@ fn map_command(
                     *contributes_audio,
                     sample_rate,
                     engine_owned_devices,
-                    attached_crumbs,
+                    &mut *attached_crumbs,
                     levain_banks,
                     ops,
                 )?
@@ -3061,7 +3129,7 @@ fn map_command(
                     *contributes_audio,
                     sample_rate,
                     engine_owned_devices,
-                    attached_crumbs,
+                    &mut *attached_crumbs,
                     levain_banks,
                     ops,
                 )?
@@ -3256,7 +3324,7 @@ fn map_command(
                 strip.contributes_audio,
                 sample_rate,
                 engine_owned_devices,
-                attached_crumbs,
+                &mut *attached_crumbs,
                 levain_banks,
                 ops,
             )?
@@ -4301,7 +4369,7 @@ pub async fn apply_graph_commands(
     // binds in this batch rather than waiting for the next one. A panel opened
     // before the first play therefore becomes audible on the batch that starts
     // the engine, with no silent block in between.
-    let attached_crumbs = crumbs::attached_crumbs_instances(crumbs);
+    let mut attached_crumbs = AttachedCrumbs::new(crumbs::attached_crumbs_instances(crumbs));
 
     let mut engine_guard = state
         .engine
@@ -4315,7 +4383,7 @@ pub async fn apply_graph_commands(
                 "engine-not-running: the engine was released while this batch was admitted"
                     .to_string(),
             )
-            .reporting_attached_crumbs(attached_crumbs_this_batch),
+            .reporting_attached_crumbs(attached_crumbs.named_with(&attached_crumbs_this_batch)),
         );
     };
 
@@ -4345,7 +4413,7 @@ pub async fn apply_graph_commands(
         &samples,
         engine.sample_rate(),
         &engine_owned_devices,
-        &attached_crumbs,
+        &mut attached_crumbs,
         &mut levain_banks,
     ) {
         Ok(mapped) => mapped,
@@ -4353,8 +4421,9 @@ pub async fn apply_graph_commands(
         // instance is engine-owned from here on whatever this batch answers.
         Err(reason) => {
             return result_json(
-                &GraphApplyResultPayload::rejected(reason)
-                    .reporting_attached_crumbs(attached_crumbs_this_batch),
+                &GraphApplyResultPayload::rejected(reason).reporting_attached_crumbs(
+                    attached_crumbs.named_with(&attached_crumbs_this_batch),
+                ),
             )
         }
     };
@@ -4379,8 +4448,9 @@ pub async fn apply_graph_commands(
             // rejection. The attach's own registration went onto the ring
             // ahead of it, so the report still belongs to this answer.
             return result_json(
-                &GraphApplyResultPayload::rejected(reason)
-                    .reporting_attached_crumbs(attached_crumbs_this_batch),
+                &GraphApplyResultPayload::rejected(reason).reporting_attached_crumbs(
+                    attached_crumbs.named_with(&attached_crumbs_this_batch),
+                ),
             );
         }
         Err(GraphBatchError::Partial {
@@ -4407,7 +4477,7 @@ pub async fn apply_graph_commands(
                     registry_guard.runtime_revision,
                     mapped.reports,
                 )
-                .reporting_attached_crumbs(attached_crumbs_this_batch),
+                .reporting_attached_crumbs(attached_crumbs.named_with(&attached_crumbs_this_batch)),
             );
         }
     }
@@ -4464,7 +4534,7 @@ pub async fn apply_graph_commands(
         // above: the crumbs attach has to precede `map_batch` for the
         // same-batch binding, so it is reported by whichever answer this call
         // reaches, this one included.
-        .reporting_attached_crumbs(attached_crumbs_this_batch),
+        .reporting_attached_crumbs(attached_crumbs.named_with(&attached_crumbs_this_batch)),
     )
 }
 
@@ -4599,7 +4669,7 @@ fn replay_prior_commands(
             samples,
             sample_rate,
             &HashMap::new(),
-            &HashMap::new(),
+            &mut AttachedCrumbs::default(),
             levain_banks,
         )
         .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
@@ -4741,7 +4811,7 @@ pub async fn map_graph_batch(
         &samples,
         sample_rate as f32,
         &HashMap::new(),
-        &HashMap::new(),
+        &mut AttachedCrumbs::default(),
         &mut levain_banks,
     );
     drop(levain_banks);
@@ -4796,7 +4866,7 @@ fn map_offline_batch(
         samples,
         sample_rate,
         &HashMap::new(),
-        &HashMap::new(),
+        &mut AttachedCrumbs::default(),
         levain_banks,
     )?
     .ops)
@@ -4954,7 +5024,7 @@ mod tests {
             samples,
             sample_rate,
             engine_owned_devices,
-            &HashMap::new(),
+            &mut AttachedCrumbs::default(),
             &mut LevainBankStore::default(),
         )
     }
@@ -4975,7 +5045,7 @@ mod tests {
             samples,
             sample_rate,
             &HashMap::new(),
-            attached_crumbs,
+            &mut AttachedCrumbs::new(attached_crumbs.clone()),
             &mut LevainBankStore::default(),
         )
     }
@@ -11105,6 +11175,48 @@ mod tests {
         assert!(!registry.devices.contains_key("d-crumbs"));
     }
 
+    /// And a strip the mix does not carry omits the sampler even when the
+    /// engine does hold its instance.
+    ///
+    /// `contributesAudio: false` is the renderer saying this strip stays on Web
+    /// Audio — it holds something the native side cannot build, and the strip is
+    /// mapped only to keep the routing graph faithful. Spliced here, one pad hit
+    /// would sound in both engines at once: the pad IPC is unconditional, the
+    /// web twin is ungated for a strip the native side does not carry, and
+    /// nothing past the mapper reads a strip's contributes flag. The instance
+    /// keeps running detached, draining its rings, and the strip's report says
+    /// the device is absent — the same omission the unattached miss takes.
+    #[test]
+    fn a_crumbs_device_on_a_strip_the_mix_does_not_carry_is_omitted_rather_than_spliced() {
+        let mut registry = GraphRegistry::default();
+        let mapped = map_crumbs_batch(
+            &batch(crumbs_strip(false, false, json!({}))),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("a silent strip maps; it just carries no sampler");
+
+        assert_eq!(
+            mapped.reports[0].device_ids,
+            Vec::<String>::new(),
+            "the report is an observation: the omitted device is visibly absent"
+        );
+        assert!(
+            inserted_effect_ids(&mapped.ops).is_empty(),
+            "nothing may splice the instance into a chain the mix never renders"
+        );
+        assert!(
+            bypass_writes(&mapped.ops).is_empty(),
+            "and no write may address it at that id either"
+        );
+        assert!(
+            !registry.devices.contains_key("d-crumbs"),
+            "an omitted device charges no chain slot"
+        );
+    }
+
     /// A spliced Crumbs device is a MIDI sink, because the registration that
     /// homed it carried a note store unconditionally — so both MIDI commands
     /// address the instance's own plugin id rather than refusing for want of a
@@ -11475,6 +11587,64 @@ mod tests {
         assert!(
             !crumbs::attached_crumbs_instances(&crumbs).is_empty(),
             "and the instance really is attached, so no later batch would report it"
+        );
+    }
+
+    /// And every batch names the instances it finds the engine already
+    /// holding, not just the ones its own pass attached.
+    ///
+    /// A graph repair rebuilds the topology without releasing the engine, and
+    /// empties its own mirror on the way
+    /// (`src/modules/Transport/useCases/repairRuntimeGraphFromProject.ts`). No
+    /// attach can correct that: every slot is already `Attached`, so the pass
+    /// finds nothing to take. Reporting only the pass would leave the mirror
+    /// empty for the rest of the session, with every Crumbs strip falling back
+    /// to Web Audio on every later play.
+    #[test]
+    fn a_batch_that_splices_an_instance_it_finds_attached_reports_it_again() {
+        let state = AppState::default();
+        let crumbs = CrumbsState::default();
+        block_on_test(crumbs::create_crumbs(
+            "d-crumbs".to_string(),
+            &crumbs,
+            &state,
+        ))
+        .expect("a create before the engine runs holds a dormant instance");
+
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(256);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let attaching = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": crumbs_strip(true, false, json!({})) }),
+            &state,
+            &crumbs,
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(attaching["application"], "applied");
+        assert_eq!(
+            attaching["attachedCrumbs"],
+            json!([{ "instanceId": "d-crumbs" }]),
+            "the batch that attached it names it"
+        );
+
+        // The rebuild a repair performs: the whole topology replaced, over an
+        // engine that was never released and an instance that is still
+        // `Attached`.
+        let rebuilding = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "replaceTopology": true,
+                    "commands": crumbs_strip(true, false, json!({})) }),
+            &state,
+            &crumbs,
+        ))
+        .expect("the rebuild resolves to a result");
+
+        assert_eq!(rebuilding["application"], "applied");
+        assert_eq!(
+            rebuilding["attachedCrumbs"],
+            json!([{ "instanceId": "d-crumbs" }]),
+            "the rebuild attached nothing, so only what it found can refill the mirror: \
+             {rebuilding:?}"
         );
     }
 
@@ -12020,7 +12190,7 @@ mod tests {
             &sample_pool(),
             48_000.0,
             &HashMap::new(),
-            &HashMap::new(),
+            &mut AttachedCrumbs::default(),
             &mut banks,
         )
         .expect("a sampler naming a committed bank must build");
