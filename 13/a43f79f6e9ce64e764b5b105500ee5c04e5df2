@@ -1,0 +1,26 @@
+src/app/getAgentProductionReadiness.ts
+  s_914af328b3988f::t_c905b98eef9cc4 75-81
+src/app/__tests__/agentProductionReadiness.spec.ts
+  s_914af328b3988f::t_559eb13d4e0732 287-310
+  s_914af328b3988f::t_14931d1798d026 200,203-210,213,217-222
+  s_914af328b3988f::t_32e1f736552155 273,281-284
+  s_914af328b3988f::t_588abe25499b7e 30-35,65
+  s_914af328b3988f::t_ba2e4fa50d367a 113-122
+  s_914af328b3988f::t_d26ff906683744 285-286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "13a43f79f6e9ce64e764b5b105500ee5c04e5df2",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
