@@ -7312,16 +7312,14 @@ mod tests {
     /// tests sharing one id contend for the same gate however separate their
     /// `AppState`s are.
     fn park_dormant_plugin(state: &AppState, instance_id: &str) {
+        let wrapper = daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+            "Dormant Fixture",
+            vec![],
+            false,
+        );
         state.plugins.lock().expect("plugins lock").insert(
             instance_id.to_string(),
-            crate::state::PluginInstanceData::dormant_fixture(
-                daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
-                    "Dormant Fixture",
-                    vec![],
-                    false,
-                )
-                .into(),
-            ),
+            crate::state::PluginInstanceData::dormant_fixture(wrapper.into()),
         );
     }
 

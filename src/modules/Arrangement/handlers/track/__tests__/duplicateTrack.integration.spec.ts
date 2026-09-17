@@ -40,7 +40,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDeviceChainTailSeconds: vi.fn(),
     getEngineState: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
-    getLiveEngineSampleRate: vi.fn(),
     getMasterAnalyser: vi.fn(() => null),
     getRuntimeGraphRevision: vi.fn(),
     getTrackAnalyser: vi.fn(() => null),

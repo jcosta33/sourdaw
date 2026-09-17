@@ -97,7 +97,6 @@ export { setMasterGainValue } from './engineAccess/setMasterGainValue';
 export { setMasterComparisonTrimDb } from './engineAccess/setMasterComparisonTrimDb';
 export { syncControlRoomMonitoring } from './engineAccess/syncControlRoomMonitoring';
 export { getAudioSampleRate } from './engineAccess/getAudioSampleRate';
-export { getLiveEngineSampleRate } from './engineAccess/getLiveEngineSampleRate';
 export { getTrackAnalyser } from './engineAccess/getTrackAnalyser';
 export { getDeviceOutputNode } from './engineAccess/getDeviceOutputNode';
 export { getFaustMeterReading } from './engineAccess/getFaustMeterReading';

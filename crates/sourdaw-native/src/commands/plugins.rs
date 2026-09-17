@@ -38,10 +38,10 @@ pub struct PluginInstance {
     pub name: String,
     pub parameters: Vec<PluginParameter>,
     pub is_active: bool,
-    /// Raw CLAP latency, in frames of the engine rate the caller supplied to
-    /// activate this instance. Informational only: `latency_ms` is the same
-    /// figure already converted against that rate, and duplicating the
-    /// conversion is how the two drift apart.
+    /// Raw CLAP latency, in frames of the rate the native side activated this
+    /// instance at. Informational only: `latency_ms` is the same figure already
+    /// converted against that rate, and duplicating the conversion is how the
+    /// two drift apart.
     pub latency_samples: u32,
     /// Latency in milliseconds, converted host-side at the activation sample rate.
     /// This is the value the frontend feeds into latency compensation.
@@ -1204,19 +1204,17 @@ fn host_backend(format: &str) -> Result<HostBackend, String> {
 }
 
 /// Rate assumed when no output device answers at all: 48 kHz, the one rate
-/// every plugin and driver understands. Keeps the divergence comparison
-/// meaningful on a machine with no output device rather than failing it.
+/// every plugin and driver understands. Keeps activation meaningful on a
+/// machine with no output device rather than failing it.
 const FALLBACK_OUTPUT_SAMPLE_RATE_HZ: f64 = 48000.0;
 
 /// The rate the output device runs at by default.
 ///
-/// Not the activation rate, and no longer used as one: a hosted plugin
-/// processes the audio the engine renders, on the engine's own clock, whatever
-/// the device prefers.
-/// This is kept only as the reference [`engine_rate_divergence_note`] compares
-/// against, so the two never diverge silently. Falling back to 48 kHz when no
-/// device answers keeps the comparison from failing on a machine with no output
-/// device at all.
+/// This IS the activation rate a load reaches for when no engine is running
+/// yet: the engine that eventually starts opens the default output device, so
+/// a plugin loaded ahead of it activates at the rate that device will run the
+/// engine on. Falling back to 48 kHz when no device answers at all keeps a
+/// headless machine able to activate a plugin rather than failing every load.
 fn default_output_sample_rate() -> f64 {
     cpal::default_host()
         .default_output_device()
@@ -1225,40 +1223,26 @@ fn default_output_sample_rate() -> f64 {
         .unwrap_or(FALLBACK_OUTPUT_SAMPLE_RATE_HZ)
 }
 
-/// The rate to activate a plugin at, or the reason this load cannot proceed.
+/// The rate to activate a plugin at: the running native engine's own clock, or
+/// the default output device's rate when no engine is running yet.
 ///
-/// The renderer's engine rate and nothing else. A plugin activated at a rate
-/// other than the one its audio is rendered at mistunes every internal
-/// coefficient it derives from that rate, and every samples→ms conversion made
-/// against it — its reported latency included — is wrong by the ratio.
+/// The plugin processes the native engine's buffers on the engine's clock —
+/// never a rate a caller supplies — so this is the only source for it. Without
+/// a running engine, the next engine that starts opens the default output
+/// device, which is exactly what `default_output_sample_rate` reads.
 ///
-/// A rate that is not a positive, finite number is refused rather than
-/// substituted: the substitute is exactly the silent guess this seam exists to
-/// remove, and the caller can only fix what it is told.
-fn engine_activation_sample_rate(engine_sample_rate: f64) -> Result<f64, String> {
-    if !engine_sample_rate.is_finite() || engine_sample_rate <= 0.0 {
-        return Err(format!(
-            "Cannot activate a plugin at an engine sample rate of {engine_sample_rate}: the rate must be a positive number of hertz"
-        ));
-    }
-    Ok(engine_sample_rate)
-}
-
-/// What to say when the engine's rate is not the one the device prefers, or
-/// `None` when they agree.
-///
-/// The two used to be assumed identical, and the assumption was wrong on every
-/// machine whose default device is not 48 kHz. It is a legitimate state — the
-/// browser resamples at the device boundary — but not a silent one: a plugin
-/// heard at the wrong pitch or a latency figure off by 8.8% is otherwise a
-/// mystery with nothing in the log to start from.
-fn engine_rate_divergence_note(engine_sample_rate: f64, device_sample_rate: f64) -> Option<String> {
-    if engine_sample_rate == device_sample_rate {
-        return None;
-    }
-    Some(format!(
-        "[Plugin] activating at the engine sample rate {engine_sample_rate} Hz; the default output device reports {device_sample_rate} Hz"
-    ))
+/// Locks `state.engine` on its own, briefly, and releases it before this
+/// returns: nothing else here needs it held, and the caller resolves the
+/// registry entry next.
+fn native_activation_sample_rate(state: &AppState) -> Result<f64, String> {
+    let engine_guard = state
+        .engine
+        .lock()
+        .map_err(|error| format!("Failed to lock engine: {error}"))?;
+    Ok(match engine_guard.as_ref() {
+        Some(engine) => f64::from(engine.sample_rate()),
+        None => default_output_sample_rate(),
+    })
 }
 
 /// Construct and activate one plugin. The only format-specific step in a load.
@@ -1309,14 +1293,12 @@ fn editor_support_on_ui_thread<P: AudioPlugin + ?Sized + 'static>(
 pub async fn load_plugin(
     plugin_id: PluginId,
     instance_id: PluginInstanceId,
-    engine_sample_rate: f64,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<PluginInstance, String> {
     load_plugin_with_backend(
         plugin_id,
         instance_id,
-        engine_sample_rate,
         windows_host,
         state,
         create_hosted_runtime,
@@ -1337,20 +1319,13 @@ pub async fn load_plugin(
 async fn load_plugin_with_backend(
     plugin_id: PluginId,
     instance_id: PluginInstanceId,
-    engine_sample_rate: f64,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
     create_runtime: impl Fn(HostBackend, &str, &str, f64) -> Result<HostedRuntime, String>,
 ) -> Result<PluginInstance, String> {
-    let instance = load_plugin_under_runtime_gate(
-        plugin_id,
-        instance_id,
-        engine_sample_rate,
-        windows_host,
-        state,
-        create_runtime,
-    )
-    .await?;
+    let instance =
+        load_plugin_under_runtime_gate(plugin_id, instance_id, windows_host, state, create_runtime)
+            .await?;
 
     if instance.engine_plugin_id.is_some() {
         // A load is the moment the process is about to want the memory a
@@ -1383,15 +1358,14 @@ async fn load_plugin_with_backend(
 async fn load_plugin_under_runtime_gate(
     plugin_id: PluginId,
     instance_id: PluginInstanceId,
-    engine_sample_rate: f64,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
     create_runtime: impl Fn(HostBackend, &str, &str, f64) -> Result<HostedRuntime, String>,
 ) -> Result<PluginInstance, String> {
     // The rate is decided before anything is resolved, locked or constructed:
-    // it is the caller's own input, refusing it costs nothing, and a load that
-    // cannot state its rate must not reach a plugin's entry point at all.
-    let sample_rate = engine_activation_sample_rate(engine_sample_rate)?;
+    // it is the native engine's own clock, never a caller's input, and a load
+    // that cannot state its rate must not reach a plugin's entry point at all.
+    let sample_rate = native_activation_sample_rate(state)?;
 
     // Resolution runs before the runtime gate is taken, not under it. It reads
     // the registry file and can wait on a bounded child-process rescan, and it
@@ -1444,10 +1418,6 @@ async fn load_plugin_under_runtime_gate(
     }
     let descriptor_id = entry.descriptor_id.clone();
 
-    if let Some(note) = engine_rate_divergence_note(sample_rate, default_output_sample_rate()) {
-        eprintln!("{note}");
-    }
-
     let mut wrapper = create_runtime(backend, &entry.path, &descriptor_id, sample_rate)?;
     let name = wrapper.get_name().to_string();
     // A wrapper is built even when the plugin's own `activate` says no, so this
@@ -1486,11 +1456,10 @@ async fn load_plugin_under_runtime_gate(
     // runtime below.
     //
     // The conversion to milliseconds happens HERE, against `sample_rate` —
-    // the exact rate this plugin was activated with, which is the caller's
-    // own engine rate. Milliseconds rather than frames because the value is
-    // reported again over the latency-change event, from a path that has no
-    // caller to ask, and a compensation figure must not depend on which side
-    // divided.
+    // the exact rate the native side activated this plugin at. Milliseconds
+    // rather than frames because the value is reported again over the
+    // latency-change event, from a path that has no caller to ask, and a
+    // compensation figure must not depend on which side divided.
     let latency_samples = wrapper.latency_samples();
     let latency_ms = wrapper.latency_ms();
     // Read on the same control-thread visit, and left in frames: see
@@ -1706,6 +1675,20 @@ fn activation_refusal_reason(name: &str) -> String {
     format!("plugin '{name}' failed to activate for engine-owned runtime")
 }
 
+/// Why a runtime activated at one rate is refused the engine running at
+/// another.
+///
+/// One wording for both the load path and the dormant-attach path, both of
+/// which reach [`register_runtime_with_engine`]'s single copy of this guard: a
+/// plugin handed to an engine on another clock renders mistuned and reports a
+/// latency off by the ratio, so it is parked and left dormant and degraded
+/// rather than wrong.
+fn activation_rate_refusal_reason(name: &str, runtime_rate: f64, engine_rate: f64) -> String {
+    format!(
+        "Cannot attach plugin '{name}': it was activated at {runtime_rate} Hz but the engine renders at {engine_rate} Hz"
+    )
+}
+
 /// Refuse a load that has already built its runtime, in the order a refusal has
 /// to happen in.
 ///
@@ -1894,6 +1877,22 @@ fn register_runtime_with_engine(
     if !runtime.is_activated() {
         return Err(RegistrationRefusal::parked(
             activation_refusal_reason(name),
+            runtime,
+        ));
+    }
+
+    // A runtime handed to an engine on another clock renders mistuned and
+    // reports a latency off by the ratio: every coefficient and every
+    // samples→ms conversion it derives from its activation rate assumes it is
+    // the rate its buffers now run at. Parking it here — dormant and degraded
+    // rather than wrong — covers both callers of this function: the load path
+    // and `attach_one_dormant_plugin`, which is the single reason this guard
+    // has one copy rather than two.
+    let engine_rate = f64::from(engine.sample_rate());
+    let runtime_rate = runtime.activation_sample_rate();
+    if runtime_rate != engine_rate {
+        return Err(RegistrationRefusal::parked(
+            activation_rate_refusal_reason(name, runtime_rate, engine_rate),
             runtime,
         ));
     }
@@ -2859,8 +2858,9 @@ mod tests {
     use daw_core::PluginInstanceId;
     use std::path::Path;
 
-    /// The rate a caller's engine renders at. Every load a test makes states
-    /// one, because every load the product makes does.
+    /// The rate `daw_engine::engine_handle_for_command_capture`'s fixture
+    /// reports, so a test asserting against the native engine's own rate can
+    /// name the figure instead of re-deriving it from the fixture each time.
     const TEST_ENGINE_SAMPLE_RATE: f64 = 48_000.0;
 
     /// `PLUGIN_SCAN_PERMIT` is process-global and maps contention to the
@@ -2971,6 +2971,138 @@ mod tests {
                 .expect("engine fixture should exist")
                 .runtime,
         )
+    }
+
+    /// The activation rate is the running engine's own clock, not a rate any
+    /// caller supplies.
+    #[test]
+    fn the_activation_rate_is_the_running_engines_own() {
+        let state = AppState::default();
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let rate = native_activation_sample_rate(&state).expect("the engine lock is free");
+
+        assert_eq!(
+            rate, TEST_ENGINE_SAMPLE_RATE,
+            "with a running engine, activation reads its rate and nothing else"
+        );
+    }
+
+    /// Before an engine exists, activation reaches for the rate the next
+    /// engine will actually open its output device at — never a hardcoded
+    /// guess independent of `default_output_sample_rate`.
+    #[test]
+    fn without_an_engine_the_activation_rate_is_the_default_output_devices() {
+        let state = AppState::default();
+
+        let rate = native_activation_sample_rate(&state).expect("the engine lock is free");
+
+        assert_eq!(
+            rate,
+            default_output_sample_rate(),
+            "with no engine running, activation falls back to the same rate the \
+             next engine will open its output device at"
+        );
+    }
+
+    /// A runtime activated at a rate other than the running engine's own is
+    /// parked — handed back rather than registered — and the refusal names
+    /// both rates so the mismatch is legible.
+    #[test]
+    fn a_runtime_activated_at_another_rate_is_parked_with_both_rates_named() {
+        let state = AppState::default();
+        let (mut engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Mistuned Fixture", Vec::new(), false);
+        wrapper.set_engine_owned_command_fixture_sample_rate(44_100.0);
+        let runtime: HostedRuntime = wrapper.into();
+
+        let refusal = register_runtime_with_engine(
+            &mut engine,
+            &state,
+            "mistuned-instance",
+            runtime,
+            "Mistuned Fixture",
+            &[],
+            false,
+            DeviceKind::Effect,
+        )
+        .err()
+        .expect("a runtime activated on another clock must be refused");
+
+        assert_eq!(
+            refusal.reason,
+            activation_rate_refusal_reason("Mistuned Fixture", 44_100.0, TEST_ENGINE_SAMPLE_RATE),
+            "the refusal names both the runtime's own rate and the engine's"
+        );
+        assert!(
+            refusal.runtime.is_some(),
+            "a mismatched runtime is handed back to be parked, not dropped"
+        );
+        assert!(
+            !state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock should be available")
+                .contains_key("mistuned-instance"),
+            "a parked runtime leaves no engine registration behind"
+        );
+    }
+
+    /// `load_plugin`'s own signature carries no rate parameter, so the only
+    /// value `create_runtime` can see is what `load_plugin_under_runtime_gate`
+    /// resolved from the running engine — never anything the caller supplied.
+    #[test]
+    fn load_plugin_activates_with_no_rate_from_the_caller() {
+        let state = Arc::new(AppState::default());
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &state.plugin_registry_store,
+            &[],
+            &[],
+            true,
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+        );
+
+        let observed_rate = Arc::new(Mutex::new(None));
+        let observed = Arc::clone(&observed_rate);
+
+        let instance = crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("caller-supplies-no-rate".to_string()),
+            &NoWindowHost,
+            &state,
+            move |_backend, _path, _descriptor_id, sample_rate| {
+                *observed.lock().expect("observed rate lock is free") = Some(sample_rate);
+                let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
+                    "Caller Supplies No Rate",
+                    Vec::new(),
+                    false,
+                );
+                wrapper.set_engine_owned_command_fixture_sample_rate(sample_rate);
+                Ok(HostedRuntime::from(wrapper))
+            },
+        ))
+        .expect("a runtime activated at the engine's own rate must register");
+
+        assert_eq!(
+            *observed_rate.lock().expect("observed rate lock is free"),
+            Some(TEST_ENGINE_SAMPLE_RATE),
+            "the rate reaching create_runtime is the running engine's own — \
+             load_plugin's public signature has nowhere for a caller to supply \
+             one"
+        );
+        assert!(
+            instance.engine_plugin_id.is_some(),
+            "activating at the engine's own rate registers rather than parks"
+        );
     }
 
     /// A bypass toggle addressed to an instance the engine never took must say
@@ -3599,7 +3731,6 @@ mod tests {
         let error = crate::block_on_test(load_plugin(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("poisoned-registry-instance".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
         ))
@@ -3883,7 +4014,6 @@ mod tests {
         let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("refused-by-the-engine".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
             |_backend, _path, _descriptor_id, _sample_rate| {
@@ -3981,7 +4111,6 @@ mod tests {
         let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("editor-ask-unanswered".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &UnreachableUiWindowHost,
             &state,
             |_backend, _path, _descriptor_id, _sample_rate| {
@@ -4074,7 +4203,6 @@ mod tests {
         crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("wake-installed".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
             |_backend, _path, _descriptor_id, _sample_rate| {
@@ -4136,17 +4264,15 @@ mod tests {
         crate::block_on_test(load_plugin_with_backend(
             PluginId("instrument1111".to_string()),
             PluginInstanceId("instrument-instance".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
             |_backend, _path, _descriptor_id, _sample_rate| {
-                Ok(HostedRuntime::from(
-                    ClapWrapper::new_engine_owned_command_fixture(
-                        "Synth Fixture",
-                        Vec::new(),
-                        false,
-                    ),
-                ))
+                let wrapper = ClapWrapper::new_engine_owned_command_fixture(
+                    "Synth Fixture",
+                    Vec::new(),
+                    false,
+                );
+                Ok(HostedRuntime::from(wrapper))
             },
         ))
         .expect("an instrument load against a running engine must succeed");
@@ -4299,19 +4425,15 @@ mod tests {
         *state.engine.lock().expect("the engine slot is free") = Some(engine);
 
         for instance_id in ["counted-instance", "parked-after-the-count"] {
+            let wrapper =
+                ClapWrapper::new_engine_owned_command_fixture("Dormant Fixture", Vec::new(), false);
             state
                 .plugins
                 .lock()
                 .expect("plugins lock should be available")
                 .insert(
                     instance_id.to_string(),
-                    crate::state::PluginInstanceData::dormant_fixture(HostedRuntime::from(
-                        ClapWrapper::new_engine_owned_command_fixture(
-                            "Dormant Fixture",
-                            Vec::new(),
-                            false,
-                        ),
-                    )),
+                    crate::state::PluginInstanceData::dormant_fixture(HostedRuntime::from(wrapper)),
                 );
         }
 
@@ -4384,7 +4506,6 @@ mod tests {
         let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("never-activated-dormant".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
             |_backend, _path, _descriptor_id, _sample_rate| {
@@ -4481,7 +4602,6 @@ mod tests {
         crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("fixture-a".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
             |_backend, _path, _descriptor_id, _sample_rate| {
@@ -4517,13 +4637,12 @@ mod tests {
         crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("fixture-b".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
             |_backend, _path, _descriptor_id, _sample_rate| {
-                Ok(HostedRuntime::from(
-                    ClapWrapper::new_engine_owned_command_fixture("Fixture B", Vec::new(), false),
-                ))
+                let wrapper =
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture B", Vec::new(), false);
+                Ok(HostedRuntime::from(wrapper))
             },
         ))
         .expect("fixture B loads");
@@ -4569,7 +4688,6 @@ mod tests {
         crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("fixture-a".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
             |_backend, _path, _descriptor_id, _sample_rate| {
@@ -4596,13 +4714,12 @@ mod tests {
         crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("fixture-c".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
             |_backend, _path, _descriptor_id, _sample_rate| {
-                Ok(HostedRuntime::from(
-                    ClapWrapper::new_engine_owned_command_fixture("Fixture C", Vec::new(), false),
-                ))
+                let wrapper =
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture C", Vec::new(), false);
+                Ok(HostedRuntime::from(wrapper))
             },
         ))
         .expect("fixture C loads");
@@ -4668,7 +4785,6 @@ mod tests {
         crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("fixture-a".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
             |_backend, _path, _descriptor_id, _sample_rate| {
@@ -4695,13 +4811,12 @@ mod tests {
         crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("fixture-d".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
             |_backend, _path, _descriptor_id, _sample_rate| {
-                Ok(HostedRuntime::from(
-                    ClapWrapper::new_engine_owned_command_fixture("Fixture D", Vec::new(), false),
-                ))
+                let wrapper =
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture D", Vec::new(), false);
+                Ok(HostedRuntime::from(wrapper))
             },
         ))
         .expect("fixture D loads");
@@ -4760,11 +4875,11 @@ mod tests {
             "a-refuses-to-attach".to_string(),
             crate::state::PluginInstanceData::dormant_fixture(HostedRuntime::from(refusing)),
         );
+        let attaching =
+            ClapWrapper::new_engine_owned_command_fixture("Dormant Fixture", Vec::new(), false);
         plugins.insert(
             "b-attaches".to_string(),
-            crate::state::PluginInstanceData::dormant_fixture(HostedRuntime::from(
-                ClapWrapper::new_engine_owned_command_fixture("Dormant Fixture", Vec::new(), false),
-            )),
+            crate::state::PluginInstanceData::dormant_fixture(HostedRuntime::from(attaching)),
         );
         drop(plugins);
 
@@ -4798,91 +4913,6 @@ mod tests {
         );
     }
 
-    /// The activation rate is the caller's, not this machine's. A plugin is fed
-    /// audio the caller's engine rendered, so the device's own preference
-    /// decides nothing here — it used to decide everything, and a 44.1 kHz
-    /// default device ran every plugin off its own clock.
-    #[test]
-    fn the_activation_rate_is_the_supplied_engine_rate_and_never_the_devices_own() {
-        let device_rate = default_output_sample_rate();
-        let engine_rate = device_rate + 1_000.0;
-
-        assert_eq!(engine_activation_sample_rate(engine_rate), Ok(engine_rate));
-        assert_ne!(
-            engine_activation_sample_rate(engine_rate),
-            Ok(device_rate),
-            "the device's own rate must not survive as the activation rate"
-        );
-    }
-
-    /// A rate that is not a rate is refused, and the refusal says which one it
-    /// was given. Substituting a default here is the silent guess this seam
-    /// exists to remove.
-    #[test]
-    fn an_engine_rate_that_is_not_a_positive_number_is_refused_by_its_own_value() {
-        // Zero renders as the single character "0", which a substring check
-        // finds in almost any message — including one that named a different
-        // rate entirely. It gets the whole message compared instead.
-        assert_eq!(
-            engine_activation_sample_rate(0.0).expect_err("0 Hz is not a rate"),
-            "Cannot activate a plugin at an engine sample rate of 0: the rate must be a positive number of hertz"
-        );
-
-        for rate in [-48_000.0, f64::NAN, f64::INFINITY] {
-            let refusal = engine_activation_sample_rate(rate)
-                .expect_err("a rate that is not a positive number must refuse");
-            assert!(
-                refusal.contains(&format!("{rate}")),
-                "the refusal must name the rate it was given, got: {refusal}"
-            );
-        }
-    }
-
-    /// The refusal is the load's, not just the predicate's: a load with no
-    /// usable rate stops before it resolves a registry entry or reaches a
-    /// plugin's entry point. The registry is deliberately left empty — with
-    /// the guard unwired this same load fails as "Plugin not found", so the
-    /// exact message pins the call site and its position.
-    #[test]
-    fn load_plugin_refuses_a_non_positive_engine_rate_before_resolving_anything() {
-        let state = AppState::default();
-
-        let error = crate::block_on_test(load_plugin(
-            PluginId("aaaa1111".to_string()),
-            PluginInstanceId("rateless-instance".to_string()),
-            0.0,
-            &NoWindowHost,
-            &state,
-        ))
-        .expect_err("a load with no usable engine rate must refuse");
-
-        assert_eq!(
-            error,
-            engine_activation_sample_rate(0.0).expect_err("0 Hz is not a rate"),
-            "the refusal must be the rate guard's own message, not a later failure"
-        );
-    }
-
-    /// A divergence between the two rates is a legitimate state — the browser
-    /// resamples at the device boundary — but never a silent one. Both numbers
-    /// are reported, because either one alone leaves the reader guessing which
-    /// side is wrong.
-    #[test]
-    fn an_engine_rate_that_differs_from_the_devices_is_reported_with_both_numbers() {
-        let note = engine_rate_divergence_note(48_000.0, 44_100.0)
-            .expect("a divergent pair must be reported");
-
-        assert!(note.contains("48000"), "the engine rate is missing: {note}");
-        assert!(note.contains("44100"), "the device rate is missing: {note}");
-    }
-
-    /// Nothing is said when there is nothing to say. A note on every load would
-    /// bury the one load that matters.
-    #[test]
-    fn an_engine_rate_matching_the_device_reports_no_divergence() {
-        assert_eq!(engine_rate_divergence_note(48_000.0, 48_000.0), None);
-    }
-
     /// Wiring: the ceiling the predicate states is the one the load path
     /// itself enforces, before the plugin library is even constructed. A
     /// session at the ceiling loading a resolvable registry entry must get
@@ -4907,7 +4937,6 @@ mod tests {
         let error = crate::block_on_test(load_plugin(
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("over-ceiling-instance".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
         ))
@@ -5074,7 +5103,6 @@ mod tests {
         let instance = crate::block_on_test(load_plugin_with_backend(
             PluginId("editor-support-fixture".to_string()),
             PluginInstanceId("editor-support-instance".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &windows,
             &state,
             |_backend, _path, _descriptor_id, _sample_rate| {
@@ -5134,7 +5162,6 @@ mod tests {
         let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("editor-support-fixture".to_string()),
             PluginInstanceId("lend-refused-instance".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &LendRefusingWindowHost,
             &state,
             |_backend, _path, _descriptor_id, _sample_rate| {
@@ -5198,7 +5225,6 @@ mod tests {
         let result = crate::block_on_test(load_plugin(
             PluginId("clap-without-descriptor-id".to_string()),
             PluginInstanceId("clap-instance".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
         ));
@@ -6859,7 +6885,6 @@ mod tests {
         let result = crate::block_on_test(load_plugin(
             PluginId("vst3-fixture".to_string()),
             PluginInstanceId("vst3-instance".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
         ));
@@ -6875,7 +6900,6 @@ mod tests {
         let duplicate = crate::block_on_test(load_plugin(
             PluginId("vst3-fixture".to_string()),
             PluginInstanceId("vst3-instance".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
         ));
@@ -6931,7 +6955,6 @@ mod tests {
             let result = crate::block_on_test(load_plugin(
                 PluginId(plugin_id.to_string()),
                 PluginInstanceId(format!("{plugin_id}-instance")),
-                TEST_ENGINE_SAMPLE_RATE,
                 &NoWindowHost,
                 &state,
             ));
@@ -7025,7 +7048,6 @@ mod tests {
         let result = crate::block_on_test(load_plugin(
             PluginId("unknown-format".to_string()),
             PluginInstanceId("unknown-instance".to_string()),
-            TEST_ENGINE_SAMPLE_RATE,
             &NoWindowHost,
             &state,
         ));

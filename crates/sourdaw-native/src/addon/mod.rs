@@ -546,18 +546,12 @@ impl SourdawNative {
     }
 
     #[napi]
-    pub async fn load_plugin(
-        &self,
-        plugin_id: String,
-        instance_id: String,
-        sample_rate: f64,
-    ) -> Result<Value> {
+    pub async fn load_plugin(&self, plugin_id: String, instance_id: String) -> Result<Value> {
         let windows = self.window_host();
         json(reason(
             commands::plugins::load_plugin(
                 PluginId(plugin_id),
                 PluginInstanceId(instance_id),
-                sample_rate,
                 windows.as_ref(),
                 &self.singletons.app_state,
             )

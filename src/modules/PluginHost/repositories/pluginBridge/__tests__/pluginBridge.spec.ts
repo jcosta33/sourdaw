@@ -29,7 +29,7 @@ describe('pluginBridge repository', () => {
     describe('loadPlugin', () => {
         it('should return unavailable in browser', async () => {
             vi.mocked(isDesktopRuntime).mockReturnValue(false);
-            const result = await loadPlugin('p1', 'i1', 44_100);
+            const result = await loadPlugin('p1', 'i1');
             expect(result.name).toBe('Unavailable');
             expect(desktopInvoke).not.toHaveBeenCalled();
         });
@@ -39,11 +39,10 @@ describe('pluginBridge repository', () => {
             const mockInstance = { instance_id: 'i1', name: 'FabFilter Pro-Q 3' };
             vi.mocked(desktopInvoke).mockResolvedValue(mockInstance);
 
-            const result = await loadPlugin('p1', 'i1', 44_100);
+            const result = await loadPlugin('p1', 'i1');
             expect(desktopInvoke).toHaveBeenCalledWith('load_plugin', {
                 pluginId: 'p1',
                 instanceId: 'i1',
-                sampleRate: 44_100,
             });
             expect(result).toEqual(mockInstance);
         });

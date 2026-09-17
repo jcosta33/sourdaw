@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
     findSupportedPlugin: vi.fn(),
     getTrackStoreState: vi.fn(),
     reportLatency: vi.fn(),
-    getLiveEngineSampleRate: vi.fn<() => number | undefined>(() => 96_000),
     activateExternalPlugin: vi.fn(),
 }));
 
@@ -23,7 +22,6 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
-    getLiveEngineSampleRate: mocks.getLiveEngineSampleRate,
     reportLatency: mocks.reportLatency,
 }));
 
@@ -46,9 +44,6 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 describe('handleLoadExternalPlugin', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        // `clearAllMocks` clears calls, not implementations, so a test that
-        // takes the engine away has to hand it back here.
-        mocks.getLiveEngineSampleRate.mockReturnValue(96_000);
         mocks.findSupportedPlugin.mockReturnValue({ id: 'plugin-1', name: 'Compressor', category: 'Effect' });
         mocks.activateExternalPlugin.mockResolvedValue({ status: 'active' });
     });
@@ -217,49 +212,12 @@ describe('handleLoadExternalPlugin', () => {
             expect.objectContaining({
                 pluginId: 'plugin-1',
                 instanceId: 'instance-1',
-                // The rate this engine renders at, read live rather than
-                // assumed: the plugin processes the audio this graph produces.
-                engineSampleRate: 96_000,
             })
         );
         const activation = mocks.activateExternalPlugin.mock.calls[0]?.[0];
         expect(activation?.onLatencyMs).toEqual(expect.any(Function));
         activation?.onLatencyMs?.(9);
         expect(mocks.reportLatency).toHaveBeenCalledWith('device-1', 9);
-    });
-
-    it('refuses to activate at a guessed rate while the engine renders no audio', async () => {
-        const before = { id: 'audio-1', kind: 'audio' as const, devices: [] };
-        const device = {
-            id: 'device-1',
-            name: 'Compressor',
-            type: 'external-plugin',
-            bypassed: false,
-            parameterValues: {},
-            externalPluginId: 'plugin-1',
-            externalInstanceId: 'instance-1',
-        };
-        mocks.getTrackStoreState
-            .mockReturnValueOnce({ tracks: [before] })
-            .mockReturnValue({ tracks: [{ ...before, devices: [device] }] });
-        mocks.addExternalDevice.mockReturnValue(device);
-        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
-        mocks.getLiveEngineSampleRate.mockReturnValue(undefined);
-
-        const result = await handleLoadExternalPlugin.execute({
-            type: 'loadExternalPlugin',
-            payload: { pluginId: 'plugin-1', trackId: 'audio-1' },
-        });
-        if (!result || result.status !== 'written' || !result.afterCommit) {
-            throw new Error('Expected a deferred external-plugin runtime effect');
-        }
-
-        // The engine is on its silent fallback shim, whose context reports a
-        // confident 44100. Substituting that would activate the plugin on a
-        // clock it is not fed, and the native rate guard would never see a
-        // value to refuse. The post-commit contract routes this to repair.
-        await expect(result.afterCommit()).rejects.toThrow('not rendering audio');
-        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 
     // The ordinary order a project opens in: no engine is running until the

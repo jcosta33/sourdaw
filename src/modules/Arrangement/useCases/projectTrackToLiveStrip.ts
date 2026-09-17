@@ -1,6 +1,4 @@
-import { logger } from '#/infra/logger/appLogger';
 import {
-    getLiveEngineSampleRate,
     initializeTrackStripFromSnapshot,
     reportLatency,
     setTrackGain,
@@ -92,30 +90,17 @@ export function projectTrackToLiveStrip({
             instanceId = device.externalInstanceId;
         }
         const pluginId = device.externalPluginId;
-        // The live engine's own rate: the plugin is fed audio this engine
-        // renders, so it has to run on the same clock. Absent when the engine
-        // is on its silent fallback shim, and this projection is the rebuild
-        // path — it says so and leaves the plugin dormant, which is what the
-        // next rebuild reverses. Activating on a substituted rate would not be
-        // reversible: the instance stays detuned until something unloads it.
-        const engineSampleRate = getLiveEngineSampleRate();
         if (instanceId && pluginId) {
-            if (engineSampleRate === undefined) {
-                logger.warn(
-                    `Leaving external plugin ${instanceId} dormant on track ${track.id}: the audio engine is not rendering audio, so there is no sample rate to activate at`
-                );
-            } else {
-                // Idempotent load + state restore; skips if the instance is already live,
-                // so the project-open rebuild and every Play/record rebuild stay cheap.
-                const activation = activateExternalPlugin({
-                    pluginId,
-                    instanceId,
-                    stateChunk: device.externalStateChunk,
-                    engineSampleRate,
-                    onLatencyMs: (latencyMs) => reportLatency(device.id, latencyMs),
-                });
-                onExternalPluginActivation?.(activation);
-            }
+            // Idempotent load + state restore; skips if the instance is already live,
+            // so the project-open rebuild and every Play/record rebuild stay cheap.
+            // The native engine activates it at its own negotiated rate.
+            const activation = activateExternalPlugin({
+                pluginId,
+                instanceId,
+                stateChunk: device.externalStateChunk,
+                onLatencyMs: (latencyMs) => reportLatency(device.id, latencyMs),
+            });
+            onExternalPluginActivation?.(activation);
         }
         for (const [parameterId, value] of orderDeviceParametersForReplay(device.type, device.parameterValues)) {
             if (typeof value === 'number') {
