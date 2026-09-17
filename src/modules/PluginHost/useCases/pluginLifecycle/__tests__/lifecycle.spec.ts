@@ -62,8 +62,8 @@ describe('Plugin Lifecycle Use Cases', () => {
     });
 
     it('loadPlugin delegates to repository', async () => {
-        await loadPlugin('p1', 'inst1', 44_100);
-        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'inst1', 44_100);
+        await loadPlugin('p1', 'inst1');
+        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'inst1');
     });
 
     it('rejects mismatched keyed unload ownership', async () => {
@@ -93,7 +93,7 @@ describe('Plugin Lifecycle Use Cases', () => {
 
         const unloadResult = unloadPlugin('ordered-instance');
         const duplicateUnload = unloadPlugin('ordered-instance');
-        const loadResult = loadPlugin('p1', 'ordered-instance', 44_100);
+        const loadResult = loadPlugin('p1', 'ordered-instance');
         await Promise.resolve();
 
         expect(mocks.unloadPluginRepo).toHaveBeenCalledWith('ordered-instance');
@@ -103,7 +103,7 @@ describe('Plugin Lifecycle Use Cases', () => {
         await Promise.all([unloadResult, duplicateUnload, loadResult]);
 
         expect(mocks.unloadPluginRepo).toHaveBeenCalledTimes(1);
-        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'ordered-instance', 44_100);
+        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'ordered-instance');
         expect(mocks.unloadPluginRepo.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.loadPluginRepo.mock.invocationCallOrder[0]!
         );
@@ -114,7 +114,7 @@ describe('Plugin Lifecycle Use Cases', () => {
         let nestedResult: ReturnType<typeof loadPlugin> | undefined;
         mocks.unloadPluginRepo.mockImplementationOnce(() => {
             order.push('outer-start');
-            nestedResult = loadPlugin('p1', 'reentrant-instance', 44_100);
+            nestedResult = loadPlugin('p1', 'reentrant-instance');
             order.push('outer-return');
             return Promise.resolve({ unloadedInstanceIds: ['reentrant-instance'], errors: [], reports: [] });
         });
@@ -144,10 +144,10 @@ describe('Plugin Lifecycle Use Cases', () => {
         loadedExternalInstances.add('blocked-instance');
 
         const unloadResult = unloadPlugin('blocked-instance');
-        const loadResult = loadPlugin('p1', 'independent-instance', 44_100);
+        const loadResult = loadPlugin('p1', 'independent-instance');
         await Promise.resolve();
 
-        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'independent-instance', 44_100);
+        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'independent-instance');
 
         unloading.reject(failure);
         await expect(unloadResult).rejects.toBe(failure);
@@ -163,13 +163,13 @@ describe('Plugin Lifecycle Use Cases', () => {
         loadedExternalInstances.add('recovering-instance');
 
         const failedUnload = unloadPlugin('recovering-instance');
-        const queuedLoad = loadPlugin('p1', 'recovering-instance', 44_100);
+        const queuedLoad = loadPlugin('p1', 'recovering-instance');
 
         expect(mocks.loadPluginRepo).not.toHaveBeenCalled();
         unloading.reject(failure);
         await expect(failedUnload).rejects.toBe(failure);
         await expect(queuedLoad).resolves.toBe(pluginInstance);
-        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'recovering-instance', 44_100);
+        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'recovering-instance');
     });
 
     it('exposes only the ignored caller branch as an unhandled rejection', () => {

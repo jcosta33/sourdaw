@@ -74,7 +74,7 @@ describe('external plugin state capture authority', () => {
         const token = externalPluginStateCaptureAuthority.current('instance-a');
         mocks.loadPlugin.mockRejectedValueOnce(new Error('load failed'));
 
-        const loading = loadPlugin('plugin', 'instance-a', 48_000);
+        const loading = loadPlugin('plugin', 'instance-a');
 
         expect(externalPluginStateCaptureAuthority.isCurrent('instance-a', token)).toBe(false);
         await expect(loading).rejects.toThrow('load failed');

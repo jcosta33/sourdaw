@@ -36,16 +36,6 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     resetExternalPluginRuntimeForGraphRebuild: mocks.resetExternalPluginRuntimeForGraphRebuild,
 }));
 
-/**
- * The rate the engine renders at in this scenario. Both activations state it,
- * because recovery has to reach the plugin on the same clock the first attempt
- * did — a repair that re-activated at a different rate would restore a detuned
- * instance and call it recovered. Deliberately neither 44100 nor 48000: those
- * are the rates a substituting accessor falls back to, so an assertion stated
- * at one of them would pass against a caller that never read the engine.
- */
-const ENGINE_SAMPLE_RATE = 96_000;
-
 const baseRevision = JSON.stringify({
     documentIdentityEpoch: 1,
     mutationEpoch: 0,
@@ -123,7 +113,6 @@ describe('loadExternalPlugin versioned recovery', () => {
             activateExternalPlugin({
                 pluginId: persistedDevice.externalPluginId,
                 instanceId: persistedDevice.externalInstanceId,
-                engineSampleRate: ENGINE_SAMPLE_RATE,
             })
         ).resolves.toMatchObject({ status: 'failed' });
 
@@ -234,7 +223,6 @@ describe('loadExternalPlugin versioned recovery', () => {
             const activation = await activateExternalPlugin({
                 pluginId: currentDevice.externalPluginId,
                 instanceId: currentDevice.externalInstanceId,
-                engineSampleRate: ENGINE_SAMPLE_RATE,
             });
             if (activation.status === 'failed') {
                 throw new Error(activation.reason);
@@ -256,14 +244,13 @@ describe('loadExternalPlugin versioned recovery', () => {
         expect(mocks.activateExternalPlugin).toHaveBeenNthCalledWith(1, {
             pluginId: persistedDevice.externalPluginId,
             instanceId: persistedDevice.externalInstanceId,
-            engineSampleRate: ENGINE_SAMPLE_RATE,
         });
-        // The rebuild reaches the same instance identity on the same clock as
-        // the attempt it is recovering from.
+        // The rebuild reaches the same instance identity the attempt it is
+        // recovering from used; the native engine activates both on its own
+        // clock.
         expect(mocks.activateExternalPlugin).toHaveBeenNthCalledWith(2, {
             pluginId: persistedDevice.externalPluginId,
             instanceId: persistedDevice.externalInstanceId,
-            engineSampleRate: ENGINE_SAMPLE_RATE,
         });
         expect(getTrackStoreState()?.tracks[0]?.devices).toEqual([persistedDevice]);
     });
