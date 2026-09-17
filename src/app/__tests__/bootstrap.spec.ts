@@ -10,6 +10,7 @@ import { getMidiTransform, getMidiTransformDescriptors, getMidiTransformNames } 
 import { getToasterPresetDeviceState } from '#/modules/Toaster/useCases';
 
 import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
+import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
 
 import type { setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import type {
@@ -151,6 +152,7 @@ const {
     setNotificationEventBusMock,
     setProjectIdentityTransitionDependenciesMock,
     commandRuntimeRepairPortMock,
+    externalClientManifestPortMock,
     repairRuntimeGraphFromProjectMock,
     sessionUndoWitnessStampPortMock,
     stampSessionUndoWitnessMock,
@@ -251,6 +253,7 @@ const {
         },
         setNotificationEventBusMock: vi.fn<(eventBus: NotificationEventBus) => void>(),
         commandRuntimeRepairPortMock: { setProvider: vi.fn() },
+        externalClientManifestPortMock: { setProvider: vi.fn() },
         repairRuntimeGraphFromProjectMock: vi.fn(() => Promise.resolve()),
         sessionUndoWitnessStampPortMock: { setProvider: vi.fn() },
         stampSessionUndoWitnessMock: vi.fn(),
@@ -265,6 +268,10 @@ const {
 });
 
 vi.mock('#/infra/logger/runtimeLogger', () => ({ setRuntimeLogger: noop }));
+
+vi.mock('#/modules/AgentAdapters/useCases', () => ({
+    externalClientManifestPort: externalClientManifestPortMock,
+}));
 
 vi.mock('#/modules/AiGeneration/useCases', () => ({
     getGenerationHandlers: sentinelHandlers('AiGeneration'),
@@ -891,6 +898,10 @@ describe('bootstrap', () => {
         expect(commandRuntimeRepairPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(
             repairRuntimeGraphFromProjectMock
         );
+    });
+
+    it('offers external clients the published protocol manifest, not a second list', () => {
+        expect(externalClientManifestPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(getAgentProtocolManifest);
     });
 
     it('wires the undo session witness stamp port to the real production stamp (#3331)', () => {
