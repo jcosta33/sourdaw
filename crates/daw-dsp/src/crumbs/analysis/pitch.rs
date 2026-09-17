@@ -14,6 +14,22 @@ const YIN_THRESHOLD: f32 = 0.15;
 const MIN_PITCH_HZ: f32 = 30.0;
 const MAX_PITCH_HZ: f32 = 4000.0;
 
+// ── 12-TET anchor ──────────────────────────────────────────────────────
+//
+// Restated per the TS↔Rust lockstep rule (no crate edge exists to the
+// owners): `daw_core::tuning` owns the Rust pair, `src/utils/pitch.ts` the
+// TypeScript one, `scoring/src/tuning.rs` carries the tuner's own copy, and
+// `fermenter/voice.rs`, `levain/fallback.rs`, and `grand_boule/parameters.rs`
+// carry the rest of this crate's copies. All seven must agree on the A4
+// anchor.
+
+/// Concert-A reference frequency the 12-TET grid is anchored to.
+const STANDARD_A4_HZ: f32 = 440.0;
+/// MIDI note number of concert A on that grid.
+const A4_MIDI_NOTE: f32 = 69.0;
+/// Semitones per octave in twelve-tone equal temperament.
+const SEMITONES_PER_OCTAVE: f32 = 12.0;
+
 // ── Result ─────────────────────────────────────────────────────────────
 
 /// Result of pitch detection on a sample.
@@ -114,7 +130,7 @@ pub fn detect_pitch(samples: &[f32], sample_rate: f32) -> PitchResult {
     let median_freq = detected_freqs[detected_freqs.len() / 2];
 
     // Convert to MIDI note.
-    let midi_float = 69.0 + 12.0 * (median_freq / 440.0).log2();
+    let midi_float = A4_MIDI_NOTE + SEMITONES_PER_OCTAVE * (median_freq / STANDARD_A4_HZ).log2();
     let midi_note = midi_float.round() as u8;
 
     let confidence = total_periodicity / detected_freqs.len() as f32;
@@ -128,11 +144,11 @@ pub fn detect_pitch(samples: &[f32], sample_rate: f32) -> PitchResult {
 
 /// Convert a frequency in Hz to the nearest MIDI note number.
 pub fn hz_to_midi(freq_hz: f32) -> u8 {
-    let midi = 69.0 + 12.0 * (freq_hz / 440.0).log2();
+    let midi = A4_MIDI_NOTE + SEMITONES_PER_OCTAVE * (freq_hz / STANDARD_A4_HZ).log2();
     (midi.round() as u8).min(127)
 }
 
 /// Convert a MIDI note number to frequency in Hz.
 pub fn midi_to_hz(note: u8) -> f32 {
-    440.0 * 2.0_f32.powf((note as f32 - 69.0) / 12.0)
+    STANDARD_A4_HZ * 2.0_f32.powf((note as f32 - A4_MIDI_NOTE) / SEMITONES_PER_OCTAVE)
 }

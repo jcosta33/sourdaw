@@ -7,6 +7,14 @@ import { renderAgentProjectSections } from '../useCases/renderAgentProjectSectio
 
 type RenderProjectSectionsAction = Extract<AppAction, { type: 'renderProjectSections' }>;
 
+/**
+ * Sample-rate bounds the render-job contract admits. They gate an AI-requested
+ * section render before any audio work starts, so a value outside every
+ * OfflineAudioContext's practical range is refused rather than rendered.
+ */
+const MIN_RENDER_JOB_SAMPLE_RATE = 8_000;
+const MAX_RENDER_JOB_SAMPLE_RATE = 192_000;
+
 function getJobs(action: RenderProjectSectionsAction): readonly RenderProjectSectionJobSnapshot[] | null {
     const jobs = action.payload.jobs;
     if (!jobs || jobs.length === 0 || jobs.length !== action.payload.sectionIds.length) {
@@ -22,8 +30,8 @@ function getJobs(action: RenderProjectSectionsAction): readonly RenderProjectSec
             Number.isFinite(job.endBeat) &&
             job.endBeat > job.startBeat &&
             Number.isInteger(job.sampleRate) &&
-            job.sampleRate >= 8_000 &&
-            job.sampleRate <= 192_000 &&
+            job.sampleRate >= MIN_RENDER_JOB_SAMPLE_RATE &&
+            job.sampleRate <= MAX_RENDER_JOB_SAMPLE_RATE &&
             Number.isFinite(job.tailSeconds) &&
             job.tailSeconds >= 0;
         jobIds.add(job.jobId);

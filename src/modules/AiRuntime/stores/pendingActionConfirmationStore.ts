@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 import { type buildSemanticProjectDiff } from '#/modules/Command/useCases';
 
+import { PENDING_ACTION_CONFIRMATION_RETENTION_POLICY } from '../models/AgentRetentionPolicy';
 import { type AgentRunCommandBatchAuthority } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus, type ChatActionFollowUpStatus } from '../models/Chat';
 import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
@@ -151,8 +152,9 @@ export const pendingActionConfirmationStore = createStore<PendingActionConfirmat
     initialData: { confirmations: [] },
 });
 
-const MAX_CONFIRMATIONS = 20;
-const MAX_PREPARED_RESOURCE_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_CONFIRMATIONS = PENDING_ACTION_CONFIRMATION_RETENTION_POLICY.maxCount;
+// A policy declaring no byte bound admits any prepared size.
+const MAX_PREPARED_RESOURCE_BYTES = PENDING_ACTION_CONFIRMATION_RETENTION_POLICY.maxBytes ?? Number.POSITIVE_INFINITY;
 
 type PendingActionResourceLease = {
     bytes: number;

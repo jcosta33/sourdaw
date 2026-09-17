@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { addTrack } from '#/modules/Arrangement/useCases';
-import { clearRuntimeCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import {
+    clearRuntimeCachedAudioBuffers,
+    forgetProjectLatchedPedals,
+    resetAudioGraph,
+} from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
     compactProject,
@@ -45,10 +49,11 @@ vi.mock('#/modules/Transport/useCases', () => ({
     stopPlayback: vi.fn(),
 }));
 
-// newProject imports clearRuntimeCachedAudioBuffers and resetAudioGraph.
+// newProject imports clearRuntimeCachedAudioBuffers, forgetProjectLatchedPedals and resetAudioGraph.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
+    forgetProjectLatchedPedals: vi.fn(),
     resetAudioGraph: vi.fn(),
 }));
 
@@ -150,6 +155,13 @@ describe('newProject injectable', () => {
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledWith({ createNewMidiProbabilitySeed: true });
         expect(resetCrdtProjectAuthority).toHaveBeenCalledWith('Test');
+        // The fresh project owns the document from that call on, so the pedals
+        // latched under the project just left are forgotten here and not at the
+        // earlier graph reset, which an abort can still undo.
+        expect(forgetProjectLatchedPedals).toHaveBeenCalledOnce();
+        expect(vi.mocked(forgetProjectLatchedPedals).mock.invocationCallOrder[0]!).toBeGreaterThan(
+            vi.mocked(resetCrdtProjectAuthority).mock.invocationCallOrder[0]!
+        );
         expect(compactProject).toHaveBeenCalledOnce();
         expect(createCrdtProject).not.toHaveBeenCalled();
         expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
@@ -209,6 +221,9 @@ describe('newProject injectable', () => {
         await expect(activation).resolves.toBe(false);
         expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
         expect(ensureTrackStrips).toHaveBeenCalledOnce();
+        // The player stays in the old project, whose graph is rebuilt above, so
+        // a damper still held must survive the abandoned activation.
+        expect(forgetProjectLatchedPedals).not.toHaveBeenCalled();
     });
 
     it('keeps previous authority and restores its graph when native plugin teardown fails', async () => {

@@ -1,3 +1,4 @@
+import { MAX_TEMPO_MAP_TEMPO, MIN_TEMPO_MAP_TEMPO } from '../../models/TempoMap';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 
 export function updateTempoChange(changeId: string, tempo: number): void {
@@ -6,8 +7,11 @@ export function updateTempoChange(changeId: string, tempo: number): void {
         return;
     }
     tempoMapStore.set({
-        changes: state.changes.map((context) =>
-            context.id === changeId ? { ...context, tempo: Math.max(20, Math.min(999, tempo)) } : context
-        ),
+        changes: state.changes.map((context) => {
+            if (context.id !== changeId) {
+                return context;
+            }
+            return { ...context, tempo: Math.max(MIN_TEMPO_MAP_TEMPO, Math.min(MAX_TEMPO_MAP_TEMPO, tempo)) };
+        }),
     });
 }

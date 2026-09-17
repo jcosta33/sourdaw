@@ -1,3 +1,5 @@
+import { clampMidiData7 } from '#/utils/midiData';
+
 import { midiStore } from '../../stores/midiStore';
 
 export function setNoteSlide(clipId: string, noteId: string, slide: number): void {
@@ -15,9 +17,7 @@ export function setNoteSlide(clipId: string, noteId: string, slide: number): voi
         ...state,
         notesByClipId: {
             ...state.notesByClipId,
-            [clipId]: existing.map((node) =>
-                node.id === noteId ? { ...node, slide: Math.max(0, Math.min(127, slide)) } : node
-            ),
+            [clipId]: existing.map((node) => (node.id === noteId ? { ...node, slide: clampMidiData7(slide) } : node)),
         },
     });
 }

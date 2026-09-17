@@ -7,9 +7,15 @@ const mocks = vi.hoisted(() => {
     return {
         padStoreValue,
         crumbsNoteOn: vi.fn(),
+        padControls: { noteOn: vi.fn(), noteOff: vi.fn() },
+        resolvePadControls: vi.fn(),
         warn: vi.fn(),
     };
 });
+
+vi.mock('../resolveCrumbsPadControls', () => ({
+    resolveCrumbsPadControls: mocks.resolvePadControls,
+}));
 
 vi.mock('../../../stores/padStore', () => ({
     padStore: {
@@ -33,6 +39,7 @@ describe('triggerPadOn', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.padStoreValue.value = { inst1: { pads: [{ midiNote: 60 }, { midiNote: 62 }] } };
+        mocks.resolvePadControls.mockReturnValue(mocks.padControls);
     });
 
     it('sends the pad note to the bridge using the resolved midi note', async () => {
@@ -59,5 +66,40 @@ describe('triggerPadOn', () => {
         mocks.crumbsNoteOn.mockRejectedValueOnce(new Error('engine offline'));
         await expect(triggerPadOn('inst1', 0)).resolves.toBeUndefined();
         expect(mocks.warn).toHaveBeenCalledWith('Note trigger failed:', expect.any(Error));
+    });
+
+    // Both carriers, because exactly one of them is audible and which one is
+    // not knowable from here: a natively carried strip has its Web Audio twin
+    // gated out of the mix, and an uncarried one has no native chain entry for
+    // the device at all. Sending only the native slot is what left the pads
+    // silent before the first Play (#4204).
+    it('voices the Web Audio node as well as the native slot', async () => {
+        await triggerPadOn('inst1', 1, 90);
+
+        expect(mocks.padControls.noteOn).toHaveBeenCalledExactlyOnceWith(62, 90);
+        expect(mocks.crumbsNoteOn).toHaveBeenCalledExactlyOnceWith('inst1', 62, 90);
+    });
+
+    it('voices the Web Audio node even when the native send is refused', async () => {
+        mocks.crumbsNoteOn.mockRejectedValueOnce(new Error('engine offline'));
+
+        await triggerPadOn('inst1', 0, 64);
+
+        expect(mocks.padControls.noteOn).toHaveBeenCalledExactlyOnceWith(60, 64);
+    });
+
+    it('still sends the native note when no Web Audio node answers', async () => {
+        mocks.resolvePadControls.mockReturnValue(null);
+
+        await triggerPadOn('inst1', 0, 64);
+
+        expect(mocks.crumbsNoteOn).toHaveBeenCalledExactlyOnceWith('inst1', 60, 64);
+    });
+
+    it('clamps the velocity on both carriers alike', async () => {
+        await triggerPadOn('inst1', 0, 500);
+
+        expect(mocks.padControls.noteOn).toHaveBeenCalledExactlyOnceWith(60, 127);
+        expect(mocks.crumbsNoteOn).toHaveBeenCalledExactlyOnceWith('inst1', 60, 127);
     });
 });

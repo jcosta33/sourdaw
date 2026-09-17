@@ -48,6 +48,7 @@
 
 import {
     type AudioGraphApplyResult,
+    type AudioGraphAttachedCrumbsInstance,
     type AudioGraphAttachedPlugin,
     type AudioGraphBackend,
     type AudioGraphCommandBatch,
@@ -76,8 +77,19 @@ export type NativeLiveGraphBackendDeps = Readonly<{
     acquireNativeSampleBank?: AcquireNativeSampleBank;
 }>;
 
-function rejected(reason: string): AudioGraphApplyResult {
-    return { acceptance: 'rejected', application: 'not-applied', reason };
+/**
+ * A refusal, with whatever the call attached before refusing.
+ *
+ * The default is the honest answer for every refusal this module raises
+ * itself — a transport that never reached the engine, a disposed backend —
+ * because no such call ran an attach. Only a refusal read back from a payload
+ * can carry one.
+ */
+function rejected(
+    reason: string,
+    attachedCrumbs: readonly AudioGraphAttachedCrumbsInstance[] = []
+): AudioGraphApplyResult {
+    return { acceptance: 'rejected', application: 'not-applied', reason, attachedCrumbs };
 }
 
 function reasonOf(error: unknown): string {
@@ -113,6 +125,29 @@ function readAttachedPlugins(value: unknown): readonly AudioGraphAttachedPlugin[
 }
 
 /**
+ * Read the Crumbs instances the same applied batch says its engine start took
+ * over, under the same rule: absent is empty, and an entry naming no instance
+ * is dropped rather than guessed at.
+ *
+ * A Crumbs instance is named by the device's own id, because that is the id the
+ * renderer created it with, so these ids join the hosted plugins' in one attach
+ * set without colliding with them.
+ */
+function readAttachedCrumbsInstances(value: unknown): readonly AudioGraphAttachedCrumbsInstance[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value.flatMap((entry) => {
+        const attached = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : null;
+        const instanceId = attached?.instanceId;
+        if (typeof instanceId !== 'string') {
+            return [];
+        }
+        return [{ instanceId }];
+    });
+}
+
+/**
  * Read `apply_graph_commands`'s mirror of {@link AudioGraphApplyResult}.
  *
  * The correlation is echoed verbatim by the native side, so it is carried back
@@ -123,7 +158,13 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
     const payload = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
     if (payload?.acceptance === 'rejected') {
         const reason = payload.reason;
-        return rejected(typeof reason === 'string' ? reason : 'refused without a reason');
+        // A refused batch can still have attached instances: the Crumbs attach
+        // runs before the batch is mapped, so it has already happened by the
+        // time anything can refuse the batch.
+        return rejected(
+            typeof reason === 'string' ? reason : 'refused without a reason',
+            readAttachedCrumbsInstances(payload.attachedCrumbs)
+        );
     }
     // The outcome is decided before any of its payload is read, so an answer
     // in no known shape is reported as the unknown outcome it is rather than as
@@ -152,6 +193,7 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
             ...admittedBatch,
             reports,
             attachedPlugins: readAttachedPlugins(payload.attachedPlugins),
+            attachedCrumbs: readAttachedCrumbsInstances(payload.attachedCrumbs),
         };
     }
     const reason = payload.reason;
@@ -166,6 +208,7 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
         reason: typeof reason === 'string' ? reason : 'partially applied without a reason',
         runtimeRevision,
         reports,
+        attachedCrumbs: readAttachedCrumbsInstances(payload.attachedCrumbs),
     };
 }
 

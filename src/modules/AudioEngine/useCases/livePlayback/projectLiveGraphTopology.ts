@@ -116,7 +116,7 @@ export type LiveGraphTopologyInput = Readonly<{
     /** A track's VCA group master as a plain multiplier; absent means `1`. */
     vcaMultiplierByTrackId: ReadonlyMap<string, number>;
     /**
-     * The external plugin instances the native engine currently owns.
+     * The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}.
      *
      * The only thing that gives an `external-plugin` device a native body: the
      * mapper splices in an engine-owned instance and has nothing to splice for

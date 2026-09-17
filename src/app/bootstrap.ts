@@ -56,6 +56,7 @@ import {
     recordNativeChainReleases,
     configureDurableAudioBufferOwnership,
     isTunerTelemetryNativelyOwned,
+    startMainThreadLongTaskObservation,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import { stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
@@ -115,7 +116,11 @@ import {
     registerCrdtStorageRuntime,
     sessionUndoWitnessStampPort,
 } from '#/modules/CrdtDocument/useCases';
-import { initCrumbsDeviceStatePersistence, prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
+import {
+    initCrumbsDeviceStatePersistence,
+    prepareCrumbsEngine,
+    syncCrumbsNativeInstances,
+} from '#/modules/Crumbs/useCases';
 import { updateCrustMeters, deleteCrustMeters } from '#/modules/Crust/stores';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
@@ -562,8 +567,18 @@ initToasterKitPersistence();
 initLevainDeviceStatePersistence();
 composeGrandBoule({ eventBus, logger });
 initCrumbsDeviceStatePersistence();
+// The native Crumbs instance follows the device's presence on the project, not
+// the panel's mount: the mapper splices a Crumbs device onto its strip by the
+// instance the engine holds, so a sampler whose window is shut would otherwise
+// leave its strip with no native body. Registered after the persistence
+// subscriber so a device's first appearance already carries the saved sample
+// this restores.
+syncCrumbsNativeInstances();
 initStalenessDetection();
 
+// Registered for the life of the process, so deadline-evidence reading has
+// main-thread long-task coverage from startup regardless of what is mounted.
+startMainThreadLongTaskObservation();
 initProjectDirtyTracking();
 initGrooveTemplateDirtyTracking();
 // Edits made inside a hosted plugin's own editor never pass through this app,

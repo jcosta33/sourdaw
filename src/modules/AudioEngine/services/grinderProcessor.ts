@@ -7,11 +7,21 @@
  * Effect processor: reads from inputs[0], writes to outputs[0].
  */
 
+import { SET_FALLBACK_PARAM_COMMAND } from '../models/RuntimeDeviceControl';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, GrinderInstance } from '../wasm/daw_dsp.js';
 
 import grinderAudioParamContract from './grinderAudioParamContract.json';
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
+
+/**
+ * Port message discriminants, restated from the app-side owner
+ * `src/infra/audioWorklet/workletPortMessages.ts` because this processor runs
+ * in the isolated worklet realm and must not import app-side code; pinned
+ * equal by `__tests__/workletPortMessageParity.spec.ts`.
+ */
+export const INIT_SAB_MESSAGE_TYPE = 'init-sab';
+export const LATENCY_CHANGED_MESSAGE_TYPE = 'latency-changed';
 
 type GrinderAudioParamDescriptor = {
     name: string;
@@ -383,7 +393,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
                 } else if (msg.type === 'reset' && this._instance !== null && !this._faulted) {
                     this._instance.reset();
                 } else if (
-                    msg.type === 'init-sab' &&
+                    msg.type === INIT_SAB_MESSAGE_TYPE &&
                     msg.sab instanceof SharedArrayBuffer &&
                     isNonNegativeSafeInteger(msg.byteOffset)
                 ) {
@@ -444,7 +454,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
     }
 
     _handleFallbackControl(message: UnknownRecord): boolean {
-        if (message.command !== 'set-fallback-param') {
+        if (message.command !== SET_FALLBACK_PARAM_COMMAND) {
             return false;
         }
         if (
@@ -551,7 +561,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
         const newLatency = this._instance.get_latency_samples();
         this._refreshWasmViewsIfMemoryChanged();
         if (newLatency !== oldLatency) {
-            this.port.postMessage({ type: 'latency-changed', latency: newLatency });
+            this.port.postMessage({ type: LATENCY_CHANGED_MESSAGE_TYPE, latency: newLatency });
         }
         return true;
     }
@@ -565,7 +575,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
         this._instance.set_param(rustName, value);
         const newLatency = this._instance.get_latency_samples();
         if (reportLatency && newLatency !== oldLatency) {
-            this.port.postMessage({ type: 'latency-changed', latency: newLatency });
+            this.port.postMessage({ type: LATENCY_CHANGED_MESSAGE_TYPE, latency: newLatency });
         }
     }
 

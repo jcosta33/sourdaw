@@ -5,6 +5,8 @@
  */
 import { type ReactElement, useLayoutEffect, useRef, useState } from 'react';
 
+import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
+
 import { type BacteriaCrossoverMode } from '../../models/BacteriaPatch';
 
 type CrossoverDisplayProps = {
@@ -36,13 +38,13 @@ const BAND_BORDER_COLORS = [
 
 function freqToX(freq: number, width: number): number {
     const minLog = Math.log10(20);
-    const maxLog = Math.log10(20000);
+    const maxLog = Math.log10(MAX_AUDIBLE_FREQ_HZ);
     return ((Math.log10(freq) - minLog) / (maxLog - minLog)) * width;
 }
 
 function xToFreq(x: number, width: number): number {
     const minLog = Math.log10(20);
-    const maxLog = Math.log10(20000);
+    const maxLog = Math.log10(MAX_AUDIBLE_FREQ_HZ);
     const log = minLog + (x / width) * (maxLog - minLog);
     return Math.round(10 ** log);
 }
@@ -99,7 +101,7 @@ export const CrossoverDisplay = ({
             return;
         }
         const x = e.clientX - rect.left;
-        const freq = Math.max(20, Math.min(20000, xToFreq(x, rect.width)));
+        const freq = Math.max(MIN_AUDIBLE_FREQ_HZ, Math.min(MAX_AUDIBLE_FREQ_HZ, xToFreq(x, rect.width)));
         onCrossoverChange(dragIndex.current, freq);
     };
 
@@ -125,7 +127,7 @@ export const CrossoverDisplay = ({
         // Determine which band was clicked
         for (let i = 0; i < bandCount; i++) {
             const lo = i === 0 ? 20 : crossoverFreqs[i - 1]!;
-            const hi = i === bandCount - 1 ? 20000 : crossoverFreqs[i]!;
+            const hi = i === bandCount - 1 ? MAX_AUDIBLE_FREQ_HZ : crossoverFreqs[i]!;
             if (freq >= lo && freq <= hi) {
                 onBandSelect(i);
                 break;
@@ -166,7 +168,7 @@ export const CrossoverDisplay = ({
             {/* Band regions */}
             {Array.from({ length: bandCount }, (_, i) => {
                 const lo = freqToX(i === 0 ? 20 : crossoverFreqs[i - 1]!, layoutWidth);
-                const hi = freqToX(i === bandCount - 1 ? 20000 : crossoverFreqs[i]!, layoutWidth);
+                const hi = freqToX(i === bandCount - 1 ? MAX_AUDIBLE_FREQ_HZ : crossoverFreqs[i]!, layoutWidth);
                 return (
                     <div
                         key={i}

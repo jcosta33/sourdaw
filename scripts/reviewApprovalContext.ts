@@ -7,7 +7,7 @@ import {
     type GhSession,
     type spawnCapture,
 } from './githubAppIdentity.ts';
-import { fail } from './prContract.ts';
+import { fail, PR_STATE } from './prContract.ts';
 import { readReviewBundleContext, reviewBundlePath, type ReviewBundleContext } from './prepareReview.ts';
 import {
     assertLandedStackParent,
@@ -101,7 +101,7 @@ export function readLiveApprovalContext(
     );
     if (
         pr.number !== number ||
-        pr.state !== 'OPEN' ||
+        pr.state !== PR_STATE.OPEN ||
         pr.headRefOid !== head ||
         pr.baseRefName !== REQUIRED_BASE_BRANCH ||
         typeof pr.baseRefOid !== 'string' ||

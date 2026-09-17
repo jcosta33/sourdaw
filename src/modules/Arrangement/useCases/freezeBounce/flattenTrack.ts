@@ -1,5 +1,5 @@
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { resolveFrozenBufferTail } from '#/utils/frozenBufferTail';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -85,7 +85,7 @@ export function flattenTrack(trackId: string): boolean {
         // baked tail must not resolve to zero: the buffer's decay past the clip
         // content would be discarded from the project itself, not from a single
         // export, and no later fix can recover it.
-        endBeat: endBeat + frozenTailSeconds * ((transportStore.value?.tempo ?? 120) / 60),
+        endBeat: endBeat + frozenTailSeconds * ((transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM) / 60),
         type: 'audio',
         audioBufferId: frozenBufferId,
         fadeInBeats: 0,

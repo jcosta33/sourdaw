@@ -241,16 +241,20 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     return;
                 }
                 // `value` is `number | boolean`; narrow it at runtime (never
-                // `as`-cast) and route through the pedal use cases so the engine
-                // is notified and the store stays clamped/consistent.
-                const liveEngine = engineRef.current;
+                // `as`-cast) and route through the pedal use cases so the store
+                // stays clamped/consistent.
+                //
+                // No engine: this is an echo of a pedal `routePedalToBodies`
+                // has already delivered to both bodies. Writing it again would
+                // re-send the identical value and queue a second native
+                // controller message for every movement the panel is open for.
                 const liveStore = storeRef.current;
                 if (cc === 64) {
-                    setGrandBouleSustain({ engine: liveEngine, store: liveStore, position: pedalContinuous(value) });
+                    setGrandBouleSustain({ store: liveStore, position: pedalContinuous(value) });
                 } else if (cc === 66) {
-                    setGrandBouleSostenuto({ engine: liveEngine, store: liveStore, engaged: pedalEngaged(value) });
+                    setGrandBouleSostenuto({ store: liveStore, engaged: pedalEngaged(value) });
                 } else if (cc === 67) {
-                    setGrandBouleUnaCorda({ engine: liveEngine, store: liveStore, engaged: pedalEngaged(value) });
+                    setGrandBouleUnaCorda({ store: liveStore, engaged: pedalEngaged(value) });
                 }
             }),
         ];

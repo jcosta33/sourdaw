@@ -5,7 +5,7 @@ import { getTransportState } from '#/modules/Transport/useCases';
 import { type ChordVoicing } from '../../models/GenerationStyles';
 import { CHORD_PROGRESSION_STYLES } from '../../useCases/generateChordProgression/algorithm';
 import { DRUM_PATTERN_STYLES } from '../../useCases/generateDrumPattern/algorithm';
-import { MELODY_STYLES, SCALE_TYPES } from '../../useCases/generateMelody/algorithm';
+import { MELODY_SCALE_TYPES, MELODY_STYLES } from '../../useCases/generateMelody/algorithm';
 
 // Derive the accepted-style sets from the algorithm rosters (their single
 // source of truth) rather than re-listing them here. Hand-maintained copies
@@ -17,7 +17,7 @@ export const VALID_DRUM_STYLES: ReadonlySet<string> = new Set(DRUM_PATTERN_STYLE
 
 export const VALID_MELODY_STYLES: ReadonlySet<string> = new Set(MELODY_STYLES);
 
-export const VALID_SCALES: ReadonlySet<string> = new Set(SCALE_TYPES);
+export const VALID_SCALES: ReadonlySet<string> = new Set(MELODY_SCALE_TYPES);
 
 export const VALID_CHORD_STYLES: ReadonlySet<string> = new Set(CHORD_PROGRESSION_STYLES);
 

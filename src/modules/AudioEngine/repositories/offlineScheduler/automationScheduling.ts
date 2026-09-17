@@ -281,7 +281,8 @@ export function scheduleTrackAutomation({
 
         if (lane.parameterId === 'pan') {
             // No `valueTransform` here, live or offline: live maps the bounded
-            // lane value through `value * 50` and `TrackNode` clamps the
+            // lane value through `fromStereoPan(value)` (× `PAN_SCALE_MAX`,
+            // `#/utils/audioLevelLaw`) and `TrackNode` clamps the
             // AudioParam's nominal [-1, 1] on every write; offline writes the
             // same bounded value in pan units and the platform applies that
             // same nominal clamp. The nominal range is the *param's* law — the

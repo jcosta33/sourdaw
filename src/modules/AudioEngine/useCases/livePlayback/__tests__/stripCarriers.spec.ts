@@ -69,6 +69,15 @@ function nativeInstrumentDevice(id: string): Device {
     return createDevice({ id, type: 'fermenter' });
 }
 
+/** The sampler the engine splices by the device's own id rather than building. */
+function crumbsDevice(input: { id: string; name?: string }): Device {
+    return createDevice({
+        id: input.id,
+        type: 'builtin-crumbs',
+        ...(input.name === undefined ? {} : { name: input.name }),
+    });
+}
+
 function pluginDevice(input: { id: string; name: string; instanceId?: string }): Device {
     return createDevice({
         id: input.id,
@@ -627,5 +636,83 @@ describe('projectStripCarriers', () => {
         );
 
         expect(carrier).toEqual({ carrier: 'web', reason: 'output path loops' });
+    });
+
+    // Crumbs is the built-in the engine splices rather than builds (#4204): the
+    // mapper borrows the instance `commands::crumbs` holds, under the device's
+    // own id, and refuses the device by name when it holds none. Answering it
+    // from `nativeBuiltinBodies` — where it deliberately has no row — carried
+    // every Crumbs strip to a batch the mapper refuses.
+    it('carries a track whose Crumbs instance the engine reports attached', () => {
+        const carrier = carrierOf(
+            {
+                stripTracks: [createTrack({ id: 'audio-1', devices: [crumbsDevice({ id: 'd-crumbs' })] })],
+                attachedInstanceIds: new Set(['d-crumbs']),
+            },
+            'audio-1'
+        );
+
+        expect(carrier).toEqual({ carrier: 'native' });
+    });
+
+    it('leaves a track whose Crumbs instance the engine does not hold on Web Audio, and names the sampler', () => {
+        const carrier = carrierOf(
+            {
+                stripTracks: [
+                    createTrack({ id: 'audio-1', devices: [crumbsDevice({ id: 'd-crumbs', name: 'Break Kit' })] }),
+                ],
+                attachedInstanceIds: new Set(),
+            },
+            'audio-1'
+        );
+
+        expect(carrier).toEqual({
+            carrier: 'web',
+            reason: 'Crumbs sampler "Break Kit" is not attached to the engine',
+        });
+    });
+
+    // The attach set is keyed by device id for a Crumbs device, so a set
+    // carrying some other id must not answer for it.
+    it('does not carry a Crumbs device on another instance id being attached', () => {
+        const carrier = carrierOf(
+            {
+                stripTracks: [createTrack({ id: 'audio-1', devices: [crumbsDevice({ id: 'd-crumbs' })] })],
+                attachedInstanceIds: new Set(['some-other-instance']),
+            },
+            'audio-1'
+        );
+
+        expect(carrier).toEqual({
+            carrier: 'web',
+            reason: 'Crumbs sampler "d-crumbs" is not attached to the engine',
+        });
+    });
+
+    // The label travels through a different sentence than `chainReason`, and a
+    // route obstructed by a sampler must name it as one rather than fall back
+    // to "device builtin-crumbs", which would claim the engine has no body for
+    // the type at all.
+    it('names an unattached Crumbs device on the output path as a sampler', () => {
+        const carrier = carrierOf(
+            {
+                stripTracks: [
+                    createTrack({ id: 'audio-1', outputId: 'bus-1' }),
+                    createTrack({
+                        id: 'bus-1',
+                        kind: 'bus',
+                        name: 'Drum Bus',
+                        devices: [crumbsDevice({ id: 'd-crumbs', name: 'Break Kit' })],
+                    }),
+                ],
+                attachedInstanceIds: new Set(),
+            },
+            'audio-1'
+        );
+
+        expect(carrier).toEqual({
+            carrier: 'web',
+            reason: 'output path through "Drum Bus" holds Crumbs sampler "Break Kit", not attached to the engine',
+        });
     });
 });

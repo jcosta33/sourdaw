@@ -1,3 +1,5 @@
+import { clampMidiData7 } from '#/utils/midiData';
+
 import { type MidiEffect } from '../../../models/MidiEffectTypes';
 
 export function createTranspose(semitones = 0): MidiEffect {
@@ -7,7 +9,7 @@ export function createTranspose(semitones = 0): MidiEffect {
         process: (notes) =>
             notes.map((node) => ({
                 ...node,
-                pitch: Math.max(0, Math.min(127, node.pitch + semitones)),
+                pitch: clampMidiData7(node.pitch + semitones),
             })),
     };
 }

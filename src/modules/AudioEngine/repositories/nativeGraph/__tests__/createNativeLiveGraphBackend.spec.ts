@@ -103,10 +103,11 @@ describe('createNativeLiveGraphBackend', () => {
             runtimeRevision: 4,
             admittedBatch: 6,
             reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['device-a'] }],
-            // A batch that attached no dormant plugin instance says so, rather
-            // than leaving the caller to tell "attached none" from "did not
-            // answer".
+            // A batch that attached no dormant instance says so, rather than
+            // leaving the caller to tell "attached none" from "did not answer".
+            // Both populations answer, because both decide a carrier.
             attachedPlugins: [],
+            attachedCrumbs: [],
         });
     });
 
@@ -140,6 +141,25 @@ describe('createNativeLiveGraphBackend', () => {
         });
     });
 
+    // Same rule, second population (#4204): a Crumbs instance is named by its
+    // device's own id, and marking one the engine never took builds a topology
+    // the mapper refuses whole.
+    it('reads the Crumbs instances a batch took over, and drops an entry it cannot read', async () => {
+        const transport = stubTransport(() =>
+            Promise.resolve({
+                acceptance: 'accepted',
+                application: 'applied',
+                runtimeRevision: 4,
+                reports: [],
+                attachedCrumbs: [{ instanceId: 'd-crumbs' }, {}, { instanceId: 7 }, { instanceId: null }],
+            })
+        );
+
+        const result = await createNativeLiveGraphBackend({ transport }).apply(BATCH);
+
+        expect(result).toMatchObject({ attachedCrumbs: [{ instanceId: 'd-crumbs' }] });
+    });
+
     it('echoes a correlation back only when the batch carried one', async () => {
         const transport = stubTransport(() =>
             Promise.resolve({ acceptance: 'accepted', application: 'applied', runtimeRevision: 1, reports: [] })
@@ -168,6 +188,31 @@ describe('createNativeLiveGraphBackend', () => {
             acceptance: 'rejected',
             application: 'not-applied',
             reason: 'engine-not-running: no default output device',
+            attachedCrumbs: [],
+        });
+    });
+
+    // The attach runs before the batch is mapped, so a refusal can report one.
+    // Dropping it here would leave a sampler the engine is now rendering on Web
+    // Audio for the rest of the session — and a refusal is exactly when the
+    // producer resends the topology that would have claimed it.
+    it('keeps the Crumbs instances a refused answer attached before refusing', async () => {
+        const transport = stubTransport(() =>
+            Promise.resolve({
+                acceptance: 'rejected',
+                application: 'not-applied',
+                reason: 'the engine refused command 2 of 5',
+                attachedCrumbs: [{ instanceId: 'd-crumbs' }, { instanceId: 7 }],
+            })
+        );
+
+        const result = await createNativeLiveGraphBackend({ transport }).apply(BATCH);
+
+        expect(result).toEqual({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'the engine refused command 2 of 5',
+            attachedCrumbs: [{ instanceId: 'd-crumbs' }],
         });
     });
 
@@ -192,6 +237,7 @@ describe('createNativeLiveGraphBackend', () => {
             reason: 'the engine refused command 2 of 5',
             runtimeRevision: 7,
             reports: [{ kind: 'bus', id: 'bus-1', deviceIds: [] }],
+            attachedCrumbs: [],
         });
     });
 
@@ -200,10 +246,13 @@ describe('createNativeLiveGraphBackend', () => {
 
         const result = await createNativeLiveGraphBackend({ transport }).apply(BATCH);
 
+        // No call reached the engine, so nothing attached: the empty report is
+        // the honest one, not an omission.
         expect(result).toEqual({
             acceptance: 'rejected',
             application: 'not-applied',
             reason: 'bridge command not exposed',
+            attachedCrumbs: [],
         });
     });
 
@@ -250,7 +299,12 @@ describe('createNativeLiveGraphBackend', () => {
         backend.dispose();
         const result = await backend.apply(BATCH);
 
-        expect(result).toEqual({ acceptance: 'rejected', application: 'not-applied', reason: 'backend disposed' });
+        expect(result).toEqual({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'backend disposed',
+            attachedCrumbs: [],
+        });
         expect(applyGraphCommands).not.toHaveBeenCalled();
     });
 

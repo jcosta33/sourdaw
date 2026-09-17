@@ -29,7 +29,7 @@ import { readRenderCache } from '../repositories/readRenderCache';
 import { readVerifiedModel } from '../repositories/readVerifiedModel';
 import { sha256ArrayBuffer } from '../repositories/sha256ArrayBuffer';
 import { writeRenderCache } from '../repositories/writeRenderCache';
-import { resampleTo44100, applyFades } from '../services/audioResampler';
+import { resampleTo44100, applyFades, TARGET_SAMPLE_RATE } from '../services/audioResampler';
 import { textToKokoroInputIds } from '../services/kokoroTokenizer';
 import { startActiveRender, clearActiveRender } from '../stores/inferenceProgressStore';
 import {
@@ -185,7 +185,7 @@ export const renderKokoroTts = inject({
                         tier: 'browser-preview',
                     };
                     markRenderComplete(phraseId, requestId, cacheKey);
-                    return { audio: cached, sampleRate: 44100, provenance };
+                    return { audio: cached, sampleRate: TARGET_SAMPLE_RATE, provenance };
                 }
 
                 updateRenderStatus(phraseId, requestId, 'rendering-browser');
@@ -251,13 +251,13 @@ export const renderKokoroTts = inject({
                 // 6. Time-stretch to target duration if requested
                 let finalAudio = resampled;
                 if (targetDurationSec !== undefined && targetDurationSec > 0) {
-                    const currentDuration = resampled.length / 44100;
+                    const currentDuration = resampled.length / TARGET_SAMPLE_RATE;
                     const stretchRatio = currentDuration / targetDurationSec;
                     if (Math.abs(stretchRatio - 1) > 0.01) {
                         // Simple resample-based time-stretch (quality: low but fast for scratch tracks)
                         finalAudio = await resampleTo44100({
                             audio: resampled,
-                            fromSampleRate: Math.round(44100 * stretchRatio),
+                            fromSampleRate: Math.round(TARGET_SAMPLE_RATE * stretchRatio),
                         });
                         assertCurrentRenderRequest(phraseId, requestId);
                     }
@@ -277,8 +277,10 @@ export const renderKokoroTts = inject({
                     tier: 'browser-preview',
                 };
 
-                logger.info(`[BrowserAi] Kokoro TTS complete: ${phraseId} (${String(finalAudio.length / 44100)}s)`);
-                return { audio: finalAudio, sampleRate: 44100, provenance };
+                logger.info(
+                    `[BrowserAi] Kokoro TTS complete: ${phraseId} (${String(finalAudio.length / TARGET_SAMPLE_RATE)}s)`
+                );
+                return { audio: finalAudio, sampleRate: TARGET_SAMPLE_RATE, provenance };
             } catch (error) {
                 updateRenderStatus(phraseId, requestId, 'error');
                 throw error;

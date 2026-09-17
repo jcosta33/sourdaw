@@ -9,7 +9,13 @@ type AppCompositionEnvironment = {
     windowName: string;
 };
 
-const DIRECT_E2E_VIEWPORT_NAME = 'sourdaw-e2e-direct';
+/**
+ * The `window.name` the e2e realm sets to claim the direct development
+ * viewport. Exported so the product's reader and the Playwright writers
+ * (`tests/e2e/e2eUtils.ts`, `tests/e2e/firstPaintWarmup.ts`) cannot drift on
+ * one string.
+ */
+export const DIRECT_E2E_VIEWPORT_NAME = 'sourdaw-e2e-direct';
 
 export const BROWSER_APPLICATION_FRAME_NAME = 'sourdaw-application';
 

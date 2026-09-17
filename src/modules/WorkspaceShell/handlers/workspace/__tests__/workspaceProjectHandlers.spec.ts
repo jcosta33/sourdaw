@@ -9,6 +9,7 @@ import {
     exportProjectFile,
     pickFiles,
 } from '#/modules/Project/useCases';
+import { AUDIO_EXTENSION_ROSTER } from '#/utils/audioFileExtensions';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { handleExportProject } from '../handleExportProject';
@@ -95,7 +96,7 @@ describe('Workspace Project Handlers', () => {
     it('handleImportAudioFile should pick files and import', async () => {
         await handleImportAudioFile.execute({ type: 'importAudioFile' });
         expect(pickFiles).toHaveBeenCalledWith({
-            filters: [{ name: 'Audio', extensions: ['wav', 'mp3', 'ogg', 'flac', 'aiff', 'aac'] }],
+            filters: [{ name: 'Audio', extensions: [...AUDIO_EXTENSION_ROSTER] }],
         });
         expect(importAudioFile).toHaveBeenCalledWith(pickedFiles.audio, { shouldContinue: expect.any(Function) });
         expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(1);

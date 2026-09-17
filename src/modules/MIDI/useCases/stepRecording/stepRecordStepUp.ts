@@ -1,4 +1,5 @@
 import { projectStore } from '#/modules/Project/stores';
+import { MAX_MIDI_DATA_7BIT } from '#/utils/midiData';
 
 import { stepRecordStore } from '../../stores/stepRecordStore';
 
@@ -18,5 +19,5 @@ export function stepRecordStepUp(): void {
         scaleName: project.scaleName,
     });
 
-    stepRecordStore.set({ ...state, currentPitch: Math.min(127, nextPitch) });
+    stepRecordStore.set({ ...state, currentPitch: Math.min(MAX_MIDI_DATA_7BIT, nextPitch) });
 }

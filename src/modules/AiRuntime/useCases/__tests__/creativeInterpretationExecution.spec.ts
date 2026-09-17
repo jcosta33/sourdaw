@@ -356,6 +356,7 @@ type InterpretationSelection = {
     targetObjectIds?: readonly string[];
     dimensions?: readonly string[];
     creationSlotObjectTypes?: readonly string[];
+    nestedCreationSlotObjectTypes?: readonly string[];
 };
 
 const EDIT_THE_SELECTED_TRACK: InterpretationSelection = {
@@ -473,6 +474,98 @@ function combinedProviderTurns(input: {
             return [proposeCall([...bluesProposalItems(), ...radioDeviceItems(input.deviceTrackName)])];
         },
     ];
+}
+
+/** A request for one track and for processing inside it. Nothing in it names an object that exists. */
+const SYNTH_PROMPT = 'add a synth track with a radio filter';
+
+const SYNTH_TRACK_NAME = 'Synth';
+const SYNTH_TRACK_BINDING = 'synth';
+const TRACK_COMMAND_NAME = 'addTrack';
+
+const SYNTH_COMMAND_NAMES = [TRACK_COMMAND_NAME, PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME];
+
+/** Create the track, and treat the track that creation leaves behind. */
+const CREATE_A_TRACK_AND_TREAT_IT: InterpretationSelection = {
+    modeId: 'create',
+    dimensions: ['processing', 'arrangement'],
+    creationSlotObjectTypes: ['track'],
+    nestedCreationSlotObjectTypes: ['device'],
+};
+
+function synthPlan() {
+    return {
+        semantic: { classification: 'complex', uncertainty: [] },
+        objective: 'Add one synth track this batch creates and put a radio filter on it.',
+        constraints: ['Leave every object the project already holds unchanged.'],
+        scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+        capabilityIds: [],
+        assetIds: [],
+        alternatives: [],
+        validationStrategy: ['Validate that the device lands on the track this batch creates.'],
+        stoppingConditions: ['Stop if the track cannot be created.'],
+    };
+}
+
+function synthProposalItems(): Record<string, unknown>[] {
+    return [
+        {
+            id: 'make-synth',
+            name: TRACK_COMMAND_NAME,
+            // An audio track is created with an empty device chain, so the chain this batch builds on
+            // it is the one the case reads. A MIDI track is created holding its default instrument.
+            arguments: { name: SYNTH_TRACK_NAME, kind: 'audio', binding: SYNTH_TRACK_BINDING },
+        },
+        {
+            id: 'add-radio',
+            name: PROPOSED_COMMAND_NAME,
+            arguments: {
+                trackId: `$${SYNTH_TRACK_BINDING}`,
+                deviceType: RADIO_DEVICE_TYPE,
+                binding: RADIO_DEVICE_BINDING,
+            },
+            dependsOn: ['make-synth'],
+        },
+        {
+            id: 'set-radio-low-gain',
+            name: PARAMETER_COMMAND_NAME,
+            arguments: {
+                deviceId: `$${RADIO_DEVICE_BINDING}`,
+                paramId: RADIO_LOW_GAIN_PARAM,
+                value: RADIO_LOW_GAIN_VALUE,
+            },
+            dependsOn: ['add-radio'],
+        },
+    ];
+}
+
+function synthProviderTurns(): ScriptedTurn[] {
+    return [
+        () => [catalogDiscoveryCall(SYNTH_COMMAND_NAMES)],
+        (userMessage) => [
+            selectCreativeInterpretationCall({
+                catalog: readCreativeInterpretationCatalog(userMessage),
+                ...CREATE_A_TRACK_AND_TREAT_IT,
+            }),
+        ],
+        (userMessage) => {
+            assertDiscoveredCommandSchemas(userMessage, SYNTH_COMMAND_NAMES);
+            return [
+                {
+                    name: 'command.batch.propose',
+                    arguments: { plan: synthPlan(), list: { schemaVersion: 1, items: synthProposalItems() } },
+                },
+            ];
+        },
+    ];
+}
+
+function requireCreatedTrack(name: string): Track {
+    const track = (trackStore.value?.tracks ?? []).find((candidate) => candidate.name === name);
+    if (!track) {
+        throw new TypeError(`Expected the batch to have created the ${name} track`);
+    }
+    return track;
 }
 
 function requireCreatedBluesTrack(): Track {
@@ -824,6 +917,25 @@ describe('creative interpretation execution', () => {
         expectNoBluesPhrase();
         expectNoDevicesAnywhere();
         expect(undoStore.value?.past ?? []).toEqual([]);
+    });
+
+    it('creates the track the request asks for and lands the treatment inside it as one batch', async () => {
+        scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, synthProviderTurns());
+
+        await sendChatMessage(SYNTH_PROMPT);
+
+        const confirmation = requireConfirmation();
+        expect(confirmation.actions.map((action) => action.type)).toEqual(SYNTH_COMMAND_NAMES);
+
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        const created = requireCreatedTrack(SYNTH_TRACK_NAME);
+        expect(getDeviceTypes(created.id)).toEqual([RADIO_DEVICE_TYPE]);
+        expect(getRadioLowGain(created.id)).toBe(RADIO_LOW_GAIN_VALUE);
+        expectNoDevicesAnywhere();
+        expect(aiActionHistoryStore.value?.groups ?? []).toHaveLength(1);
     });
 
     it('refuses a read-only interpretation that selects the edits a write would need', async () => {

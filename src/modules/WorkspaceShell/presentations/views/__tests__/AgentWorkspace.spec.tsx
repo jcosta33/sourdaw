@@ -147,6 +147,7 @@ const run = (overrides: Partial<AgentRun> = {}): AgentRun => ({
     workLeases: [],
     contextEvidence: null,
     createdAt: 1,
+    activeSince: 1,
     updatedAt: 1,
     ...overrides,
 });

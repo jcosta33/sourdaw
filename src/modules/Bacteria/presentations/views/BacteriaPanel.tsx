@@ -7,6 +7,8 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { GAIN_TRIM_DB } from '#/utils/audioLevelLaw';
+import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
 import { type BacteriaPatch } from '../../models/BacteriaPatch';
 import {
@@ -527,8 +529,8 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                         v={state.patch.inputGain}
                         k="inputGain"
                         label="Input"
-                        min={-24}
-                        max={24}
+                        min={GAIN_TRIM_DB.min}
+                        max={GAIN_TRIM_DB.max}
                         step={0.5}
                         def={0}
                         unit="dB"
@@ -538,8 +540,8 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                         v={state.patch.outputGain}
                         k="outputGain"
                         label="Output"
-                        min={-24}
-                        max={24}
+                        min={GAIN_TRIM_DB.min}
+                        max={GAIN_TRIM_DB.max}
                         step={0.5}
                         def={0}
                         unit="dB"
@@ -1020,8 +1022,8 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 v={band.filterCutoff}
                                 k="filterCutoff"
                                 label="Cutoff"
-                                min={20}
-                                max={20000}
+                                min={MIN_AUDIBLE_FREQ_HZ}
+                                max={MAX_AUDIBLE_FREQ_HZ}
                                 step={1}
                                 def={8000}
                                 unit="Hz"

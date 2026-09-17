@@ -1,5 +1,5 @@
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { type StripSilenceActionSnapshot } from '#/utils/handlerContract';
 
 import { type Clip } from '../models/Track';
@@ -51,7 +51,7 @@ function emptySatelliteEntry(clipId: string): ClipSatelliteEntry {
  * plays, and mis-scales every derived beat position.
  */
 function resolvePlayedWindow(clip: Clip, buffer: AudioBuffer, bufferLength: number): PlayedWindow | null {
-    const tempo = transportStore.value?.tempo ?? 120;
+    const tempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
     const samplesPerBufferBeat = (60 / tempo) * buffer.sampleRate;
     if (!Number.isFinite(samplesPerBufferBeat) || samplesPerBufferBeat <= 0) {
         return null;

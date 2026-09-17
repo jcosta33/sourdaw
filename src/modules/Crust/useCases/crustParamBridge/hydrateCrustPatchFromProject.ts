@@ -1,5 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
+import { CRUST_PARAM_IDS } from '../../models/CrustParamIds';
 import { asCrustOversampleFactor, type CrustPatch } from '../../models/CrustPatch';
 import { getCrustState, loadCrustPatch } from '../../stores/crustStore';
 
@@ -29,28 +30,28 @@ function nameAt(names: readonly string[], stored: number | undefined): string | 
 }
 
 const NUMERIC_FIELDS = [
-    'gain',
-    'ceiling',
-    'lookahead',
-    'attack',
-    'release',
-    'channelLinkTransient',
-    'channelLinkRelease',
-    'satDrive',
-    'satMix',
-    'crossover1',
-    'crossover2',
-    'scHpfFreq',
+    CRUST_PARAM_IDS.gain,
+    CRUST_PARAM_IDS.ceiling,
+    CRUST_PARAM_IDS.lookahead,
+    CRUST_PARAM_IDS.attack,
+    CRUST_PARAM_IDS.release,
+    CRUST_PARAM_IDS.channelLinkTransient,
+    CRUST_PARAM_IDS.channelLinkRelease,
+    CRUST_PARAM_IDS.satDrive,
+    CRUST_PARAM_IDS.satMix,
+    CRUST_PARAM_IDS.crossover1,
+    CRUST_PARAM_IDS.crossover2,
+    CRUST_PARAM_IDS.scHpfFreq,
 ] as const satisfies readonly (keyof CrustPatch)[];
 
 const BOOLEAN_FIELDS = [
-    'attackAuto',
-    'releaseAuto',
-    'truePeak',
-    'satEnabled',
-    'deltaListen',
-    'unityGain',
-    'scHpfEnabled',
+    CRUST_PARAM_IDS.attackAuto,
+    CRUST_PARAM_IDS.releaseAuto,
+    CRUST_PARAM_IDS.truePeak,
+    CRUST_PARAM_IDS.satEnabled,
+    CRUST_PARAM_IDS.deltaListen,
+    CRUST_PARAM_IDS.unityGain,
+    CRUST_PARAM_IDS.scHpfEnabled,
 ] as const satisfies readonly (keyof CrustPatch)[];
 
 function isFiniteNumber(value: unknown): value is number {
@@ -159,8 +160,8 @@ export function hydrateCrustPatchFromProject(deviceId: string): void {
     const currentPatch = getCrustState(deviceId).patch;
     let patch = withGlobalFields(currentPatch, parameterValues);
     patch = withEnumFields(patch, parameterValues);
-    patch = withStoredOversampling(patch, parameterValues.oversampling);
-    patch = withStoredBitDepth(patch, parameterValues.outputBitDepth);
+    patch = withStoredOversampling(patch, parameterValues[CRUST_PARAM_IDS.oversampling]);
+    patch = withStoredBitDepth(patch, parameterValues[CRUST_PARAM_IDS.outputBitDepth]);
 
     if (patch !== currentPatch) {
         loadCrustPatch(deviceId, patch);

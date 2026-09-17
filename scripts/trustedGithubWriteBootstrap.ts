@@ -14,6 +14,17 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+    TRUSTED_COMMON_DIR_ENV,
+    TRUSTED_GATE_WORKFLOW_ENV,
+    TRUSTED_GH_PATH_ENV,
+    TRUSTED_GIT_PATH_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV,
+    TRUSTED_POWERSHELL_PATH_ENV,
+    TRUSTED_PRIMARY_ROOT_ENV,
+    TRUSTED_PS_PATH_ENV,
+} from './prContract.ts';
+
 export type TrustedGithubWriteCommand =
     | 'deliver'
     | 'issue:reconcile'
@@ -26,15 +37,6 @@ export type TrustedGithubWriteCommand =
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
-
-export const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
-export const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
-export const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
-export const TRUSTED_GH_PATH_ENV = 'SOURDAW_TRUSTED_GH_PATH';
-export const TRUSTED_PS_PATH_ENV = 'SOURDAW_TRUSTED_PS_PATH';
-export const TRUSTED_POWERSHELL_PATH_ENV = 'SOURDAW_TRUSTED_POWERSHELL_PATH';
-export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
-export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
 
 export type TrustedLauncherBinding = {
     primaryRoot: string;

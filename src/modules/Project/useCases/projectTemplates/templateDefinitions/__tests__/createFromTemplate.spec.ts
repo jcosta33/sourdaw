@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     createPopSongTemplate: vi.fn(),
     ensureTrackStrips: vi.fn(),
     executeAppAction: vi.fn(),
+    forgetProjectLatchedPedals: vi.fn(),
     isAppActionCommittedError: vi.fn(),
     flushAutomergeStorageWrites: vi.fn(),
     newProject: vi.fn(),
@@ -47,6 +48,7 @@ vi.mock('../helpers', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    forgetProjectLatchedPedals: mocks.forgetProjectLatchedPedals,
     resetAudioGraph: mocks.resetAudioGraph,
 }));
 
@@ -258,6 +260,13 @@ describe('createFromTemplate', () => {
         expect(mocks.transactionActivate).toHaveBeenCalledOnce();
         expect(mocks.stopActiveAutoSave).toHaveBeenCalledOnce();
         expect(mocks.resetCrdtProjectAuthority).toHaveBeenCalledWith('Pop Song');
+        // The template owns the document from that call on, so the pedals
+        // latched under the project just left are forgotten here and not at the
+        // earlier graph reset, which restoreAudioGraph can still undo.
+        expect(mocks.forgetProjectLatchedPedals).toHaveBeenCalledOnce();
+        expect(mocks.forgetProjectLatchedPedals.mock.invocationCallOrder[0]!).toBeGreaterThan(
+            mocks.resetCrdtProjectAuthority.mock.invocationCallOrder[0]!
+        );
         expect(mocks.projectActionHistoryToStore).toHaveBeenCalledOnce();
         expect(mocks.resetModuleStoresToDefault).toHaveBeenCalledOnce();
         expect(mocks.clearUndoHistory).toHaveBeenCalledOnce();
@@ -323,6 +332,10 @@ describe('createFromTemplate', () => {
 
         await expect(creation).resolves.toBe(false);
         expect(mocks.resetCrdtProjectAuthority).not.toHaveBeenCalled();
+        // The player stays in the old project, whose graph restoreAudioGraph
+        // rebuilds above, so a damper still held must survive the abandoned
+        // template creation.
+        expect(mocks.forgetProjectLatchedPedals).not.toHaveBeenCalled();
     });
     it('holds the runtime transition lease through the template action', async () => {
         const action = Promise.withResolvers<void>();

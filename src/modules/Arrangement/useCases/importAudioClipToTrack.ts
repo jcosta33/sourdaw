@@ -1,6 +1,6 @@
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackById } from '../repositories/track/getTrackById';
@@ -72,7 +72,7 @@ export async function importAudioClipToTrack(
     }
 
     const transport = transportStore.value;
-    const tempo = transport?.tempo ?? 120;
+    const tempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
     const durationBeats = Math.ceil((buffer.duration / 60) * tempo);
     const lastClipEnd = Math.max(0, ...track.clips.map((context) => context.endBeat));
     const name = file.name.replace(/\.[^.]+$/, '');

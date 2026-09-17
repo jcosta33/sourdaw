@@ -4,8 +4,8 @@ Acoustic grand piano physical modeling and multi-sample virtual instrument (stri
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `getGrandBouleHandlers`, `prepareOfflineGrandBoule`, `setGrandBouleEventBus`, `initGrandBouleSubscribers`, `setGrandBouleMorphBalance`, `setGrandBouleMorphEnabled`, `setGrandBouleMorphModel`, `setGrandBouleMorphPosition`.
-- **Stores** (`stores/index.ts`): `grandBouleStore`, `createGrandBouleStore`, `resetGrandBouleStores`, `defaultGrandBouleState`, `createDefaultGrandBouleState`, `applyVelocityCurve`.
+- **Use Cases** (`useCases/index.ts`): `getGrandBouleHandlers`, `prepareOfflineGrandBoule`, `projectGrandBouleCalibrationToNativePatch`, `setGrandBouleEventBus`, `initGrandBouleSubscribers`, `setGrandBouleMorphBalance`, `setGrandBouleMorphEnabled`, `setGrandBouleMorphModel`, `setGrandBouleMorphPosition`.
+- **Stores** (`stores/index.ts`): `grandBouleStore`, `createGrandBouleStore`, `peekGrandBouleStore`, `subscribeToGrandBouleStoreCreation`, `resetGrandBouleStores`, `defaultGrandBouleState`, `createDefaultGrandBouleState`, `applyVelocityCurve`.
 - **Views** (`presentations/views/index.ts`): `GrandBoulePanel`.
 - **Events** (`events/index.ts`): No public events.
 - **Handler Maps**: `getGrandBouleHandlers` exposes `setGrandBouleDeviceState`.

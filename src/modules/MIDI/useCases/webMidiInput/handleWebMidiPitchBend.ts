@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { applyNoteExpression, audioEngine } from '#/modules/AudioEngine/useCases';
+import { PITCH_BEND_CENTER } from '#/utils/midiData';
 
 import { MPE_FIRST_MEMBER_CHANNEL } from '../../models/MidiControllerState';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
@@ -11,7 +12,6 @@ import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime } from './resolveInputEventTime';
 
-const PITCH_BEND_CENTER = 8192;
 const CENTS_PER_SEMITONE = 100;
 
 export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(

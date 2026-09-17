@@ -4,7 +4,13 @@
  * Resamples Float32Array PCM audio to 44.1 kHz using OfflineAudioContext.
  */
 
-const TARGET_SAMPLE_RATE = 44100;
+/**
+ * Every BrowserAi render path hands the renderer PCM at this rate: the
+ * resampler targets it, the DDSP/Kokoro/RAVE results report it as their
+ * `sampleRate`, and duration math divides by it. A path that disagrees with
+ * the resampler's target would misreport every clip length it produced.
+ */
+export const TARGET_SAMPLE_RATE = 44100;
 
 type ResampleInput = {
     audio: Float32Array;

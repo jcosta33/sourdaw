@@ -5,6 +5,23 @@ const NOTE_NAMES: [&str; 12] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
 ];
 
+// ── 12-TET anchor ──────────────────────────────────────────────────────
+//
+// Restated per the TS↔Rust lockstep rule (scoring cannot depend on the
+// owners): `daw_core::tuning` owns the Rust pair, `src/utils/pitch.ts` the
+// TypeScript one, and — inside daw-dsp, which also cannot depend on the
+// owners — `crumbs/analysis/pitch.rs`, `fermenter/voice.rs`,
+// `levain/fallback.rs`, and `grand_boule/parameters.rs` carry the rest of
+// the copies. Every copy must stay equal.
+
+/// Concert-A reference frequency the 12-TET grid is anchored to. The tuner's
+/// `a4_hz` control starts here and the user may retune it (415–466 Hz).
+pub(crate) const STANDARD_A4_HZ: f32 = 440.0;
+/// MIDI note number of concert A (the A above middle C) on that grid.
+pub(crate) const A4_MIDI_NOTE: f32 = 69.0;
+/// Semitones per octave in twelve-tone equal temperament.
+pub(crate) const SEMITONES_PER_OCTAVE: f32 = 12.0;
+
 pub struct TuningSystem {
     pub a4_hz: f32,
     pub transpose_semitones: i32,
@@ -16,7 +33,7 @@ pub struct TuningSystem {
 impl TuningSystem {
     pub fn new() -> Self {
         Self {
-            a4_hz: 440.0,
+            a4_hz: STANDARD_A4_HZ,
             transpose_semitones: 0,
             capo_semitones: 0,
             offsets: [0.0; 12],
@@ -26,12 +43,12 @@ impl TuningSystem {
     /// Given a detected frequency, return (midi_note, note_name_index, octave, cents_deviation).
     pub fn map_frequency(&self, freq: f32) -> (i32, usize, i32, f32) {
         if freq <= 0.0 {
-            return (69, 9, 4, 0.0); // default A4
+            return (A4_MIDI_NOTE as i32, 9, 4, 0.0); // default A4
         }
 
         // Continuous MIDI note number relative to A4=69
-        let semitones_from_a4 = 12.0 * (freq / self.a4_hz).log2();
-        let midi_continuous = 69.0 + semitones_from_a4;
+        let semitones_from_a4 = SEMITONES_PER_OCTAVE * (freq / self.a4_hz).log2();
+        let midi_continuous = A4_MIDI_NOTE + semitones_from_a4;
 
         // Apply transpose and capo
         let adjusted =
@@ -96,7 +113,7 @@ impl TuningSystem {
 
     /// Get the target frequency for a MIDI note number.
     pub fn midi_to_freq(&self, midi_note: i32) -> f32 {
-        self.a4_hz * (2.0_f32).powf((midi_note as f32 - 69.0) / 12.0)
+        self.a4_hz * (2.0_f32).powf((midi_note as f32 - A4_MIDI_NOTE) / SEMITONES_PER_OCTAVE)
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {

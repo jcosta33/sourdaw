@@ -2,6 +2,7 @@ import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } 
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
+import { type AgentRunCreationRefusalReason, describeAgentRunCreationRefusal } from '../models/AgentResourceLimits';
 import { getCreativeSelectionSnapshot } from '../models/CreativeInterpretation';
 import { type PlannedIntentResult } from '../models/IntentResult';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
@@ -53,25 +54,63 @@ function isCorrectableRejection(rejectionReason: string | undefined): boolean {
     return /schema|target|resolv/iu.test(rejectionReason) || rejectionReason.startsWith('Provider action rejected:');
 }
 
+type PlanningRunStreamIdentity = Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>;
+
+type PlanningRunAdmission =
+    | { status: 'admitted'; streamIdentity: PlanningRunStreamIdentity }
+    | { status: 'hard-limit-reached'; reason: AgentRunCreationRefusalReason };
+
+function admitPlanningRun(input: {
+    prompt: string;
+    projectRevision: string;
+    streamIdentity?: PlanningRunStreamIdentity;
+}): PlanningRunAdmission {
+    if (input.streamIdentity !== undefined) {
+        if (agentRunLifecycle.get(input.streamIdentity.runId) === null) {
+            throw new Error('Executable provider planning requires an admitted agent run.');
+        }
+        return { status: 'admitted', streamIdentity: input.streamIdentity };
+    }
+    const runId = `agent-run-${crypto.randomUUID()}`;
+    const created = agentRunLifecycle.create({
+        runId,
+        request: input.prompt,
+        mode: 'plan',
+        createdRevision: input.projectRevision,
+    });
+    if (created.status === 'hard-limit-reached') {
+        return { status: 'hard-limit-reached', reason: created.reason };
+    }
+    return {
+        status: 'admitted',
+        streamIdentity: { runId, requestId: `planning:${runId}`, cancellationGeneration: 0 },
+    };
+}
+
 export async function planPromptActions(input: PlanPromptActionsInput): Promise<PlannedPromptActions> {
     const projectRevision = settlePendingProjectWritesAndCaptureRevision();
     const context = getProjectContext();
-    const streamIdentity = (() => {
-        if (input.streamIdentity !== undefined) {
-            if (agentRunLifecycle.get(input.streamIdentity.runId) === null) {
-                throw new Error('Executable provider planning requires an admitted agent run.');
-            }
-            return input.streamIdentity;
-        }
-        const runId = `agent-run-${crypto.randomUUID()}`;
-        agentRunLifecycle.create({
-            runId,
-            request: input.prompt,
-            mode: 'plan',
-            createdRevision: projectRevision,
-        });
-        return { runId, requestId: `planning:${runId}`, cancellationGeneration: 0 };
-    })();
+    const admission = admitPlanningRun({
+        prompt: input.prompt,
+        projectRevision,
+        streamIdentity: input.streamIdentity,
+    });
+    if (admission.status === 'hard-limit-reached') {
+        return {
+            context,
+            projectRevision,
+            result: {
+                actions: [],
+                rawText: input.prompt,
+                requiresConfirmation: false,
+                planningOutcome: {
+                    kind: 'denied' as const,
+                    reason: describeAgentRunCreationRefusal(admission.reason),
+                },
+            },
+        };
+    }
+    const streamIdentity = admission.streamIdentity;
     // Read once, here: the correction compares against the authority this run started with, not
     // against whatever the run has become by the time the correction is admitted.
     const runAtCapture = agentRunLifecycle.get(streamIdentity.runId);

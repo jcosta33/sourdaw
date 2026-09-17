@@ -13,7 +13,8 @@ vi.mock('../../stores/tempoMapStore', () => ({
     },
 }));
 
-vi.mock('../../stores/transportStore', () => ({
+vi.mock('../../stores/transportStore', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../stores/transportStore')>()),
     transportStore: { value: { tempo: 60 } },
 }));
 
@@ -30,7 +31,10 @@ describe('createSamplePositionProjector', () => {
         // values once at construction time. The fresh module load picks up the
         // null-store mocks defined below.
         vi.resetModules();
-        vi.doMock('../../stores/transportStore', () => ({ transportStore: { value: null } }));
+        vi.doMock('../../stores/transportStore', async (importOriginal) => ({
+            ...(await importOriginal<typeof import('../../stores/transportStore')>()),
+            transportStore: { value: null },
+        }));
         vi.doMock('../../stores/tempoMapStore', () => ({ tempoMapStore: { value: null } }));
         // Re-import after the doMock so the module sees the null stores.
         const { createSamplePositionProjector: freshProjector } = await import('../createSamplePositionProjector');

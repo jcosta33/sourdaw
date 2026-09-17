@@ -26,6 +26,14 @@ import { initSync, FermenterInstance } from '../wasm/daw_dsp.js';
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 
+/**
+ * Port message discriminant, restated from the app-side owner
+ * `src/infra/audioWorklet/workletPortMessages.ts` because this processor runs
+ * in the isolated worklet realm and must not import app-side code; pinned
+ * equal by `__tests__/workletPortMessageParity.spec.ts`.
+ */
+export const INIT_SAB_MESSAGE_TYPE = 'init-sab';
+
 // Exclusive upper bound of the offline automation ordinal space. **Derived, not
 // restated**: the ordinal table is dense 0..n-1 (pinned by
 // `wasm/__tests__/dawDspFermenterAutomationOrdinals.spec.ts`), so its key count
@@ -118,7 +126,7 @@ type NoteExpressionMsg = {
 };
 type FermenterMsg =
     | { type: 'init' }
-    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
+    | { type: typeof INIT_SAB_MESSAGE_TYPE; sab: SharedArrayBuffer; byteOffset: number }
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number; channel?: number }
     | { type: 'noteOff'; note: number; sampleFrame?: number; channel?: number }
     | NoteExpressionMsg
@@ -191,7 +199,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
                     }
                     this._initWasm(wasmModule);
                     wasmModule = null;
-                } else if (msg.type === 'init-sab') {
+                } else if (msg.type === INIT_SAB_MESSAGE_TYPE) {
                     this._telemetryView = new Float32Array(msg.sab, msg.byteOffset, TELEMETRY_SLOT_FLOATS);
                     this._telemetrySeqView = new Int32Array(msg.sab, msg.byteOffset, TELEMETRY_SLOT_FLOATS);
                     this._lastPublishedLifecycleState = null;
@@ -329,7 +337,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
             // Both are consumed by the constructor's port handler and never
             // reach the dispatcher; listed so the switch stays exhaustive.
             case 'init':
-            case 'init-sab':
+            case INIT_SAB_MESSAGE_TYPE:
                 break;
             case 'noteOn':
                 inst.note_on_with_channel(msg.note, msg.velocity, msg.channel ?? 0);

@@ -1,7 +1,12 @@
 import { extractGuardedZip, type ZipExtractionLimits } from '#/infra/archive/extractGuardedZip';
 
-export const projectXmlPath = /^project\.xml$/i;
-export const metadataXmlPath = /^metadata\.xml$/i;
+import {
+    METADATA_XML_ENTRY_NAME,
+    METADATA_XML_ENTRY_PATH,
+    PROJECT_XML_ENTRY_NAME,
+    PROJECT_XML_ENTRY_PATH,
+} from './dawProjectEntryNames';
+
 const audioAssetPath = /^audio\//;
 
 export type DawProjectZipWorkerPhase = 'header' | 'audio';
@@ -28,7 +33,7 @@ export function runDawProjectZipWorkerRequest(
         request.phase === 'header'
             ? extractGuardedZip({
                   bytes,
-                  include: (path) => projectXmlPath.test(path) || metadataXmlPath.test(path),
+                  include: (path) => PROJECT_XML_ENTRY_PATH.test(path) || METADATA_XML_ENTRY_PATH.test(path),
                   validateInventory: validateDawProjectRootInventory,
                   restrictLimits: request.restrictLimits,
               })
@@ -56,15 +61,15 @@ function toTransferableEntries(entries: Record<string, Uint8Array>): Record<stri
 }
 
 function validateDawProjectRootInventory(paths: readonly string[]): void {
-    const projectRoots = paths.filter((path) => projectXmlPath.test(path));
+    const projectRoots = paths.filter((path) => PROJECT_XML_ENTRY_PATH.test(path));
     if (projectRoots.length === 0) {
-        throw new Error('DAWproject archive is missing project.xml at its root');
+        throw new Error(`DAWproject archive is missing ${PROJECT_XML_ENTRY_NAME} at its root`);
     }
     if (projectRoots.length > 1) {
-        throw new Error('DAWproject archive contains duplicate project.xml roots');
+        throw new Error(`DAWproject archive contains duplicate ${PROJECT_XML_ENTRY_NAME} roots`);
     }
-    const metadataRoots = paths.filter((path) => metadataXmlPath.test(path));
+    const metadataRoots = paths.filter((path) => METADATA_XML_ENTRY_PATH.test(path));
     if (metadataRoots.length > 1) {
-        throw new Error('DAWproject archive contains duplicate metadata.xml roots');
+        throw new Error(`DAWproject archive contains duplicate ${METADATA_XML_ENTRY_NAME} roots`);
     }
 }

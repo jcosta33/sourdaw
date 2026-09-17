@@ -1,7 +1,7 @@
 import { expect, test, type Page, type Locator } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_new_project, RECENT_PROJECTS_STORAGE_KEY, setupWorkspace } from './e2eUtils';
 
 /**
  * Two controls the final audit found with zero e2e hits:
@@ -41,8 +41,7 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
  *    to the launch home view.
  */
 
-const CANCEL_PROCESSING = (page: Page): Locator =>
-    page.getByRole('button', { name: 'Cancel AI processing' });
+const CANCEL_PROCESSING = (page: Page): Locator => page.getByRole('button', { name: 'Cancel AI processing' });
 
 test.describe('PromptBar cancel-processing control', () => {
     test.beforeEach(async ({ page }) => {
@@ -144,7 +143,7 @@ test.describe('LaunchScreen recent-project cards', () => {
             { name: 'Recent Mix', key: 'e2e-missing-recent-project', updatedAt: Date.now() },
         ]);
         await setupWorkspace(page, {
-            localStorage: [{ name: 'sourdaw-recent-projects', value: seeded }],
+            localStorage: [{ name: RECENT_PROJECTS_STORAGE_KEY, value: seeded }],
         });
 
         const launch_screen = page.getByLabel('Sourdaw — start a project');

@@ -1,3 +1,5 @@
+import { clampPitchBend } from '#/utils/midiData';
+
 import { midiStore } from '../../stores/midiStore';
 
 export function setNotePitchBend(clipId: string, noteId: string, pitchBend: number): void {
@@ -16,7 +18,7 @@ export function setNotePitchBend(clipId: string, noteId: string, pitchBend: numb
         notesByClipId: {
             ...state.notesByClipId,
             [clipId]: existing.map((node) =>
-                node.id === noteId ? { ...node, pitchBend: Math.max(-8192, Math.min(8191, pitchBend)) } : node
+                node.id === noteId ? { ...node, pitchBend: clampPitchBend(pitchBend) } : node
             ),
         },
     });

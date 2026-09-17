@@ -38,6 +38,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
+    forgetProjectLatchedPedals: vi.fn(),
     resetAudioGraph: vi.fn(),
 }));
 

@@ -86,6 +86,34 @@ describe('resolveNativeNoteSink', () => {
         ).toBe('plug-1');
     });
 
+    // Crumbs takes live notes through the engine's own note store, registered
+    // when the instance is spliced in. Carriage is the proof it was: the
+    // carrier law refuses to carry a strip holding a Crumbs device the engine
+    // does not hold. `soundsNativeNotes` answers false for it — the engine
+    // builds no Crumbs body — so a rule reading only that dropped every live
+    // note a musician played into a carried sampler.
+    it('takes a carried Crumbs device as the sink', () => {
+        const track = make_track([{ id: 'crumbs-1', type: 'builtin-crumbs' }]);
+
+        const result = resolveNativeNoteSink(
+            track,
+            deps(() => true)
+        );
+
+        expect(result?.id).toBe('crumbs-1');
+    });
+
+    it('returns null for a Crumbs device on a strip the session does not carry', () => {
+        const track = make_track([{ id: 'crumbs-1', type: 'builtin-crumbs' }]);
+
+        const result = resolveNativeNoteSink(
+            track,
+            deps(() => false)
+        );
+
+        expect(result).toBeNull();
+    });
+
     it('hands the predicate the instrument track id', () => {
         const track = {
             id: 'track-x',

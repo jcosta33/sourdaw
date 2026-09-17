@@ -13,6 +13,7 @@
 //! License: MIT — Copyright (c) 2022 Oliver Rockstedt
 //! https://github.com/sourcebox/mi-plaits-dsp-rs
 
+use crate::params::{DECAY, TONE, TUNE};
 use crate::toaster::adaa::pulse_shape_diode;
 
 #[inline]
@@ -253,13 +254,13 @@ impl Kick808Engine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "decay" => {
+            DECAY => {
                 self.decay = value.clamp(0.0, 1.0);
             }
-            "tune" => {
+            TUNE => {
                 self.tune = value.clamp(-24.0, 24.0);
             }
-            "tone" => {
+            TONE => {
                 // Tone controls tone LPF coefficient
                 self.tone_coeff = (value.clamp(0.0, 1.0) * 0.99).max(0.01);
             }

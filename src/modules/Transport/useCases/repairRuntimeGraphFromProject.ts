@@ -1,4 +1,5 @@
 import { resetAudioGraph, stopAllScheduled } from '#/modules/AudioEngine/useCases';
+import { retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 import { resetExternalPluginRuntimeForGraphRebuild } from '#/modules/PluginHost/useCases';
 
@@ -32,6 +33,13 @@ export async function repairRuntimeGraphFromProject(): Promise<void> {
     }
 
     await resetExternalPluginRuntimeForGraphRebuild();
+    // The repair does not release the engine: the reset above unloads the
+    // hosted plugin runtime and nothing else, so every Crumbs instance the
+    // engine holds stays attached across the rebuild. The mirror is emptied
+    // here all the same. Nothing below refills it — the rebuild builds Web
+    // Audio and sends no graph batch — so the next Play does, reporting the
+    // instances it finds held and re-projecting the strips it binds.
+    retractEveryCrumbsEngineAttachment();
     resetAudioGraph();
     const rebuild = ensureTrackStrips({ collectExternalPluginActivations: true });
     if (rebuild.status === 'failed') {

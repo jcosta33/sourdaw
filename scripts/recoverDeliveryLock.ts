@@ -26,7 +26,7 @@ import {
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
-import { parseDeliveryReceipt, fail } from './prContract.ts';
+import { parseDeliveryReceipt, fail, PR_STATE } from './prContract.ts';
 import {
     currentMutationOwnerFence,
     isDeliveryPullRequestMutationLockOwner,
@@ -171,7 +171,7 @@ function assertRejectedMergeRemoteState(
     incident: RejectedMergeIncident,
     remote: RejectedMergeRecoveryRemoteState
 ): void {
-    if (remote.state.toUpperCase() !== 'OPEN') {
+    if (remote.state.toUpperCase() !== PR_STATE.OPEN) {
         fail(`PR #${incident.number} is not open`);
     }
     if (!/^[0-9a-f]{40}$/iu.test(remote.head) || remote.head.toLowerCase() === incident.rejectedHead) {
@@ -196,7 +196,7 @@ function assertMissingReceiptRemoteState(
     incident: MissingReceiptIncident,
     remote: MissingReceiptRecoveryRemoteState
 ): void {
-    if (remote.state.toUpperCase() !== 'OPEN') {
+    if (remote.state.toUpperCase() !== PR_STATE.OPEN) {
         fail(`PR #${incident.number} is not open`);
     }
     if (!/^[0-9a-f]{40}$/iu.test(remote.head)) {
@@ -251,7 +251,7 @@ type JournaledRecoveryReceipt = {
 };
 
 function observedDeliveryState(remote: JournaledRecoveryRemoteState): string {
-    return remote.merged ? 'MERGED' : remote.state.toUpperCase();
+    return remote.merged ? PR_STATE.MERGED : remote.state.toUpperCase();
 }
 
 function describeOwnerFence(ownerFence: PullRequestMutationLockOwnerFence): string {

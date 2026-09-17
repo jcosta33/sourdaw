@@ -1,4 +1,4 @@
-import { clampFaderGain } from '#/utils/audioLevelLaw';
+import { clampFaderGain, toStereoPan } from '#/utils/audioLevelLaw';
 
 import { type Device } from '../../models/TrackViewTypes';
 import { buildDeviceChain } from '../buildDeviceChain';
@@ -85,7 +85,7 @@ export async function createOfflineTrackStrip(
     postFaderGain.gain.value = honorMuted && track.muted ? 0 : 1;
 
     const panNode = offlineCtx.createStereoPanner();
-    panNode.pan.value = Math.max(-1, Math.min(1, track.pan / 50));
+    panNode.pan.value = toStereoPan(track.pan);
 
     const outputNode = offlineCtx.createGain();
     outputNode.gain.value = 1;

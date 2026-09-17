@@ -1,3 +1,5 @@
+import { clampVelocity } from '#/utils/midiData';
+
 import { type MidiEffect } from '../../../models/MidiEffectTypes';
 
 export function createVelocityCurve(
@@ -24,7 +26,7 @@ export function createVelocityCurve(
                     default:
                         break;
                 }
-                return { ...node, velocity: Math.max(1, Math.min(127, vel)) };
+                return { ...node, velocity: clampVelocity(vel) };
             }),
     };
 }

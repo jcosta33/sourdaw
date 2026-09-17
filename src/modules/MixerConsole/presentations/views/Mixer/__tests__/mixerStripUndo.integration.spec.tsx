@@ -236,6 +236,7 @@ vi.mock('#/modules/Knead/useCases', async () => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    forgetProjectLatchedPedals: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
     startFaustNote: vi.fn(),
     writeNativeBuiltinParameters: vi.fn(),
@@ -339,6 +340,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxParam: vi.fn(),
     updateNativeLiveGraphSessionTransportMaps: vi.fn(),
     waitForDevices: vi.fn(),
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Routing/useCases', () => ({
