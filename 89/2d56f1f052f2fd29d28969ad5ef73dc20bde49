@@ -1,0 +1,44 @@
+src/modules/CrdtDocument/repositories/branchStateAuthority.ts
+  s_9b530f08172a54::t_ab7770a0c01bbf 454,458,466
+  s_9b530f08172a54::t_af6cfae1679650 50-64
+  s_9b530f08172a54::t_0544ff331e330f 84,86
+  s_9b530f08172a54::t_a1a55c13b3e8e1 113-114,128,132
+  s_9b530f08172a54::t_88a7b3b293cc65 147,152-153,157
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchTransition.ts
+  s_9b530f08172a54::t_2e68ad7414d218 5-8
+  s_9b530f08172a54::t_7e6153053bfa9e 157-161
+  s_9b530f08172a54::t_51e348849b8008 137-143
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranch.spec.ts
+  s_9b530f08172a54::t_6952b8531dad37 104-110
+  s_9b530f08172a54::t_67fe959d912525 285
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/runBranchLineageTransition.spec.ts
+  s_9b530f08172a54::t_ce0ba7fa368bea 8
+  s_9b530f08172a54::t_4527da27269d4e 21-23
+  s_9b530f08172a54::t_3f4258c6072f7d 110-112
+  s_9b530f08172a54::t_9ecef2622ab856 24-27,55,99-100,113-116
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.spec.ts
+  s_9b530f08172a54::t_606e8f33b0c2b0 260
+  s_9b530f08172a54::t_b7a37114680699 17-18
+  s_9b530f08172a54::t_69f6dbb2e07213 254,261-264,281,294-298
+src/modules/Project/useCases/projectPersistence/durableOwnership/__tests__/savedAudioCollectionRace.integration.spec.ts
+  s_9b530f08172a54::t_15a19c512f15cf 17
+  s_9b530f08172a54::t_1be2d4b33bfeca 300-308
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/forkProjectBranch.spec.ts
+  s_9b530f08172a54::t_6e2c580c1d0622 133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "892d56f1f052f2fd29d28969ad5ef73dc20bde49",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
