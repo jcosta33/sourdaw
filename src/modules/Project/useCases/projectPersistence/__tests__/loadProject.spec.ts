@@ -170,6 +170,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     migrateAbsoluteMidiNotes: vi.fn(),
     midiClipGlueStateMatches: vi.fn(),
     midiClipSplitStateMatches: vi.fn(),
+    prepareMidiClipFanOutState: vi.fn(),
     prepareMidiClipGlueState: vi.fn(),
     prepareMidiClipSplit: vi.fn(),
     projectMidiNotesByClipIdThroughRestores: vi.fn(() => ({})),

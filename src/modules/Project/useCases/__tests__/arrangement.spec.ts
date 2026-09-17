@@ -226,6 +226,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         midiClipGlueStateMatches: vi.fn(),
         midiClipSplitStateMatches: vi.fn(),
         panicLiveNotes: vi.fn(),
+        prepareMidiClipFanOutState: vi.fn(),
         prepareMidiClipGlueState: vi.fn(),
         prepareMidiClipSplit: vi.fn(),
         projectClipMidiEvents: vi.fn(),

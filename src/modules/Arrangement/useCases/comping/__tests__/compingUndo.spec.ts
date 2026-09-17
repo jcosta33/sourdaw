@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTakeLane } from '../../../models/TakeLane';
 import { type TakeLaneStoreState } from '../../../stores/takeLaneStore';
+import { trackStore } from '../../../stores/trackStore';
 import { addTake } from '../addTake';
 import { addTakeLane } from '../addTakeLane';
 import { flattenComp } from '../flattenComp';
@@ -21,6 +23,7 @@ const { executeUserAppActionMock, pushUndoEntryMock, takeLaneStoreMock } = vi.ho
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
     executeUserAppAction: executeUserAppActionMock,
     pushUndoEntry: pushUndoEntryMock,
 }));
@@ -108,6 +111,13 @@ describe('comping undo entries', () => {
         const laneA = createTakeLane('t1');
         const laneB = createTakeLane('t2');
         takeLaneStoreMock.value = { lanes: [laneA, laneB] };
+        // Flatten reads the track to materialise the comp programme onto it;
+        // a lane selecting nothing takes the lane-only route either way.
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 't1', clips: [] })],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        });
         flattenComp('t1');
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Flatten comp');

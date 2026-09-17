@@ -7,6 +7,36 @@ export type ResolvedClip = Track['clips'][number] & {
 };
 
 /**
+ * A fragment's own media-entry offset.
+ *
+ * Every consumer — `projectOfflineAudioClipPlaybacks`, the Web Audio clip
+ * scheduler, and the MIDI note projections — enters the material at the
+ * fragment's own `startBeat` using the offset field alone; none of them adds a
+ * displacement term of its own, and `sourceStartBeat` only carries the
+ * loop-occurrence count for probability rolls. So a fragment that begins
+ * partway into its source must carry that whole displacement here, or it sounds
+ * the material from the clip's origin, late by the span it was displaced.
+ *
+ * `displacement` is measured from the media origin, which loop recording moves
+ * behind the clip's own start: every pass lands in one continuous clip, and the
+ * take — not the shared clip — names how deep its pass sits in that buffer.
+ *
+ * A fragment sitting exactly on the media origin leaves the clip's fields
+ * untouched, so an unshifted region stays byte-identical to its source.
+ * Mirrors the web resolver (`Arrangement/useCases/resolveComping.ts`) so both
+ * renderers read the same material for the same fragment (#2225).
+ */
+function withFragmentOffset(clip: Track['clips'][number], displacement: number): Track['clips'][number] {
+    if (displacement === 0) {
+        return clip;
+    }
+    if (clip.type === 'audio') {
+        return { ...clip, audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + displacement };
+    }
+    return { ...clip, midiOffsetBeats: (clip.midiOffsetBeats ?? 0) + displacement };
+}
+
+/**
  * The clip set a track actually plays: comped takes where a take lane has
  * active regions, gap fills where the original clip still shows through, and
  * the clips unchanged when no comping applies.
@@ -56,25 +86,16 @@ export function resolveTrackClipsWithComping(trackId: string, clips: Track['clip
             continue;
         }
 
-        // Loop recording writes every pass into one continuous clip, so the
-        // take — not the shared clip — carries where its own pass begins.
-        // `segmentStartBeat - sourceStartBeat` is how far into the source a
-        // consumer reads: a pass recorded one loop length later sits that much
-        // deeper in the shared buffer, so its origin resolves before the clip's
-        // own start. Audio consumers address PCM through the clip's media-entry
-        // offset, which shifts by the same span. Mirrors the web resolver
-        // (`Arrangement/useCases/resolveComping.ts`) so both renderers pick the
-        // same take material (#2225).
         const passOffsetBeats = take.sourceOffsetBeats ?? 0;
+        const mediaOriginBeat = sourceClip.startBeat - passOffsetBeats;
 
         resolvedClips.push({
-            ...sourceClip,
+            ...withFragmentOffset(sourceClip, overlapStart - mediaOriginBeat),
             startBeat: overlapStart,
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,
             regionEndBeat: overlapEnd,
-            sourceStartBeat: sourceClip.startBeat - passOffsetBeats,
-            audioOffsetBeats: (sourceClip.audioOffsetBeats ?? 0) + passOffsetBeats,
+            sourceStartBeat: mediaOriginBeat,
         });
     }
 
@@ -100,7 +121,7 @@ export function resolveTrackClipsWithComping(trackId: string, clips: Track['clip
 
         for (const gap of gaps) {
             resolvedClips.push({
-                ...clip,
+                ...withFragmentOffset(clip, gap.start - clip.startBeat),
                 startBeat: gap.start,
                 endBeat: gap.end,
                 regionStartBeat: gap.start,
