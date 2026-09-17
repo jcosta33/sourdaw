@@ -187,8 +187,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/agentCommandCoverage.spec.ts",
-                    "digest": null,
-                    "status": "absent"
+                    "digest": "5fda9f12f5f6c460a03da80d7d8fc1bce57a3a60b55f16a709409e5e6ecae265"
                 }
             ]
         },
@@ -815,8 +814,7 @@
             "fixtures": [
                 {
                     "path": "src/app/__tests__/agentProductionReadiness.spec.ts",
-                    "digest": null,
-                    "status": "absent"
+                    "digest": "888330ad8930fcec704444fb42f39999090d17ffc03ecce2ab90cbcc1e03ccca"
                 }
             ]
         },
