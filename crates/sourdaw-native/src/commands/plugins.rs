@@ -2802,6 +2802,7 @@ pub async fn send_plugin_midi(
             event_id_hash: 0,
             absolute_occurrence_index: 0,
             frame_offset: 0,
+            articulation_id: None,
         },
     )
 }

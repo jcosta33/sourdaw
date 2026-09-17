@@ -733,6 +733,13 @@ pub struct MidiNotePayload {
     pub event_id_hash: Option<u32>,
     #[serde(default)]
     pub absolute_occurrence_index: Option<u64>,
+    /// The instrument's per-note articulation, as the DSP engine numbers it.
+    ///
+    /// Absent means the note sounds on whatever articulation the device already
+    /// stands on, which is the answer every note gave before the wire carried
+    /// one. Only an instrument with a per-note articulation surface reads it.
+    #[serde(default)]
+    pub articulation_id: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1968,6 +1975,7 @@ fn map_midi_note(
             clip_id_hash: note.clip_id_hash.unwrap_or(0),
             event_id_hash: note.event_id_hash.unwrap_or(0),
             absolute_occurrence_index: note.absolute_occurrence_index.unwrap_or(0),
+            articulation_id: note.articulation_id,
         },
     })
 }
@@ -3612,6 +3620,7 @@ fn map_command(
                     clip_id_hash: 0,
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
+                    articulation_id: None,
                 },
             ));
             Ok(())
@@ -9627,6 +9636,50 @@ mod tests {
                 "the command's project seed is stamped on every note it maps"
             );
         }
+    }
+
+    /// A stated articulation reaches the note the store holds, and a note that
+    /// states none carries none.
+    ///
+    /// Both halves are claims. A mapper that dropped the field would leave
+    /// every articulated clip note sounding on whatever articulation its
+    /// instrument happened to stand on; one that filled an absence with a
+    /// default would pin every other note to articulation 0, which is a sound
+    /// of its own rather than the absence the wire means.
+    #[test]
+    fn schedule_midi_carries_a_stated_articulation_and_nothing_for_an_unstated_one() {
+        /// `pizzicato` in the project's own articulation table.
+        const ARTICULATION: u16 = 10;
+
+        let mut registry = registry_with_hosted_device("t1", "d1");
+        let samples = TimelineSamplePool::default();
+        let batch = schedule_midi_batch(
+            "t1",
+            "d1",
+            json!([
+                {
+                    "time": 0.0, "note": 60, "velocity": 100, "channel": 0, "isNoteOn": true,
+                    "articulationId": ARTICULATION,
+                },
+                note_at(0.25, 62, 0),
+            ]),
+        );
+
+        let mapped = map_unbound_batch(&batch, &mut registry, &samples, 48_000.0)
+            .expect("a schedule-midi on a registered hosted device maps");
+        let GraphCommand::ScheduleMidiNotes { notes, .. } = &mapped.ops[0] else {
+            panic!("schedule-midi must map onto ScheduleMidiNotes");
+        };
+
+        assert_eq!(
+            notes[0].event.articulation_id,
+            Some(ARTICULATION),
+            "the stated articulation must reach the stored note"
+        );
+        assert_eq!(
+            notes[1].event.articulation_id, None,
+            "a note stating no articulation must carry none, not a default"
+        );
     }
 
     /// The web carrier's twin is `matches the fixed cross-runtime tuple corpus`

@@ -205,6 +205,7 @@ describe('Levain instrument persistence round trip', () => {
             // This case follows project truth into the offline engine state;
             // the native session is not part of that round trip.
             writeNativeBuiltinParameters: vi.fn(),
+            sendNativeLiveMidiControl: vi.fn(() => Promise.resolve(true)),
         });
         await bridge.registerLevainDevice(DEVICE_ID, { setParam: vi.fn(), handleCc: vi.fn() }, fakePort().port);
 
@@ -305,6 +306,7 @@ describe('Levain instrument persistence round trip', () => {
             getAllTracks: () => [],
             persistDeviceParam: vi.fn(),
             writeNativeBuiltinParameters: vi.fn(),
+            sendNativeLiveMidiControl: vi.fn(() => Promise.resolve(true)),
             autoLoadLevainSamples,
             resolveEligibleDeviceWriteTarget: (deviceId: string) => ({
                 status: 'eligible' as const,

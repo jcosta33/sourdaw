@@ -95,6 +95,7 @@ export type NativeGraphWireMidiNote = Readonly<{
     clipIdHash?: number;
     eventIdHash?: number;
     absoluteOccurrenceIndex?: number;
+    articulationId?: number;
 }>;
 
 /**
@@ -242,6 +243,7 @@ function serializeMidiNote(note: AudioGraphMidiNoteEvent): NativeGraphWireMidiNo
         ...(note.absoluteOccurrenceIndex !== undefined
             ? { absoluteOccurrenceIndex: note.absoluteOccurrenceIndex }
             : {}),
+        ...(note.articulationId !== undefined ? { articulationId: note.articulationId } : {}),
     };
 }
 

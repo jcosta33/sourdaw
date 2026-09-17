@@ -4,7 +4,7 @@ import {
     persistDeviceParam,
     resolveEligibleDeviceWriteTarget,
 } from '#/modules/Arrangement/stores';
-import { writeNativeBuiltinParameters } from '#/modules/AudioEngine/useCases';
+import { sendNativeLiveMidiControl, writeNativeBuiltinParameters } from '#/modules/AudioEngine/useCases';
 
 import { autoLoadLevainSamples } from '../autoLoadSamples';
 
@@ -18,4 +18,5 @@ export const levainBridgeDependencies = {
     autoLoadLevainSamples,
     resolveEligibleDeviceWriteTarget,
     writeNativeBuiltinParameters,
+    sendNativeLiveMidiControl,
 } as const;
