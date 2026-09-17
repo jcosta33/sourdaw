@@ -110,6 +110,14 @@ movement of the base tip is allowed when that context is unchanged.
 GitHub's live head matches the bundle; fresh approvals also require matching
 base context.
 
+### Headless reviewer dispatch
+
+When the harness cannot select subagent models, run each blind stance on another agent
+harness headlessly: one stance per dispatch, blind, read-only, no credentials, the
+report returned as text for the orchestrator to validate and publish. `reviewerModel`
+records the model actually run; the dispatch never enters the trusted snapshot; the
+harness, model, and invocation are the dispatching session's choice.
+
 ## Review document formats
 
 ### Inline comments (REQUEST_CHANGES)
