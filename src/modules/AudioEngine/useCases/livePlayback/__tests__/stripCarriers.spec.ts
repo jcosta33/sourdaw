@@ -715,4 +715,57 @@ describe('projectStripCarriers', () => {
             reason: 'output path through "Drum Bus" holds Crumbs sampler "Break Kit", not attached to the engine',
         });
     });
+
+    // Toaster pad bindings (#4180). The native graph has no multi-output
+    // device and no child strip, so a Toaster whose pads reach child tracks is
+    // unrepresentable on either strip — the check runs first, ahead of rule 1,
+    // so the reason a musician reads names the actual obstruction rather than
+    // "nothing scheduled".
+    it('keeps a Toaster and its pad-bound child on Web Audio, each naming the other', () => {
+        const carriers = projectStripCarriers({
+            stripTracks: [
+                createTrack({
+                    id: 'toaster-1',
+                    name: 'Drum Toaster',
+                    devices: [createDevice({ id: 'd', type: 'toaster' })],
+                }),
+                createTrack({ id: 'pad-1', parentId: 'toaster-1' }),
+            ],
+            attachedInstanceIds: new Set(),
+            programme: programmeFor(['toaster-1', 'pad-1']),
+            inputMonitoredTrackIds: new Set(),
+        });
+
+        expect(carriers.get('toaster-1')).toEqual({ carrier: 'web', reason: 'its pads route to child tracks' });
+        expect(carriers.get('pad-1')).toEqual({ carrier: 'web', reason: 'it plays a pad of "Drum Toaster"' });
+    });
+
+    // A Toaster with no children is exactly the built-in-instrument case rule 3
+    // already carries: nothing about this rule touches it.
+    it('carries a Toaster track with no child tracks natively', () => {
+        const carrier = carrierOf(
+            {
+                stripTracks: [createTrack({ id: 'toaster-1', devices: [createDevice({ id: 'd', type: 'toaster' })] })],
+            },
+            'toaster-1'
+        );
+
+        expect(carrier).toEqual({ carrier: 'native' });
+    });
+
+    // The rule is Toaster-specific: a child of a track that hosts no Toaster
+    // gets no pad-binding answer and falls through to the ordinary rules.
+    it('leaves a child track whose parent hosts no Toaster to the ordinary rules', () => {
+        const carrier = carrierOf(
+            {
+                stripTracks: [
+                    createTrack({ id: 'parent-1', devices: [nativeDevice('d')] }),
+                    createTrack({ id: 'child-1', parentId: 'parent-1' }),
+                ],
+            },
+            'child-1'
+        );
+
+        expect(carrier).toEqual({ carrier: 'native' });
+    });
 });

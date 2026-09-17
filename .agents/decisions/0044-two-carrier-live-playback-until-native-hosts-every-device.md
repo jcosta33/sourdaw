@@ -50,8 +50,9 @@ into it, so it is shared infrastructure rather than a thing one of them owns.
 
 A track is native only when the engine can represent all of it: it has something scheduled to play,
 it is not monitoring live input, every device in its chain has a native body — a `knead` built-in, or
-a plugin the engine reports attached — and every bus its output path and its sends reach is
-representable by the same test, all the way to master. A routing cycle is answered rather than
+a plugin the engine reports attached — every bus its output path and its sends reach is representable
+by the same test, all the way to master, and none of its Toaster pads is bound to a child track, since
+the native graph has no multi-output device or child strip. A routing cycle is answered rather than
 recursed. Each of these is a `web` answer with a reason, and the reason is written for a musician
 because it is what a musician is shown.
 

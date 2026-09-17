@@ -502,6 +502,24 @@ describe('projectLiveGraphTopology', () => {
         expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(false);
     });
 
+    // Toaster pad bindings (#4180): the native graph has no multi-output
+    // device and no child strip, so a Toaster with pads bound to child tracks
+    // is unrepresentable on either strip, however native its own chain looks.
+    it('keeps a Toaster and its pad-bound child both off contributing audio', () => {
+        const commands = project({
+            stripTracks: [
+                createTrack({ id: 'toaster-1', devices: [createDevice({ id: 'dev-1', type: 'toaster' })] }),
+                createTrack({ id: 'pad-1', parentId: 'toaster-1' }),
+            ],
+            programme: programmeFor(['toaster-1', 'pad-1']),
+        });
+
+        const toasterCreation = stripCreation(commands, 'toaster-1');
+        const padCreation = stripCreation(commands, 'pad-1');
+        expect(toasterCreation?.kind === 'create-track-strip' && toasterCreation.contributesAudio).toBe(false);
+        expect(padCreation?.kind === 'create-track-strip' && padCreation.contributesAudio).toBe(false);
+    });
+
     it('builds a playing strip whose external plugin the engine holds as contributing audio', () => {
         // The mapper splices the engine-owned instance into the chain, so the
         // device has a native body and the whole chain is representable. Read

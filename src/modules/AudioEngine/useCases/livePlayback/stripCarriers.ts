@@ -38,6 +38,7 @@ import { type Track } from '#/modules/Arrangement/stores';
 
 import { type AudioGraphDeviceChain } from '../../models/AudioGraphBackend';
 import { resolveOutputTarget } from '../offlineRender/resolveOutputTarget';
+import { resolveToasterPadBinding } from '../resolveToasterPadBinding';
 
 import { admittedSendBusIds } from './admittedSendBusIds';
 import { isCrumbsChainDevice } from './isCrumbsChainDevice';
@@ -107,6 +108,7 @@ type PathObstruction =
 
 type CarrierContext = Readonly<{
     stripById: ReadonlyMap<string, Track>;
+    stripTracks: readonly Track[];
     busStripIds: ReadonlySet<string>;
     trackStripIds: ReadonlySet<string>;
     attachedInstanceIds: ReadonlySet<string>;
@@ -192,6 +194,31 @@ function webReasonWithoutNativePlayback(track: Track, context: CarrierContext): 
     return context.programme.webVoicedStripIds.has(track.id) ? 'its clips play on Web Audio' : null;
 }
 
+/**
+ * The Toaster pad-binding reason a strip stays on Web Audio, or `null` when
+ * neither this track nor its parent is bound the way `resolveToasterPadBinding`
+ * describes.
+ *
+ * The native graph has no multi-output device and no child strip, so a
+ * Toaster whose pads reach child tracks cannot be represented at all: the
+ * parent's own strip only ever plays one output, and `resolveToasterPadBinding`
+ * — the ordinal-under-16 law that decides which child plays which pad — is
+ * reused here rather than restated, so a child beyond the pad count keeps
+ * today's answer instead of a false one.
+ */
+function padBindingReason(track: Track, context: CarrierContext): string | null {
+    const hostsToaster = track.devices.some((device) => device.type === 'toaster');
+    if (hostsToaster && context.stripTracks.some((candidate) => candidate.parentId === track.id)) {
+        return 'its pads route to child tracks';
+    }
+    const binding = resolveToasterPadBinding(context.stripTracks, track.id);
+    if (!binding) {
+        return null;
+    }
+    const parent = context.stripById.get(binding.toasterParentTrackId);
+    return parent ? `it plays a pad of "${parent.name}"` : null;
+}
+
 function chainObstruction(track: Track, context: CarrierContext): AudioGraphDeviceChain[number] | null {
     return chainOf(track, context).find((device) => !hasNativeBody(device, context.attachedInstanceIds)) ?? null;
 }
@@ -257,6 +284,11 @@ function obstructionReason(obstruction: PathObstruction, lead: string): string {
  * reads has to be the first thing that is actually wrong, and a track with no
  * clips on it is not "missing a plugin".
  *
+ * The Toaster pad-binding check runs before every other rule, including rule
+ * 1: a Toaster with pads bound to child tracks is unrepresentable however
+ * much or little either strip plays, so a musician who has scheduled nothing
+ * yet is still told the specific reason rather than "nothing scheduled".
+ *
  * Rule 1 reads the programme first, exactly as the code does: a strip the
  * programme scheduled native playback for passes rule 1 outright. Only a
  * strip with no native playback falls to
@@ -270,6 +302,10 @@ function firstFailure(
     context: CarrierContext,
     inputMonitoredTrackIds: ReadonlySet<string>
 ): string | null {
+    const padReason = padBindingReason(track, context);
+    if (padReason) {
+        return padReason;
+    }
     const plays = (context.programme.playbacksByStripId.get(track.id)?.length ?? 0) > 0;
     if (!plays) {
         const webReason = webReasonWithoutNativePlayback(track, context);
@@ -311,6 +347,7 @@ export function projectStripCarriers(input: StripCarriersInput): ReadonlyMap<str
     const { stripTracks, attachedInstanceIds, programme, inputMonitoredTrackIds } = input;
     const context: CarrierContext = {
         stripById: new Map(stripTracks.map((track): [string, Track] => [track.id, track])),
+        stripTracks,
         busStripIds: new Set(stripTracks.filter((track) => track.kind === 'bus').map((track) => track.id)),
         trackStripIds: new Set(stripTracks.filter((track) => track.kind !== 'bus').map((track) => track.id)),
         attachedInstanceIds,
