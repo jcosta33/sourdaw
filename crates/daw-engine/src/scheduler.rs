@@ -1382,13 +1382,11 @@ impl PluginCore {
     fn control_change(&mut self, event: MidiControlEvent) {
         match self {
             Self::GrandBoule(body) => body.control_change(event),
-            // Levain reads controllers through its own `handle_cc`, which is
-            // #4203's route rather than this one.
-            Self::Levain(_)
+            Self::Levain(body) => body.control_change(event),
             // No controller surface: an effect body takes its parameters by
-            // name ([`GraphCommand::SetParam`]), and the two instruments
-            // here take notes alone.
-            | Self::Knead(_)
+            // name ([`GraphCommand::SetParam`]), and the instruments here take
+            // notes alone.
+            Self::Knead(_)
             | Self::Fermenter(_)
             | Self::Gluten(_)
             | Self::Crust(_)
@@ -1422,10 +1420,10 @@ impl PluginCore {
     fn silence_pedal_held_voices(&mut self) -> bool {
         match self {
             Self::GrandBoule(body) => body.silence_pedal_held_voices(),
-            // The same bodies that take no controller in
-            // [`Self::control_change`] hold nothing a note-off cannot release.
-            Self::Levain(_)
-            | Self::Knead(_)
+            Self::Levain(body) => body.silence_pedal_held_voices(),
+            // The bodies that take no controller in [`Self::control_change`]
+            // hold nothing a note-off cannot release.
+            Self::Knead(_)
             | Self::Fermenter(_)
             | Self::Gluten(_)
             | Self::Crust(_)
@@ -3922,6 +3920,14 @@ const LEVAIN_PATCH_PRECEDENCE: &[&str] = &[];
 /// instance's own state, reached through the two doors below.
 pub struct LevainBody {
     instance: LevainInstance,
+    /// Whether this instrument's sustain pedal is down.
+    ///
+    /// Mirrored here because the instrument publishes no reader for it and
+    /// [`Self::silence_pedal_held_voices`] has to know: a Levain holding the
+    /// pedal routes every `note_off` into its deferred queue
+    /// (`LevainEngine::note_off`), so the note-offs a stop pays would leave the
+    /// voices ringing with nothing coming to release them.
+    sustain_held: bool,
 }
 
 impl LevainBody {
@@ -3932,7 +3938,10 @@ impl LevainBody {
     /// signature carries nothing a bank could be read from; see
     /// [`PluginCore::levain_with_patch`], the only caller.
     fn new(instance: LevainInstance) -> Self {
-        Self { instance }
+        Self {
+            instance,
+            sustain_held: false,
+        }
     }
 
     /// Render this instrument's material for the block and sum it into the
@@ -4002,20 +4011,86 @@ impl LevainBody {
     /// a release everywhere else in this file, so folding the MIDI running-
     /// status convention in here alone would make the native strip diverge
     /// from the web strip on the same event.
+    ///
+    /// A note-on carrying an articulation takes the articulated door, which is
+    /// the same door the worklet's `noteOn` arm calls for a note whose clip
+    /// states one (`levainProcessor.ts`); one carrying none takes the plain
+    /// door and sounds on the articulation the device already stands on. A
+    /// release addresses a key rather than selecting a sound, so it has no
+    /// articulated form to take.
     fn deliver(&mut self, event: &MidiNoteEvent) {
         let channel = member_channel(event.channel);
         if event.is_note_on {
             // An unaddressable channel still sounds: the key went down, and the
             // base member channel is where a note with no channel of its own
             // belongs.
-            self.instance
-                .note_on_with_channel(event.note, event.velocity, channel.unwrap_or(0));
+            let channel = channel.unwrap_or(0);
+            match event.articulation_id {
+                Some(articulation) => self.instance.note_on_with_channel_and_articulation(
+                    event.note,
+                    event.velocity,
+                    channel,
+                    articulation,
+                ),
+                None => self
+                    .instance
+                    .note_on_with_channel(event.note, event.velocity, channel),
+            }
             return;
         }
         match channel {
             Some(channel) => self.instance.note_off_on_channel(event.note, channel),
             None => self.instance.note_off(event.note),
         }
+    }
+
+    /// Apply one live controller message to this instrument.
+    ///
+    /// Every controller reaches the instrument verbatim, through the same
+    /// `handle_cc` door the browser worklet posts to (`levainProcessor.ts`):
+    /// the engine owns which numbers it understands — expression, dynamics,
+    /// vibrato, the sustain pedal, the articulation switch its bank
+    /// configured — so this body owns no vocabulary of its own to filter by,
+    /// and one it filtered would be a controller the two carriers disagreed
+    /// about.
+    ///
+    /// The value crosses as the raw 7-bit byte the wire carries, because that
+    /// is what `LevainEngine::handle_cc` reads: it divides by full scale and
+    /// compares against the switch threshold itself.
+    ///
+    /// No channel: the instrument's controller surface is per-instrument rather
+    /// than per-member-channel, so there is nothing here for one to address.
+    ///
+    /// Real-time safe: every arm the instrument takes stores or recomputes over
+    /// state its constructor already sized.
+    fn control_change(&mut self, event: MidiControlEvent) {
+        if event.controller == CC_SUSTAIN_PEDAL {
+            self.sustain_held = event.value >= MIDI_SWITCH_THRESHOLD;
+        }
+        self.instance.handle_cc(event.controller, event.value);
+    }
+
+    /// Silence the instrument at a stop or a locate without lifting its pedal.
+    ///
+    /// The same law [`GrandBouleBody::silence_pedal_held_voices`] is held to,
+    /// for the same reason: with the sustain pedal down this instrument's
+    /// `note_off` defers rather than releases, so the note-offs a stop queues
+    /// cannot discharge the voices and the instrument would ring on. The kill
+    /// is what the Web Audio carrier's own stop does, and it clears the
+    /// deferred queue with it, so a later pedal-up fires nothing at a voice
+    /// that is already gone.
+    ///
+    /// The pedal itself is left where it stands: the player's foot has not
+    /// moved.
+    ///
+    /// Nothing happens on an unpedalled body — its queued note-offs release the
+    /// voices on their own envelopes, which is the better sound.
+    fn silence_pedal_held_voices(&mut self) -> bool {
+        if !self.sustain_held {
+            return false;
+        }
+        self.instance.all_notes_off();
+        true
     }
 
     /// Render one run into the instrument's own buffers and sum them out.
@@ -5800,6 +5875,8 @@ fn release_note(channel: i16, note: u8, frame_offset: u32) -> MidiNoteEvent {
         clip_id_hash: 0,
         event_id_hash: 0,
         absolute_occurrence_index: 0,
+        // A release addresses a key; nothing about it selects a sound.
+        articulation_id: None,
     }
 }
 
@@ -8729,6 +8806,7 @@ mod tests {
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
                     frame_offset: 0,
+                    articulation_id: None,
                 },
             ))
             .unwrap();
@@ -9127,6 +9205,7 @@ mod tests {
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
                     frame_offset: 0,
+                    articulation_id: None,
                 },
             ))
             .unwrap();
@@ -9734,6 +9813,7 @@ mod tests {
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
                     frame_offset: 0,
+                    articulation_id: None,
                 },
             ))
             .unwrap();
@@ -9800,6 +9880,7 @@ mod tests {
                         event_id_hash: 0,
                         absolute_occurrence_index: 0,
                         frame_offset: 0,
+                        articulation_id: None,
                     },
                 ))
                 .unwrap();
@@ -10480,6 +10561,7 @@ mod tests {
                         event_id_hash: 0,
                         absolute_occurrence_index: 0,
                         frame_offset: 0,
+                        articulation_id: None,
                     },
                 ))
                 .unwrap();
@@ -11021,6 +11103,7 @@ mod tests {
                 event_id_hash: 0,
                 absolute_occurrence_index: 0,
                 frame_offset: 0,
+                articulation_id: None,
             };
             let release = MidiNoteEvent {
                 is_note_on: false,
@@ -11158,6 +11241,7 @@ mod tests {
                 event_id_hash: 0,
                 absolute_occurrence_index: 0,
                 frame_offset: 0,
+                articulation_id: None,
             };
             let release = MidiNoteEvent {
                 is_note_on: false,
@@ -12887,6 +12971,7 @@ mod timeline_tests {
             event_id_hash: 0,
             absolute_occurrence_index: 0,
             frame_offset: 0,
+            articulation_id: None,
         }
     }
 
@@ -25535,23 +25620,48 @@ mod timeline_tests {
     /// lets an equality below refuse a body that read one channel twice.
     const LEVAIN_SPEC_PAN: f32 = -0.8;
 
-    /// One second of 440 Hz at [`LEVAIN_RATE`], with a 5 ms linear fade at each
-    /// end.
+    /// The pitch the fixture's unarticulated zone is authored at, and — rooted
+    /// at [`LEVAIN_SPEC_NOTE`] and played there — the pitch it comes back at.
+    const LEVAIN_SPEC_HERTZ: f32 = 440.0;
+
+    /// The pitch the fixture's articulated zone is authored at, a fifth above
+    /// the other, so a strike that resolved to the wrong zone comes back as a
+    /// different signal rather than as a scaled one.
+    const LEVAIN_SPEC_ARTICULATION_HERTZ: f32 = 660.0;
+
+    /// The articulation the fixture's second zone is tagged with, and the id
+    /// every articulated strike below carries. It is `pizzicato`'s id in the
+    /// project's own 28-name table, so the fixture numbers an articulation the
+    /// way a clip note does.
+    const LEVAIN_SPEC_ARTICULATION: u16 = 10;
+
+    /// The articulation count the fixture's zone map is built at. The tagged id
+    /// indexes that map, so a map built any shorter resolves no zone for it and
+    /// the instrument degrades the strike back to the articulation the channel
+    /// already stands on — which would make an articulated render equal to an
+    /// unarticulated one and every claim below vacuous.
+    const LEVAIN_SPEC_ARTICULATION_COUNT: u32 = LEVAIN_SPEC_ARTICULATION as u32 + 1;
+
+    /// The controller the gesture fixture moves. 11 is expression, which the
+    /// instrument carries as a gain on what it renders, so closing it is
+    /// audible in the render rather than only in state the instrument keeps to
+    /// itself.
+    const LEVAIN_SPEC_EXPRESSION_CC: u8 = 11;
+
+    /// One second of `hertz` at [`LEVAIN_RATE`], with a 5 ms linear fade at
+    /// each end.
     ///
     /// The fades are what make the sample a usable oracle: a raw sine starting
     /// at full amplitude clicks on every strike, and a click is broadband
     /// enough to survive any filtering a stage might apply, so a comparison
     /// against it would hold even for a body that lost the tone entirely.
-    fn levain_spec_sample() -> Vec<f32> {
+    fn levain_spec_sample(hertz: f32) -> Vec<f32> {
         /// 5 ms at [`LEVAIN_RATE`].
         const FADE_FRAMES: f32 = 240.0;
-        /// The pitch the sample is authored at, and — rooted at
-        /// [`LEVAIN_SPEC_NOTE`] and played there — the pitch it comes back at.
-        const HERTZ: f32 = 440.0;
 
         (0..LEVAIN_SPEC_SAMPLE_FRAMES)
             .map(|frame| {
-                let phase = std::f32::consts::TAU * HERTZ * frame as f32 / LEVAIN_RATE;
+                let phase = std::f32::consts::TAU * hertz * frame as f32 / LEVAIN_RATE;
                 let fade_in = (frame as f32 / FADE_FRAMES).min(1.0);
                 let remaining = (LEVAIN_SPEC_SAMPLE_FRAMES - frame) as f32;
                 let fade_out = (remaining / FADE_FRAMES).min(1.0);
@@ -25560,9 +25670,17 @@ mod timeline_tests {
             .collect()
     }
 
-    /// A sampler holding one committed bank: one mono zone covering the whole
+    /// A sampler holding one committed bank: two mono zones covering the whole
     /// keyboard and the whole velocity range, through one mic position panned
     /// off centre.
+    ///
+    /// The zones differ only in the articulation they are tagged with and the
+    /// pitch their sample is authored at — one untagged, one at
+    /// [`LEVAIN_SPEC_ARTICULATION`] — so which zone a strike resolved to is
+    /// readable in the render itself. A bank with one zone cannot tell an
+    /// articulated strike from a plain one: the instrument degrades an
+    /// articulation it holds no zone for back to the one the channel stands
+    /// on, and the two renders then agree whatever the body did with the id.
     ///
     /// Two calls build two independent instances that render identically. The
     /// bank is loaded into this instance alone — nothing here publishes or
@@ -25576,12 +25694,20 @@ mod timeline_tests {
         instance.begin_sample_bank("spec");
         let sample = instance
             .add_sample(
-                levain_spec_sample(),
+                levain_spec_sample(LEVAIN_SPEC_HERTZ),
                 LEVAIN_SPEC_SAMPLE_FRAMES as u32,
                 1,
                 LEVAIN_RATE,
             )
-            .expect("the staged bank takes the fixture's one sample");
+            .expect("the staged bank takes the fixture's unarticulated sample");
+        let articulated_sample = instance
+            .add_sample(
+                levain_spec_sample(LEVAIN_SPEC_ARTICULATION_HERTZ),
+                LEVAIN_SPEC_SAMPLE_FRAMES as u32,
+                1,
+                LEVAIN_RATE,
+            )
+            .expect("the staged bank takes the fixture's articulated sample");
         instance.add_zone(
             0,
             sample,
@@ -25606,9 +25732,33 @@ mod timeline_tests {
             1.0,
             0.05,
         );
+        instance.add_zone(
+            1,
+            articulated_sample,
+            LEVAIN_SPEC_ARTICULATION,
+            LEVAIN_SPEC_NOTE,
+            0.0,
+            0,
+            127,
+            0,
+            127,
+            0,
+            1,
+            0,
+            false,
+            0,
+            0,
+            0,
+            0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.05,
+        );
         assert!(
-            instance.build_zone_map(1, 1),
-            "the fixture's one zone does not build a zone map, so nothing below would sound"
+            instance.build_zone_map(LEVAIN_SPEC_ARTICULATION_COUNT, 1),
+            "the fixture's zones do not build a zone map, so nothing below would sound"
         );
         assert!(
             instance.commit_sample_bank(),
@@ -25633,6 +25783,49 @@ mod timeline_tests {
             unreachable!("levain_with_patch builds the levain variant");
         };
         body
+    }
+
+    /// The plugin id [`track_with_levain`] registers in the hosted specs
+    /// below, and the track id it places the instrument on.
+    const LEVAIN_ID: usize = 7;
+    const LEVAIN_TRACK: usize = 1;
+
+    /// Place a Levain generator on a track, the way `commands/graph.rs` places
+    /// a built-in instrument: registered detached with its own note store,
+    /// then spliced at the head of the chain.
+    ///
+    /// The instance carries the fixture's committed bank ([`levain_instance`]),
+    /// and the track holds no clip, so every non-zero sample the master
+    /// carries came out of the instrument.
+    fn track_with_levain(harness: &mut Harness, track_id: usize, effect_id: usize) {
+        for command in [
+            GraphCommand::AddTrack(TimelineTrack::new(track_id)),
+            GraphCommand::AddDetachedEffect(
+                effect_id,
+                PluginCore::levain_with_patch(levain_instance(), &[]),
+                Some(MidiNoteStore::new()),
+            ),
+            insert_track_device(track_id, generator(effect_id), 0),
+        ] {
+            harness.send(command);
+        }
+    }
+
+    /// One live controller message for the hosted Levain.
+    ///
+    /// The channel is deliberately not the note's: this instrument's
+    /// controller surface is per-instrument rather than per-channel
+    /// ([`LevainBody::control_change`]), so a body that narrowed a controller
+    /// to a voice's channel would drop this.
+    fn levain_control(controller: u8, value: u8) -> GraphCommand {
+        GraphCommand::SendMidiControl(
+            LEVAIN_ID,
+            MidiControlEvent {
+                controller,
+                value,
+                channel: 9,
+            },
+        )
     }
 
     /// A strike of `note` on `channel`, stamped for `frame`.
@@ -25773,6 +25966,335 @@ mod timeline_tests {
             body_left, body_right,
             "the two channels are identical, so the fixture's panned mic never moved and a body \
              that read one channel twice would pass"
+        );
+    }
+
+    /// A strike carrying an articulation sounds that articulation, through the
+    /// instrument's own articulated door.
+    ///
+    /// A body that dropped the id would still sound: the plain door plays
+    /// whatever articulation the channel was last left on, so the failure is an
+    /// audibly wrong sound rather than silence. That is what the inequality
+    /// against the plain render refuses — it fails if the tagged zone is
+    /// unreachable, or if both doors resolve to the same zone, and with it the
+    /// two equalities say nothing.
+    #[test]
+    fn a_levain_body_sounds_the_articulation_its_note_carries() {
+        let mut strike = levain_hit(LEVAIN_SPEC_NOTE, 0, 0);
+        strike.articulation_id = Some(LEVAIN_SPEC_ARTICULATION);
+        let mut body = levain_body(&[]);
+        let (body_left, body_right) = levain_render(&mut body, LEVAIN_PARITY_FRAMES, &[strike]);
+
+        let (articulated_left, articulated_right) =
+            render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel_and_articulation(
+                        LEVAIN_SPEC_NOTE,
+                        LEVAIN_SPEC_VELOCITY,
+                        0,
+                        LEVAIN_SPEC_ARTICULATION,
+                    );
+                }
+            });
+        let (plain_left, _) = render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+            if run == 0 {
+                instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+            }
+        });
+
+        assert_eq!(
+            body_left, articulated_left,
+            "the body's left channel is not what the instrument renders for a strike on this \
+             articulation"
+        );
+        assert_eq!(
+            body_right, articulated_right,
+            "the body's right channel is not what the instrument renders for a strike on this \
+             articulation"
+        );
+        assert_ne!(
+            articulated_left, plain_left,
+            "the articulated strike renders what a plain one does, so the equalities above would \
+             hold for a body that dropped the id"
+        );
+    }
+
+    /// A controller the instance is handed reaches the instrument before the
+    /// block it arrived on renders.
+    ///
+    /// Addressed at [`PluginCore`] rather than at the body, because the
+    /// instance-side match is where a controller is dispatched or dropped: a
+    /// Levain arm that fell back to the no-op every effect body takes would
+    /// leave the body's own handling unreachable and every gesture inaudible.
+    ///
+    /// Expression closed to zero, so the claim is readable in the render: the
+    /// instrument carries that controller as a gain on what it sounds, and the
+    /// inequality against the render that took no controller is what refuses a
+    /// dropped message. A controller is a state write with no frame, so it
+    /// applies at the head of the block that drained it — which is the run the
+    /// reference hands it to the instrument on.
+    #[test]
+    fn a_levain_body_sounds_the_controller_gestures_it_is_handed() {
+        let events = [levain_hit(LEVAIN_SPEC_NOTE, 0, 0)];
+        let mut core = PluginCore::levain_with_patch(levain_instance(), &[]);
+        core.control_change(MidiControlEvent {
+            controller: LEVAIN_SPEC_EXPRESSION_CC,
+            value: 0,
+            channel: 0,
+        });
+        let PluginCore::Levain(mut body) = core else {
+            unreachable!("levain_with_patch builds the levain variant");
+        };
+        let (body_left, body_right) = levain_render(&mut body, LEVAIN_PARITY_FRAMES, &events);
+
+        let (closed_left, closed_right) =
+            render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+                if run == 0 {
+                    instance.handle_cc(LEVAIN_SPEC_EXPRESSION_CC, 0);
+                    instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+                }
+            });
+        let (open_left, _) = render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+            if run == 0 {
+                instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+            }
+        });
+
+        assert_eq!(
+            body_left, closed_left,
+            "the body's left channel is not what the instrument renders after the same controller"
+        );
+        assert_eq!(
+            body_right, closed_right,
+            "the body's right channel is not what the instrument renders after the same controller"
+        );
+        assert_ne!(
+            closed_left, open_left,
+            "closing expression changed nothing in the render, so the equalities above would hold \
+             for a body that took the controller and dropped it"
+        );
+    }
+
+    /// A transport stop silences the voices a pedalled Levain is holding, and
+    /// leaves its pedal exactly where the player's foot left it.
+    ///
+    /// The programme puts the instrument in the one state a note-off cannot
+    /// discharge: the sustain pedal goes down, the key is struck, and the key
+    /// is let go while the pedal is still down — which the instrument defers
+    /// rather than releasing (`LevainEngine::note_off`). So the note-offs a
+    /// stop pays reach that deferred queue rather than a voice, and what the
+    /// edge has to do is kill the voices without moving the foot.
+    ///
+    /// Every door is the engine's own. The instrument is hosted on a track
+    /// ([`track_with_levain`]), the pedal arrives as
+    /// [`GraphCommand::SendMidiControl`], the key and its release as
+    /// [`GraphCommand::SendMidiNote`], and the edge is the transport parking
+    /// ([`stop_transport`]) — which owes the graph's live keys
+    /// ([`AudioScheduler::owe_all_releases`]) and then asks a pedalled slot's
+    /// instance for the kill where it would otherwise spend them
+    /// ([`AudioScheduler::pay_owed_releases`]). A Levain arm missing from
+    /// either match, and a stop that never reaches one, are both a body a stop
+    /// leaves ringing.
+    ///
+    /// The kill lands at the payment, which runs at the end of the drain that
+    /// carried the stop — before the block that drain precedes, so at the head
+    /// of the edge callback. That is why the reference writes it at that
+    /// callback's own first run.
+    ///
+    /// Three renders. The reference is the instrument driven directly, killed
+    /// at the edge's own run with its pedal never written, and it is what the
+    /// two equalities claim the hosted master renders — the whole of what the
+    /// edge does to a pedalled body. The control is the same hosted programme
+    /// with no stop at all: it rings on at full level right through the tail
+    /// window, which is what refuses a vacuous pass, because a pedalled body
+    /// nothing silenced renders no decay there to mistake for one.
+    ///
+    /// What a kill leaves behind is a decaying tail rather than a zero: it
+    /// hands every voice to its zone's release envelope, which falls
+    /// exponentially (`AdsrEnvelope::tick`). So the tail window is read far
+    /// enough past the edge for that fall to be decisive, and still inside the
+    /// fixture's one-second sample, where the control render is sounding
+    /// rather than out of recording.
+    #[test]
+    fn a_transport_stop_silences_a_pedalled_levain_body() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 176;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / LEVAIN_RUN_FRAMES;
+        /// The pedal press, above [`MIDI_SWITCH_THRESHOLD`] and spelled here
+        /// so the fixture states the byte the wire carries.
+        const PEDAL_DOWN: u8 = 127;
+        /// Where the key is let go, into a pedal that defers the release.
+        const RELEASE_CALLBACK: usize = 2;
+        const RELEASE_RUN: usize = RELEASE_CALLBACK * RUNS_PER_CALLBACK;
+        /// Where the edge arrives, well after the pedal took the note.
+        const EDGE_CALLBACK: usize = 8;
+        const EDGE_RUN: usize = EDGE_CALLBACK * RUNS_PER_CALLBACK;
+        /// The note ringing under the pedal, past its deferred release and
+        /// before the edge.
+        const BEFORE: std::ops::Range<usize> =
+            (RELEASE_CALLBACK + 2) * CALLBACK..EDGE_CALLBACK * CALLBACK;
+        /// Where the tail window opens: far enough past the edge for the
+        /// release envelope to have fallen, and short of the 48 000 frames the
+        /// fixture's sample holds.
+        const TAIL_CALLBACK: usize = 160;
+        /// What the edge left, read out to the end of the render.
+        const AFTER: std::ops::Range<usize> = TAIL_CALLBACK * CALLBACK..CALLBACKS * CALLBACK;
+        /// How far below the pedalled ring the stopped tail has to sit. The
+        /// renders decide it: over this window the stop leaves about 0.009
+        /// where the pedal holding the same note reads about 0.34, a ratio
+        /// near 38, so this is a margin against voice detail moving rather
+        /// than a tuned figure — and still far above the 1.0 a body no stop
+        /// reached would land on.
+        const DECISIVE: f32 = 10.0;
+
+        /// The hosted programme, with the edge taken at [`EDGE_CALLBACK`] or
+        /// not taken at all.
+        fn render(stops: bool) -> (Vec<f32>, Vec<f32>) {
+            let mut harness = Harness::new(32);
+            track_with_levain(&mut harness, LEVAIN_TRACK, LEVAIN_ID);
+            harness.playing();
+            harness.send(levain_control(CC_SUSTAIN_PEDAL, PEDAL_DOWN));
+            harness.send(GraphCommand::SendMidiNote(
+                LEVAIN_ID,
+                levain_hit(LEVAIN_SPEC_NOTE, 0, 0),
+            ));
+            render_master_at_callback_heads(
+                &mut harness,
+                CALLBACK,
+                CALLBACKS,
+                |callback, harness| {
+                    if callback == RELEASE_CALLBACK {
+                        harness.send(GraphCommand::SendMidiNote(
+                            LEVAIN_ID,
+                            levain_release(LEVAIN_SPEC_NOTE, 0, 0),
+                        ));
+                    }
+                    if stops && callback == EDGE_CALLBACK {
+                        harness.send(stop_transport());
+                    }
+                },
+            )
+        }
+
+        let (killed_left, killed_right) = render_levain_reference(RENDERED, |run, instance| {
+            if run == 0 {
+                instance.handle_cc(CC_SUSTAIN_PEDAL, PEDAL_DOWN);
+                instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+            }
+            if run == RELEASE_RUN {
+                instance.note_off_on_channel(LEVAIN_SPEC_NOTE, 0);
+            }
+            if run == EDGE_RUN {
+                // The whole of what the edge does to a pedalled body: the
+                // voices the pedal was holding are killed, and the pedal
+                // itself is not written at all.
+                instance.all_notes_off();
+            }
+        });
+        let (hosted_left, hosted_right) = render(true);
+        let (control_left, _control_right) = render(false);
+
+        assert!(
+            rms(&hosted_left[BEFORE]) > 0.0,
+            "the pedal was holding nothing before the stop, so its tail proves nothing"
+        );
+        assert!(
+            rms(&hosted_left[AFTER]) * DECISIVE < rms(&hosted_left[BEFORE]),
+            "the stop left {} against the {} the pedal was holding, so the pedalled voices rang \
+             on through the tail window",
+            rms(&hosted_left[AFTER]),
+            rms(&hosted_left[BEFORE])
+        );
+        assert!(
+            rms(&hosted_left[AFTER]) * DECISIVE < rms(&control_left[AFTER]),
+            "the same programme without the stop left {} where the stopped render left {}, so the \
+             tail window decays whether or not anything silenced the body and the equalities \
+             below say nothing",
+            rms(&control_left[AFTER]),
+            rms(&hosted_left[AFTER])
+        );
+        assert_eq!(
+            hosted_left, killed_left,
+            "the hosted left channel is not the signal a stop that kills and keeps the pedal \
+             renders"
+        );
+        assert_eq!(
+            hosted_right, killed_right,
+            "the hosted right channel is not the signal a stop that kills and keeps the pedal \
+             renders"
+        );
+    }
+
+    /// A hosted Levain takes a pedal, a strike, a deferred release, the pedal
+    /// coming up and a stop without allocating.
+    ///
+    /// A controller and a stop are both applied on the audio thread, inside the
+    /// command drain, so they are held to ADR 0020 exactly as a render is. The
+    /// pedal has two routes through the instrument — a press that makes every
+    /// later note-off defer, and a lift that fires the whole deferred queue
+    /// (`LevainEngine::handle_cc`) — and `silence_pedal_held_voices` has a
+    /// third that kills the voices and clears that queue, so all three are
+    /// driven here rather than one standing in for the others.
+    ///
+    /// Every controller is followed by a render, because a pedal's cost is
+    /// mostly paid on the block after it: the deferred releases the lift fires
+    /// and the voices the kill retires are state the next `process` walks, and
+    /// a guard holding controllers alone would never enter those paths.
+    ///
+    /// The bank is loaded outside the guard, where a sampler's samples, zone
+    /// map and mic mixer are legitimately allocated (ADR 0020); everything the
+    /// audio thread would do is inside it, first block included, because a
+    /// sampler that grew a buffer on its first tick would otherwise spend that
+    /// growth where nothing was watching.
+    ///
+    /// The sounding reading is taken inside the guard and asserted outside it:
+    /// a failing `assert!` formats its message, and an allocation on the panic
+    /// path would abort the process instead of failing the test.
+    #[test]
+    fn a_levain_control_change_allocates_nothing() {
+        const FRAMES: usize = 256;
+        /// The pedal press, above [`MIDI_SWITCH_THRESHOLD`].
+        const PEDAL_DOWN: u8 = 127;
+        /// The pedal lift.
+        const PEDAL_UP: u8 = 0;
+
+        let strike = levain_hit(LEVAIN_SPEC_NOTE, 0, 0);
+        let lift = levain_release(LEVAIN_SPEC_NOTE, 0, 0);
+        let pedal = |value: u8| MidiControlEvent {
+            controller: CC_SUSTAIN_PEDAL,
+            value,
+            channel: 0,
+        };
+
+        let mut left = vec![0.0_f32; FRAMES];
+        let mut right = vec![0.0_f32; FRAMES];
+        let mut body = levain_body(&[]);
+        let mut sounded = false;
+
+        assert_no_alloc::assert_no_alloc(|| {
+            body.control_change(pedal(PEDAL_DOWN));
+            body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&strike));
+            sounded = left.iter().any(|sample| *sample != 0.0);
+            // The release the pedal defers, and the block that renders behind
+            // it with the voice still held.
+            body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&lift));
+            body.process(&mut left, &mut right, FRAMES, &[]);
+            // The pedal coming up, which fires that deferred release.
+            body.control_change(pedal(PEDAL_UP));
+            body.process(&mut left, &mut right, FRAMES, &[]);
+            // The stop's own route, on a body standing on the pedal with a
+            // voice to kill: a body with the pedal up answers `false` and
+            // reaches nothing.
+            body.control_change(pedal(PEDAL_DOWN));
+            body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&strike));
+            body.silence_pedal_held_voices();
+            body.process(&mut left, &mut right, FRAMES, &[]);
+        });
+
+        assert!(
+            sounded,
+            "the instrument never sounded, so the guard covered a silent path"
         );
     }
 

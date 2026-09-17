@@ -20,7 +20,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
-import { shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
+import { resolveMidiNoteArticulationId, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
 
 import {
     type OfflineMidiEventProjector,
@@ -153,6 +153,7 @@ function projectProgramme(
         projectMidiEvents,
         selectProbability: shouldPlayMidiEvent,
         projectChordPitch: null,
+        resolveArticulationId: null,
         span: { startSeconds: 0, endSeconds: 8 },
         ...overrides,
     });
@@ -161,6 +162,17 @@ function projectProgramme(
 /** A MIDI strip whose instrument the engine already holds. */
 function voicedTrack(clips: Track['clips']): Track {
     return createTrack({ id: 'midi-1', devices: [instrument('d1', 'i1')], clips });
+}
+
+/**
+ * A MIDI strip carrying the one built-in with a per-note articulation surface.
+ *
+ * The device type is what decides an articulation here, so the same clip note
+ * on `voicedTrack` above is the control case: it carries an articulation name
+ * the resolver answers nothing for.
+ */
+function levainTrack(clips: Track['clips']): Track {
+    return createTrack({ id: 'midi-1', devices: [createDevice({ id: 'd1', name: 'Levain', type: 'levain' })], clips });
 }
 
 describe('projectLiveMidiProgramme', () => {
@@ -183,6 +195,74 @@ describe('projectLiveMidiProgramme', () => {
                 ],
             },
         ]);
+    });
+
+    it('strikes a Levain note on the articulation it carries, and releases it carrying none', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [levainTrack([clip])],
+            resolveArticulationId: resolveMidiNoteArticulationId,
+            notesByClipId: {
+                'clip-1': [
+                    note({
+                        id: 'n1',
+                        pitch: 64,
+                        startBeat: 1,
+                        duration: 2,
+                        velocity: 90,
+                        articulation: 'pizzicato',
+                    }),
+                ],
+            },
+        });
+
+        expect(programme.targets).toEqual([
+            {
+                target: { trackId: 'midi-1', deviceId: 'd1' },
+                events: [
+                    // 10 is `pizzicato` in the project's own table, which the
+                    // resolver here is the real reader of.
+                    { time: seconds(1), note: 64, velocity: 90, channel: 0, isNoteOn: true, articulationId: 10 },
+                    { time: seconds(3), note: 64, velocity: 0, channel: 0, isNoteOn: false },
+                ],
+            },
+        ]);
+        // A release addresses the key; nothing about it selects a sound.
+        expect(programme.targets[0]?.events[1]).not.toHaveProperty('articulationId');
+    });
+
+    it('states no articulation for a Levain note naming none', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [levainTrack([clip])],
+            resolveArticulationId: resolveMidiNoteArticulationId,
+            notesByClipId: { 'clip-1': [note({ id: 'n1', pitch: 64, startBeat: 1, duration: 2 })] },
+        });
+
+        // Absence, not a default: articulation 0 is `sustain`, a sound of its
+        // own, and a note naming none sounds on whatever the device stands on.
+        expect(programme.targets[0]?.events[0]).not.toHaveProperty('articulationId');
+    });
+
+    it('states no articulation for the same note on an instrument that has none', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [voicedTrack([clip])],
+            resolveArticulationId: resolveMidiNoteArticulationId,
+            notesByClipId: {
+                'clip-1': [
+                    note({
+                        id: 'n1',
+                        pitch: 64,
+                        startBeat: 1,
+                        duration: 2,
+                        articulation: 'pizzicato',
+                    }),
+                ],
+            },
+        });
+
+        expect(programme.targets[0]?.events[0]).not.toHaveProperty('articulationId');
     });
 
     // The engine's sounding set is one bit per (channel, note), so the later

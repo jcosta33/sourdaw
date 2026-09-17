@@ -61,7 +61,8 @@ export function readLiveMidiProgramme(input: ReadLiveMidiProgrammeInput): LiveMi
     const midi = midiStore.value;
     const probabilitySeed = midi?.probabilitySeed ?? 0;
     const { project } = offlinePpqEndpointProjectorState;
-    const { createProjector, createChordPitchProjector, selectProbability } = offlineMidiEventProjectorState;
+    const { createProjector, createChordPitchProjector, selectProbability, resolveArticulationId } =
+        offlineMidiEventProjectorState;
     if (!midi || !project || !createProjector || !selectProbability) {
         return { ...EMPTY_PROGRAMME, probabilitySeed };
     }
@@ -83,6 +84,7 @@ export function readLiveMidiProgramme(input: ReadLiveMidiProgrammeInput): LiveMi
             projectMidiEvents: createProjector(),
             selectProbability,
             projectChordPitch: createChordPitchProjector?.() ?? null,
+            resolveArticulationId,
             span: input.span,
         }),
         probabilitySeed,

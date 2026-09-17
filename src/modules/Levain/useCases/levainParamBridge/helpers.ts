@@ -4,7 +4,7 @@ import {
     type persistDeviceParam,
     type resolveEligibleDeviceWriteTarget,
 } from '#/modules/Arrangement/stores';
-import { type writeNativeBuiltinParameters } from '#/modules/AudioEngine/useCases';
+import { type sendNativeLiveMidiControl, type writeNativeBuiltinParameters } from '#/modules/AudioEngine/useCases';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import { getArticulationId, isArticulationType, type LevainPatch } from '../../models/LevainPatch';
@@ -45,6 +45,15 @@ export type LevainBridgeDeps = {
      * vocabulary, which is exactly what this bridge holds.
      */
     writeNativeBuiltinParameters: typeof writeNativeBuiltinParameters;
+    /**
+     * The native session's door for a live controller message.
+     *
+     * A continuous controller is not a device parameter, so it cannot travel
+     * the parameter door above: the instrument reads it through its own
+     * controller surface, and this is the route that reaches it on a natively
+     * carried strip.
+     */
+    sendNativeLiveMidiControl: typeof sendNativeLiveMidiControl;
 };
 
 /**
@@ -92,6 +101,32 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         deps.writeNativeBuiltinParameters(target.trackId, target.deviceId, { [rustKey]: value });
     }
 
+    /**
+     * One controller gesture to both carriers of the strip.
+     *
+     * The twin of [`setRuntimeParam`] for the messages that are not parameters:
+     * a continuous controller reaches the instrument through its own controller
+     * surface on either carrier, so a macro bound to one is sent twice for the
+     * same reason a parameter is — the natively carried strip sounds it, and
+     * the Web Audio node holds it for the moment the session's gate reopens.
+     *
+     * `value` is the raw 7-bit byte, which is the only scale either surface
+     * reads: the instrument divides expression and dynamics by full scale
+     * itself, so a normalized fraction sent here would land as near silence.
+     * Channel 0, because a macro is moved by the panel rather than played on a
+     * channel, and the body applies a controller to the whole instrument.
+     */
+    function sendCc(target: LevainWriteTarget, controller: number, value: number): void {
+        activeDevices.get(target.deviceId)?.handleCc(controller, value);
+        void deps.sendNativeLiveMidiControl({
+            trackId: target.trackId,
+            deviceId: target.deviceId,
+            controller,
+            value,
+            channel: 0,
+        });
+    }
+
     function flushParam(compositeKey: string, value: number): void {
         const parts = compositeKey.split(':');
         const deviceId = parts[0];
@@ -118,10 +153,6 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         }
         keys.add(compositeKey);
         paramBatcher.schedule(compositeKey, value, flushParam);
-    }
-
-    function getDevice(deviceId: string): LevainDevice | undefined {
-        return activeDevices.get(deviceId);
     }
 
     async function followCurrentSampleLoad(operation: SampleLoadOperation): Promise<LevainSampleLoadOutcome> {
@@ -317,18 +348,19 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
 
         const label = state.patch.macroLabels[index];
         switch (label) {
-            // The three CC gestures stay web-only: a continuous controller is
-            // not a device parameter, and the native session has no door that
-            // takes one. A natively carried strip therefore hears the macro
-            // slots below and not these three until a CC route exists.
+            // The three gestures every carrier reads as a controller rather
+            // than as a parameter: dynamics, expression and vibrato are the
+            // instrument's own continuous controllers, so they travel the
+            // controller door on both carriers while the slots below travel
+            // the parameter one.
             case 'Dynamics':
-                getDevice(deviceId)?.handleCc(1, Math.round(value * 127));
+                sendCc(target, 1, Math.round(value * 127));
                 break;
             case 'Expression':
-                getDevice(deviceId)?.handleCc(11, Math.round(value * 127));
+                sendCc(target, 11, Math.round(value * 127));
                 break;
             case 'Vibrato':
-                getDevice(deviceId)?.handleCc(2, Math.round(value * 127));
+                sendCc(target, 2, Math.round(value * 127));
                 break;
             case 'Tightness':
                 setRuntimeParam(target, 'humanize', 1.0 - value);

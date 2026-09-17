@@ -511,6 +511,35 @@ describe('handleWebMidiCC', () => {
         expect(handle_cc).toHaveBeenCalledWith(74, 40);
     });
 
+    it('sends a Levain CC gesture to the native session as well as the worklet', () => {
+        target_track_id.value = 'track-1';
+        const handle_cc = vi.fn<(cc: number, value: number) => void>();
+        const fn = handleWebMidiCC._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'lev-1', type: 'levain' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+            })
+        );
+        get_track_strip.mockReturnValue({
+            deviceNodes: [{ type: 'levain', deviceId: 'lev-1', levainControls: { ready: true, handleCc: handle_cc } }],
+        });
+
+        // Expression, performed on channel 3: the native body reads the same
+        // raw 7-bit byte and the same channel the worklet is handed.
+        fn(3, 11, 40);
+
+        expect(handle_cc).toHaveBeenCalledWith(11, 40);
+        expect(send_native_live_midi_control).toHaveBeenCalledWith({
+            trackId: 'track-1',
+            deviceId: 'lev-1',
+            controller: 11,
+            value: 40,
+            channel: 3,
+        });
+    });
+
     it('ignores MPE slide CC on the global channel (0) even when MPE is enabled', () => {
         // MPE slide (CC 74) is only meaningful on member channels (>= 1). On channel 0
         // (the global/manager channel) it must fall through to ordinary CC handling.

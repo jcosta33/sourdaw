@@ -599,6 +599,16 @@ export type AudioGraphMidiNoteEvent = Readonly<{
     clipIdHash?: number;
     eventIdHash?: number;
     absoluteOccurrenceIndex?: number;
+    /**
+     * The instrument's per-note articulation, as the DSP engine numbers it.
+     *
+     * Absent means the device sounds the note on the articulation it currently
+     * stands on, which is what a note carrying none means on both carriers.
+     * Only Levain reads it today — it is the one built-in with a per-note
+     * articulation surface — and a note-off never carries it, because a release
+     * addresses a key rather than selecting a sound.
+     */
+    articulationId?: number;
 }>;
 
 /**
