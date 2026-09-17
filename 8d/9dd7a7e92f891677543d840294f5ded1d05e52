@@ -1,0 +1,44 @@
+src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts
+  s_914af328b3988f::t_725a899837d390 11-12
+  s_914af328b3988f::t_77d25e6fd48333 44-45
+  s_914af328b3988f::t_32578a6d504491 55,58-60
+src/modules/AiRuntime/useCases/aiRuntimeQueries/__tests__/runLocalModelTextCompletion.spec.ts
+  s_914af328b3988f::t_801c788154eb6d 1-77
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts
+  s_914af328b3988f::t_9a1a36d891cae5 380-413
+src/modules/AiRuntime/useCases/streamHostedModelText.ts
+  s_914af328b3988f::t_ec94d205c28725 101,104-106
+  s_914af328b3988f::t_9cd0ee3bdf5e23 12,15
+  s_914af328b3988f::t_c207ebb48a0b47 90-91
+src/modules/AiRuntime/useCases/__tests__/streamHostedModelText.spec.ts
+  s_914af328b3988f::t_9903fcbb53f768 120-167
+  s_914af328b3988f::t_62ecbcbfdde313 1,3-6,12,23-38
+  s_914af328b3988f::t_a8d994ebedcdfc 39
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_914af328b3988f::t_bd3749fa919664 27
+  s_914af328b3988f::t_283f86583395f3 418,420
+src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts
+  s_914af328b3988f::t_cb6a957b5f6661 24
+  s_914af328b3988f::t_d255d2c5fd4d2a 230,232
+src/modules/AiRuntime/models/ModelTextRequestLimits.ts
+  s_914af328b3988f::t_d2307540bed214 1-2
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  s_914af328b3988f::t_47e5675638b78c 525-526
+  s_914af328b3988f::t_9a5e3c7577624b 599
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8d9dd7a7e92f891677543d840294f5ded1d05e52",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
