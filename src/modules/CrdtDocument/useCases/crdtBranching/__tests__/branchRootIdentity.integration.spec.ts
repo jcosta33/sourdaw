@@ -1,6 +1,8 @@
 import { change, clone as cloneDoc, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import { automergeRepository } from '../../../repositories/automergeRepository';
 import { branchStore, type BranchRecord } from '../../../stores/branchStore';
 import { captureProjectRootIdentity } from '../../captureProjectRootIdentity';
@@ -102,6 +104,9 @@ describe('branch root identity integration', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         automergeRepository.reset();
+        // The real branch-state authority sequences every durable write on a
+        // Web Lock, and jsdom ships no Web Locks API.
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.loadCrdtProject.mockResolvedValue(false);
         mocks.runCrdtPersistenceOperation.mockResolvedValue(undefined);
@@ -109,6 +114,7 @@ describe('branch root identity integration', () => {
     });
 
     afterEach(() => {
+        vi.unstubAllGlobals();
         automergeRepository.reset();
     });
 

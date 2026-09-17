@@ -14,9 +14,9 @@ import {
     runCrdtPersistenceBarrier,
     hasCrdtDoc,
     DOC_BRANCHES,
-    preserveBranchStateForSession,
-    replaceBranchState,
-    restoreBranchStateAfterSession,
+    beginBranchSession,
+    projectBranchSession,
+    endBranchSession,
     waitForCrdtDocumentTransition,
     DOC_PREFIX_ROOT,
 } from '#/modules/CrdtDocument/useCases';
@@ -45,6 +45,22 @@ import { type CollaborationPeer } from '../collaborationQueries';
 import { clearCollaborationFailure } from './clearCollaborationFailure';
 import { joinAttemptAuthority } from './joinAttemptAuthority';
 
+/**
+ * Derived from the callables, not imported. The branch-session types belong to
+ * CrdtDocument's durable branch authority, and its use-case barrel may not
+ * re-export a repository type — so the contract this module depends on is the
+ * one it actually calls.
+ */
+type BranchSessionHandle = Extract<Awaited<ReturnType<typeof beginBranchSession>>, { status: 'begun' }>['handle'];
+type BranchSessionEndOutcome = Awaited<ReturnType<typeof endBranchSession>>;
+
+/** Outcomes that leave the session record durable, so a retry can still finish it. */
+const RETRYABLE_BRANCH_SESSION_END: readonly BranchSessionEndOutcome[] = [
+    'write-failed',
+    'storage-unavailable',
+    'lock-unavailable',
+];
+
 type InstalledSessionOwner = {
     retired: boolean;
     peerManager: PeerConnectionManager | null;
@@ -60,7 +76,14 @@ type RetainedSessionTeardown = {
     owner: InstalledSessionOwner;
     automergeSync: AutomergeSync | null;
     assetTransfer: AssetTransfer | null;
-    branchRestoreOutcome: ReturnType<typeof restoreBranchStateAfterSession> | null;
+    /**
+     * The handle teardown has to finish with. Held here and not in
+     * `sessionState`, which the next session resets: an unfinished restore has
+     * to stay addressable after the session it belongs to is gone.
+     */
+    branchSession: BranchSessionHandle | null;
+    branchRestore: Promise<BranchSessionEndOutcome> | null;
+    branchRestoreOutcome: BranchSessionEndOutcome | null;
     settlement: Promise<void> | null;
 };
 
@@ -124,8 +147,11 @@ const sessionState: {
      * signaling path has any business reading it.
      */
     sessionSecret: string | null;
-    /** Whether this session has durably preserved its local branch state. */
-    hasBranchStateBackup: boolean;
+    /**
+     * This session's claim on the durable branch list, or `null` when it has
+     * none — no session was begun, or another session owns the list.
+     */
+    branchSession: BranchSessionHandle | null;
     /** Unsubscribe from branchStore changes (local mutations → Automerge doc). */
     unsubscribeBranchStore: (() => void) | null;
     /** Unsubscribe from automergeRepository changes (__branches__ doc → branchStore). */
@@ -153,7 +179,7 @@ const sessionState: {
     playheadBroadcastInterval: null,
     pendingInviteId: null,
     sessionSecret: null,
-    hasBranchStateBackup: false,
+    branchSession: null,
     unsubscribeBranchStore: null,
     unsubscribeAutomergeChanges: null,
     isProjectingBranches: false,
@@ -218,13 +244,32 @@ function sanitizePresence(data: PresenceDelta): PresenceDelta {
  *
  * Only `branches` is synced; `activeBranchId` is per-peer and never shared.
  */
-function startBranchSync(isHost: boolean): void {
+async function startBranchSync(isHost: boolean): Promise<void> {
     const owner = captureInstalledSessionOwner();
     if (!canSessionOwnerWrite(owner)) {
         return;
     }
-    preserveBranchStateForSession();
-    sessionState.hasBranchStateBackup = true;
+    const begun = await beginBranchSession();
+    if (begun.status === 'refused') {
+        // Another session owns the durable branch list — including one left
+        // behind by a window that is still open. This session runs without
+        // branch sync rather than projecting peer branches over a list it does
+        // not own: the same degraded shape as a session owner that cannot write.
+        logger.error(new Error(`[Collaboration] Branch sync is disabled for this session (${begun.reason})`));
+        return;
+    }
+    if (!canSessionOwnerWrite(owner)) {
+        // Retired while the claim was being taken, so teardown has already run
+        // and will never see this handle. Hand the list back from here.
+        void endBranchSession(begun.handle).then((outcome) => {
+            if (outcome !== 'restored' && outcome !== 'superseded') {
+                logger.warn(`[Collaboration] A retired session kept its claim on the branch list (${outcome})`);
+            }
+            return undefined;
+        });
+        return;
+    }
+    sessionState.branchSession = begun.handle;
 
     if (isHost) {
         // Seed the metadata doc. Remove any stale doc from a previous session first.
@@ -240,8 +285,40 @@ function startBranchSync(isHost: boolean): void {
     }
     // For joiners, the doc is created on demand in AutomergeSync.receiveSync.
 
-    // Mirror local branch mutations into the Automerge doc.
-    sessionState.unsubscribeBranchStore = branchStore.subscribe((state) => {
+    sessionState.unsubscribeBranchStore = subscribeBranchMirror(owner);
+    sessionState.unsubscribeAutomergeChanges = subscribeBranchProjection(owner, begun.handle);
+}
+
+/**
+ * Projection depth, not a boolean.
+ *
+ * Publishing an incoming branch list is now asynchronous — the durable write
+ * takes a lock — so two projections can overlap, and a boolean would be cleared
+ * by the first to finish while the second is still writing, reopening the
+ * write-back loop this guard exists to close.
+ */
+let branchProjectionDepth = 0;
+
+function enterBranchProjection(): void {
+    branchProjectionDepth += 1;
+    sessionState.isProjectingBranches = true;
+}
+
+function exitBranchProjection(): void {
+    branchProjectionDepth = Math.max(0, branchProjectionDepth - 1);
+    sessionState.isProjectingBranches = branchProjectionDepth > 0;
+}
+
+function stopBranchSubscriptions(): void {
+    sessionState.unsubscribeBranchStore?.();
+    sessionState.unsubscribeBranchStore = null;
+    sessionState.unsubscribeAutomergeChanges?.();
+    sessionState.unsubscribeAutomergeChanges = null;
+}
+
+/** Mirror local branch mutations into the Automerge doc. */
+function subscribeBranchMirror(owner: InstalledSessionOwner | null): () => void {
+    return branchStore.subscribe((state) => {
         if (!canSessionOwnerWrite(owner)) {
             return;
         }
@@ -278,9 +355,11 @@ function startBranchSync(isHost: boolean): void {
             return undefined;
         });
     });
+}
 
-    // Project incoming __branches__ doc changes back into branchStore.
-    sessionState.unsubscribeAutomergeChanges = subscribeToCrdtChanges((docId) => {
+/** Project incoming `__branches__` doc changes back into the branch list. */
+function subscribeBranchProjection(owner: InstalledSessionOwner | null, handle: BranchSessionHandle): () => void {
+    return subscribeToCrdtChanges((docId) => {
         if (!canSessionOwnerWrite(owner)) {
             return;
         }
@@ -300,13 +379,33 @@ function startBranchSync(isHost: boolean): void {
         if (incomingJson === sessionState.lastProjectedBranchesJson) {
             return;
         }
-        sessionState.isProjectingBranches = true;
-        try {
-            replaceBranchState({ branches: doc.branches, activeBranchId });
-            sessionState.lastProjectedBranchesJson = incomingJson;
-        } finally {
-            sessionState.isProjectingBranches = false;
-        }
+        enterBranchProjection();
+        void projectBranchSession(handle, { branches: doc.branches, activeBranchId })
+            .then((result) => {
+                if (result.status === 'committed') {
+                    // Recorded only once the list is durable. Recording it on
+                    // the attempt would make the next identical arrival a
+                    // no-op and leave the failed projection unrepeated.
+                    sessionState.lastProjectedBranchesJson = incomingJson;
+                    return undefined;
+                }
+                if (result.reason === 'superseded') {
+                    // Another instance owns the durable list now. Stop both
+                    // directions: this session can no longer publish what it
+                    // receives, and mirroring local writes into a doc peers
+                    // still sync would hand them a list nobody owns.
+                    logger.warn(
+                        '[Collaboration] The branch list is no longer owned by this session; branch sync stopped.'
+                    );
+                    stopBranchSubscriptions();
+                    return undefined;
+                }
+                logger.warn(`[Collaboration] Incoming branch list could not be persisted (${result.reason})`);
+                return undefined;
+            })
+            .finally(() => {
+                exitBranchProjection();
+            });
     });
 }
 
@@ -314,38 +413,34 @@ function startBranchSync(isHost: boolean): void {
  * Stop branch sync and restore the pre-session branchStore state.
  * Removes the `__branches__` Automerge doc so it isn't included in future saves.
  */
-function stopBranchSync(): ReturnType<typeof restoreBranchStateAfterSession> | null {
-    if (sessionState.unsubscribeBranchStore) {
-        sessionState.unsubscribeBranchStore();
-        sessionState.unsubscribeBranchStore = null;
-    }
-    if (sessionState.unsubscribeAutomergeChanges) {
-        sessionState.unsubscribeAutomergeChanges();
-        sessionState.unsubscribeAutomergeChanges = null;
-    }
-
+function stopBranchSync(): Promise<BranchSessionEndOutcome> | null {
+    stopBranchSubscriptions();
     removeCrdtDoc(DOC_BRANCHES);
-
-    let restoreOutcome: ReturnType<typeof restoreBranchStateAfterSession> | null = null;
-    if (sessionState.hasBranchStateBackup) {
-        sessionState.isProjectingBranches = true;
-        try {
-            // Reports rather than throws on purpose. This `try` has no `catch`,
-            // and everything left in teardown — stopping the sync, closing the
-            // WebRTC peers — runs after it. A refused `localStorage` write used
-            // to unwind from here and leave live peers connected to a session
-            // the user had left. See #1557.
-            restoreOutcome = restoreBranchStateAfterSession();
-            sessionState.hasBranchStateBackup = false;
-        } finally {
-            sessionState.isProjectingBranches = false;
-        }
-    }
     sessionState.lastProjectedBranchesJson = null;
 
-    // Handed back rather than reported here. Reporting is the last thing
-    // teardown does, after the peers are closed — see `cleanupSubsystems`.
-    return restoreOutcome;
+    const handle = sessionState.branchSession;
+    sessionState.branchSession = null;
+    if (!handle) {
+        return null;
+    }
+
+    // Reports rather than throws on purpose — including a throw from the
+    // authority, mapped onto the retryable outcome. Everything left in teardown
+    // — stopping the sync, closing the WebRTC peers — runs after this, and a
+    // refused durable write used to unwind from here and leave live peers
+    // connected to a session the user had left. See #1557.
+    enterBranchProjection();
+    return endBranchSession(handle)
+        .then(
+            (outcome) => outcome,
+            (error: unknown): BranchSessionEndOutcome => {
+                logger.warn('[Collaboration] Branch list restore failed:', error);
+                return 'write-failed';
+            }
+        )
+        .finally(() => {
+            exitBranchProjection();
+        });
 }
 
 /**
@@ -359,11 +454,11 @@ function stopBranchSync(): ReturnType<typeof restoreBranchStateAfterSession> | n
  * while a session is live; this one outlives the session by definition.
  *
  * The failures are not interchangeable: one loses the branch list on reload,
- * one keeps it now and reverts to it later, and one cannot establish either
- * durable fact. Each names the cause and an action. See #1557.
+ * and the other two leave the session still holding it, so the list comes back
+ * at the next boot instead. Each names the cause and an action. See #1557.
  */
-function reportBranchRestoreOutcome(outcome: ReturnType<typeof restoreBranchStateAfterSession> | null): void {
-    if (outcome === 'state-not-persisted') {
+function reportBranchRestoreOutcome(outcome: BranchSessionEndOutcome | null): void {
+    if (outcome === 'write-failed') {
         notifyUser(
             'Left the session, but your branch list could not be saved — it will revert when you reopen the project. Free up storage space and try again.',
             'error'
@@ -371,17 +466,17 @@ function reportBranchRestoreOutcome(outcome: ReturnType<typeof restoreBranchStat
         return;
     }
 
-    if (outcome === 'backup-not-cleared') {
+    if (outcome === 'storage-unavailable') {
         notifyUser(
-            'Left the session, but a leftover session backup could not be cleared — your branch list may revert when you reopen the project. Free up storage space and try again.',
+            'Left the session, but branch storage could not be read — your local branch list is still held by this session and will be restored the next time you open the project. Restore storage access and try again.',
             'error'
         );
         return;
     }
 
-    if (outcome === 'storage-unavailable') {
+    if (outcome === 'lock-unavailable') {
         notifyUser(
-            'Left the session, but branch storage could not be read — your local branch list is still protected by its session backup. Restore storage access and try again.',
+            'Left the session, but the branch list could not be handed back — your local branch list is still held by this session and will be restored the next time you open the project.',
             'error'
         );
     }
@@ -756,7 +851,10 @@ function cleanupSubsystems(
     sessionState.sessionSecret = null;
     sessionState.sessionEndedByHostDeparture = false;
     stopPlayheadBroadcast();
-    const branchRestoreOutcome = stopBranchSync();
+    // Captured before the stop clears it: an unfinished restore is retried
+    // against this handle long after the session state has been reset.
+    const branchSession = sessionState.branchSession;
+    const branchRestore = stopBranchSync();
     for (const timer of peerCleanupTimers.values()) {
         clearTimeout(timer);
     }
@@ -784,7 +882,9 @@ function cleanupSubsystems(
         owner: targetOwner,
         automergeSync: targetOwner.automergeSync,
         assetTransfer: targetOwner.assetTransfer,
-        branchRestoreOutcome,
+        branchSession,
+        branchRestore,
+        branchRestoreOutcome: null,
         settlement: null,
     };
     // `presenceListeners` is deliberately NOT cleared here: it holds
@@ -803,12 +903,12 @@ function closeCapturedSessionTransport(owner: InstalledSessionOwner | null): voi
     owner?.peerManager?.closeAll();
 }
 
-function branchRestoreError(outcome: Exclude<ReturnType<typeof restoreBranchStateAfterSession>, 'restored'>): Error {
-    if (outcome === 'state-not-persisted') {
+function branchRestoreError(outcome: Exclude<BranchSessionEndOutcome, 'restored' | 'superseded'>): Error {
+    if (outcome === 'write-failed') {
         return new Error('Pre-session branch state could not be persisted');
     }
-    if (outcome === 'backup-not-cleared') {
-        return new Error('Pre-session branch backup could not be cleared');
+    if (outcome === 'lock-unavailable') {
+        return new Error('Pre-session branch state could not be sequenced');
     }
     return new Error('Pre-session branch state could not be read');
 }
@@ -829,10 +929,28 @@ function settleRetainedSessionTeardown(): Promise<void> {
                 failures.push(error);
             }
         };
-        if (retained.branchRestoreOutcome && retained.branchRestoreOutcome !== 'restored') {
-            retained.branchRestoreOutcome = restoreBranchStateAfterSession();
+        if (retained.branchRestore) {
+            retained.branchRestoreOutcome = await retained.branchRestore;
+            retained.branchRestore = null;
         }
-        if (retained.branchRestoreOutcome && retained.branchRestoreOutcome !== 'restored') {
+        const restoreOutcome = retained.branchRestoreOutcome;
+        if (
+            retained.branchSession &&
+            restoreOutcome !== null &&
+            RETRYABLE_BRANCH_SESSION_END.includes(restoreOutcome)
+        ) {
+            retained.branchRestoreOutcome = await endBranchSession(retained.branchSession);
+        }
+        if (retained.branchRestoreOutcome === 'superseded') {
+            // Not a failure to report: another instance took the durable branch
+            // list over while this session held it, and its list is the one the
+            // user should keep. Restoring this session's backup on top of it is
+            // exactly the overwrite this protocol exists to prevent (#4249).
+            logger.warn(
+                '[Collaboration] The branch list was taken over while this session held it; the pre-session list was not restored.'
+            );
+            retained.branchSession = null;
+        } else if (retained.branchRestoreOutcome !== null && retained.branchRestoreOutcome !== 'restored') {
             try {
                 reportBranchRestoreOutcome(retained.branchRestoreOutcome);
             } catch (error) {

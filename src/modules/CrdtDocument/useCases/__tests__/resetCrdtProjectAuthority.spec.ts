@@ -20,8 +20,29 @@ const mocks = vi.hoisted(() => {
         return 'root';
     }
 
+    const defaultBranchState = {
+        branches: [
+            {
+                branchId: 'main',
+                name: 'Main',
+                rootDocId: 'root',
+                sourceBranchId: null,
+                createdAt: 100,
+                createdFromHeads: [],
+                note: '',
+            },
+        ],
+        activeBranchId: 'main',
+    };
+
     return {
         branchStoreSet: vi.fn(),
+        defaultBranchState,
+        createDefaultBranchStoreState: vi.fn(() => defaultBranchState),
+        captureRevision: vi.fn(() => 3),
+        commit: vi.fn(async (): Promise<{ status: string; revision?: number; reason?: string }> => {
+            return { status: 'committed', revision: 4 };
+        }),
         rootDocs,
         docs,
         createProjectImplementation,
@@ -37,7 +58,11 @@ vi.mock('../runCrdtPersistenceOperation', () => ({
 
 vi.mock('../../stores/branchStore', () => ({
     branchStore: { set: mocks.branchStoreSet },
+    createDefaultBranchStoreState: mocks.createDefaultBranchStoreState,
     MAIN_BRANCH_ID: 'main',
+}));
+vi.mock('../../repositories/branchStateAuthority', () => ({
+    branchStateAuthority: { captureRevision: mocks.captureRevision, commit: mocks.commit },
 }));
 vi.mock('../../repositories/automergeRepository', () => ({
     automergeRepository: { createProject: mocks.createProject },
@@ -59,6 +84,8 @@ describe('resetCrdtProjectAuthority', () => {
         mocks.createProject.mockImplementation(mocks.createProjectImplementation);
         mocks.resetActionReplayAuthority.mockReset();
         mocks.runCrdtPersistenceOperation.mockReset();
+        mocks.captureRevision.mockReturnValue(3);
+        mocks.commit.mockResolvedValue({ status: 'committed', revision: 4 });
         mocks.rootDocs.length = 0;
         mocks.docs.clear();
         const initialRoot = {};
@@ -97,6 +124,10 @@ describe('resetCrdtProjectAuthority', () => {
             branches: [expect.objectContaining({ branchId: 'main', rootDocId: 'root', sourceBranchId: null })],
             activeBranchId: 'main',
         });
+        // The same list is committed durably, against the revision this caller
+        // observed, so a reload does not come back on the replaced project's
+        // branch list.
+        expect(mocks.commit).toHaveBeenCalledWith({ expectedRevision: 3, next: mocks.defaultBranchState });
         expect(mocks.createProject.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.branchStoreSet.mock.invocationCallOrder[0]!
         );
@@ -206,21 +237,22 @@ describe('resetCrdtProjectAuthority', () => {
             expect(mocks.resetActionReplayAuthority).not.toHaveBeenCalled();
         });
 
-        it('does not let a full quota escape the authority switch it cannot undo', () => {
+        it('does not let a refused durable write escape the authority switch it cannot undo', async () => {
             const onAuthorityReplaced = vi.fn();
-            // `branchStore` is localStorage-backed, that adapter propagates a
-            // failed write by design, and this is the last statement of the
-            // switch. It used to throw straight through a caller that had
-            // already replaced the project.
-            mocks.branchStoreSet.mockImplementationOnce(() => {
-                throw new DOMException('exceeded the quota', 'QuotaExceededError');
-            });
+            // A full origin quota is the last thing that can fail here, and the
+            // switch is already irreversible: throwing out of this caller used
+            // to abort a project load back into a session that no longer exists.
+            mocks.commit.mockResolvedValueOnce({ status: 'refused', reason: 'write-failed' });
 
             expect(() => resetCrdtProjectAuthority('New Project', onAuthorityReplaced)).not.toThrow();
+            await Promise.resolve();
 
             expect(onAuthorityReplaced).toHaveBeenCalledTimes(1);
             // The document these entries describe is gone, so they must go too.
             expect(mocks.resetActionReplayAuthority).toHaveBeenCalledTimes(1);
+            // Memory still went to Main: every reader after the switch sees the
+            // new project's branch list whether or not it reached storage.
+            expect(mocks.branchStoreSet).toHaveBeenCalledWith(mocks.defaultBranchState);
         });
 
         it('reports the replacement before anything that runs after it', () => {

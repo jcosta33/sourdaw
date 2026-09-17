@@ -33,10 +33,10 @@ const mocks = vi.hoisted(() => ({
     merge: vi.fn(() => MERGED_DOC),
     clone: vi.fn((doc: unknown) => structuredClone(doc)),
     storeSet: vi.fn(),
-    // The rollback path writes with trySet: it runs after the documents have
-    // been restored, where a throw would skip the projection that puts the
-    // stores back in step with them. See #1557.
-    storeTrySet: vi.fn(() => true),
+    captureRevision: vi.fn(() => 4),
+    commit: vi.fn(async (): Promise<{ status: string; revision?: number; reason?: string }> => {
+        return { status: 'committed', revision: 5 };
+    }),
 }));
 
 vi.mock('@automerge/automerge', () => ({ merge: mocks.merge, clone: mocks.clone }));
@@ -58,8 +58,11 @@ vi.mock('../../../repositories/automergeRepository', () => ({
 }));
 vi.mock('../../../stores/branchStore', () => ({
     get branchStore() {
-        return { value: mocks.storeValue, set: mocks.storeSet, trySet: mocks.storeTrySet };
+        return { value: mocks.storeValue, set: mocks.storeSet };
     },
+}));
+vi.mock('../../../repositories/branchStateAuthority', () => ({
+    branchStateAuthority: { captureRevision: mocks.captureRevision, commit: mocks.commit },
 }));
 vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject }));
 vi.mock('../../loadCrdtProject', () => ({ loadCrdtProject: mocks.loadCrdtProject }));
@@ -97,6 +100,8 @@ describe('mergeBranch', () => {
         mocks.rootIdentityEpoch = 1;
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.loadCrdtProject.mockResolvedValue(true);
+        mocks.captureRevision.mockReturnValue(4);
+        mocks.commit.mockResolvedValue({ status: 'committed', revision: 5 });
     });
 
     it('merges the source into the active branch (root slot) and refreshes its snapshot', async () => {
@@ -112,6 +117,9 @@ describe('mergeBranch', () => {
         expect(snapshot).toBeDefined();
         expect(mocks.compactProject).toHaveBeenCalledOnce();
         expect(mocks.rootIdentityEpoch).toBe(rootIdentity);
+        // A merge changes documents, not the branch list: it must not consume a
+        // durable revision, or a concurrent fork would be refused for nothing.
+        expect(mocks.commit).not.toHaveBeenCalled();
     });
 
     it('flushes deferred root writes before reading the active branch', async () => {
@@ -133,7 +141,9 @@ describe('mergeBranch', () => {
 
         await expect(mergeBranch('src')).rejects.toBe(error);
         expect(mocks.loadCrdtProject).toHaveBeenCalledOnce();
-        expect(mocks.storeTrySet).toHaveBeenLastCalledWith(mocks.storeValue);
+        expect(mocks.storeSet).toHaveBeenLastCalledWith(mocks.storeValue);
+        // Nothing was committed, so the rollback has no revision to swap back.
+        expect(mocks.commit).not.toHaveBeenCalled();
         expect(docs.root).toEqual(TARGET_DOC);
         expect(docs.branch_feat).toEqual(ACTIVE_SNAPSHOT);
         expect(mocks.rootIdentityEpoch).toBe(rootIdentity);

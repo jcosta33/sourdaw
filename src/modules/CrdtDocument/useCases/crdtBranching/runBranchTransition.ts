@@ -7,6 +7,7 @@ import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomer
 import { createBranchError } from '../../errors/BranchError';
 import { type DocId } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
+import { branchStateAuthority } from '../../repositories/branchStateAuthority';
 import { branchStore, type BranchStoreState } from '../../stores/branchStore';
 import { compactProject } from '../compactProject';
 import { loadCrdtProject } from '../loadCrdtProject';
@@ -72,11 +73,13 @@ async function recoverFailedTransition({
     previousState,
     capturedRootIdentity,
     snapshots,
+    committedRevision,
 }: {
     error: unknown;
     previousState: BranchStoreState;
     capturedRootIdentity: number;
     snapshots: DocumentSnapshot[];
+    committedRevision: number | null;
 }): Promise<void> {
     for (const snapshot of snapshots) {
         restoreDocumentSnapshot(snapshot, capturedRootIdentity);
@@ -92,9 +95,23 @@ async function recoverFailedTransition({
         logger.warn('[CrdtDocument] Failed to reload persistence after branch rollback:', recoveryError);
     }
 
-    const persisted = branchStore.trySet(recoveredState);
-    if (!persisted) {
-        logger.warn('[CrdtDocument] Rolled-back branch state could not be persisted; it applies to this session only.');
+    branchStore.set(recoveredState);
+    if (committedRevision !== null) {
+        // Only the transition's own commit can be rolled back, and only against
+        // the revision it produced. A refusal means a successor committed in
+        // the meantime, and that successor's list is the newer truth — the
+        // transaction leaves the store holding it. Undoing it here would revert
+        // a branch the user created after this transition failed.
+        const rolledBack = await branchStateAuthority.commit({
+            expectedRevision: committedRevision,
+            next: recoveredState,
+        });
+        if (rolledBack.status === 'refused') {
+            logger.warn(
+                `[CrdtDocument] Rolled-back branch state was not persisted (${rolledBack.reason}); ` +
+                    'durable branch state holds a later revision.'
+            );
+        }
     }
 
     projectCrdtToStores();
@@ -113,14 +130,25 @@ export async function runBranchTransition<TResult>({
 
     flushAutomergeStorageWrites();
     const capturedRootIdentity = automergeRepository.getRootIdentityEpoch();
+    const expectedRevision = branchStateAuthority.captureRevision();
     const snapshots = [...new Set(affectedDocIds)].map(createDocumentSnapshot);
     branchTransitionInProgress = true;
 
+    let persistence: Promise<void> | null = null;
+    let committedRevision: number | null = null;
     try {
-        const persistence = persistenceOperation();
+        persistence = persistenceOperation();
         const { nextState, result } = apply();
         if (nextState) {
-            branchStore.set(nextState);
+            // The last durable branch write before the document work is
+            // awaited, as the store write it replaces was: a refused commit has
+            // to unwind through the same rollback a thrown persistence error
+            // does, and the rollback needs the documents still restorable.
+            const committed = await branchStateAuthority.commit({ expectedRevision, next: nextState });
+            if (committed.status === 'refused') {
+                throw createBranchError(`Branch state could not be persisted (${committed.reason})`);
+            }
+            committedRevision = committed.revision;
         }
         projectCrdtToStores();
 
@@ -128,7 +156,10 @@ export async function runBranchTransition<TResult>({
         await compactProject();
         return result;
     } catch (error) {
-        await recoverFailedTransition({ error, previousState, capturedRootIdentity, snapshots });
+        // Nothing awaits the persistence once the transition is unwinding, and
+        // an unobserved rejection here would be reported as an unhandled one.
+        void persistence?.catch(() => undefined);
+        await recoverFailedTransition({ error, previousState, capturedRootIdentity, snapshots, committedRevision });
         throw error;
     } finally {
         branchTransitionInProgress = false;

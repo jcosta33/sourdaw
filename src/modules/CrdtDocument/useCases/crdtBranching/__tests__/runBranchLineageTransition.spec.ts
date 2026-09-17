@@ -7,6 +7,7 @@ const {
     mockFlushStorage,
     mockAutomergeRepo,
     mockBranchStore,
+    mockBranchStateAuthority,
     mockCompactProject,
     mockLoadCrdtProject,
     mockProjectCrdtToStores,
@@ -26,12 +27,12 @@ const {
         replaceRootContentPreservingIdentity: vi.fn(),
         insertDoc: vi.fn(),
     },
-    mockBranchStore: {
-        set: vi.fn(),
-        // The rollback path writes with trySet — a throw there would skip the
-        // projection that puts the stores back in step with the restored
-        // documents. See #1557.
-        trySet: vi.fn(() => true),
+    mockBranchStore: { set: vi.fn() },
+    mockBranchStateAuthority: {
+        captureRevision: vi.fn(() => 4),
+        commit: vi.fn((): Promise<{ status: string; revision?: number; reason?: string }> =>
+            Promise.resolve({ status: 'committed', revision: 5 })
+        ),
     },
     mockCompactProject: vi.fn(() => Promise.resolve()),
     mockLoadCrdtProject: vi.fn(() => Promise.resolve(true)),
@@ -47,6 +48,9 @@ vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
 }));
 vi.mock('../../../repositories/automergeRepository', () => ({ automergeRepository: mockAutomergeRepo }));
 vi.mock('../../../stores/branchStore', () => ({ branchStore: mockBranchStore }));
+vi.mock('../../../repositories/branchStateAuthority', () => ({
+    branchStateAuthority: mockBranchStateAuthority,
+}));
 vi.mock('../../compactProject', () => ({ compactProject: mockCompactProject }));
 vi.mock('../../loadCrdtProject', () => ({ loadCrdtProject: mockLoadCrdtProject }));
 vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mockProjectCrdtToStores }));
@@ -77,9 +81,11 @@ describe('runBranchLineageTransition', () => {
         mockLoadCrdtProject.mockResolvedValue(true);
         mockCompactProject.mockResolvedValue(undefined);
         mockRunPersistenceOp.mockResolvedValue(undefined);
+        mockBranchStateAuthority.captureRevision.mockReturnValue(4);
+        mockBranchStateAuthority.commit.mockResolvedValue({ status: 'committed', revision: 5 });
     });
 
-    it('applies the transition, sets next state, and returns the result', async () => {
+    it('applies the transition, commits next state, and returns the result', async () => {
         const nextState = { ...previousState, activeBranchId: 'branch-b' };
         const result = await runBranchLineageTransition({
             affectedDocIds: ['doc-1'],
@@ -89,7 +95,9 @@ describe('runBranchLineageTransition', () => {
             to: 'branch-b',
         });
         expect(result).toBe('success');
-        expect(mockBranchStore.set).toHaveBeenCalledWith(nextState);
+        // The durable commit is the write: it carries the revision the
+        // transition observed, and the authority is what projects it to memory.
+        expect(mockBranchStateAuthority.commit).toHaveBeenCalledWith({ expectedRevision: 4, next: nextState });
         expect(mockProjectCrdtToStores).toHaveBeenCalledTimes(1);
         expect(mockRunPersistenceOp).toHaveBeenCalledWith({
             type: 'root-lineage-transition',
@@ -161,9 +169,32 @@ describe('runBranchLineageTransition', () => {
         ).rejects.toThrow('apply failed');
 
         // Recovery: snapshots restored, branch store reset to previous, stores re-projected
-        expect(mockBranchStore.trySet).toHaveBeenCalledWith(previousState);
+        expect(mockBranchStore.set).toHaveBeenCalledWith(previousState);
         expect(mockProjectCrdtToStores).toHaveBeenCalled();
         expect(mockLoadCrdtProject).toHaveBeenCalled();
+        expect(mockBranchStateAuthority.commit).not.toHaveBeenCalled();
+    });
+
+    it('rolls back and throws when the durable commit is refused', async () => {
+        (mockAutomergeRepo.getDoc as ReturnType<typeof vi.fn>).mockReturnValue({ data: 'doc-1-content' });
+        mockBranchStateAuthority.commit.mockResolvedValueOnce({ status: 'refused', reason: 'conflict' });
+        const nextState = { ...previousState, activeBranchId: 'branch-b' };
+
+        await expect(
+            runBranchLineageTransition({
+                affectedDocIds: ['doc-1'],
+                apply: () => ({ nextState, result: 'success' }),
+                from: 'branch-a',
+                previousState,
+                to: 'branch-b',
+            })
+        ).rejects.toThrow(/Branch state could not be persisted \(conflict\)/);
+
+        expect(mockAutomergeRepo.replaceDoc).not.toHaveBeenCalledWith('doc-1', nextState);
+        expect(mockBranchStore.set).toHaveBeenCalledWith(previousState);
+        // A refused commit wrote nothing, so there is no revision to swap back.
+        expect(mockBranchStateAuthority.commit).toHaveBeenCalledTimes(1);
+        expect(mockProjectCrdtToStores).toHaveBeenCalled();
     });
 
     it('deduplicates affectedDocIds when creating snapshots', async () => {

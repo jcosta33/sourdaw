@@ -6,8 +6,9 @@ import {
 import { resetActionReplayAuthority } from '#/modules/Command/useCases';
 
 import { automergeRepository } from '../repositories/automergeRepository';
+import { branchStateAuthority } from '../repositories/branchStateAuthority';
 import { agentProjectRepairStateStore } from '../stores/agentProjectRepairStateStore';
-import { branchStore, MAIN_BRANCH_ID } from '../stores/branchStore';
+import { branchStore, createDefaultBranchStoreState } from '../stores/branchStore';
 
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
 import { runCrdtPersistenceOperation } from './runCrdtPersistenceOperation';
@@ -61,29 +62,26 @@ export function resetCrdtProjectAuthority(name: string, onAuthorityReplaced?: ()
     // the top (where it used to be), every abort before `createProject` left the
     // user's undo entries still rendered and silently inert.
     resetActionReplayAuthority();
-    // `branchStore` is localStorage-backed, and that adapter deliberately
-    // propagates a failed write so callers can retry (see `createLocalStorage`).
-    // This caller cannot: it is the last statement of the authority switch, and
-    // the switch is already irreversible by the time it runs. Letting a full
-    // origin quota throw from here would abort a project load back into a
+    // The memory projection goes first and synchronously: this is the last
+    // statement of the authority switch, every reader after it must already see
+    // Main, and the durable commit needs a lock it cannot take synchronously.
+    //
+    // The commit is then fire-and-forget because this caller has no answer to a
+    // refusal. The switch is already irreversible by the time it runs, and
+    // awaiting — or throwing — from here would abort a project load back into a
     // session that no longer exists. The branch record is rebuilt by the next
     // reset or load, so a failure to persist it is degraded, not fatal.
-    try {
-        branchStore.set({
-            branches: [
-                {
-                    branchId: MAIN_BRANCH_ID,
-                    name: 'Main',
-                    rootDocId: DOC_PREFIX_ROOT,
-                    sourceBranchId: null,
-                    createdAt: Date.now(),
-                    createdFromHeads: [],
-                    note: '',
-                },
-            ],
-            activeBranchId: MAIN_BRANCH_ID,
+    const defaultBranchState = createDefaultBranchStoreState();
+    branchStore.set(defaultBranchState);
+    void branchStateAuthority
+        .commit({ expectedRevision: branchStateAuthority.captureRevision(), next: defaultBranchState })
+        .then((committed) => {
+            if (committed.status === 'refused') {
+                logger.error(
+                    new Error(
+                        `[resetCrdtProjectAuthority] Failed to publish the new branch state (${committed.reason})`
+                    )
+                );
+            }
         });
-    } catch (error) {
-        logger.error(new Error('[resetCrdtProjectAuthority] Failed to publish the new branch state', { cause: error }));
-    }
 }

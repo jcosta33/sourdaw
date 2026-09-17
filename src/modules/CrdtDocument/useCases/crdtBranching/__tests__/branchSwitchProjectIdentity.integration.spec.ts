@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import { DOC_PREFIX_ROOT } from '../../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../../repositories/automergeRepository';
 import { branchStore } from '../../../stores/branchStore';
@@ -15,6 +17,9 @@ describe('branch switch moves project identity', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         automergeRepository.reset();
+        // The real branch-state authority sequences every durable write on a
+        // Web Lock, and jsdom ships no Web Locks API.
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         automergeRepository.createProject('branch identity test');
         branchStore.set({
             branches: [
@@ -34,6 +39,7 @@ describe('branch switch moves project identity', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+        vi.unstubAllGlobals();
         automergeRepository.reset();
     });
 

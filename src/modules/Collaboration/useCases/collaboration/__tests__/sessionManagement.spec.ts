@@ -130,9 +130,9 @@ const crdtMock = vi.hoisted(() => {
         waitForCrdtDocumentTransition: vi.fn<(docId: string) => Promise<'aborted' | 'committed'> | null>(),
         subscribeToCrdtChanges: vi.fn().mockReturnValue(unsubscribeAutomergeChanges),
         unsubscribeAutomergeChanges,
-        preserveBranchStateForSession: vi.fn(),
-        replaceBranchState: vi.fn(),
-        restoreBranchStateAfterSession: vi.fn(),
+        beginBranchSession: vi.fn(() => Promise.resolve({ status: 'begun', handle: { owner: 'owner-mock' } })),
+        projectBranchSession: vi.fn(() => Promise.resolve({ status: 'committed', revision: 1 })),
+        endBranchSession: vi.fn(() => Promise.resolve('restored')),
         replaceCrdtDocInLineage: vi.fn(),
     };
 });
@@ -294,9 +294,9 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     runCrdtPersistenceBarrier: crdtMock.runCrdtPersistenceBarrier,
     waitForCrdtDocumentTransition: crdtMock.waitForCrdtDocumentTransition,
     subscribeToCrdtChanges: crdtMock.subscribeToCrdtChanges,
-    preserveBranchStateForSession: crdtMock.preserveBranchStateForSession,
-    replaceBranchState: crdtMock.replaceBranchState,
-    restoreBranchStateAfterSession: crdtMock.restoreBranchStateAfterSession,
+    beginBranchSession: crdtMock.beginBranchSession,
+    projectBranchSession: crdtMock.projectBranchSession,
+    endBranchSession: crdtMock.endBranchSession,
     replaceCrdtDocInLineage: crdtMock.replaceCrdtDocInLineage,
 }));
 
@@ -456,7 +456,7 @@ describe('sessionRuntimePrimitives', () => {
         it('starts with no active peer manager or pending invite', () => {
             expect(sessionRuntimePrimitives.state.peerManager).toBeNull();
             expect(sessionRuntimePrimitives.state.pendingInviteId).toBeNull();
-            expect(sessionRuntimePrimitives.state.hasBranchStateBackup).toBe(false);
+            expect(sessionRuntimePrimitives.state.branchSession).toBeNull();
         });
     });
 });
@@ -960,11 +960,11 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('does not persist or settle handoffs until branch restoration succeeds', async () => {
             await sessionRuntimePrimitives.initialize('project-owner-branch-retry');
-            sessionRuntimePrimitives.startBranchSync(true);
-            crdtMock.restoreBranchStateAfterSession
-                .mockReturnValueOnce('state-not-persisted')
-                .mockReturnValueOnce('state-not-persisted')
-                .mockReturnValueOnce('restored');
+            await sessionRuntimePrimitives.startBranchSync(true);
+            crdtMock.endBranchSession
+                .mockResolvedValueOnce('write-failed')
+                .mockResolvedValueOnce('write-failed')
+                .mockResolvedValueOnce('restored');
 
             sessionRuntimePrimitives.cleanup();
             await expect(sessionRuntimePrimitives.settleRetainedTeardown()).rejects.toThrow(
@@ -1825,12 +1825,12 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         it('seeds the __branches__ doc from the current branch list when hosting', async () => {
             branchStoreMock.value = { branches: [{ id: 'b1' }], activeBranchId: 'b1' };
 
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
 
             expect(crdtMock.removeCrdtDoc).toHaveBeenCalledWith('__branches__');
             expect(crdtMock.createCrdtDoc).toHaveBeenCalledWith('__branches__');
-            expect(crdtMock.preserveBranchStateForSession).toHaveBeenCalledTimes(1);
-            expect(sessionRuntimePrimitives.state.hasBranchStateBackup).toBe(true);
+            expect(crdtMock.beginBranchSession).toHaveBeenCalledTimes(1);
+            expect(sessionRuntimePrimitives.state.branchSession).toEqual({ owner: 'owner-mock' });
 
             const seedCall = crdtMock.mutateCrdtDoc.mock.calls.find(
                 (call) => (call[0] as { id: string }).id === '__branches__'
@@ -1841,7 +1841,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('does not seed the doc when joining as a non-host', async () => {
-            sessionRuntimePrimitives.startBranchSync(false);
+            await sessionRuntimePrimitives.startBranchSync(false);
 
             expect(crdtMock.removeCrdtDoc).not.toHaveBeenCalled();
             expect(crdtMock.createCrdtDoc).not.toHaveBeenCalled();
@@ -1849,7 +1849,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('mirrors local branch mutations into the doc when a doc already exists', async () => {
             crdtMock.hasCrdtDoc.mockReturnValue(true);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1874,7 +1874,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             });
             crdtMock.hasCrdtDoc.mockReturnValue(true);
             crdtMock.waitForCrdtDocumentTransition.mockReturnValue(transition);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1904,7 +1904,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             });
             crdtMock.hasCrdtDoc.mockReturnValue(true);
             crdtMock.waitForCrdtDocumentTransition.mockReturnValue(transition);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1923,7 +1923,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             const transition = Promise.withResolvers<'aborted' | 'committed'>();
             crdtMock.hasCrdtDoc.mockReturnValue(true);
             crdtMock.waitForCrdtDocumentTransition.mockReturnValue(transition.promise);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1943,7 +1943,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('does not mirror branch mutations while a projection is already in flight', async () => {
             crdtMock.hasCrdtDoc.mockReturnValue(true);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1958,7 +1958,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('does not mirror branch mutations when the doc has not been created yet', async () => {
             crdtMock.hasCrdtDoc.mockReturnValue(false);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1971,7 +1971,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('does not mirror a null branchStore state', async () => {
             crdtMock.hasCrdtDoc.mockReturnValue(true);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1982,8 +1982,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
         });
 
-        it('projects an incoming __branches__ doc change into branchStore via replaceBranchState', async () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+        it('projects an incoming __branches__ doc change through this session claim', async () => {
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
@@ -1992,15 +1992,22 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             crdtChangeListener('__branches__');
 
-            expect(crdtMock.replaceBranchState).toHaveBeenCalledWith({
-                branches: [{ id: 'incoming' }],
-                activeBranchId: 'active-1',
-            });
-            expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(JSON.stringify([{ id: 'incoming' }]));
+            expect(crdtMock.projectBranchSession).toHaveBeenCalledWith(
+                { owner: 'owner-mock' },
+                { branches: [{ id: 'incoming' }], activeBranchId: 'active-1' }
+            );
+            // The durable write is asynchronous, and only a committed one may
+            // record the projected list: a refused projection that recorded it
+            // would suppress the retry of the very list it failed to publish.
+            await vi.waitFor(() =>
+                expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(
+                    JSON.stringify([{ id: 'incoming' }])
+                )
+            );
         });
 
         it('falls back to MAIN_BRANCH_ID when branchStore has no active branch yet', async () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
@@ -2009,14 +2016,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             crdtChangeListener(undefined);
 
-            expect(crdtMock.replaceBranchState).toHaveBeenCalledWith({
-                branches: [{ id: 'incoming' }],
-                activeBranchId: 'main-branch-mock',
-            });
+            expect(crdtMock.projectBranchSession).toHaveBeenCalledWith(
+                { owner: 'owner-mock' },
+                { branches: [{ id: 'incoming' }], activeBranchId: 'main-branch-mock' }
+            );
         });
 
         it('ignores a change notification for an unrelated doc id', async () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
@@ -2025,11 +2032,11 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             crdtChangeListener('some-other-doc');
 
             expect(crdtMock.getCrdtDoc).not.toHaveBeenCalled();
-            expect(crdtMock.replaceBranchState).not.toHaveBeenCalled();
+            expect(crdtMock.projectBranchSession).not.toHaveBeenCalled();
         });
 
         it('ignores a change notification whose doc has no branches array yet', async () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
@@ -2037,26 +2044,29 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             crdtChangeListener('__branches__');
 
-            expect(crdtMock.replaceBranchState).not.toHaveBeenCalled();
+            expect(crdtMock.projectBranchSession).not.toHaveBeenCalled();
         });
 
         it('skips re-projecting the same branch JSON twice in a row', async () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
             crdtMock.getCrdtDoc.mockReturnValue({ branches: [{ id: 'same' }] });
 
             crdtChangeListener('__branches__');
-            crdtMock.replaceBranchState.mockClear();
+            await vi.waitFor(() =>
+                expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(JSON.stringify([{ id: 'same' }]))
+            );
+            crdtMock.projectBranchSession.mockClear();
             crdtChangeListener('__branches__');
 
-            expect(crdtMock.replaceBranchState).not.toHaveBeenCalled();
+            expect(crdtMock.projectBranchSession).not.toHaveBeenCalled();
         });
 
         it('stops branch sync on cleanup: unsubscribes, removes the doc, restores state, and persists', async () => {
             branchStoreMock.value = { branches: [], activeBranchId: 'b1' };
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             crdtMock.removeCrdtDoc.mockClear();
 
             sessionRuntimePrimitives.cleanup();
@@ -2065,24 +2075,25 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(branchStoreMock.unsubscribeBranchStore).toHaveBeenCalledTimes(1);
             expect(crdtMock.unsubscribeAutomergeChanges).toHaveBeenCalledTimes(1);
             expect(crdtMock.removeCrdtDoc).toHaveBeenCalledWith('__branches__');
-            expect(crdtMock.restoreBranchStateAfterSession).toHaveBeenCalledTimes(1);
+            expect(crdtMock.endBranchSession).toHaveBeenCalledWith({ owner: 'owner-mock' });
+            expect(crdtMock.endBranchSession).toHaveBeenCalledTimes(1);
             expect(crdtMock.persistCrdtProject).toHaveBeenCalledTimes(1);
-            expect(sessionRuntimePrimitives.state.hasBranchStateBackup).toBe(false);
+            expect(sessionRuntimePrimitives.state.branchSession).toBeNull();
             expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBeNull();
             await Promise.resolve();
         });
 
-        it('does not restore branch state on cleanup when no backup was ever taken', async () => {
+        it('does not hand back the branch list on cleanup when this session never claimed it', async () => {
             sessionRuntimePrimitives.cleanup();
 
-            expect(crdtMock.restoreBranchStateAfterSession).not.toHaveBeenCalled();
+            expect(crdtMock.endBranchSession).not.toHaveBeenCalled();
         });
 
         it('surfaces a store error and logs a warning when post-cleanup persistence fails', async () => {
             collaborationStore.set(makeState());
             const persistenceError = new Error('disk full');
             crdtMock.persistCrdtProject.mockRejectedValueOnce(persistenceError);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
 
             await expect(leaveSession()).rejects.toBe(persistenceError);
 
@@ -2097,7 +2108,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             collaborationStore.set(makeState());
             const persistence = Promise.withResolvers<void>();
             crdtMock.persistCrdtProject.mockReturnValueOnce(persistence.promise);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
 
             const decompression = Promise.withResolvers<string>();
             const decompressInvite = vi
@@ -2119,7 +2130,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             collaborationStore.set(makeState());
             const persistence = Promise.withResolvers<void>();
             crdtMock.persistCrdtProject.mockReturnValueOnce(persistence.promise);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
 
             const oldCleanupError = new Error('old cleanup failed');
             const firstCreate = createSession('Session B');
