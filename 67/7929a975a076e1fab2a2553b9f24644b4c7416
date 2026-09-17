@@ -1,0 +1,41 @@
+src/modules/Command/AGENTS.md
+  s_914af328b3988f::t_3a0fb8c5cbeb29 35
+src/modules/Command/models/AgentCommandLedger.ts
+  s_914af328b3988f::t_8e8cd915e70420 66-74
+src/modules/Command/useCases/getAgentCommandLedger.ts
+  s_914af328b3988f::t_1b9ccd644ad8d8 53-67
+  s_914af328b3988f::t_ee86152a657578 80
+  s_914af328b3988f::t_b5f2c306aa0313 6,9
+  s_914af328b3988f::t_e31edb4891a062 13-14,24
+  s_914af328b3988f::t_29f13adff749f5 45-51,70-75,83
+  s_914af328b3988f::t_4f00e7fdada914 52
+src/modules/Command/useCases/__tests__/agentCommandCoverage.spec.ts
+  s_914af328b3988f::t_ab8bd9962ec1b1 13,16,22
+  s_914af328b3988f::t_51556a4686d234 115,117-149,151-152
+src/app/getAgentProductionReadiness.ts
+  s_914af328b3988f::t_bdb35efe559411 127
+  s_914af328b3988f::t_7c1656f9f7ac5c 64
+  s_914af328b3988f::t_a4f9c485261c6a 86-91
+src/app/__tests__/agentProductionReadiness.spec.ts
+  s_914af328b3988f::t_c082b50469ff72 181,191
+  s_914af328b3988f::t_3252908ee2dde6 1,4-5,7,9-24
+  s_914af328b3988f::t_926ad6c5356b15 389-427
+  s_914af328b3988f::t_df86ff085b74c0 341,349-360
+  s_914af328b3988f::t_3ed8a2c6d76321 209-220,224,227,230-272,275,280-281,286-289
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "677929a975a076e1fab2a2553b9f24644b4c7416",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
