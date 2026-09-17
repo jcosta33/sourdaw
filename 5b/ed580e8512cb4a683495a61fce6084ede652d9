@@ -1,0 +1,111 @@
+crates/daw-dsp/src/grand_boule/mod.rs
+  s_9b530f08172a54::t_2864df19174b38 48-87,94-96,488
+  s_9b530f08172a54::t_74b8319f1d371f 29
+  s_9b530f08172a54::t_2870df032c5914 119-127
+  s_9b530f08172a54::t_afcf330dd6301a 172-249
+  s_9b530f08172a54::t_008f7b06ea5210 291-295,297,302-305,307-309,315-318,324-331
+  s_9b530f08172a54::t_ce632927f188b7 458-487
+  s_9b530f08172a54::t_6e5704c25adac6 358-424
+  s_9b530f08172a54::t_c8d535faadfa62 113-114
+  s_9b530f08172a54::t_5bd78e37b13331 425
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_9b530f08172a54::t_6bfb678ef8ae36 771,773-780
+  s_9b530f08172a54::t_7e73a611546818 656-664,666-680
+src/modules/AudioEngine/AGENTS.md
+  s_9b530f08172a54::t_b2ab8052e4578b 30
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_9b530f08172a54::t_4d0493bd89fa13 453-457,466,468-469,472
+  s_9b530f08172a54::t_bcb35fc891110e 387-392
+  s_9b530f08172a54::t_a6ca45bd46f3b5 75
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_73887b382af242 3478-3483
+  s_9b530f08172a54::t_57c9d8b2e6a7e9 11215,20291,20294,20314-20386,20443,22193
+  s_9b530f08172a54::t_7a19d266cd9fa8 1907,1913-1924,1927,1934,1948-1951,1960-1961,1969-1974,1976,1980,1984,1986-1997
+  s_9b530f08172a54::t_f82eab3af3a942 1783-1790,1792-1798,1801
+  s_9b530f08172a54::t_692d42475006cf 3847-3853
+  s_9b530f08172a54::t_58b7d7aa34143f 11176,11180-11186,11198-11207
+  s_9b530f08172a54::t_0b1f58d2c38ad3 11225,20387-20390,20392-20397,20399,20402-20403,20405,20413,20419,20425-20430,20435-20438,20441
+  s_9b530f08172a54::t_3ab928a4b98785 11030-11031,11038,11045
+  s_9b530f08172a54::t_c0a66998d46826 20442,20490-20492,20501-20504
+  s_9b530f08172a54::t_533fa6940a467f 3647-3650,3657-3659
+  s_9b530f08172a54::t_2ac8d9d5765f63 11129,11132-11137
+  s_9b530f08172a54::t_83f1e7f1ea51c5 8133-8139
+  s_9b530f08172a54::t_9ce5d96d55e86a 1952
+  s_9b530f08172a54::t_a64dd5d8c768de 11138,11143,11210,11213,11218,11223,20480,20486,20505-20506,20561,20574,20585,20591-20592,20595,20670-20671,20788,20791,20863,20869,20929,20935,21073,21079,21097,21100,21329,21335,22101,22109,22189,22283,22294
+crates/daw-dsp/tests/device_process_rt.rs
+  s_9b530f08172a54::t_1b18123e005973 1202-1249
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  s_9b530f08172a54::t_06b463ba4274a4 273,275
+  s_9b530f08172a54::t_30bb8d3f7cb684 332-340
+  s_9b530f08172a54::t_b1514517d73032 326
+  s_9b530f08172a54::t_4f5017eff2922e 383,393-402
+  s_9b530f08172a54::t_d82282f3327bbf 229-240,248,251,254-263,267-269,277-278
+  s_9b530f08172a54::t_6fe36c9a568e12 444-456,461-462,466-467,470-478,480,489,494-498
+crates/daw-dsp/tests/grand_boule_note_offsets.rs
+  s_9b530f08172a54::t_be2e6ff8aaf6a7 1-107,109-110,113-188
+  s_9b530f08172a54::t_0a00dbb9c6333e 108,111-112
+src/modules/AudioEngine/worklets/grandBouleOfflineProcessor.ts
+  s_9b530f08172a54::t_e4618b81801af0 334-339
+  s_9b530f08172a54::t_73f2dee2e3d198 270-274
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineNoteTiming.spec.ts
+  s_9b530f08172a54::t_ea63418c585c3c 46,57
+  s_9b530f08172a54::t_0bccd41264907a 68-69,71,73-87,89
+  s_9b530f08172a54::t_dc276371e5224f 28-29,325-329,343,346,376-378
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.noteTiming.spec.ts
+  s_9b530f08172a54::t_b266cd2ca4bcbd 335-348
+  s_9b530f08172a54::t_8c1ee948367eff 196-198
+  s_9b530f08172a54::t_187c075940e755 332-334
+  s_e330aee6767ccb::t_97613a95adce2d 40-42,48-59,208,250,270,288,307,321
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_9b530f08172a54::t_ce6f5a1f1f1dd7 1,432-436,451-454,481-489,503-506,509-547,945,949-966,981-984,990-1030,1128,1143-1158
+public/wasm/daw-dsp/daw_dsp.js
+  s_9b530f08172a54::t_bdb83b91804217 868-872,897-900,960-968,996-999,1007-1076
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_9b530f08172a54::t_7de09e20cafdda 1,5,9-26,41-44,50-90,188,203-218
+public/wasm/manifest.json
+  s_9b530f08172a54::t_f7c10c63f1ca10 12,15-18,20-21
+release/open-source-inventory.json
+  s_9b530f08172a54::t_5bd7b0040a7655 1341,1722
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_9b530f08172a54::t_2651dfd6480720 1,432-436,451-454,481-489,503-506,509-547,945,949-966,981-984,990-1030,1128,1143-1158
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_9b530f08172a54::t_f36c0f33e5523d 1045-1049,1074-1077,1137-1145,1173-1176,1184-1253
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.dispatch.spec.ts
+  s_9b530f08172a54::t_46e52337fe095a 25,27-36,38-39,270-271,273
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.renderLoop.spec.ts
+  s_9b530f08172a54::t_beba0cad5becb8 51,55
+src/modules/AudioEngine/worklets/__tests__/grandBouleDispatchParity.spec.ts
+  s_9b530f08172a54::t_4f17660c57219c 60-62,64-66,68-70,72-81,163-164,178,304-308
+src/modules/AudioEngine/worklets/__tests__/grandBouleEngineCore.spec.ts
+  s_9b530f08172a54::t_1c87666beaeac0 24-25,31,37-46,48-51,63-69,76,78,97,107-115,118-119,134,136-139,151-159,162,166-186,192-200,203-227,229,238-246,249,257,259,272,274,277-309,321,330-338,343-371
+src/modules/AudioEngine/worklets/__tests__/grandBouleFreezeAudio.spec.ts
+  s_9b530f08172a54::t_e9b569be2d74cb 48,50,52,54,56,58-61
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineRender.spec.ts
+  s_9b530f08172a54::t_9b4282f4a27d8a 39,41,43,45,47,49-52
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineTransport.spec.ts
+  s_9b530f08172a54::t_2a9f754e0c524c 41,43,45,47,49,51-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5bed580e8512cb4a683495a61fce6084ede652d9",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e330aee6767ccb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a5fa97ee676afa22b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
