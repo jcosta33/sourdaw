@@ -1,0 +1,27 @@
+src/modules/CrdtDocument/repositories/__tests__/branchStateAuthority.spec.ts
+  s_9b530f08172a54::t_6da0b5999a7c99 326-332
+  s_9b530f08172a54::t_819f732d637d02 315-317,319-322,324,341-343,347,354
+  s_9b530f08172a54::t_6ffe4e8386e765 308-314,318,323,325,333-340,344-346,348-353,355-358
+  s_9b530f08172a54::t_3fed6f7caeb1f2 23-43
+src/modules/CrdtDocument/repositories/branchStateAuthority.ts
+  s_9b530f08172a54::t_7f8583838b8968 489-492
+  s_9b530f08172a54::t_7942bd3c310a26 1-2
+  s_9b530f08172a54::t_5f064eaa4ee817 367-371
+  s_9b530f08172a54::t_251466e8578bbb 366
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8170d718e81f8bc44e26615166b43c4a1a859ed7",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
