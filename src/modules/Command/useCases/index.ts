@@ -79,6 +79,7 @@ export { getVersionedCommandBatchCommitDisposition } from './getVersionedCommand
 export { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 export { getVersionedCommandTargetRanges } from './getVersionedCommandTargetRanges';
 export { getCommandProtocolContracts } from './getCommandProtocolContracts';
+export { getAgentCommandLedger } from './getAgentCommandLedger';
 export { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 export { createAppActionCommittedError } from './createAppActionCommittedError';
 export { isAppActionCommittedError } from './isAppActionCommittedError';
