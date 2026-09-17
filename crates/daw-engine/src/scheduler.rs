@@ -26032,6 +26032,223 @@ mod timeline_tests {
         );
     }
 
+    /// A transport stop silences the voices a pedalled Levain is holding, and
+    /// leaves its pedal exactly where the player's foot left it.
+    ///
+    /// The programme puts the instrument in the one state a note-off cannot
+    /// discharge: the sustain pedal goes down, the key is struck, and the key
+    /// is let go while the pedal is still down — which the instrument defers
+    /// rather than releasing (`LevainEngine::note_off`). So the note-offs a
+    /// stop pays reach that deferred queue rather than a voice, and what the
+    /// edge has to do is kill the voices without moving the foot.
+    ///
+    /// Both doors are the instance-side ones the engine really uses: the pedal
+    /// arrives through [`PluginCore::control_change`] and the stop through
+    /// [`PluginCore::silence_pedal_held_voices`], which is what
+    /// [`AudioScheduler::pay_owed_releases`] asks a slot's instance at the
+    /// edge. A Levain arm missing from either match is a body a stop leaves
+    /// ringing.
+    ///
+    /// Three renders. The reference is the instrument driven directly, killed
+    /// at the edge's own run with its pedal never written, and it is what the
+    /// two equalities claim the hosted body renders — the whole of what the
+    /// edge does to a pedalled body. The control is the same hosted programme
+    /// with no stop at all: it rings on at full level right through the tail
+    /// window, which is what refuses a vacuous pass, because a pedalled body
+    /// nothing silenced renders no decay there to mistake for one.
+    ///
+    /// What a kill leaves behind is a decaying tail rather than a zero: it
+    /// hands every voice to its zone's release envelope, which falls
+    /// exponentially (`AdsrEnvelope::tick`). So the tail window is read far
+    /// enough past the edge for that fall to be decisive, and still inside the
+    /// fixture's one-second sample, where the control render is sounding
+    /// rather than out of recording.
+    #[test]
+    fn a_transport_stop_silences_a_pedalled_levain_body() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 176;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / LEVAIN_RUN_FRAMES;
+        /// The pedal press, above [`MIDI_SWITCH_THRESHOLD`] and spelled here
+        /// so the fixture states the byte the wire carries.
+        const PEDAL_DOWN: u8 = 127;
+        /// Where the key is let go, into a pedal that defers the release.
+        const RELEASE_CALLBACK: usize = 2;
+        const RELEASE_RUN: usize = RELEASE_CALLBACK * RUNS_PER_CALLBACK;
+        /// Where the edge arrives, well after the pedal took the note.
+        const EDGE_CALLBACK: usize = 8;
+        const EDGE_RUN: usize = EDGE_CALLBACK * RUNS_PER_CALLBACK;
+        /// The note ringing under the pedal, past its deferred release and
+        /// before the edge.
+        const BEFORE: std::ops::Range<usize> =
+            (RELEASE_CALLBACK + 2) * CALLBACK..EDGE_CALLBACK * CALLBACK;
+        /// Where the tail window opens: far enough past the edge for the
+        /// release envelope to have fallen, and short of the 48 000 frames the
+        /// fixture's sample holds.
+        const TAIL_CALLBACK: usize = 160;
+        /// What the edge left, read out to the end of the render.
+        const AFTER: std::ops::Range<usize> = TAIL_CALLBACK * CALLBACK..CALLBACKS * CALLBACK;
+        /// How far below the pedalled ring the stopped tail has to sit. The
+        /// renders decide it: over this window the stop leaves about 0.009
+        /// where the pedal holding the same note reads about 0.34, a ratio
+        /// near 38, so this is a margin against voice detail moving rather
+        /// than a tuned figure — and still far above the 1.0 a body no stop
+        /// reached would land on.
+        const DECISIVE: f32 = 10.0;
+
+        /// The hosted programme, with the edge taken at [`EDGE_CALLBACK`] or
+        /// not taken at all.
+        fn render(stops: bool) -> (Vec<f32>, Vec<f32>) {
+            let strike = [levain_hit(LEVAIN_SPEC_NOTE, 0, 0)];
+            let lift = [levain_release(LEVAIN_SPEC_NOTE, 0, 0)];
+            let mut core = PluginCore::levain_with_patch(levain_instance(), &[]);
+            core.control_change(MidiControlEvent {
+                controller: CC_SUSTAIN_PEDAL,
+                value: PEDAL_DOWN,
+                channel: 0,
+            });
+            let mut left = Vec::with_capacity(RENDERED);
+            let mut right = Vec::with_capacity(RENDERED);
+            for callback in 0..CALLBACKS {
+                if stops && callback == EDGE_CALLBACK {
+                    core.silence_pedal_held_voices();
+                }
+                let events: &[MidiNoteEvent] = match callback {
+                    0 => &strike,
+                    RELEASE_CALLBACK => &lift,
+                    _ => &[],
+                };
+                let PluginCore::Levain(body) = &mut core else {
+                    unreachable!("levain_with_patch builds the levain variant");
+                };
+                let (block_left, block_right) = levain_render(body, CALLBACK, events);
+                left.extend(block_left);
+                right.extend(block_right);
+            }
+            (left, right)
+        }
+
+        let (killed_left, killed_right) = render_levain_reference(RENDERED, |run, instance| {
+            if run == 0 {
+                instance.handle_cc(CC_SUSTAIN_PEDAL, PEDAL_DOWN);
+                instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+            }
+            if run == RELEASE_RUN {
+                instance.note_off_on_channel(LEVAIN_SPEC_NOTE, 0);
+            }
+            if run == EDGE_RUN {
+                // The whole of what the edge does to a pedalled body: the
+                // voices the pedal was holding are killed, and the pedal
+                // itself is not written at all.
+                instance.all_notes_off();
+            }
+        });
+        let (hosted_left, hosted_right) = render(true);
+        let (control_left, _control_right) = render(false);
+
+        assert!(
+            rms(&hosted_left[BEFORE]) > 0.0,
+            "the pedal was holding nothing before the stop, so its tail proves nothing"
+        );
+        assert!(
+            rms(&hosted_left[AFTER]) * DECISIVE < rms(&hosted_left[BEFORE]),
+            "the stop left {} against the {} the pedal was holding, so the pedalled voices rang \
+             on through the tail window",
+            rms(&hosted_left[AFTER]),
+            rms(&hosted_left[BEFORE])
+        );
+        assert!(
+            rms(&hosted_left[AFTER]) * DECISIVE < rms(&control_left[AFTER]),
+            "the same programme without the stop left {} where the stopped render left {}, so the \
+             tail window decays whether or not anything silenced the body and the equalities \
+             below say nothing",
+            rms(&control_left[AFTER]),
+            rms(&hosted_left[AFTER])
+        );
+        assert_eq!(
+            hosted_left, killed_left,
+            "the hosted left channel is not the signal a stop that kills and keeps the pedal \
+             renders"
+        );
+        assert_eq!(
+            hosted_right, killed_right,
+            "the hosted right channel is not the signal a stop that kills and keeps the pedal \
+             renders"
+        );
+    }
+
+    /// A hosted Levain takes a pedal, a strike, a deferred release, the pedal
+    /// coming up and a stop without allocating.
+    ///
+    /// A controller and a stop are both applied on the audio thread, inside the
+    /// command drain, so they are held to ADR 0020 exactly as a render is. The
+    /// pedal has two routes through the instrument — a press that makes every
+    /// later note-off defer, and a lift that fires the whole deferred queue
+    /// (`LevainEngine::handle_cc`) — and `silence_pedal_held_voices` has a
+    /// third that kills the voices and clears that queue, so all three are
+    /// driven here rather than one standing in for the others.
+    ///
+    /// Every controller is followed by a render, because a pedal's cost is
+    /// mostly paid on the block after it: the deferred releases the lift fires
+    /// and the voices the kill retires are state the next `process` walks, and
+    /// a guard holding controllers alone would never enter those paths.
+    ///
+    /// The bank is loaded outside the guard, where a sampler's samples, zone
+    /// map and mic mixer are legitimately allocated (ADR 0020); everything the
+    /// audio thread would do is inside it, first block included, because a
+    /// sampler that grew a buffer on its first tick would otherwise spend that
+    /// growth where nothing was watching.
+    ///
+    /// The sounding reading is taken inside the guard and asserted outside it:
+    /// a failing `assert!` formats its message, and an allocation on the panic
+    /// path would abort the process instead of failing the test.
+    #[test]
+    fn a_levain_control_change_allocates_nothing() {
+        const FRAMES: usize = 256;
+        /// The pedal press, above [`MIDI_SWITCH_THRESHOLD`].
+        const PEDAL_DOWN: u8 = 127;
+        /// The pedal lift.
+        const PEDAL_UP: u8 = 0;
+
+        let strike = levain_hit(LEVAIN_SPEC_NOTE, 0, 0);
+        let lift = levain_release(LEVAIN_SPEC_NOTE, 0, 0);
+        let pedal = |value: u8| MidiControlEvent {
+            controller: CC_SUSTAIN_PEDAL,
+            value,
+            channel: 0,
+        };
+
+        let mut left = vec![0.0_f32; FRAMES];
+        let mut right = vec![0.0_f32; FRAMES];
+        let mut body = levain_body(&[]);
+        let mut sounded = false;
+
+        assert_no_alloc::assert_no_alloc(|| {
+            body.control_change(pedal(PEDAL_DOWN));
+            body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&strike));
+            sounded = left.iter().any(|sample| *sample != 0.0);
+            // The release the pedal defers, and the block that renders behind
+            // it with the voice still held.
+            body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&lift));
+            body.process(&mut left, &mut right, FRAMES, &[]);
+            // The pedal coming up, which fires that deferred release.
+            body.control_change(pedal(PEDAL_UP));
+            body.process(&mut left, &mut right, FRAMES, &[]);
+            // The stop's own route, on a body standing on the pedal with a
+            // voice to kill: a body with the pedal up answers `false` and
+            // reaches nothing.
+            body.control_change(pedal(PEDAL_DOWN));
+            body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&strike));
+            body.silence_pedal_held_voices();
+            body.process(&mut left, &mut right, FRAMES, &[]);
+        });
+
+        assert!(
+            sounded,
+            "the instrument never sounded, so the guard covered a silent path"
+        );
+    }
+
     /// The body joins what it renders to whatever already stands in the pair.
     ///
     /// An instrument is a generator, and the buffers it is handed carry the
