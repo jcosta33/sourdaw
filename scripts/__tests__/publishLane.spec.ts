@@ -154,7 +154,12 @@ type FakeInput = {
     /** The repository label list `gh label list --limit 200 --json name,description` would answer. */
     repositoryLabels?: LabelRow[];
     /** Current pull-request metadata `gh pr view` would answer; defaults to a complete state. */
-    currentMetadata?: { labels: string[]; milestoneTitle?: string; projectTitles: string[] };
+    currentMetadata?: {
+        labels: string[];
+        fencedAuthorLabels?: string[];
+        milestoneTitle?: string;
+        projectTitles: string[];
+    };
 };
 
 function fakePort(input: FakeInput = {}) {
@@ -241,7 +246,11 @@ function fakePort(input: FakeInput = {}) {
         },
         readPullRequestMetadata: (number) => {
             calls.push(`prMeta:${number}`);
-            return input.currentMetadata ?? { labels: [modelLabelName('glm-5.3')], projectTitles: [] };
+            const current = input.currentMetadata ?? {
+                labels: [modelLabelName('glm-5.3')],
+                projectTitles: [],
+            };
+            return { fencedAuthorLabels: [], ...current };
         },
         applyPullRequestMetadata: (number, plan) => {
             calls.push(
@@ -2116,9 +2125,14 @@ describe('lane publish', () => {
                     milestone: { title: 'v1.2' },
                     projectItems: [{ title: 'Roadmap' }, { title: 'Roadmap' }],
                 })
-            ).toEqual({ labels: ['glm-5.3', 'bug'], milestoneTitle: 'v1.2', projectTitles: ['Roadmap'] });
+            ).toEqual({
+                labels: ['glm-5.3', 'bug'],
+                fencedAuthorLabels: [],
+                milestoneTitle: 'v1.2',
+                projectTitles: ['Roadmap'],
+            });
             expect(pullRequestMetadataFromRow({ labels: undefined, milestone: null, projectItems: undefined })).toEqual(
-                { labels: [], projectTitles: [] }
+                { labels: [], fencedAuthorLabels: [], projectTitles: [] }
             );
         });
 
@@ -2177,6 +2191,59 @@ describe('lane publish', () => {
             expect(() => canonicalLabelName('MODEL:GLM-5.3', known)).toThrow(/names an authoring model/);
         });
 
+        it('removes exactly the fenced authorship labels a model change supersedes', () => {
+            const target = { model: 'glm-5.3', labels: ['glm-5.3'], projectTitles: [] };
+            // A republish with a different --model leaves the previous fence behind (the old
+            // add-only plan accumulated them); only the current model's fence may stay.
+            const plan = metadataEditPlan(target, {
+                labels: ['glm-5.3', 'glm-5.3-flash'],
+                fencedAuthorLabels: ['glm-5.3', 'glm-5.3-flash'],
+                projectTitles: [],
+            });
+            expect(plan).toEqual({ addLabels: [], removeLabels: ['glm-5.3-flash'], addProjectTitles: [] });
+            if (plan === undefined) {
+                throw new Error('expected a metadata edit plan');
+            }
+            expect(applyPullRequestMetadataArgs(42, plan)).toEqual([
+                'pr',
+                'edit',
+                '42',
+                '--repo',
+                'jcosta33/sourdaw',
+                '--remove-label',
+                'glm-5.3-flash',
+            ]);
+            // The current fence survives a case-variant spelling, and a label outside the fence
+            // list is never a removal candidate even when it shares a model's name.
+            expect(
+                metadataEditPlan(target, {
+                    labels: ['glm-5.3'],
+                    fencedAuthorLabels: ['GLM-5.3'],
+                    projectTitles: [],
+                })
+            ).toBeUndefined();
+            // Matching fences alone produce no edit at all.
+            expect(
+                metadataEditPlan(target, {
+                    labels: ['glm-5.3'],
+                    fencedAuthorLabels: ['glm-5.3'],
+                    projectTitles: [],
+                })
+            ).toBeUndefined();
+        });
+
+        it('reads fenced authorship labels from the pull-request row', () => {
+            expect(
+                pullRequestMetadataFromRow({
+                    labels: [
+                        { name: 'bug', description: 'Something is broken' },
+                        { name: 'glm-5.3', description: 'Authored by glm-5.3' },
+                        { name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' },
+                    ],
+                }).fencedAuthorLabels
+            ).toEqual(['glm-5.3', 'glm-5.3-flash']);
+        });
+
         it('edits only the metadata pieces the pull request is missing', () => {
             const target = {
                 model: 'glm-5.3',
@@ -2186,10 +2253,16 @@ describe('lane publish', () => {
             };
             const plan = metadataEditPlan(target, {
                 labels: ['glm-5.3', 'enhancement'],
+                fencedAuthorLabels: ['glm-5.3'],
                 milestoneTitle: 'v1.0',
                 projectTitles: ['Triage'],
             });
-            expect(plan).toEqual({ addLabels: ['bug'], milestoneTitle: 'v1.2', addProjectTitles: ['Roadmap'] });
+            expect(plan).toEqual({
+                addLabels: ['bug'],
+                removeLabels: [],
+                milestoneTitle: 'v1.2',
+                addProjectTitles: ['Roadmap'],
+            });
             if (plan === undefined) {
                 throw new Error('expected a metadata edit plan');
             }
@@ -2211,7 +2284,7 @@ describe('lane publish', () => {
         it('composes one edit carrying every missing label', () => {
             const plan = metadataEditPlan(
                 { model: 'glm-5.3', labels: ['glm-5.3', 'bug', 'security'], projectTitles: [] },
-                { labels: [], projectTitles: [] }
+                { labels: [], fencedAuthorLabels: [], projectTitles: [] }
             );
             if (plan === undefined) {
                 throw new Error('expected a metadata edit plan');
@@ -2239,7 +2312,12 @@ describe('lane publish', () => {
                     milestoneTitle: 'v1.2',
                     projectTitles: ['Roadmap'],
                 },
-                { labels: ['bug', 'glm-5.3'], milestoneTitle: 'v1.2', projectTitles: ['Roadmap'] }
+                {
+                    labels: ['bug', 'glm-5.3'],
+                    fencedAuthorLabels: ['glm-5.3'],
+                    milestoneTitle: 'v1.2',
+                    projectTitles: ['Roadmap'],
+                }
             );
             expect(complete).toBeUndefined();
         });
@@ -2360,6 +2438,7 @@ describe('lane publish', () => {
             const afterFirst = calls.length;
             port.readPullRequestMetadata = () => ({
                 labels: ['glm-5.3'],
+                fencedAuthorLabels: ['glm-5.3'],
                 milestoneTitle: 'v1.2',
                 projectTitles: [],
             });
