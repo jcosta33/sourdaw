@@ -92,3 +92,6 @@ export { settleRetainedSectionRenderManualReview } from './settleRetainedSection
 export { selectRetainedSectionRenderManualReviews } from './selectRetainedSectionRenderManualReviews';
 export { auditionAgentCatalogCandidate } from './agentCatalogAudition/auditionAgentCatalogCandidate';
 export { applyAgentAuditionCandidate } from './agentCatalogAudition/applyAgentAuditionCandidate';
+export { resolveAgentPreviewDomains } from './agentDomainPreview/resolveAgentPreviewDomains';
+export { resolveAgentDomainPreviewSupport } from './agentDomainPreview/resolveAgentDomainPreviewSupport';
+export { buildAgentDomainPreviews } from './agentDomainPreview/buildAgentDomainPreviews';
