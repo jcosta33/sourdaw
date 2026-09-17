@@ -1,0 +1,67 @@
+src/modules/AiRuntime/useCases/__tests__/agentRetentionAndDeletion.spec.ts
+  s_914af328b3988f::t_9d8a29a2e884a1 328-337
+  s_914af328b3988f::t_e035a4c84b7313 37,47
+  s_914af328b3988f::t_9c54318c73ba98 175-176,180-181
+  s_914af328b3988f::t_ba7087db0b3645 1-36,38-46,48-174,177-179,182-236,239-327,338-352,357-363,365-400
+  s_914af328b3988f::t_644b2df496050f 237-238
+  s_914af328b3988f::t_7b70946eee2967 353-356
+  s_914af328b3988f::t_d9d5042aaaa91e 364
+  s_914af328b3988f::t_37ebef565a0679 401-405
+src/modules/AiRuntime/useCases/deleteAgentRun.ts
+  s_914af328b3988f::t_448b82b5725921 1-91
+src/modules/AiRuntime/useCases/index.ts
+  s_914af328b3988f::t_08b5c2c3feeca8 87
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_914af328b3988f::t_c3a6cf8a3d5be1 12
+  s_914af328b3988f::t_52596565651199 163,178,197,418,469,1023-1026,1065-1068,1188,1216,1278,1290,1380,1403,1412,1493,1534,1537,1612-1615,1618,1848-1851,1924,1957-1960,2099,2175,2231
+src/modules/AiRuntime/stores/aiActionHistoryStore.ts
+  s_914af328b3988f::t_b9fea1873006f8 4-5
+  s_914af328b3988f::t_71c3cc0b674739 131-133,135
+  s_914af328b3988f::t_647ff51539975c 119-124
+  s_914af328b3988f::t_54972d4965dd81 144,149
+src/modules/AiRuntime/stores/chatStore.ts
+  s_914af328b3988f::t_ac2fae70332958 20,30
+  s_914af328b3988f::t_f7e68f6fa042b8 3
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_914af328b3988f::t_83abe1f3ee8dc6 156-157
+  s_9b530f08172a54::t_fe6cc30c0a178a 5,155
+src/modules/AiRuntime/models/AgentRetentionPolicy.ts
+  s_914af328b3988f::t_cae33920e055e2 1-32
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_914af328b3988f::t_0186c5c3e22904 7,11
+  s_914af328b3988f::t_fc32bd5b9263ad 1384
+  s_914af328b3988f::t_650ca9e40cb262 1712
+  s_914af328b3988f::t_140a8f1b3c5941 1887-1891
+  s_914af328b3988f::t_5923ed73f7147d 1831-1882
+  s_914af328b3988f::t_9cafac3434ed66 61-66
+src/modules/AiRuntime/AGENTS.md
+  s_914af328b3988f::t_3694f351fe772f 33
+src/modules/AiRuntime/models/AgentRun.ts
+  s_914af328b3988f::t_00c40c32300c23 479-486
+src/modules/AiRuntime/stores/__tests__/aiActionHistoryStore.spec.ts
+  s_914af328b3988f::t_4e49973d3f68e1 13-15,73,92,103,129,149,168,187,206,221,236,266
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "210fcd516b9a87d9080045ec72feddd2bf7ef4e2",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
