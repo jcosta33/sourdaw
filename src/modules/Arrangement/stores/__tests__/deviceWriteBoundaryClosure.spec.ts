@@ -570,10 +570,7 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Command/useCases/compileVersionedCommandBatchEnvelope.ts': 1,
         'src/modules/Command/useCases/createExecutionCommandEnvelope.ts': 2,
         'src/modules/Command/useCases/getCommandDivergenceTargetIds.ts': 2,
-        // Count provenance: measured 6 — three barrel re-exports of compile*
-        // symbols, each naming the symbol and its module path. Was 4 before the
-        // declarative transform compiler joined the barrel.
-        'src/modules/Command/useCases/index.ts': 6,
+        'src/modules/Command/useCases/index.ts': 4,
         'src/modules/Command/useCases/parseVersionedCommandEnvelope.ts': 2,
         'src/modules/Command/useCases/refreshVersionedCommandBatchForApproval.ts': 3,
         'src/modules/Command/useCases/resolveVersionedCommandBatchBindings.ts': 2,

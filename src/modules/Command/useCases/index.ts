@@ -28,7 +28,6 @@ export { getCommandDivergenceTargetIds } from './getCommandDivergenceTargetIds';
 export { createCallbackUndoEntry } from './createCallbackUndoEntry';
 export { createVersionedCommandEnvelope } from './createVersionedCommandEnvelope';
 export { compileVersionedCommandBatchEnvelope } from './compileVersionedCommandBatchEnvelope';
-export { compileDeclarativeTransform } from './compileDeclarativeTransform';
 export { issueCommandApprovalBinding } from './issueCommandApprovalBinding';
 export { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 export { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';

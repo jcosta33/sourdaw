@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type AppAction } from '#/utils/handlerContract';
 
 import {
+    DECLARATIVE_TRANSFORM_BINDING_PREFIX,
     DECLARATIVE_TRANSFORM_MAX_EMITTED_COMMANDS,
     DECLARATIVE_TRANSFORM_MAX_SELECTOR_LIMIT,
     DECLARATIVE_TRANSFORM_SCHEMA_VERSION,
@@ -15,10 +16,14 @@ import {
     type TransformSnapshot,
     type TransformStep,
 } from '../../models/DeclarativeTransform';
+import { type VersionedCommandEnvelope } from '../../models/VersionedCommandEnvelope';
+import { compileCommandArgumentMetadata } from '../commandArgumentMetadata';
+import { commandDeviceVersionsPort } from '../commandDeviceVersionsPort';
 import { commandTrackDefaultsPort } from '../commandTrackDefaultsPort';
 import { compileDeclarativeTransform } from '../compileDeclarativeTransform';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
-import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
+import { createVersionedCommandEnvelope } from '../createVersionedCommandEnvelope';
+import { materializeCommandApplicationIds } from '../materializeCommandApplicationIds';
 import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
 
@@ -218,6 +223,40 @@ function toAppAction(command: CompiledTransformCommand): AppAction {
     throw new Error(`unexpected operation ${command.operation}`);
 }
 
+function payloadRecord(action: AppAction): Readonly<Record<string, unknown>> {
+    const payload: unknown = action.payload;
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        throw new TypeError(`action ${action.type} carries no argument record`);
+    }
+    return payload as Readonly<Record<string, unknown>>;
+}
+
+/** Builds the envelope through the producer that accepts a caller reason, and threads it. */
+function toEnvelope(
+    command: CompiledTransformCommand,
+    dependencyIds: readonly string[],
+    revision: string
+): VersionedCommandEnvelope {
+    const materialized = materializeCommandApplicationIds(toAppAction(command));
+    const argumentsValue = payloadRecord(materialized.action);
+    const metadata = compileCommandArgumentMetadata(argumentsValue);
+    return createVersionedCommandEnvelope({
+        action: materialized.action,
+        applicationAssignedIds: materialized.applicationAssignedIds,
+        availableDeviceVersions: commandDeviceVersionsPort.capture({
+            argumentsValue,
+            operation: materialized.action.type,
+        }),
+        dependencyIds,
+        expectedEffect: command.expectedEffect,
+        normalizedProjectRevision: revision,
+        objectReferences: metadata.objectReferences,
+        parameterUnits: metadata.parameterUnits,
+        reason: command.reason,
+        time: metadata.time,
+    });
+}
+
 function withoutVelocity(command: CompiledTransformCommand): CompiledTransformCommand {
     const kept = Object.entries(command.arguments).filter(([name]) => name !== 'velocity');
     return { ...command, arguments: Object.fromEntries(kept) };
@@ -274,24 +313,17 @@ describe('declarative transform sandbox', () => {
         const snapshot = createSnapshot();
         const commands = compileOrThrow(createDocument(), snapshot);
 
-        const commandIdByStepId = new Map<string, string>();
+        const commandIdByKey = new Map<string, string>();
         const serialized = commands.map((command) => {
-            const dependencyIds = command.dependencyStepIds.flatMap((stepId) => {
-                const commandId = commandIdByStepId.get(stepId);
+            const dependencyIds = command.dependencyKeys.map((key) => {
+                const commandId = commandIdByKey.get(key);
                 if (commandId === undefined) {
-                    throw new Error(`no compiled command carries step ${stepId}`);
+                    throw new Error(`no compiled command carries key ${key}`);
                 }
-                return [commandId];
+                return commandId;
             });
-            const { envelope } = createExecutionCommandEnvelope({
-                action: toAppAction(command),
-                dependencyIds,
-                expectedEffect: command.expectedEffect,
-                normalizedProjectRevision: snapshot.revision,
-            });
-            if (!commandIdByStepId.has(command.stepId)) {
-                commandIdByStepId.set(command.stepId, envelope.commandId);
-            }
+            const envelope = toEnvelope(command, dependencyIds, snapshot.revision);
+            commandIdByKey.set(command.key, envelope.commandId);
             return { command, envelope };
         });
         const producer = serialized.find((entry) => entry.command.binding === 'lead');
@@ -321,9 +353,15 @@ describe('declarative transform sandbox', () => {
         expect(parsed.envelope.batchLocalBindings).toEqual([
             { bindingId: '$lead', producerArgument: 'id', producerCommandId: producer?.envelope.commandId },
         ]);
-        expect(parsed.envelope.commands.find((command) => command.operation === 'addClip')?.arguments.trackId).toBe(
-            '$lead'
-        );
+        const parsedClip = parsed.envelope.commands.find((command) => command.operation === 'addClip');
+        expect(parsedClip?.arguments.trackId).toBe('$lead');
+
+        const velocityCommandIds = serialized
+            .filter((entry) => entry.command.operation === 'setAllVelocities')
+            .map((entry) => entry.envelope.commandId);
+        expect(velocityCommandIds).toHaveLength(2);
+        expect(parsedClip?.dependencyIds).toEqual([...velocityCommandIds, producer?.envelope.commandId ?? '']);
+        expect(parsedClip?.reason).toBe('Declarative transform "lift-and-lead" step "add-lead-clip".');
     });
 
     it('refuses a selector limit above the iteration bound and keeps a declared limit exact', () => {
@@ -402,6 +440,44 @@ describe('declarative transform sandbox', () => {
         });
     });
 
+    it('converts between seconds and beats at the snapshot tempo, not a fixed one', () => {
+        const snapshot: TransformSnapshot = { ...createSnapshot(), tempo: 90 };
+        deepFreeze(snapshot);
+
+        const commands = compileOrThrow(
+            createDocument({
+                variables: {
+                    leadStart: {
+                        node: 'secondsToBeats',
+                        value: { node: 'const', quantity: { unit: 'seconds', value: 1 } },
+                    },
+                    backoff: {
+                        node: 'beatsToSeconds',
+                        value: { node: 'const', quantity: { unit: 'beats', value: 3 } },
+                    },
+                },
+                steps: [
+                    {
+                        id: 'probe-lead-start',
+                        kind: 'emit',
+                        operation: 'setAllVelocities',
+                        arguments: { clipId: { literal: 'clip-verse' }, velocity: { node: 'var', name: 'leadStart' } },
+                    },
+                    {
+                        id: 'probe-backoff',
+                        kind: 'emit',
+                        operation: 'setAllVelocities',
+                        arguments: { clipId: { literal: 'clip-verse' }, velocity: { node: 'var', name: 'backoff' } },
+                    },
+                ],
+                assertions: [],
+            }),
+            snapshot
+        );
+
+        expect(commands.map((command) => command.arguments.velocity)).toEqual([1.5, 2]);
+    });
+
     it('refuses an unregistered operation, a binding on a command that mints no identity, and a forward binding reference', () => {
         const snapshot = createSnapshot();
 
@@ -438,6 +514,30 @@ describe('declarative transform sandbox', () => {
         expect(
             rejectionReason(createDocument({ steps: [ADD_LEAD_CLIP_STEP_ALONE, ADD_LEAD_TRACK_STEP] }), snapshot)
         ).toContain('reads binding "lead" before the step that produces it');
+    });
+
+    it('refuses a literal wearing the binding placeholder prefix, which batch resolution would rewrite', () => {
+        const reason = rejectionReason(
+            createDocument({
+                steps: [
+                    {
+                        id: 'gain-step',
+                        kind: 'emit',
+                        operation: 'setTrackGain',
+                        arguments: {
+                            trackId: { literal: `${DECLARATIVE_TRANSFORM_BINDING_PREFIX}lead` },
+                            gain: { literal: 0.5 },
+                            expectedGain: { literal: 1 },
+                        },
+                    },
+                ],
+            }),
+            createSnapshot()
+        );
+
+        expect(reason).toBe(
+            'literal "$lead" in step "gain-step" argument "trackId" collides with the binding placeholder prefix'
+        );
     });
 
     it('refuses a document whose assertion is false, with the assertion message', () => {
@@ -492,7 +592,10 @@ describe('declarative transform sandbox', () => {
         expect(commands).toEqual([]);
     });
 
-    it('refuses a nested walk that would emit past the emitted command bound', () => {
+    it('compiles exactly the emitted command bound and refuses the next command', () => {
+        // One clip per selected item, two emits per item: the walk lands on the bound exactly.
+        const clipCount = DECLARATIVE_TRANSFORM_MAX_EMITTED_COMMANDS / 2;
+        expect(clipCount).toBeLessThanOrEqual(DECLARATIVE_TRANSFORM_MAX_SELECTOR_LIMIT);
         const wideSnapshot: TransformSnapshot = {
             revision: 'revision-transform-wide',
             tempo: 120,
@@ -502,7 +605,7 @@ describe('declarative transform sandbox', () => {
                     id: 'track-keys',
                     name: 'Keys',
                     contentType: 'midi',
-                    clips: Array.from({ length: DECLARATIVE_TRANSFORM_MAX_SELECTOR_LIMIT }, (_unused, index) => ({
+                    clips: Array.from({ length: clipCount }, (_unused, index) => ({
                         id: `clip-${String(index)}`,
                         name: `Take ${String(index)}`,
                         startBeat: index * 4,
@@ -513,24 +616,80 @@ describe('declarative transform sandbox', () => {
         };
         deepFreeze(wideSnapshot);
 
+        const eachClipTwice: TransformStep = {
+            id: 'each-midi-clip',
+            kind: 'each',
+            selector: 'midiClips',
+            as: 'clip',
+            body: [RAISE_VELOCITY_STEP, { ...RAISE_VELOCITY_STEP, id: 'raise-velocity-again' }],
+        };
+        const atBound = createDocument({
+            selectors: { midiClips: { target: 'clip', where: { contentType: 'midi' }, limit: clipCount } },
+            steps: [eachClipTwice],
+            assertions: [],
+        });
+
+        expect(compileOrThrow(atBound, wideSnapshot)).toHaveLength(DECLARATIVE_TRANSFORM_MAX_EMITTED_COMMANDS);
+
         const reason = rejectionReason(
             createDocument({
-                selectors: {
-                    midiClips: {
-                        target: 'clip',
-                        where: { contentType: 'midi' },
-                        limit: DECLARATIVE_TRANSFORM_MAX_SELECTOR_LIMIT,
+                selectors: { midiClips: { target: 'clip', where: { contentType: 'midi' }, limit: clipCount } },
+                steps: [
+                    eachClipTwice,
+                    {
+                        id: 'one-too-many',
+                        kind: 'emit',
+                        operation: 'setAllVelocities',
+                        arguments: {
+                            clipId: { literal: 'clip-0' },
+                            velocity: { node: 'const', quantity: { unit: 'count', value: 80 } },
+                        },
                     },
+                ],
+                assertions: [],
+            }),
+            wideSnapshot
+        );
+
+        expect(reason).toContain('emitted command bound');
+        expect(reason).toContain('step "one-too-many"');
+        expect(reason).toContain(String(DECLARATIVE_TRANSFORM_MAX_EMITTED_COMMANDS));
+    });
+
+    it('keys every emission of a repeated step and depends on all of them in walk order', () => {
+        const commands = compileOrThrow(createDocument(), createSnapshot());
+
+        expect(commands.map((command) => command.key)).toEqual([
+            'raise-velocity@0',
+            'raise-velocity@1',
+            'add-lead-track',
+            'add-lead-clip',
+        ]);
+        expect(commands.map((command) => command.stepId)).toEqual([
+            'raise-velocity',
+            'raise-velocity',
+            'add-lead-track',
+            'add-lead-clip',
+        ]);
+        expect(commands.at(-1)?.dependencyKeys).toEqual(['raise-velocity@0', 'raise-velocity@1', 'add-lead-track']);
+    });
+
+    it('joins nested iteration indices in a key with the path separator', () => {
+        const commands = compileOrThrow(
+            createDocument({
+                selectors: {
+                    midiClips: { target: 'clip', where: { contentType: 'midi' }, limit: 2 },
+                    midiTracks: { target: 'track', where: { contentType: 'midi' }, limit: 2 },
                 },
                 steps: [
                     {
-                        id: 'each-outer',
+                        id: 'each-track',
                         kind: 'each',
-                        selector: 'midiClips',
-                        as: 'outer',
+                        selector: 'midiTracks',
+                        as: 'track',
                         body: [
                             {
-                                id: 'each-inner',
+                                id: 'each-midi-clip',
                                 kind: 'each',
                                 selector: 'midiClips',
                                 as: 'clip',
@@ -541,22 +700,9 @@ describe('declarative transform sandbox', () => {
                 ],
                 assertions: [],
             }),
-            wideSnapshot
+            createSnapshot()
         );
 
-        expect(reason).toContain('emitted command bound');
-        expect(reason).toContain(String(DECLARATIVE_TRANSFORM_MAX_EMITTED_COMMANDS));
-    });
-
-    it('records a declared dependency and a binding reference as dependency step ids in walk order', () => {
-        const commands = compileOrThrow(createDocument(), createSnapshot());
-
-        expect(commands.map((command) => command.stepId)).toEqual([
-            'raise-velocity',
-            'raise-velocity',
-            'add-lead-track',
-            'add-lead-clip',
-        ]);
-        expect(commands.at(-1)?.dependencyStepIds).toEqual(['raise-velocity', 'add-lead-track']);
+        expect(commands.map((command) => command.key)).toEqual(['raise-velocity@0/0', 'raise-velocity@0/1']);
     });
 });

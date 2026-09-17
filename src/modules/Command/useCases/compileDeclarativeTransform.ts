@@ -1,7 +1,10 @@
 import { createSeededRandom } from '#/utils/SeededRandom/SeededRandom';
 
 import {
+    DECLARATIVE_TRANSFORM_BINDING_PREFIX,
     DECLARATIVE_TRANSFORM_BINDING_PRODUCERS,
+    DECLARATIVE_TRANSFORM_KEY_ITERATION_SEPARATOR,
+    DECLARATIVE_TRANSFORM_KEY_PATH_SEPARATOR,
     DECLARATIVE_TRANSFORM_MAX_EMITTED_COMMANDS,
     DECLARATIVE_TRANSFORM_MAX_SEED,
     DECLARATIVE_TRANSFORM_MAX_STEP_DEPTH,
@@ -47,16 +50,42 @@ type WalkContext = {
 };
 
 type WalkState = {
+    /** Binding name to the key of the one emission that mints it. */
     bindings: Map<string, string>;
     commands: CompiledTransformCommand[];
-    emittedStepIds: string[];
+    /** Every emitted key in walk order, so dependency keys can be ordered against the walk. */
+    emittedKeys: string[];
+    /** Step id to every key that step emitted, because one step inside an `each` emits many. */
+    emittedKeysByStepId: Map<string, string[]>;
+    /** The enclosing `each` iteration indices, outermost first. */
+    iterationPath: number[];
     items: Map<string, TransformItemBinding>;
     variables: Map<string, TransformQuantity>;
 };
 
 type Failure = { reason: string };
 
-type RenderedArguments = { dependencyStepIds: readonly string[]; values: Record<string, unknown> };
+type RenderedArguments = { dependencyKeys: readonly string[]; values: Record<string, unknown> };
+
+function emptyWalkState(variables: Map<string, TransformQuantity>): WalkState {
+    return {
+        bindings: new Map(),
+        commands: [],
+        emittedKeys: [],
+        emittedKeysByStepId: new Map(),
+        iterationPath: [],
+        items: new Map(),
+        variables,
+    };
+}
+
+function commandKey(stepId: string, iterationPath: readonly number[]): string {
+    if (iterationPath.length === 0) {
+        return stepId;
+    }
+    const path = iterationPath.map(String).join(DECLARATIVE_TRANSFORM_KEY_PATH_SEPARATOR);
+    return `${stepId}${DECLARATIVE_TRANSFORM_KEY_ITERATION_SEPARATOR}${path}`;
+}
 
 function failed(reason: string): Failure {
     return { reason };
@@ -109,13 +138,7 @@ function evaluateDocumentVariables(context: WalkContext): Map<string, TransformQ
         );
     }
     const variables = new Map<string, TransformQuantity>();
-    const state: WalkState = {
-        bindings: new Map(),
-        commands: [],
-        emittedStepIds: [],
-        items: new Map(),
-        variables,
-    };
+    const state = emptyWalkState(variables);
     for (const [name, expression] of declared) {
         const result = evaluateTransformExpression(expression, evaluationContext(state, context, `variable "${name}"`));
         if (result.status === 'rejected') {
@@ -126,15 +149,15 @@ function evaluateDocumentVariables(context: WalkContext): Map<string, TransformQ
     return variables;
 }
 
-function orderByWalk(stepIds: readonly string[], walkOrder: readonly string[]): readonly string[] {
-    return [...new Set(stepIds)].sort((left, right) => walkOrder.indexOf(left) - walkOrder.indexOf(right));
+function orderByWalk(keys: readonly string[], walkOrder: readonly string[]): readonly string[] {
+    return [...new Set(keys)].sort((left, right) => walkOrder.indexOf(left) - walkOrder.indexOf(right));
 }
 
 function renderArgument(
     input: { argument: TransformArgument; name: string; step: Extract<TransformStep, { kind: 'emit' }> },
     state: WalkState,
     context: WalkContext
-): { dependencyStepId?: string; value: unknown } | Failure {
+): { dependencyKey?: string; value: unknown } | Failure {
     const { argument, name, step } = input;
     const label = `step "${step.id}" argument "${name}"`;
     if (isExpressionArgument(argument)) {
@@ -145,6 +168,9 @@ function renderArgument(
         return { value: result.quantity.value };
     }
     if ('literal' in argument) {
+        if (typeof argument.literal === 'string' && argument.literal.startsWith(DECLARATIVE_TRANSFORM_BINDING_PREFIX)) {
+            return failed(`literal "${argument.literal}" in ${label} collides with the binding placeholder prefix`);
+        }
         return { value: argument.literal };
     }
     if ('itemId' in argument) {
@@ -154,11 +180,14 @@ function renderArgument(
         }
         return { value: item.id };
     }
-    const producerStepId = state.bindings.get(argument.bindingRef);
-    if (producerStepId === undefined) {
+    const producerKey = state.bindings.get(argument.bindingRef);
+    if (producerKey === undefined) {
         return failed(`${label} reads binding "${argument.bindingRef}" before the step that produces it`);
     }
-    return { dependencyStepId: producerStepId, value: `$${argument.bindingRef}` };
+    return {
+        dependencyKey: producerKey,
+        value: `${DECLARATIVE_TRANSFORM_BINDING_PREFIX}${argument.bindingRef}`,
+    };
 }
 
 function renderArguments(
@@ -167,18 +196,18 @@ function renderArguments(
     context: WalkContext
 ): RenderedArguments | Failure {
     const values: Record<string, unknown> = {};
-    const dependencyStepIds: string[] = [];
+    const dependencyKeys: string[] = [];
     for (const [name, argument] of Object.entries(step.arguments)) {
         const rendered = renderArgument({ argument, name, step }, state, context);
         if (isFailure(rendered)) {
             return rendered;
         }
         values[name] = rendered.value;
-        if (rendered.dependencyStepId !== undefined) {
-            dependencyStepIds.push(rendered.dependencyStepId);
+        if (rendered.dependencyKey !== undefined) {
+            dependencyKeys.push(rendered.dependencyKey);
         }
     }
-    return { dependencyStepIds, values };
+    return { dependencyKeys, values };
 }
 
 function validateBinding(step: Extract<TransformStep, { kind: 'emit' }>, state: WalkState): Failure | null {
@@ -196,16 +225,23 @@ function validateBinding(step: Extract<TransformStep, { kind: 'emit' }>, state: 
     return null;
 }
 
+/**
+ * Expands each declared step id into every key that step emitted, because a step inside an `each`
+ * emits once per iteration and a dependency on the step is a dependency on all of them.
+ */
 function validateDeclaredDependencies(
     step: Extract<TransformStep, { kind: 'emit' }>,
     state: WalkState
 ): readonly string[] | Failure {
-    const declared = step.dependsOn ?? [];
-    const unknown = declared.find((stepId) => !state.emittedStepIds.includes(stepId));
-    if (unknown === undefined) {
-        return declared;
+    const keys: string[] = [];
+    for (const stepId of step.dependsOn ?? []) {
+        const emitted = state.emittedKeysByStepId.get(stepId);
+        if (emitted === undefined) {
+            return failed(`step "${step.id}" depends on "${stepId}", which no earlier step emitted`);
+        }
+        keys.push(...emitted);
     }
-    return failed(`step "${step.id}" depends on "${unknown}", which no earlier step emitted`);
+    return keys;
 }
 
 function emitStep(
@@ -233,20 +269,26 @@ function emitStep(
     if (isFailure(rendered)) {
         return rendered;
     }
-    if (!state.emittedStepIds.includes(step.id)) {
-        state.emittedStepIds.push(step.id);
-    }
+    const key = commandKey(step.id, state.iterationPath);
     state.commands.push({
+        key,
         stepId: step.id,
         operation: step.operation,
         arguments: rendered.values,
         reason: `Declarative transform "${context.document.name}" step "${step.id}".`,
         expectedEffect: `${step.operation} lowered from declarative transform "${context.document.name}".`,
         binding: step.binding ?? null,
-        dependencyStepIds: orderByWalk([...declared, ...rendered.dependencyStepIds], state.emittedStepIds),
+        dependencyKeys: orderByWalk([...declared, ...rendered.dependencyKeys], state.emittedKeys),
     });
+    state.emittedKeys.push(key);
+    const keysForStep = state.emittedKeysByStepId.get(step.id);
+    if (keysForStep === undefined) {
+        state.emittedKeysByStepId.set(step.id, [key]);
+    } else {
+        keysForStep.push(key);
+    }
     if (step.binding !== undefined) {
-        state.bindings.set(step.binding, step.id);
+        state.bindings.set(step.binding, key);
     }
     return null;
 }
@@ -268,9 +310,11 @@ function walkEach(
     if (selection.status === 'rejected') {
         return failed(selection.reason);
     }
-    for (const item of selection.items) {
+    for (const [index, item] of selection.items.entries()) {
         state.items.set(step.as, item);
+        state.iterationPath.push(index);
         const failure = walkSteps(step.body, state, context, depth + 1);
+        state.iterationPath.pop();
         if (failure) {
             state.items.delete(step.as);
             return failure;
@@ -381,13 +425,7 @@ export function compileDeclarativeTransform(
     if (isFailure(variables)) {
         return { status: 'rejected', reason: variables.reason };
     }
-    const state: WalkState = {
-        bindings: new Map(),
-        commands: [],
-        emittedStepIds: [],
-        items: new Map(),
-        variables,
-    };
+    const state = emptyWalkState(variables);
     const walkFailure = walkSteps(document.steps, state, context, 1);
     if (walkFailure) {
         return { status: 'rejected', reason: walkFailure.reason };

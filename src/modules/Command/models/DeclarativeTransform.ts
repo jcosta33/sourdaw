@@ -43,6 +43,18 @@ export const DECLARATIVE_TRANSFORM_SCALING_UNITS: readonly DeclarativeTransformU
  */
 export const DECLARATIVE_TRANSFORM_BINDING_PRODUCERS = ['createBus', 'addTrack', 'addClip'] as const;
 
+/**
+ * The prefix `commandArgumentMetadata` reads to mark an id-shaped argument batch-local, and batch
+ * binding resolution then rewrites. A rendered binding reference wears it; a literal may not.
+ */
+export const DECLARATIVE_TRANSFORM_BINDING_PREFIX = '$';
+
+/** Separates the iteration indices a nested `each` walk contributes to a command key. */
+export const DECLARATIVE_TRANSFORM_KEY_PATH_SEPARATOR = '/';
+
+/** Separates a step id from its iteration path in a command key. */
+export const DECLARATIVE_TRANSFORM_KEY_ITERATION_SEPARATOR = '@';
+
 export type TransformQuantity = { unit: DeclarativeTransformUnit; value: number };
 
 export type TransformSnapshotClip = {
@@ -136,18 +148,21 @@ export type DeclarativeTransformDocument = {
 };
 
 /**
- * One lowered command. `binding` names the batch-local identity this command mints, and
- * `dependencyStepIds` names the emitted steps it must follow — both the steps it declared and the
- * ones its `$binding` arguments read.
+ * One lowered command. `key` identifies this emission, not its step: a step inside an `each` emits
+ * once per iteration, so the key carries the enclosing iteration indices and a caller can map every
+ * emission to its own command id. `binding` names the batch-local identity this command mints, and
+ * `dependencyKeys` names the emissions it must follow in walk order — every emission of each step it
+ * declared, and the exact producing emission of each `$binding` argument it reads.
  */
 export type CompiledTransformCommand = {
+    key: string;
     stepId: string;
     operation: string;
     arguments: Readonly<Record<string, unknown>>;
     reason: string;
     expectedEffect: string;
     binding: string | null;
-    dependencyStepIds: readonly string[];
+    dependencyKeys: readonly string[];
 };
 
 export type DeclarativeTransformCompilation =
