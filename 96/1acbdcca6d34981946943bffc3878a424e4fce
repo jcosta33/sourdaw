@@ -1,0 +1,37 @@
+.agents/skills/ast-grep/SKILL.md
+  s_914af328b3988f::t_5dca7ff9b4c5c9 1-55
+.claude/settings.json
+  s_914af328b3988f::t_c6955e5ca1e7c4 81-102
+AGENTS.md
+  s_914af328b3988f::t_dd4d0c3d4766bf 183-184
+package.json
+  s_914af328b3988f::t_01de64b3cc969c 128
+pnpm-lock.yaml
+  s_914af328b3988f::t_2c086fc1003f42 93-95,260-308,5767-5799
+pnpm-workspace.yaml
+  s_914af328b3988f::t_6dd46a25382f4b 24-28
+public/legal/DEPENDENCY-LICENSES.txt
+  s_914af328b3988f::t_c0f9466815c8dc 10
+release/dependency-license-proofs.json
+  s_914af328b3988f::t_e94bef11af5fd6 64
+release/open-source-inventory.json
+  s_914af328b3988f::t_912083fb019a92 168-169,279,1695,1707
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/createDeEsser.spec.ts
+  s_914af328b3988f::t_8b7e3738b4de1e 5,438-447
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "961acbdcca6d34981946943bffc3878a424e4fce",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
