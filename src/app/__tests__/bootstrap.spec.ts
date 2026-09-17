@@ -276,6 +276,8 @@ vi.mock('#/modules/AiGeneration/useCases', () => ({
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     assertCanonicalLlmActionStrategies: assertCanonicalLlmActionStrategiesMock,
+    getAgentCapabilityCatalog: noop,
+    getAiRuntimeProtocolContracts: noop,
     beginMixAnalysis: noop,
     completeMixAnalysis: noop,
     failMixAnalysis: noop,
@@ -294,6 +296,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    getDeviceManifestProtocolContract: noop,
     setClipAudioAssetStager: noop,
     stageAudioBufferAsset: noop,
     acceptsExternalPluginAutomationParameter: noop,
@@ -395,6 +398,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getCommandProtocolContracts: noop,
     commandBatchPreflightPort: { setProvider: noop },
     commandBatchPreviewPort: { setProvider: noop, setRecoveryProvider: noop },
     configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
@@ -499,6 +503,7 @@ vi.mock('#/modules/Levain/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    getMidiTransformProtocolContract: noop,
     getChordTrackHandlers: sentinelHandlers('ChordTrack'),
     getMidiGrooveHandlers: sentinelHandlers('MidiGroove'),
     getMidiNoteTransformHandlers: sentinelHandlers('MidiNoteTransform'),
@@ -522,6 +527,8 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
+    agentCapabilityDiscoveryPort: { setProvider: noop },
+    getProjectProtocolContracts: noop,
     collectDurableOwnedAudioBufferIds: collectDurableOwnedAudioBufferIdsMock,
     productionBriefActionBatchAdmission: { capture: () => ({ allowsCurrent: () => true }) },
     getProjectHandlers: sentinelHandlers('Project'),

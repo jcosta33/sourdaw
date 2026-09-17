@@ -236,6 +236,7 @@ vi.mock('#/modules/Knead/useCases', async () => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getAgentBuiltinDeviceRuntimeManifest: vi.fn(() => []),
     forgetProjectLatchedPedals: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
     startFaustNote: vi.fn(),
@@ -361,6 +362,7 @@ vi.mock('#/modules/Routing/useCases', () => ({
     wireSidechainRoutes: vi.fn(),
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
+    getAgentDeviceFactoryManifest: vi.fn(() => ({ devices: [] })),
     activateExternalPlugin: vi.fn(() => Promise.resolve()),
     beginProjectSessionPluginRetirement: vi.fn(),
     clearExternalPluginRestoreFailure: vi.fn(),
