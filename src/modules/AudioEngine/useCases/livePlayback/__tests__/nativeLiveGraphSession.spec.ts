@@ -18,6 +18,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore, type Device, type Track } from '#/modules/Arrangement/stores';
+import { readAttachedCrumbsInstanceIds } from '#/modules/Crumbs/stores';
 import { markCrumbsEngineAttached, retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
 import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
 
@@ -1920,6 +1921,38 @@ describe('startNativeLiveGraphSession', () => {
             reason: 'engine-not-running: no default output device',
         });
         expect(nativeLiveGraphSession.backend).toBeNull();
+    });
+
+    // A refusal does not undo a Crumbs attach (#4204). The native attach pass
+    // runs before the batch is mapped, so a batch the ring or the mapper then
+    // refuses has still taken those instances — and names them. This is the
+    // only report of that attach the Play will get: dropping it would leave the
+    // sampler on Web Audio while the engine holds it, which is exactly the
+    // state a refusal makes a producer resend against.
+    it('records the Crumbs instances a refused topology batch attached anyway', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [crumbsDevice('d-crumbs')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.applyGraphCommands.mockResolvedValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'engine-not-running: no default output device',
+            attachedCrumbs: [{ instanceId: 'd-crumbs' }],
+        });
+
+        const result = await startHeldSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason: 'engine-not-running: no default output device',
+        });
+        expect([...readAttachedCrumbsInstanceIds()]).toEqual(['d-crumbs']);
     });
 
     it('reads the project as it stands when the batch is sent, not when the gesture happened', async () => {

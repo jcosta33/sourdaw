@@ -490,17 +490,26 @@ async function applyTopologyBatch(input: {
     }
     const commands = [...input.commands, ...latchedPedalCommands(builtDeviceAddresses(input.commands))];
     const result = await backend.apply({ schemaVersion: 1, replaceTopology: true, commands });
+    // A batch that starts the engine takes over the plugin instances loaded
+    // before there was one — reported to their devices as loaded but processing
+    // no audio, and corrected nowhere else. Reported before the session
+    // bookkeeping, because a device told late has already been read as degraded.
+    //
+    // Ahead of the acceptance checks, as every other route reports, because the
+    // native Crumbs attach pass runs *before* the batch is mapped: a batch the
+    // ring or the mapper then refuses has still taken those instances and names
+    // them. Judging acceptance first would drop the only report of an attach
+    // this Play will get, leaving the sampler on Web Audio with the engine
+    // holding it. The plugin half is unaffected — its attach is behind the
+    // fence, and both `markAttachedInstances` and `spliceInstancesAttachedBy`
+    // read applied answers only.
+    reportAttachedPlugins(result);
     if (result.acceptance === 'rejected') {
         return { outcome: 'refused', reason: result.reason };
     }
     if (result.application !== 'applied') {
         return { outcome: 'unreconciled', reason: result.reason };
     }
-    // A batch that starts the engine takes over the plugin instances loaded
-    // before there was one — reported to their devices as loaded but processing
-    // no audio, and corrected nowhere else. Reported before the session
-    // bookkeeping, because a device told late has already been read as degraded.
-    reportAttachedPlugins(result);
     // Replaced rather than merged: this batch tore every strip down inside its
     // own fence, so a strip missing from these reports is a strip the engine no
     // longer has, and a mirror addressing one must find nothing.
