@@ -1,0 +1,59 @@
+package.json
+  s_914af328b3988f::t_be189ab1f2fcf2 83
+scripts/agent-campaign/run-evidence-gate.ts
+  s_914af328b3988f::t_9d1917e8b1ae49 48-50
+  s_914af328b3988f::t_1537150bd79dae 1-10,13-18,51-156,163,165-288,290-296,307-337,341-376,386-398,400-404,407-425,436-472,474-485,490,492,494-503
+  s_914af328b3988f::t_116403661b1c34 473
+  s_914af328b3988f::t_8b0b91585880ea 486-489,491,493
+  s_914af328b3988f::t_55404c68bcb2a5 297-306
+  s_914af328b3988f::t_b002f16a8db89b 11-12,19-47,157-162,164,289,338-340,377-385,399,405-406,426-435
+  s_914af328b3988f::t_29fc574e60c214 504-508
+scripts/agent-campaign/evidenceManifest.ts
+  s_914af328b3988f::t_fe8686db3c8eb7 1-126,128-133,135-140,142-147,149-271,282-286,288-289,292-339,341-393
+  s_914af328b3988f::t_e766cf0dfba3cb 272-281,287,290-291
+  s_914af328b3988f::t_7d365b8f42a273 340
+  s_914af328b3988f::t_ac9875f9067d6c 127
+  s_914af328b3988f::t_fb167ebe6bde33 134
+  s_914af328b3988f::t_22edeb46a2124c 141
+  s_914af328b3988f::t_5d60d2221743a3 148
+scripts/__tests__/runEvidenceGate.spec.ts
+  s_914af328b3988f::t_5dfe993e180a90 54-56
+  s_914af328b3988f::t_b46b54d59eabc3 1,3-5,7-32,35-53,57-88,97-98,100,102-241,243-258
+  s_914af328b3988f::t_934f46fde12668 2
+  s_914af328b3988f::t_3f8a74027514d9 33-34
+  s_914af328b3988f::t_2c7272adcf94eb 6
+  s_914af328b3988f::t_000cc4cc82ef38 89-96,99,101
+  s_914af328b3988f::t_d636509fc6781a 242
+docs/architecture/agent-release-gates.md
+  s_914af328b3988f::t_65e05e3f9b23f2 1-106
+src/app/__tests__/agentCampaignBaseline.spec.ts
+  s_914af328b3988f::t_614c85bb01d5f0 1-17,19-25,31,34,36-60,67-68,73-74,86-88,94-169,172,177-179,183-191
+  s_914af328b3988f::t_9e4585a11951b6 61-66,69-72
+  s_914af328b3988f::t_acf0c7751c0885 89-93
+  s_914af328b3988f::t_4d5aa6f33d3386 170-171,173-176,180-182
+  s_914af328b3988f::t_299fb55eb057e8 18,26-30,32-33,35
+  s_914af328b3988f::t_5640e1b4fa8d97 75-85
+  s_914af328b3988f::t_41ef8e0c944d96 192
+.gitignore
+  s_914af328b3988f::t_9ca7d203afaf88 62-64
+evidence/agent-campaign/manifest.json
+  s_914af328b3988f::t_807343ea01b0ab 1-970
+scripts/agent-campaign/evidenceGateContract.ts
+  s_914af328b3988f::t_f02a6cdf2a5716 1-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b94686e65209f08c4c210034078dc2d34bd0bb75",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
