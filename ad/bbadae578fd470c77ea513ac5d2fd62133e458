@@ -1,0 +1,57 @@
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_9b530f08172a54::t_38d3d0ef1a52d9 337-338
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/forkProjectBranch.spec.ts
+  s_9b530f08172a54::t_6034efa32fdfa9 160,164-168
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_9b530f08172a54::t_9ee928cc09cfaa 413-419
+  s_9b530f08172a54::t_7a0f21d83b83e2 293-303,309
+  s_9b530f08172a54::t_3fc6b066359576 315-318
+  s_9b530f08172a54::t_0d74256b5514d2 370-375,377-389,420-423
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_9b530f08172a54::t_da024f034a0290 134-145
+  s_9b530f08172a54::t_b7393a39536e1e 2115-2170
+  s_9b530f08172a54::t_3ac605f9f116da 1955,1957-1959,1966,1969-2004
+src/modules/CrdtDocument/useCases/__tests__/loadCrdtProject.spec.ts
+  s_9b530f08172a54::t_38927cc13c445f 172-259,261-262
+  s_9b530f08172a54::t_83eb976069c51d 2,4-6
+  s_9b530f08172a54::t_536bb5e8c879ac 260
+  s_9b530f08172a54::t_42ebf55f1dcc0e 51-64
+  s_9b530f08172a54::t_facf0fd6e96109 18-19,25-26,49-50,170-171
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/runBranchLineageTransition.spec.ts
+  s_9b530f08172a54::t_b829af67a1bad3 187-190,194
+  s_9b530f08172a54::t_8fd75dcbe58a5f 213-215,217
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranch.spec.ts
+  s_9b530f08172a54::t_ff6f966536eb2a 511-514,516
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/mergeBranch.spec.ts
+  s_9b530f08172a54::t_ee1ba900c00f1c 144-147,149
+src/modules/CrdtDocument/useCases/resetCrdtProjectAuthority.ts
+  s_9b530f08172a54::t_76c61588262920 85-89
+  s_9b530f08172a54::t_da8c5d7d34745d 90
+src/modules/CrdtDocument/useCases/__tests__/resetCrdtProjectAuthority.spec.ts
+  s_9b530f08172a54::t_aa0a2bdb65e9d0 258-284,288-290
+  s_9b530f08172a54::t_18a2ae49d50e1d 285-287,291-292
+  s_9b530f08172a54::t_b8571dd7a4ea5b 257
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchWritesUnderStoragePressure.spec.ts
+  s_9b530f08172a54::t_3fa7c7ff16ac59 28-34,43-45,67-76,82-98,105-135,137-139,143-150,170,186-222,230,239,246,250
+src/modules/CrdtDocument/repositories/branchStateAuthority.ts
+  s_9b530f08172a54::t_0629bcd7653ddb 354
+  s_9b530f08172a54::t_6baa546a5f0168 478-481,483
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchTransition.ts
+  s_9b530f08172a54::t_eb41adefea7ebd 107-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "adbbadae578fd470c77ea513ac5d2fd62133e458",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
