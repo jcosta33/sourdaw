@@ -1,0 +1,49 @@
+src/modules/AiRuntime/useCases/__tests__/agentRetentionAndDeletion.spec.ts
+  s_914af328b3988f::t_0d88358cf3cd4a 512-589
+  s_914af328b3988f::t_083e1b124b889d 9,13
+  s_914af328b3988f::t_4f696f46ba8cae 94-185
+  s_914af328b3988f::t_e8fcd1a3793fc1 312-402
+  s_914af328b3988f::t_f9c1e62b28e73d 22
+  s_914af328b3988f::t_cbc54dd755ecc1 487
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_914af328b3988f::t_6f2d92e22dd2b3 1832-1856,1859-1860,1869-1871,1880-1889,1891-1895,1898-1901,1905,1908-1917,1921,1923-1924,1926,1928,1930
+  s_9b530f08172a54::t_7bd7ff51720fb4 1831
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_914af328b3988f::t_a98ae12bec02c8 2095-2098
+  s_914af328b3988f::t_172d9c14c15a17 2053
+  s_914af328b3988f::t_bb3b52c9d392bc 2073
+  s_914af328b3988f::t_b49d2e74fdadf0 1856,1866-1869,1874,1881-1884
+  s_914af328b3988f::t_9e69a417d3cb4b 2084
+src/modules/AiRuntime/AGENTS.md
+  s_914af328b3988f::t_43c06fdb2c018d 33
+src/modules/AiRuntime/useCases/deleteAgentRun.ts
+  s_914af328b3988f::t_92026063c67faf 1-2
+  s_914af328b3988f::t_8bb77cd3280a7a 39,47-51,53,61
+src/modules/AiRuntime/useCases/deleteAgentRunArtifacts.ts
+  s_914af328b3988f::t_60882ee932d5ac 9-12
+  s_914af328b3988f::t_e9a70c8c7ab890 38-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fd57c6d69ca67e3f1e465e591a6913fe7ec60c04",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
