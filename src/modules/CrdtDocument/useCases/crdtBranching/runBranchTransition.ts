@@ -105,13 +105,10 @@ async function recoverFailedTransition({
         // transaction leaves the store holding it. Undoing it here would revert
         // a branch the user created after this transition failed.
         //
-        // Memory goes back only on this path. When the transition's own commit
-        // never landed, the list the caller captured is stale by definition: a
-        // refused commit hydrated the store with the fresh durable envelope
-        // (`conflict`, `session-active`), and a write that never reached storage
-        // (`write-failed`) left the store on whatever was already there. Putting
-        // `previousState` back over either would show a branch list no revision
-        // describes.
+        // Memory goes back only on this path. The transition's own commit
+        // landed, so `previousState` is the list it displaced; without that
+        // commit whatever the caller captured is stale, and restoring it would
+        // show a branch list no revision describes.
         branchStore.set(recoveredState);
         const rolledBack = await branchStateAuthority.commit({
             expectedRevision: committedRevision,

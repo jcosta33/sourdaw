@@ -1,9 +1,10 @@
 import { change, init, save } from '@automerge/automerge';
 import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { createControlledLockManager, type ControlledLockManager } from '#/infra/testing/createControlledLockManager';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
+import { holdBranchStateLock, settleBranchStateLocks } from '../../repositories/__tests__/branchStateHarness';
 import { loadCrdtProject } from '../loadCrdtProject';
 
 type TestPersistenceSnapshot = {
@@ -45,22 +46,6 @@ vi.mock('../runCrdtPersistenceLoad', () => ({
         }
     ),
 }));
-
-/** Hold a lock the way a live instance does: granted now, released on demand. */
-function holdLock(manager: ControlledLockManager, name: string): () => void {
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => {
-        release = resolve;
-    });
-    void manager.locks.request(name, { mode: 'exclusive' }, async () => held);
-    return release;
-}
-
-function nextMacrotask(): Promise<void> {
-    return new Promise((resolve) => {
-        setTimeout(resolve, 0);
-    });
-}
 
 describe('loadCrdtProject', () => {
     beforeEach(() => {
@@ -234,11 +219,11 @@ describe('loadCrdtProject', () => {
             // The recovery has to take the transaction lock to write the backup
             // back, and this holds it, so the boot stays pending for as long as
             // the test wants it to.
-            const releaseTransactionLock = holdLock(manager, 'sourdaw:branch-state');
+            const releaseTransactionLock = holdBranchStateLock(manager, 'sourdaw:branch-state');
             expect(branchStateAuthority.hydrateFromDurableState()).toBe('hydrated');
             expect(branchStore.value).toEqual(sessionProjectedList);
             const boot = branchStateAuthority.settleBoot();
-            await nextMacrotask();
+            await settleBranchStateLocks();
 
             mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
                 authority: { epoch: 'test-project', revision: 1, rootLineage: 'main' },

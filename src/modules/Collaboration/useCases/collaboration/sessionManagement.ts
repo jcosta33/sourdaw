@@ -225,6 +225,13 @@ function sanitizePresence(data: PresenceDelta): PresenceDelta {
 // -- Branch sync helpers --
 
 /**
+ * The branch lists this session is publishing right now, one entry per
+ * in-flight projection. A projection hydrates the store before it is durable,
+ * so this is what tells the mirror that list came from the doc.
+ */
+const projectingBranchesJson: string[] = [];
+
+/**
  * Start session-scoped branch metadata sync.
  *
  * For the host: seeds the `__branches__` Automerge doc with current branch list.
@@ -293,13 +300,11 @@ function stopBranchSubscriptions(): void {
 /**
  * Mirror local branch mutations into the Automerge doc.
  *
- * The write-back loop is closed by comparing lists, not by a flag raised for the
- * duration of a projection. Publishing an incoming list is asynchronous — the
- * durable write takes a lock — and a local branch commit queued behind that same
- * lock hydrates the store inside the projection's window; a flag would have
- * swallowed it and the peers would never have seen the branch. The doc read here
- * is the one the projection wrote the store from, so a pure echo compares equal
- * and a local write does not.
+ * The mirror never writes a list that came from the doc: a projection's hydrate
+ * echoed back re-notifies the projection, which hydrates again, and two lists
+ * queued behind the durable lock trade places for as long as the session lives.
+ * The exclusion is per list rather than a flag over the whole projection window,
+ * because that flag swallowed the local commits that hydrated inside it.
  */
 function subscribeBranchMirror(owner: InstalledSessionOwner | null): () => void {
     return branchStore.subscribe((state) => {
@@ -312,8 +317,12 @@ function subscribeBranchMirror(owner: InstalledSessionOwner | null): () => void 
         if (!hasCrdtDoc(DOC_BRANCHES)) {
             return;
         }
+        const stateJson = JSON.stringify(state.branches);
+        if (stateJson === sessionState.lastProjectedBranchesJson || projectingBranchesJson.includes(stateJson)) {
+            return;
+        }
         const mirrored = getCrdtDoc<{ branches: unknown }>(DOC_BRANCHES)?.branches;
-        if (JSON.stringify(state.branches) === JSON.stringify(mirrored)) {
+        if (stateJson === JSON.stringify(mirrored)) {
             return;
         }
         const branches = structuredClone(state.branches);
@@ -367,7 +376,12 @@ function subscribeBranchProjection(owner: InstalledSessionOwner | null, handle: 
         if (incomingJson === sessionState.lastProjectedBranchesJson) {
             return;
         }
+        projectingBranchesJson.push(incomingJson);
         void projectBranchSession(handle, { branches: doc.branches, activeBranchId }).then((result) => {
+            const projecting = projectingBranchesJson.indexOf(incomingJson);
+            if (projecting !== -1) {
+                projectingBranchesJson.splice(projecting, 1);
+            }
             if (result.status === 'committed') {
                 // Recorded only once the list is durable. Recording it on
                 // the attempt would make the next identical arrival a
@@ -398,6 +412,7 @@ function stopBranchSync(): Promise<BranchSessionEndOutcome> | null {
     stopBranchSubscriptions();
     removeCrdtDoc(DOC_BRANCHES);
     sessionState.lastProjectedBranchesJson = null;
+    projectingBranchesJson.length = 0;
 
     const handle = sessionState.branchSession;
     sessionState.branchSession = null;

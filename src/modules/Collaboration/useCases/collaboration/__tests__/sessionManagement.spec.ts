@@ -341,6 +341,12 @@ function latestAutomergeSync() {
 function latestAssetTransfer() {
     return assetTransferMock.instances.at(-1)!;
 }
+function nextMacrotask(): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, 0);
+    });
+}
+
 function makePeer(overrides: Partial<PeerInfo> = {}): PeerInfo {
     return {
         id: 'peer-x',
@@ -532,9 +538,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
     afterEach(async () => {
         vi.useRealTimers();
+        // `clearAllMocks` drops recorded calls but keeps implementations, so
+        // anything a case wires up has to be reset back to the hoisted default
+        // here or it runs inside every later case.
         crdtMock.getCrdtDoc
             .mockReset()
             .mockImplementation((docId: string) => (docId === 'root' ? rootDocument : undefined));
+        crdtMock.mutateCrdtDoc.mockReset();
+        crdtMock.projectBranchSession.mockReset();
         sessionRuntimePrimitives.cleanup();
         await sessionRuntimePrimitives.settleRetainedTeardown().catch(() => undefined);
     });
@@ -2002,6 +2013,76 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             projection.resolve({ status: 'committed', revision: 2 });
             await projection.promise;
+        });
+
+        /**
+         * A local commit and a peer change queued one behind the other used to
+         * feed each other forever: every projection hydrated the store with a
+         * list the doc no longer held, the mirror wrote that list back, and the
+         * change listener queued the other one again — one durable branch write
+         * and one broadcast per macrotask, without end.
+         */
+        it('settles on one branch list instead of trading a local commit against a peer change', async () => {
+            const base = { id: 'base' };
+            const local = { id: 'local' };
+            const peer = { id: 'peer' };
+            const doc: { branches: unknown[] } = { branches: [base] };
+            branchStoreMock.value = { branches: [base], activeBranchId: 'base' };
+            crdtMock.hasCrdtDoc.mockReturnValue(true);
+            crdtMock.getCrdtDoc.mockImplementation((docId: string) => (docId === '__branches__' ? doc : undefined));
+            const branchStoreListener = () =>
+                branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
+                    state: { branches: unknown[]; activeBranchId: string } | null
+                ) => void;
+            const crdtChangeListener = () =>
+                crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (docId?: string) => void;
+
+            // The durable projection queue: one list per macrotask, hydrating
+            // the store — and so running the mirror — before it reports
+            // committed, exactly as the real lock-serialised write does.
+            let projections = Promise.resolve();
+            let revision = 0;
+            crdtMock.projectBranchSession.mockImplementation((_handle, next) => {
+                const projected = next as { branches: unknown[]; activeBranchId: string };
+                const hydrated = projections.then(async () => {
+                    await nextMacrotask();
+                    branchStoreMock.value = projected;
+                    branchStoreListener()(projected);
+                });
+                projections = hydrated.then(
+                    () => undefined,
+                    () => undefined
+                );
+                revision += 1;
+                const committed = { status: 'committed' as const, revision };
+                return hydrated.then(() => committed);
+            });
+
+            await sessionRuntimePrimitives.startBranchSync(true);
+            crdtMock.mutateCrdtDoc.mockImplementation(
+                ({ id, changeFn }: { id: string; changeFn: (target: Record<string, unknown>) => void }) => {
+                    if (id !== '__branches__') {
+                        return;
+                    }
+                    changeFn(doc);
+                    crdtChangeListener()('__branches__');
+                }
+            );
+
+            // The local commit hydrates the store, so the mirror publishes it
+            // and the change listener queues a projection of it. The peer's
+            // change lands before that projection runs.
+            branchStoreListener()({ branches: [base, local], activeBranchId: 'base' });
+            doc.branches = [base, peer];
+            crdtChangeListener()('__branches__');
+            for (let macrotask = 0; macrotask < 20; macrotask += 1) {
+                await nextMacrotask();
+            }
+
+            expect(crdtMock.projectBranchSession.mock.calls.length).toBeLessThanOrEqual(3);
+            const settledJson = JSON.stringify(doc.branches);
+            expect(JSON.stringify(branchStoreMock.value?.branches)).toBe(settledJson);
+            expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(settledJson);
         });
 
         it('does not mirror branch mutations when the doc has not been created yet', async () => {
