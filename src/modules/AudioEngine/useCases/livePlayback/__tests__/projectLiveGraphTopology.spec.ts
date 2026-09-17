@@ -113,8 +113,13 @@ function createDevice(overrides: Partial<Device> & { id: string }): Device {
 }
 
 function project(overrides: Partial<LiveGraphTopologyInput>): readonly AudioGraphCommand[] {
+    const stripTracks = overrides.stripTracks ?? [];
     return projectLiveGraphTopology({
-        stripTracks: [],
+        stripTracks,
+        // The default keeps every existing case's pad-ordinal reading
+        // unchanged: only a fixture that deliberately drops a sibling from
+        // the live strip list needs to pass a real `projectTracks` of its own.
+        projectTracks: stripTracks,
         soloGatedTrackIds: new Set(),
         vcaMultiplierByTrackId: new Map(),
         attachedInstanceIds: new Set(),

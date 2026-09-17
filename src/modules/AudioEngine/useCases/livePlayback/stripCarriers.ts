@@ -56,6 +56,20 @@ export type StripCarrier = Readonly<{ carrier: 'native' }> | Readonly<{ carrier:
 export type StripCarriersInput = Readonly<{
     /** Every track and bus the live engine builds a strip for, in project order. */
     stripTracks: readonly Track[];
+    /**
+     * Every track in the project, in project order, including tracks with no
+     * live strip.
+     *
+     * The pad-ordinal law is read over this list rather than over
+     * `stripTracks`, because every routing consumer resolves the same ordinal
+     * over it too (`setTrackOutput.ts`, `refreshToasterPadBindings.ts`,
+     * `compileTrackStripInitializationSnapshot.ts`): a plain folder or a
+     * disabled child drops out of `stripTracks` but still occupies a pad slot
+     * in the list routing counts, and reading the shorter list here would
+     * shift every later child's ordinal out of step with the binding routing
+     * actually made.
+     */
+    projectTracks: readonly Track[];
     /** The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}. */
     attachedInstanceIds: ReadonlySet<string>;
     /** What each strip plays, from {@link projectLiveGraphProgramme}. */
@@ -109,6 +123,7 @@ type PathObstruction =
 type CarrierContext = Readonly<{
     stripById: ReadonlyMap<string, Track>;
     stripTracks: readonly Track[];
+    projectTracks: readonly Track[];
     busStripIds: ReadonlySet<string>;
     trackStripIds: ReadonlySet<string>;
     attachedInstanceIds: ReadonlySet<string>;
@@ -203,15 +218,19 @@ function webReasonWithoutNativePlayback(track: Track, context: CarrierContext): 
  * Toaster whose pads reach child tracks cannot be represented at all: the
  * parent's own strip only ever plays one output, and `resolveToasterPadBinding`
  * — the ordinal-under-16 law that decides which child plays which pad — is
- * reused here rather than restated, so a child beyond the pad count keeps
- * today's answer instead of a false one.
+ * reused here rather than restated. It is read over `context.projectTracks`,
+ * the full project track list, rather than `stripTracks`, because every
+ * routing consumer resolves the same ordinal over the full list: a plain
+ * folder or a disabled child still occupies a pad slot for routing even
+ * though it builds no live strip, so a child with no live strip still
+ * occupies its pad slot here too, exactly as routing counts it.
  */
 function padBindingReason(track: Track, context: CarrierContext): string | null {
     const hostsToaster = track.devices.some((device) => device.type === 'toaster');
-    if (hostsToaster && context.stripTracks.some((candidate) => candidate.parentId === track.id)) {
+    if (hostsToaster && context.projectTracks.some((candidate) => candidate.parentId === track.id)) {
         return 'its pads route to child tracks';
     }
-    const binding = resolveToasterPadBinding(context.stripTracks, track.id);
+    const binding = resolveToasterPadBinding(context.projectTracks, track.id);
     if (!binding) {
         return null;
     }
@@ -344,10 +363,11 @@ function firstFailure(
  * reads it to say which plugins a musician will not be able to hear.
  */
 export function projectStripCarriers(input: StripCarriersInput): ReadonlyMap<string, StripCarrier> {
-    const { stripTracks, attachedInstanceIds, programme, inputMonitoredTrackIds } = input;
+    const { stripTracks, projectTracks, attachedInstanceIds, programme, inputMonitoredTrackIds } = input;
     const context: CarrierContext = {
         stripById: new Map(stripTracks.map((track): [string, Track] => [track.id, track])),
         stripTracks,
+        projectTracks,
         busStripIds: new Set(stripTracks.filter((track) => track.kind === 'bus').map((track) => track.id)),
         trackStripIds: new Set(stripTracks.filter((track) => track.kind !== 'bus').map((track) => track.id)),
         attachedInstanceIds,
