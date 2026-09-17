@@ -3,6 +3,7 @@ import { type ReactElement, useEffect, useState } from 'react';
 import { Cpu, Play, Send, Square } from 'lucide-react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
@@ -717,6 +718,10 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 To timeline
                             </DawPluginChip>
                         </Row>
+                        <DawInlineHint>
+                            Play sounds the pattern live only. To timeline writes it to the arrangement for export and
+                            native playback.
+                        </DawInlineHint>
                         <div role="status" className="text-[9px] leading-4 text-muted-foreground">
                             {grooveStatusMessage}
                         </div>
