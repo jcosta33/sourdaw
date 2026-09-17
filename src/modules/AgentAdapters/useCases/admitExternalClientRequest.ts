@@ -7,22 +7,37 @@
  * client has to pass, wherever it connected from.
  *
  * The order is deliberate. Transport comes first, so a disabled door refuses
- * before anything about the caller is consulted. Identity comes next, so a
- * revoked client hears that it was revoked rather than that it is a stranger.
- * The schema version comes before the operation, because a client speaking a
- * version this build does not know cannot be told anything true about which
- * operations it holds.
+ * before anything about the caller is consulted. Identity comes next: a client
+ * is the grant whose secret it can present, so a name without the token and a
+ * name nobody granted are the same refusal — `grant-missing` — and a peer
+ * spraying client ids learns nothing about which ones exist. Revocation is
+ * reported only to the holder of the token, because only the holder had
+ * anything to lose. The schema version comes before the operation, because a
+ * client speaking a version this build does not know cannot be told anything
+ * true about which operations it holds.
  */
 
 import {
     EXTERNAL_CLIENT_CONTRACT_SCHEMA_VERSION,
+    externalClientTokenDigest,
     isExternallyReachableTransport,
     type ExternalClientAdmission,
+    type ExternalClientGrant,
     type ExternalClientRequest,
 } from '../models/ExternalClientContract';
 import { readExternalClientSession } from '../stores/externalClientSessionStore';
 
 import { normalizeExternalClientContract } from './normalizeExternalClientContract';
+
+/**
+ * The presented token against the stored digest.
+ *
+ * The comparison is over digests, so what an early exit could time is how far
+ * two SHA-256 outputs agree — a figure nobody can walk back to a token.
+ */
+function presentsGrantToken(grant: ExternalClientGrant, grantToken: string): boolean {
+    return grantToken.length > 0 && externalClientTokenDigest(grantToken) === grant.tokenDigest;
+}
 
 export function admitExternalClientRequest(request: ExternalClientRequest): ExternalClientAdmission {
     const session = readExternalClientSession();
@@ -31,7 +46,7 @@ export function admitExternalClientRequest(request: ExternalClientRequest): Exte
     }
 
     const grant = session.grants[request.clientId];
-    if (!grant || grant.transport !== request.transport) {
+    if (!grant || grant.transport !== request.transport || !presentsGrantToken(grant, request.grantToken)) {
         return { status: 'refused', reason: 'grant-missing' };
     }
     if (grant.revokedAt !== null) {

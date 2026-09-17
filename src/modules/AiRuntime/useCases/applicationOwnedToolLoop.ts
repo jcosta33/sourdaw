@@ -5,7 +5,12 @@ import {
     MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH,
 } from '#/modules/Command/useCases';
 import { getAgentDeviceFactoryManifest } from '#/modules/PluginHost/useCases';
-import { getProjectProtocolContracts, queryAgentDiscovery, querySemanticProject } from '#/modules/Project/useCases';
+import {
+    parseAgentDiscoveryInput,
+    parseSemanticProjectQueryInput,
+    queryAgentDiscovery,
+    querySemanticProject,
+} from '#/modules/Project/useCases';
 
 import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabilityOperations';
 import { type AgentPlanProposal } from '../models/AgentRun';
@@ -48,14 +53,10 @@ const DEFAULT_LIMITS = {
 const CREATIVE_TURN_ALLOWANCE = 1;
 const MAX_CALL_ID_LENGTH = 256;
 const MAX_FILTER_STRING_LENGTH = 256;
-const MAX_CURSOR_LENGTH = 256;
-const MAX_REVISION_LENGTH = 65_536;
 const CATALOG_CURSOR_PATTERN = new RegExp(AGENT_CATALOG_CURSOR_PATTERN, 'u');
 
 type QueryInput = Parameters<typeof querySemanticProject>[0];
-type QueryFilters = NonNullable<QueryInput['filters']>;
 type DiscoveryInput = Parameters<typeof queryAgentDiscovery>[0];
-type DiscoveryFilters = NonNullable<DiscoveryInput['filters']>;
 type DiscoveryVerdict = Exclude<ReturnType<typeof queryAgentDiscovery>, { status: 'receipt' }>;
 type ParsedDiscovery = { status: 'valid'; input: DiscoveryInput } | { status: 'invalid'; reason: string };
 type ApplicationToolPlanningOutcome =
@@ -142,198 +143,31 @@ function byteLength(value: string): number {
     return new TextEncoder().encode(value).byteLength;
 }
 
-function isQueryType(value: unknown): value is QueryInput['type'] {
-    return (
-        typeof value === 'string' &&
-        getProjectProtocolContracts().query.operations.some((operation) => operation.name === value)
-    );
-}
+/** The loop's own words for the part of an input the owner's parser refused. */
+const STRICT_CONTRACT_PART: Readonly<Record<'arguments' | 'filters' | 'page' | 'revision', string>> = {
+    arguments: 'arguments do not match',
+    filters: 'filters do not match',
+    page: 'page does not match',
+    revision: 'revision does not match',
+};
 
-function parseStringFilter(filters: QueryFilters, key: string, value: unknown): boolean {
-    if (typeof value !== 'string' || value.length > MAX_FILTER_STRING_LENGTH) {
-        return false;
-    }
-    switch (key) {
-        case 'stableId':
-            filters.stableId = value;
-            return true;
-        case 'exactName':
-            filters.exactName = value;
-            return true;
-        case 'fuzzyName':
-            filters.fuzzyName = value;
-            return true;
-        case 'kind':
-            filters.kind = value;
-            return true;
-        case 'tag':
-            filters.tag = value;
-            return true;
-        case 'role':
-            filters.role = value;
-            return true;
-        case 'parentId':
-            filters.parentId = value;
-            return true;
-        case 'sectionId':
-            filters.sectionId = value;
-            return true;
-        case 'deviceType':
-            filters.deviceType = value;
-            return true;
-        case 'deviceCategory':
-            filters.deviceCategory = value;
-            return true;
-        case 'routeFromId':
-            filters.routeFromId = value;
-            return true;
-        case 'routeToId':
-            filters.routeToId = value;
-            return true;
-        case 'assetType':
-            filters.assetType = value;
-            return true;
-        default:
-            return false;
-    }
-}
-
-function parseBooleanFilter(filters: QueryFilters, key: string, value: unknown): boolean {
-    if (typeof value !== 'boolean') {
-        return false;
-    }
-    switch (key) {
-        case 'selected':
-            filters.selected = value;
-            return true;
-        case 'locked':
-            filters.locked = value;
-            return true;
-        case 'muted':
-            filters.muted = value;
-            return true;
-        case 'soloed':
-            filters.soloed = value;
-            return true;
-        case 'hasAutomation':
-            filters.hasAutomation = value;
-            return true;
-        default:
-            return false;
-    }
-}
-
-function parseNumberFilter(filters: QueryFilters, key: string, value: unknown): boolean {
-    if (
-        typeof value !== 'number' ||
-        !Number.isFinite(value) ||
-        (key === 'minInferredConfidence' && (value < 0 || value > 1))
-    ) {
-        return false;
-    }
-    switch (key) {
-        case 'startBeat':
-            filters.startBeat = value;
-            return true;
-        case 'endBeat':
-            filters.endBeat = value;
-            return true;
-        case 'minInferredConfidence':
-            filters.minInferredConfidence = value;
-            return true;
-        default:
-            return false;
-    }
-}
-
-function parseFilters(value: unknown): { status: 'valid'; filters: QueryFilters } | { status: 'invalid' } {
-    if (!isRecord(value)) {
-        return { status: 'invalid' };
-    }
-    const filters: QueryFilters = {};
-    for (const [key, filterValue] of Object.entries(value)) {
-        if (
-            parseStringFilter(filters, key, filterValue) ||
-            parseBooleanFilter(filters, key, filterValue) ||
-            parseNumberFilter(filters, key, filterValue)
-        ) {
-            continue;
-        }
-        if (key === 'contentType' && (filterValue === 'audio' || filterValue === 'midi')) {
-            filters.contentType = filterValue;
-            continue;
-        }
-        return { status: 'invalid' };
-    }
-    return { status: 'valid', filters };
-}
-
+/**
+ * The strict argument contract for one query call.
+ *
+ * The contract belongs to the owner that answers the call, so this reads the
+ * owner's published parser rather than keeping a second copy of the key set and
+ * the bounds. Only the wording of a refusal is the loop's own, because a
+ * receipt names the tool the provider called.
+ */
 function parseProjectQueryArguments(argumentsValue: Record<string, unknown>): ParsedQuery {
-    const allowedKeys = new Set(['type', 'filters', 'page', 'sinceRevision']);
-    if (Object.keys(argumentsValue).some((key) => !allowedKeys.has(key)) || !isQueryType(argumentsValue.type)) {
-        return { status: 'invalid', reason: 'project.query arguments do not match the strict query contract' };
+    const parsed = parseSemanticProjectQueryInput(argumentsValue);
+    if (parsed.status === 'invalid') {
+        return {
+            status: 'invalid',
+            reason: `project.query ${STRICT_CONTRACT_PART[parsed.reason]} the strict query contract`,
+        };
     }
-    const input: QueryInput = { type: argumentsValue.type };
-    if (argumentsValue.filters !== undefined) {
-        const parsedFilters = parseFilters(argumentsValue.filters);
-        if (parsedFilters.status === 'invalid') {
-            return { status: 'invalid', reason: 'project.query filters do not match the strict query contract' };
-        }
-        input.filters = parsedFilters.filters;
-    }
-    if (argumentsValue.page !== undefined) {
-        if (
-            !isRecord(argumentsValue.page) ||
-            Object.keys(argumentsValue.page).some((key) => key !== 'limit' && key !== 'cursor')
-        ) {
-            return { status: 'invalid', reason: 'project.query page does not match the strict query contract' };
-        }
-        const limit = argumentsValue.page.limit;
-        const cursor = argumentsValue.page.cursor;
-        if (
-            (limit !== undefined &&
-                (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 50)) ||
-            (cursor !== undefined && (typeof cursor !== 'string' || cursor.length > MAX_CURSOR_LENGTH))
-        ) {
-            return { status: 'invalid', reason: 'project.query page does not match the strict query contract' };
-        }
-        input.page = {};
-        if (typeof limit === 'number') {
-            input.page.limit = limit;
-        }
-        if (typeof cursor === 'string') {
-            input.page.cursor = cursor;
-        }
-    }
-    if (argumentsValue.sinceRevision !== undefined) {
-        if (
-            typeof argumentsValue.sinceRevision !== 'string' ||
-            argumentsValue.sinceRevision.length > MAX_REVISION_LENGTH
-        ) {
-            return { status: 'invalid', reason: 'project.query revision does not match the strict query contract' };
-        }
-        input.sinceRevision = argumentsValue.sinceRevision;
-    }
-    return { status: 'valid', input };
-}
-
-function parseDiscoveryFilters(value: unknown): { status: 'valid'; filters: DiscoveryFilters } | { status: 'invalid' } {
-    if (!isRecord(value)) {
-        return { status: 'invalid' };
-    }
-    const filters: DiscoveryFilters = {};
-    for (const [key, filterValue] of Object.entries(value)) {
-        if (
-            (key !== 'text' && key !== 'stableId' && key !== 'kind') ||
-            typeof filterValue !== 'string' ||
-            filterValue.length === 0 ||
-            filterValue.length > MAX_FILTER_STRING_LENGTH
-        ) {
-            return { status: 'invalid' };
-        }
-        filters[key] = filterValue;
-    }
-    return { status: 'valid', filters };
+    return { status: 'valid', input: parsed.input };
 }
 
 /**
@@ -344,52 +178,14 @@ function parseDiscoveryFilters(value: unknown): { status: 'valid'; filters: Disc
  * the contract cannot read at all.
  */
 function parseProjectDiscoveryArguments(argumentsValue: Record<string, unknown>): ParsedDiscovery {
-    const allowedKeys = new Set(['domain', 'filters', 'page']);
-    const domain = argumentsValue.domain;
-    if (
-        Object.keys(argumentsValue).some((key) => !allowedKeys.has(key)) ||
-        typeof domain !== 'string' ||
-        domain.length === 0 ||
-        domain.length > MAX_FILTER_STRING_LENGTH
-    ) {
-        return { status: 'invalid', reason: 'project.discover arguments do not match the strict discovery contract' };
+    const parsed = parseAgentDiscoveryInput(argumentsValue);
+    if (parsed.status === 'invalid') {
+        return {
+            status: 'invalid',
+            reason: `project.discover ${STRICT_CONTRACT_PART[parsed.reason]} the strict discovery contract`,
+        };
     }
-    const input: DiscoveryInput = { domain };
-    if (argumentsValue.filters !== undefined) {
-        const parsedFilters = parseDiscoveryFilters(argumentsValue.filters);
-        if (parsedFilters.status === 'invalid') {
-            return {
-                status: 'invalid',
-                reason: 'project.discover filters do not match the strict discovery contract',
-            };
-        }
-        input.filters = parsedFilters.filters;
-    }
-    if (argumentsValue.page !== undefined) {
-        if (
-            !isRecord(argumentsValue.page) ||
-            Object.keys(argumentsValue.page).some((key) => key !== 'limit' && key !== 'cursor')
-        ) {
-            return { status: 'invalid', reason: 'project.discover page does not match the strict discovery contract' };
-        }
-        const limit = argumentsValue.page.limit;
-        const cursor = argumentsValue.page.cursor;
-        if (
-            (limit !== undefined &&
-                (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 50)) ||
-            (cursor !== undefined && (typeof cursor !== 'string' || cursor.length > MAX_CURSOR_LENGTH))
-        ) {
-            return { status: 'invalid', reason: 'project.discover page does not match the strict discovery contract' };
-        }
-        input.page = {};
-        if (typeof limit === 'number') {
-            input.page.limit = limit;
-        }
-        if (typeof cursor === 'string') {
-            input.page.cursor = cursor;
-        }
-    }
-    return { status: 'valid', input };
+    return { status: 'valid', input: parsed.input };
 }
 
 function failureReceipt(input: {

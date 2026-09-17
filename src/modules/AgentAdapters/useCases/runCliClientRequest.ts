@@ -16,7 +16,12 @@
 
 import { getAgentCapabilityCatalog } from '#/modules/AiRuntime/useCases';
 import { parseVersionedCommandBatchEnvelope, previewVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
-import { queryAgentDiscovery, querySemanticProject } from '#/modules/Project/useCases';
+import {
+    parseAgentDiscoveryInput,
+    parseSemanticProjectQueryInput,
+    queryAgentDiscovery,
+    querySemanticProject,
+} from '#/modules/Project/useCases';
 
 import {
     type ExternalClientOperation,
@@ -26,8 +31,6 @@ import {
 
 import { admitExternalClientRequest } from './admitExternalClientRequest';
 import { externalClientManifestPort } from './externalClientManifestPort';
-import { parseExternalClientDiscoveryPayload } from './parseExternalClientDiscoveryPayload';
-import { parseExternalClientQueryPayload } from './parseExternalClientQueryPayload';
 
 type CliClientResult =
     | { status: 'completed'; operation: ExternalClientOperation; data: unknown }
@@ -37,8 +40,15 @@ type CliClientResult =
 
 const payloadInvalid = { status: 'refused', reason: 'payload-invalid' } as const;
 
+/**
+ * The argument contracts are the owners', not this adapter's.
+ *
+ * A payload arriving over a wire is parsed by the same function the local tool
+ * loop parses one with, so an external client is held to the published contract
+ * rather than to a copy of it that could be laxer in one key.
+ */
 function runQuery(payload: unknown): CliClientResult {
-    const parsed = parseExternalClientQueryPayload(payload);
+    const parsed = parseSemanticProjectQueryInput(payload);
     if (parsed.status === 'invalid') {
         return payloadInvalid;
     }
@@ -46,7 +56,7 @@ function runQuery(payload: unknown): CliClientResult {
 }
 
 function runDiscovery(payload: unknown): CliClientResult {
-    const parsed = parseExternalClientDiscoveryPayload(payload);
+    const parsed = parseAgentDiscoveryInput(payload);
     if (parsed.status === 'invalid') {
         return payloadInvalid;
     }

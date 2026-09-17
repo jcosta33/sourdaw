@@ -36,6 +36,8 @@ export { unlockProjectScopedBrief } from './unlockProjectScopedBrief';
 export { acceptCreativeIntent } from './acceptCreativeIntent';
 export { querySemanticProject } from './semanticProjectQueries';
 export { queryAgentDiscovery } from './queryAgentDiscovery';
+export { parseSemanticProjectQueryInput } from './parseSemanticProjectQueryInput';
+export { parseAgentDiscoveryInput } from './parseAgentDiscoveryInput';
 export { agentCapabilityDiscoveryPort } from './agentCapabilityDiscoveryPort';
 export { getProjectProtocolContracts } from './getProjectProtocolContracts';
 export { getAgentProjectModelContract } from './getAgentProjectModelContract';

@@ -24,6 +24,17 @@ export const AGENT_DISCOVERY_DOMAINS = ['device', 'preset', 'sample', 'asset', '
  */
 export const AGENT_DISCOVERY_SAMPLE_QUERY_LIMIT = 24;
 
+/**
+ * How long a filter string and a page cursor may be, and the largest page a
+ * caller may ask for.
+ *
+ * Stated with the contract rather than inside one caller, so every surface that
+ * admits a discovery request refuses the same oversized value.
+ */
+export const MAX_AGENT_DISCOVERY_FILTER_TEXT_LENGTH = 256;
+export const MAX_AGENT_DISCOVERY_CURSOR_LENGTH = 256;
+export const MAX_AGENT_DISCOVERY_PAGE_SIZE = 50;
+
 export type AgentDiscoveryDomain = (typeof AGENT_DISCOVERY_DOMAINS)[number];
 
 export type AgentDiscoveryFilters = {

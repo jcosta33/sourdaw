@@ -7,13 +7,17 @@
  * client from arriving with its own dialect and its own idea of who approved
  * what.
  *
- * Two facts are carried here rather than left to each adapter. A transport that
- * something outside this machine can reach is off until a person here turns it
- * on, and an operation is reachable only through a grant that names it, names
- * the project it was issued against, and can be revoked. Neither is a policy an
- * adapter may soften, because an adapter is the thing on the far end of the
- * wire.
+ * Three facts are carried here rather than left to each adapter. A transport
+ * that something outside this machine can reach is off until a person here
+ * turns it on. An operation is reachable only through a grant that names it,
+ * names the project it was issued against, and can be revoked. And a grant is
+ * held by whoever holds its secret, never by whoever claims its name: the
+ * client id is an address, and an address is not authority. None of the three
+ * is a policy an adapter may soften, because an adapter is the thing on the far
+ * end of the wire.
  */
+
+import { digest } from '#/utils/canonicalDigest';
 
 /** The version an external client must speak to be admitted at all. */
 export const EXTERNAL_CLIENT_CONTRACT_SCHEMA_VERSION = 1;
@@ -38,12 +42,25 @@ export const EXTERNAL_CLIENT_OPERATIONS = [
     'receipt.read',
 ] as const;
 
+/**
+ * The width of a grant token, in bytes drawn from the platform CSPRNG.
+ *
+ * 32 is the width a guess has to cross, and it is the whole of the client's
+ * authority: nothing else about a request is secret, because a client id, a
+ * transport name and an operation name are all published or guessable.
+ */
+export const EXTERNAL_CLIENT_TOKEN_BYTES = 32;
+
 export type ExternalClientTransport = (typeof EXTERNAL_CLIENT_TRANSPORTS)[number];
 
 export type ExternalClientOperation = (typeof EXTERNAL_CLIENT_OPERATIONS)[number];
 
 /**
  * One client's authority, bound to the project it was issued against.
+ *
+ * The token itself is never a field here. Only its digest is kept, so a session
+ * dump, a log line or a store read cannot hand anyone the bearer secret; the
+ * issuing call is the one and only place the token exists in the clear.
  *
  * A revocation stamps `revokedAt` instead of removing the record: a grant that
  * disappears cannot tell a later reader that the client ever held it, and
@@ -54,6 +71,7 @@ export type ExternalClientGrant = {
     transport: ExternalClientTransport;
     operations: readonly ExternalClientOperation[];
     activeProjectId: string;
+    tokenDigest: string;
     issuedAt: number;
     revokedAt: number | null;
 };
@@ -64,6 +82,7 @@ export type ExternalClientRequest = {
     operation: ExternalClientOperation;
     schemaVersion: number;
     projectId: string;
+    grantToken: string;
     payload: unknown;
 };
 
@@ -108,6 +127,27 @@ export type ExternalClientAdmission =
     | { status: 'admitted'; grant: ExternalClientGrant; operation: NormalizedExternalClientOperation }
     | { status: 'refused'; reason: ExternalClientAdmissionRefusalReason };
 
+/**
+ * Whether a transport could be opened.
+ *
+ * `native-transport-unavailable` is not a refusal of the caller's authority: it
+ * says this build has no shell to carry the transport at all, which is why the
+ * answer is a status rather than a thrown error or a silent no-op.
+ */
+export type ExternalClientTransportEnablement =
+    { status: 'enabled' } | { status: 'refused'; reason: 'native-transport-unavailable' };
+
 export function isExternallyReachableTransport(transport: ExternalClientTransport): boolean {
     return EXTERNALLY_REACHABLE_TRANSPORTS.some((reachable) => reachable === transport);
+}
+
+/**
+ * The stored form of a grant token.
+ *
+ * Both the issuing call and every admission run the token through here, so the
+ * session holds one derived value that no reader can spend and admission still
+ * compares the presented token against something.
+ */
+export function externalClientTokenDigest(token: string): string {
+    return digest(token);
 }
