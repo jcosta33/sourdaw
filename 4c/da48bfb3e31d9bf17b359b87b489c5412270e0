@@ -1,0 +1,81 @@
+src/modules/Project/useCases/getProjectProtocolContracts.ts
+  s_914af328b3988f::t_dc102d4feb11ef 1,11-29
+src/modules/Project/services/agentDiscovery/discoveryCandidates.ts
+  s_914af328b3988f::t_c7a759faf509a1 1-49
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_914af328b3988f::t_80df606b9cb491 438
+  s_914af328b3988f::t_2ac84e20e92185 10
+src/modules/Project/useCases/agentDiscovery/collectSampleDiscoveryEntries.ts
+  s_914af328b3988f::t_12a877ba975dc5 1-62
+src/app/__tests__/bootstrap.spec.ts
+  s_914af328b3988f::t_a6f0dcfeae9570 279-280
+  s_914af328b3988f::t_b45f2f2f31ca13 299,401,506,530-531
+src/modules/Project/useCases/queryAgentDiscovery.ts
+  s_914af328b3988f::t_41e1ce02ddcd05 150-151,153
+  s_914af328b3988f::t_b3569d3a0c05af 9,17,30-37,46,73-76,99,111,121-122,124,145-147,159-163,167-169
+  s_914af328b3988f::t_99074a942cb735 1-8,10-16,18-29,38-45,47-72,77-98,100-110,112-120,123,125-144,148-149,152,154-158,164-166,170-190
+src/modules/Project/useCases/agentCapabilityDiscoveryPort.ts
+  s_914af328b3988f::t_d885db5cde9bb6 1-35
+src/modules/Project/useCases/agentDiscovery/collectDeviceDiscoveryEntries.ts
+  s_914af328b3988f::t_d939c80e490fae 1-107
+  s_914af328b3988f::t_ed2e1bd129188b 108-110
+src/modules/Project/useCases/index.ts
+  s_914af328b3988f::t_c061dc6fe47cf0 38-39
+src/app/bootstrap.ts
+  s_914af328b3988f::t_c18e5b6aabd5eb 203
+  s_914af328b3988f::t_1afd8e273485a3 153
+  s_914af328b3988f::t_c12e8c67d7b2c6 10
+  s_914af328b3988f::t_0e5037ea56564a 239-241
+src/modules/AiRuntime/useCases/__tests__/agentCapabilityCatalog.spec.ts
+  s_914af328b3988f::t_9b179f57b6b2ac 1-104,106-129
+  s_914af328b3988f::t_e671bf1a90c8c1 105
+src/modules/Project/services/createBoundedRevisionToken.ts
+  s_914af328b3988f::t_c1d8964f75dbff 1-21
+src/modules/Project/models/AgentDiscoveryQuery.ts
+  s_914af328b3988f::t_3a408482c468ee 26-27,29
+  s_914af328b3988f::t_55f369467c564f 1-25,28,30-79
+src/modules/Project/useCases/semanticProjectIndex.ts
+  s_914af328b3988f::t_9287ab362c18dd 16
+src/modules/Project/useCases/agentDiscovery/collectAssetDiscoveryEntries.ts
+  s_914af328b3988f::t_608ac18b7d31ad 1-53,57-70
+  s_914af328b3988f::t_bd2f2e3d662d52 54-56
+src/modules/AiRuntime/models/AgentCapabilityOperations.ts
+  s_914af328b3988f::t_8ead01ead9d6ec 1-35
+src/modules/AiRuntime/useCases/getAgentCapabilityCatalog.ts
+  s_914af328b3988f::t_00dc5061558822 1-97
+src/modules/AiRuntime/useCases/index.ts
+  s_914af328b3988f::t_b9ef864441c7ba 34
+src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts
+  s_914af328b3988f::t_14bd6fd0ac06af 277-280,283
+  s_914af328b3988f::t_5ac205a44fcea3 1-276,281-282,284-445,447-511
+  s_914af328b3988f::t_ebacb41533bc5e 446
+  s_914af328b3988f::t_6ac8bf3386e43f 512-516
+src/modules/Project/services/agentDiscovery/discoveryPaging.ts
+  s_914af328b3988f::t_0a8db2e5683a18 1-48
+src/modules/Project/AGENTS.md
+  s_914af328b3988f::t_01d6be22bbc2fa 32
+  s_914af328b3988f::t_9af43acabe2475 18
+src/modules/Project/useCases/agentDiscovery/collectPresetDiscoveryEntries.ts
+  s_914af328b3988f::t_bf36102b898778 1-32
+src/modules/AiRuntime/AGENTS.md
+  s_914af328b3988f::t_58a55d00004e61 39
+  s_914af328b3988f::t_3e6051ee55a0ed 13
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_914af328b3988f::t_8b45d87367f304 239,365
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4cda48bfb3e31d9bf17b359b87b489c5412270e0",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
