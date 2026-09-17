@@ -60,11 +60,12 @@ function toApplicationEntry(operation: AgentCapabilityOperation): AgentCapabilit
 }
 
 /**
- * Declared states in which an owner publishes an operation it cannot be called
- * through. Every other state is a reachable operation whose declared condition
- * the entry reports as its reason rather than as a negative verdict.
+ * Declared states in which the operation cannot be called now: the owner defers
+ * it, publishes it as unavailable, or holds it behind configuration nobody has
+ * supplied. Every other state is reachable, and the entry reports the owner's
+ * declared condition as its reason rather than as a negative verdict.
  */
-const UNREACHABLE_CONTRACT_AVAILABILITIES: readonly string[] = ['deferred', 'unavailable'];
+const UNREACHABLE_CONTRACT_AVAILABILITIES: readonly string[] = ['deferred', 'unavailable', 'configuration-required'];
 
 function toContractEntries(contract: ProtocolContract): AgentCapabilityCatalogEntry[] {
     return contract.operations.map((operation) => ({

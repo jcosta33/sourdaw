@@ -22,7 +22,7 @@ const ADAPTER_CONTRACT = {
     owner: 'AiRuntime',
     operations: [
         { name: 'webllm', version: '2', availability: 'runtime-dependent' },
-        { name: 'anthropic', version: '2', availability: 'unavailable' },
+        { name: 'anthropic', version: '2', availability: 'configuration-required' },
     ],
 };
 
@@ -119,7 +119,7 @@ describe('agent capability catalog', () => {
         });
         expect(entries.find((entry) => entry.id === 'external-adapter:anthropic')).toMatchObject({
             availability: 'unavailable',
-            reason: 'unavailable',
+            reason: 'configuration-required',
             version: '2',
         });
     });
