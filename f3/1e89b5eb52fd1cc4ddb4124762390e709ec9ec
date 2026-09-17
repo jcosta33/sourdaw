@@ -1,0 +1,19 @@
+src/utils/__tests__/desktopBridge.spec.ts
+  s_9b530f08172a54::t_9c0783b14dce69 165,167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f31e89b5eb52fd1cc4ddb4124762390e709ec9ec",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
