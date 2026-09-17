@@ -14,12 +14,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
 import { createNativeLiveGraphBackend } from '../createNativeLiveGraphBackend';
 import { type NativeGraphTransport } from '../nativeGraphTransport';
-import { registerNativeSampleBanks } from '../registerNativeSampleBanks';
 import {
     claimedNativeSampleBankKeysByBackend,
     inFlightNativeSampleBankShipments,
     registeredNativeSampleBankKeys,
 } from '../registeredNativeSampleBankKeys';
+import { type AcquireNativeSampleBank, registerNativeSampleBanks } from '../registerNativeSampleBanks';
 
 const BATCH: AudioGraphCommandBatch = {
     schemaVersion: 1,
@@ -496,7 +496,7 @@ function claimTransport(calls: string[]): NativeGraphTransport {
     };
 }
 
-function acquireViolinBank() {
+const acquireViolinBank: AcquireNativeSampleBank = () => {
     return Promise.resolve({
         bank: {
             instrumentId: 'violin-1',
@@ -504,11 +504,13 @@ function acquireViolinBank() {
             numMics: 1,
             zones: [],
             legatoTransitions: [],
-            samples: [{ sampleId: '0', sampleRate: 48_000, channels: 1, frameCount: 1, pcm: new Uint8Array([1, 2, 3, 4]) }],
+            samples: [
+                { sampleId: '0', sampleRate: 48_000, channels: 1, frameCount: 1, pcm: new Uint8Array([1, 2, 3, 4]) },
+            ],
         },
         release: vi.fn(),
     });
-}
+};
 
 describe('createNativeLiveGraphBackend — claims scoped per instance (#4203)', () => {
     beforeEach(() => {
