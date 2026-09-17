@@ -1,0 +1,35 @@
+.github/workflows/validation.yml
+  s_914af328b3988f::t_6e7bccce9603b1 623
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_1baf9e439d3581::t_e5a03f35203399 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_1baf9e439d3581::t_1a4beea539faa5 1
+public/wasm/manifest.json
+  s_1baf9e439d3581::t_9599ec1d4daea7 12,17-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_1baf9e439d3581::t_0cb7459920a24b 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7e7451b4c1537347b3ed1af00be73ed12ba867b4",
+  "prompts": {},
+  "sessions": {
+    "s_1baf9e439d3581": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aae93a7648ed2d653",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
