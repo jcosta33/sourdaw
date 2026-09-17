@@ -30,6 +30,7 @@ import { recoverQuarantinedHarnessPlugin } from './desktopLatencyPreferencesReco
 import {
     computeCounterDeltas,
     computeGaugeReadings,
+    isAudibleLatencyReading,
     isRunningEngineTitle,
     parseEngineTitle,
     parseLatencyMs,
@@ -454,6 +455,28 @@ async function waitForScanToFinish(page: Page): Promise<number> {
     throw new Error(`the plugin scan did not finish within ${SCAN_STEP_TIMEOUT_MS} ms`);
 }
 
+/**
+ * Polls the status bar until `isAudibleLatencyReading` accepts it — the
+ * audible engine's own Latency figure, not a healthy reading from the engine
+ * nobody hears. See the call site in `driveToPlayingProject` for why this
+ * wait exists between the running-meter wait and the play-start probe.
+ */
+async function waitForAudibleLatencyReading(page: Page): Promise<void> {
+    const deadline = Date.now() + STEP_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+        const status = await readStatusBar(page);
+        if (isAudibleLatencyReading(status)) {
+            return;
+        }
+        await sleep(250);
+    }
+    const status = await readStatusBar(page);
+    throw new Error(
+        `the audible engine never published its output latency — latency "${status.latencyText}", ` +
+            `title "${status.latencyTitle.slice(0, 80)}", engine dot "${status.engineTitle.slice(0, 80)}"`
+    );
+}
+
 type AppStartedResult = { startedAt: AppStartedAt; playStart: PlayStartRecord };
 
 async function driveToPlayingProject(
@@ -548,6 +571,18 @@ async function driveToPlayingProject(
             `the engine never reported a running meter — engine dot "${status.engineTitle.slice(0, 40)}", master "${status.masterLevelText}"`
         );
     });
+
+    // The idle leg's opening sample must not be the pre-#3706 hazard this
+    // harness exists to catch: a native carrier that is running (the wait
+    // above) but has not yet published its own output-latency figure reads
+    // `n/a` on the status bar, and before this wait the harness sampled
+    // whatever was there regardless — including, once, a healthy Web Audio
+    // context figure recorded while the native engine was the audible
+    // carrier. `isAudibleLatencyReading` is the same predicate `sample()`'s
+    // `parseLatencyMs` reading must satisfy; waiting for it here keeps that
+    // reading out of the recorded run instead of discovering it after the
+    // fact.
+    await step('wait for the audible engine to publish its output latency', () => waitForAudibleLatencyReading(page));
 
     // Awaited before the click below dispatches: the capture listener has to
     // already be attached in the page when the click's own CDP sequence
