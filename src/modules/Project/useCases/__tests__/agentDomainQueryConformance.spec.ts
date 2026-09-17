@@ -26,10 +26,12 @@ import { searchAgentCatalog } from '#/modules/SampleLibrary/useCases';
 
 import {
     AGENT_DISCOVERY_DOMAINS,
+    AGENT_DISCOVERY_SAMPLE_QUERY_LIMIT,
     type AgentDiscoveryDomain,
     type AgentDiscoveryFilters,
     type AgentDiscoveryResult,
 } from '../../models/AgentDiscoveryQuery';
+import { SEMANTIC_PROJECT_QUERY_TYPES } from '../../models/SemanticProjectQuery';
 import { defaultProjectStoreState, projectStore } from '../../stores/projectStore';
 import { agentCapabilityDiscoveryPort } from '../agentCapabilityDiscoveryPort';
 import { getProjectProtocolContracts } from '../getProjectProtocolContracts';
@@ -66,8 +68,8 @@ function buildSample(args: { id: string; displayName: string; status: LibrarySyn
 }
 
 const SEEDED_SAMPLES: LibrarySample[] = [
-    buildSample({ id: 'sample-kick-a', displayName: 'Kick A', status: 'indexed' }),
-    buildSample({ id: 'sample-kick-b', displayName: 'Kick B', status: 'analyzed' }),
+    buildSample({ id: 'sample-kick-a', displayName: 'Kick A', status: 'discovered' }),
+    buildSample({ id: 'sample-kick-b', displayName: 'Kick B', status: 'indexed' }),
     buildSample({ id: 'sample-kick-offline', displayName: 'Kick Offline', status: 'offline' }),
 ];
 
@@ -155,25 +157,27 @@ function seedProject(): void {
     });
 }
 
-function seedLibrary(samples: LibrarySample[]): void {
+function buildReadyRoot(fileCount: number): LibraryState['roots'][number] {
+    return {
+        id: LIBRARY_ROOT_ID,
+        name: 'User Library',
+        provider: 'desktop',
+        rootRef: '',
+        connectedAt: 0,
+        status: 'ready',
+        fileCount,
+        settings: { recursive: true },
+    };
+}
+
+function seedLibrary(samples: LibrarySample[], roots: 'ready' | 'none' = 'ready'): void {
     const state = libraryStore.value;
     if (!state) {
         throw new Error('The sample library store carries no state to seed.');
     }
     libraryStore.set({
         ...state,
-        roots: [
-            {
-                id: LIBRARY_ROOT_ID,
-                name: 'User Library',
-                provider: 'desktop',
-                rootRef: '',
-                connectedAt: 0,
-                status: 'ready',
-                fileCount: samples.length,
-                settings: { recursive: true },
-            },
-        ],
+        roots: roots === 'none' ? [] : [buildReadyRoot(samples.length)],
         samples,
         folderTrees: {},
     });
@@ -213,6 +217,24 @@ function registerCapabilityCatalog(extraIds: readonly string[] = []): void {
             })),
         ],
     }));
+}
+
+/** Every entry the domain answers with, counted by walking its own cursors. */
+function walkEveryMatch(probe: DomainProbe): number {
+    let cursor: string | null = null;
+    let seen = 0;
+    do {
+        const page = expectReceipt(
+            queryAgentDiscovery({
+                domain: probe.domain,
+                filters: probe.filters,
+                page: cursor === null ? { limit: 50 } : { limit: 50, cursor },
+            })
+        );
+        seen += page.items.length;
+        cursor = page.nextCursor;
+    } while (cursor !== null);
+    return seen;
 }
 
 /** Narrow an answer to its receipt branch, failing loudly on any other status. */
@@ -315,7 +337,7 @@ describe('agent domain query conformance', () => {
     afterEach(async () => {
         agentCapabilityDiscoveryPort.setProvider(null);
         pluginScanStore.set(structuredClone(defaultPluginScanState));
-        seedLibrary([]);
+        seedLibrary([], 'none');
         if (savedPresetId !== null) {
             deleteUserPreset(savedPresetId);
             savedPresetId = null;
@@ -361,7 +383,12 @@ describe('agent domain query conformance', () => {
                 queryAgentDiscovery({ domain: probe.domain, filters: probe.filters, page: { limit: 1 } })
             );
 
+            const walked = walkEveryMatch(probe);
+
+            expect(walked).toBeGreaterThan(1);
             expect(first.items).toHaveLength(1);
+            // The page counts every match, not the slice this page returned.
+            expect(first.page.total).toBe(walked);
             expect(first.nextCursor).toEqual(expect.any(String));
             expect(() =>
                 queryAgentDiscovery({ domain: probe.domain, filters: probe.filters, page: { limit: 51 } })
@@ -410,13 +437,22 @@ describe('agent domain query conformance', () => {
             reason: 'sample-browse-requires-text',
         });
 
-        seedLibrary([]);
+        seedLibrary([], 'none');
 
         expect(queryAgentDiscovery({ domain: 'sample', filters: { text: SAMPLE_TEXT } })).toEqual({
             status: 'unavailable',
             domain: 'sample',
             reason: 'catalog-not-indexed',
         });
+    });
+
+    it('answers an operable library that matched nothing with an empty receipt, not an unavailable catalog', () => {
+        seedLibrary([]);
+
+        const receipt = expectReceipt(queryAgentDiscovery({ domain: 'sample', filters: { text: SAMPLE_TEXT } }));
+
+        expect(receipt.items).toEqual([]);
+        expect(receipt.page.total).toBe(0);
     });
 
     it('reports an unregistered capability provider as unavailable, and an empty one as an empty receipt', () => {
@@ -449,13 +485,11 @@ describe('agent domain query conformance', () => {
     });
 
     it('keeps the unavailable verdict each producer published instead of dropping the entry', () => {
-        const samples = expectReceipt(queryAgentDiscovery({ domain: 'sample', filters: { text: SAMPLE_TEXT } }));
+        vi.mocked(getAgentBuiltinDeviceRuntimeManifest).mockReturnValueOnce([]);
 
-        expect(samples.items.find((item) => item.id === 'sample-kick-offline')).toMatchObject({
-            availability: 'unavailable',
-            reason: 'offline',
-        });
-        expect(samples.items.find((item) => item.id === 'sample-kick-a')).toMatchObject({ availability: 'available' });
+        const devices = expectReceipt(queryAgentDiscovery({ domain: 'device', page: { limit: 50 } }));
+
+        expect(devices.items.filter((item) => item.availability === 'unavailable').length).toBeGreaterThan(0);
 
         const capabilities = expectReceipt(queryAgentDiscovery({ domain: 'capability' }));
 
@@ -463,6 +497,104 @@ describe('agent domain query conformance', () => {
             availability: 'unavailable',
             reason: 'deferred',
         });
+    });
+
+    it('reports every sample the catalog answered with as available, whatever index state its record carries', () => {
+        const receipt = expectReceipt(queryAgentDiscovery({ domain: 'sample', filters: { text: SAMPLE_TEXT } }));
+
+        expect(receipt.items.map((item) => item.id).toSorted()).toEqual(
+            SEEDED_SAMPLES.map((sample) => sample.id).toSorted()
+        );
+        for (const item of receipt.items) {
+            expect(item).toMatchObject({ availability: 'available', reason: null });
+        }
+        expect(receipt.items.find((item) => item.id === 'sample-kick-a')?.evidence).toMatchObject({
+            provenance: { indexStatus: 'discovered' },
+        });
+    });
+
+    it('counts every match the catalog returned in one sample page', () => {
+        const matches = Array.from({ length: 12 }, (_, index) =>
+            buildSample({
+                id: `sample-kick-${String(index)}`,
+                displayName: `Kick ${String(index)}`,
+                status: 'discovered',
+            })
+        );
+        seedLibrary(matches);
+
+        expect(searchAgentCatalog({ text: SAMPLE_TEXT, limit: AGENT_DISCOVERY_SAMPLE_QUERY_LIMIT }).status).toBe(
+            'results'
+        );
+
+        const receipt = expectReceipt(queryAgentDiscovery({ domain: 'sample', filters: { text: SAMPLE_TEXT } }));
+
+        expect(receipt.page).toEqual({ offset: 0, limit: 20, total: 12 });
+        expect(receipt.items).toHaveLength(12);
+        expect(receipt.warnings).not.toContain('sample-catalog-truncated');
+    });
+
+    it('refuses an id filter on the sample catalog it can only apply to one ranked page', () => {
+        expect(
+            queryAgentDiscovery({ domain: 'sample', filters: { text: SAMPLE_TEXT, stableId: 'sample-kick-a' } })
+        ).toEqual({
+            status: 'unsupported',
+            domain: 'sample',
+            reason: 'filter-not-supported',
+        });
+    });
+
+    it('moves the device revision token when a producer re-versions an entry it still publishes', () => {
+        const runtime = getAgentBuiltinDeviceRuntimeManifest(builtinDeviceTypes());
+        const before = expectReceipt(queryAgentDiscovery({ domain: 'device', page: { limit: 50 } }));
+
+        vi.mocked(getAgentBuiltinDeviceRuntimeManifest).mockReturnValueOnce(
+            runtime.map((entry, index) =>
+                index === 0 ? { ...entry, runtimeVersion: `${entry.runtimeVersion}-probe` } : entry
+            )
+        );
+        const after = expectReceipt(queryAgentDiscovery({ domain: 'device', page: { limit: 50 } }));
+
+        expect(after.items.map((item) => item.id)).toEqual(before.items.map((item) => item.id));
+        expect(after.revisionToken).not.toBe(before.revisionToken);
+    });
+
+    it('moves the capability revision token when a producer changes only an availability', () => {
+        const published = agentCapabilityDiscoveryPort.read()?.entries ?? [];
+        const before = expectReceipt(queryAgentDiscovery({ domain: 'capability' }));
+
+        agentCapabilityDiscoveryPort.setProvider(() => ({
+            version: 'discovery-capability-catalog-v1',
+            entries: published.map((entry) =>
+                entry.id === 'query:object' ? { ...entry, availability: 'unavailable' as const } : entry
+            ),
+        }));
+        const after = expectReceipt(queryAgentDiscovery({ domain: 'capability' }));
+
+        expect(after.items.map((item) => item.id)).toEqual(before.items.map((item) => item.id));
+        expect(after.revisionToken).not.toBe(before.revisionToken);
+    });
+
+    it('reads one page through one cursor however a caller orders the same filters', () => {
+        const first = expectReceipt(
+            queryAgentDiscovery({ domain: 'device', filters: { kind: 'external', text: 'e' }, page: { limit: 1 } })
+        );
+        const reordered = expectReceipt(
+            queryAgentDiscovery({ domain: 'device', filters: { text: 'e', kind: 'external' }, page: { limit: 1 } })
+        );
+
+        expect(first.page.total).toBe(SCANNED_PLUGINS.length);
+        expect(reordered.nextCursor).toBe(first.nextCursor);
+
+        const second = expectReceipt(
+            queryAgentDiscovery({
+                domain: 'device',
+                filters: { text: 'e', kind: 'external' },
+                page: { limit: 1, cursor: first.nextCursor! },
+            })
+        );
+
+        expect(second.items[0]?.id).not.toBe(first.items[0]?.id);
     });
 
     it('marks a built-in device unavailable when no runtime factory claims its type', () => {
@@ -506,11 +638,14 @@ describe('agent domain query conformance', () => {
         expect(filtered.page.total).toBe(1);
     });
 
-    it('publishes one query protocol operation per discovery domain', () => {
-        const operations = getProjectProtocolContracts().query.operations.map((operation) => operation.name);
+    it('publishes discovery on its own protocol contract, leaving the semantic query types alone', () => {
+        const contracts = getProjectProtocolContracts();
 
-        for (const domain of AGENT_DISCOVERY_DOMAINS) {
-            expect(operations).toContain(`discovery.${domain}`);
-        }
+        expect(contracts.discovery.operations.map((operation) => operation.name)).toEqual([...AGENT_DISCOVERY_DOMAINS]);
+        expect(contracts.discovery.capabilities).toContain('owner-catalog-discovery');
+        expect(contracts.query.operations.map((operation) => operation.name)).toEqual([
+            ...SEMANTIC_PROJECT_QUERY_TYPES,
+        ]);
+        expect(contracts.query.capabilities).not.toContain('owner-catalog-discovery');
     });
 });

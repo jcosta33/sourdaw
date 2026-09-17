@@ -108,6 +108,21 @@ function collect(domain: AgentDiscoveryDomain, filters: AgentDiscoveryFilters | 
 }
 
 /**
+ * A filter this layer cannot honour for the named domain.
+ *
+ * A kind filter needs a producer that publishes a kind vocabulary. An id filter
+ * on a sample would be applied to the one ranked page the catalog returned, so
+ * it would report a miss over the rest of the library that the catalog never
+ * made.
+ */
+function isUnsupportedFilter(domain: AgentDiscoveryDomain, filters: AgentDiscoveryFilters | undefined): boolean {
+    if (filters?.kind !== undefined && !KIND_FILTERED_DOMAINS.includes(domain)) {
+        return true;
+    }
+    return domain === 'sample' && filters?.stableId !== undefined;
+}
+
+/**
  * The filters the producer has not already applied.
  *
  * The catalog matched a sample on its name, path or tags, so re-applying the
@@ -118,10 +133,15 @@ function residualFilters(
     domain: AgentDiscoveryDomain,
     filters: AgentDiscoveryFilters | undefined
 ): AgentDiscoveryFilters | undefined {
-    if (domain !== 'sample') {
-        return filters;
-    }
-    return filters?.stableId === undefined ? undefined : { stableId: filters.stableId };
+    return domain === 'sample' ? undefined : filters;
+}
+
+/**
+ * The filter set in one fixed key order, so two callers naming the same filters
+ * in different orders read the same page through the same cursor.
+ */
+function canonicalFilterSignature(filters: AgentDiscoveryFilters | undefined): string {
+    return JSON.stringify([filters?.kind ?? null, filters?.stableId ?? null, filters?.text ?? null]);
 }
 
 function createRevisionToken(
@@ -151,7 +171,7 @@ export function queryAgentDiscovery(input: AgentDiscoveryInput): AgentDiscoveryR
         return { status: 'unsupported', domain: input.domain, reason: 'unknown-domain' };
     }
     const domain = input.domain;
-    if (input.filters?.kind !== undefined && !KIND_FILTERED_DOMAINS.includes(domain)) {
+    if (isUnsupportedFilter(domain, input.filters)) {
         return { status: 'unsupported', domain, reason: 'filter-not-supported' };
     }
 
@@ -169,7 +189,7 @@ export function queryAgentDiscovery(input: AgentDiscoveryInput): AgentDiscoveryR
     );
     const fingerprint = createBoundedRevisionToken(
         revisionToken,
-        JSON.stringify({ domain, filters: input.filters ?? null })
+        `${domain}:${canonicalFilterSignature(input.filters)}`
     );
     const page = readDiscoveryPage({ limit: input.page?.limit, cursor: input.page?.cursor, fingerprint });
     const nextOffset = page.offset + page.limit;

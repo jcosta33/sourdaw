@@ -15,6 +15,15 @@ export const AGENT_DISCOVERY_SCHEMA_VERSION = 1 as const;
 
 export const AGENT_DISCOVERY_DOMAINS = ['device', 'preset', 'sample', 'asset', 'capability'] as const;
 
+/**
+ * The page size a sample discovery request asks the catalog for: the ceiling
+ * that catalog publishes, so one discovery page counts every match it returned
+ * rather than the smaller default page it answers an unbounded request with.
+ * The ceiling lives in the catalog owner's private model, so a spec asserts the
+ * catalog still accepts this figure.
+ */
+export const AGENT_DISCOVERY_SAMPLE_QUERY_LIMIT = 24;
+
 export type AgentDiscoveryDomain = (typeof AGENT_DISCOVERY_DOMAINS)[number];
 
 export type AgentDiscoveryFilters = {

@@ -5,7 +5,7 @@ import {
     MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH,
 } from '#/modules/Command/useCases';
 import { getAgentDeviceFactoryManifest } from '#/modules/PluginHost/useCases';
-import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
+import { getProjectProtocolContracts, queryAgentDiscovery, querySemanticProject } from '#/modules/Project/useCases';
 
 import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabilityOperations';
 import { type AgentPlanProposal } from '../models/AgentRun';
@@ -29,6 +29,7 @@ import {
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
     getAgentToolCatalogSchemas,
+    PROJECT_DISCOVERY_TOOL_NAME,
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
 } from './agentToolCatalog';
@@ -53,6 +54,10 @@ const CATALOG_CURSOR_PATTERN = new RegExp(AGENT_CATALOG_CURSOR_PATTERN, 'u');
 
 type QueryInput = Parameters<typeof querySemanticProject>[0];
 type QueryFilters = NonNullable<QueryInput['filters']>;
+type DiscoveryInput = Parameters<typeof queryAgentDiscovery>[0];
+type DiscoveryFilters = NonNullable<DiscoveryInput['filters']>;
+type DiscoveryVerdict = Exclude<ReturnType<typeof queryAgentDiscovery>, { status: 'receipt' }>;
+type ParsedDiscovery = { status: 'valid'; input: DiscoveryInput } | { status: 'invalid'; reason: string };
 type ApplicationToolPlanningOutcome =
     | { status: 'complete'; toolCalls: ToolCallResult[]; proposal?: AgentPlanProposal | null }
     | { status: 'rejected'; reason: string };
@@ -312,6 +317,81 @@ function parseProjectQueryArguments(argumentsValue: Record<string, unknown>): Pa
     return { status: 'valid', input };
 }
 
+function parseDiscoveryFilters(value: unknown): { status: 'valid'; filters: DiscoveryFilters } | { status: 'invalid' } {
+    if (!isRecord(value)) {
+        return { status: 'invalid' };
+    }
+    const filters: DiscoveryFilters = {};
+    for (const [key, filterValue] of Object.entries(value)) {
+        if (
+            (key !== 'text' && key !== 'stableId' && key !== 'kind') ||
+            typeof filterValue !== 'string' ||
+            filterValue.length === 0 ||
+            filterValue.length > MAX_FILTER_STRING_LENGTH
+        ) {
+            return { status: 'invalid' };
+        }
+        filters[key] = filterValue;
+    }
+    return { status: 'valid', filters };
+}
+
+/**
+ * The strict argument contract for one discovery call.
+ *
+ * A domain outside the published set stays a well-formed request: the owner
+ * answers it as an unsupported domain, which is a different fact from arguments
+ * the contract cannot read at all.
+ */
+function parseProjectDiscoveryArguments(argumentsValue: Record<string, unknown>): ParsedDiscovery {
+    const allowedKeys = new Set(['domain', 'filters', 'page']);
+    const domain = argumentsValue.domain;
+    if (
+        Object.keys(argumentsValue).some((key) => !allowedKeys.has(key)) ||
+        typeof domain !== 'string' ||
+        domain.length === 0 ||
+        domain.length > MAX_FILTER_STRING_LENGTH
+    ) {
+        return { status: 'invalid', reason: 'project.discover arguments do not match the strict discovery contract' };
+    }
+    const input: DiscoveryInput = { domain };
+    if (argumentsValue.filters !== undefined) {
+        const parsedFilters = parseDiscoveryFilters(argumentsValue.filters);
+        if (parsedFilters.status === 'invalid') {
+            return {
+                status: 'invalid',
+                reason: 'project.discover filters do not match the strict discovery contract',
+            };
+        }
+        input.filters = parsedFilters.filters;
+    }
+    if (argumentsValue.page !== undefined) {
+        if (
+            !isRecord(argumentsValue.page) ||
+            Object.keys(argumentsValue.page).some((key) => key !== 'limit' && key !== 'cursor')
+        ) {
+            return { status: 'invalid', reason: 'project.discover page does not match the strict discovery contract' };
+        }
+        const limit = argumentsValue.page.limit;
+        const cursor = argumentsValue.page.cursor;
+        if (
+            (limit !== undefined &&
+                (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 50)) ||
+            (cursor !== undefined && (typeof cursor !== 'string' || cursor.length > MAX_CURSOR_LENGTH))
+        ) {
+            return { status: 'invalid', reason: 'project.discover page does not match the strict discovery contract' };
+        }
+        input.page = {};
+        if (typeof limit === 'number') {
+            input.page.limit = limit;
+        }
+        if (typeof cursor === 'string') {
+            input.page.cursor = cursor;
+        }
+    }
+    return { status: 'valid', input };
+}
+
 function failureReceipt(input: {
     callId: string;
     toolName?: string;
@@ -383,6 +463,77 @@ function executeProjectQuery(call: ToolCallResult, callId: string, turn: number)
         });
     }
     return executeSemanticProjectQuery(parsed.input, PROJECT_QUERY_TOOL_NAME, callId, turn);
+}
+
+/**
+ * An owner's `unavailable` or `unsupported` verdict as a receipt.
+ *
+ * The verdict is the owner's answer rather than a failure of the call, so it is
+ * carried verbatim and marked unretryable: repeating the same call cannot turn
+ * a domain nobody publishes, or a catalog nothing has indexed, into a page.
+ */
+function discoveryVerdictReceipt(verdict: DiscoveryVerdict, callId: string, turn: number): ApplicationToolReceipt {
+    const safeMessage = `${PROJECT_DISCOVERY_TOOL_NAME} ${verdict.domain}: ${verdict.status} (${verdict.reason})`;
+    return {
+        schema: 'sourdaw.application-tool-receipt',
+        schemaVersion: 1,
+        callId,
+        toolName: PROJECT_DISCOVERY_TOOL_NAME,
+        turn,
+        status: 'failure',
+        revision: null,
+        data: { status: verdict.status, domain: verdict.domain, reason: verdict.reason },
+        summary: safeMessage,
+        warnings: [],
+        error: {
+            code: verdict.status === 'unavailable' ? 'unavailable-tool' : 'invalid-tool-arguments',
+            safeMessage,
+            retryable: false,
+        },
+    };
+}
+
+function executeProjectDiscovery(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+    const parsed = parseProjectDiscoveryArguments(call.arguments);
+    if (parsed.status === 'invalid') {
+        return failureReceipt({
+            callId,
+            toolName: PROJECT_DISCOVERY_TOOL_NAME,
+            turn,
+            code: 'invalid-tool-arguments',
+            safeMessage: parsed.reason,
+            retryable: true,
+        });
+    }
+    try {
+        const result = queryAgentDiscovery(parsed.input);
+        if (result.status !== 'receipt') {
+            return discoveryVerdictReceipt(result, callId, turn);
+        }
+        const receipt = result.receipt;
+        return {
+            schema: 'sourdaw.application-tool-receipt',
+            schemaVersion: 1,
+            callId,
+            toolName: PROJECT_DISCOVERY_TOOL_NAME,
+            turn,
+            status: 'success',
+            revision: receipt.revisionToken,
+            data: receipt,
+            summary: `${receipt.domain}: ${String(receipt.items.length)} of ${String(receipt.page.total)} item(s)`,
+            warnings: [...receipt.warnings],
+            error: null,
+        };
+    } catch {
+        return failureReceipt({
+            callId,
+            toolName: PROJECT_DISCOVERY_TOOL_NAME,
+            turn,
+            code: 'tool-execution-failed',
+            safeMessage: 'Project discovery failed inside the application authority.',
+            retryable: true,
+        });
+    }
 }
 
 function executeProjectResolve(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
@@ -763,6 +914,8 @@ function executeSafeRead(call: ToolCallResult, callId: string, turn: number): Ap
     switch (call.name) {
         case PROJECT_QUERY_TOOL_NAME:
             return executeProjectQuery(call, callId, turn);
+        case PROJECT_DISCOVERY_TOOL_NAME:
+            return executeProjectDiscovery(call, callId, turn);
         case PROJECT_RESOLVE_TOOL_NAME:
             return executeProjectResolve(call, callId, turn);
         case AGENT_CAPABILITIES_TOOL_NAME:
@@ -1157,6 +1310,7 @@ export async function runApplicationOwnedToolLoop(
 
         const safeReadToolNames = new Set([
             PROJECT_QUERY_TOOL_NAME,
+            PROJECT_DISCOVERY_TOOL_NAME,
             PROJECT_RESOLVE_TOOL_NAME,
             AGENT_CAPABILITIES_TOOL_NAME,
             AGENT_DEVICE_MANIFEST_TOOL_NAME,

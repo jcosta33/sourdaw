@@ -8,16 +8,22 @@ import { getAgentCapabilityCatalog } from '../getAgentCapabilityCatalog';
 const QUERY_CONTRACT = {
     id: 'query',
     owner: 'Project',
-    operations: [
-        { name: 'object', version: '1', availability: 'available' },
-        { name: 'discovery.sample', version: '1', availability: 'available' },
-    ],
+    operations: [{ name: 'object', version: '1', availability: 'available' }],
+};
+
+const DISCOVERY_CONTRACT = {
+    id: 'discovery',
+    owner: 'Project',
+    operations: [{ name: 'sample', version: '1', availability: 'available' }],
 };
 
 const ADAPTER_CONTRACT = {
     id: 'external-adapter',
     owner: 'AiRuntime',
-    operations: [{ name: 'anthropic', version: '2', availability: 'configuration-required' }],
+    operations: [
+        { name: 'webllm', version: '2', availability: 'runtime-dependent' },
+        { name: 'anthropic', version: '2', availability: 'unavailable' },
+    ],
 };
 
 function readOperationNames(data: unknown): string[] {
@@ -55,7 +61,7 @@ async function readCapabilityReceiptOperationNames(): Promise<string[]> {
 }
 
 function applicationSurfaceEntries() {
-    return getAgentCapabilityCatalog([QUERY_CONTRACT, ADAPTER_CONTRACT]).entries.filter(
+    return getAgentCapabilityCatalog([QUERY_CONTRACT, DISCOVERY_CONTRACT, ADAPTER_CONTRACT]).entries.filter(
         (entry) => entry.evidence.surface === 'application-tool'
     );
 }
@@ -96,25 +102,43 @@ describe('agent capability catalog', () => {
     });
 
     it('copies each protocol contract operation with its contract identity and published version', () => {
-        const entries = getAgentCapabilityCatalog([QUERY_CONTRACT, ADAPTER_CONTRACT]).entries;
+        const entries = getAgentCapabilityCatalog([QUERY_CONTRACT, DISCOVERY_CONTRACT, ADAPTER_CONTRACT]).entries;
 
-        expect(entries.find((entry) => entry.id === 'query:discovery.sample')).toEqual({
-            id: 'query:discovery.sample',
-            name: 'discovery.sample',
+        expect(entries.find((entry) => entry.id === 'discovery:sample')).toEqual({
+            id: 'discovery:sample',
+            name: 'sample',
             availability: 'available',
             reason: null,
             version: '1',
             evidence: {
                 surface: 'protocol-contract',
-                owner: 'query',
+                owner: 'discovery',
                 contractOwner: 'Project',
                 declaredAvailability: 'available',
             },
         });
         expect(entries.find((entry) => entry.id === 'external-adapter:anthropic')).toMatchObject({
             availability: 'unavailable',
-            reason: 'configuration-required',
+            reason: 'unavailable',
             version: '2',
+        });
+    });
+
+    it('keeps an operation whose owner declared a runtime condition reachable, with that condition as its reason', () => {
+        const entries = getAgentCapabilityCatalog([ADAPTER_CONTRACT]).entries;
+
+        expect(entries.find((entry) => entry.id === 'external-adapter:webllm')).toEqual({
+            id: 'external-adapter:webllm',
+            name: 'webllm',
+            availability: 'available',
+            reason: 'runtime-dependent',
+            version: '2',
+            evidence: {
+                surface: 'protocol-contract',
+                owner: 'external-adapter',
+                contractOwner: 'AiRuntime',
+                declaredAvailability: 'runtime-dependent',
+            },
         });
     });
 

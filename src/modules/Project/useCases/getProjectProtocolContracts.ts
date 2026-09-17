@@ -8,29 +8,34 @@ export function getProjectProtocolContracts() {
             id: 'query' as const,
             owner: 'Project' as const,
             schemaVersion: SEMANTIC_PROJECT_QUERY_SCHEMA_VERSION,
-            capabilities: [
-                'revision-bound-read',
-                'pagination',
-                'stable-object-identity',
-                'semantic-diff',
-                'owner-catalog-discovery',
-            ] as const,
-            operations: [
-                ...SEMANTIC_PROJECT_QUERY_TYPES.map((name) => ({
-                    name,
-                    version: String(SEMANTIC_PROJECT_QUERY_SCHEMA_VERSION),
-                    availability: 'available' as const,
-                })),
-                ...AGENT_DISCOVERY_DOMAINS.map((domain) => ({
-                    name: `discovery.${domain}`,
-                    version: String(AGENT_DISCOVERY_SCHEMA_VERSION),
-                    availability: 'available' as const,
-                })),
-            ],
+            capabilities: ['revision-bound-read', 'pagination', 'stable-object-identity', 'semantic-diff'] as const,
+            operations: SEMANTIC_PROJECT_QUERY_TYPES.map((name) => ({
+                name,
+                version: String(SEMANTIC_PROJECT_QUERY_SCHEMA_VERSION),
+                availability: 'available' as const,
+            })),
             availability: 'available' as const,
             compatibility: {
                 mode: 'reject-unsupported' as const,
                 behavior: 'Reject unsupported query schemas; query receipts remain read-only evidence.',
+                canonicalProjectRequiresCommandReplay: false as const,
+            },
+        },
+        discovery: {
+            id: 'discovery' as const,
+            owner: 'Project' as const,
+            schemaVersion: AGENT_DISCOVERY_SCHEMA_VERSION,
+            capabilities: ['owner-catalog-discovery', 'revision-bound-read', 'pagination'] as const,
+            operations: AGENT_DISCOVERY_DOMAINS.map((domain) => ({
+                name: domain,
+                version: String(AGENT_DISCOVERY_SCHEMA_VERSION),
+                availability: 'available' as const,
+            })),
+            availability: 'available' as const,
+            compatibility: {
+                mode: 'reject-unsupported' as const,
+                behavior:
+                    'Reject a domain no owner publishes; discovery receipts carry owner-published entries as read-only evidence.',
                 canonicalProjectRequiresCommandReplay: false as const,
             },
         },

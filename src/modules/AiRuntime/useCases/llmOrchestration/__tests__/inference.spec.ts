@@ -430,7 +430,7 @@ describe('generateToolPlanningOutcome', () => {
                 'automateSendRanges',
                 'renderProjectSections',
                 CREATIVE_INTERPRETATION_TOOL_NAME,
-                'project.resolve',
+                'project.discover',
             ])
         );
         // The free slot goes to the first non-mandatory catalog tool; agent.capabilities is not it.

@@ -59,11 +59,20 @@ function toApplicationEntry(operation: AgentCapabilityOperation): AgentCapabilit
     };
 }
 
+/**
+ * Declared states in which an owner publishes an operation it cannot be called
+ * through. Every other state is a reachable operation whose declared condition
+ * the entry reports as its reason rather than as a negative verdict.
+ */
+const UNREACHABLE_CONTRACT_AVAILABILITIES: readonly string[] = ['deferred', 'unavailable'];
+
 function toContractEntries(contract: ProtocolContract): AgentCapabilityCatalogEntry[] {
     return contract.operations.map((operation) => ({
         id: `${contract.id}:${operation.name}`,
         name: operation.name,
-        availability: operation.availability === 'available' ? 'available' : 'unavailable',
+        availability: UNREACHABLE_CONTRACT_AVAILABILITIES.includes(operation.availability)
+            ? 'unavailable'
+            : 'available',
         reason: operation.availability === 'available' ? null : operation.availability,
         version: operation.version,
         evidence: {
