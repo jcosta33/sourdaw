@@ -15,6 +15,7 @@ function fakeEngine(engineRate: number): {
             noteOnMidi2: vi.fn(),
             noteOff: vi.fn(),
             setParam: vi.fn(),
+            setCalibration: vi.fn(),
             setSustain: vi.fn(),
             setUnaCorda: vi.fn(),
             setSostenuto: vi.fn(),

@@ -66,11 +66,14 @@ function shapedFiniteProjectedState(projected: Readonly<Record<string, number>>)
     );
 }
 
-function projectDeviceState(deviceType: string, deviceState: DeviceStateChunk | undefined) {
-    if (!deviceState) {
-        return null;
-    }
-    return getAudioDeviceRuntimeSink().projectNativeDeviceState({ deviceType, deviceState });
+/**
+ * Asked unconditionally, even when `deviceState` is `undefined`: not every
+ * arm reads `deviceState` at all — Grand Boule's calibration lives in its
+ * per-device store, keyed by `deviceId` — so the "nothing committed yet"
+ * guard belongs to the arms that actually need a chunk, not to this caller.
+ */
+function projectDeviceState(deviceId: string, deviceType: string, deviceState: DeviceStateChunk | undefined) {
+    return getAudioDeviceRuntimeSink().projectNativeDeviceState({ deviceId, deviceType, deviceState });
 }
 
 /**
@@ -98,7 +101,7 @@ export function projectDeviceForNativeBody(device: Device): NativeBodyDevice {
     }
     const patch = body.projectPatch(device.parameterValues);
     const bank = sampleBankKeyField(device.type, device.deviceState);
-    const projectedState = projectDeviceState(device.type, device.deviceState);
+    const projectedState = projectDeviceState(device.id, device.type, device.deviceState);
     if (!projectedState) {
         return { ...device, ...bank, parameterValues: patch };
     }

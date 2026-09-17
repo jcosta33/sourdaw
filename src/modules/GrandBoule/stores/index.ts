@@ -3,6 +3,7 @@ export {
     createDefaultGrandBouleState,
     grandBouleStore,
     createGrandBouleStore,
+    peekGrandBouleStore,
     resetGrandBouleStores,
 } from './grandBouleStore';
 

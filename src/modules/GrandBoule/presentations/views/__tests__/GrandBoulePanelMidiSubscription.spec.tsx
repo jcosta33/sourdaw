@@ -29,6 +29,7 @@ vi.mock('../../../useCases/resolveGrandBouleEngine', () => ({
         noteOnMidi2: () => {},
         noteOff: () => {},
         setParam: () => {},
+        setCalibration: () => {},
         setSustain: pedalWrites.setSustain,
         setUnaCorda: pedalWrites.setUnaCorda,
         setSostenuto: pedalWrites.setSostenuto,
