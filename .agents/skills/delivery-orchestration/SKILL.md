@@ -110,6 +110,29 @@ movement of the base tip is allowed when that context is unchanged.
 GitHub's live head matches the bundle; fresh approvals also require matching
 base context.
 
+### Headless reviewer dispatch
+
+When the orchestrator's harness cannot choose a different model for delegated review
+stances, run each blind stance on another agent harness launched headlessly. The
+dispatching session decides the harness, model, and invocation mechanics; this skill
+pins only the contract:
+
+- One stance per dispatch, blind: the reviewer receives the bundle path, the PR head,
+  its single stance, and read access to the repository — nothing else. Dispatches never
+  see each other's output.
+- The reviewer is read-only and credential-free. It never touches GitHub, never runs a
+  delivery script, and never receives a role credential; its report returns as text,
+  and the orchestrator validates findings, composes `review.json`, and publishes.
+- The reviewer's model must differ from the PR's authoring-model label; `review:publish`
+  refuses a match however the review was produced. Record in `reviewerModel` the model
+  the dispatch actually ran, cross-checked against the reviewer's self-report.
+- The dispatch is orchestrator-side tooling, never part of a trusted script: the trusted
+  snapshot must not spawn a language-model CLI, and the dispatch only produces input for
+  `review.json`.
+- A headless run bills the harness it uses. Keep stance prompts bounded and use the
+  cheapest model adequate for the stance's tier; the default reviewer harness and model
+  are the operator's choice, not this skill's.
+
 ## Review document formats
 
 ### Inline comments (REQUEST_CHANGES)
