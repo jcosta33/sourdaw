@@ -758,7 +758,7 @@ describe('ExportDialog', () => {
         expect(persistedDepths).toEqual([32, 32]);
     });
 
-    it('warns about a Toaster sequencer pattern that was never baked to the arrangement (ADR 0045)', () => {
+    it('renders one advisory per Toaster pattern the selector reports and keeps Start enabled', () => {
         mocks.listToasterPatternsOutsideArrangement.mockReturnValue([
             { trackId: 'track-1', trackName: 'Drums', deviceName: 'Toaster' },
         ]);
@@ -774,7 +774,7 @@ describe('ExportDialog', () => {
         expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
     });
 
-    it('shows no advisory once the pattern is baked to a clip on the child track', () => {
+    it('renders no advisory when the selector reports no pattern outside the arrangement', () => {
         mocks.listToasterPatternsOutsideArrangement.mockReturnValue([]);
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);

@@ -10,6 +10,7 @@ sources:
     - src/modules/Toaster/useCases/startSequencer.ts
     - src/modules/Toaster/useCases/exportPatternToTimeline.ts
     - src/modules/Toaster/useCases/prepareOfflineToaster.ts
+    - src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
     - src/modules/AudioEngine/useCases/livePlayback/projectLiveMidiProgramme.ts
     - https://github.com/jcosta33/sourdaw/issues/4181
 ---
@@ -29,13 +30,15 @@ against `loopIndex`, not stored.
 
 A free-running, click-time-seeded instrument has no arrangement position: there is no beat at which
 "the pattern" sits, only a beat at which Play happened to be pressed. Both offline export
-(`prepareOfflineToaster.ts` renders instrument devices from clips on the timeline) and the native
+(`scheduleTrackClips.ts` renders Toaster instrument devices from clips on the timeline) and the native
 live session (`projectLiveMidiProgramme.ts` projects MIDI notes from track clips) render what is
-_on the timeline_. Neither can render "the hits the browser session sounds," because that set is not
-a function of arrangement time — it depends on when Play was pressed and what the RNG rolled that
-time. The only arrangement-anchored, reproducible truth the Toaster pattern has is what
-**To timeline** (`exportPatternToTimeline.ts`) bakes onto the Toaster's child tracks: ordinary MIDI
-clips that export and native playback already know how to render.
+_on the timeline_. `prepareOfflineToaster.ts` projects the session's Toaster kit to the offline
+instance, but kit parameters only, never notes. Neither offline export nor live playback can render
+"the hits the browser session sounds," because that set is not a function of arrangement time — it
+depends on when Play was pressed and what the RNG rolled that time. The only arrangement-anchored,
+reproducible truth the Toaster pattern has is what **To timeline** (`exportPatternToTimeline.ts`)
+bakes onto the Toaster's child tracks: ordinary MIDI clips that export and native playback already
+know how to render.
 
 That bake is deliberately lossy. `exportPatternToTimeline.ts` (lines 13-33) is faithful to every
 dimension a plain MIDI note can carry — start time (including micro-timing and swing), duration,
