@@ -1245,9 +1245,11 @@ fn resolve_activation_sample_rate(
 /// Locks `state.engine` briefly to read its rate, drops the guard, then
 /// resolves through [`resolve_activation_sample_rate`]: the lock covers one
 /// field read and never spans `default_output_sample_rate`'s blocking device
-/// query, which callers such as `graph::start_into_empty_slot` require —
-/// holding `state.engine` across a device wait can deadlock the quit cascade
-/// racing to claim it on the JS thread.
+/// query. `graph::start_into_empty_slot` holds the same lock across the
+/// engine's own device wait for the same reason — a mutex held across a
+/// device wait parks every other claim on `state.engine` behind it,
+/// including the quit cascade's claim on the JS thread, where parking stops
+/// the shell's force-exit timer from ever firing.
 fn native_activation_sample_rate(state: &AppState) -> Result<f64, String> {
     let engine_rate = {
         let engine_guard = state
