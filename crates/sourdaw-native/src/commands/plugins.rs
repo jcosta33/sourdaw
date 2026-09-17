@@ -1229,20 +1229,39 @@ fn default_output_sample_rate() -> f64 {
 /// The plugin processes the native engine's buffers on the engine's clock —
 /// never a rate a caller supplies — so this is the only source for it. Without
 /// a running engine, the next engine that starts opens the default output
-/// device, which is exactly what `default_output_sample_rate` reads.
+/// device, which is exactly what `default_output_rate` reads.
 ///
-/// Locks `state.engine` on its own, briefly, and releases it before this
-/// returns: nothing else here needs it held, and the caller resolves the
-/// registry entry next.
+/// The engine rate wins when there is one; `default_output_rate` is called
+/// only in its absence, so a running engine never pays for the device query.
+fn resolve_activation_sample_rate(
+    engine_rate: Option<f64>,
+    default_output_rate: impl FnOnce() -> f64,
+) -> f64 {
+    engine_rate.unwrap_or_else(default_output_rate)
+}
+
+/// The rate to activate a plugin at, wired to the live state and device.
+///
+/// Locks `state.engine` briefly to read its rate, drops the guard, then
+/// resolves through [`resolve_activation_sample_rate`]: the lock covers one
+/// field read and never spans `default_output_sample_rate`'s blocking device
+/// query, which callers such as `graph::start_into_empty_slot` require —
+/// holding `state.engine` across a device wait can deadlock the quit cascade
+/// racing to claim it on the JS thread.
 fn native_activation_sample_rate(state: &AppState) -> Result<f64, String> {
-    let engine_guard = state
-        .engine
-        .lock()
-        .map_err(|error| format!("Failed to lock engine: {error}"))?;
-    Ok(match engine_guard.as_ref() {
-        Some(engine) => f64::from(engine.sample_rate()),
-        None => default_output_sample_rate(),
-    })
+    let engine_rate = {
+        let engine_guard = state
+            .engine
+            .lock()
+            .map_err(|error| format!("Failed to lock engine: {error}"))?;
+        engine_guard
+            .as_ref()
+            .map(|engine| f64::from(engine.sample_rate()))
+    };
+    Ok(resolve_activation_sample_rate(
+        engine_rate,
+        default_output_sample_rate,
+    ))
 }
 
 /// Construct and activate one plugin. The only format-specific step in a load.
@@ -2973,10 +2992,13 @@ mod tests {
         )
     }
 
-    /// The activation rate is the running engine's own clock, not a rate any
-    /// caller supplies.
+    /// `native_activation_sample_rate` reads the running engine's rate
+    /// through its own lock-read-drop wiring. Which rate wins — the engine's
+    /// or the default output device's — is `resolve_activation_sample_rate`'s
+    /// decision and is pinned by the pure-helper tests below; this test pins
+    /// only that the wiring reaches the engine's rate at all.
     #[test]
-    fn the_activation_rate_is_the_running_engines_own() {
+    fn native_activation_sample_rate_pins_the_engine_rate_through_its_own_wiring() {
         let state = AppState::default();
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(8);
@@ -2986,25 +3008,33 @@ mod tests {
 
         assert_eq!(
             rate, TEST_ENGINE_SAMPLE_RATE,
-            "with a running engine, activation reads its rate and nothing else"
+            "the wiring reads the engine's own rate through its lock-read-drop path"
         );
+    }
+
+    /// A running engine's rate wins, and `resolve_activation_sample_rate`
+    /// never calls the default-output closure to get there — the closure
+    /// panics if it is, which is the discriminating half of this test: a
+    /// caller who forgot to short-circuit on `Some` would pay for the device
+    /// query, and reading the caller's `state.engine` lock around one would
+    /// hold it across a blocking device wait.
+    #[test]
+    fn a_running_engines_rate_wins_and_the_device_is_never_asked() {
+        let rate = resolve_activation_sample_rate(Some(44_100.0), || {
+            panic!("the device must not be queried while an engine runs")
+        });
+
+        assert_eq!(rate, 44_100.0);
     }
 
     /// Before an engine exists, activation reaches for the rate the next
     /// engine will actually open its output device at — never a hardcoded
-    /// guess independent of `default_output_sample_rate`.
+    /// guess independent of the caller's own device query.
     #[test]
-    fn without_an_engine_the_activation_rate_is_the_default_output_devices() {
-        let state = AppState::default();
+    fn without_an_engine_the_default_output_rate_is_the_activation_rate() {
+        let rate = resolve_activation_sample_rate(None, || 22_050.0);
 
-        let rate = native_activation_sample_rate(&state).expect("the engine lock is free");
-
-        assert_eq!(
-            rate,
-            default_output_sample_rate(),
-            "with no engine running, activation falls back to the same rate the \
-             next engine will open its output device at"
-        );
+        assert_eq!(rate, 22_050.0);
     }
 
     /// A runtime activated at a rate other than the running engine's own is
@@ -3036,7 +3066,7 @@ mod tests {
 
         assert_eq!(
             refusal.reason,
-            activation_rate_refusal_reason("Mistuned Fixture", 44_100.0, TEST_ENGINE_SAMPLE_RATE),
+            "Cannot attach plugin 'Mistuned Fixture': it was activated at 44100 Hz but the engine renders at 48000 Hz",
             "the refusal names both the runtime's own rate and the engine's"
         );
         assert!(
@@ -4334,6 +4364,55 @@ mod tests {
                 .chain_kind,
             DeviceKind::Generator,
             "a dormant instrument's chain kind must carry through the attach"
+        );
+    }
+
+    /// A dormant runtime activated at a rate other than the running engine's
+    /// is refused the same way a fresh load is: the attach leaves it parked
+    /// in `state.plugins`, never registered in `state.engine_plugins`, rather
+    /// than wrongly wiring a mistuned instance onto the engine's clock.
+    #[test]
+    fn a_dormant_runtime_at_another_rate_stays_parked_after_attach() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let state = Arc::new(AppState::default());
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Mistuned Dormant", Vec::new(), false);
+        wrapper.set_engine_owned_command_fixture_sample_rate(44_100.0);
+        state
+            .plugins
+            .lock()
+            .expect("plugins lock should be available")
+            .insert(
+                "mistuned-dormant".to_string(),
+                PluginInstanceData::dormant_fixture(wrapper.into()),
+            );
+
+        let attached =
+            attach_dormant_plugins(&state, 1).expect("the attach call itself must not error");
+
+        assert!(
+            attached.is_empty(),
+            "a mismatched runtime is refused rather than attached"
+        );
+        assert!(
+            state
+                .plugins
+                .lock()
+                .expect("plugins lock should be available")
+                .contains_key("mistuned-dormant"),
+            "a refused dormant instance stays parked in state.plugins"
+        );
+        assert!(
+            !state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .contains_key("mistuned-dormant"),
+            "a refused dormant instance never reaches state.engine_plugins"
         );
     }
 
