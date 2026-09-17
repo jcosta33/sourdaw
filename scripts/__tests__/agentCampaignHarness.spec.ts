@@ -8,10 +8,33 @@ import {
     EVIDENCE_MANIFEST_PATH,
     computeFixtureDigest,
     parseEvidenceManifest,
+    sharedFixturePaths,
+    validateEvidenceManifest,
+    type EvidenceCollision,
 } from '../agent-campaign/evidenceManifest';
 import { isSourdawE2eServeMode } from '../e2eServerIdentity';
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+
+/**
+ * The exact collision list the committed manifest's suites produce, written by hand from that
+ * manifest's fixtures rather than recomputed: recomputing with the production `sharedFixturePaths`
+ * would prove the function agrees with itself, not that the committed manifest is correct. Mirrors
+ * `EXPECTED_COLLISIONS` in `src/app/__tests__/agentCampaignBaseline.spec.ts`; the two files cannot
+ * share an import because `src/` may not import `scripts/`.
+ */
+const EXPECTED_COLLISIONS: readonly EvidenceCollision[] = [
+    { path: 'crates/sourdaw/src', suites: ['AC-030', 'AC-049', 'AC-057'] },
+    { path: 'scripts/agent-campaign/run-evidence-gate.ts', suites: ['AC-054', 'AC-060'] },
+    {
+        path: 'src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts',
+        suites: ['AC-019', 'AC-024'],
+    },
+    {
+        path: 'src/modules/AiRuntime/useCases/__tests__/agentRunWorkLease.spec.ts',
+        suites: ['AC-019', 'AC-020'],
+    },
+];
 
 /**
  * The build configuration is read as text rather than imported: it is outside every `tsconfig`
@@ -51,5 +74,13 @@ describe('agent campaign evidence fixtures', () => {
                 });
             }
         }
+    });
+
+    it('validates the committed manifest with no problems', () => {
+        expect(validateEvidenceManifest(manifest)).toEqual([]);
+    });
+
+    it('shares the fixture-path collisions the baseline spec pins', () => {
+        expect(sharedFixturePaths(manifest.suites)).toEqual(EXPECTED_COLLISIONS);
     });
 });

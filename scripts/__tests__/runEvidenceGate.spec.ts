@@ -153,9 +153,14 @@ describe('evidence manifest generation', () => {
 
     it('rejects a suite id declared twice', () => {
         const { manifest } = fixture();
-        const duplicated = { ...manifest, suites: [...manifest.suites, ...manifest.suites.slice(0, 1)] };
+        const original = manifest.suites[0];
+        if (original === undefined) {
+            throw new Error('fixture manifest carries no suites');
+        }
+        const duplicate: EvidenceSuite = { ...original, fixtures: [] };
+        const duplicated = { ...manifest, suites: [...manifest.suites, duplicate] };
 
-        expect(validateEvidenceManifest(duplicated)).toContain('suite AC-001 is declared more than once');
+        expect(validateEvidenceManifest(duplicated)).toEqual([`suite ${original.id} is declared more than once`]);
     });
 });
 
