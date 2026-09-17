@@ -8,6 +8,8 @@ import {
     type ModelProviderName,
     type ModelProviderRequest,
 } from '../../models/ModelProviderProtocol';
+import { MODEL_TEXT_MAX_INPUT_TOKENS } from '../../models/ModelTextRequestLimits';
+import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
 
 type RunLocalModelTextCompletionBase = {
@@ -39,6 +41,8 @@ type RunLocalModelTextCompletionInput = RunLocalModelTextCompletionBase &
 
 export async function runLocalModelTextCompletion(input: RunLocalModelTextCompletionInput): Promise<string> {
     const protocol = createModelProviderProtocol({ provider: input.provider, model: input.model });
+    /** A caller's own output ceiling holds only as far as the configured model ceiling allows. */
+    const maxOutputTokens = Math.min(input.maxOutputTokens, readAgentResourceLimits().maxModelOutputTokens);
     const compiled = protocol.compileRequest({
         correlationId: `model-text-${crypto.randomUUID()}`,
         operation: 'text',
@@ -48,12 +52,12 @@ export async function runLocalModelTextCompletion(input: RunLocalModelTextComple
             { role: 'user', content: input.userMessage },
         ],
         stream: false,
-        limits: { maxOutputTokens: input.maxOutputTokens },
+        limits: { maxOutputTokens },
         controls: { cache: 'provider-default', reasoning: 'provider-default' },
         budget: {
-            maxInputTokens: 32_768,
-            maxOutputTokens: input.maxOutputTokens,
-            maxTotalTokens: 32_768 + input.maxOutputTokens,
+            maxInputTokens: MODEL_TEXT_MAX_INPUT_TOKENS,
+            maxOutputTokens,
+            maxTotalTokens: MODEL_TEXT_MAX_INPUT_TOKENS + maxOutputTokens,
         },
         dataPolicy: 'local-only',
     });

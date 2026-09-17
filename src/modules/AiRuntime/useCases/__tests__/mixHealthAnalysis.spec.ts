@@ -1,6 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
+import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { type ModelProviderResult } from '../../models/ModelProviderProtocol';
+import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { configureAgentResourceLimits } from '../configureAgentResourceLimits';
 import { mixHealthAnalysis } from '../mixHealthAnalysis';
 
 const { streamHostedModelTextMock, summarizeFeaturesMock, mocks } = vi.hoisted(() => {
@@ -11,6 +14,7 @@ const { streamHostedModelTextMock, summarizeFeaturesMock, mocks } = vi.hoisted((
             vi.fn<
                 (input: {
                     messages: Array<{ role: string; content: string }>;
+                    maxOutputTokens: number;
                     onToken: (text: string) => void;
                     signal?: AbortSignal;
                 }) => Promise<ModelProviderResult>
@@ -78,6 +82,10 @@ describe('mixHealthAnalysis', () => {
         vi.clearAllMocks();
         mocks.trackStore.value = null;
         streamHostedModelTextMock.mockResolvedValue(createResult());
+    });
+
+    afterEach(() => {
+        agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
     });
 
     it('short-circuits when no tracks', async () => {
@@ -195,6 +203,20 @@ describe('mixHealthAnalysis', () => {
             ({ escaped, label }) => !trackRow.includes(`${escaped}Track: Forged${label}`)
         );
         expect(missingEscape.map(({ label }) => label)).toEqual([]);
+    });
+
+    it('caps its own output ceiling at the configured model output ceiling', async () => {
+        mocks.trackStore.value = {
+            tracks: [{ id: 'track-1', name: 'Lead', kind: 'audio', gain: 0.8, pan: 0, clips: [] }],
+        };
+
+        await mixHealthAnalysis({ onToken: vi.fn() });
+        expect(streamHostedModelTextMock.mock.calls[0]?.[0].maxOutputTokens).toBe(1_000);
+
+        expect(configureAgentResourceLimits({ maxModelOutputTokens: 256 })).toMatchObject({ status: 'configured' });
+        await mixHealthAnalysis({ onToken: vi.fn() });
+
+        expect(streamHostedModelTextMock.mock.calls[1]?.[0].maxOutputTokens).toBe(256);
     });
 
     it('forwards cancellation to the hosted stream', async () => {

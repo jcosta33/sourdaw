@@ -9,8 +9,10 @@ import {
     type ModelProviderMessage,
     type ModelProviderResult,
 } from '../models/ModelProviderProtocol';
+import { MODEL_TEXT_MAX_INPUT_TOKENS } from '../models/ModelTextRequestLimits';
 import { streamCloudChatCompletion } from '../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
 import { getCloudProviderInfo } from '../repositories/cloudLlm/getCloudProviderInfo';
+import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 
 import { createModelProviderStreamWriter } from './createModelProviderStreamWriter';
 import { remoteTransmissionDisclosure } from './discloseRemoteTransmission';
@@ -85,6 +87,8 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
         ...result,
         remoteDisclosure,
     });
+    /** A caller's own output ceiling holds only as far as the configured model ceiling allows. */
+    const maxOutputTokens = Math.min(input.maxOutputTokens, readAgentResourceLimits().maxModelOutputTokens);
     const compiled = protocol.compileRequest({
         correlationId: input.correlationId,
         ...(input.runId === undefined ? {} : { runId: input.runId }),
@@ -94,12 +98,12 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
         modality: 'text',
         messages: input.messages,
         stream: true,
-        limits: { maxOutputTokens: input.maxOutputTokens },
+        limits: { maxOutputTokens },
         controls: { cache: 'provider-default', reasoning: 'provider-default' },
         budget: {
-            maxInputTokens: 32_768,
-            maxOutputTokens: input.maxOutputTokens,
-            maxTotalTokens: 32_768 + input.maxOutputTokens,
+            maxInputTokens: MODEL_TEXT_MAX_INPUT_TOKENS,
+            maxOutputTokens,
+            maxTotalTokens: MODEL_TEXT_MAX_INPUT_TOKENS + maxOutputTokens,
         },
         dataPolicy: 'remote-allowed',
         dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
