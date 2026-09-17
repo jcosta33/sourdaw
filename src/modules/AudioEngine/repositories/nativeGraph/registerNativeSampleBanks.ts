@@ -188,6 +188,24 @@ export async function registerNativeSampleBanks(input: RegisterNativeSampleBanks
     const named = collectNativeSampleBankKeys(commands);
     const committed: string[] = [];
 
+    // Replace rather than union: a `replaceTopology` batch states this
+    // backend's *whole* graph, so a key it no longer names must stop being
+    // this backend's claim, not merely gain company in it — otherwise a
+    // device a musician removed from a live session would keep its bank alive
+    // through every later replacement that also forgot to drop it.
+    //
+    // Recorded before the staging loop below, not after: a batch naming
+    // several keys stages them one at a time, and a key already shipped —
+    // committed to the process-wide store — must never sit unclaimed by this
+    // backend while a sibling key in the same batch is still in flight. A
+    // release racing in during that window reads every backend's claim
+    // (`isClaimedByAnyBackend`), and a claim recorded only after the whole
+    // batch finishes would leave an already-committed key looking owned by no
+    // one for as long as the batch takes to stage the rest.
+    const previousClaim = claimedNativeSampleBankKeysByBackend.get(backendId) ?? new Set<string>();
+    const nextClaim = replaceTopology === true ? new Set(named) : new Set([...previousClaim, ...named]);
+    claimedNativeSampleBankKeysByBackend.set(backendId, nextClaim);
+
     for (const bankKey of named) {
         if (registeredNativeSampleBankKeys.has(bankKey)) {
             continue;
@@ -213,15 +231,6 @@ export async function registerNativeSampleBanks(input: RegisterNativeSampleBanks
             committed.push(bankKey);
         }
     }
-
-    // Replace rather than union: a `replaceTopology` batch states this
-    // backend's *whole* graph, so a key it no longer names must stop being
-    // this backend's claim, not merely gain company in it — otherwise a
-    // device a musician removed from a live session would keep its bank alive
-    // through every later replacement that also forgot to drop it.
-    const previousClaim = claimedNativeSampleBankKeysByBackend.get(backendId) ?? new Set<string>();
-    const nextClaim = replaceTopology === true ? new Set(named) : new Set([...previousClaim, ...named]);
-    claimedNativeSampleBankKeysByBackend.set(backendId, nextClaim);
 
     if (replaceTopology === true) {
         await releaseUnnamedBanks(transport);

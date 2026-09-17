@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { mirrorDeviceChainDelta, projectDeviceForNativeBody } from '#/modules/AudioEngine/useCases';
+import { mirrorDeviceChainDelta, projectsToDifferentNativeBank } from '#/modules/AudioEngine/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { type Track } from '../../stores/trackStore';
@@ -26,9 +26,7 @@ function projectedBankKeyChanged(before: Track, after: Track, deviceId: string):
     if (!beforeDevice || !afterDevice) {
         return false;
     }
-    return (
-        projectDeviceForNativeBody(beforeDevice).sampleBankKey !== projectDeviceForNativeBody(afterDevice).sampleBankKey
-    );
+    return projectsToDifferentNativeBank(beforeDevice, afterDevice);
 }
 
 /**

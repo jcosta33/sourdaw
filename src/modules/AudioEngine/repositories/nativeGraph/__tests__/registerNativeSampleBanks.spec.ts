@@ -468,6 +468,92 @@ describe('registerNativeSampleBanks — claims scoped by backend (#4203)', () =>
         expect(registeredNativeSampleBankKeys.has('levain:trumpet')).toBe(true);
     });
 
+    it('never releases a bank already committed while a sibling in the same batch is still shipping', async () => {
+        // The offline batch names two banks. Trumpet stages and commits
+        // through ordinary microtask ticks; violin's `begin_levain_bank` is
+        // held open on a deferred that this case controls, so the offline
+        // call's own loop cannot reach its post-loop code — and with the
+        // claim write sited after that loop, its backend would still be
+        // unclaimed for a bank it already shipped. A foreign backend's
+        // `replaceTopology` naming nothing races in once trumpet is
+        // genuinely committed (observed, not counted in ticks) but before
+        // offline's own batch has finished: it must find trumpet claimed by
+        // offline's still-in-flight batch, not free to reclaim.
+        const violinBegin = deferred();
+        const beginLevainBank = vi.fn(({ bankKey }: { bankKey: string }) =>
+            bankKey === 'levain:violin' ? violinBegin.promise.then(() => null) : Promise.resolve(null)
+        );
+        const { transport, calls } = recordingTransport({ beginLevainBank });
+
+        const offline = registerNativeSampleBanks({
+            transport,
+            commands: [
+                createStrip('audio-1', [
+                    device({ id: 'device-a', sampleBankKey: 'levain:trumpet' }),
+                    device({ id: 'device-b', sampleBankKey: 'levain:violin' }),
+                ]),
+            ],
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            backendId: 'off-1',
+        });
+
+        await vi.waitFor(() => {
+            expect(registeredNativeSampleBankKeys.has('levain:trumpet')).toBe(true);
+        });
+
+        // Trumpet is committed; violin's begin is still held open, so
+        // offline's own batch has not reached its post-loop code. A foreign
+        // backend's replaceTopology naming nothing must still find trumpet
+        // spoken for.
+        await registerNativeSampleBanks({
+            transport,
+            commands: [],
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            replaceTopology: true,
+            backendId: 'foreign',
+        });
+
+        expect(calls.filter((call) => call.startsWith('release:'))).not.toContain('release:levain:trumpet');
+        expect(registeredNativeSampleBankKeys.has('levain:trumpet')).toBe(true);
+
+        violinBegin.settle();
+        await offline;
+
+        expect(registeredNativeSampleBankKeys.has('levain:violin')).toBe(true);
+    });
+
+    it("unions a later non-replace batch onto the same backend's claim rather than replacing it", async () => {
+        const { transport, calls } = recordingTransport();
+
+        await registerNativeSampleBanks({
+            transport,
+            commands: commandsNaming('levain:trumpet'),
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            replaceTopology: true,
+            backendId: LIVE_BACKEND_ID,
+        });
+        await registerNativeSampleBanks({
+            transport,
+            commands: commandsNaming('levain:violin'),
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            backendId: LIVE_BACKEND_ID,
+        });
+        // A foreign backend's replaceTopology naming neither must not read
+        // this backend's claim as having dropped trumpet just because a later
+        // incremental batch on the same backend named only violin.
+        await registerNativeSampleBanks({
+            transport,
+            commands: [],
+            acquire: () => Promise.resolve(lease(vi.fn())),
+            replaceTopology: true,
+            backendId: 'foreign',
+        });
+
+        expect(calls.filter((call) => call.startsWith('release:'))).toEqual([]);
+        expect(registeredNativeSampleBankKeys.has('levain:trumpet')).toBe(true);
+        expect(registeredNativeSampleBankKeys.has('levain:violin')).toBe(true);
+    });
+
     it('replaces its claim on replaceTopology rather than unioning it, so a dropped device releases', async () => {
         const { transport, calls } = recordingTransport();
 

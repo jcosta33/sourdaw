@@ -4,14 +4,14 @@ const mocks = vi.hoisted(() => ({
     setDeviceState: vi.fn(),
     getTrackStoreState: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(),
-    projectDeviceForNativeBody: vi.fn(),
+    projectsToDifferentNativeBank: vi.fn(),
 }));
 
 vi.mock('../../../useCases/device/setDeviceState', () => ({ setDeviceState: mocks.setDeviceState }));
 vi.mock('../../../useCases/getTrackStoreState', () => ({ getTrackStoreState: mocks.getTrackStoreState }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     mirrorDeviceChainDelta: mocks.mirrorDeviceChainDelta,
-    projectDeviceForNativeBody: mocks.projectDeviceForNativeBody,
+    projectsToDifferentNativeBank: mocks.projectsToDifferentNativeBank,
 }));
 vi.mock('../../toHandlerExecutionResult', () => ({
     toHandlerExecutionResult: (result: unknown) => ({ status: result ? 'written' : 'no-write' }),
@@ -79,10 +79,10 @@ describe('handleSetDeviceState', () => {
         mocks.getTrackStoreState
             .mockReturnValueOnce({ tracks: [track([beforeDevice])] })
             .mockReturnValueOnce({ tracks: [track([afterDevice])] });
-        mocks.projectDeviceForNativeBody.mockImplementation((deviceInput: { deviceState?: { bank?: string } }) => ({
-            ...deviceInput,
-            sampleBankKey: `levain:${deviceInput.deviceState?.bank}`,
-        }));
+        mocks.projectsToDifferentNativeBank.mockImplementation(
+            (before: { deviceState?: { bank?: string } }, after: { deviceState?: { bank?: string } }) =>
+                before.deviceState?.bank !== after.deviceState?.bank
+        );
 
         const result = handleSetDeviceState.execute(action);
         if (!result || result instanceof Promise || result.status !== 'written' || !result.afterCommit) {
@@ -108,10 +108,10 @@ describe('handleSetDeviceState', () => {
         mocks.getTrackStoreState
             .mockReturnValueOnce({ tracks: [track([beforeDevice])] })
             .mockReturnValueOnce({ tracks: [track([afterDevice])] });
-        mocks.projectDeviceForNativeBody.mockImplementation((deviceInput: { deviceState?: { bank?: string } }) => ({
-            ...deviceInput,
-            sampleBankKey: `levain:${deviceInput.deviceState?.bank}`,
-        }));
+        mocks.projectsToDifferentNativeBank.mockImplementation(
+            (before: { deviceState?: { bank?: string } }, after: { deviceState?: { bank?: string } }) =>
+                before.deviceState?.bank !== after.deviceState?.bank
+        );
 
         const result = handleSetDeviceState.execute(action);
 

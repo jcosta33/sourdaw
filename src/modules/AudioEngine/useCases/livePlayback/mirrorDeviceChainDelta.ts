@@ -63,6 +63,7 @@ import { notifyDeferredChainChange } from './notifyDeferredChainChange';
 // not hold a vocabulary for — every `insert-device` this file builds carries a
 // projected device, not the raw project one.
 import { projectDeviceForNativeBody } from './projectDeviceForNativeBody';
+import { projectsToDifferentNativeBank } from './projectsToDifferentNativeBank';
 import { readNativeChain } from './readNativeChain';
 import { rearmNativeLiveAutomationWriterInPlace } from './rearmNativeLiveAutomationWriterInPlace';
 import { rearmNativeLiveMidiWriterInPlace } from './rearmNativeLiveMidiWriterInPlace';
@@ -125,10 +126,7 @@ function swappedDevices(before: readonly Device[], after: readonly Device[]): re
     const beforeById = new Map(before.map((device) => [device.id, device]));
     return after.filter((device) => {
         const priorDevice = beforeById.get(device.id);
-        return (
-            priorDevice !== undefined &&
-            projectDeviceForNativeBody(priorDevice).sampleBankKey !== projectDeviceForNativeBody(device).sampleBankKey
-        );
+        return priorDevice !== undefined && projectsToDifferentNativeBank(priorDevice, device);
     });
 }
 
@@ -162,11 +160,15 @@ function rebuildChain(track: Track, nativeChain: readonly string[]): readonly Au
     ];
 }
 
-function editChain(input: MirrorDeviceChainDeltaInput, nativeChain: readonly string[]): readonly AudioGraphCommand[] {
+function editChain(
+    input: MirrorDeviceChainDeltaInput,
+    nativeChain: readonly string[],
+    swapped: readonly Device[]
+): readonly AudioGraphCommand[] {
     const { before, after } = input;
     const afterIds = new Set(idsOf(after.devices));
     const beforeIds = new Set(idsOf(before.devices));
-    const swappedIds = new Set(idsOf(swappedDevices(before.devices, after.devices)));
+    const swappedIds = new Set(idsOf(swapped));
     const removed = idsOf(before.devices).filter((id) => !afterIds.has(id) && nativeChain.includes(id));
     const commands: AudioGraphCommand[] = removed.map((deviceId) => ({
         kind: 'remove-device',
@@ -184,7 +186,8 @@ function editChain(input: MirrorDeviceChainDeltaInput, nativeChain: readonly str
         // that is, so this device is torn down and built again — at the same
         // position, immediately, rather than left to the next play.
         const isSwapped = !isNew && swappedIds.has(device.id) && projected.includes(device.id);
-        if (!isNew && !isSwapped) {
+        const unchanged = !isNew && !isSwapped;
+        if (unchanged) {
             continue;
         }
         if (isSwapped) {
@@ -243,24 +246,29 @@ function changesWhatThePassCarries(commands: readonly AudioGraphCommand[]): bool
     );
 }
 
-function changedDeviceNames(input: MirrorDeviceChainDeltaInput): readonly string[] {
+function changedDeviceNames(input: MirrorDeviceChainDeltaInput, swapped: readonly Device[]): readonly string[] {
     const { before, after } = input;
     const afterIds = new Set(idsOf(after.devices));
     const beforeIds = new Set(idsOf(before.devices));
     return [
         ...before.devices.filter((device) => !afterIds.has(device.id)),
         ...after.devices.filter((device) => !beforeIds.has(device.id)),
-        ...swappedDevices(before.devices, after.devices),
+        ...swapped,
     ].map((device) => device.name);
 }
 
 function planMirror(input: MirrorDeviceChainDeltaInput, nativeChain: readonly string[]): MirrorPlan {
     const reordered = survivorsWereReordered(input.before.devices, input.after.devices);
+    // Computed once and shared: the edit path and the decline notice both ask
+    // which survivors changed instrument, and asking twice would cost a
+    // second `projectDeviceForNativeBody` pass over every survivor for no
+    // reason — the answer cannot differ between the two callers.
+    const swapped = swappedDevices(input.before.devices, input.after.devices);
     return {
-        commands: reordered ? rebuildChain(input.after, nativeChain) : editChain(input, nativeChain),
+        commands: reordered ? rebuildChain(input.after, nativeChain) : editChain(input, nativeChain, swapped),
         // Empty for a pure reorder, which is what makes the notice name the
         // chain rather than a device that did not change.
-        changedDeviceNames: changedDeviceNames(input),
+        changedDeviceNames: changedDeviceNames(input, swapped),
     };
 }
 
