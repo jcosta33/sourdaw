@@ -1,0 +1,92 @@
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanelCalibrationSync.spec.tsx
+  s_9b530f08172a54::t_aa356846e76ca8 21,31-32,50,53-55
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleMorphPosition.spec.ts
+  s_9b530f08172a54::t_5317ca7e8f4685 21
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanel.spec.tsx
+  s_9b530f08172a54::t_4b5e7c952899ff 49-53,58
+src/app/projectNativeDeviceState.ts
+  s_9b530f08172a54::t_81037c1da622fa 52
+  s_9b530f08172a54::t_991730c9bf9c6d 58
+  s_9b530f08172a54::t_816c477e1f9ca1 69-76
+  s_9b530f08172a54::t_188551b2f27244 2,8-9,16-29
+  s_9b530f08172a54::t_51387fd25dd08d 117,126
+src/modules/GrandBoule/AGENTS.md
+  s_9b530f08172a54::t_ad8fdceef4b198 7-8
+src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/__tests__/resetMidiCalibration.spec.ts
+  s_9b530f08172a54::t_97a6f371d1f026 27,35,40-42,48,55
+src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/__tests__/syncMidiCalibrationToEngine.spec.ts
+  s_9b530f08172a54::t_15e9928255ef05 15-21,23,30,35,42
+src/modules/GrandBoule/repositories/__tests__/grandBouleEngineHandle.spec.ts
+  s_9b530f08172a54::t_0289299849a6c4 27
+src/modules/GrandBoule/repositories/grandBouleEngineHandle.ts
+  s_9b530f08172a54::t_ba01f9846ea2d7 23-29
+  s_9b530f08172a54::t_15d3fafe37eb3e 65
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectDeviceForNativeBody.spec.ts
+  s_9b530f08172a54::t_1deff92dea46c0 100-101
+  s_9b530f08172a54::t_a6222d72a1a713 155-176
+src/app/__tests__/bootstrap.spec.ts
+  s_9b530f08172a54::t_54b2923d307176 65
+  s_9b530f08172a54::t_a265d58d240a32 478
+  s_9b530f08172a54::t_1b0303b612ddca 1035-1037
+  s_9b530f08172a54::t_e06d4bb939fd67 1019-1024
+src/modules/GrandBoule/useCases/index.ts
+  s_9b530f08172a54::t_04eff657a89978 5
+src/modules/GrandBoule/useCases/__tests__/loadGrandBoulePreset.spec.ts
+  s_9b530f08172a54::t_3bb66f63459775 26
+src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/syncMidiCalibrationToEngine.ts
+  s_9b530f08172a54::t_295d9f66b5b375 12,26-31,43-46
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanelMidiSubscription.spec.tsx
+  s_9b530f08172a54::t_dcee851322da08 32
+src/modules/GrandBoule/stores/grandBouleStore.ts
+  s_9b530f08172a54::t_6d9425c4de6fdb 85-97
+src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts
+  s_9b530f08172a54::t_5045bb0ea2072a 79-94
+  s_9b530f08172a54::t_eced330630f7ee 2-7,9
+src/modules/GrandBoule/models/GrandBouleCalibrationDspParamNames.ts
+  s_9b530f08172a54::t_1f2615d6a3dae7 1-19
+src/modules/AudioEngine/useCases/livePlayback/projectDeviceForNativeBody.ts
+  s_9b530f08172a54::t_c2147017ed597a 69-76
+  s_9b530f08172a54::t_d560101233ea63 104
+src/modules/GrandBoule/useCases/__tests__/loadGrandBouleAttackClip.spec.ts
+  s_9b530f08172a54::t_9c642697544943 18
+src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/__tests__/setCcSmoothingMs.spec.ts
+  s_9b530f08172a54::t_78ee6e4f388c0a 25-26,28,32,37,44,49,56
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_9b530f08172a54::t_2fb6286f244e97 129-133,136
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_9b530f08172a54::t_a4c46743571c5f 381-385
+  s_9b530f08172a54::t_e52e25959e53e0 395-403
+src/modules/GrandBoule/stores/index.ts
+  s_9b530f08172a54::t_e395cce6403ee4 6
+src/modules/GrandBoule/useCases/__tests__/resolveGrandBouleEngine.spec.ts
+  s_9b530f08172a54::t_37a0028e2b6e77 5,31-34,42-43
+  s_9b530f08172a54::t_a24801bdd702d7 115-138
+src/modules/GrandBoule/useCases/__tests__/triggerGrandBouleNote.spec.ts
+  s_9b530f08172a54::t_5c9f18b665e57a 25
+src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/__tests__/setSustainThreshold.spec.ts
+  s_9b530f08172a54::t_99bf1ac281165d 25-27,29,33,38,45,50,57
+src/modules/GrandBoule/useCases/__tests__/projectGrandBouleCalibrationToNativePatch.spec.ts
+  s_9b530f08172a54::t_a4e94919c6684f 1-17,24-25,27-74
+  s_9b530f08172a54::t_4834c993cc1390 18-23,26
+src/modules/GrandBoule/useCases/projectGrandBouleCalibrationToNativePatch.ts
+  s_9b530f08172a54::t_258cf5047b9459 1-43
+src/app/__tests__/projectNativeDeviceState.spec.ts
+  s_9b530f08172a54::t_ccb07f81aef7d2 1-16,22-83
+  s_9b530f08172a54::t_ea5319f6ace94a 17-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b13b85a2e5206f0ef3c811ef85374051f4c7438f",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
