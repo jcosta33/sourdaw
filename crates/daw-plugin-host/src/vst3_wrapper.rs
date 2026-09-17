@@ -1273,6 +1273,11 @@ impl Vst3Wrapper {
         &self.descriptor_id
     }
 
+    /// The rate this instance was activated at.
+    pub fn sample_rate(&self) -> f64 {
+        self.sample_rate
+    }
+
     /// Deliver messages the plugin's halves sent each other through the host.
     ///
     /// VST3 routes an `IMessage` from one connection point to the other, and a

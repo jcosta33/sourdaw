@@ -50,7 +50,6 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         const latencyReporter = vi.fn();
         await expect(
             activateExternalPlugin({
-                engineSampleRate: 48_000,
                 pluginId: 'compressor',
                 instanceId: 'plugin-instance-1',
                 onLatencyMs: latencyReporter,
@@ -71,7 +70,6 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
 
         await expect(
             activateExternalPlugin({
-                engineSampleRate: 48_000,
                 pluginId: 'compressor',
                 instanceId: 'plugin-instance-1',
             })
@@ -102,14 +100,12 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         mocks.unloadPlugin.mockReturnValueOnce(bulkUnload.promise);
 
         const firstActivation = activateExternalPlugin({
-            engineSampleRate: 48_000,
             pluginId: 'compressor',
             instanceId: 'plugin-instance-1',
         });
         await vi.waitFor(() => expect(mocks.loadPlugin).toHaveBeenCalledOnce());
         const reset = resetExternalPluginRuntimeForGraphRebuild();
         const lateActivation = activateExternalPlugin({
-            engineSampleRate: 48_000,
             pluginId: 'compressor',
             instanceId: 'late-instance',
         });
@@ -145,7 +141,6 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         const retirement = await beginProjectSessionPluginRetirement();
         const retiring = retirement.retire();
         const activation = activateExternalPlugin({
-            engineSampleRate: 48_000,
             pluginId: 'compressor',
             instanceId: 'late-instance',
         });
@@ -167,7 +162,6 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
 
         await expect(retirement.retire()).rejects.toThrow('native unload failed');
         const activation = activateExternalPlugin({
-            engineSampleRate: 48_000,
             pluginId: 'compressor',
             instanceId: 'after-failed-retirement',
         });
@@ -192,7 +186,6 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         mocks.unloadPlugin.mockReturnValueOnce(bulkUnload.promise);
 
         const activation = activateExternalPlugin({
-            engineSampleRate: 48_000,
             pluginId: 'compressor',
             instanceId: 'pre-admitted-instance',
         });

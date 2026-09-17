@@ -75,7 +75,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: vi.fn(),
     getDeviceChainTailSeconds: vi.fn(),
     getEngineState: vi.fn(),
-    getLiveEngineSampleRate: vi.fn(),
     getRuntimeGraphRevision: vi.fn(),
     getTrackStrip: vi.fn(),
     initializeTrackStripFromSnapshot: vi.fn(),

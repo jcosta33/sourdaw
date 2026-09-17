@@ -525,9 +525,9 @@ mod tests {
 
     /// The flagged instance is re-queried: the change becomes the event, the
     /// flag is consumed, and the graph is told where to aim compensation. The
-    /// figures travel together exactly as a channel wake's do — the fixture's
-    /// activation rate is unknown, so its millisecond figure is 0 and the
-    /// frames are what the fixture declared.
+    /// figures travel together exactly as a channel wake's do — the fixture
+    /// activates at 48 kHz, the engine's own rate, so 441 frames is 9.1875 ms
+    /// and the frames are what the fixture declared.
     #[test]
     fn a_sweep_services_a_flagged_instance_and_aims_the_compensation() {
         let (engine_plugins, _runtime) = sweep_fixture(441, true);
@@ -542,7 +542,7 @@ mod tests {
             sink.events.lock().expect("event log").as_slice(),
             [(
                 PLUGIN_LATENCY_CHANGED_EVENT.to_string(),
-                serde_json::json!({ "instance_id": "inst-1", "latency_ms": 0.0 }),
+                serde_json::json!({ "instance_id": "inst-1", "latency_ms": 9.1875 }),
             )],
             "the sweep publishes the change the restart flag recorded"
         );

@@ -902,6 +902,15 @@ impl ClapWrapper {
         })
     }
 
+    /// The rate `daw_engine::engine_handle_for_command_capture` reports.
+    ///
+    /// A fixture handed to that engine has to match it, so the constructor's
+    /// default matches: a test only calls
+    /// `set_engine_owned_command_fixture_sample_rate` to create a deliberate
+    /// mismatch.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    const ENGINE_OWNED_COMMAND_FIXTURE_SAMPLE_RATE: f64 = 48_000.0;
+
     #[cfg(feature = "engine-owned-command-fixture")]
     #[doc(hidden)]
     pub fn new_engine_owned_command_fixture(name: &str, state: Vec<u8>, has_gui: bool) -> Self {
@@ -912,7 +921,7 @@ impl ClapWrapper {
             host: Box::new(create_host_descriptor()),
             activated: true,
             name: name.to_string(),
-            sample_rate: 0.0,
+            sample_rate: Self::ENGINE_OWNED_COMMAND_FIXTURE_SAMPLE_RATE,
             params_ext: ptr::null(),
             state_ext: ptr::null(),
             gui_ext: ptr::null(),
@@ -990,6 +999,18 @@ impl ClapWrapper {
         if let Some(fixture) = self.command_fixture.as_mut() {
             fixture.parameters = parameters;
         }
+    }
+
+    /// Stage the rate this fixture reports as its activation rate.
+    ///
+    /// The constructor's default already matches the engine fixture, so a
+    /// test calls this only to create a deliberate mismatch — a runtime
+    /// activated at a rate other than the engine's own, to exercise the
+    /// registration guard that parks it.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn set_engine_owned_command_fixture_sample_rate(&mut self, sample_rate: f64) {
+        self.sample_rate = sample_rate;
     }
 
     /// Stage the latency the fixture declares, in frames of the rate it was
@@ -1204,6 +1225,11 @@ impl ClapWrapper {
     /// Returns true if the plugin was successfully activated.
     pub fn is_activated(&self) -> bool {
         self.activated
+    }
+
+    /// The rate this instance was activated at.
+    pub fn sample_rate(&self) -> f64 {
+        self.sample_rate
     }
 
     // ── GUI support ─────────────────────────────────────────────────────
