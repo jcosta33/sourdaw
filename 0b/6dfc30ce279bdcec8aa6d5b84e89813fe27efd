@@ -1,0 +1,115 @@
+src/modules/MIDI/useCases/midiClipData/midiClipGlueStateMatches.ts
+  s_9b530f08172a54::t_b387a03f4fc26a 1,6-7
+  s_9b530f08172a54::t_cc7a0e08b4c9a2 31
+src/modules/Arrangement/useCases/comping/insertTakeLane.ts
+  s_9b530f08172a54::t_ca17d3b3977735 1-20
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipFanOutState.spec.ts
+  s_9b530f08172a54::t_335c4e7260277c 12-16
+  s_9b530f08172a54::t_6dae2a856dd1f8 1-11,17-218
+  s_9b530f08172a54::t_32a8bb326417eb 219-220
+src/modules/Arrangement/useCases/comping/__tests__/compingUndo.spec.ts
+  s_9b530f08172a54::t_f5b1a4a7f0582a 26
+  s_9b530f08172a54::t_ca73dd104f6382 114-120
+  s_9b530f08172a54::t_41198d1cf5a0b4 3,6
+src/modules/Arrangement/useCases/__tests__/resolveComping.spec.ts
+  s_9b530f08172a54::t_b739bafa6a3fec 332-436
+  s_9b530f08172a54::t_240f9b5dfa70c2 282-284,287
+  s_9b530f08172a54::t_e0610e3d4f6372 232-235,238
+  s_edc4c47752d490::t_8e312078e5d6f7 190,245
+src/modules/Arrangement/useCases/comping/removeTakeLane.ts
+  s_9b530f08172a54::t_ea8697ce3201cc 1-15
+src/modules/Arrangement/useCases/comping/flattenComp.ts
+  s_9b530f08172a54::t_d2c31ee7bc4310 1-9,11-13,15-16,19-69,71-73,76-86,88-91,93-181
+src/modules/Arrangement/useCases/comping/__tests__/flattenComp.spec.ts
+  s_9b530f08172a54::t_b6fda3fb9a1f5a 1,3-10,12-14,18-45,47-49,53-107,113-193,197,213-266,269-317,320-340,342,344-347
+  s_9b530f08172a54::t_8e0c34d72af3a6 108-112
+  s_9b530f08172a54::t_1fcd2382682f35 11
+  s_9b530f08172a54::t_b4b9486759df51 15
+  s_9b530f08172a54::t_c2a3ceb4490f70 194-196,198-210
+src/modules/Arrangement/useCases/comping/takeLaneUndo.ts
+  s_9b530f08172a54::t_5252b975faf172 65,68
+  s_9b530f08172a54::t_b9075c6f430ef6 6-8
+  s_9b530f08172a54::t_e3c90a8559f8de 76,79
+src/modules/Arrangement/useCases/comping/__tests__/targetedTakeLaneUndo.spec.ts
+  s_9b530f08172a54::t_36b187318024cd 163-170
+  s_9b530f08172a54::t_7cc0ae0d21f364 3,6
+  s_9b530f08172a54::t_10cef1108b96ba 20
+src/modules/MIDI/useCases/index.ts
+  s_9b530f08172a54::t_16b12acba9420b 47
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts
+  s_9b530f08172a54::t_e8f8ea25a07ae1 819-845
+  s_9b530f08172a54::t_5f3a73e8f9adc4 236-238,249
+  s_9b530f08172a54::t_2cf8b9e47bbc79 270
+src/modules/Arrangement/useCases/resolveComping.ts
+  s_9b530f08172a54::t_04ef6d2d5d6375 30
+  s_9b530f08172a54::t_fdafaf6b5a5acd 10-29,31-37,79,82,87,117
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_9b530f08172a54::t_c04f9bcffaeba2 10-30,32-38,90,93,98,124
+  s_9b530f08172a54::t_948e52cb32a25b 31
+  s_914af328b3988f::t_9f2d0e4b0380a1 9
+src/modules/MIDI/useCases/midiClipData/prepareMidiClipGlueState.ts
+  s_9b530f08172a54::t_70594034195008 23
+  s_9b530f08172a54::t_540981a07b150b 7-8
+src/modules/MIDI/useCases/midiClipData/prepareMidiClipFanOutState.ts
+  s_9b530f08172a54::t_f9ec051da7ecb1 1-176
+src/modules/MIDI/useCases/midiClipData/snapshotMidiClipData.ts
+  s_9b530f08172a54::t_282b23e249d6a3 1-29
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithComping.spec.ts
+  s_9b530f08172a54::t_105350aac932a9 92-95,98
+  s_9b530f08172a54::t_841c837cc709a4 105-111,130-137,139-142,146-207
+  s_9b530f08172a54::t_176cc5085557c9 49
+src/app/__tests__/main.spec.tsx
+  s_9b530f08172a54::t_53a4b71cb8a480 112
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_9b530f08172a54::t_e5976d0771b486 113
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_9b530f08172a54::t_cfea6966070aa3 101
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_9b530f08172a54::t_72ddfb958591ca 104
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_9b530f08172a54::t_5e3e14920c46a0 176
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_9b530f08172a54::t_16b297e72bd1dd 229
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_9b530f08172a54::t_683259e5146928 142
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_9b530f08172a54::t_d0dd86a700c72a 173
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_9b530f08172a54::t_df32f24bbf507f 146
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_9b530f08172a54::t_63de5c5235bd08 153
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_9b530f08172a54::t_c03a65f9f99692 160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0b6dfc30ce279bdcec8aa6d5b84e89813fe27efd",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_edc4c47752d490": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a2ed1aab7573f4da0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
