@@ -1,0 +1,23 @@
+src/modules/AudioEngine/useCases/livePlayback/stripCarriers.ts
+  s_9b530f08172a54::t_8dcf686665fb5b 227-232,243-247
+  s_9b530f08172a54::t_438b62e393f1cb 126
+  s_9b530f08172a54::t_8fb99ef537197f 379
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripCarriers.spec.ts
+  s_9b530f08172a54::t_83a9e6eadbe9d6 813-857
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ea4404170826053c8cb2691ca13f4c4dcff5dcad",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
