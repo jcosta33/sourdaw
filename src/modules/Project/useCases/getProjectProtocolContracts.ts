@@ -1,3 +1,4 @@
+import { AGENT_DISCOVERY_DOMAINS, AGENT_DISCOVERY_SCHEMA_VERSION } from '../models/AgentDiscoveryQuery';
 import { PRODUCTION_BRIEF_OPERATIONS, PRODUCTION_BRIEF_SCHEMA_VERSION } from '../models/ProductionBrief';
 import { SEMANTIC_PROJECT_QUERY_SCHEMA_VERSION, SEMANTIC_PROJECT_QUERY_TYPES } from '../models/SemanticProjectQuery';
 
@@ -7,12 +8,25 @@ export function getProjectProtocolContracts() {
             id: 'query' as const,
             owner: 'Project' as const,
             schemaVersion: SEMANTIC_PROJECT_QUERY_SCHEMA_VERSION,
-            capabilities: ['revision-bound-read', 'pagination', 'stable-object-identity', 'semantic-diff'] as const,
-            operations: SEMANTIC_PROJECT_QUERY_TYPES.map((name) => ({
-                name,
-                version: String(SEMANTIC_PROJECT_QUERY_SCHEMA_VERSION),
-                availability: 'available' as const,
-            })),
+            capabilities: [
+                'revision-bound-read',
+                'pagination',
+                'stable-object-identity',
+                'semantic-diff',
+                'owner-catalog-discovery',
+            ] as const,
+            operations: [
+                ...SEMANTIC_PROJECT_QUERY_TYPES.map((name) => ({
+                    name,
+                    version: String(SEMANTIC_PROJECT_QUERY_SCHEMA_VERSION),
+                    availability: 'available' as const,
+                })),
+                ...AGENT_DISCOVERY_DOMAINS.map((domain) => ({
+                    name: `discovery.${domain}`,
+                    version: String(AGENT_DISCOVERY_SCHEMA_VERSION),
+                    availability: 'available' as const,
+                })),
+            ],
             availability: 'available' as const,
             compatibility: {
                 mode: 'reject-unsupported' as const,

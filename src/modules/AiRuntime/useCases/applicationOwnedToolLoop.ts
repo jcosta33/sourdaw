@@ -7,6 +7,7 @@ import {
 import { getAgentDeviceFactoryManifest } from '#/modules/PluginHost/useCases';
 import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
+import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabilityOperations';
 import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
@@ -24,14 +25,12 @@ import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
-    ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
     getAgentToolCatalogSchemas,
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
-    RENDER_REQUEST_TOOL_NAME,
 } from './agentToolCatalog';
 import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
@@ -436,14 +435,7 @@ function executeCapabilities(call: ToolCallResult, callId: string, turn: number)
             retryable: true,
         });
     }
-    const operations = [
-        { name: 'command.batch.preview', callable: false, owner: 'Command', availability: 'available' },
-        { name: 'command.batch.commit', callable: false, owner: 'Command', availability: 'available' },
-        { name: 'command.approval', callable: false, owner: 'Command', availability: 'available' },
-        { name: RENDER_REQUEST_TOOL_NAME, callable: true, owner: 'AiRuntime', availability: 'proposal-only' },
-        { name: ANALYSIS_REQUEST_TOOL_NAME, callable: true, owner: 'AiRuntime', availability: 'proposal-only' },
-        ...DEFERRED_AGENT_CAPABILITIES,
-    ];
+    const operations = [...APPLICATION_OWNED_CAPABILITY_OPERATIONS, ...DEFERRED_AGENT_CAPABILITIES];
     return {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,

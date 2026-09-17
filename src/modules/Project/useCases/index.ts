@@ -35,6 +35,8 @@ export { repairProjectData } from './repairProjectData';
 export { unlockProjectScopedBrief } from './unlockProjectScopedBrief';
 export { acceptCreativeIntent } from './acceptCreativeIntent';
 export { querySemanticProject } from './semanticProjectQueries';
+export { queryAgentDiscovery } from './queryAgentDiscovery';
+export { agentCapabilityDiscoveryPort } from './agentCapabilityDiscoveryPort';
 export { getProjectProtocolContracts } from './getProjectProtocolContracts';
 export { getAgentProjectModelContract } from './getAgentProjectModelContract';
 export { getDurableProjectOwnerId } from './getDurableProjectOwnerId';

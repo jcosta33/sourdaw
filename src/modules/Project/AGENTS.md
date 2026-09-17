@@ -15,7 +15,7 @@ Root Project aggregate lifecycle, project persistence (IndexedDB and native file
     - **Tuning & Scales**: `importSclFile`, `setProjectKeyRoot`, `setProjectScaleName`.
     - **Media & Files**: `pickFiles`, `verifyAudioBufferReferences`, `exportProjectFile`, `pickAndImportProjectFile`.
     - **Interchange Contracts**: `buildProjectData`, `applyImportedProjectData`, `runProjectLoadTransaction`, `isNativeProjectRuntimeAvailable`.
-    - **Semantic Queries & Briefs**: `doesProductionBriefAllowActionBatch`, `productionBriefActionBatchAdmission`, `getProjectScopedBriefLock`, `acceptCreativeIntent`, `querySemanticProject`, `getProjectProtocolContracts`, `getAgentProjectModelContract`, `getDurableProjectOwnerId`.
+    - **Semantic Queries & Briefs**: `doesProductionBriefAllowActionBatch`, `productionBriefActionBatchAdmission`, `getProjectScopedBriefLock`, `acceptCreativeIntent`, `querySemanticProject`, `queryAgentDiscovery`, `agentCapabilityDiscoveryPort`, `getProjectProtocolContracts`, `getAgentProjectModelContract`, `getDurableProjectOwnerId`.
     - **Agent Asset File Boundary**: `agentAssetFileBoundary` (`pickAndRegister`, `importAsset`, `stageExport`, `finalizeExport`, `cleanup`) — the only handle-only surface that may drive the native agent asset saga; `pickAndRegister` mints read handles through the native open dialog and read-write handles through the native save dialog, because only the save channel grants write access.
     - **Recent Projects**: `getRecentProjects`, `loadRecentProject`.
     - **Handlers**: `getProjectHandlers`.
@@ -29,6 +29,7 @@ Root Project aggregate lifecycle, project persistence (IndexedDB and native file
 - **Template Engine**: Factory templates and starter arrangements with audio preview loops (`useCases/projectTemplates/`).
 - **Missing Media Detector**: `stores/missingMediaStore.ts` and `useCases/projectPersistence/helpers/verifyAudioBufferReferences.ts` inspect audio buffer references against loaded clips to flag missing assets.
 - **Semantic Project Query Engine**: Structured read interface and creative brief validation for automated agents and AI workflows (`useCases/semanticProjectQueries.ts`, `models/ProductionBrief.ts`).
+- **Owner Catalog Discovery**: `useCases/queryAgentDiscovery.ts` answers device, preset, sample, asset and capability discovery as bounded, revision-bearing receipts built only from records other owners publish — their stable ids, versions, evidence and `unavailable` verdicts copied rather than restated. A query this layer cannot answer is `unsupported`; a catalog that exists but holds nothing to read is `unavailable`, and the two never collapse. Capability entries reach it through `agentCapabilityDiscoveryPort`, which the composition root fills from AiRuntime because AiRuntime imports this module and the reverse import would close a cycle.
 - **Scala Tuning Parser**: Parses microtonal `.scl` scale files into project pitch definitions (`repositories/nativeTuning/parseScl.ts`).
 
 ## Invariants & Traps
