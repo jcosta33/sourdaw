@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
-import { automationStore } from '#/modules/Automation/stores';
+import { type AutomationLane, automationStore } from '#/modules/Automation/stores';
 import { undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, redo, undo } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -49,6 +49,35 @@ function seedLane(
     };
     takeLaneStore.set({ lanes: [lane] });
     return lane;
+}
+
+/**
+ * One lane for another track, placed ahead of `TRACK_ID`'s own lane, so the
+ * index `flattenComp` captures is 1 and a restore that ignores it shows up in
+ * the store's order rather than passing at index 0 by coincidence.
+ */
+function seedLeadingLane(lane: TakeLane): TakeLane {
+    const leading = createTakeLane('track-0');
+    takeLaneStore.set({ lanes: [leading, lane] });
+    return leading;
+}
+
+/** One clip-scoped automation lane in the shape `readClipScopedAutomationLanes` reads. */
+function clipAutomationLane(laneId: string, clipId: string): AutomationLane {
+    return {
+        id: laneId,
+        trackId: TRACK_ID,
+        clipId,
+        parameterId: 'gain',
+        parameterName: 'gain',
+        points: [{ id: 'point-1', beat: 1, value: 0.5, curve: 'linear', tension: 0 }],
+        objects: [],
+        visible: true,
+        enabled: true,
+        collapsed: false,
+        minValue: 0,
+        maxValue: 1,
+    };
 }
 
 function liveClips(): Clip[] {
@@ -357,6 +386,61 @@ describe('flattenComp', () => {
         expect(undoDepth()).toBe(0);
     });
 
+    it('refuses to flatten a clip carrying clip-scoped automation', () => {
+        // The lane is keyed to the source clip id, and the fragments are new
+        // ids: a silent flatten would leave the automation pointing at a clip
+        // the track no longer holds.
+        const clip = ClipDummy.create({
+            id: 'clip-a',
+            trackId: TRACK_ID,
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'buf-a',
+        });
+        seedTrack([clip]);
+        const lane = seedLane(
+            [{ id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8 }],
+            [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }]
+        );
+        automationStore.set({ lanes: [clipAutomationLane('lane-clip-a-gain', 'clip-a')] });
+
+        expect(flattenComp(TRACK_ID)).toBe(false);
+
+        expect(warnings()).toEqual([expect.stringContaining('clip-scoped automation')]);
+        expect(restoreClipGlueState).not.toHaveBeenCalled();
+        expect(liveClips()).toEqual([clip]);
+        expect(laneIds()).toEqual([lane.id]);
+        expect(automationStore.value!.lanes.map((automationLane) => automationLane.id)).toEqual(['lane-clip-a-gain']);
+        expect(undoDepth()).toBe(0);
+    });
+
+    it('puts the lane back when the apply transaction is refused', () => {
+        const clip = ClipDummy.create({
+            id: 'clip-a',
+            trackId: TRACK_ID,
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'buf-a',
+        });
+        seedTrack([clip]);
+        const lane = seedLane(
+            [{ id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8 }],
+            [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }]
+        );
+        const leadingLane = seedLeadingLane(lane);
+        vi.mocked(restoreClipGlueState).mockReturnValueOnce(false);
+
+        expect(flattenComp(TRACK_ID)).toBe(false);
+
+        // The lane comes off before the replacement is attempted, so a refused
+        // apply has to put it back — at its own index — rather than leave the
+        // track without the comp it still plays.
+        expect(laneIds()).toEqual([leadingLane.id, lane.id]);
+        expect(liveClips()).toEqual([clip]);
+        expect(warnings()).toEqual([expect.stringContaining('the clip replacement was refused')]);
+        expect(undoDepth()).toBe(0);
+    });
+
     it('leaves the clips and the retired lane alone when the undo transaction is refused', async () => {
         const clip = ClipDummy.create({
             id: 'clip-a',
@@ -422,11 +506,12 @@ describe('flattenComp', () => {
             [{ id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8 }],
             [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }]
         );
+        const leadingLane = seedLeadingLane(lane);
 
         expect(flattenComp(TRACK_ID)).toBe(true);
         await undo();
         expect(liveClips()).toEqual([clip]);
-        expect(laneIds()).toEqual([lane.id]);
+        expect(laneIds()).toEqual([leadingLane.id, lane.id]);
 
         // The original clip trimmed after the undo: the redo's transaction no
         // longer matches the clip set it would retire. A lane added meanwhile
@@ -444,7 +529,8 @@ describe('flattenComp', () => {
         await redo();
 
         expect(liveClips()).toEqual(clipsBeforeRedo);
-        expect(laneIds()).toEqual([lane.id, siblingLane.id]);
+        // Back at the index it was captured at, not at the head of the store.
+        expect(laneIds()).toEqual([leadingLane.id, lane.id, siblingLane.id]);
         expect(warnings()).toEqual([expect.stringContaining('redoing the flatten was refused')]);
         expect(notifyUserMock.mock.calls).toEqual([
             ['Failed to redo flatten comp - the clips no longer match the flattened state', 'error'],
@@ -452,6 +538,59 @@ describe('flattenComp', () => {
         // Reported not-applied: the entry leaves `future` and never reaches
         // `past`, so the entries behind it stay redoable instead of queueing
         // behind a forward path that can no longer run.
+        expect(undoStore.value!.future).toEqual([]);
+        expect(undoStore.value!.past).toEqual([]);
+    });
+
+    it('refused undo followed by redo leaves the lane retired and drops the entry', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-a',
+            trackId: TRACK_ID,
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'buf-a',
+        });
+        seedTrack([clip]);
+        seedLane(
+            [{ id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8 }],
+            [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }]
+        );
+
+        expect(flattenComp(TRACK_ID)).toBe(true);
+
+        // One fragment moved after the flatten refuses both directions. The
+        // redo removes no lane of its own — the refused undo already left it
+        // retired — so putting it back would revive takes naming the retired
+        // source clips, a comp no resolver can play and no undo can repair.
+        const fragments = liveClips();
+        trackStore.set({
+            tracks: [
+                {
+                    ...trackStore.value!.tracks[0]!,
+                    clips: [{ ...fragments[0]!, startBeat: 1 }, ...fragments.slice(1)],
+                },
+            ],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        vi.clearAllMocks();
+
+        await undo();
+        const clipsBeforeRedo = structuredClone(liveClips());
+        await redo();
+
+        expect(laneIds()).toEqual([]);
+        expect(liveClips()).toEqual(clipsBeforeRedo);
+        expect(warnings()).toEqual([
+            expect.stringContaining('undoing the flatten was refused'),
+            expect.stringContaining('redoing the flatten was refused'),
+        ]);
+        expect(notifyUserMock.mock.calls).toEqual([
+            ['Failed to undo flatten comp - the clips no longer match the flattened result', 'error'],
+            ['Failed to redo flatten comp - the clips no longer match the flattened state', 'error'],
+        ]);
+        // Reported not-applied: the entry leaves both stacks, so nothing can
+        // reach this state again.
         expect(undoStore.value!.future).toEqual([]);
         expect(undoStore.value!.past).toEqual([]);
     });

@@ -184,11 +184,17 @@ export function flattenComp(trackId: string): boolean {
             insertTakeLane(lane, laneIndex);
         },
         () => {
+            // A refused redo may only put back the lane it removed itself. After
+            // a refused undo the lane is already retired, and reinserting it
+            // there would revive takes naming the retired source clips.
+            const lanePresent = takeLaneStore.value?.lanes.some((candidate) => candidate.id === lane.id) === true;
             removeTakeLane(lane.id);
             if (restoreClipGlueState({ expected: plan.previous, replacement: plan.next })) {
                 return undefined;
             }
-            insertTakeLane(lane, laneIndex);
+            if (lanePresent) {
+                insertTakeLane(lane, laneIndex);
+            }
             logger.warn('flattenComp: redoing the flatten was refused — the clips and the lane stand');
             notifyUser('Failed to redo flatten comp - the clips no longer match the flattened state', 'error');
             // This forward path is gone for good: the clips it would retire are
