@@ -837,13 +837,43 @@ type InstalledProjection = Readonly<{
 }>;
 
 /**
+ * Instances the batch reported held that the projection it was built from
+ * lacked — hosted plugins and Crumbs alike.
+ *
+ * The comparison, not the count, is what says a re-send has anything to do. A
+ * report names every instance the engine holds, including the ones the first
+ * projection already knew about and bound, so a batch answering "still held"
+ * would re-send on every Play. Only a name the projection did not carry can
+ * have gone out with no body.
+ */
+function instancesTheProjectionLacked(
+    result: Extract<AudioGraphApplyResult, { application: 'applied' }>,
+    projected: ReadonlySet<string>
+): readonly string[] {
+    const reported = [
+        ...(result.attachedPlugins ?? []).map((plugin) => plugin.instanceId),
+        ...(result.attachedCrumbs ?? []).map((instance) => instance.instanceId),
+    ];
+    return reported.filter((instanceId) => !projected.has(instanceId));
+}
+
+/**
  * Send the topology once more, bound to the instances the first batch attached.
  *
  * The batch that attached them was mapped before the engine held them, so their
  * strips went out with no body for the plugin; one more parked batch, built
  * against the attach state those reports have just written, is what binds them
  * — see the header for why there is never a third. Nothing is re-sent when the
- * first batch attached nothing, because there is nothing new to bind.
+ * first batch bound nothing the first projection lacked, because there is
+ * nothing new to bind.
+ *
+ * Crumbs instances count here for the same reason hosted ones do, and on a
+ * first Play they are the only ones that can (#4204). A lazily started engine
+ * answers `createCrumbsInstance` with `attached: false`, so the first
+ * projection sees an empty mirror and marks that strip web-carried; the batch
+ * then attaches the instance and reports it under `attachedCrumbs` while
+ * `attachedPlugins` stays empty. Reading the plugin report alone left the
+ * sampler on Web Audio for the whole take.
  *
  * The re-send answers with what now stands rather than only what was applied: a
  * refused re-send leaves the *first* batch's graph installed, and that graph is
@@ -863,7 +893,7 @@ async function bindAttachedPlugins(input: {
 }): Promise<Readonly<{ resent: TopologyBatchOutcome; installed: InstalledProjection }>> {
     const { transport, backend, topology, started, programme, projectTopology } = input;
     const first: InstalledProjection = { attachedInstanceIds: topology.attachedInstanceIds, programme };
-    if ((started.result.attachedPlugins ?? []).length === 0) {
+    if (instancesTheProjectionLacked(started.result, topology.attachedInstanceIds).length === 0) {
         return { resent: started, installed: first };
     }
     const attachedInstanceIds = readAttachedEngineInstanceIds();
