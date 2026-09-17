@@ -798,7 +798,7 @@
             "fixtures": [
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
-                    "digest": "da064a8576b3d0bb93c5857bc1d3df28bebc9fd4ef0facfe3bed19a2e7c7cad7"
+                    "digest": "5d522f749cc6fe0fa218619eda1a9fa42cdb9623d4ff89472cf5bfae5a747fe7"
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
@@ -883,11 +883,11 @@
             "fixtures": [
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
-                    "digest": "da064a8576b3d0bb93c5857bc1d3df28bebc9fd4ef0facfe3bed19a2e7c7cad7"
+                    "digest": "5d522f749cc6fe0fa218619eda1a9fa42cdb9623d4ff89472cf5bfae5a747fe7"
                 },
                 {
                     "path": "src/app/__tests__/agentCampaignBaseline.spec.ts",
-                    "digest": "b2fef97462b2bc84e62e40737d382520ca66dcae9e5f70a08dde9e4cd4bc7eb2"
+                    "digest": "1a9656a913723b2092d708ce8342979a8105e36e87ab5fed83c2db753fb6cb82"
                 }
             ]
         },

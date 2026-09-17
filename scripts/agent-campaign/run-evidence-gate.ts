@@ -86,6 +86,27 @@ function commandFixturePaths(command: string): readonly string[] {
     return [...new Set(paths)].sort();
 }
 
+/**
+ * Every suite's command must equal the frozen contract's verbatim text. `evidenceManifest.ts` stays
+ * free of any dependency beyond node builtins (the app's baseline spec type-checks it too), so this
+ * check lives here rather than in `validateEvidenceManifest`: it is the one caller that already
+ * imports both the parsed manifest and `EVIDENCE_SUITE_COMMANDS`.
+ */
+function validateSuiteCommands(manifest: EvidenceManifest): readonly string[] {
+    const problems: string[] = [];
+    for (const suite of manifest.suites) {
+        const contractCommand = EVIDENCE_SUITE_COMMANDS[suite.id];
+        if (contractCommand === undefined) {
+            problems.push(`${suite.id}: the frozen contract names no command for this suite`);
+            continue;
+        }
+        if (suite.command !== contractCommand) {
+            problems.push(`${suite.id}: manifest command does not match the frozen contract command`);
+        }
+    }
+    return problems;
+}
+
 function suiteKindOf(command: string): EvidenceSuiteKind {
     const rust = command.indexOf('cargo test');
     if (rust < 0) {
@@ -381,6 +402,10 @@ function newRecord(
 }
 
 function runSuiteCommand(root: string, suite: EvidenceSuite): { exitCode: number; durationMs: number } {
+    const contractCommand = EVIDENCE_SUITE_COMMANDS[suite.id];
+    if (suite.command !== contractCommand) {
+        throw new Error(`${suite.id}: refusing to run a command that does not match the frozen contract`);
+    }
     const started = Date.now();
     const result = spawnSync(suite.command, {
         cwd: root,
@@ -501,7 +526,7 @@ export async function main(argv: readonly string[]): Promise<number> {
         return 0;
     }
     const manifest = parseEvidenceManifest(readFileSync(manifestPath, 'utf8'));
-    const structural = validateEvidenceManifest(manifest);
+    const structural = [...validateEvidenceManifest(manifest), ...validateSuiteCommands(manifest)];
     if (structural.length > 0) {
         return report(structural);
     }

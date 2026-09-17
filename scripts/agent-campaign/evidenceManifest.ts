@@ -1,8 +1,10 @@
 /**
  * Schema, parser, validator, and path digests of the agent-campaign evidence manifest. Kept free of
  * any dependency beyond node builtins: the gate runner imports it under Node type stripping, and
- * `src/app/__tests__/agentCampaignBaseline.spec.ts` imports it under the app's compiler options,
- * which do not admit `.ts` import specifiers. Contract: docs/architecture/agent-release-gates.md.
+ * `scripts/__tests__/agentCampaignHarness.spec.ts` imports it as a plain script test. Nothing under
+ * `src/` may import this module; `src/app/__tests__/agentCampaignBaseline.spec.ts` parses the
+ * committed manifest itself with a local minimal type instead. Contract:
+ * docs/architecture/agent-release-gates.md.
  */
 
 import { createHash } from 'node:crypto';

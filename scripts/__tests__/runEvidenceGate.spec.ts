@@ -1,12 +1,15 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { EVIDENCE_SUITE_COMMANDS } from '../agent-campaign/evidenceGateContract';
+import { sharedFixturePaths } from '../agent-campaign/evidenceManifest';
 import {
     EVIDENCE_MANIFEST_PATH,
+    EVIDENCE_RECORDS_DIRECTORY,
     buildEvidenceManifest,
     compareDigests,
     evaluateRelease,
@@ -248,6 +251,77 @@ describe('release evaluation', () => {
         expect(evaluateRelease(scopedTo(manifest, suite), [failed], release).blockers).toEqual([
             'AC-017: record outcome is failed, not passed',
         ]);
+    });
+
+    it('blocks a record whose suite was blocked rather than run', () => {
+        const { root, manifest, head } = fixture();
+        const suite = suiteOf(manifest, DRIFTING_GATE);
+        const release = releaseState(root, manifest, head);
+        const blocked: EvidenceRecord = { ...passingRecord(manifest, suite, release), exitCode: 2, outcome: 'blocked' };
+
+        expect(evaluateRelease(scopedTo(manifest, suite), [blocked], release).blockers).toEqual([
+            'AC-017: record outcome is blocked, not passed',
+        ]);
+    });
+});
+
+describe('shared fixture detection', () => {
+    it('reports the fixture path two of three hand-built suites share', () => {
+        const sharedPath = 'src/shared/fixture.ts';
+        const suiteA: EvidenceSuite = {
+            id: 'Z-A',
+            task: 'Z',
+            kind: 'unit',
+            command: 'echo a',
+            fixtures: [{ path: sharedPath, digest: 'a'.repeat(64) }],
+        };
+        const suiteB: EvidenceSuite = {
+            id: 'Z-B',
+            task: 'Z',
+            kind: 'unit',
+            command: 'echo b',
+            fixtures: [{ path: sharedPath, digest: 'a'.repeat(64) }],
+        };
+        const suiteC: EvidenceSuite = {
+            id: 'Z-C',
+            task: 'Z',
+            kind: 'unit',
+            command: 'echo c',
+            fixtures: [{ path: 'src/shared/other.ts', digest: 'b'.repeat(64) }],
+        };
+
+        expect(sharedFixturePaths([suiteA, suiteB, suiteC])).toEqual([{ path: sharedPath, suites: ['Z-A', 'Z-B'] }]);
+    });
+});
+
+describe('suite command contract', () => {
+    it('refuses a manifest whose suite command departs from the frozen contract, without spawning it', async () => {
+        const { root, manifest, manifestPath } = fixture();
+        const suite = suiteOf(manifest, DRIFTING_GATE);
+        expect(suite.command).toBe(EVIDENCE_SUITE_COMMANDS[suite.id]);
+
+        const tampered: EvidenceManifest = {
+            ...manifest,
+            suites: manifest.suites.map((entry) =>
+                entry.id === suite.id ? { ...entry, command: 'echo tampered' } : entry
+            ),
+        };
+        write(root, EVIDENCE_MANIFEST_PATH, `${JSON.stringify(tampered, null, 4)}\n`);
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const exitCode = await main([
+            '--task',
+            DRIFTING_GATE.task,
+            '--gate',
+            DRIFTING_GATE.gate,
+            '--manifest',
+            manifestPath,
+        ]);
+
+        expect(exitCode).toBe(1);
+        expect(errorSpy.mock.calls.flat()).toContainEqual(expect.stringContaining(suite.id));
+        expect(existsSync(join(root, EVIDENCE_RECORDS_DIRECTORY, `${suite.id}.json`))).toBe(false);
+        errorSpy.mockRestore();
     });
 });
 
