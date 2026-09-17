@@ -1,3 +1,5 @@
+import { canonicalJson } from '#/utils/canonicalDigest';
+
 import { branchStore, createDefaultBranchStoreState, type BranchStoreState } from '../stores/branchStore';
 
 import {
@@ -361,6 +363,12 @@ async function projectSession(
         if (session?.owner !== handle.owner) {
             return { kind: 'refuse', reason: 'superseded' };
         }
+        if (canonicalJson(state) === canonicalJson(envelope.current)) {
+            // Canonical rather than `JSON.stringify`: the document materialises
+            // branch records with a different key order than the store, so the
+            // list already durable would compare unequal and be written again.
+            return { kind: 'noop' };
+        }
         return {
             kind: 'write',
             next: advance(envelope, { current: state, session: { ...session, sequence: session.sequence + 1 } }),
@@ -478,7 +486,10 @@ export const branchStateAuthority = {
      * Call order is already storage order: every projection awaits the same
      * settled boot promise and then queues on the one transaction lock, so a
      * later projection cannot overtake an earlier one and durably resurrect the
-     * branch list the peer had already replaced.
+     * branch list the peer had already replaced. A projection of the list that
+     * is already durable commits at the unchanged revision: an echo of the
+     * session's own local write must not advance the revision a following local
+     * transition has already captured.
      */
     projectSession,
 

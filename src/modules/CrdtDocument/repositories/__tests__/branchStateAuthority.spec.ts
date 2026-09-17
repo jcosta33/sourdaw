@@ -20,6 +20,27 @@ import {
     type BranchStateInstance,
 } from './branchStateHarness';
 
+/**
+ * The same list a peer's `__branches__` document hands back: identical values,
+ * branch-record keys in another insertion order. `JSON.stringify` follows that
+ * order, so only a canonical comparison can tell this is the list already
+ * durable.
+ */
+function withReorderedKeys(state: BranchStoreState): BranchStoreState {
+    return {
+        activeBranchId: state.activeBranchId,
+        branches: state.branches.map((record) => ({
+            createdAt: record.createdAt,
+            sourceBranchId: record.sourceBranchId,
+            rootDocId: record.rootDocId,
+            note: record.note,
+            createdFromHeads: [...record.createdFromHeads],
+            name: record.name,
+            branchId: record.branchId,
+        })),
+    };
+}
+
 const feature = forkedBranch('feature', 'Feature');
 const guest = forkedBranch('guest', 'Guest');
 const hotfix = forkedBranch('hotfix', 'Hotfix');
@@ -282,6 +303,57 @@ describe('branchStateAuthority', () => {
                 current: second,
                 session: { owner: handle.owner, backup: branchList(feature), baseRevision: 6, sequence: 2 },
             });
+        });
+
+        /**
+         * The mirror publishes a local commit into the `__branches__` doc, and
+         * the change listener projects it straight back. Advancing the revision
+         * for that echo refuses the next local transition, which captured the
+         * revision the commit produced.
+         */
+        it('commits a projection of the list already durable without advancing the revision', async () => {
+            const preSession = branchList();
+            const instance = await bootAt(5, preSession);
+            const handle = await beginOwnSession(instance);
+            const committedLocally = branchList(feature);
+            await expect(instance.authority.commit({ expectedRevision: 6, next: committedLocally })).resolves.toEqual({
+                status: 'committed',
+                revision: 7,
+            });
+
+            const echo = await instance.authority.projectSession(handle, committedLocally);
+
+            expect(echo).toEqual({ status: 'committed', revision: 7 });
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 7,
+                current: committedLocally,
+                session: { owner: handle.owner, backup: preSession, baseRevision: 6, sequence: 0 },
+            });
+            // The transition that started right after the commit still holds
+            // revision 7, so it has to land.
+            await expect(
+                instance.authority.commit({ expectedRevision: 7, next: branchList(feature, guest) })
+            ).resolves.toEqual({ status: 'committed', revision: 8 });
+        });
+
+        it('recognises the durable list through a document-materialised key order', async () => {
+            const preSession = branchList();
+            const instance = await bootAt(5, preSession);
+            const handle = await beginOwnSession(instance);
+            const committedLocally = branchList(feature);
+            await instance.authority.commit({ expectedRevision: 6, next: committedLocally });
+
+            const echo = await instance.authority.projectSession(handle, withReorderedKeys(committedLocally));
+
+            expect(echo).toEqual({ status: 'committed', revision: 7 });
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 7,
+                current: committedLocally,
+                session: { owner: handle.owner, backup: preSession, baseRevision: 6, sequence: 0 },
+            });
+            expect(instance.store.value).toEqual(committedLocally);
         });
 
         it('puts the pre-session list back and releases the lock when the session ends', async () => {
