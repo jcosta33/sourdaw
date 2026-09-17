@@ -5,7 +5,13 @@ const mocks = vi.hoisted(() => ({
         value: { inst1: { pads: [{ midiNote: 60 }, { midiNote: 62 }] } },
     },
     crumbsNoteOff: vi.fn(),
+    padControls: { noteOn: vi.fn(), noteOff: vi.fn() },
+    resolvePadControls: vi.fn(),
     warn: vi.fn(),
+}));
+
+vi.mock('../resolveCrumbsPadControls', () => ({
+    resolveCrumbsPadControls: mocks.resolvePadControls,
 }));
 
 vi.mock('../../../stores/padStore', () => ({
@@ -30,6 +36,7 @@ describe('triggerPadOff', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.padStoreValue.value = { inst1: { pads: [{ midiNote: 60 }, { midiNote: 62 }] } };
+        mocks.resolvePadControls.mockReturnValue(mocks.padControls);
     });
 
     it('releases the pad note on the bridge using the resolved midi note', async () => {
@@ -51,5 +58,31 @@ describe('triggerPadOff', () => {
         mocks.crumbsNoteOff.mockRejectedValueOnce(new Error('engine offline'));
         await expect(triggerPadOff('inst1', 0)).resolves.toBeUndefined();
         expect(mocks.warn).toHaveBeenCalledWith('Note release failed:', expect.any(Error));
+    });
+
+    // The release follows the trigger on both carriers whichever one sounded:
+    // a voice left ringing on the silent carrier becomes a stuck note the
+    // moment the carrier law flips that strip over.
+    it('releases the Web Audio node as well as the native slot', async () => {
+        await triggerPadOff('inst1', 1);
+
+        expect(mocks.padControls.noteOff).toHaveBeenCalledExactlyOnceWith(62);
+        expect(mocks.crumbsNoteOff).toHaveBeenCalledExactlyOnceWith('inst1', 62);
+    });
+
+    it('releases the Web Audio node even when the native send is refused', async () => {
+        mocks.crumbsNoteOff.mockRejectedValueOnce(new Error('engine offline'));
+
+        await triggerPadOff('inst1', 0);
+
+        expect(mocks.padControls.noteOff).toHaveBeenCalledExactlyOnceWith(60);
+    });
+
+    it('still sends the native release when no Web Audio node answers', async () => {
+        mocks.resolvePadControls.mockReturnValue(null);
+
+        await triggerPadOff('inst1', 0);
+
+        expect(mocks.crumbsNoteOff).toHaveBeenCalledExactlyOnceWith('inst1', 60);
     });
 });

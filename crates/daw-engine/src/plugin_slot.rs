@@ -174,6 +174,25 @@ pub trait NativePlugin: Any + Send {
         false
     }
 
+    /// Whether the scheduler must hand this plugin a block every callback even
+    /// when no chain runs it, discarding what it renders.
+    ///
+    /// A plugin whose command surface is drained only by its own process call
+    /// has no second route into its body: detached, nothing calls it, so every
+    /// note, parameter and load its control side pushed banks in its ring until
+    /// the ring is full — and the first placement then replays the whole stale
+    /// backlog at once. Such a body answers `true` and the scheduler renders it
+    /// every callback into scratch it discards, so the drain runs whether or not
+    /// a strip is carrying its output.
+    ///
+    /// The default is `false`, which is the answer for every body the host can
+    /// reach some other way: a hosted plugin takes its control operations
+    /// through its own access seam, and a built-in is written by the command
+    /// drain directly, so neither needs a block to stay current.
+    fn runs_while_detached(&self) -> bool {
+        false
+    }
+
     /// Expose concrete plugin adapters to non-RT control code after transfer.
     fn as_any(&self) -> &dyn Any;
 

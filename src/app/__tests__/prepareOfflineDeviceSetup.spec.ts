@@ -28,6 +28,7 @@ vi.mock('#/modules/Levain/useCases', () => ({
 // decodes it; likewise never exercised here.
 vi.mock('#/modules/Crumbs/useCases', () => ({
     prepareCrumbsEngine: vi.fn(() => Promise.resolve('ready')),
+    markCrumbsEngineAttached: vi.fn(),
 }));
 vi.mock('#/modules/GrandBoule/useCases', () => ({ prepareOfflineGrandBoule: vi.fn() }));
 // Toaster's kit push is asserted against real project state in

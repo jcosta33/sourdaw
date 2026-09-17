@@ -18,6 +18,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore, type Device, type Track } from '#/modules/Arrangement/stores';
+import { readAttachedCrumbsInstanceIds } from '#/modules/Crumbs/stores';
+import { markCrumbsEngineAttached, retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
 import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
 
 import {
@@ -546,6 +548,22 @@ function forgetPressedPedals(): void {
     }
 }
 
+/**
+ * A Crumbs sampler, whose engine instance carries the device's own id.
+ *
+ * No `externalInstanceId`: the renderer creates the instance under the device
+ * id, so that id is what the attach mirror holds and what the mapper splices by.
+ */
+function crumbsDevice(deviceId: string): Device {
+    return {
+        id: deviceId,
+        name: 'Crumbs',
+        type: 'builtin-crumbs',
+        bypassed: false,
+        parameterValues: {},
+    };
+}
+
 /** A device the host has resolved to an external plugin instance. */
 function externalPluginDevice(instanceId: string): Device {
     return {
@@ -638,6 +656,7 @@ beforeEach(() => {
     // previous one's would build strips against an engine that never took
     // those instances.
     externalPluginParameterStore.set(defaultExternalPluginParameterState);
+    retractEveryCrumbsEngineAttachment();
     // The pool memo is module state and process-wide by design, so a case that
     // inherited the previous one's belief would see no registration at all.
     registeredNativeTimelineSampleIds.clear();
@@ -864,6 +883,58 @@ describe('startNativeLiveGraphSession', () => {
         });
 
         expect(topologyBatches()).toHaveLength(1);
+    });
+
+    // The first Play on a fresh desktop project, where the engine has not
+    // started yet (#4204). `createCrumbsInstance` answered `attached: false`,
+    // so the mirror is empty and the first projection calls the sampler's strip
+    // web-carried; the batch that maps it attaches the instance and reports it
+    // under `attachedCrumbs`, while `attachedPlugins` stays empty because no
+    // plugin is loaded. Read as a plugin report alone, the strip stayed on Web
+    // Audio for the whole take.
+    it('sends the topology again when the batch bound a Crumbs instance and no plugin', async () => {
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [crumbsDevice('d-crumbs')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [],
+            attachedCrumbs: [{ instanceId: 'd-crumbs' }],
+        });
+
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        const [first, second] = topologyBatches();
+        expect(topologyBatches()).toHaveLength(2);
+        expect(stripCreation(first, 'audio-1')).toMatchObject({ contributesAudio: false });
+        expect(stripCreation(second, 'audio-1')).toMatchObject({ contributesAudio: true });
+    });
+
+    // The re-send answers to the comparison, not to the report being non-empty:
+    // a batch names every Crumbs instance it found the engine holding, so every
+    // Play after the first reports one the projection already bound. Counting
+    // instead would send a second `replaceTopology` batch on every Play.
+    it('sends the topology once when the batch reports only instances the projection held', async () => {
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        markCrumbsEngineAttached({ instanceId: 'd-held' });
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [crumbsDevice('d-held')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedCrumbs: [{ instanceId: 'd-held' }],
+        });
+
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(topologyBatches()).toHaveLength(1);
+        // Nothing to re-project because the one batch already carried the body.
+        expect(stripCreation(topologyBatches()[0], 'audio-1')).toMatchObject({ contributesAudio: true });
     });
 
     it('never sends a third topology, however much the re-send attaches', async () => {
@@ -1850,6 +1921,38 @@ describe('startNativeLiveGraphSession', () => {
             reason: 'engine-not-running: no default output device',
         });
         expect(nativeLiveGraphSession.backend).toBeNull();
+    });
+
+    // A refusal does not undo a Crumbs attach (#4204). The native attach pass
+    // runs before the batch is mapped, so a batch the ring or the mapper then
+    // refuses has still taken those instances — and names them. This is the
+    // only report of that attach the Play will get: dropping it would leave the
+    // sampler on Web Audio while the engine holds it, which is exactly the
+    // state a refusal makes a producer resend against.
+    it('records the Crumbs instances a refused topology batch attached anyway', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [crumbsDevice('d-crumbs')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.applyGraphCommands.mockResolvedValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'engine-not-running: no default output device',
+            attachedCrumbs: [{ instanceId: 'd-crumbs' }],
+        });
+
+        const result = await startHeldSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason: 'engine-not-running: no default output device',
+        });
+        expect([...readAttachedCrumbsInstanceIds()]).toEqual(['d-crumbs']);
     });
 
     it('reads the project as it stands when the batch is sent, not when the gesture happened', async () => {

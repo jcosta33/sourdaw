@@ -39,6 +39,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(() => Promise.resolve({ status: 'committed', actions: [] })),
     generateGroupId: vi.fn((label: string) => ({ groupId: 'group-test', groupLabel: label })),

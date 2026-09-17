@@ -1187,15 +1187,15 @@ impl SourdawNative {
     // ── Crumbs ─────────────────────────────────────────────────────────
 
     #[napi]
-    pub async fn create_crumbs(&self, instance_id: String) -> Result<()> {
-        reason(
+    pub async fn create_crumbs(&self, instance_id: String) -> Result<Value> {
+        json(reason(
             commands::crumbs::create_crumbs(
                 instance_id,
                 &self.singletons.crumbs,
                 &self.singletons.app_state,
             )
             .await,
-        )
+        )?)
     }
 
     #[napi]

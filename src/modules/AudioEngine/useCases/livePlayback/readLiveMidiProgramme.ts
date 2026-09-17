@@ -27,7 +27,7 @@ export type ReadLiveMidiProgrammeInput = Readonly<{
     /** The strips this session built, in project order. */
     stripTracks: readonly Track[];
     /**
-     * The external plugin instances the native engine currently owns.
+     * The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}.
      *
      * The caller's, not read here, for the same reason `readLiveGraphProgramme`
      * takes it: one arm threads a single attach state through every projection

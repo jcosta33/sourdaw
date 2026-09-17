@@ -122,6 +122,7 @@ vi.mock('#/modules/Preferences/stores', () => ({
     },
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
     executeUserAppAction: mocks.executeUserAppAction,
     generateGroupId: mocks.generateGroupId,
     pushUndoEntry: mocks.pushUndoEntry,
