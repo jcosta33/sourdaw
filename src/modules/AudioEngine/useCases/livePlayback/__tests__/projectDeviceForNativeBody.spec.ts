@@ -97,7 +97,8 @@ describe('projectDeviceForNativeBody', () => {
     // path resolves it: `parameterValues` replays first, the kit hydrates after.
     it('merges a projected deviceState over the table projection, the kit winning on overlap', () => {
         setAudioDeviceRuntimeSink({
-            projectNativeDeviceState: ({ deviceType, deviceState }) => {
+            projectNativeDeviceState: ({ deviceId, deviceType, deviceState }) => {
+                expect(deviceId).toBe('device-a');
                 expect(deviceType).toBe('toaster');
                 expect(deviceState).toBe(A_DEVICE_STATE);
                 return { master_gain: 0.4, delay_time: 375 };
@@ -149,6 +150,28 @@ describe('projectDeviceForNativeBody', () => {
         );
 
         expect(projected.parameterValues).toEqual({ master_gain: 0.6 });
+    });
+
+    // Not every arm reads `deviceState` at all: Grand Boule's calibration
+    // lives in its per-device store, keyed by `deviceId`, so the sink must be
+    // asked (and its answer folded in) even for a device that has committed
+    // no state chunk. Skipping the call here is what left a fresh native body
+    // on the DSP's own defaults regardless of a calibrated store (#4302).
+    it('calls the sink and folds its answer in for a body-backed device with no deviceState', () => {
+        setAudioDeviceRuntimeSink({
+            projectNativeDeviceState: ({ deviceId, deviceType, deviceState }) => {
+                expect(deviceId).toBe('device-a');
+                expect(deviceType).toBe('grand-boule');
+                expect(deviceState).toBeUndefined();
+                return { sustain_threshold: 0.4 };
+            },
+        });
+
+        const projected = projectDeviceForNativeBody(
+            createDevice({ id: 'device-a', type: 'grand-boule', parameterValues: { masterGain: 0.6 } })
+        );
+
+        expect(projected.parameterValues).toEqual({ master_gain: 0.6, sustain_threshold: 0.4 });
     });
 
     // A device with no native body holds no vocabulary the projector could

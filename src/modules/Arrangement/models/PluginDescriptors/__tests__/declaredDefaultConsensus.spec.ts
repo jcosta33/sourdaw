@@ -883,6 +883,15 @@ const NON_DEFAULT_MODEL_DECLARATIONS: readonly {
             "none of its keys is one of GrandBoule's three descriptor parameters.",
     },
     {
+        file: 'src/modules/GrandBoule/models/GrandBouleCalibrationDspParamNames.ts',
+        exportName: 'GRAND_BOULE_CALIBRATION_DSP_PARAM_NAMES',
+        reason:
+            'The two DSP wire names (sustain_threshold, cc_smoothing_ms) the engine-consumed half of the MIDI ' +
+            'calibration travels under, keyed by the store field that carries each (#4302). A string-to-string ' +
+            'name table in the same shape as `GRAND_BOULE_DSP_PARAM_NAMES`, so the scanner surfaces it, but it ' +
+            'declares no numeric default and neither key is a descriptor parameter id.',
+    },
+    {
         file: 'src/modules/GrandBoule/models/GrandBoulePerNoteParams.ts',
         exportName: 'PER_NOTE_PARAM_DESCRIPTORS',
         reason:

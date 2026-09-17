@@ -1,6 +1,12 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
-import { ensureTrackStrip, getAudioSampleRate, sendNativeLiveMidiControl } from '#/modules/AudioEngine/useCases';
+import {
+    ensureTrackStrip,
+    getAudioSampleRate,
+    sendNativeLiveMidiControl,
+    writeNativeBuiltinParameters,
+} from '#/modules/AudioEngine/useCases';
 
+import { GRAND_BOULE_CALIBRATION_DSP_PARAM_NAMES } from '../models/GrandBouleCalibrationDspParamNames';
 import {
     createDisconnectedGrandBouleEngineHandle,
     type GrandBouleEngineHandle,
@@ -70,6 +76,22 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
         noteOnMidi2: (noteInput) =>
             controls.noteOnMidi2(noteInput.midiNote, noteInput.velocity16bit, noteInput.pitchOffsetQ24),
         setParam: (paramInput) => controls.setParam(paramInput.name, paramInput.value),
+        // Both carriers on every calibration write, the same reason the
+        // pedals below take both: a native body (re)built at Play starts on
+        // the DSP defaults, and a body already carried keeps whatever it was
+        // last told, so a calibration that only reached the Web Audio node
+        // would damp at a different pedal position depending on carrier.
+        setCalibration: (calibrationInput) => {
+            controls.setParam(
+                GRAND_BOULE_CALIBRATION_DSP_PARAM_NAMES.sustainThreshold,
+                calibrationInput.sustainThreshold
+            );
+            controls.setParam(GRAND_BOULE_CALIBRATION_DSP_PARAM_NAMES.ccSmoothingMs, calibrationInput.ccSmoothingMs);
+            writeNativeBuiltinParameters(track.id, input.deviceId, {
+                [GRAND_BOULE_CALIBRATION_DSP_PARAM_NAMES.sustainThreshold]: calibrationInput.sustainThreshold,
+                [GRAND_BOULE_CALIBRATION_DSP_PARAM_NAMES.ccSmoothingMs]: calibrationInput.ccSmoothingMs,
+            });
+        },
         // Both carriers on every pedal, exactly as a physical pedal reaches
         // both (`routePedalToBodies.ts`): the panel's own pedals are the same
         // foot, and a body that took only one half of a press stays latched

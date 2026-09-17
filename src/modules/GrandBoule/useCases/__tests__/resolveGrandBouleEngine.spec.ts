@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     sendNativeLiveMidiControl: vi.fn(async () => true),
+    writeNativeBuiltinParameters: vi.fn(),
     controls: {
         ready: true,
         noteOn: vi.fn(),
@@ -27,14 +28,19 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     }),
     getAudioSampleRate: () => 48_000,
     sendNativeLiveMidiControl: mocks.sendNativeLiveMidiControl,
+    writeNativeBuiltinParameters: mocks.writeNativeBuiltinParameters,
 }));
-vi.mock('../../repositories/grandBouleEngineHandle', () => ({ createDisconnectedGrandBouleEngineHandle: vi.fn() }));
+vi.mock('../../repositories/grandBouleEngineHandle', () => ({
+    createDisconnectedGrandBouleEngineHandle: vi.fn(() => ({ setCalibration: vi.fn() })),
+}));
 
 import { resolveGrandBouleEngine } from '../resolveGrandBouleEngine';
 
 describe('resolveGrandBouleEngine', () => {
     beforeEach(() => {
         mocks.sendNativeLiveMidiControl.mockClear();
+        mocks.writeNativeBuiltinParameters.mockClear();
+        mocks.controls.setParam.mockClear();
         mocks.controls.setSustain.mockClear();
         mocks.controls.setSostenuto.mockClear();
         mocks.controls.setUnaCorda.mockClear();
@@ -105,5 +111,29 @@ describe('resolveGrandBouleEngine', () => {
             [{ trackId: 'track-1', deviceId: 'grand-1', controller: subject.controller, value: 127, channel: 0 }],
             [{ trackId: 'track-1', deviceId: 'grand-1', controller: subject.controller, value: 0, channel: 0 }],
         ]);
+    });
+
+    it('mirrors a calibration write onto both the Web Audio node and the native session', () => {
+        const engine = resolveGrandBouleEngine({ deviceId: 'grand-1' });
+
+        engine.setCalibration({ sustainThreshold: 0.6, ccSmoothingMs: 40 });
+
+        expect(mocks.controls.setParam).toHaveBeenCalledWith('sustain_threshold', 0.6);
+        expect(mocks.controls.setParam).toHaveBeenCalledWith('cc_smoothing_ms', 40);
+        expect(mocks.writeNativeBuiltinParameters).toHaveBeenCalledExactlyOnceWith('track-1', 'grand-1', {
+            sustain_threshold: 0.6,
+            cc_smoothing_ms: 40,
+        });
+    });
+
+    it('writes no calibration natively for a device on no track', () => {
+        // A device the resolver cannot find on any track never reaches the
+        // ready-controls branch that constructs the native write, so the
+        // disconnected handle's own no-op is what a caller gets instead.
+        const engine = resolveGrandBouleEngine({ deviceId: 'no-such-device' });
+
+        engine.setCalibration({ sustainThreshold: 0.6, ccSmoothingMs: 40 });
+
+        expect(mocks.writeNativeBuiltinParameters).not.toHaveBeenCalled();
     });
 });
