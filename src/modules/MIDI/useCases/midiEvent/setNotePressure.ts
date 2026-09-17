@@ -1,3 +1,5 @@
+import { clampMidiData7 } from '#/utils/midiData';
+
 import { midiStore } from '../../stores/midiStore';
 
 export function setNotePressure(clipId: string, noteId: string, pressure: number): void {
@@ -16,7 +18,7 @@ export function setNotePressure(clipId: string, noteId: string, pressure: number
         notesByClipId: {
             ...state.notesByClipId,
             [clipId]: existing.map((node) =>
-                node.id === noteId ? { ...node, pressure: Math.max(0, Math.min(127, pressure)) } : node
+                node.id === noteId ? { ...node, pressure: clampMidiData7(pressure) } : node
             ),
         },
     });

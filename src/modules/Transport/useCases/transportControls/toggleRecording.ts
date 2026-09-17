@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getTrackEligibility } from '#/modules/Arrangement/stores';
-import { getTrackStoreState, updateClip, startRecording } from '#/modules/Arrangement/useCases';
+import { getTrackStoreState, updateClip, startRecording, removeClip } from '#/modules/Arrangement/useCases';
 import {
     resumeEngine,
     getAudioContext,
@@ -19,6 +19,7 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
+import { DEFAULT_TEMPO_BPM } from '../../stores/transportStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 
 import { recordingLifecycle } from './recordingLifecycle';
@@ -59,6 +60,17 @@ async function beginActualRecording(
 
         return startAudioRecording(track.id, (result) => {
             if (result.kind === 'failed') {
+                // A capture that dies mid-take (ring overrun, worker crash, a
+                // WAV that never decoded) must not strand an empty provisional
+                // clip on the arrangement or stay silent about it (#4265).
+                notifyUser(
+                    'Recording failed — the partial take was discarded. Check your audio input and try again.',
+                    'error'
+                );
+                const failedClip = clips.find((context) => context.trackId === track.id);
+                if (failedClip) {
+                    removeClip(failedClip.id);
+                }
                 return;
             }
             const { buffer } = result;
@@ -68,7 +80,7 @@ async function beginActualRecording(
                 cacheAudioBuffer({ buffer, bufferId });
 
                 const transport = getTransportState();
-                const defaultTempo = transport?.tempo ?? 120;
+                const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
                 const tempoChanges = tempoMapStore.value?.changes ?? [];
                 // The capture is open before the transport is asked to roll, and
                 // on a desktop build the roll waits for the native session, so

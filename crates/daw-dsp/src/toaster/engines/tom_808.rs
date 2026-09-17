@@ -8,6 +8,7 @@
 //!   Mid tom:  120–160 Hz (decay ~130ms)
 //!   High tom: 165–220 Hz (decay ~100ms)
 
+use crate::params::{DECAY, TUNE};
 use crate::toaster::bridged_t::BridgedTFilter;
 
 #[inline]
@@ -189,8 +190,8 @@ impl Tom808Engine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "tune" => self.tune = value.clamp(-24.0, 24.0),
-            "decay" => self.decay = value.clamp(0.0, 1.0),
+            TUNE => self.tune = value.clamp(-24.0, 24.0),
+            DECAY => self.decay = value.clamp(0.0, 1.0),
             _ => {}
         }
     }

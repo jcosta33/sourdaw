@@ -19,3 +19,10 @@ export const DAW_PROJECT_ZIP_LIMITS = {
     maxEntryUncompressedBytes: DAW_PROJECT_ZIP_MAX_BYTES,
     maxEntries: 512,
 } satisfies Partial<ZipExtractionLimits>;
+
+/**
+ * Filename extension of a DAWproject archive, shared by the export dialog's
+ * file picker, the save dialog, and the import mapping so all three agree on
+ * what a DAWproject file is called.
+ */
+export const DAWPROJECT_FILE_EXTENSION = '.dawproject';

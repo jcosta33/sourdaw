@@ -24,7 +24,7 @@ import {
     openExportDialog,
     openPreferencesDialog,
     setEditingTool,
-    showAutomationPanel,
+    showDevicePanel,
     startToolSwap,
     toggleCommandPalette,
     toggleMixer,
@@ -332,7 +332,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                     toggleVirtualKeyboard();
                     return true;
                 case 'showAutomationPanel':
-                    showAutomationPanel();
+                    showDevicePanel('automation', null);
                     return true;
 
                 // ── Dialog openers (emit event the dialog listens to)─

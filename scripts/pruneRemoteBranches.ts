@@ -15,10 +15,10 @@ import {
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
-import { fail } from './prContract.ts';
+import { fail, PR_STATE, type PullRequestState } from './prContract.ts';
 
 export type RemoteBranch = { name: string; tip: string };
-export type PullRequestState = 'OPEN' | 'MERGED' | 'CLOSED';
+export type { PullRequestState };
 export type BranchPullRequest = { number: number; state: PullRequestState; headRefOid: string };
 export type DeleteOutcome = 'deleted' | 'already-gone';
 export type BranchClass = 'protected' | 'unlisted' | 'open' | 'unpublished' | 'moved' | 'spent';
@@ -88,7 +88,7 @@ export function classifyRemoteBranch(
     if (!complete) {
         return 'unlisted';
     }
-    if (pullRequests.some((pullRequest) => pullRequest.state === 'OPEN')) {
+    if (pullRequests.some((pullRequest) => pullRequest.state === PR_STATE.OPEN)) {
         return 'open';
     }
     if (pullRequests.length === 0) {
@@ -143,7 +143,7 @@ function dependentBlockReason(listing: PullRequestListing): string | undefined {
     if (!listing.complete) {
         return 'base-dependent pull requests not fully listed';
     }
-    const dependent = listing.pullRequests.find((pullRequest) => pullRequest.state === 'OPEN');
+    const dependent = listing.pullRequests.find((pullRequest) => pullRequest.state === PR_STATE.OPEN);
     return dependent === undefined ? undefined : `open base-dependent pull request #${dependent.number}`;
 }
 
@@ -424,7 +424,7 @@ function toBranchPullRequest(value: unknown): BranchPullRequest {
     if (
         typeof node.number !== 'number' ||
         !Number.isSafeInteger(node.number) ||
-        (node.state !== 'OPEN' && node.state !== 'MERGED' && node.state !== 'CLOSED') ||
+        (node.state !== PR_STATE.OPEN && node.state !== PR_STATE.MERGED && node.state !== PR_STATE.CLOSED) ||
         typeof node.headRefOid !== 'string'
     ) {
         fail('invalid pull-request node');

@@ -4,13 +4,16 @@
 export { playheadPositionRef } from './playheadPositionRef';
 export { tempoProjectRevisionStore } from './tempoProjectRevisionStore';
 
+export { captureGestureBeat } from './captureGestureBeat';
+export { setGestureClockSource, type GestureClockSource } from './gestureClockSource';
+
 export type { TempoMapStoreState } from './tempoMapStore';
-export { tempoMapStore, MIN_TEMPO_MAP_TEMPO } from './tempoMapStore';
+export { tempoMapStore } from './tempoMapStore';
 
 export type { TimeSignatureMapStoreState } from './timeSignatureMapStore';
 export { timeSignatureMapStore } from './timeSignatureMapStore';
 
-export { transportStore, defaultTransportState, MIN_TEMPO, MAX_TEMPO } from './transportStore';
+export { transportStore, defaultTransportState, DEFAULT_TEMPO_BPM, MIN_TEMPO, MAX_TEMPO } from './transportStore';
 export type { TransportState } from './transportStore';
 
 export { readTempoAtBeat } from './readTempoAtBeat';

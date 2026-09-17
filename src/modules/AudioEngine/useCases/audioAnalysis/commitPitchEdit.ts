@@ -20,6 +20,11 @@ type CommitPitchEditInput = {
     audioBufferId?: string;
     segments: PitchEditSegment[];
     contour: PitchContour;
+    /** The live settings the bake must carry (#2058): after commit the clip's
+     *  audio is replaced and the analysis cleared, so an omitted setting is
+     *  lost, not corrected later. Both realms' renderers consume them. */
+    retuneSpeedMs?: number;
+    formantPreserve?: boolean;
 };
 
 /** `renderedAudioBufferId` names the cache entry holding the rendered audio, for
@@ -38,12 +43,16 @@ export async function commitPitchEdit({
     audioBufferId,
     segments,
     contour,
+    retuneSpeedMs = 25,
+    formantPreserve = false,
 }: CommitPitchEditInput): CommitPitchEditOutput {
     const didCommitNatively = await commitNativePitchEdit({
         inputAudioPath,
         outputAudioPath,
         segments,
         contour,
+        retuneSpeedMs,
+        formantPreserve,
     });
 
     if (didCommitNatively) {
@@ -74,6 +83,6 @@ export async function commitPitchEdit({
         throw new Error('Could not get audio buffer for clip');
     }
 
-    await processPitchEditWasm(buffer, segments, contour, outputAudioBufferId);
+    await processPitchEditWasm(buffer, segments, contour, outputAudioBufferId, retuneSpeedMs, formantPreserve);
     return { renderedAudioBufferId: outputAudioBufferId };
 }

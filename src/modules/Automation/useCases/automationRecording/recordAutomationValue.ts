@@ -5,7 +5,7 @@ import { transportStore } from '#/modules/Transport/stores';
 import { type AutomationPoint } from '../../models/Automation';
 
 import { commitRecordedPass } from './commitRecordedPass';
-import { getAutomationRecordingDependencies } from './getAutomationRecordingDependencies';
+import { latencyCompensatedBeat } from './latencyCompensatedBeat';
 import { makeKey } from './makeKey';
 import { RECORDING_MODES, activeRecording, pendingPoints, touchActive } from './recordingSessionState';
 
@@ -49,14 +49,7 @@ export function recordAutomationValue(trackId: string, parameterId: string, valu
     }
     const tempo = session.tempoAtStart;
 
-    const deps = getAutomationRecordingDependencies();
-    const ctx = deps.getAudioContext();
-    const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
-    const trackLatencySec = deps.getCompensationDelay(trackId);
-    const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
-    const offsetBeats = (totalLatencySec * tempo) / 60;
-
-    const compensatedBeat = Math.max(0, beat - offsetBeats);
+    const compensatedBeat = latencyCompensatedBeat(beat, trackId, tempo);
 
     // A loop wrap ends the pass. Every pass used to accumulate into one buffer,
     // which made it non-monotonic in beat the moment the playhead jumped back:
@@ -65,11 +58,20 @@ export function recordAutomationValue(trackId: string, parameterId: string, valu
     // that happened to sample the same beat grid still merged correctly, so the
     // damage looked intermittent — off-grid, lap one's points survived
     // interleaved with lap two's. Live, Logic, Pro Tools and REAPER all replace
-    // the previous pass on lap two; committing here does the same.
+    // the previous pass on lap two; committing here does the same. The ended
+    // pass's boundary is its own last known raw beat — the best position this
+    // gesture-driven detection can name, and equal to the last gesture, so the
+    // boundary hold collapses to what the clear already covered.
     const previousRawBeat = session.lastRawBeat;
     if (previousRawBeat !== undefined && previousRawBeat !== null && beat < previousRawBeat) {
-        commitRecordedPass(key, track.automationMode === 'write' || track.automationMode === 'latch');
+        commitRecordedPass(
+            key,
+            track.automationMode === 'write' || track.automationMode === 'latch' ? track.automationMode : 'touch',
+            previousRawBeat
+        );
         session.startBeat = compensatedBeat;
+        // The ended pass owned the writing span; the next gesture re-seeds it.
+        session.passWriteStartBeat = null;
     }
     session.lastRawBeat = beat;
 
@@ -77,6 +79,13 @@ export function recordAutomationValue(trackId: string, parameterId: string, valu
     // latency-compensated beat is the real start, so anchor it on first value.
     if (session.startBeat > compensatedBeat) {
         session.startBeat = compensatedBeat;
+    }
+
+    // Where this writing span began — latch's overwrite starts at its first
+    // gesture, and the buffer cannot answer that once a touch release has
+    // flushed it empty mid-span.
+    if (session.passWriteStartBeat === null || session.passWriteStartBeat === undefined) {
+        session.passWriteStartBeat = compensatedBeat;
     }
 
     const point: AutomationPoint = { beat: compensatedBeat, value, curve: 'linear', tension: 0 };

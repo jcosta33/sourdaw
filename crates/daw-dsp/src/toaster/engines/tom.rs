@@ -4,6 +4,7 @@
 //! shorter decay). Supports low, mid, and hi tom tunings (80-400Hz).
 //! Optional noise layer for stick attack and tanh drive for analog warmth.
 
+use crate::params::{DECAY, DRIVE, TONE, TUNE};
 use std::f32::consts::TAU;
 
 const DEFAULT_BASE_FREQ: f32 = 150.0;
@@ -140,16 +141,16 @@ impl TomEngine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "decay" => {
+            DECAY => {
                 // Normalize 0-1 to amp decay range 0.05-0.5s
                 let v = value.clamp(0.0, 1.0);
                 self.amp_decay = 0.05 + v * 0.45;
             }
-            "tune" => {
+            TUNE => {
                 self.tune_ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0);
             }
-            "tone" => self.tone_cutoff = value.clamp(0.0, 1.0),
-            "drive" => self.drive = value.clamp(0.0, 10.0),
+            TONE => self.tone_cutoff = value.clamp(0.0, 1.0),
+            DRIVE => self.drive = value.clamp(0.0, 10.0),
             "base_freq" => self.base_freq = value.clamp(80.0, 400.0),
             "pitch_amount" => self.pitch_amount = value.clamp(0.0, 1.0),
             "pitch_decay" => self.pitch_decay = value.clamp(0.005, 0.1),

@@ -11,7 +11,7 @@ import { readRenderCache } from '../repositories/readRenderCache';
 import { renderRequestCancellation } from '../repositories/renderRequestCancellation';
 import { withDdspInstrumentLock } from '../repositories/withDdspInstrumentLock';
 import { writeRenderCache } from '../repositories/writeRenderCache';
-import { applyFades, resampleTo44100 } from '../services/audioResampler';
+import { applyFades, resampleTo44100, TARGET_SAMPLE_RATE } from '../services/audioResampler';
 import {
     conditionDdspInput,
     createDdspInferenceChunks,
@@ -30,7 +30,6 @@ import {
 
 import { supersedeBrowserRender } from './supersedeBrowserRender';
 
-const OUTPUT_SAMPLE_RATE = 44_100;
 const CROSSFADE_SECONDS = 1;
 const FADE_SAMPLES = 441;
 const DDSP_RENDER_REVISION = 'magenta-ddsp-midi-v1';
@@ -122,7 +121,7 @@ export const renderDdspInstrument = inject({
             // work instead of letting overlapping notes overwrite each other's
             // pitch frames in input order.
             assertMonophonicNotes(notes);
-            const targetSamples = targetSampleCount(durationSec, OUTPUT_SAMPLE_RATE);
+            const targetSamples = targetSampleCount(durationSec, TARGET_SAMPLE_RATE);
             const instrument = resolveDdspInstrument(instrumentId);
             const nativeTargetSamples = targetSampleCount(durationSec, instrument.nativeSampleRate);
             if (signal?.aborted) {
@@ -193,7 +192,7 @@ export const renderDdspInstrument = inject({
                         return {
                             audio: cached,
                             backend: session.backend,
-                            sampleRate: OUTPUT_SAMPLE_RATE,
+                            sampleRate: TARGET_SAMPLE_RATE,
                             provenance: {
                                 modelId: instrument.id,
                                 renderQuality: 'standard',
@@ -260,7 +259,7 @@ export const renderDdspInstrument = inject({
                     return {
                         audio,
                         backend: session.backend,
-                        sampleRate: OUTPUT_SAMPLE_RATE,
+                        sampleRate: TARGET_SAMPLE_RATE,
                         provenance: {
                             modelId: instrument.id,
                             renderQuality: 'standard',

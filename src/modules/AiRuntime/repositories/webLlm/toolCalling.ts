@@ -3,6 +3,7 @@ import { type ChatCompletionTool } from '@mlc-ai/web-llm';
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
+import { TOOL_CALLING_TEMPERATURE } from '../../models/LlmSamplingTemperatures';
 import { parseToolPlanningOutcome, type ToolPlanningOutcome } from '../../transformers/toolCallParser';
 
 import { generateWebLlmCompletion } from './generateWebLlmCompletion';
@@ -42,7 +43,7 @@ export const generateWebLlmToolCalls = inject({ logger })(
             ].join('\n');
 
             const response = await generateWebLlmCompletion(fullSystemPrompt, userMessage, {
-                temperature: 0.1,
+                temperature: TOOL_CALLING_TEMPERATURE,
                 maxTokens,
                 signal: actualSignal,
                 requireComplete: true,

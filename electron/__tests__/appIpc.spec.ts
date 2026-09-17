@@ -15,7 +15,6 @@ import {
     registerScanCommand,
     registerNativeMenuChannels,
     registerWindowControlChannels,
-    SCAN_COMMAND,
     type NativeDialogs,
     type WindowControlTarget,
 } from '../appIpc.js';
@@ -34,7 +33,7 @@ import {
     RENDERER_SESSION_QUIESCED_CHANNEL,
     RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
 } from '../channels.js';
-import { commandChannel } from '../commands.js';
+import { commandChannel, SCAN_PLUGINS } from '../commands.js';
 
 import type { NativeHost } from '../native.js';
 import type { IpcMainLike, SenderFrameCarrier } from '../router.js';
@@ -88,7 +87,7 @@ describe('the scan command', () => {
     const scanHandler = (supervisor: ScanSupervisor): Handler | undefined => {
         const { ipcMain, handlers } = collectingIpc();
         registerScanCommand({ ipcMain, isTrustedFrameUrl, supervisor });
-        return handlers.get(commandChannel(SCAN_COMMAND));
+        return handlers.get(commandChannel(SCAN_PLUGINS));
     };
 
     const supervisorSpy = (scan: ScanSupervisor['scan']): ScanSupervisor => ({
@@ -101,7 +100,7 @@ describe('the scan command', () => {
         // The renderer must not learn that this one command lives elsewhere: a
         // different channel here is a `scan_plugins` call with no handler.
         expect(scanHandler(supervisorSpy(async () => []))).toBeDefined();
-        expect(commandChannel(SCAN_COMMAND)).toBe('sourdaw:invoke:scan_plugins');
+        expect(commandChannel(SCAN_PLUGINS)).toBe('sourdaw:invoke:scan_plugins');
     });
 
     it('forwards the roots to the supervisor and returns its result', async () => {

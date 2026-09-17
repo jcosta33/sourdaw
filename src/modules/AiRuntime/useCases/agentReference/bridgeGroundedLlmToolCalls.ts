@@ -47,7 +47,11 @@ import {
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
 import { bridgeDrumRenderComparisonPlan } from './bridgeDrumRenderComparisonPlan';
 import { bridgeSharedVocalFxBusesPlan } from './bridgeSharedVocalFxBusesPlan';
-import { getSpentCreationBudgetReason } from './creativeAuthorityReasons';
+import {
+    getSpentCreationBudgetReason,
+    SPENT_CREATION_BUDGET_INFIX,
+    SPENT_CREATION_BUDGET_PREFIX,
+} from './creativeAuthorityReasons';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
 import {
     getBassProcessingCopyPromptScope,
@@ -3264,10 +3268,12 @@ function resolvePlanCreatedObjectAdmission({
 
 /**
  * The objects a plan-created call may leave behind while riding the ordinary creation route under an
- * authority. Each hangs inside a track the same batch creates, so the published track slot the ride
- * spends already answers for it; a `bus` and every other object stand outside that slot.
+ * authority. Each hangs inside a track the same batch creates and carries no budget of its own, so
+ * the published track slot the ride spends answers for it. A `device` is outside this set because
+ * the authority publishes its own nested slot for one, and that slot's budget must bound it; a `bus`
+ * and every other object stand outside the track slot altogether.
  */
-const TRACK_SLOT_COVERED_CREATIONS: ReadonlySet<string> = new Set(['clip', 'notes', 'device']);
+const TRACK_SLOT_COVERED_CREATIONS: ReadonlySet<string> = new Set(['clip', 'notes']);
 
 function getCreatedObjectTypes(actionName: string): readonly string[] {
     return getExecutableAppActionEffect(actionName)?.creates ?? [];
@@ -3292,11 +3298,18 @@ function getAuthorityTrackCreationBudget(authority: CreativeRequestAuthority | u
     );
 }
 
+/** Whether a refusal is the spent-budget statement, which no later route may override. */
+function isSpentCreationBudgetReason(reason: string): boolean {
+    return reason.startsWith(SPENT_CREATION_BUDGET_PREFIX) && reason.includes(SPENT_CREATION_BUDGET_INFIX);
+}
+
 /**
  * Whether a call the plan-created route admitted may still take that ordinary creation route after
  * the creative authority refused it. The authority's published track slot is what bounds the ride:
  * it is the record's own statement about tracks this batch creates, and a batch may not put more of
- * them in front of the musician than the admitted interpretation published.
+ * them in front of the musician than the admitted interpretation published. A refusal that already
+ * names a spent creation budget is never ridden past: the ride is bounded by published slots, so it
+ * cannot answer for one the batch has already emptied.
  */
 function resolvePlanCreatedRideAlong(input: {
     createdObjectTypes: readonly string[];
@@ -3304,6 +3317,9 @@ function resolvePlanCreatedRideAlong(input: {
     plannedTrackCreationCount: number;
     trackCreationBudget: number;
 }): { status: 'rides' } | { status: 'refused'; reason: string } {
+    if (isSpentCreationBudgetReason(input.creativeReason)) {
+        return { status: 'refused', reason: input.creativeReason };
+    }
     if (input.trackCreationBudget === 0) {
         return { status: 'refused', reason: input.creativeReason };
     }
@@ -3449,7 +3465,7 @@ function groundToolCall({
     const sidechainRoutingScope =
         call.name === 'addSidechainRoute' ? getSidechainRoutingPromptScope(prompt, context) : null;
     const wholeProjectVibeMixScope =
-        call.name === 'automateTrackGainRange' ? getWholeProjectVibeMixScope(prompt, context) : null;
+        call.name === 'automateTrackGainRange' ? getWholeProjectVibeMixScope(context) : null;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
         if (targetRule.optional && assertedValue === undefined) {
@@ -4335,7 +4351,7 @@ export function bridgeGroundedLlmToolCalls({
             return providerRoute ? [providerRoute] : [];
         });
     }
-    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(prompt, context);
+    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(context);
     const providerVibeMixCalls = calls.filter((call) => call.name === 'automateTrackGainRange');
     if (wholeProjectVibeMixScope || providerVibeMixCalls.length > 0) {
         const providerCall = providerVibeMixCalls[0];

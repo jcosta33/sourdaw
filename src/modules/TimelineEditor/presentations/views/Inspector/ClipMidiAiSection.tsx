@@ -28,7 +28,7 @@ import {
 } from '#/modules/BrowserAi/useCases';
 import { defaultGrooveTemplateState, grooveTemplateStore, type MidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
-import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { secondsBetweenBeats } from '#/modules/Transport/useCases';
 import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
@@ -541,7 +541,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             const voiceName = activeVoicebank?.name ?? selectedVoicebankId;
             const lyrics = diffSingerLyrics.trim() || 'la la la';
             const lyricsPreview = lyrics.slice(0, 20) + (lyrics.length > 20 ? '…' : '');
-            const tempo = tempoMapStore.value?.changes[0]?.tempo ?? 120;
+            const tempo = tempoMapStore.value?.changes[0]?.tempo ?? DEFAULT_TEMPO_BPM;
             const secondsPerBeat = 60 / tempo;
             const timedNotes = notes.map((note) => ({
                 pitch: note.pitch,

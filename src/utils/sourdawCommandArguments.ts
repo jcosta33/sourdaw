@@ -17,6 +17,13 @@
  * table equal to the one derived from the addon's `#[napi]` signatures, and
  * `src/utils/__tests__/desktopBridge.spec.ts` proves the seam orders arguments
  * by it.
+ *
+ * The keys restate the command names the shell owns: no import route crosses
+ * from `src/` into `electron/`, so this table is the renderer realm's copy of
+ * the surface `electron/commands.ts` defines. The shell branches on
+ * `apply_graph_commands`, `retire_native_engine`, and `scan_plugins` by name
+ * (consts there); those names appear here as keys, and the Rust-derived pin
+ * above is what keeps the two realms equal.
  */
 export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['agent_asset_cleanup', ['saga_id', 'owner']],
@@ -52,6 +59,7 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['engine_rt_diagnostics', []],
     ['engine_transport_position', []],
     ['engine_transport_set_maps', ['maps']],
+    ['get_crumbs_dropped_sample_writes', ['instance_id']],
     ['get_crumbs_position', ['instance_id']],
     ['get_default_plugin_paths', []],
     ['get_plugin_parameters', ['instance_id']],

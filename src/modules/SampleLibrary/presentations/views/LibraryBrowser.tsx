@@ -19,6 +19,7 @@ import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { FACTORY_LIBRARY_ROOT_ID } from '#/modules/FactorySynthesis/useCases';
+import { SAMPLE_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { basename_from_path } from '#/utils/path-basename';
 
@@ -614,7 +615,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                     onFindSimilar={() => handleFindSimilar(sample)}
                                     onDragStart={(e) => {
                                         e.dataTransfer.setData(
-                                            'application/x-sourdaw-sample',
+                                            SAMPLE_DRAG_MIME_TYPE,
                                             JSON.stringify({
                                                 name: sample.displayName,
                                                 id: sample.id,

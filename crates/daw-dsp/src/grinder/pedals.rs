@@ -1,6 +1,7 @@
 //! Pedalboard DSP: compressor plus core drive pedals.
 
 use super::oversample::StageOversampler2x;
+use crate::params::{ATTACK, DRIVE, RELEASE, THRESHOLD, TONE};
 use crate::primitives::flush_denormal;
 use std::f32::consts::PI;
 
@@ -33,8 +34,8 @@ impl OverdrivePedal {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "drive" => self.drive = (value / 10.0).clamp(0.0, 1.0),
-            "tone" => self.tone = (value / 10.0).clamp(0.0, 1.0),
+            DRIVE => self.drive = (value / 10.0).clamp(0.0, 1.0),
+            TONE => self.tone = (value / 10.0).clamp(0.0, 1.0),
             "level" => self.level = (value / 10.0).clamp(0.0, 1.0),
             "enabled" => self.enabled = value > 0.5,
             _ => {}
@@ -128,8 +129,8 @@ impl DistortionPedal {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "drive" => self.drive = (value / 10.0).clamp(0.0, 1.0),
-            "tone" => self.tone = (value / 10.0).clamp(0.0, 1.0),
+            DRIVE => self.drive = (value / 10.0).clamp(0.0, 1.0),
+            TONE => self.tone = (value / 10.0).clamp(0.0, 1.0),
             "level" => self.level = (value / 10.0).clamp(0.0, 1.0),
             "enabled" => self.enabled = value > 0.5,
             _ => {}
@@ -247,7 +248,7 @@ impl FuzzPedal {
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "fuzz" => self.fuzz = (value / 10.0).clamp(0.0, 1.0),
-            "tone" => self.tone = (value / 10.0).clamp(0.0, 1.0),
+            TONE => self.tone = (value / 10.0).clamp(0.0, 1.0),
             "level" => self.level = (value / 10.0).clamp(0.0, 1.0),
             "enabled" => self.enabled = value > 0.5,
             _ => {}
@@ -349,12 +350,12 @@ impl CompressorPedal {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "threshold" => self.threshold = super::params::db_to_linear(value),
+            THRESHOLD => self.threshold = super::params::db_to_linear(value),
             "ratio" => self.ratio = value.max(1.0),
-            "attack" => {
+            ATTACK => {
                 self.attack_coeff = (-1.0 / (value.max(0.1) * 0.001 * self.sample_rate)).exp()
             }
-            "release" => {
+            RELEASE => {
                 self.release_coeff = (-1.0 / (value.max(1.0) * 0.001 * self.sample_rate)).exp()
             }
             "enabled" => self.enabled = value > 0.5,

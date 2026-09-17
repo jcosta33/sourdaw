@@ -17,6 +17,7 @@ use poly::PolyStringTracker;
 use preprocess::{normalize, Bandpass, DcBlocker, RmsTracker};
 use tone::ToneGenerator;
 use tuning::TuningSystem;
+use tuning::{A4_MIDI_NOTE, SEMITONES_PER_OCTAVE};
 use wasm_bindgen::prelude::*;
 use yin::YinDetector;
 
@@ -588,7 +589,7 @@ impl ScoringInstance {
         // offsets table exactly as it was.
         let a4_hz = match tuning.base_freq {
             Some(base_freq) => {
-                let a4 = base_freq * (2.0_f32).powf(69.0 / 12.0);
+                let a4 = base_freq * (2.0_f32).powf(A4_MIDI_NOTE / SEMITONES_PER_OCTAVE);
                 if !(400.0..=490.0).contains(&a4) {
                     return false;
                 }

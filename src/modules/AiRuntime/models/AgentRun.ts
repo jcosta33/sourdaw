@@ -464,8 +464,38 @@ export type AgentRun = {
     workLeases: AgentRunWorkLease[];
     contextEvidence: AgentContextEvidence | null;
     createdAt: number;
+    /** When the run entered its current active stretch, or `null` while it holds no active stretch. */
+    activeSince: number | null;
     updatedAt: number;
 };
+
+/** Phases in which a run holds machine resources and its wall-clock limit runs. */
+export const AGENT_RUN_ACTIVE_PHASES: ReadonlySet<AgentRunPhase> = new Set<AgentRunPhase>([
+    'planning',
+    'previewing',
+    'executing',
+]);
+
+/** Phases from which a run proposes no further mutation, so nothing it holds can still be claimed. */
+export const AGENT_RUN_TERMINAL_PHASES: ReadonlySet<AgentRunPhase> = new Set<AgentRunPhase>([
+    'completed',
+    'failed',
+    'cancelled',
+    'partially-completed',
+]);
+
+/**
+ * Anchors `activeSince` at the moment the run entered the active stretch it is in. Moving between
+ * active phases keeps the anchor already held; leaving the active set drops it, so the time a run
+ * spends waiting for approval or paused never ages it out of its wall-clock limit.
+ */
+export function trackActiveSince(current: AgentRun, next: AgentRun, at: number): AgentRun {
+    if (!AGENT_RUN_ACTIVE_PHASES.has(next.phase)) {
+        return { ...next, activeSince: null };
+    }
+    const continuesActiveStretch = AGENT_RUN_ACTIVE_PHASES.has(current.phase) && current.activeSince !== null;
+    return { ...next, activeSince: continuesActiveStretch ? current.activeSince : at };
+}
 
 export type AgentRunState = {
     schemaVersion: typeof AGENT_RUN_SCHEMA_VERSION;

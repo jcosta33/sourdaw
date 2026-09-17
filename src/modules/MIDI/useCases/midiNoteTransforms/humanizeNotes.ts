@@ -1,3 +1,4 @@
+import { clampVelocity } from '#/utils/midiData';
 import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
 
 import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
@@ -16,7 +17,7 @@ export function humanizeNotes(clipId: string, timingAmount: number, velocityAmou
         notes.map((node) => ({
             ...node,
             startBeat: node.startBeat + (rng() - 0.5) * timingAmount * 0.25,
-            velocity: Math.max(1, Math.min(127, node.velocity + Math.round((rng() - 0.5) * vAmount * 10))),
+            velocity: clampVelocity(node.velocity + Math.round((rng() - 0.5) * vAmount * 10)),
         }))
     );
 

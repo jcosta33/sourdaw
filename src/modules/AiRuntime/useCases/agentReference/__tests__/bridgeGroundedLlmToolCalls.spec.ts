@@ -295,7 +295,9 @@ describe('automateTrackGainRange capability grounding', () => {
                     },
                 },
             ],
-            'Make the second chorus hit harder without changing any lead-vocal state, the tempo map, or the master chain.',
+            // A paraphrase, not the demo sentence: grounding authority is the
+            // typed call plus app-derived scope, never the wording (#2002).
+            'Lift the rhythm section in the second chorus a touch — vocals, tempo map, and the master chain must stay untouched.',
             exactContext,
             [],
             [{ sectionId: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 }]

@@ -18,6 +18,7 @@ use super::modulation::{EnvelopeFollower, Lfo, LfoShape, LorenzAttractor};
 use super::params::{db_to_linear, linear_to_db, SmoothedParam};
 use super::stft::StftProcessor;
 use super::waveshaper::CustomWaveshaper;
+use crate::params::MIX;
 use crate::primitives::oversample::OversamplingChain;
 
 const MAX_BANDS: usize = 6;
@@ -1268,7 +1269,7 @@ impl BacteriaEngine {
             // Global
             "inputGain" => self.input_gain.set_target(db_to_linear(value)),
             "outputGain" => self.output_gain.set_target(db_to_linear(value)),
-            "mix" => self.mix.set_target(value),
+            MIX => self.mix.set_target(value),
             "bypass" => self.bypassed = value > 0.5,
 
             // Crossover
@@ -1445,6 +1446,41 @@ impl BacteriaEngine {
         }
         self.modulated_targets[self.modulated_target_count] = target;
         self.modulated_target_count += 1;
+    }
+
+    /// Drop every modulation assignment, leaving the macro mappings alone.
+    ///
+    /// The table is append-only at the wasm boundary apart from this: removal,
+    /// undo, and a patch reload all arrive from the UI as "replace the whole
+    /// table", which the caller spells clear-then-re-add through
+    /// [`Self::add_mod_assignment`]. Clearing has to retire the cleared targets
+    /// from [`Self::modulated_targets`] — otherwise the per-sample pass would
+    /// go on re-zeroing slots nothing writes any more — and zero
+    /// [`Self::param_offsets`], because a slot that just left the table is
+    /// never cleared again and would otherwise hold its last resolved offset
+    /// forever. A target a macro mapping still writes is re-noted below, so
+    /// sharing a slot between an assignment and a mapping survives the clear.
+    pub fn clear_mod_assignments(&mut self) {
+        self.mod_assignments.clear();
+        self.rebuild_modulated_targets();
+    }
+
+    /// Recompute [`Self::modulated_targets`] from both tables and drop every
+    /// resolved offset.
+    ///
+    /// Index-walked rather than iterated by reference: [`Self::note_modulated_target`]
+    /// takes `&mut self`, and index reads end their borrow before the call.
+    fn rebuild_modulated_targets(&mut self) {
+        self.modulated_target_count = 0;
+        for index in 0..self.mod_assignments.len() {
+            let target = self.mod_assignments[index].target_param;
+            self.note_modulated_target(target);
+        }
+        for index in 0..self.macro_mappings.len() {
+            let target = self.macro_mappings[index].target_param;
+            self.note_modulated_target(target);
+        }
+        self.param_offsets = [0.0; PARAM_OFFSET_COUNT];
     }
 
     /// Process a stereo block in-place.
@@ -2864,6 +2900,61 @@ mod tests {
             (engine.param_offsets[MIX_TARGET as usize] - 0.25).abs() < 1.0e-6,
             "moving macro1 did not reach the matrix: {}",
             engine.param_offsets[MIX_TARGET as usize]
+        );
+    }
+
+    /// The UI's remove, undo, and a patch reload all replace the whole
+    /// assignment table through `clear_mod_assignments` + re-add. After the
+    /// clear, a target only the removed assignment wrote must stop resolving —
+    /// and return to rest, because a slot that left the table is never
+    /// re-zeroed by the per-sample pass. A target a macro mapping still writes
+    /// keeps resolving through the mapping, so a shared slot survives.
+    #[test]
+    fn clearing_assignments_stops_them_and_releases_their_offsets() {
+        const MACRO_1_SOURCE: u8 = MACRO_SOURCE_BASE as u8;
+        const MIX_TARGET: u16 = 0;
+        const BAND_0_GAIN_TARGET: u16 = 1;
+
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        // Mix is written by the assignment alone; the band 0 gain is written by
+        // both the assignment and a constant macro mapping.
+        engine.add_mod_assignment(MACRO_1_SOURCE, MIX_TARGET, 1.0);
+        engine.add_mod_assignment(MACRO_1_SOURCE, BAND_0_GAIN_TARGET, 1.0);
+        engine.add_macro_mapping(0, BAND_0_GAIN_TARGET, 0.25, 0.25);
+
+        let mut seed = 17u32;
+        let mut left = noise_block(64, &mut seed);
+        let mut right = noise_block(64, &mut seed);
+        engine.process_block(&mut left, &mut right);
+        assert!(
+            (engine.param_offsets[MIX_TARGET as usize] - DEFAULT_MACRO).abs() < 1.0e-6,
+            "fixture: the assignment must be live before the clear, saw {}",
+            engine.param_offsets[MIX_TARGET as usize]
+        );
+
+        engine.clear_mod_assignments();
+        assert_eq!(
+            engine.mod_assignments.len(),
+            0,
+            "the clear must empty the assignment table"
+        );
+
+        let mut left = noise_block(64, &mut seed);
+        let mut right = noise_block(64, &mut seed);
+        engine.process_block(&mut left, &mut right);
+        assert_eq!(
+            engine.param_offsets[MIX_TARGET as usize], 0.0,
+            "a cleared assignment's slot must rest at zero, saw {}",
+            engine.param_offsets[MIX_TARGET as usize]
+        );
+        assert!(
+            (engine.param_offsets[BAND_0_GAIN_TARGET as usize] - 0.25).abs() < 1.0e-6,
+            "a slot a macro mapping still writes must keep resolving, saw {}",
+            engine.param_offsets[BAND_0_GAIN_TARGET as usize]
+        );
+        assert_eq!(
+            engine.modulated_target_count, 1,
+            "only the mapping's target may stay in the modulated set"
         );
     }
 

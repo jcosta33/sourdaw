@@ -19,11 +19,17 @@ type HumanizePreset = 'tight' | 'loose' | 'drunk' | 'rushed' | 'laidBack';
  */
 const MAX_TRACKED_NOTES = 16 * 128;
 
+// FNV-1a 32-bit constants, restated from their owner in
+// `src/utils/canonicalDigest.ts` because worker processors stay isolated from
+// app-side imports (the same restatement discipline the worklet processors use).
+const FNV_1A_OFFSET_BASIS = 0x811c9dc5;
+const FNV_1A_PRIME = 0x01000193;
+
 function hashIdentity(value: string): number {
-    let hash = 0x811c9dc5;
+    let hash = FNV_1A_OFFSET_BASIS;
     for (let index = 0; index < value.length; index++) {
         hash ^= value.charCodeAt(index);
-        hash = Math.imul(hash, 0x01000193);
+        hash = Math.imul(hash, FNV_1A_PRIME);
     }
     return hash & 0x7fffffff;
 }

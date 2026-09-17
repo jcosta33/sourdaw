@@ -28,6 +28,7 @@ import {
 import {
     assertConventionalSubject,
     assertIssueNumber,
+    AUTHOR_LANE_BRANCH_PREFIX,
     canonicalPath,
     composePublishBody,
     containsPath,
@@ -35,6 +36,11 @@ import {
     howToTestFromBody,
     issueRelationshipFromBody,
     readGuardFailureReceipt,
+    TRUSTED_COMMON_DIR_ENV,
+    TRUSTED_GH_PATH_ENV,
+    TRUSTED_GIT_PATH_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV,
+    TRUSTED_PRIMARY_ROOT_ENV,
     whatFromBody,
     type GuardFailureReceipt,
     type IssueRelationship,
@@ -75,13 +81,25 @@ export type StackPublicationContext = {
 };
 
 export const PUBLISH_LANE_USAGE =
-    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>]';
+    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]';
 
-const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
-const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
-const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
-const TRUSTED_GH_PATH_ENV = 'SOURDAW_TRUSTED_GH_PATH';
-const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
+/**
+ * The same authoring-model rule `lane:open` enforces, mirrored here rather than imported: the
+ * trusted publish snapshot's dependency graph is closed, so `publishLane.ts` cannot take a new
+ * local dependency to reach `openLane.ts`'s copy. The specs hold the two spellings to one rule.
+ */
+export const AUTHOR_MODEL_PATTERN = /^[a-z0-9][a-z0-9.+-]{0,39}$/;
+
+const AUTHOR_MODEL_RULE =
+    'the lowercase public name of the model itself, keeping every qualifier that distinguishes capability or edition within the family (flash, mini, pro, air, codex, thinking) and dropping only deployment-routing prefixes and date-snapshot suffixes, e.g. glm-5.3-flash, glm-5.3, claude-sonnet-4.5, gpt-5.2-codex, kimi-k2.5';
+
+function normalizeAuthorModel(token: string): string {
+    const normalized = token.trim().toLowerCase();
+    if (!AUTHOR_MODEL_PATTERN.test(normalized)) {
+        fail(`--model must be ${AUTHOR_MODEL_RULE}`);
+    }
+    return normalized;
+}
 
 type TrustedPublishRuntime = {
     primaryRoot: string;
@@ -114,6 +132,312 @@ export function trustedPublishRuntime(env: NodeJS.ProcessEnv = process.env): Tru
     return { primaryRoot, commonDir, gitPath, ghPath, originCommit };
 }
 
+/**
+ * Flag-authored metadata overrides for one publication. `model` is pre-normalized by argv parsing;
+ * `milestone`, `projects`, and `labels` are validated against live tracker state before anything is
+ * written.
+ */
+export type PublishMetadataFlags = {
+    model?: string;
+    milestone?: string;
+    projects?: string[];
+    labels?: string[];
+};
+
+export type PullRequestMetadata = { labels: string[]; milestoneTitle?: string; projectTitles: string[] };
+
+/** The metadata a publication must leave on its pull request. `labels` leads with the model label. */
+export type PublishMetadataTarget = {
+    model: string;
+    labels: string[];
+    milestoneTitle?: string;
+    projectTitles: string[];
+};
+
+/** The pieces of the target a pull request is missing, or `undefined` when it is already complete. */
+export type MetadataEditPlan = { addLabels: string[]; milestoneTitle?: string; addProjectTitles: string[] };
+
+export const MODEL_LABEL_COLOR = '8250df';
+
+/**
+ * The label name is the bare model token; no name prefix marks it as authorship. The fence that
+ * keeps these labels out of inheritance and `--label` is the label description (`Authored by
+ * <model>`), not the name.
+ */
+export function modelLabelName(model: string): string {
+    return model;
+}
+
+/**
+ * `--force` turns create into create-or-update, so this is the idempotent way to make sure the
+ * label exists before any pull-request write references it. The shared color keeps the bare-name
+ * authorship labels visually grouped now that no `model:` prefix does it.
+ */
+export function ensureModelLabelArgs(model: string): string[] {
+    return [
+        'label',
+        'create',
+        modelLabelName(model),
+        '--color',
+        MODEL_LABEL_COLOR,
+        '--description',
+        `Authored by ${model}`,
+        '--force',
+    ];
+}
+
+/**
+ * `gh label create --force` updates whatever label already owns the name, so the label-creation
+ * path must first prove the model token names no label the repository maintains: overwriting a
+ * descriptive label's color and description would silently convert it into the authorship fence.
+ * Names match case-insensitively because GitHub holds them unique that way. A same-named label
+ * carrying the `Authored by ` description is the mechanism's own output, and an absent name
+ * creates fresh — both proceed.
+ */
+function assertModelLabelNameAvailable(model: string, knownLabels: LabelRow[]): void {
+    const collision = knownLabels.find(
+        (label) => label.name.toLowerCase() === model.toLowerCase() && !isAuthorshipLabel(label)
+    );
+    if (collision !== undefined) {
+        fail(
+            `the model token "${model}" collides with an existing repository label; authorship labels ` +
+                "never overwrite one; pick the model's exact public name"
+        );
+    }
+}
+
+function titleOf(value: unknown): string | undefined {
+    if (typeof value === 'object' && value !== null && 'title' in value && typeof value.title === 'string') {
+        return value.title;
+    }
+    return undefined;
+}
+
+/** One repository label as the tracker reports it: its canonical name and, when present, its description. */
+export type LabelRow = { name: string; description?: string };
+
+const AUTHORED_BY_DESCRIPTION_PREFIX = 'Authored by ';
+
+/** An authorship label is exactly one whose description begins `Authored by `. */
+function isAuthorshipLabel(label: LabelRow): boolean {
+    return label.description !== undefined && label.description.startsWith(AUTHORED_BY_DESCRIPTION_PREFIX);
+}
+
+/** One parser owns the defensive row shape; name-only readers project onto it. */
+function labelRowsFromRow(labels: unknown[] | undefined): LabelRow[] {
+    return (labels ?? []).flatMap((label) => {
+        if (typeof label === 'string') {
+            return [{ name: label }];
+        }
+        if (typeof label === 'object' && label !== null && 'name' in label && typeof label.name === 'string') {
+            const description =
+                'description' in label && typeof label.description === 'string' ? label.description : undefined;
+            return [{ name: label.name, ...(description === undefined ? {} : { description }) }];
+        }
+        return [];
+    });
+}
+
+function labelNamesFromRow(labels: unknown[] | undefined): string[] {
+    return labelRowsFromRow(labels).map((row) => row.name);
+}
+
+export type IssueTrackerRow = {
+    labels?: unknown[];
+    milestone?: { title?: unknown } | null;
+    projectItems?: unknown[];
+};
+
+export function trackerMetadataFromIssueRow(row: IssueTrackerRow): {
+    milestoneTitle?: string;
+    projectTitles: string[];
+    labels: LabelRow[];
+} {
+    const milestoneTitle = titleOf(row.milestone);
+    const projectTitles = (row.projectItems ?? []).flatMap((item) => {
+        const title = titleOf(item);
+        return title === undefined ? [] : [title];
+    });
+    return {
+        ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
+        projectTitles: [...new Set(projectTitles)],
+        labels: labelRowsFromRow(row.labels),
+    };
+}
+
+export function openMilestoneTitlesFromRows(rows: unknown): string[] {
+    if (!Array.isArray(rows)) {
+        fail('open milestone lookup returned malformed data');
+    }
+    return rows.flatMap((row) => {
+        const title = titleOf(row);
+        return title === undefined ? [] : [title];
+    });
+}
+
+/** `gh project list --format json` answers `{"projects":[...],"totalCount":N}`, not a bare array. */
+export function projectTitlesFromListing(listing: unknown): string[] {
+    if (
+        typeof listing !== 'object' ||
+        listing === null ||
+        !('projects' in listing) ||
+        !Array.isArray(listing.projects)
+    ) {
+        fail('project list returned malformed data');
+    }
+    return listing.projects.flatMap((project) => {
+        const title = titleOf(project);
+        return title === undefined ? [] : [title];
+    });
+}
+
+export type PullRequestMetadataRow = {
+    labels?: unknown[];
+    milestone?: { title?: unknown } | null;
+    projectItems?: unknown[];
+};
+
+export function pullRequestMetadataFromRow(row: PullRequestMetadataRow): PullRequestMetadata {
+    const milestoneTitle = titleOf(row.milestone);
+    return {
+        labels: labelNamesFromRow(row.labels),
+        ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
+        projectTitles: [
+            ...new Set(
+                (row.projectItems ?? []).flatMap((item) => {
+                    const title = titleOf(item);
+                    return title === undefined ? [] : [title];
+                })
+            ),
+        ],
+    };
+}
+
+/**
+ * Flags match live titles case-insensitively, but the target must carry the canonical spelling the
+ * tracker reports: a case-variant flag flowing through as typed would differ from what GitHub
+ * stores, and every republish would re-edit the pull request.
+ */
+export function canonicalMilestoneTitle(title: string, openTitles: string[]): string {
+    const canonical = openTitles.find((open) => open.toLowerCase() === title.toLowerCase());
+    if (canonical === undefined) {
+        fail(`--milestone "${title}" matches no open milestone in ${REQUIRED_REPOSITORY}`);
+    }
+    return canonical;
+}
+
+export function canonicalProjectTitle(title: string, knownTitles: string[]): string {
+    const canonical = knownTitles.find((known) => known.toLowerCase() === title.toLowerCase());
+    if (canonical === undefined) {
+        fail(`--project "${title}" matches no project in gh project list for ${REQUIRED_REPOSITORY}'s owner`);
+    }
+    return canonical;
+}
+
+/**
+ * Resolves one `--label` value against the live label list case-insensitively, so the edit
+ * carries the canonical spelling the tracker stores. A value that resolves to an authorship
+ * label — its description begins `Authored by ` — refuses: the authorship label is `--model`'s
+ * to set, and a flag spelling of it could only contradict the recorded model.
+ */
+export function canonicalLabelName(name: string, knownLabels: LabelRow[]): string {
+    const canonical = knownLabels.find((known) => known.name.toLowerCase() === name.toLowerCase());
+    if (canonical === undefined) {
+        fail(`--label "${name}" matches no label in gh label list for ${REQUIRED_REPOSITORY}`);
+    }
+    if (isAuthorshipLabel(canonical)) {
+        fail(
+            `--label "${name}" names an authoring model; the authoring model is set with ` +
+                '--model <model>, never --label'
+        );
+    }
+    return canonical.name;
+}
+
+/**
+ * `priority:` and `status:` are issue-workflow namespaces — the boards' status follows issue
+ * labels — so they never describe a pull request and are dropped from inheritance, and so are
+ * authorship labels: the authorship namespace is no longer a name prefix but the `Authored by `
+ * description, which `ensureModelLabel` is the only writer of, so such a label belongs to the
+ * authoring-model mechanism alone — set from the recorded or flagged model, never inherited from
+ * an issue. Triage labels need no exclusion: they are never inherited, because they do not appear
+ * on issues.
+ */
+export function descriptiveLabelNames(labels: LabelRow[]): string[] {
+    return labels
+        .filter(
+            (label) =>
+                !isAuthorshipLabel(label) && !label.name.startsWith('priority:') && !label.name.startsWith('status:')
+        )
+        .map((label) => label.name);
+}
+
+const SUBJECT_TYPE_LABELS: Readonly<Record<string, string>> = {
+    feat: 'enhancement',
+    fix: 'bug',
+    docs: 'documentation',
+};
+
+/**
+ * An explicit, deliberately small map: only the three conventional types whose meaning matches an
+ * existing repository label. Every other type (chore, test, refactor, build, ...) names work that
+ * is none of these, and guessing beyond the map would put wrong descriptors on pull requests. The
+ * optional `!` matches TITLE_PATTERN's breaking-change marker, so `feat!:` derives like `feat:`.
+ */
+export function derivedLabelFromSubject(subject: string): string | undefined {
+    const type = /^([a-z]+)(?:\([^)]*\))?!?:/.exec(subject)?.[1];
+    return type === undefined ? undefined : SUBJECT_TYPE_LABELS[type];
+}
+
+/**
+ * gh's default page is 30; the repository's label set is far below this limit. The description
+ * rides along because it is what the authorship fence reads.
+ */
+export function labelListArgs(): string[] {
+    return ['label', 'list', '--limit', '200', '--json', 'name,description'];
+}
+
+export function labelRowsFromListing(rows: unknown): LabelRow[] {
+    if (!Array.isArray(rows)) {
+        fail('repository label list returned malformed data');
+    }
+    return labelRowsFromRow(rows);
+}
+
+/**
+ * The missing pieces only, so a rerun after a partial metadata write converges without churning
+ * what a previous publish already set. `undefined` means the pull request already carries the
+ * whole target and no `gh pr edit` is issued at all.
+ */
+export function metadataEditPlan(
+    target: PublishMetadataTarget,
+    current: PullRequestMetadata
+): MetadataEditPlan | undefined {
+    const addLabels = target.labels.filter((label) => !current.labels.includes(label));
+    const milestoneTitle =
+        target.milestoneTitle !== undefined && current.milestoneTitle !== target.milestoneTitle
+            ? target.milestoneTitle
+            : undefined;
+    const addProjectTitles = target.projectTitles.filter((title) => !current.projectTitles.includes(title));
+    if (addLabels.length === 0 && milestoneTitle === undefined && addProjectTitles.length === 0) {
+        return undefined;
+    }
+    return { addLabels, ...(milestoneTitle === undefined ? {} : { milestoneTitle }), addProjectTitles };
+}
+
+export function applyPullRequestMetadataArgs(number: number, plan: MetadataEditPlan): string[] {
+    return [
+        'pr',
+        'edit',
+        String(number),
+        '--repo',
+        REQUIRED_REPOSITORY,
+        ...plan.addLabels.flatMap((label) => ['--add-label', label]),
+        ...(plan.milestoneTitle === undefined ? [] : ['--milestone', plan.milestoneTitle]),
+        ...plan.addProjectTitles.flatMap((title) => ['--add-project', title]),
+    ];
+}
+
 export type PublishLanePort = {
     baseSha: () => string;
     worktrees: () => PublishWorktree[];
@@ -132,6 +456,19 @@ export type PublishLanePort = {
     reportDiff?: (lane: string, base: string, head: string) => void;
     createPullRequest: (input: { branch: string; title: string; body: string; base?: string }) => number;
     updatePullRequest: (number: number, input: { body: string }) => void;
+    saveAuthorModel: (branch: string, model: string) => void;
+    readAuthorModel: (branch: string) => string | undefined;
+    ensureModelLabel: (model: string) => void;
+    readIssueTrackerMetadata: (issue: number) => {
+        milestoneTitle?: string;
+        projectTitles: string[];
+        labels: LabelRow[];
+    };
+    openMilestoneTitles: () => string[];
+    knownProjectTitles: () => string[];
+    knownLabels: () => LabelRow[];
+    readPullRequestMetadata: (number: number) => PullRequestMetadata;
+    applyPullRequestMetadata: (number: number, plan: MetadataEditPlan) => void;
     log: (message: string) => void;
     guardFailure: (laneName: string) => GuardFailureReceipt | undefined;
 };
@@ -142,6 +479,10 @@ export function parsePublishLaneArgs(args: string[]): {
     relationship?: IssueRelationship;
     testInstructions?: string;
     summary?: string;
+    model?: string;
+    milestone?: string;
+    projects?: string[];
+    labels?: string[];
     help: boolean;
 } {
     if (args[0] === '--help') {
@@ -155,6 +496,10 @@ export function parsePublishLaneArgs(args: string[]): {
     let relationship: IssueRelationship | undefined;
     let testInstructions: string | undefined;
     let summary: string | undefined;
+    let model: string | undefined;
+    let milestone: string | undefined;
+    const projects: string[] = [];
+    const labels: string[] = [];
     for (let index = 0; index < args.length; index += 1) {
         const arg = args[index];
         if (arg === '--relates') {
@@ -182,6 +527,42 @@ export function parsePublishLaneArgs(args: string[]): {
             index += 1;
             continue;
         }
+        if (arg === '--model') {
+            const value = args[index + 1];
+            if (model !== undefined || value === undefined || value.startsWith('--')) {
+                fail(PUBLISH_LANE_USAGE);
+            }
+            model = normalizeAuthorModel(value);
+            index += 1;
+            continue;
+        }
+        if (arg === '--milestone') {
+            const value = args[index + 1];
+            if (milestone !== undefined || value === undefined || value.startsWith('--')) {
+                fail(PUBLISH_LANE_USAGE);
+            }
+            milestone = value;
+            index += 1;
+            continue;
+        }
+        if (arg === '--project') {
+            const value = args[index + 1];
+            if (value === undefined || value.startsWith('--')) {
+                fail(PUBLISH_LANE_USAGE);
+            }
+            projects.push(value);
+            index += 1;
+            continue;
+        }
+        if (arg === '--label') {
+            const value = args[index + 1];
+            if (value === undefined || value.startsWith('--')) {
+                fail(PUBLISH_LANE_USAGE);
+            }
+            labels.push(value);
+            index += 1;
+            continue;
+        }
         if (arg === '--lane') {
             const value = args[index + 1];
             if (lanePath !== undefined || issue !== undefined || value === undefined || value.startsWith('--')) {
@@ -205,6 +586,10 @@ export function parsePublishLaneArgs(args: string[]): {
         ...(relationship === undefined ? {} : { relationship }),
         ...(testInstructions === undefined ? {} : { testInstructions }),
         ...(summary === undefined ? {} : { summary }),
+        ...(model === undefined ? {} : { model }),
+        ...(milestone === undefined ? {} : { milestone }),
+        ...(projects.length === 0 ? {} : { projects: [...new Set(projects)] }),
+        ...(labels.length === 0 ? {} : { labels: [...new Set(labels)] }),
         help: false,
     };
 }
@@ -220,8 +605,6 @@ type AuthorizedResolvedLane = PublishingAuthorAuthorization & { legacy: boolean 
 
 export const NO_ISSUE_LANE_FAILURE =
     'not inside a locked author lane: pass its issue number or --lane with its absolute worktree root';
-
-export const AUTHOR_LANE_BRANCH_PREFIX = 'agent/';
 
 /**
  * A push target must be lock-shaped *and* branch-shaped. `lockReason` is only ever set on a locked
@@ -431,7 +814,7 @@ export function resolveAuthorLane(
     // pick up an unrelated stranded lane and stamp `Closes #<that issue>` on its pull request. A
     // legacy lane resolves only from an explicit lane-path selection with no issue argument — see
     // the `issue === undefined` branch above.
-    const prefix = `agent/${issue}/`;
+    const prefix = `${AUTHOR_LANE_BRANCH_PREFIX}${issue}/`;
     const matches = lanes.filter((lane) => lane.branch.startsWith(prefix));
     if (matches.length !== 1) {
         return fail(`expected exactly one locked author lane for issue #${issue}`);
@@ -451,7 +834,8 @@ export function publishLane(
     relationship?: IssueRelationship,
     testInstructions?: string,
     summary?: string,
-    authorization?: AuthorizedResolvedLane
+    authorization?: AuthorizedResolvedLane,
+    metadataFlags?: PublishMetadataFlags
 ): number {
     const lane = resolveAuthorLane(
         issue,
@@ -516,6 +900,10 @@ export function publishLane(
         testInstructions,
         summary
     );
+    // Resolved before the push: every refusal it can raise (no model on record, a model token
+    // colliding with an existing label, an unknown flag title or label) must land with nothing
+    // written, not even the branch push.
+    const metadata = resolvePublishMetadata(lane, laneIssue, write?.effectiveTitle, metadataFlags, port);
     port.reportDiff?.(lane.path, comparisonHead, headSha);
     if (stack !== undefined) {
         port.pinStackParent?.(lane.branch, stack.parentNumber);
@@ -555,6 +943,12 @@ export function publishLane(
         fail('origin/main changed after its permission-scoped token was minted');
     }
     assertStackContext();
+    // The label must exist before any pull-request write can reference it; `--force` makes this
+    // create-or-update, and the collision guard in resolution has already proven any same-named
+    // label is the mechanism's own, so it is safe on every publish.
+    if (metadata !== undefined) {
+        port.ensureModelLabel(metadata.model);
+    }
     const number = pullRequestNumber(lane, write, port, stack?.branch);
     if (stack !== undefined) {
         const after = port.stackBase?.(lane.path, lane.branch, headSha, baseSha);
@@ -568,8 +962,210 @@ export function publishLane(
             fail('stack publication changed during mutation; publication may be partial, reconcile before retrying');
         }
     }
+    if (metadata !== undefined) {
+        assertPullRequestMetadata(number, metadata, port);
+    }
     port.log(String(number));
     return number;
+}
+
+/**
+ * The metadata a publication must leave on its pull request, or `undefined` when this lane's pull
+ * request is not `lane:publish`'s to decorate: a legacy lane publishes without an explicit
+ * `--model` exactly as it always did, because its pull request predates this mechanism and the
+ * flag is the one thing that proves the operator wants it applied anyway.
+ *
+ * The model resolution order is the contract: an explicit `--model` wins and is persisted for
+ * later runs; otherwise the value `lane:open` recorded for the branch is used; a conforming lane
+ * with neither fails closed rather than pushing an unattributed pull request. The resolved
+ * model's label name is then proven free against the live label list, so the `--force` label
+ * creation can only ever create fresh or update the mechanism's own label. Milestone and
+ * projects come from the lane's issue, and flag values override them per field after validation
+ * against live tracker state — left empty rather than forced onto the pull request. Descriptive
+ * labels come from the same issue read (minus the issue-workflow namespaces and authorship
+ * labels), or on an issueless lane from the conventional subject, and `--label` adds more by
+ * live canonical name; unlike authorship labels they are never created on demand. The model
+ * record is written only after every validation here has passed, so a refused run leaves the
+ * shared git config untouched.
+ *
+ * `subject` is the pull request's effective title: the title frozen on an existing pull request
+ * (this script never retitles, so a follow-up commit's subject must not re-derive the label), or
+ * the newest non-merge conventional subject on a fresh create. A manually retitled,
+ * non-conventional title derives nothing. It is `undefined` for a legacy lane, whose title is not
+ * this script's to derive, so a legacy lane derives no label either.
+ */
+function resolvePublishMetadata(
+    lane: ResolvedLane,
+    laneIssue: number | undefined,
+    subject: string | undefined,
+    flags: PublishMetadataFlags | undefined,
+    port: PublishLanePort
+): PublishMetadataTarget | undefined {
+    const flaggedModel = flags?.model;
+    if (lane.legacy && flaggedModel === undefined) {
+        if (flags?.milestone !== undefined || flags?.projects !== undefined || flags?.labels !== undefined) {
+            fail('metadata flags require --model on a legacy lane; its pull request predates lane:publish');
+        }
+        return undefined;
+    }
+    const model = flaggedModel !== undefined ? flaggedModel : readRecordedAuthorModel(lane.branch, port);
+    const inherited = laneIssue === undefined ? undefined : port.readIssueTrackerMetadata(laneIssue);
+    let milestoneTitle: string | undefined;
+    if (flags?.milestone !== undefined) {
+        milestoneTitle = canonicalMilestoneTitle(flags.milestone, port.openMilestoneTitles());
+    } else {
+        const inheritedMilestone = inherited?.milestoneTitle;
+        if (inheritedMilestone !== undefined) {
+            const openTitles = port.openMilestoneTitles();
+            if (openTitles.some((open) => open.toLowerCase() === inheritedMilestone.toLowerCase())) {
+                milestoneTitle = inheritedMilestone;
+            } else {
+                // An issue can hold a milestone that has since closed; publishing must not resurrect it.
+                port.log(
+                    `milestone "${inheritedMilestone}" on the lane's issue is no longer open; ` +
+                        'leaving the pull request milestone unset'
+                );
+            }
+        }
+    }
+    const projectTitles = resolveProjectTitles(
+        laneIssue !== undefined,
+        inherited?.projectTitles ?? [],
+        flags?.projects,
+        port
+    );
+    // One label-list read serves both the label-creation collision guard and `--label`
+    // canonicalization; the collision guard needs it on every conforming publish, flags or not.
+    const knownLabels = port.knownLabels();
+    assertModelLabelNameAvailable(model, knownLabels);
+    const descriptive = resolveDescriptiveLabels(inherited?.labels, subject, flags?.labels, knownLabels);
+    if (flaggedModel !== undefined) {
+        port.saveAuthorModel(lane.branch, model);
+    }
+    return {
+        model,
+        // The Set is structural defense-in-depth, not an independently observable fence: with the
+        // inheritance filter and the flag refusal above, no descriptive source can produce an
+        // authorship label (one whose description begins `Authored by `, the only spelling
+        // `ensureModelLabel` writes), so this dedupe backs those two fences rather than gating
+        // anything a test could reach on its own — which is why no dedicated test pins it.
+        labels: [...new Set([modelLabelName(model), ...descriptive])],
+        ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
+        projectTitles,
+    };
+}
+
+/**
+ * Descriptive labels from three sources, unioned and deduped: the bound issue's labels minus the
+ * issue-workflow namespaces and authorship labels, one type label derived from the pull request's
+ * effective title on an issueless lane, and canonicalized `--label` flags. Only authorship labels
+ * are ever created on demand; descriptive labels must already exist — the live-list validation
+ * enforces it for flags, and the other two sources carry names the repository already issued (the
+ * issue wears its labels, and the derived three are repository staples). A `--label` that
+ * resolves to an authorship label refuses: the authorship label is `--model`'s to set, and a
+ * flag spelling of it could only contradict the recorded model.
+ */
+function resolveDescriptiveLabels(
+    inheritedLabels: LabelRow[] | undefined,
+    subject: string | undefined,
+    flaggedLabels: string[] | undefined,
+    knownLabels: LabelRow[]
+): string[] {
+    const carried: string[] = [];
+    if (inheritedLabels !== undefined) {
+        carried.push(...descriptiveLabelNames(inheritedLabels));
+    } else if (subject !== undefined) {
+        const derived = derivedLabelFromSubject(subject);
+        if (derived !== undefined) {
+            carried.push(derived);
+        }
+    }
+    if (flaggedLabels === undefined) {
+        return [...new Set(carried)];
+    }
+    const canonical = flaggedLabels.map((name) => canonicalLabelName(name, knownLabels));
+    return [...new Set([...carried, ...canonical])];
+}
+
+function readRecordedAuthorModel(branch: string, port: PublishLanePort): string {
+    const recorded = port.readAuthorModel(branch);
+    if (recorded === undefined) {
+        fail(
+            `${branch} has no authoring model on record; backfill it with pnpm lane:publish --model <model>, ` +
+                'the lowercase public name of the model itself, e.g. glm-5.3-flash'
+        );
+    }
+    return normalizeAuthorModel(recorded);
+}
+
+/**
+ * Installation tokens cannot access user-owned Projects v2 — the platform offers no installation
+ * permission for them — and gh ≥ 2.92 swallows the Projects v2 enrichment error and answers
+ * `gh issue view --json projectItems` with `projectItems: []` and exit 0, so under this token an
+ * empty read cannot be trusted as "no projects": empty and unreadable are indistinguishable. The
+ * project list probe is therefore the only reliable capability signal, and it runs before any
+ * pull-request write whenever a lane issue is bound or `--project` flags are present. With
+ * explicit flags an unreachable list is a hard failure (the operator asked for something this
+ * token cannot deliver and must know now), while an issue-bound lane with no flags skips project
+ * application with one loud line and the publish continues, leaving the pull request's project
+ * membership to the operator backfill. Only a lane with neither a bound issue nor flags skips the
+ * probe entirely — there is nothing to apply and nothing to report.
+ */
+function resolveProjectTitles(
+    issueBound: boolean,
+    inheritedTitles: string[],
+    flaggedTitles: string[] | undefined,
+    port: PublishLanePort
+): string[] {
+    if (!issueBound && flaggedTitles === undefined) {
+        return [];
+    }
+    let knownTitles: string[];
+    try {
+        knownTitles = port.knownProjectTitles();
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        if (flaggedTitles !== undefined) {
+            fail(
+                `cannot list the owner's projects as the author App (${reason}); installation tokens cannot ` +
+                    'access user-owned Projects v2. Apply the project membership by hand under the operator ' +
+                    'backfill exception, or retry without --project'
+            );
+        }
+        port.log(
+            `cannot list the owner's projects as the author App (${reason}); leaving the pull request's ` +
+                'project membership to the operator backfill'
+        );
+        return [];
+    }
+    if (flaggedTitles !== undefined) {
+        const canonical = flaggedTitles.map((title) => canonicalProjectTitle(title, knownTitles));
+        return [...new Set(canonical)];
+    }
+    return inheritedTitles;
+}
+
+/**
+ * Metadata assertion is convergent, not transactional: the pull request already exists by the time
+ * this runs, so a failure here leaves a publishable pull request that a rerun completes. Reading
+ * current state first keeps a rerun — or a later publish of the same head — from churning metadata
+ * that is already right.
+ */
+function assertPullRequestMetadata(number: number, target: PublishMetadataTarget, port: PublishLanePort): void {
+    const current = port.readPullRequestMetadata(number);
+    const plan = metadataEditPlan(target, current);
+    if (plan === undefined) {
+        return;
+    }
+    try {
+        port.applyPullRequestMetadata(number, plan);
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        fail(
+            `could not assert metadata on pull request #${number}: ${reason}; the pull request exists, and ` +
+                'rerunning pnpm lane:publish re-asserts its metadata safely'
+        );
+    }
 }
 
 /**
@@ -604,8 +1200,19 @@ function pullRequestNumber(
  * The title and body to write, plus the pull request they are written to. `existing` travels with
  * them because it is read once, before the push: the relationship a flagless update must preserve
  * and the create-vs-update decision both come out of that single read.
+ *
+ * `title` is the newest lane subject — the title a create writes. `effectiveTitle` is the title
+ * GitHub will show after this publish: the existing title when one is frozen on the pull request
+ * (this script never retitles), the lane subject only on a fresh create. Label derivation reads
+ * `effectiveTitle`, because the label must describe the change the title names, not a follow-up
+ * commit the PR was never retitled for.
  */
-type PullRequestWrite = { title: string; body: string; existing: ExistingPullRequest | undefined };
+type PullRequestWrite = {
+    title: string;
+    effectiveTitle: string;
+    body: string;
+    existing: ExistingPullRequest | undefined;
+};
 
 /**
  * The title and body to write, or `undefined` for a legacy lane, whose pull request this script must
@@ -686,6 +1293,7 @@ function pullRequestWrite(
     const pullRequestTitle = typeof existingTitle === 'string' ? existingTitle : laneSubject;
     return {
         title: laneSubject,
+        effectiveTitle: pullRequestTitle,
         body: composePublishBody(
             laneIssue,
             pullRequestTitle,
@@ -739,6 +1347,10 @@ export function shellPort(
             cwd
         );
     const token = session.env.GH_TOKEN ?? '';
+    const [repositoryOwner] = REQUIRED_REPOSITORY.split('/');
+    if (repositoryOwner === undefined) {
+        fail(`invalid GitHub repository: ${REQUIRED_REPOSITORY}`);
+    }
     const git = (args: string[], directory: string) =>
         spawnCapture(executables.git, gitAuthenticatedArgs(token, session.configDir, args), {
             cwd: directory,
@@ -821,6 +1433,11 @@ export function shellPort(
         push: (lane, branch, headSha) => {
             const disabledHooksPath = join(session.configDir, 'disabled-hooks');
             mkdirSync(disabledHooksPath, { recursive: true, mode: 0o700 });
+            const hasAiNotes =
+                spawnSync(executables.git, ['rev-parse', '--verify', 'refs/notes/ai'], {
+                    cwd: lane,
+                    env: session.env,
+                }).status === 0;
             spawnRun(
                 executables.git,
                 gitAuthenticatedArgs(token, session.configDir, [
@@ -830,6 +1447,7 @@ export function shellPort(
                     '--no-verify',
                     GITHUB_HTTPS_REMOTE,
                     `${headSha}:refs/heads/${branch}`,
+                    ...(hasAiNotes ? ['+refs/notes/ai:refs/notes/ai'] : []),
                 ]),
                 {
                     cwd: lane,
@@ -912,6 +1530,42 @@ export function shellPort(
         updatePullRequest: (number, { body }) => {
             ghRun(updatePullRequestArgs(number, body));
         },
+        saveAuthorModel: (branch, model) => {
+            spawnRun(executables.git, ['config', `branch.${branch}.sourdaw-author-model`, model], {
+                cwd: primaryRoot,
+                env: session.env,
+            });
+        },
+        readAuthorModel: (branch) => {
+            const value = spawnCapture(
+                executables.git,
+                ['config', '--get', '--default', '', `branch.${branch}.sourdaw-author-model`],
+                { cwd: primaryRoot, env: session.env }
+            );
+            return value === '' ? undefined : value;
+        },
+        ensureModelLabel: (model) => {
+            ghRun(ensureModelLabelArgs(model));
+        },
+        readIssueTrackerMetadata: (issue) =>
+            trackerMetadataFromIssueRow(
+                parseJson<IssueTrackerRow>(gh(issueTrackerMetadataArgs(issue)), `issue #${issue} tracker metadata`)
+            ),
+        openMilestoneTitles: () =>
+            openMilestoneTitlesFromRows(parseJson<unknown>(gh(openMilestoneTitlesArgs()), 'open milestone titles')),
+        knownProjectTitles: () =>
+            projectTitlesFromListing(parseJson<unknown>(gh(projectListArgs(repositoryOwner)), 'project list')),
+        knownLabels: () => labelRowsFromListing(parseJson<unknown>(gh(labelListArgs()), 'repository label list')),
+        readPullRequestMetadata: (number) =>
+            pullRequestMetadataFromRow(
+                parseJson<PullRequestMetadataRow>(
+                    gh(pullRequestMetadataArgs(number)),
+                    `pull request #${number} metadata`
+                )
+            ),
+        applyPullRequestMetadata: (number, plan) => {
+            ghRun(applyPullRequestMetadataArgs(number, plan));
+        },
         log: (message) => {
             console.log(message);
         },
@@ -991,6 +1645,22 @@ export function existingOpenPullRequestArgs(branch: string): string[] {
 
 export function updatePullRequestArgs(number: number, body: string): string[] {
     return ['pr', 'edit', String(number), '--repo', REQUIRED_REPOSITORY, '--body', body];
+}
+
+export function issueTrackerMetadataArgs(issue: number): string[] {
+    return ['issue', 'view', String(issue), '--repo', REQUIRED_REPOSITORY, '--json', 'labels,milestone,projectItems'];
+}
+
+export function openMilestoneTitlesArgs(): string[] {
+    return ['api', `repos/${REQUIRED_REPOSITORY}/milestones?state=open`];
+}
+
+export function projectListArgs(owner: string): string[] {
+    return ['project', 'list', '--owner', owner, '--format', 'json'];
+}
+
+export function pullRequestMetadataArgs(number: number): string[] {
+    return ['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'labels,milestone,projectItems'];
 }
 
 export type OpenPullRequestRow = {
@@ -1138,7 +1808,13 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
             parsed.relationship,
             parsed.testInstructions,
             parsed.summary,
-            { ...auth.authorization, legacy: authenticationLane.legacy }
+            { ...auth.authorization, legacy: authenticationLane.legacy },
+            {
+                ...(parsed.model === undefined ? {} : { model: parsed.model }),
+                ...(parsed.milestone === undefined ? {} : { milestone: parsed.milestone }),
+                ...(parsed.projects === undefined ? {} : { projects: parsed.projects }),
+                ...(parsed.labels === undefined ? {} : { labels: parsed.labels }),
+            }
         );
         return 0;
     } finally {

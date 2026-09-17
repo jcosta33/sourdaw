@@ -549,7 +549,13 @@ function referencedClipOverlapsRange(
 function doesProductionBriefAllowActionFootprint(footprint: ProductionBriefActionFootprint): boolean {
     const brief = projectStore.value?.productionBrief;
     const { actions } = footprint;
-    if (!brief || actions.every((action) => action.type === 'setProductionBrief')) {
+    // Brief changes reconcile their own authorization (`preservesLockedIntent`
+    // or an authorized replay), and the project-data repair changes no musical
+    // content — a lock protects content, not the reconciliation that lets a
+    // broken document be edited again.
+    const isAdmittedRoute = (action: AppAction): boolean =>
+        action.type === 'setProductionBrief' || action.type === 'repairProjectData';
+    if (!brief || actions.every(isAdmittedRoute)) {
         return true;
     }
 
@@ -557,7 +563,7 @@ function doesProductionBriefAllowActionFootprint(footprint: ProductionBriefActio
         return false;
     }
 
-    const projectActions = actions.filter((action) => action.type !== 'setProductionBrief');
+    const projectActions = actions.filter((action) => !isAdmittedRoute(action));
     const actionStrings = new Set<string>();
     for (const action of projectActions) {
         collectActionStrings(action.payload, actionStrings);

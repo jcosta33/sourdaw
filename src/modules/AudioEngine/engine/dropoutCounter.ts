@@ -72,6 +72,7 @@ const EMPTY_DROPOUT_STATS: AudioEngineDropoutStats = {
 class DropoutCounters {
     private sab: SharedArrayBuffer | null = null;
     private view: Int32Array | null = null;
+    private countingTransports = 0;
 
     /**
      * The buffer to hand a worklet on init, or `null` when `SharedArrayBuffer`
@@ -87,6 +88,37 @@ class DropoutCounters {
             this.view = new Int32Array(this.sab);
         }
         return this.sab;
+    }
+
+    /**
+     * Whether a live worklet is counting into the shared buffer these counts
+     * live in. Holding the buffer is not counting into it: it is handed out on
+     * `init`, before the worklet has replied, and it stays allocated after the
+     * last worklet has gone away. In both windows `read()` answers all-zero
+     * from memory nothing writes to, and a reader that cannot tell the two
+     * apart reports "no dropouts" for a graph with no dropout counter in it at
+     * all.
+     */
+    hasCoverage(): boolean {
+        return this.countingTransports > 0;
+    }
+
+    /**
+     * Count one worklet that has taken the buffer and is now writing into it.
+     *
+     * A tally rather than a flag: every device shares the one buffer, so one
+     * transport stopping while another still counts leaves coverage open.
+     */
+    openCoverage(): void {
+        this.countingTransports++;
+    }
+
+    /** Drop one worklet that has stopped counting. Never falls below zero. */
+    closeCoverage(): void {
+        if (this.countingTransports === 0) {
+            return;
+        }
+        this.countingTransports--;
     }
 
     /** Current tally. All-zero before any worklet has been wired. */

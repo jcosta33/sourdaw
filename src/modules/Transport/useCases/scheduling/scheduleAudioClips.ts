@@ -1,5 +1,5 @@
-import { trackStore } from '#/modules/Arrangement/stores';
-import { getGainAtBeat, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
+import { getGainEnvelopeSeries, trackStore } from '#/modules/Arrangement/stores';
+import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     createBufferSource,
     ensureTrackStrip,
@@ -15,6 +15,11 @@ import {
     clampClipFadeInDurationSeconds,
     clampClipFadeOutStartSeconds,
 } from '#/utils/clipFadeScheduleClamp';
+import {
+    applyGainCurveAnchorsToParam,
+    envelopeGainDbToLinear,
+    foldGainCurveAnchorsToAudibleStart,
+} from '#/utils/clipGainEnvelopeSchedule';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
@@ -242,12 +247,18 @@ export function scheduleAudioClips(
                 const fadeGain = acquireGainNode(ctx);
                 (source as SourceWithFade).fadeGainNode = fadeGain;
 
-                const envGainDb = getGainAtBeat(clip.id, iterOffsetBeats);
-                const hasEnvGain = envGainDb !== 0;
-                const envGainNode = hasEnvGain ? acquireGainNode(ctx) : null;
-                if (envGainNode) {
-                    envGainNode.gain.value = 10 ** (envGainDb / 20);
-                }
+                // #2865 — the envelope is the whole curve over this
+                // iteration's span, not one sample of it pinned as a static
+                // value. The series is acquired here, next to the node it
+                // rides; its ramp anchors go on below, once the beat→time
+                // mapping they anchor to has been computed. Absent when the
+                // clip carries no envelope that moves, so the node is too.
+                const envelopeSeries = getGainEnvelopeSeries(
+                    clip.id,
+                    iterOffsetBeats,
+                    iterOffsetBeats + iterDurationBeats
+                );
+                const envGainNode = envelopeSeries ? acquireGainNode(ctx) : null;
 
                 let outputNode: AudioNode = strip.gainNode;
                 if (fadeGain) {
@@ -400,6 +411,26 @@ export function scheduleAudioClips(
                         );
                         fadeGain.gain.linearRampToValueAtTime(0, iterEndTime);
                     }
+                }
+
+                if (envGainNode && envelopeSeries) {
+                    // #2865 — the envelope's breakpoints, mapped through the
+                    // same beat→time law every fade above uses and held to
+                    // where sound actually begins, laid on the param as a ramp
+                    // series. The offline render folds its copy at the
+                    // playback's `startSec` on the same shared law, so the
+                    // curve a bounce prints is the curve monitored here.
+                    // Anchors may precede `now` on a mid-clip transport start;
+                    // the param evaluates them exactly as drawn, which is why
+                    // the fold — not a re-anchoring — keeps a resume mid-curve.
+                    const anchors = foldGainCurveAnchorsToAudibleStart(
+                        envelopeSeries.map((point) => ({
+                            time: beatToAudioTime(clip.startBeat + point.beatOffset),
+                            gain: envelopeGainDbToLinear(point.gainDb),
+                        })),
+                        Math.max(soundStartTime, now)
+                    );
+                    applyGainCurveAnchorsToParam(envGainNode.gain, anchors);
                 }
 
                 activeAudioSources.push(source);

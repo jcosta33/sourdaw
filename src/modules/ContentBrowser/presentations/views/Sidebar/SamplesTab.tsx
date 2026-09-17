@@ -11,6 +11,7 @@ import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { SAMPLE_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 
@@ -119,7 +120,7 @@ export const SamplesTab = ({
                                         audioBufferId: sample.audioBufferId,
                                         durationSeconds: sample.durationSeconds,
                                     };
-                                    event.dataTransfer.setData('application/x-sourdaw-sample', JSON.stringify(data));
+                                    event.dataTransfer.setData(SAMPLE_DRAG_MIME_TYPE, JSON.stringify(data));
                                     event.dataTransfer.effectAllowed = 'copy';
                                 }}
                                 onClick={() => void handleAdd(sample)}

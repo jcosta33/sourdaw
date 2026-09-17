@@ -307,10 +307,14 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
         expect(sources).toHaveLength(1);
         const source = sources[0]!;
         const fadeGain = gains[0]!;
+        // The envelope node the scheduler chains between source and fade —
+        // unity and unscheduled when this clip carries no envelope (#2865).
+        const envelopeGain = gains[1]!;
         // 2 beats at 120bpm = 1.0s start, 2 beats visual length = 1.0s duration.
         expect(source.start).toHaveBeenCalledWith(1, 0, 1);
         expect(source.buffer).toEqual(makeBuffer(10));
-        expect(source.connect).toHaveBeenCalledWith(fadeGain);
+        expect(source.connect).toHaveBeenCalledWith(envelopeGain);
+        expect(envelopeGain.connect).toHaveBeenCalledWith(fadeGain);
         expect(fadeGain.connect).toHaveBeenCalledWith(trackInputNode);
         // Micro fade-in from silence at the clip head…
         expect(fadeGain.gain.setValueAtTime).toHaveBeenCalledWith(0, 1);

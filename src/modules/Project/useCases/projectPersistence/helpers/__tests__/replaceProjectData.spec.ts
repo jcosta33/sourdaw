@@ -4,6 +4,7 @@ const {
     mockLogger,
     mockBatchStoreUpdates,
     mockClearRuntimeCachedAudioBuffers,
+    mockForgetProjectLatchedPedals,
     mockGetAudioContext,
     mockImportCachedAudioBuffers,
     mockCancelPreparedStoredBuffers,
@@ -30,6 +31,7 @@ const {
     mockLogger: { error: vi.fn(), warn: vi.fn() },
     mockBatchStoreUpdates: vi.fn((fn: () => void) => fn()),
     mockClearRuntimeCachedAudioBuffers: vi.fn(),
+    mockForgetProjectLatchedPedals: vi.fn(),
     mockGetAudioContext: vi.fn(() => ({ sampleRate: 44100 })),
     mockImportCachedAudioBuffers: vi.fn(() =>
         Promise.resolve({ publish: vi.fn(), persist: () => Promise.resolve(true) })
@@ -66,6 +68,7 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 vi.mock('#/infra/store/createStore', () => ({ batchStoreUpdates: mockBatchStoreUpdates }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     clearRuntimeCachedAudioBuffers: mockClearRuntimeCachedAudioBuffers,
+    forgetProjectLatchedPedals: mockForgetProjectLatchedPedals,
     getAudioContext: mockGetAudioContext,
     importCachedAudioBuffers: mockImportCachedAudioBuffers,
     prepareCachedAudioBuffersFromIdb: mockPrepareCachedAudioBuffersFromIdb,
@@ -264,6 +267,13 @@ describe('replaceProjectData', () => {
         // Second argument is the point-of-no-return callback the abort path
         // uses to tell a recoverable failure from an unrecoverable one.
         expect(mockResetCrdtProjectAuthority).toHaveBeenCalledWith('Test Project', expect.any(Function));
+        // The loaded project owns the document from that call on, so the pedals
+        // latched under the project just left are forgotten here and not at the
+        // earlier graph reset, which an abort can still undo.
+        expect(mockForgetProjectLatchedPedals).toHaveBeenCalledOnce();
+        expect(mockForgetProjectLatchedPedals.mock.invocationCallOrder[0]!).toBeGreaterThan(
+            mockResetCrdtProjectAuthority.mock.invocationCallOrder[0]!
+        );
         expect(mockResetModuleStores).toHaveBeenCalled();
         expect(mockHydrateArrangement).toHaveBeenCalled();
         expect(mockClearUndoHistory).toHaveBeenCalled();
@@ -332,6 +342,9 @@ describe('replaceProjectData', () => {
         await expect(replacement).resolves.toEqual({ status: 'aborted' });
         expect(mockResetCrdtProjectAuthority).not.toHaveBeenCalled();
         expect(mockEnsureTrackStrips).toHaveBeenCalledOnce();
+        // The player stays in the old project, whose graph is rebuilt above, so
+        // a damper still held must survive the abandoned load.
+        expect(mockForgetProjectLatchedPedals).not.toHaveBeenCalled();
     });
 
     it('cancels the stored-buffer candidate when playback shutdown fails before publication', async () => {

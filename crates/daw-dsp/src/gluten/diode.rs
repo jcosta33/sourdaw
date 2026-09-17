@@ -7,6 +7,7 @@
 use super::detector::{DetectionMode, StereoDetector};
 use super::gain_computer::{apply_range, db_to_linear, gain_computer};
 use super::oversample::ConfigurableOversample;
+use crate::params::{ATTACK, THRESHOLD, THRESHOLD_MAX_DB, THRESHOLD_MIN_DB};
 use crate::primitives::flush_denormal;
 
 /// One side's bridge. Both the compressor and the limiter section are
@@ -88,9 +89,9 @@ impl DiodeCompressor {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "threshold" => self.threshold = value.clamp(-60.0, 0.0),
+            THRESHOLD => self.threshold = value.clamp(THRESHOLD_MIN_DB, THRESHOLD_MAX_DB),
             "ratio" => self.ratio = value.clamp(1.5, 6.0), // 33609 has limited ratio range
-            "attack" => {
+            ATTACK => {
                 self.attack_ms = value.clamp(0.5, 30.0);
                 self.update_coeffs();
             }

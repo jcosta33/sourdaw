@@ -182,17 +182,20 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Automation/useCases/modulation/applyModulationToEngine.ts': 1,
         'src/modules/Automation/useCases/modulation/modulationDependencies.ts': 1,
         'src/modules/Automation/useCases/modulation/revertMappingsToBase.ts': 1,
-        'src/modules/Bacteria/useCases/bacteriaParamBridge/bacteriaParamBridgeDependencies.ts': 4,
+        'src/modules/Bacteria/useCases/bacteriaParamBridge/bacteriaParamBridgeDependencies.ts': 6,
         // Count provenance: measured 2 — the `updateDeviceParam` and
         // `persistDeviceParam` bridges the morph flush shares with the other
         // panel param paths. Each interpolated scalar is one ordinary
         // device-param write through the shared rAF batcher; the morph never
         // touches a store directly.
         'src/modules/Bacteria/useCases/bacteriaParamBridge/applyBacteriaMorph.ts': 2,
-        'src/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts': 4,
-        'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 2,
+        'src/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts': 6,
+        'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 3,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts': 2,
+        // Modulation assignment push (#4264): setBacteriaModAssignmentsWithAudio
+        // pushes the whole assignment table through updateDevicePatch.
+        'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaModAssignmentsWithAudio.ts': 1,
         // Count provenance: measured 2 in code, both `updateDeviceParam` — the
         // import and a single call on the transient branch. The **commit**
         // branch reaches no sink here at all; it dispatches
@@ -375,7 +378,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // through `setDeviceParameter`. The Crumbs bridge calls
         // `setCrumbsParam`, which does not match this family's pattern.
         // 'src/modules/Crumbs/useCases/setCrumbsParamWithAudio.ts': removed (0),
-        'src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/syncMidiCalibrationToEngine.ts': 2,
+        // Count provenance: 0 in code, was 2 — the sustain-threshold and
+        // CC-smoothing writes now go through the engine handle's single
+        // `setCalibration` call instead of two direct `engine.setParam` calls,
+        // so both carriers stay in lockstep from one call site (#4302).
+        // 'src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/syncMidiCalibrationToEngine.ts': removed (0),
         // Count provenance: measured 2 in code — the transient preview and
         // rejected-commit reconciliation each call `engine.setParam`. This is
         // the write the three Mix setters used to each hold one of:
@@ -385,12 +392,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // delegate; nothing else changed about them.
         'src/modules/GrandBoule/useCases/grandBouleParamBridge/helpers.ts': 2,
         'src/modules/GrandBoule/useCases/loadGrandBoulePreset.ts': 4,
-        // Count provenance: measured 2 in code — the `setParam` handle on the
-        // returned engine and the `controls.setParam` call it forwards to. The
-        // node selector scopes on `candidateNode.deviceId === input.deviceId`;
-        // the handle-member prose that used to add a third match sits in a
-        // doc comment and no longer counts.
-        'src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts': 2,
+        // Count provenance: measured 4 in code, was 2 — the `setParam` handle
+        // on the returned engine and the `controls.setParam` call it forwards
+        // to, plus the two `controls.setParam` calls `setCalibration` now
+        // makes directly (sustain threshold, CC smoothing) before mirroring
+        // the same pair to the native session (#4302). The node selector
+        // scopes on `candidateNode.deviceId === input.deviceId`; the
+        // handle-member prose that used to add a third match sits in a doc
+        // comment and no longer counts.
+        'src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts': 4,
         'src/modules/GrandBoule/useCases/setGrandBouleAttackBite.ts': 1,
         // Count provenance: 0 in code, was 1 lexical — the file delegates to
         // the command/runtime split, and its remaining match was the

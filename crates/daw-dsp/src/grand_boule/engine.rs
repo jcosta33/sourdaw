@@ -14,6 +14,7 @@ use super::radiation::RadiationModel;
 use super::soundboard::{RenderedBridgeSignal, Soundboard};
 use super::sympathetic::Sympathetic;
 use super::voice::{PianoVoice, PianoVoiceStart, VoiceQuality};
+use crate::params::MASTER_GAIN;
 use crate::primitives::ProcessLifecycle;
 
 /// Default voice-pool size for this scaffolding slice.
@@ -521,7 +522,7 @@ impl GrandBouleEngine {
     pub fn set_param(&mut self, name: &str, value: f32) {
         let was_sleeping = self.lifecycle() == ProcessLifecycle::Sleep;
         match name {
-            "master_gain" => self.master_gain = value.clamp(0.0, 1.0),
+            MASTER_GAIN => self.master_gain = value.clamp(0.0, 1.0),
             "soundboard_send" => self.soundboard_send = value.clamp(0.0, 1.0),
             "sympathetic_send" => self.sympathetic_send = value.clamp(0.0, 1.0),
             "lid_position" => {

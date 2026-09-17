@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
-import { fail } from './prContract.ts';
+import { fail, TRUSTED_GH_PATH_ENV, TRUSTED_GIT_PATH_ENV } from './prContract.ts';
 
 export const AUTHOR_BOT_NODE_ID = 'BOT_kgDOEv71mA';
 export const REVIEWER_BOT_NODE_ID = 'BOT_kgDOEv74EA';
@@ -64,8 +64,18 @@ export const AUTHOR_MINT_PERMISSIONS = {
     pull_requests: 'write',
 } as const;
 
-export const AUTHOR_WORKFLOW_MINT_PERMISSIONS = {
+/**
+ * Publishing asserts pull-request metadata — `gh label create` and `gh pr edit --add-label`/
+ * `--milestone` — which needs issues write on top of the ordinary author scope. Publishing keeps
+ * its own sets so no other author command's token is broadened.
+ */
+export const PUBLISH_AUTHOR_MINT_PERMISSIONS = {
     ...AUTHOR_MINT_PERMISSIONS,
+    issues: 'write',
+} as const;
+
+export const PUBLISH_AUTHOR_WORKFLOW_MINT_PERMISSIONS = {
+    ...PUBLISH_AUTHOR_MINT_PERMISSIONS,
     workflows: 'write',
 } as const;
 
@@ -433,7 +443,9 @@ export async function authenticatePublishingAuthor(input: {
     const authorization = resolvePublishingAuthorAuthorization(input.lane, input.baseSha, input.capture, input.env);
     const authentication = await authenticateWithPermissions(
         { ...input, role: 'author' },
-        authorization.permissionClass === 'workflow' ? AUTHOR_WORKFLOW_MINT_PERMISSIONS : AUTHOR_MINT_PERMISSIONS
+        authorization.permissionClass === 'workflow'
+            ? PUBLISH_AUTHOR_WORKFLOW_MINT_PERMISSIONS
+            : PUBLISH_AUTHOR_MINT_PERMISSIONS
     );
     return { ...authentication, authorization };
 }
@@ -623,9 +635,9 @@ export function spawnRun(
 export function trustedChildExecutable(command: string, env: NodeJS.ProcessEnv = process.env): string {
     let trustedPath: string | undefined;
     if (command === 'git') {
-        trustedPath = env.SOURDAW_TRUSTED_GIT_PATH;
+        trustedPath = env[TRUSTED_GIT_PATH_ENV];
     } else if (command === 'gh') {
-        trustedPath = env.SOURDAW_TRUSTED_GH_PATH;
+        trustedPath = env[TRUSTED_GH_PATH_ENV];
     }
     if (trustedPath === undefined) {
         return command;

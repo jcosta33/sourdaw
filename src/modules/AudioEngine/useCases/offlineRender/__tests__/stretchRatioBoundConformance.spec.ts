@@ -28,6 +28,7 @@ const BUFFER_SECONDS = 100;
 function projectWithStretchRatio(raw: number) {
     return projectOfflineAudioClipPlaybacks({
         clip: {
+            id: 'clip-ratio',
             startBeat: 0,
             endBeat: 4,
             loopLength: undefined,
@@ -100,6 +101,7 @@ describe('stretch-ratio bound conformance — offline projector applies the shar
     it('leaves the stretchMode gate in place: mode off ignores a corrupt stored ratio', () => {
         const playbacks = projectOfflineAudioClipPlaybacks({
             clip: {
+                id: 'clip-ratio-off',
                 startBeat: 0,
                 endBeat: 4,
                 loopLength: undefined,

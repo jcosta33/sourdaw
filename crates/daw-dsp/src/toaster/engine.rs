@@ -8,6 +8,7 @@ use super::lofi::LofiProcessor;
 use super::pad::Pad;
 use super::transient::TransientShaper;
 use super::voice::DrumVoice;
+use crate::params::{MASTER_GAIN, THRESHOLD};
 use crate::primitives::{flush_denormal, ProcessLifecycle};
 
 const EFFECT_STATE_QUIET_THRESHOLD: f32 = 3.162_277_6e-8;
@@ -359,8 +360,8 @@ impl ToasterEngine {
             global_reverb: PlateReverb::new(sample_rate),
             global_delay: StereoDelay::new(sample_rate),
             global_lofi: LofiProcessor::new(),
-            pad_l_gains: vec![0.70710677; num_pads],
-            pad_r_gains: vec![0.70710677; num_pads],
+            pad_l_gains: vec![std::f32::consts::FRAC_1_SQRT_2; num_pads],
+            pad_r_gains: vec![std::f32::consts::FRAC_1_SQRT_2; num_pads],
             pad_dry_routed_mask: 0,
             sample_rate,
             master_gain: 0.8,
@@ -444,7 +445,7 @@ impl ToasterEngine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "master_gain" => self.master_gain = value.clamp(0.0, 2.0),
+            MASTER_GAIN => self.master_gain = value.clamp(0.0, 2.0),
             n if n.starts_with("reverb_") => self.global_reverb.set_param(n, value),
             n if n.starts_with("delay_") => self.global_delay.set_param(n, value, self.sample_rate),
             "lofi_bits" => self.global_lofi.set_bit_depth(value as u8),
@@ -462,7 +463,7 @@ impl ToasterEngine {
                 }) {
                     let suffix = &n[5..]; // skip "busN_"
                     match suffix {
-                        "threshold" => self.bus_effects[idx].comp_threshold = value.clamp(0.0, 1.0),
+                        THRESHOLD => self.bus_effects[idx].comp_threshold = value.clamp(0.0, 1.0),
                         "ratio" => self.bus_effects[idx].comp_ratio = value.clamp(1.0, 20.0),
                         _ => {}
                     }

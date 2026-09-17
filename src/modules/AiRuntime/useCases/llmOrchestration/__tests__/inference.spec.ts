@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
+import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../../models/AgentResourceLimits';
 import {
     CREATIVE_INTERPRETATION_TOOL_NAME,
     createCreativeInterpretationToolSchema,
@@ -10,6 +11,8 @@ import {
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
+import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
+import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getPlanningProviderSchemaContract } from '../../planningProviderSchema';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET, type ProviderAttemptAdmission } from '../inference';
@@ -153,6 +156,10 @@ describe('generateToolPlanningOutcome', () => {
         mocks.providerStartFailure.value = null;
     });
 
+    afterEach(() => {
+        agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
+    });
+
     it('dispatches a hosted provider through the provider-neutral tool protocol', async () => {
         mocks.backendChain.value = ['cloud'];
         mocks.generateCloudToolCalls.mockResolvedValue([
@@ -210,6 +217,42 @@ describe('generateToolPlanningOutcome', () => {
             expect.anything(),
             expect.anything(),
             TOOL_PLAN_MAX_OUTPUT_TOKENS
+        );
+    });
+
+    it('admits the compiled request with the configured model output ceiling', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue([
+            { id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
+        ]);
+        expect(configureAgentResourceLimits({ maxModelOutputTokens: 1_024 })).toMatchObject({ status: 'configured' });
+        const onProviderAttempt = vi.fn((_input: ProviderAttemptAdmission) => ({ status: 'admitted' as const }));
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                undefined,
+                'mute the first track',
+                undefined,
+                undefined,
+                onProviderAttempt
+            )
+        ).resolves.toMatchObject({ status: 'complete' });
+
+        const admission = onProviderAttempt.mock.calls[0]?.[0];
+        expect(admission?.request.limits).toEqual({ maxOutputTokens: 1_024 });
+        expect(admission?.request.budget).toEqual({
+            maxInputTokens: 32_768,
+            maxOutputTokens: 1_024,
+            maxTotalTokens: 32_768 + 1_024,
+        });
+        expect(mocks.generateCloudToolCalls).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            expect.anything(),
+            1_024
         );
     });
 

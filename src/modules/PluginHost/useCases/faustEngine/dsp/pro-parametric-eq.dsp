@@ -1,9 +1,14 @@
 import("stdfaust.lib");
-process = vgroup("eq", 
+// Stereo: the mono filterbank is duplicated per channel (par(i, 2, ...)), so a
+// stereo insert keeps independent L/R instead of being downmixed to (L+R)/2 by
+// the explicit-speakers mono worklet input (#3730). The two copies share one
+// control surface: same-path UI items merge into a single zone, so every
+// slider drives both channels and the addresses/automation are unchanged.
+process = par(i, 2, vgroup("eq",
     fi.low_shelf(lf_gain, lf_freq) :
     fi.peak_eq_cq(mf_gain, mf_freq, mf_q) :
     fi.high_shelf(hf_gain, hf_freq)
-) with {
+)) with {
     lf_gain = hslider("lf_gain", 0, -18, 18, 0.1);
     lf_freq = hslider("lf_freq", 100, 20, 500, 1);
     mf_gain = hslider("mf_gain", 0, -18, 18, 0.1);

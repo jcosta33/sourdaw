@@ -54,15 +54,17 @@ describe('readMidiFile', () => {
         Reflect.set(globalThis, 'Worker', originalWorker);
     });
 
-    it('resolves with the parsed tracks the worker posts back', async () => {
+    it('resolves with the parsed tracks and truncation facts the worker posts back', async () => {
         const pending = readMidiFile(fakeMidiFile());
         await vi.waitFor(() => expect(workers).toHaveLength(1));
         const worker = latestWorker();
 
         const tracks = [{ name: 'Bass', notes: [], endTick: 960 }];
-        worker.onmessage?.(new MessageEvent('message', { data: { type: 'parsed', tracks } }));
+        worker.onmessage?.(
+            new MessageEvent('message', { data: { type: 'parsed', tracks, declaredTrackCount: 2, truncated: true } })
+        );
 
-        await expect(pending).resolves.toEqual(tracks);
+        await expect(pending).resolves.toEqual({ tracks, declaredTrackCount: 2, truncated: true });
         expect(worker.terminate).toHaveBeenCalledTimes(1);
     });
 
@@ -108,8 +110,12 @@ describe('readMidiFile', () => {
         const pending = readMidiFile(fakeMidiFile());
         await vi.advanceTimersByTimeAsync(0);
 
-        latestWorker().onmessage?.(new MessageEvent('message', { data: { type: 'parsed', tracks: [] } }));
-        await expect(pending).resolves.toEqual([]);
+        latestWorker().onmessage?.(
+            new MessageEvent('message', {
+                data: { type: 'parsed', tracks: [], declaredTrackCount: 0, truncated: false },
+            })
+        );
+        await expect(pending).resolves.toEqual({ tracks: [], declaredTrackCount: 0, truncated: false });
 
         // A surviving timeout would fire here and reject an already-settled
         // promise, surfacing as an unhandled rejection.

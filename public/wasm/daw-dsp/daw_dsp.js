@@ -43,6 +43,16 @@ export class BacteriaInstance {
         wasm.bacteriainstance_add_mod_assignment(this.__wbg_ptr, source_id, target_param, amount);
     }
     /**
+     * Drop every modulation assignment; macro mappings are untouched.
+     *
+     * Removal, undo, and a patch reload arrive from the UI as one replacement
+     * of the whole table, spelled clear-then-re-add against the validated
+     * [`Self::add_mod_assignment`] path. Safe to call with the table empty.
+     */
+    clear_mod_assignments() {
+        wasm.bacteriainstance_clear_mod_assignments(this.__wbg_ptr);
+    }
+    /**
      * Get per-band levels packed as: [band0_db, band1_db, ... band5_db].
      * @returns {number}
      */
@@ -224,6 +234,16 @@ export class CrumbsInstance {
         wasm.crumbsinstance_all_sound_off(this.__wbg_ptr);
     }
     /**
+     * Sample writes the pool refused because the instance's fixed sample
+     * budget (`MAX_POOL_SAMPLES`) was exhausted. Non-zero means new samples
+     * stopped landing silently; the host logs a warning when this moves.
+     * @returns {number}
+     */
+    dropped_sample_writes() {
+        const ret = wasm.crumbsinstance_dropped_sample_writes(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * Non-finite output samples scrubbed to silence since construction.
      * Non-zero means a poisoned block was caught at the wasm boundary.
      * @returns {number}
@@ -286,7 +306,7 @@ export class CrumbsInstance {
         wasm.crumbsinstance_set_active_sample(this.__wbg_ptr, sample_id);
     }
     /**
-     * Set the operating mode by name (`quick`, `drum`, `slice`, `warp`,
+     * Set the operating mode by name (`quick`, `drum`, `slice`,
      * `record`).
      * @param {string} mode
      */
@@ -1336,6 +1356,25 @@ export class LevainInstance {
         return ret >>> 0;
     }
     /**
+     * Register one articulation switch with the engine's articulation map.
+     *
+     * - `kind` 0: keyswitch on note `a` (`momentary` reverts on release).
+     * - `kind` 1: velocity split across `[a, b]`.
+     * - `kind` 2: CC split across `[a, b]` of the switch CC.
+     *
+     * Note-on and CC routing already consult the map; this is the binding
+     * that lets a bank configure it. Keyswitches are baseline
+     * orchestral-sampler behaviour.
+     * @param {number} kind
+     * @param {number} a
+     * @param {number} b
+     * @param {number} articulation_id
+     * @param {boolean} momentary
+     */
+    add_articulation_switch(kind, a, b, articulation_id, momentary) {
+        wasm.levaininstance_add_articulation_switch(this.__wbg_ptr, kind, a, b, articulation_id, momentary);
+    }
+    /**
      * Register a recorded true-legato transition sample (audit F7). Bank
      * loading calls this once per authored transition; the engine looks
      * these up by (interval, dynamic, transition type) when a note-on
@@ -1960,16 +1999,18 @@ export function analyze_pitch_wasm(samples, sample_rate) {
  * @param {number} sample_rate
  * @param {string} segments_json
  * @param {string} contour_json
+ * @param {number} retune_speed_ms
+ * @param {boolean} formant_preserve
  * @returns {Float32Array}
  */
-export function commit_pitch_edit_wasm(samples, sample_rate, segments_json, contour_json) {
+export function commit_pitch_edit_wasm(samples, sample_rate, segments_json, contour_json, retune_speed_ms, formant_preserve) {
     const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(segments_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
     const ptr2 = passStringToWasm0(contour_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.commit_pitch_edit_wasm(ptr0, len0, sample_rate, ptr1, len1, ptr2, len2);
+    const ret = wasm.commit_pitch_edit_wasm(ptr0, len0, sample_rate, ptr1, len1, ptr2, len2, retune_speed_ms, formant_preserve);
     var v4 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v4;

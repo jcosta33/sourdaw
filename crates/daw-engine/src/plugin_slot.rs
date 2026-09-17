@@ -27,6 +27,21 @@ pub struct MidiNoteEvent {
     pub absolute_occurrence_index: u64,
 }
 
+/// A live MIDI controller message to send to a plugin.
+///
+/// No frame, deliberately: a controller is a state write rather than a sounded
+/// event, and it lands at the head of the block that drains it — the same law a
+/// live note is held to ([`MidiNoteEvent::frame_offset`] of zero), because a
+/// pedal pressed under the player's foot has no timeline position to stamp it
+/// against either. Nothing stamps a controller for a later frame, so it applies
+/// before that block's notes render.
+#[derive(Clone, Copy)]
+pub struct MidiControlEvent {
+    pub controller: u8,
+    pub value: u8,
+    pub channel: i16,
+}
+
 /// Transport state for plugins that need tempo/position info.
 ///
 /// Ownership is split by field, not by writer: tempo and time signature are
@@ -156,6 +171,25 @@ pub trait NativePlugin: Any + Send {
 
     /// Whether this plugin accepts MIDI input (instruments).
     fn accepts_midi(&self) -> bool {
+        false
+    }
+
+    /// Whether the scheduler must hand this plugin a block every callback even
+    /// when no chain runs it, discarding what it renders.
+    ///
+    /// A plugin whose command surface is drained only by its own process call
+    /// has no second route into its body: detached, nothing calls it, so every
+    /// note, parameter and load its control side pushed banks in its ring until
+    /// the ring is full — and the first placement then replays the whole stale
+    /// backlog at once. Such a body answers `true` and the scheduler renders it
+    /// every callback into scratch it discards, so the drain runs whether or not
+    /// a strip is carrying its output.
+    ///
+    /// The default is `false`, which is the answer for every body the host can
+    /// reach some other way: a hosted plugin takes its control operations
+    /// through its own access seam, and a built-in is written by the command
+    /// drain directly, so neither needs a block to stay current.
+    fn runs_while_detached(&self) -> bool {
         false
     }
 

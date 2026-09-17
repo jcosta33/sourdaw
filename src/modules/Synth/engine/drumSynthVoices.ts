@@ -12,6 +12,8 @@
  * 808 Conga:  Sine with moderate pitch sweep
  */
 
+import { MAX_MIDI_DATA_7BIT } from '#/utils/midiData';
+
 import { type DrumVoiceType } from '../models/DrumSynthTypes';
 
 // Disconnect every node in a voice's graph once its longest-running source
@@ -59,7 +61,7 @@ function createNoiseBuffer(ctx: BaseAudioContext, durationSec: number): AudioBuf
 }
 
 function schedule808Kick(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
-    const vel = velocity / 127;
+    const vel = velocity / MAX_MIDI_DATA_7BIT;
     const osc = ctx.createOscillator();
     osc.type = 'sine';
 
@@ -90,7 +92,7 @@ function schedule808Kick(ctx: BaseAudioContext, dest: AudioNode, startTime: numb
 }
 
 function schedule808Snare(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
-    const vel = velocity / 127;
+    const vel = velocity / MAX_MIDI_DATA_7BIT;
 
     const bodyOsc = ctx.createOscillator();
     bodyOsc.type = 'triangle';
@@ -128,7 +130,7 @@ function schedule808Snare(ctx: BaseAudioContext, dest: AudioNode, startTime: num
 }
 
 function schedule808Clap(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
-    const vel = velocity / 127;
+    const vel = velocity / MAX_MIDI_DATA_7BIT;
     const noiseBuffer = createNoiseBuffer(ctx, 0.4);
 
     const filter = ctx.createBiquadFilter();
@@ -173,7 +175,7 @@ function schedule808HiHat(
     velocity: number,
     isOpen: boolean
 ): void {
-    const vel = velocity / 127;
+    const vel = velocity / MAX_MIDI_DATA_7BIT;
     const decayTime = isOpen ? 0.4 : 0.06;
 
     const fundamentals = [800, 1046.5, 1318.5, 1480, 1661.2, 1864.7];
@@ -215,7 +217,7 @@ function schedule808Tom(
     velocity: number,
     pitch: 'low' | 'mid' | 'high'
 ): void {
-    const vel = velocity / 127;
+    const vel = velocity / MAX_MIDI_DATA_7BIT;
     const baseFreqs: Record<string, [number, number]> = {
         low: [120, 70],
         mid: [165, 100],
@@ -240,7 +242,7 @@ function schedule808Tom(
 }
 
 function schedule808Cowbell(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
-    const vel = velocity / 127;
+    const vel = velocity / MAX_MIDI_DATA_7BIT;
     const freqs = [560, 845];
 
     const bpf = ctx.createBiquadFilter();
@@ -270,7 +272,7 @@ function schedule808Cowbell(ctx: BaseAudioContext, dest: AudioNode, startTime: n
 }
 
 function schedule808Rimshot(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
-    const vel = velocity / 127;
+    const vel = velocity / MAX_MIDI_DATA_7BIT;
 
     const osc = ctx.createOscillator();
     osc.type = 'triangle';
@@ -310,7 +312,7 @@ function schedule808Conga(
     velocity: number,
     pitch: 'low' | 'mid' | 'high'
 ): void {
-    const vel = velocity / 127;
+    const vel = velocity / MAX_MIDI_DATA_7BIT;
     const freqMap: Record<string, number> = { low: 200, mid: 310, high: 420 };
     const freq = freqMap[pitch]!;
 
@@ -331,7 +333,7 @@ function schedule808Conga(
 }
 
 function schedule808Maracas(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
-    const vel = velocity / 127;
+    const vel = velocity / MAX_MIDI_DATA_7BIT;
     const noiseBuffer = createNoiseBuffer(ctx, 0.1);
     const noise = ctx.createBufferSource();
     noise.buffer = noiseBuffer;
@@ -353,7 +355,7 @@ function schedule808Maracas(ctx: BaseAudioContext, dest: AudioNode, startTime: n
 }
 
 function schedule808Clave(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
-    const vel = velocity / 127;
+    const vel = velocity / MAX_MIDI_DATA_7BIT;
     const osc = ctx.createOscillator();
     osc.type = 'triangle';
     osc.frequency.value = 2500;

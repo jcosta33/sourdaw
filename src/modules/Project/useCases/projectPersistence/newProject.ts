@@ -1,7 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { addTrack } from '#/modules/Arrangement/useCases';
-import { clearRuntimeCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import {
+    clearRuntimeCachedAudioBuffers,
+    forgetProjectLatchedPedals,
+    resetAudioGraph,
+} from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
     compactProject,
@@ -86,6 +90,9 @@ async function activateNewProject({
                 return failNewProjectActivation({ previousTransientState, transaction });
             }
             resetCrdtProjectAuthority(name);
+            // Point of no return: the fresh project owns the document now, so
+            // the old project's latched pedals can no longer be replayed.
+            forgetProjectLatchedPedals();
         } finally {
             releaseRuntimeTransition();
         }

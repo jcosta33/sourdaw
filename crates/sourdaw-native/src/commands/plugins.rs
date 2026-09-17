@@ -1203,6 +1203,11 @@ fn host_backend(format: &str) -> Result<HostBackend, String> {
     }
 }
 
+/// Rate assumed when no output device answers at all: 48 kHz, the one rate
+/// every plugin and driver understands. Keeps the divergence comparison
+/// meaningful on a machine with no output device rather than failing it.
+const FALLBACK_OUTPUT_SAMPLE_RATE_HZ: f64 = 48000.0;
+
 /// The rate the output device runs at by default.
 ///
 /// Not the activation rate, and no longer used as one: a hosted plugin
@@ -1217,7 +1222,7 @@ fn default_output_sample_rate() -> f64 {
         .default_output_device()
         .and_then(|device| device.default_output_config().ok())
         .map(|config| config.sample_rate() as f64)
-        .unwrap_or(48000.0)
+        .unwrap_or(FALLBACK_OUTPUT_SAMPLE_RATE_HZ)
 }
 
 /// The rate to activate a plugin at, or the reason this load cannot proceed.

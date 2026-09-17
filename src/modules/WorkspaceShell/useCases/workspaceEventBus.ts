@@ -7,7 +7,6 @@ import type {
     NotifyPayload,
     PromptPayload,
     ShowDevicePanelGenericPayload,
-    ShowDevicePanelPayload,
     ToggleVoiceCommandPayload,
     VoidPayload,
     ZoomToSelectionPayload,
@@ -15,20 +14,6 @@ import type {
 
 type WorkspaceEvents = {
     'panel.showDevice': ShowDevicePanelGenericPayload;
-    'panel.showFermenter': ShowDevicePanelPayload;
-    'panel.showToaster': ShowDevicePanelPayload;
-    'panel.showLevain': ShowDevicePanelPayload;
-    'panel.showDutchOven': ShowDevicePanelPayload;
-    'panel.showGluten': ShowDevicePanelPayload;
-    'panel.showBacteria': ShowDevicePanelPayload;
-    'panel.showGrinder': ShowDevicePanelPayload;
-    'panel.showProof': ShowDevicePanelPayload;
-    'panel.showYeast': ShowDevicePanelPayload;
-    'panel.showScoring': ShowDevicePanelPayload;
-    'panel.showCrust': ShowDevicePanelPayload;
-    'panel.showCrumbs': ShowDevicePanelPayload;
-    'panel.showGrandBoule': ShowDevicePanelPayload;
-    'panel.showAutomation': VoidPayload;
     'dialog.openExport': VoidPayload;
     'dialog.openPreferences': VoidPayload;
     'project.save': VoidPayload;

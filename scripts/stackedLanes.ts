@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path';
 
 import { AUTHOR_BOT_NODE_ID, REQUIRED_REPOSITORY } from './githubAppIdentity.ts';
-import { fail } from './prContract.ts';
+import { fail, PR_STATE, type PullRequestState } from './prContract.ts';
 
 export type LaneStack = {
     version: 1;
@@ -18,7 +18,7 @@ export type StackParent = {
     number: number;
     branch: string;
     headSha: string;
-    state: 'OPEN' | 'MERGED' | 'CLOSED';
+    state: PullRequestState;
     authorId: string;
     repository: string;
     mergeCommit?: string;
@@ -142,9 +142,9 @@ export function stackParentQuery(branch: string): string[] {
 
 function parentState(state: 'open' | 'closed', mergedAt: string | null): StackParent['state'] {
     if (mergedAt !== null) {
-        return 'MERGED';
+        return PR_STATE.MERGED;
     }
-    return state === 'open' ? 'OPEN' : 'CLOSED';
+    return state === 'open' ? PR_STATE.OPEN : PR_STATE.CLOSED;
 }
 
 export function parseStackParents(raw: string): StackParent[] {
@@ -217,7 +217,7 @@ export function resolveStackParent(descriptor: LaneStack, port: StackReadPort): 
     if (!port.isAncestor(descriptor.parentHead, parent.headSha)) {
         fail('stack parent history no longer contains its admitted head');
     }
-    if (parent.state === 'CLOSED') {
+    if (parent.state === PR_STATE.CLOSED) {
         fail('stack parent closed without merging');
     }
     return parent;
@@ -232,7 +232,7 @@ export function assertLandedStackParent(
     const parent = resolveStackParent(descriptor, port);
     if (
         descriptor.parentPullRequest === undefined ||
-        parent.state !== 'MERGED' ||
+        parent.state !== PR_STATE.MERGED ||
         parent.mergeCommit === undefined ||
         !shaPattern.test(parent.mergeCommit) ||
         !port.isAncestor(parent.mergeCommit, mainHead) ||
@@ -259,7 +259,7 @@ export function stackPublicationBase(
     if (!port.isAncestor(descriptor.forkHead, childHead)) {
         fail('stack child no longer contains its fork head');
     }
-    if (parent.state === 'OPEN') {
+    if (parent.state === PR_STATE.OPEN) {
         if (parent.headSha !== descriptor.parentHead || !port.isAncestor(parent.headSha, childHead)) {
             fail('stack parent moved: run lane:sync-parent before publishing');
         }

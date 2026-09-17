@@ -340,8 +340,29 @@ export type AudioGraphClipPlayback = Readonly<{
     playbackRate: number;
     /** The clip's own level, as a linear amplitude. */
     gain: number;
+    /**
+     * The clip's gain-envelope curve, in destination seconds (#2865). Absent
+     * when the clip carries no envelope — or when the producer addresses a
+     * backend that cannot apply one: the native wire has no envelope
+     * vocabulary, its serializer **refuses** a playback that carries this
+     * field rather than silently printing the clip without its curve, and the
+     * native producers gate envelope-carrying clips back onto the Web Audio
+     * carrier instead of sending them at all.
+     */
+    envelope?: readonly AudioGraphClipEnvelopeAnchor[];
     /** Per-clip fades, and the anti-click floor both of them are held to. */
     fade: AudioGraphClipFade;
+}>;
+
+/**
+ * One anchor of a clip's gain-envelope curve: when the curve reaches this
+ * level, as a linear amplitude. Unfolded — a backend folds the series to its
+ * own audible start, exactly as the Web Audio scheduler does at
+ * `max(soundStartTime, now)`.
+ */
+export type AudioGraphClipEnvelopeAnchor = Readonly<{
+    timeSec: number;
+    gain: number;
 }>;
 
 /**
@@ -639,6 +660,37 @@ export type AudioGraphSendMidiNoteCommand = Readonly<{
 }>;
 
 /**
+ * Apply one live controller message now on a device that sinks notes.
+ *
+ * The pedal route. MIDI clips carry no controller lanes, so a controller is
+ * always live: it reaches the device at the head of the first block the backend
+ * renders after this batch is applied, playing or stopped, because a pedal
+ * under the player's foot names no timeline position either.
+ *
+ * Nothing is queued. A controller is a state write on the device rather than a
+ * frame-stamped event, so it applies ahead of the notes the same block renders
+ * — which is what makes a damper pressed before a key sustain the note that key
+ * sounds.
+ *
+ * No transport edge lifts a pedal — a stop, a locate and a loop wrap all
+ * leave the player's foot exactly where it stands. A stop or a locate kills
+ * the sounding voices of an instrument a pedal is holding instead, because
+ * their note-offs cannot discharge a held key and nothing else would stop it
+ * ringing for the rest of the session. A loop wrap only strands the release
+ * its own store scheduled, so it neither lifts the pedal nor kills the voice.
+ */
+export type AudioGraphSendMidiControlCommand = Readonly<{
+    kind: 'send-midi-control';
+    target: AudioGraphDeviceTarget;
+    /** `0` through `127`. */
+    controller: number;
+    /** `0` through `127`, as the wire carries it — never a normalized fraction. */
+    value: number;
+    /** `0` through `15`. */
+    channel: number;
+}>;
+
+/**
  * Drop the device's scheduled notes between `fromTime` and `toTime`.
  *
  * Half-open, so a producer rewriting one bar clears exactly its span and the
@@ -748,6 +800,7 @@ export type AudioGraphCommand =
     | AudioGraphScheduleClipCommand
     | AudioGraphScheduleMidiCommand
     | AudioGraphSendMidiNoteCommand
+    | AudioGraphSendMidiControlCommand
     | AudioGraphClearMidiCommand
     | AudioGraphSetTransportCommand
     | AudioGraphSetMonitorShadowCommand
@@ -831,6 +884,44 @@ export type AudioGraphAttachedPlugin = Readonly<{
 }>;
 
 /**
+ * One Crumbs instance a batch's attach took over.
+ *
+ * The instance id is the whole payload, and it is the device id too: a Crumbs
+ * runtime is created under the id of the device it belongs to, so the caller
+ * needs nothing else to know which device just became audible.
+ *
+ * Reported apart from {@link AudioGraphAttachedPlugin} because the two name
+ * different id spaces — a hosted plugin's instance id against a Crumbs device's
+ * own id — and a caller writes them into different mirrors.
+ */
+export type AudioGraphAttachedCrumbsInstance = Readonly<{
+    instanceId: string;
+}>;
+
+/**
+ * Crumbs instances the engine took over while this call ran.
+ *
+ * Carried by every outcome, because the attach is a fact about the call rather
+ * than about the batch: `apply_graph_commands` takes over its dormant Crumbs
+ * instances *before* it maps the batch — which is what lets one bind inside the
+ * same batch instead of the next — so a batch that is then refused, or that
+ * only partly applies, has still attached them. An outcome that dropped the
+ * report would leave that sampler on Web Audio until some later batch reported
+ * it again, and a refusal is exactly when a producer resends.
+ *
+ * Empty when the call took none. Absent from a backend that hosts no engine at
+ * all, and from one whose payload predates the field; both mean the same thing
+ * to a reader, which is why no reader distinguishes them.
+ *
+ * Note the contrast with `attachedPlugins`, which stays on the applied arm
+ * alone: a dormant *plugin* is taken after the batch is fenced, so only an
+ * applied answer can ever have taken one.
+ */
+type AudioGraphCallAttachedCrumbs = Readonly<{
+    attachedCrumbs?: readonly AudioGraphAttachedCrumbsInstance[];
+}>;
+
+/**
  * The outcome vocabulary of `RuntimeGraphDeltaResult`, applied to a batch.
  *
  * The three states mean exactly what they mean there — `rejected` is refused
@@ -841,12 +932,13 @@ export type AudioGraphAttachedPlugin = Readonly<{
  * alike).
  */
 export type AudioGraphApplyResult =
-    | Readonly<{
+    | (Readonly<{
           acceptance: 'rejected';
           application: 'not-applied';
           reason: string;
-      }>
-    | Readonly<{
+      }> &
+          AudioGraphCallAttachedCrumbs)
+    | (Readonly<{
           acceptance: 'accepted';
           application: 'applied';
           correlation?: AudioGraphCorrelation;
@@ -883,8 +975,9 @@ export type AudioGraphApplyResult =
            * engine at all, and from one whose payload predates the field.
            */
           attachedPlugins?: readonly AudioGraphAttachedPlugin[];
-      }>
-    | Readonly<{
+      }> &
+          AudioGraphCallAttachedCrumbs)
+    | (Readonly<{
           acceptance: 'accepted';
           application: 'needs-reconcile';
           /**
@@ -896,7 +989,8 @@ export type AudioGraphApplyResult =
           reason: string;
           runtimeRevision: number;
           reports: readonly AudioGraphStripReport[];
-      }>;
+      }> &
+          AudioGraphCallAttachedCrumbs);
 
 /**
  * A renderer, behind one seam.

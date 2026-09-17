@@ -37,6 +37,14 @@ export type RecordingSession = {
      * Absent/`null` until the first value lands.
      */
     lastRawBeat?: number | null;
+    /**
+     * The compensated beat of the FIRST gesture of the current writing span —
+     * where latch's overwrite begins. Tracked on the session rather than read
+     * off the buffer, because a mid-pass touch release flushes the buffer empty
+     * while the writing span itself continues. Reset when a pass ends (loop
+     * wrap); absent/`null` until the span's first gesture lands.
+     */
+    passWriteStartBeat?: number | null;
 };
 
 export const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);

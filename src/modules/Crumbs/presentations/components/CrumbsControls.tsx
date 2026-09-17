@@ -7,6 +7,7 @@ import { type ReactElement } from 'react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
+import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
 import type { CrumbsPersistedParamId } from '../../models/CrumbsParameterMap';
 import type { EnvelopeParams, FilterType, CrumbsMode, VoiceStackParams } from '../../models/CrumbsTypes';
@@ -191,10 +192,10 @@ export const CrumbsControls = ({
                         value={filterCutoff}
                         onChange={(v, isTransient) => onParamChange('filterCutoff', v, isTransient)}
                         label="Cutoff"
-                        min={20}
-                        max={20000}
+                        min={MIN_AUDIBLE_FREQ_HZ}
+                        max={MAX_AUDIBLE_FREQ_HZ}
                         step={10}
-                        defaultValue={20000}
+                        defaultValue={MAX_AUDIBLE_FREQ_HZ}
                         readout={
                             filterCutoff >= 1000 ? `${(filterCutoff / 1000).toFixed(1)}k` : `${filterCutoff.toFixed(0)}`
                         }

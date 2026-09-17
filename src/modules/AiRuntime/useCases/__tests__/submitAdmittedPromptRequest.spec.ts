@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
+import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
+import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import {
     AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING,
@@ -130,6 +132,7 @@ describe('submitAdmittedPromptRequest', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         agentRunLifecycle.clear();
+        agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
         randomUuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-0000-0000-000000000001');
         mocks.settlePendingProjectWritesAndCaptureRevision.mockReturnValue('revision-1');
         mocks.compileAgentActionExecution.mockReturnValue(compiled);
@@ -845,6 +848,22 @@ describe('submitAdmittedPromptRequest', () => {
             phase: 'waiting-for-approval',
             batches: [{ batchId: 'batch-1', status: 'waiting-for-approval' }],
         });
+    });
+
+    it('rejects a prompt longer than the configured request ceiling and reports the refusal', async () => {
+        agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, requestChars: 10 });
+
+        await expect(submitAdmittedPromptRequest({ prompt: 'x'.repeat(11), source: 'prompt-bar' })).resolves.toEqual({
+            status: 'rejected',
+            runId: RUN_ID,
+        });
+
+        expect(agentRunLifecycle.get(RUN_ID)).toBeNull();
+        expect(mocks.planPromptActions).not.toHaveBeenCalled();
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            'The request is longer than the configured requestChars limit for one agent run.',
+            []
+        );
     });
 
     it.each(['committed', 'executed', 'failed', 'cancelled', 'ambiguous', 'no-op'] as const)(

@@ -79,6 +79,8 @@ export { getAudioContext, audioEngine } from './engineAccess/getAudioContext';
 export { getEngineState } from './engineAccess/getEngineState';
 export { getEngineDiagnostics } from './engineAccess/getEngineDiagnostics';
 export { getEngineHealth } from './engineAccess/getEngineHealth';
+export { collectAudioDeadlineEvidence } from './collectAudioDeadlineEvidence';
+export { startMainThreadLongTaskObservation } from './startMainThreadLongTaskObservation';
 export { isEngineAudioAvailable } from './engineAccess/isEngineAudioAvailable';
 export { refreshEngineRtDiagnostics } from './engineAccess/refreshEngineRtDiagnostics';
 export { readNativeOutputLatency } from './engineAccess/readNativeOutputLatency';
@@ -122,6 +124,8 @@ export { initializeAudioEngine } from './initializeAudioEngine';
 export { claimNativeSessionRearm } from './livePlayback/claimNativeSessionRearm';
 export { nativeSessionRearmClaimHolds } from './livePlayback/nativeSessionRearmClaimHolds';
 export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
+// Published because the project-leaving use cases own the commit point the pedal latch is scoped to.
+export { forgetProjectLatchedPedals } from './livePlayback/forgetProjectLatchedPedals';
 export { isDeviceCarriedByNativeSession } from './livePlayback/isDeviceCarriedByNativeSession';
 // Published because the composition root decides which of the Tuner's two carriers publishes a reading.
 export { isTunerTelemetryNativelyOwned } from './livePlayback/isTunerTelemetryNativelyOwned';
@@ -135,6 +139,7 @@ export { recordNativeChainReleases } from './livePlayback/recordNativeChainRelea
 export { syncNativeTimelineSamples } from './livePlayback/syncNativeTimelineSamples';
 export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
 export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';
+export { sendNativeLiveMidiControl } from './livePlayback/sendNativeLiveMidiControl';
 export { sendNativeLiveMidiNote } from './livePlayback/sendNativeLiveMidiNote';
 export { startNativeLiveGraphSession } from './livePlayback/startNativeLiveGraphSession';
 export { stopNativeLiveGraphSession } from './livePlayback/stopNativeLiveGraphSession';

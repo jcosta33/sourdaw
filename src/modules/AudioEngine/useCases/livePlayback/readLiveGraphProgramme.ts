@@ -18,7 +18,7 @@
  * `resolveRenderContext` leaves its callers to make.
  */
 
-import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { offlinePpqEndpointProjectorState } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { audioBufferCache } from '../../stores/audioBufferCache';
@@ -51,7 +51,7 @@ export type ReadLiveGraphProgrammeInput = Readonly<{
     /** The strips this session builds, in project order. */
     stripTracks: LiveGraphProgrammeInput['stripTracks'];
     /**
-     * The external plugin instances the native engine currently owns.
+     * The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}.
      *
      * The caller's, not read here, for the same reason the topology takes it:
      * a session threads one attach state through every projection it makes, so
@@ -86,7 +86,7 @@ export function readLiveGraphProgramme(input: ReadLiveGraphProgrammeInput): Live
         stripTracks: input.stripTracks,
         attachedInstanceIds: input.attachedInstanceIds,
         sampleRate: input.sampleRate,
-        defaultTempo: transportStore.value?.tempo ?? 120,
+        defaultTempo: transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM,
         changes: tempoMapStore.value?.changes ?? [],
         projectPpqEndpoints: project,
         resolveTempoAtBeat,

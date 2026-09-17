@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { resolveClipsWithComping, getGainAtBeat } from '#/modules/Arrangement/useCases';
+import { getGainEnvelopeSeries } from '#/modules/Arrangement/stores';
+import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     createBufferSource,
     ensureTrackStrip,
@@ -33,6 +34,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return trackStoreState.value;
         },
     },
+    getGainEnvelopeSeries: vi.fn(() => undefined),
 }));
 const { tempoMapStore } = vi.hoisted((): { tempoMapStore: { value: { changes: unknown[] } | null } } => ({
     tempoMapStore: { value: { changes: [] } },
@@ -51,6 +53,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
                 cancelScheduledValues: vi.fn(),
                 setValueAtTime: vi.fn(),
                 linearRampToValueAtTime: vi.fn(),
+                exponentialRampToValueAtTime: vi.fn(),
             },
             connect: vi.fn(),
             disconnect: vi.fn(),
@@ -63,7 +66,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 // real loop projection.
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: vi.fn(() => []),
-    getGainAtBeat: vi.fn(() => 0),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
@@ -163,7 +165,7 @@ describe('scheduleAudioClips', () => {
         // clearAllMocks only clears call records, not per-test return values.
         vi.mocked(getCurrentTime).mockReturnValue(0);
         vi.mocked(getCompensationDelay).mockReturnValue(0);
-        vi.mocked(getGainAtBeat).mockReturnValue(0);
+        vi.mocked(getGainEnvelopeSeries).mockReturnValue(undefined);
         vi.mocked(getAssetTransfer).mockReturnValue(null);
         mockResolveClips.mockReturnValue([]);
         disposeAudioClipScheduling();
@@ -667,24 +669,91 @@ describe('scheduleAudioClips', () => {
         expect(duration).toBeCloseTo(2, 6);
     });
 
-    it('inserts an envelope gain node scaled by 10^(db/20) when the clip has env gain', () => {
+    /// #2865 — the envelope used to reach this scheduler as one sampled value
+    /// pinned on `gain.value`, so a clip whose curve rose from -12 dB to unity
+    /// played flat at -12 dB for its whole length. It must arrive as the
+    /// curve's breakpoints and leave as a ramp series on the param, on the
+    /// same beat→time map the fades above use.
+    it('schedules the envelope curve as a ramp series on its own gain node', () => {
         const fakeSource = makeFakeSource();
         mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
         mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
-        vi.mocked(getGainAtBeat).mockReturnValue(6); // +6 dB ≈ gain ~1.995
+        // A fade-up drawn across the clip's whole 4-beat span.
+        vi.mocked(getGainEnvelopeSeries).mockReturnValue([
+            { beatOffset: 0, gainDb: -12 },
+            { beatOffset: 4, gainDb: 0 },
+        ]);
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
         scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
 
-        // The envelope gain node is acquired after the fade gain; its gain.value
-        // is set to 10**(db/20) before being wired ahead of the source.
+        // The envelope node is acquired after the fade gain.
         const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
-        const gains = ctx.createGain.mock.results.map(
-            (r: { value: { gain: { value: number } } }) => r.value.gain.value
-        );
-        const expected = 10 ** (6 / 20);
-        expect(gains.some((g: number) => Math.abs(g - expected) < 1e-5)).toBe(true);
+        const fadeGain = ctx.createGain.mock.results[0]!.value;
+        const envGain = ctx.createGain.mock.results[1]!.value;
+        // Clip spans beats 8–12 at 2 beats/s, now 0: anchors at 4 s and 6 s.
+        // exponentialRampToValueAtTime is the law match — exponential in
+        // amplitude is linear in dB, the curve's own interpolation.
+        expect(envGain.gain.setValueAtTime).toHaveBeenCalledWith(10 ** (-12 / 20), 4);
+        expect(envGain.gain.exponentialRampToValueAtTime).toHaveBeenCalledWith(10 ** (0 / 20), 6);
+        // The fade param is untouched by the envelope: two curves on one node
+        // multiply only through two nodes.
+        expect(fadeGain.gain.setValueAtTime).not.toHaveBeenCalledWith(10 ** (-12 / 20), 4);
+    });
+
+    /// The curve between anchors, not just its ends: a midpoint breakpoint
+    /// inside the iteration lands at its own time and value.
+    it('lands every interior envelope breakpoint at its own time', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        vi.mocked(getGainEnvelopeSeries).mockReturnValue([
+            { beatOffset: 0, gainDb: -12 },
+            { beatOffset: 2, gainDb: -6 },
+            { beatOffset: 4, gainDb: 0 },
+        ]);
+        mockResolveClips.mockReturnValue([makeAudioClip()] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
+        const envGain = ctx.createGain.mock.results[1]!.value;
+        expect(envGain.gain.setValueAtTime).toHaveBeenCalledWith(10 ** (-12 / 20), 4);
+        expect(envGain.gain.exponentialRampToValueAtTime).toHaveBeenCalledWith(10 ** (-6 / 20), 5);
+        expect(envGain.gain.exponentialRampToValueAtTime).toHaveBeenCalledWith(1, 6);
+    });
+
+    /// #2865's reproduce step, resumed: transport starts mid-clip, so the
+    /// sound begins mid-curve. The fold holds the curve at the moment sound
+    /// starts — the value the curve carries there, on its own interpolation —
+    /// rather than stepping from the span's first value.
+    it('holds the curve at the moment sound begins on a mid-clip start', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        vi.mocked(getGainEnvelopeSeries).mockReturnValue([
+            { beatOffset: 0, gainDb: -12 },
+            { beatOffset: 4, gainDb: 0 },
+        ]);
+        mockResolveClips.mockReturnValue([makeAudioClip()] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        // Playback is anchored at beat 10 — inside the clip — so the clip's
+        // head (beat 8) landed at `now` - 1 s and the curve spans 4…6 s.
+        vi.mocked(getCurrentTime).mockReturnValue(5);
+
+        scheduleAudioClips(0, 16, 10, new Set(), new Set(), [], defaultTransportState);
+
+        const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
+        const envGain = ctx.createGain.mock.results[1]!.value;
+        // Held at -6 dB (halfway up the -12 → 0 dB ramp) where sound begins,
+        // then continues the curve to unity at the clip's end. The held value
+        // is interpolated on the ramp's own law, so it is compared by
+        // magnitude, not bit-for-bit.
+        expect(envGain.gain.setValueAtTime).toHaveBeenCalledWith(expect.closeTo(10 ** (-6 / 20), 9), 5);
+        expect(envGain.gain.exponentialRampToValueAtTime).toHaveBeenCalledWith(1, 6);
+        expect(envGain.gain.setValueAtTime).not.toHaveBeenCalledWith(10 ** (-12 / 20), 5);
     });
 
     /// B-1: the live scheduler never read `clip.gain`, so a Clip Gain drag or a
@@ -846,9 +915,9 @@ describe('scheduleAudioClips', () => {
         const fakeSource = makeFakeSource();
         mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
         mockGetCachedAudioBuffer.mockReturnValue({ duration: 0.25 } as AudioBuffer);
-        // Non-zero env gain so an envGainNode is also acquired, exercising both
+        // An envelope curve so an envGainNode is also acquired, exercising both
         // pool slots this guard is responsible for releasing.
-        vi.mocked(getGainAtBeat).mockReturnValue(3);
+        vi.mocked(getGainEnvelopeSeries).mockReturnValue([{ beatOffset: 0, gainDb: 3 }]);
         // clipBeatsPerSecond = 2; audioOffsetBeats 10 → 5 s into a 0.25 s buffer.
         mockResolveClips.mockReturnValue([makeAudioClip({ audioOffsetBeats: 10 })] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
@@ -1270,7 +1339,7 @@ describe('scheduleAudioClips', () => {
         const fakeSource = makeFakeSource();
         mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
         mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
-        vi.mocked(getGainAtBeat).mockReturnValue(3);
+        vi.mocked(getGainEnvelopeSeries).mockReturnValue([{ beatOffset: 0, gainDb: 3 }]);
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 

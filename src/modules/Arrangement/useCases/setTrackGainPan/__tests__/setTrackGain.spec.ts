@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => {
         transportStoreValue,
         getTrackById: vi.fn(),
         recordAutomationValue: vi.fn(),
+        captureGestureBeat: vi.fn(),
     };
 });
 
@@ -44,6 +45,9 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
             return mocks.transportStoreValue;
         },
     },
+    // The recording beat comes from the moving playback clock, never from the
+    // transport store's discrete `playheadPosition` (#3799).
+    captureGestureBeat: mocks.captureGestureBeat,
 }));
 
 vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
@@ -56,6 +60,7 @@ describe('setTrackGain', () => {
         vi.clearAllMocks();
         mocks.getAllTracks.mockReturnValue([]);
         mocks.transportStoreValue = { isPlaying: false };
+        mocks.captureGestureBeat.mockReturnValue(0);
     });
 
     it('updates track gain and notifies engine', () => {
@@ -81,13 +86,16 @@ describe('setTrackGain', () => {
         expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 0);
     });
 
-    it('records automation if track automation mode is write/touch', () => {
+    it('records the gesture at the moving playhead, not the store beat playback started at', () => {
         mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
+        // Playback started at 10; the transport has since rolled to 12.5 while
+        // the store kept the start beat — the ride must land at 12.5 (#3799).
         mocks.transportStoreValue = { isPlaying: true, playheadPosition: 10 };
+        mocks.captureGestureBeat.mockReturnValue(12.5);
 
         setTrackGain('t1', 0.8);
 
-        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'gain', 0.8, 10);
+        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'gain', 0.8, 12.5);
     });
 
     it('skips persistence but still records the gesture when the change is transient', () => {
@@ -100,12 +108,13 @@ describe('setTrackGain', () => {
         // with a step at the release beat.
         mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
         mocks.transportStoreValue = { isPlaying: true, playheadPosition: 10 };
+        mocks.captureGestureBeat.mockReturnValue(12.5);
 
         setTrackGain('t1', 0.8, true);
 
         expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 0.8);
         expect(mocks.updateTrack).not.toHaveBeenCalled();
-        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'gain', 0.8, 10);
+        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'gain', 0.8, 12.5);
     });
 
     /**

@@ -9,6 +9,10 @@ use super::params::SmoothedParam;
 use super::voice::{Voice, VoiceParams};
 
 const MAX_STEAL_TAILS_PER_LAYER: usize = 16;
+// Restatement of the engine's callback ceiling
+// (`daw_engine::audio_thread::MAX_CALLBACK_FRAMES`): daw-dsp cannot depend
+// on the engine, so the figure is restated here and every copy must move
+// with the ceiling.
 const MAX_SCRATCH_FRAMES: usize = 4096;
 
 pub struct Layer {

@@ -7,7 +7,7 @@ import { type ReactElement } from 'react';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
-import { type PadState } from '../../models/ToasterKit';
+import { TOASTER_PAD_COUNT, type PadState } from '../../models/ToasterKit';
 
 type PadMixerProps = {
     pads: PadState[];
@@ -16,7 +16,7 @@ type PadMixerProps = {
 
 export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => (
     <Row align="stretch" gap={0.5} className="overflow-x-auto pb-1">
-        {pads.slice(0, 16).map((pad, index) => (
+        {pads.slice(0, TOASTER_PAD_COUNT).map((pad, index) => (
             <Stack align="center" shrink={false} className="w-9" key={pad.id}>
                 {/* Volume fader track */}
                 <div

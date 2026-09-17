@@ -8,6 +8,7 @@ import { type BacteriaState, setBacteriaBandParam } from '../../../stores/bacter
 import {
     type PersistDeviceParamFn,
     type ResolveEligibleDeviceWriteTargetFn,
+    type UpdateDevicePatchFn,
     type UpdateDeviceParamFn,
 } from '../helpers';
 import { setBacteriaBandParamWithAudio } from '../setBacteriaBandParamWithAudio';
@@ -61,6 +62,7 @@ vi.mock('../helpers', async (importOriginal) => {
 type BridgeDeps = {
     getAllTracks: () => Track[];
     updateDeviceParam: UpdateDeviceParamFn;
+    updateDevicePatch: UpdateDevicePatchFn;
     persistDeviceParam: PersistDeviceParamFn;
     resolveEligibleDeviceWriteTarget: ResolveEligibleDeviceWriteTargetFn;
 };
@@ -134,6 +136,7 @@ function createDeps(tracks: Track[] = [createTrackWithDevice('device-1')]): Brid
     return {
         getAllTracks: vi.fn(() => tracks),
         updateDeviceParam: vi.fn<UpdateDeviceParamFn>(),
+        updateDevicePatch: vi.fn<UpdateDevicePatchFn>(),
         persistDeviceParam: vi.fn<PersistDeviceParamFn>(),
         resolveEligibleDeviceWriteTarget,
     };

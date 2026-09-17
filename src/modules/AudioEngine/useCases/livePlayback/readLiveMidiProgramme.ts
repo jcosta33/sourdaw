@@ -14,7 +14,7 @@
 
 import { type Track } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI/stores';
-import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { offlineMidiEventProjectorState } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { offlinePpqEndpointProjectorState } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
@@ -27,7 +27,7 @@ export type ReadLiveMidiProgrammeInput = Readonly<{
     /** The strips this session built, in project order. */
     stripTracks: readonly Track[];
     /**
-     * The external plugin instances the native engine currently owns.
+     * The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}.
      *
      * The caller's, not read here, for the same reason `readLiveGraphProgramme`
      * takes it: one arm threads a single attach state through every projection
@@ -76,7 +76,7 @@ export function readLiveMidiProgramme(input: ReadLiveMidiProgrammeInput): LiveMi
             }),
             notesByClipId: midi.notesByClipId,
             probabilitySeed,
-            defaultTempo: transportStore.value?.tempo ?? 120,
+            defaultTempo: transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM,
             sampleRate: input.sampleRate,
             changes: tempoMapStore.value?.changes ?? [],
             projectPpqEndpoints: project,

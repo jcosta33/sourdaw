@@ -148,11 +148,11 @@ const paramTargetMap: Record<string, readonly DeviceParamTargetDefinition[]> = {
         { nodeName: 'threshLin', property: 'offset', convert: (value) => -dbToGain(value) },
     ],
     'builtin-deesser:deess-freq': [{ nodeName: 'bandpass', property: 'frequency' }],
-    // Both band taps carry 10^(range/20): the reduction limit and the
+    // Both band taps carry 1 − 10^(range/20): the reduction limit and the
     // cancellation weight are the same law (see createDeEsser).
     'builtin-deesser:deess-range': [
-        { nodeName: 'wet', property: 'gain', convert: dbToGain },
-        { nodeName: 'cancel', property: 'gain', convert: (value) => -dbToGain(value) },
+        { nodeName: 'wet', property: 'gain', convert: (value) => 1 - dbToGain(value) },
+        { nodeName: 'cancel', property: 'gain', convert: (value) => dbToGain(value) - 1 },
     ],
     'builtin-convolution-reverb:conv-mix': [
         { nodeIndex: 2, property: 'gain' },

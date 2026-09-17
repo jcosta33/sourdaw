@@ -1,6 +1,6 @@
 import { setTrackGain as engineSetTrackGain } from '#/modules/AudioEngine/useCases';
 import { recordAutomationValue } from '#/modules/Automation/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { captureGestureBeat, transportStore } from '#/modules/Transport/stores';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -49,7 +49,12 @@ export function setTrackGain(
     }
 
     maybeRecordAutomation(
-        { getTransportValue: () => transportStore.value, getTrackById, recordAutomationValue },
+        {
+            getTransportValue: () => transportStore.value,
+            getGestureBeat: captureGestureBeat,
+            getTrackById,
+            recordAutomationValue,
+        },
         trackId,
         'gain',
         clamped,

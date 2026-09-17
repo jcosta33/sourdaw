@@ -13,6 +13,7 @@ import { type AgentRunWorkLease } from '../../models/AgentRun';
 import { type ChatMessage } from '../../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../../models/ChatSystemPrompt';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
+import { EXPLAIN_TEMPERATURE } from '../../models/LlmSamplingTemperatures';
 import { estimateCompiledProviderRequestTokenCeiling } from '../../models/ModelProviderBudgetEstimate';
 import {
     type ModelProviderFinish,
@@ -20,6 +21,7 @@ import {
     type ModelProviderResult,
     type ModelProviderSession,
 } from '../../models/ModelProviderProtocol';
+import { MODEL_TEXT_MAX_INPUT_TOKENS } from '../../models/ModelTextRequestLimits';
 import {
     type CloudChatCompletionOutcome,
     streamCloudChatCompletion,
@@ -28,6 +30,7 @@ import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProvid
 import { isCloudAvailable } from '../../repositories/cloudLlm/isCloudAvailable';
 import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
 import { getLlmEngine } from '../../repositories/webLlm/getLlmEngine';
+import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import {
     chatStore,
@@ -50,6 +53,9 @@ import { createModelProviderProtocol } from '../modelProviderProtocol';
 import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 
 import { AGENT_RUN_STALE_COMPLETION_WARNING, settleAgentRunWorkLeaseSafely } from './settleAgentRunWorkLeaseSafely';
+
+/** The explain route's own output ceiling; the configured model ceiling can only lower it. */
+const EXPLAIN_MAX_OUTPUT_TOKENS = 2_048;
 
 type StreamExplainChatResponseInput = {
     userText: string;
@@ -205,6 +211,10 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
             provider: getModelProviderName(backend),
             model: getBackendModelId(backend),
         });
+        const explainMaxOutputTokens = Math.min(
+            EXPLAIN_MAX_OUTPUT_TOKENS,
+            readAgentResourceLimits().maxModelOutputTokens
+        );
         const compiledProviderRequest = providerProtocol.compileRequest({
             correlationId: providerReceiptIdentity,
             runId,
@@ -214,9 +224,13 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
             modality: 'text',
             messages: [{ role: 'system', content: agentContext.message }, ...conversationHistory],
             stream: true,
-            limits: { maxOutputTokens: 2_048 },
+            limits: { maxOutputTokens: explainMaxOutputTokens },
             controls: { cache: 'provider-default', reasoning: 'provider-default' },
-            budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
+            budget: {
+                maxInputTokens: MODEL_TEXT_MAX_INPUT_TOKENS,
+                maxOutputTokens: explainMaxOutputTokens,
+                maxTotalTokens: MODEL_TEXT_MAX_INPUT_TOKENS + explainMaxOutputTokens,
+            },
             dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
             ...(remoteDisclosure === undefined
                 ? {}
@@ -283,7 +297,7 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
                     updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
                 },
                 {
-                    temperature: 0.7,
+                    temperature: EXPLAIN_TEMPERATURE,
                     maxTokens: providerRequest.limits.maxOutputTokens,
                     signal: aborter.signal,
                     onUsage: (event) => activeProviderStreamWriter.push(event),
@@ -303,7 +317,7 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
             try {
                 const asyncChunkGenerator = (await engine.chat.completions.create({
                     messages: providerRequest.messages,
-                    temperature: 0.7,
+                    temperature: EXPLAIN_TEMPERATURE,
                     max_tokens: providerRequest.limits.maxOutputTokens,
                     stream: true,
                 })) as AsyncIterable<{

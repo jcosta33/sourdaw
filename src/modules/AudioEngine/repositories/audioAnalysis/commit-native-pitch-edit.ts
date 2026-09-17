@@ -11,6 +11,10 @@ type CommitNativePitchEditInput<TContour> = {
     outputAudioPath: string;
     segments: PitchEditSegment[];
     contour: TContour;
+    /** The live settings the native bake must reproduce (#2058); the Rust
+     *  request struct reads them as `retuneSpeedMs`/`formantPreserve`. */
+    retuneSpeedMs: number;
+    formantPreserve: boolean;
 };
 
 type CommitNativePitchEditOutput = Promise<boolean>;
@@ -20,6 +24,8 @@ export async function commitNativePitchEdit<TContour>({
     outputAudioPath,
     segments,
     contour,
+    retuneSpeedMs,
+    formantPreserve,
 }: CommitNativePitchEditInput<TContour>): CommitNativePitchEditOutput {
     if (!isDesktopRuntime()) {
         return false;
@@ -31,6 +37,8 @@ export async function commitNativePitchEdit<TContour>({
             outputAudioPath,
             segments,
             contour,
+            retuneSpeedMs,
+            formantPreserve,
         },
     });
 

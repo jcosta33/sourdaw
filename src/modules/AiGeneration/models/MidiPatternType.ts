@@ -36,6 +36,13 @@ export const SCALE_TYPES = [
     'pentatonic-major',
 ] as const;
 
+/**
+ * Scale vocabulary for pattern templates (pattern library, Pattern Browser).
+ * Distinct domain from the melody-algorithm `MelodyScaleType` in
+ * `GenerationStyles.ts`: the two vocabularies describe different consumers
+ * (pattern templates vs melody algorithm) and must not be merged or
+ * cross-assigned.
+ */
 export type ScaleType = (typeof SCALE_TYPES)[number];
 
 export const SCALE_LABELS: Record<ScaleType, string> = {

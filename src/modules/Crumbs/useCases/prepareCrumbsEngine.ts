@@ -57,6 +57,17 @@ function createSampleLoadHandshake(port: MessagePort, loadToken: number, signal?
             return;
         }
         if (message.type === 'sampleLoaded') {
+            // The worklet ack carries the pool's refusal count: a full pool
+            // accepts the transfer on the port and then drops the write in
+            // the DSP, which would otherwise stay silent forever.
+            const droppedWrites = typeof message.droppedWrites === 'number' ? message.droppedWrites : 0;
+            if (droppedWrites > 0) {
+                logger.warn(
+                    `Crumbs sample pool refused ${String(droppedWrites)} write(s) while loading: ` +
+                        'the per-instance sample budget is exhausted and new samples are not landing. ' +
+                        'Reload the project to reset the pool.'
+                );
+            }
             settle('ready');
         } else if (message.type === 'sampleLoadError') {
             settle('failed');

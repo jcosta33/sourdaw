@@ -20,12 +20,12 @@ export function applyDeEsserParams(dn: OfflineDeviceNode, params: Record<string,
         bandpassDE.frequency.value = params['deess-freq'];
     }
     if (params['deess-range'] !== undefined) {
-        // Range is the reduction LIMIT in dB: both band taps carry
-        // 10^(range/20), so a fully compressed band is attenuated by exactly
-        // Range dB and an idle band cancels to unity.
-        const weight = dbToGain(params['deess-range']);
-        wetDE.gain.value = weight;
-        cancelDE.gain.value = -weight;
+        // Range is the reduction LIMIT in dB: both band taps carry 1 − 10^(range/20),
+        // so a fully compressed band is attenuated by exactly Range dB (the output
+        // subtracts the tap weight from unity) and an idle band cancels to unity.
+        const reductionWeight = 1 - dbToGain(params['deess-range']);
+        wetDE.gain.value = reductionWeight;
+        cancelDE.gain.value = -reductionWeight;
     }
     if (params['deess-listen'] !== undefined) {
         // Listen isolates the selected band: the full-range path mutes and the

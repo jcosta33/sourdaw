@@ -1,6 +1,45 @@
 import { clampFaderGain } from '#/utils/audioLevelLaw';
 
+import { DAW_PROJECT_XML_TAGS } from './dawProjectXmlTagNames';
 import { type ProjectClip, type ProjectData, type ProjectMidiNote, type ProjectTrack } from './projectDataContract';
+
+const {
+    APPLICATION,
+    ARRANGEMENT,
+    AUDIO,
+    CHANNEL,
+    CLIP,
+    CLIPS,
+    DEVICE,
+    DEVICES,
+    FILE,
+    LANES,
+    MARKER,
+    MARKERS,
+    MUTE,
+    NOTE,
+    NOTES,
+    PAN,
+    POINTS,
+    PROJECT,
+    REAL_POINT,
+    SOLO,
+    STRUCTURE,
+    TEMPO,
+    TIME_SIGNATURE,
+    TIME_SIGNATURE_POINT,
+    TRACK,
+    TRANSPORT,
+    VOLUME,
+} = DAW_PROJECT_XML_TAGS;
+
+/**
+ * Version written into the `<Application>` header of an exported project.xml.
+ * It tracks the app version in `package.json` (the `__APP_VERSION__` Vite
+ * define is not importable from module code), and the parser ignores the
+ * header, so bumping it never breaks reading an older export.
+ */
+const DAWPROJECT_APPLICATION_VERSION = '0.1.0';
 
 export type SerializeProjectXmlInput = {
     project: ProjectData;
@@ -72,13 +111,13 @@ function renderDevicesXml(devices: ProjectTrack['devices'], indent: string): str
         return '';
     }
     const lines: string[] = [];
-    lines.push(`${indent}<Devices>`);
+    lines.push(`${indent}<${DEVICES}>`);
     for (const device of devices) {
         lines.push(
-            `${indent}    <Device deviceRole="${escapeXml(device.type)}" name="${escapeXml(device.name)}" bypassed="${String(device.bypassed)}"/>`
+            `${indent}    <${DEVICE} deviceRole="${escapeXml(device.type)}" name="${escapeXml(device.name)}" bypassed="${String(device.bypassed)}"/>`
         );
     }
-    lines.push(`${indent}</Devices>`);
+    lines.push(`${indent}</${DEVICES}>`);
     return lines.join('\n');
 }
 
@@ -95,16 +134,16 @@ function renderChannelXml(track: ProjectTrack, indent: string): string {
     const pan = Math.max(-1, Math.min(1, track.pan));
     const normalizedPan = (pan + 1) / 2;
     const parts: string[] = [];
-    parts.push(`${indent}<Channel id="${escapeXml(`${track.id}-channel`)}">`);
-    parts.push(`${indent}    <Volume value="${formatNumber(volume)}"/>`);
-    parts.push(`${indent}    <Pan value="${formatNumber(normalizedPan)}"/>`);
-    parts.push(`${indent}    <Mute value="${String(track.muted)}"/>`);
-    parts.push(`${indent}    <Solo value="${String(track.soloed)}"/>`);
+    parts.push(`${indent}<${CHANNEL} id="${escapeXml(`${track.id}-channel`)}">`);
+    parts.push(`${indent}    <${VOLUME} value="${formatNumber(volume)}"/>`);
+    parts.push(`${indent}    <${PAN} value="${formatNumber(normalizedPan)}"/>`);
+    parts.push(`${indent}    <${MUTE} value="${String(track.muted)}"/>`);
+    parts.push(`${indent}    <${SOLO} value="${String(track.soloed)}"/>`);
     const devicesXml = renderDevicesXml(track.devices, `${indent}    `);
     if (devicesXml) {
         parts.push(devicesXml);
     }
-    parts.push(`${indent}</Channel>`);
+    parts.push(`${indent}</${CHANNEL}>`);
     return parts.join('\n');
 }
 
@@ -134,29 +173,29 @@ function renderTrackNode(node: TrackTreeNode, indent: string): string {
     const { track, children } = node;
     const parts: string[] = [];
     parts.push(
-        `${indent}<Track id="${escapeXml(track.id)}" name="${escapeXml(track.name)}" contentType="${contentTypeForKind(track.kind)}"${typeAttributeForKind(track.kind)} color="${escapeXml(track.color || '#64748b')}">`
+        `${indent}<${TRACK} id="${escapeXml(track.id)}" name="${escapeXml(track.name)}" contentType="${contentTypeForKind(track.kind)}"${typeAttributeForKind(track.kind)} color="${escapeXml(track.color || '#64748b')}">`
     );
     parts.push(renderChannelXml(track, `${indent}    `));
     for (const child of children) {
         parts.push(renderTrackNode(child, `${indent}    `));
     }
-    parts.push(`${indent}</Track>`);
+    parts.push(`${indent}</${TRACK}>`);
     return parts.join('\n');
 }
 
 function renderNotesXml(notes: ProjectMidiNote[], indent: string): string {
     if (notes.length === 0) {
-        return `${indent}<Notes/>`;
+        return `${indent}<${NOTES}/>`;
     }
     const lines: string[] = [];
-    lines.push(`${indent}<Notes>`);
+    lines.push(`${indent}<${NOTES}>`);
     for (const note of notes) {
         const vel = Math.max(0, Math.min(1, note.velocity / 127));
         lines.push(
-            `${indent}    <Note time="${formatNumber(note.startBeat)}" duration="${formatNumber(note.duration)}" key="${String(note.pitch)}" vel="${formatNumber(vel)}"/>`
+            `${indent}    <${NOTE} time="${formatNumber(note.startBeat)}" duration="${formatNumber(note.duration)}" key="${String(note.pitch)}" vel="${formatNumber(vel)}"/>`
         );
     }
-    lines.push(`${indent}</Notes>`);
+    lines.push(`${indent}</${NOTES}>`);
     return lines.join('\n');
 }
 
@@ -167,7 +206,7 @@ function renderClipXml(
     indent: string
 ): string {
     const duration = Math.max(0, clip.endBeat - clip.startBeat);
-    const header = `${indent}<Clip time="${formatNumber(clip.startBeat)}" duration="${formatNumber(duration)}" name="${escapeXml(clip.name)}"`;
+    const header = `${indent}<${CLIP} time="${formatNumber(clip.startBeat)}" duration="${formatNumber(duration)}" name="${escapeXml(clip.name)}"`;
     if (clip.type === 'audio') {
         const path = clip.bufferId ? audioPathByBufferId.get(clip.bufferId) : undefined;
         if (!path) {
@@ -175,10 +214,10 @@ function renderClipXml(
         }
         const lines: string[] = [];
         lines.push(`${header}>`);
-        lines.push(`${indent}    <Audio>`);
-        lines.push(`${indent}        <File path="${escapeXml(path)}"/>`);
-        lines.push(`${indent}    </Audio>`);
-        lines.push(`${indent}</Clip>`);
+        lines.push(`${indent}    <${AUDIO}>`);
+        lines.push(`${indent}        <${FILE} path="${escapeXml(path)}"/>`);
+        lines.push(`${indent}    </${AUDIO}>`);
+        lines.push(`${indent}</${CLIP}>`);
         return lines.join('\n');
     }
 
@@ -186,7 +225,7 @@ function renderClipXml(
     const lines: string[] = [];
     lines.push(`${header}>`);
     lines.push(renderNotesXml(notes, `${indent}    `));
-    lines.push(`${indent}</Clip>`);
+    lines.push(`${indent}</${CLIP}>`);
     return lines.join('\n');
 }
 
@@ -200,47 +239,47 @@ function renderClipsLane(
         return '';
     }
     const lines: string[] = [];
-    lines.push(`${indent}<Clips track="${escapeXml(track.id)}" timeUnit="beats">`);
+    lines.push(`${indent}<${CLIPS} track="${escapeXml(track.id)}" timeUnit="beats">`);
     for (const clip of track.clips) {
         lines.push(renderClipXml(clip, notesByClipId, audioPathByBufferId, `${indent}    `));
     }
-    lines.push(`${indent}</Clips>`);
+    lines.push(`${indent}</${CLIPS}>`);
     return lines.join('\n');
 }
 
 function renderTempoPoints(project: ProjectData, indent: string): string {
     const tempoChanges = project.tempoMap?.changes ?? [];
     if (tempoChanges.length === 0) {
-        return `${indent}<Points target="tempo" timeUnit="beats">
-${indent}    <RealPoint time="0" value="${formatNumber(project.transport.tempo)}"/>
-${indent}</Points>`;
+        return `${indent}<${POINTS} target="tempo" timeUnit="beats">
+${indent}    <${REAL_POINT} time="0" value="${formatNumber(project.transport.tempo)}"/>
+${indent}</${POINTS}>`;
     }
     const lines: string[] = [];
-    lines.push(`${indent}<Points target="tempo" timeUnit="beats">`);
+    lines.push(`${indent}<${POINTS} target="tempo" timeUnit="beats">`);
     for (const change of tempoChanges) {
         lines.push(
-            `${indent}    <RealPoint time="${formatNumber(change.beat)}" value="${formatNumber(change.tempo)}"/>`
+            `${indent}    <${REAL_POINT} time="${formatNumber(change.beat)}" value="${formatNumber(change.tempo)}"/>`
         );
     }
-    lines.push(`${indent}</Points>`);
+    lines.push(`${indent}</${POINTS}>`);
     return lines.join('\n');
 }
 
 function renderTimeSignaturePoints(project: ProjectData, indent: string): string {
     const changes = project.timeSignatureMap?.changes ?? [];
     if (changes.length === 0) {
-        return `${indent}<Points target="timeSignature" timeUnit="beats">
-${indent}    <TimeSignaturePoint time="0" numerator="${String(project.transport.timeSignatureNumerator)}" denominator="${String(project.transport.timeSignatureDenominator)}"/>
-${indent}</Points>`;
+        return `${indent}<${POINTS} target="timeSignature" timeUnit="beats">
+${indent}    <${TIME_SIGNATURE_POINT} time="0" numerator="${String(project.transport.timeSignatureNumerator)}" denominator="${String(project.transport.timeSignatureDenominator)}"/>
+${indent}</${POINTS}>`;
     }
     const lines: string[] = [];
-    lines.push(`${indent}<Points target="timeSignature" timeUnit="beats">`);
+    lines.push(`${indent}<${POINTS} target="timeSignature" timeUnit="beats">`);
     for (const change of changes) {
         lines.push(
-            `${indent}    <TimeSignaturePoint time="${formatNumber(change.beat)}" numerator="${String(change.numerator)}" denominator="${String(change.denominator)}"/>`
+            `${indent}    <${TIME_SIGNATURE_POINT} time="${formatNumber(change.beat)}" numerator="${String(change.numerator)}" denominator="${String(change.denominator)}"/>`
         );
     }
-    lines.push(`${indent}</Points>`);
+    lines.push(`${indent}</${POINTS}>`);
     return lines.join('\n');
 }
 
@@ -249,11 +288,11 @@ function renderMarkersXml(project: ProjectData, indent: string): string {
         return '';
     }
     const lines: string[] = [];
-    lines.push(`${indent}<Markers>`);
+    lines.push(`${indent}<${MARKERS}>`);
     for (const marker of project.markers) {
-        lines.push(`${indent}    <Marker time="${formatNumber(marker.beat)}" name="${escapeXml(marker.name)}"/>`);
+        lines.push(`${indent}    <${MARKER} time="${formatNumber(marker.beat)}" name="${escapeXml(marker.name)}"/>`);
     }
-    lines.push(`${indent}</Markers>`);
+    lines.push(`${indent}</${MARKERS}>`);
     return lines.join('\n');
 }
 
@@ -276,22 +315,22 @@ export function serializeProjectXml(input: SerializeProjectXmlInput): string {
     const markersXml = renderMarkersXml(project, '        ');
 
     return `<?xml version="1.0" encoding="UTF-8"?>
-<Project version="1.0">
-    <Application name="Sourdaw" version="0.1.0"/>
-    <Transport>
-        <Tempo value="${formatNumber(project.transport.tempo)}"/>
-        <TimeSignature numerator="${String(project.transport.timeSignatureNumerator)}" denominator="${String(project.transport.timeSignatureDenominator)}"/>
-    </Transport>
-    <Structure>
+<${PROJECT} version="1.0">
+    <${APPLICATION} name="Sourdaw" version="${DAWPROJECT_APPLICATION_VERSION}"/>
+    <${TRANSPORT}>
+        <${TEMPO} value="${formatNumber(project.transport.tempo)}"/>
+        <${TIME_SIGNATURE} numerator="${String(project.transport.timeSignatureNumerator)}" denominator="${String(project.transport.timeSignatureDenominator)}"/>
+    </${TRANSPORT}>
+    <${STRUCTURE}>
 ${structureXml}
-    </Structure>
-    <Arrangement timeUnit="beats">
-        <Lanes timeUnit="beats">
+    </${STRUCTURE}>
+    <${ARRANGEMENT} timeUnit="beats">
+        <${LANES} timeUnit="beats">
 ${clipsLanes}
 ${tempoPoints}
 ${tsPoints}
-        </Lanes>
+        </${LANES}>
 ${markersXml}
-    </Arrangement>
-</Project>`;
+    </${ARRANGEMENT}>
+</${PROJECT}>`;
 }

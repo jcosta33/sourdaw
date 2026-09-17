@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
-import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { forgetProjectLatchedPedals, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import {
     compactProject,
@@ -94,6 +94,10 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
             return false;
         }
         resetCrdtProjectAuthority(template.name);
+        // Point of no return: the template owns the document now, so the
+        // previous project's latched pedals can no longer be replayed. Above
+        // this line `restoreAudioGraph` still puts the old graph back.
+        forgetProjectLatchedPedals();
         projectActionHistoryToStore();
         resetModuleStoresToDefault({ createNewMidiProbabilitySeed: true });
         // Commit the teardown baseline before the async rebuild action runs.
