@@ -34,7 +34,7 @@ import {
 const WHAT_HEADING = '### 🎯 What does this PR do?';
 const HOW_HEADING = '### 🧪 How to test';
 const SCREENSHOTS_HEADING = '### 🖼️ Screenshots';
-const RELATED_HEADING = '### 📌 Related tickets & additional notes';
+const RELATED_HEADING = '### 📌 Related issues & additional notes';
 const TITLE = 'feat(vcs): add identities';
 const SUMMARY = 'Keep VCS identity records so each authored change names who wrote it.';
 const TEST_INSTRUCTIONS = 'Run the lane publisher contract test and confirm it passes.';
@@ -96,7 +96,7 @@ describe('pull-request contract', () => {
     });
 
     it('recovers one existing issue relationship', () => {
-        const prefix = '### 📌 Related tickets & additional notes\n';
+        const prefix = '### 📌 Related issues & additional notes\n';
         expect(issueRelationshipFromBody(`${prefix}Closes #2164`, 2164)).toBe('closes');
         expect(issueRelationshipFromBody(`${prefix}CLOSES #2164`, 2164)).toBe('closes');
         expect(issueRelationshipFromBody(`${prefix}Closes: #2164`, 2164)).toBe('closes');
@@ -115,7 +115,7 @@ describe('pull-request contract', () => {
             /exactly one relationship/
         );
         expect(() => issueRelationshipFromBody(`${prefix}Closes #2164\n${prefix}Related #2164`, 2164)).toThrow(
-            /exactly one Related tickets section/
+            /exactly one Related issues section/
         );
         expect(() => issueRelationshipFromBody(`${prefix}Closes #90071992547409930`, Number.MAX_SAFE_INTEGER)).toThrow(
             /exactly one relationship/
@@ -130,7 +130,7 @@ describe('pull-request contract', () => {
     });
 
     it('tolerates extra Related lines for other issues once exactly one line names the lane issue', () => {
-        const prefix = '### 📌 Related tickets & additional notes\n';
+        const prefix = '### 📌 Related issues & additional notes\n';
         expect(issueRelationshipFromBody(`${prefix}Closes #2857\nRelated #2854\nRelated #2856`, 2857)).toBe('closes');
         expect(issueRelationshipFromBody(`${prefix}Related #2857\nRelated #2854`, 2857)).toBe('relates');
         expect(issueRelationshipFromBody(`${prefix}Related #2854\nCloses #2857`, 2857)).toBe('closes');
@@ -149,7 +149,7 @@ describe('pull-request contract', () => {
     });
 
     it('derives delivery authority only from one canonical same-repository relationship', () => {
-        const prefix = '### 📌 Related tickets & additional notes\n';
+        const prefix = '### 📌 Related issues & additional notes\n';
         expect(canonicalIssueReferenceFromBody(`${prefix}Closes #2164`, 'jcosta33/sourdaw')).toEqual({
             issue: 2164,
             relationship: 'closes',
@@ -172,12 +172,12 @@ describe('pull-request contract', () => {
     });
 
     it.each(['Fixes #2164', 'closes #2164', 'Closes: #2164'])('rejects non-canonical delivery authority %s', (line) => {
-        const prefix = '### 📌 Related tickets & additional notes\n';
+        const prefix = '### 📌 Related issues & additional notes\n';
         expect(() => canonicalIssueReferenceFromBody(`${prefix}${line}`, 'jcosta33/sourdaw')).toThrow(/canonical/);
     });
 
-    it('rejects closing authority outside the canonical Related tickets section', () => {
-        const prefix = '### 📌 Related tickets & additional notes\n';
+    it('rejects closing authority outside the canonical Related issues section', () => {
+        const prefix = '### 📌 Related issues & additional notes\n';
         expect(() => canonicalIssueReferenceFromBody(`Fixes #99\n${prefix}Closes #2164`, 'jcosta33/sourdaw')).toThrow(
             /unexpected issue-closing references/
         );
@@ -417,11 +417,11 @@ describe('pull-request contract', () => {
         );
     });
 
-    it('composes a nonempty Related tickets section when no issue is given', () => {
+    it('composes a nonempty Related issues section when no issue is given', () => {
         const body = composePublishBody(undefined, TITLE, SUMMARY, TEST_INSTRUCTIONS);
         expect(body).not.toContain('Closes #');
-        expect(body.slice(body.indexOf('### 📌 Related tickets & additional notes')).trim()).toBe(
-            '### 📌 Related tickets & additional notes\nNone.'
+        expect(body.slice(body.indexOf('### 📌 Related issues & additional notes')).trim()).toBe(
+            '### 📌 Related issues & additional notes\nNone.'
         );
         expect(() => assertPullRequestBody(body, 'body')).not.toThrow();
     });
@@ -454,7 +454,7 @@ describe('pull-request contract', () => {
     it('still terminates a required section at the offered Screenshots heading', () => {
         // Screenshots left the required list, so it no longer bounds a section by being in that
         // list. If it stopped bounding sections altogether, How-to-test's content span would run
-        // past it to Related tickets and swallow `### 🖼️ Screenshots\nNone.`, so an empty
+        // past it to Related issues and swallow `### 🖼️ Screenshots\nNone.`, so an empty
         // How-to-test section would read as full and merge.
         const body = `${WHAT_HEADING}\nChange.\n\n${HOW_HEADING}\n\n${SCREENSHOTS_HEADING}\nNone.\n\n${RELATED_HEADING}\nCloses #1\n`;
 

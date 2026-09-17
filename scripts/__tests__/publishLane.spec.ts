@@ -993,7 +993,7 @@ describe('lane publish', () => {
 
         publishLane(12, port);
 
-        const relatedSection = bodies.at(-1)?.split('### 📌 Related tickets & additional notes\n')[1]?.trim();
+        const relatedSection = bodies.at(-1)?.split('### 📌 Related issues & additional notes\n')[1]?.trim();
         expect(relatedSection).toBe('Closes #12');
     });
 
@@ -1005,7 +1005,7 @@ describe('lane publish', () => {
 
         publishLane(12, port, 'relates');
 
-        const relatedSection = bodies.at(-1)?.split('### 📌 Related tickets & additional notes\n')[1]?.trim();
+        const relatedSection = bodies.at(-1)?.split('### 📌 Related issues & additional notes\n')[1]?.trim();
         expect(relatedSection).toBe('Related #12');
     });
 
@@ -1112,7 +1112,7 @@ describe('lane publish', () => {
     it('rejects mixed None and issue relationships before mutation', () => {
         const { port, calls } = fakePort({
             existing: 41,
-            existingBody: '### 📌 Related tickets & additional notes\nNone.\nCloses #12',
+            existingBody: '### 📌 Related issues & additional notes\nNone.\nCloses #12',
         });
 
         expect(() => publishLane(12, port)).toThrow(/exactly one relationship/);
@@ -1125,7 +1125,7 @@ describe('lane publish', () => {
             trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
             cwd: CLEANUP_LANE,
             existing: 41,
-            existingBody: '### 📌 Related tickets & additional notes\nCloses #12',
+            existingBody: '### 📌 Related issues & additional notes\nCloses #12',
         });
 
         expect(() => publishLane(undefined, port)).toThrow(/issueless pull-request body/);
@@ -1143,7 +1143,7 @@ describe('lane publish', () => {
 
         publishLane(undefined, port);
 
-        expect(bodies.at(-1)).toContain('### 📌 Related tickets & additional notes\nNone.');
+        expect(bodies.at(-1)).toContain('### 📌 Related issues & additional notes\nNone.');
         expect(bodies.at(-1)).not.toContain('Closes #');
         expect(bodies.at(-1)).not.toContain('Related #');
     });
@@ -1167,7 +1167,7 @@ describe('lane publish', () => {
         expect(calls).toContain('push:agent/cleanup');
         expect(calls.some((call) => call.startsWith('issueExists:'))).toBe(false);
         expect(bodies.at(-1)).not.toContain('Closes #');
-        expect(bodies.at(-1)).toContain('### 📌 Related tickets & additional notes\nNone.');
+        expect(bodies.at(-1)).toContain('### 📌 Related issues & additional notes\nNone.');
         expect(logs.at(-1)).toBe('88');
     });
 
@@ -1621,7 +1621,7 @@ describe('lane publish', () => {
                 headRefName: 'agent/12/work',
                 isCrossRepository: false,
                 title: 'feat(vcs): add identities',
-                body: '### 📌 Related tickets & additional notes\nCloses #12',
+                body: '### 📌 Related issues & additional notes\nCloses #12',
                 ...overrides,
             };
         }
@@ -1632,7 +1632,7 @@ describe('lane publish', () => {
                 headRefName: 'agent/12/work',
                 isCrossRepository: false,
                 title: 'feat(vcs): add identities',
-                body: '### 📌 Related tickets & additional notes\nCloses #12',
+                body: '### 📌 Related issues & additional notes\nCloses #12',
             });
         });
 

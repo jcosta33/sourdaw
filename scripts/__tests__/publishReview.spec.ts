@@ -131,6 +131,7 @@ function fakePort(
         missing?: boolean;
         actorNodeId?: string;
         login?: string;
+        labels?: { name: string; description?: string }[];
     } = {}
 ) {
     const calls: string[] = [];
@@ -150,22 +151,26 @@ function fakePort(
             if (input.laterState !== undefined) {
                 state = input.laterState;
             }
-            return { state: currentState, head: current };
+            return { state: currentState, head: current, labels: input.labels };
         },
         readReviewJson: (path) => {
             calls.push(`read:${path}`);
             if (input.missing === true) {
                 throw new Error('ENOENT');
             }
-            return (
-                input.json ?? {
-                    format: 'compact-v1',
-                    event: 'APPROVE',
-                    body: 'ok',
-                    comments: [],
-                    evidence: approvalEvidence(input.head),
-                }
-            );
+            const json = input.json ?? {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'ok',
+                comments: [],
+                evidence: approvalEvidence(input.head),
+            };
+            // Every valid fixture must carry the reviewer model, as real review.json files now do;
+            // a fixture that sets the key at all (even to undefined) opts out to exercise refusal.
+            if (typeof json === 'object' && json !== null && !Array.isArray(json) && !('reviewerModel' in json)) {
+                return { ...json, reviewerModel: 'glm-5.3-flash' };
+            }
+            return json;
         },
         readBundleDiff: () =>
             input.diff ??
@@ -201,7 +206,12 @@ function createJournaledRecoveryFixture(
     mkdirSync(bundle, { recursive: true });
     writeFileSync(
         join(bundle, 'review.json'),
-        JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [] })
+        JSON.stringify({
+            event: 'APPROVE',
+            body: 'Attacked; held.',
+            comments: [],
+            reviewerModel: 'glm-5.3-flash',
+        })
     );
     writeFileSync(join(bundle, 'diff.patch'), '');
     const digest = reviewPublicationPayloadDigest(
@@ -268,6 +278,7 @@ async function runFailingReviewPublication(root: string, number: number, head: s
             body: 'Attacked; held.',
             comments: [],
             evidence: approvalEvidence(head),
+            reviewerModel: 'glm-5.3-flash',
         })
     );
     writeFileSync(join(bundle, 'diff.patch'), '');
@@ -990,6 +1001,7 @@ describe('review publish', () => {
                         body: 'Attacked; held.',
                         comments: [],
                         evidence: approvalEvidence('a'.repeat(40)),
+                        reviewerModel: 'glm-5.3-flash',
                     }),
                     readBundleDiff: () => '',
                     postReview: () => {
@@ -1172,6 +1184,54 @@ describe('review publish', () => {
         // parsed document's comments actually reached postReview — only the captured argument can.
         // This must go red if `publishReview` ever forwards an empty or substituted comments array.
         expect(posted.review?.comments).toEqual([validComment]);
+    });
+
+    it('refuses a fresh review document without reviewerModel', () => {
+        const { port, calls } = fakePort({
+            json: {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'ok',
+                comments: [],
+                evidence: approvalEvidence(),
+                reviewerModel: undefined,
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/review\.json must carry reviewerModel/u);
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('refuses a review whose reviewer model matches the PR authoring-model label', () => {
+        const { port, calls } = fakePort({
+            labels: [
+                { name: 'enhancement', description: 'New feature or request' },
+                { name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' },
+            ],
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/matches one of the PR's authoring models/u);
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('posts when the reviewer model differs from the PR authoring-model label', () => {
+        const { port, calls } = fakePort({
+            labels: [
+                { name: 'enhancement', description: 'New feature or request' },
+                { name: 'claude-opus-4.5', description: 'Authored by claude-opus-4.5' },
+            ],
+        });
+
+        expect(publishReview(42, port)).toBe(99);
+        expect(calls[1]).toBe(`post:headsha:APPROVE:${approvalBody()}`);
+    });
+
+    it('treats a bare label name as descriptive, never as the authoring model', () => {
+        // A descriptive label that merely shares a model's name carries no `Authored by `
+        // description fence, so it must not trigger the diversity refusal.
+        const { port } = fakePort({ labels: [{ name: 'glm-5.3-flash' }] });
+
+        expect(publishReview(42, port)).toBe(99);
     });
 
     it('refuses an inline comment outside the prepared head diff before posting', () => {
@@ -2006,6 +2066,81 @@ describe('shellPort postReview state verification', () => {
             port.postReview({ number: 42, commitId: 'sha', event: 'REQUEST_CHANGES', body: 'no', comments: [] })
         ).toEqual({ id: 42, actorNodeId: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' });
         expect(events).toEqual(['attempt', 'post']);
+    });
+
+    it('fetches label names and descriptions for the diversity fence from gh pr view', () => {
+        const requests: string[] = [];
+        const capture = (command: string, args: string[]): string => {
+            if (command === 'git' && args[0] === 'rev-parse') {
+                return `${process.cwd()}/.git`;
+            }
+            if (command === 'gh' && args[0] === 'pr') {
+                requests.push(args.join(' '));
+                return JSON.stringify({
+                    state: 'OPEN',
+                    headRefOid: 'headsha',
+                    labels: [
+                        { name: 'bug', description: 'Something is broken' },
+                        { name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' },
+                        { name: 'no-description' },
+                    ],
+                });
+            }
+            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+        };
+        const port = shellPort(session, process.cwd(), capture);
+
+        expect(port.pullRequest(42)).toEqual({
+            state: 'OPEN',
+            head: 'headsha',
+            labels: [
+                { name: 'bug', description: 'Something is broken' },
+                { name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' },
+                { name: 'no-description' },
+            ],
+        });
+        // The field list is the acquisition path itself: dropping `labels` from it silently
+        // disables the diversity enforcement in production while every fake-port test stays green.
+        expect(requests).toEqual([`pr view 42 --repo jcosta33/sourdaw --json state,headRefOid,labels`]);
+    });
+
+    it('refuses a same-model review end to end through the production shellPort label fetch', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-diversity-shell-'));
+        runGit(root, ['init', '-b', 'main']);
+        const head = 'f'.repeat(40);
+        const bundle = join(root, '.agents', 'review-bundles', `42-${head}`);
+        mkdirSync(bundle, { recursive: true });
+        writeFileSync(
+            join(bundle, 'review.json'),
+            JSON.stringify({
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'Attacked; held.',
+                comments: [],
+                evidence: approvalEvidence(head),
+                reviewerModel: 'glm-5.3-flash',
+            })
+        );
+        writeFileSync(join(bundle, 'diff.patch'), '');
+        try {
+            const port = shellPort(session, root, (command, args) => {
+                if (command === 'git' && args[0] === 'rev-parse') {
+                    return `${root}/.git`;
+                }
+                if (command === 'gh' && args[0] === 'pr') {
+                    return JSON.stringify({
+                        state: 'OPEN',
+                        headRefOid: head,
+                        labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+                    });
+                }
+                throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+            });
+
+            expect(() => publishReview(42, port)).toThrow(/matches one of the PR's authoring models/u);
+        } finally {
+            removeTemporaryDirectory(root);
+        }
     });
 
     it('retains the exact shared owner when the production review POST becomes indeterminate', async () => {
