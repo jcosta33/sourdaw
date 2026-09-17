@@ -11648,6 +11648,94 @@ mod tests {
         );
     }
 
+    /// And a strip the mix does not carry still names the instance the engine
+    /// holds.
+    ///
+    /// This is the pair of rules the repair refill actually runs on, because
+    /// every strip in a rebuild that follows a repair can be non-contributing:
+    /// the device is left off the chain (nothing may sound it twice) *and* the
+    /// instance is named all the same (nothing else will refill the caller's
+    /// mirror). Recording the hit only for a device that reaches the chain, or
+    /// omitting the strip before the lookup runs, would leave the report empty
+    /// exactly when it is the only thing that can answer.
+    #[test]
+    fn a_strip_the_mix_does_not_carry_still_names_the_instance_the_engine_holds() {
+        use crate::host::native_bridge::CrumbsPluginSlot;
+
+        let state = AppState::default();
+        let crumbs = CrumbsState::default();
+        block_on_test(crumbs::create_crumbs(
+            "d-crumbs".to_string(),
+            &crumbs,
+            &state,
+        ))
+        .expect("a create before the engine runs holds a dormant instance");
+
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(256);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let attaching = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": crumbs_strip(true, false, json!({})) }),
+            &state,
+            &crumbs,
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(attaching["application"], "applied");
+
+        let mut attached_plugin_id = None;
+        while let Ok(command) = command_rx.pop() {
+            if let GraphCommand::AddHostedPlugin(id, plugin, _) = command {
+                if plugin.as_any().downcast_ref::<CrumbsPluginSlot>().is_some() {
+                    attached_plugin_id = Some(id);
+                }
+            }
+        }
+        let attached_plugin_id = attached_plugin_id.expect("the first batch attached the instance");
+
+        // The rebuild, with the strip left on Web Audio: the instance is
+        // `Attached` and no pass can attach it again.
+        let rebuilt = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "replaceTopology": true,
+                    "commands": crumbs_strip(false, false, json!({})) }),
+            &state,
+            &crumbs,
+        ))
+        .expect("the rebuild resolves to a result");
+
+        assert_eq!(rebuilt["application"], "applied");
+        assert_eq!(
+            rebuilt["reports"][0]["deviceIds"],
+            json!([]),
+            "a strip the mix does not carry reports the sampler as absent: {rebuilt:?}"
+        );
+        assert_eq!(
+            rebuilt["attachedCrumbs"],
+            json!([{ "instanceId": "d-crumbs" }]),
+            "and names it all the same, because nothing else refills the mirror: {rebuilt:?}"
+        );
+
+        let mut spliced = Vec::new();
+        let mut bypasses = Vec::new();
+        while let Ok(command) = command_rx.pop() {
+            match command {
+                GraphCommand::InsertTrackDevice { entry, .. } => spliced.push(entry.effect_id),
+                GraphCommand::SetBypass(effect_id, bypassed) => {
+                    bypasses.push((effect_id, bypassed))
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            !spliced.contains(&attached_plugin_id),
+            "the omitted device must reach no chain: {spliced:?}"
+        );
+        assert!(
+            !bypasses.iter().any(|(id, _)| *id == attached_plugin_id),
+            "and no write may address it at that id either: {bypasses:?}"
+        );
+    }
+
     /// An offline render has no engine, so it has no instances: the binding
     /// path cannot open there, and an external device on a sounding strip
     /// refuses exactly as it did before binding existed.
