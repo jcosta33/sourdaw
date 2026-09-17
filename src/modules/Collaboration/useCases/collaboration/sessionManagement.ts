@@ -23,6 +23,7 @@ import {
 import { getSettledProjectId, getSettledProjectIdentity } from '#/modules/Project/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { bytesToBase64 } from '#/utils/base64';
+import { canonicalJson } from '#/utils/canonicalDigest';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import {
@@ -159,6 +160,11 @@ const sessionState: {
     /** Canonical JSON for the latest successfully projected branch list. */
     lastProjectedBranchesJson: string | null;
     /**
+     * One canonical entry per in-flight projection. A projection hydrates the
+     * store before it is durable, so this is what marks a list as the doc's.
+     */
+    projectingBranchesJson: string[];
+    /**
      * Set once host departure has ended the session for this joiner, so a
      * later reconnect knows it must undo that state rather than guess from
      * the store's error text.
@@ -178,6 +184,7 @@ const sessionState: {
     unsubscribeBranchStore: null,
     unsubscribeAutomergeChanges: null,
     lastProjectedBranchesJson: null,
+    projectingBranchesJson: [],
     sessionEndedByHostDeparture: false,
     synchronizeAssetOwner: null,
     assetOwnershipTask: Promise.resolve(),
@@ -223,13 +230,6 @@ function sanitizePresence(data: PresenceDelta): PresenceDelta {
 }
 
 // -- Branch sync helpers --
-
-/**
- * The branch lists this session is publishing right now, one entry per
- * in-flight projection. A projection hydrates the store before it is durable,
- * so this is what tells the mirror that list came from the doc.
- */
-const projectingBranchesJson: string[] = [];
 
 /**
  * Start session-scoped branch metadata sync.
@@ -300,11 +300,10 @@ function stopBranchSubscriptions(): void {
 /**
  * Mirror local branch mutations into the Automerge doc.
  *
- * The mirror never writes a list that came from the doc: a projection's hydrate
- * echoed back re-notifies the projection, which hydrates again, and two lists
- * queued behind the durable lock trade places for as long as the session lives.
- * The exclusion is per list rather than a flag over the whole projection window,
- * because that flag swallowed the local commits that hydrated inside it.
+ * The mirror never writes a list that came from the doc: echoing a projection's
+ * hydrate back re-notifies the projection, and two queued lists trade places
+ * for as long as the session lives. Every comparison here is canonical because
+ * Automerge materialises a record's keys sorted, not in declaration order.
  */
 function subscribeBranchMirror(owner: InstalledSessionOwner | null): () => void {
     return branchStore.subscribe((state) => {
@@ -317,12 +316,12 @@ function subscribeBranchMirror(owner: InstalledSessionOwner | null): () => void 
         if (!hasCrdtDoc(DOC_BRANCHES)) {
             return;
         }
-        const stateJson = JSON.stringify(state.branches);
-        if (stateJson === sessionState.lastProjectedBranchesJson || projectingBranchesJson.includes(stateJson)) {
+        const stateJson = canonicalJson(state.branches);
+        if (sessionState.projectingBranchesJson.includes(stateJson)) {
             return;
         }
         const mirrored = getCrdtDoc<{ branches: unknown }>(DOC_BRANCHES)?.branches;
-        if (stateJson === JSON.stringify(mirrored)) {
+        if (stateJson === canonicalJson(mirrored)) {
             return;
         }
         const branches = structuredClone(state.branches);
@@ -372,15 +371,15 @@ function subscribeBranchProjection(owner: InstalledSessionOwner | null, handle: 
         }
         const current = branchStore.value;
         const activeBranchId = current?.activeBranchId ?? MAIN_BRANCH_ID;
-        const incomingJson = JSON.stringify(doc.branches);
+        const incomingJson = canonicalJson(doc.branches);
         if (incomingJson === sessionState.lastProjectedBranchesJson) {
             return;
         }
-        projectingBranchesJson.push(incomingJson);
+        sessionState.projectingBranchesJson.push(incomingJson);
         void projectBranchSession(handle, { branches: doc.branches, activeBranchId }).then((result) => {
-            const projecting = projectingBranchesJson.indexOf(incomingJson);
+            const projecting = sessionState.projectingBranchesJson.indexOf(incomingJson);
             if (projecting !== -1) {
-                projectingBranchesJson.splice(projecting, 1);
+                sessionState.projectingBranchesJson.splice(projecting, 1);
             }
             if (result.status === 'committed') {
                 // Recorded only once the list is durable. Recording it on
@@ -412,7 +411,7 @@ function stopBranchSync(): Promise<BranchSessionEndOutcome> | null {
     stopBranchSubscriptions();
     removeCrdtDoc(DOC_BRANCHES);
     sessionState.lastProjectedBranchesJson = null;
-    projectingBranchesJson.length = 0;
+    sessionState.projectingBranchesJson.length = 0;
 
     const handle = sessionState.branchSession;
     sessionState.branchSession = null;

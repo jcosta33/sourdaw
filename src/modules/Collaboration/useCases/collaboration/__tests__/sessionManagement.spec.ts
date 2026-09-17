@@ -1,6 +1,8 @@
 import { init as automergeInit } from '@automerge/automerge';
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 
+import { canonicalJson } from '#/utils/canonicalDigest';
+
 import {
     PEER_COLORS,
     type CollaborationState,
@@ -1979,6 +1981,54 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
         });
 
+        it('does not write a projection echo back into the doc when the document orders the record keys differently', async () => {
+            // The store builds a branch record in declaration order; Automerge
+            // materialises a map with its keys sorted. The same record therefore
+            // serialises two ways, and a key-order-sensitive comparison reads
+            // the projection's own hydrate as a local change.
+            const storeRecord = {
+                branchId: 'b-take-2',
+                name: 'Take 2',
+                rootDocId: 'doc-take-2',
+                sourceBranchId: 'main-branch-mock',
+                createdAt: 1_700_000_000_000,
+            };
+            const docRecord = {
+                branchId: 'b-take-2',
+                createdAt: 1_700_000_000_000,
+                name: 'Take 2',
+                rootDocId: 'doc-take-2',
+                sourceBranchId: 'main-branch-mock',
+            };
+            const doc = { branches: [docRecord] };
+            crdtMock.hasCrdtDoc.mockReturnValue(true);
+            crdtMock.getCrdtDoc.mockImplementation((docId: string) => (docId === '__branches__' ? doc : undefined));
+            branchStoreMock.value = { branches: [], activeBranchId: 'main-branch-mock' };
+            const branchStoreListener = () =>
+                branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
+                    state: { branches: unknown[]; activeBranchId: string } | null
+                ) => void;
+            // The durable projection hydrates the store with the store-shaped
+            // list before it reports committed.
+            crdtMock.projectBranchSession.mockImplementation(() => {
+                const hydrated = { branches: [storeRecord], activeBranchId: 'main-branch-mock' };
+                branchStoreMock.value = hydrated;
+                branchStoreListener()(hydrated);
+                return Promise.resolve({ status: 'committed' as const, revision: 1 });
+            });
+
+            await sessionRuntimePrimitives.startBranchSync(false);
+            const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
+                docId?: string
+            ) => void;
+            crdtMock.mutateCrdtDoc.mockClear();
+
+            crdtChangeListener('__branches__');
+
+            expect(crdtMock.projectBranchSession).toHaveBeenCalledTimes(1);
+            expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
+        });
+
         it('mirrors a local branch write that lands while a projection is still in flight', async () => {
             crdtMock.hasCrdtDoc.mockReturnValue(true);
             // The doc holds the peers' list; the projection that is publishing
@@ -2068,6 +2118,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                     crdtChangeListener()('__branches__');
                 }
             );
+            // Drop the host's seeding write so what remains is what the
+            // exchange below costs.
+            crdtMock.mutateCrdtDoc.mockClear();
 
             // The local commit hydrates the store, so the mirror publishes it
             // and the change listener queues a projection of it. The peer's
@@ -2079,10 +2132,60 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 await nextMacrotask();
             }
 
-            expect(crdtMock.projectBranchSession.mock.calls.length).toBeLessThanOrEqual(3);
-            const settledJson = JSON.stringify(doc.branches);
-            expect(JSON.stringify(branchStoreMock.value?.branches)).toBe(settledJson);
+            // One projection per list that really arrived, and the local
+            // commit's own mirror write. Nothing repeats.
+            expect(crdtMock.projectBranchSession).toHaveBeenCalledTimes(2);
+            expect(
+                crdtMock.mutateCrdtDoc.mock.calls.filter((call) => (call[0] as { id: string }).id === '__branches__')
+            ).toHaveLength(1);
+            const settledJson = canonicalJson(doc.branches);
+            expect(canonicalJson(branchStoreMock.value?.branches)).toBe(settledJson);
             expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(settledJson);
+            expect(sessionRuntimePrimitives.state.projectingBranchesJson).toEqual([]);
+        });
+
+        it('mirrors a local write of a list an earlier settled projection had published', async () => {
+            const listA = [{ id: 'a' }];
+            const listB = [{ id: 'b' }];
+            const doc: { branches: unknown[] } = { branches: [] };
+            crdtMock.hasCrdtDoc.mockReturnValue(true);
+            crdtMock.getCrdtDoc.mockImplementation((docId: string) => (docId === '__branches__' ? doc : undefined));
+            branchStoreMock.value = { branches: [], activeBranchId: 'b1' };
+            crdtMock.projectBranchSession.mockResolvedValue({ status: 'committed', revision: 1 });
+
+            await sessionRuntimePrimitives.startBranchSync(false);
+            const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
+                docId?: string
+            ) => void;
+            const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
+                state: { branches: unknown[]; activeBranchId: string } | null
+            ) => void;
+
+            doc.branches = listA;
+            crdtChangeListener('__branches__');
+            await vi.waitFor(() =>
+                expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(canonicalJson(listA))
+            );
+            doc.branches = listB;
+            crdtChangeListener('__branches__');
+            await vi.waitFor(() =>
+                expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(canonicalJson(listB))
+            );
+            crdtMock.mutateCrdtDoc.mockClear();
+
+            // The user forks back to the list the first projection published.
+            // The doc holds B, so this is a local change the peers need — and
+            // only a projection that is still in flight may suppress a write.
+            branchStoreListener({ branches: listA, activeBranchId: 'b1' });
+
+            expect(crdtMock.mutateCrdtDoc).toHaveBeenCalledTimes(1);
+            const [{ id, changeFn }] = crdtMock.mutateCrdtDoc.mock.calls[0] as [
+                { id: string; changeFn: (target: Record<string, unknown>) => void },
+            ];
+            expect(id).toBe('__branches__');
+            const written: Record<string, unknown> = {};
+            changeFn(written);
+            expect(written.branches).toEqual(listA);
         });
 
         it('does not mirror branch mutations when the doc has not been created yet', async () => {
