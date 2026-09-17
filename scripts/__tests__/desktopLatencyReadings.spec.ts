@@ -182,7 +182,9 @@ describe('isAudibleLatencyReading', () => {
         expect(
             isAudibleLatencyReading({
                 latencyText: 'n/a',
-                latencyTitle: 'Native engine is the audible output; its output latency has not been published.',
+                latencyTitle:
+                    'Native engine is the audible output; its output latency has not been published.' +
+                    ' Web Audio figures would describe a path nobody hears.',
                 engineTitle: nativeRunning,
             })
         ).toBe(false);

@@ -169,7 +169,7 @@ export function findAppPageTarget(list: unknown, urlPrefix: string): AppPageTarg
     return null;
 }
 
-/** `useStatusBarMetrics.ts:236` writes `${ms.toFixed(1)}ms`. Shared with `isAudibleLatencyReading`. */
+/** `useStatusBarMetrics.ts`'s `describeOutputLatency` tick writes `${ms.toFixed(1)}ms`. Shared with `isAudibleLatencyReading`. */
 const LATENCY_MS_PATTERN = /^(-?\d+(?:\.\d+)?)ms$/;
 
 export function parseLatencyMs(text: string): number {

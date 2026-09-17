@@ -91,6 +91,9 @@ const PLAY_START_PROBE_KEY = '__sourdawPlayStartProbe';
 /** `electron/scan.ts`'s own `SCAN_TIMEOUT_MS` bounds a scan at 120 s; this adds margin on top of it. */
 const SCAN_STEP_TIMEOUT_MS = 150_000;
 
+/** `waitForAudibleLatencyReading`'s inner deadline plus its final diagnostic read must finish before the step's own timer does. */
+const LATENCY_READING_STEP_TIMEOUT_MS = STEP_TIMEOUT_MS + 5_000;
+
 /**
  * `openEffectsTab` performs up to five operations in sequence, each
  * individually bounded at `STEP_TIMEOUT_MS`: a click, an "External Plugins"
@@ -338,6 +341,12 @@ async function readPlayStartProbe(page: Page): Promise<PlayStartProbe> {
 
 async function sample(page: Page, t: number): Promise<{ record: SampleRecord; events: EngineEventRecord[] }> {
     const status = await readStatusBar(page);
+    if (!isAudibleLatencyReading(status)) {
+        throw new Error(
+            `sample() read a Latency figure that does not describe the audible engine — latency "${status.latencyText}", ` +
+                `title "${status.latencyTitle.slice(0, 80)}", engine dot "${status.engineTitle.slice(0, 80)}"`
+        );
+    }
     const diagnostics = await readEngineDiagnostics(page);
     const engine = parseEngineTitle(status.engineTitle);
     return {
@@ -459,7 +468,7 @@ async function waitForScanToFinish(page: Page): Promise<number> {
  * Polls the status bar until `isAudibleLatencyReading` accepts it — the
  * audible engine's own Latency figure, not a healthy reading from the engine
  * nobody hears. See the call site in `driveToPlayingProject` for why this
- * wait exists between the running-meter wait and the play-start probe.
+ * wait runs after the play-start probe is read, not before it.
  */
 async function waitForAudibleLatencyReading(page: Page): Promise<void> {
     const deadline = Date.now() + STEP_TIMEOUT_MS;
@@ -572,18 +581,6 @@ async function driveToPlayingProject(
         );
     });
 
-    // The idle leg's opening sample must not be the pre-#3706 hazard this
-    // harness exists to catch: a native carrier that is running (the wait
-    // above) but has not yet published its own output-latency figure reads
-    // `n/a` on the status bar, and before this wait the harness sampled
-    // whatever was there regardless — including, once, a healthy Web Audio
-    // context figure recorded while the native engine was the audible
-    // carrier. `isAudibleLatencyReading` is the same predicate `sample()`'s
-    // `parseLatencyMs` reading must satisfy; waiting for it here keeps that
-    // reading out of the recorded run instead of discovering it after the
-    // fact.
-    await step('wait for the audible engine to publish its output latency', () => waitForAudibleLatencyReading(page));
-
     // Awaited before the click below dispatches: the capture listener has to
     // already be attached in the page when the click's own CDP sequence
     // fires, and this await is what proves that ordering instead of leaving
@@ -602,6 +599,19 @@ async function driveToPlayingProject(
     );
     const playStart = resolvePlayStart(probe);
     process.stdout.write(`${describePlayStart(playStart)}\n`);
+
+    // The native session only becomes the audible carrier here, inside the
+    // play click just taken — before it, the engine dot and Latency readout
+    // both describe Web Audio. The native figure lands with the diagnostics
+    // poll after that flip, not with the click itself, so `sample()`'s first
+    // read (the idle leg's opening sample) has to wait for it: sampling right
+    // after the click recorded a healthy Web Audio figure under a native
+    // engine on 2026-09-13.
+    await step(
+        'wait for the audible engine to publish its output latency',
+        () => waitForAudibleLatencyReading(page),
+        LATENCY_READING_STEP_TIMEOUT_MS
+    );
 
     return { startedAt, playStart };
 }
