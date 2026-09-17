@@ -1,0 +1,74 @@
+src/modules/PluginHost/repositories/pluginBridge/__tests__/pluginBridge.spec.ts
+  s_4f08b53210ae1b::t_babba736f4f6f8 32,42
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_9b530f08172a54::t_f96accbe9bd571 94-103
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_9b530f08172a54::t_817fa10418827e 161
+crates/sourdaw-native/src/addon/mod.rs
+  s_9b530f08172a54::t_97c10b4baeebb4 549
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginStateCaptureAuthority.spec.ts
+  s_9b530f08172a54::t_3fa361112be63e 77
+src/utils/sourdawCommandArguments.ts
+  s_9b530f08172a54::t_c95bb7ac995cbc 72
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/forgetRetiredPluginInstances.spec.ts
+  s_9b530f08172a54::t_865701ef732084 25,39
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_9b530f08172a54::t_ac51c72de593f1 26,100,107,112,139,142,198-205,210,213-214,227,238,330-332,426-427,430
+crates/sourdaw-native/src/commands/graph.rs
+  s_9b530f08172a54::t_8f80876158f5e5 7315
+  s_9b530f08172a54::t_30a15c3d5b8706 7316-7319,7322
+src/modules/PluginHost/useCases/pluginLifecycle/loadPlugin.ts
+  s_9b530f08172a54::t_c1edf2868ab49a 7-8,10,12
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_9b530f08172a54::t_4a0ffe6d6a1993 911,1004-1005,1010-1015,1230-1234
+  s_9b530f08172a54::t_604f5b4308eec0 905-910,913,924
+  s_9b530f08172a54::t_b9a18839ad8eaf 912
+  s_9b530f08172a54::t_b6f6571d4aeb1c 1006-1009
+src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts
+  s_9b530f08172a54::t_99ba4d5749eae0 2
+crates/daw-plugin-host/src/vst3_wrapper.rs
+  s_9b530f08172a54::t_1b5615d12fa894 1276-1280
+electron/__tests__/commands.spec.ts
+  s_9b530f08172a54::t_6a6fa347e65fff 386,429
+crates/sourdaw-native/src/commands/plugins.rs
+  s_9b530f08172a54::t_3df134140210eb 4643
+  s_9b530f08172a54::t_c633364b2397f2 41-44,1207-1208,1213-1217,1226-1227,1229-1232,1234-1245,1326-1328,1366-1368,1459-1462,1678-1691,1884-1899,2861-2863,2976-3018,3023-3038,3040-3107,4271-4275,4429,4436,4644-4645,4721-4722,4818-4819,4879,4882
+  s_9b530f08172a54::t_45de4250910643 3019-3022,3039
+  s_9b530f08172a54::t_f7956a2e5ad6f9 4270
+  s_9b530f08172a54::t_dcaaf0a4658ef1 4428
+  s_9b530f08172a54::t_2e1cdaef978b97 4817
+  s_9b530f08172a54::t_bafda248293865 4878
+  s_9b530f08172a54::t_34bb212899ffec 4720
+src/modules/Command/useCases/__tests__/loadExternalPluginVersionedRecovery.spec.ts
+  s_9b530f08172a54::t_c009c1f6040330 248-250
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/lifecycle.spec.ts
+  s_4f08b53210ae1b::t_513d75d8f4138e 65-66,96,106,117,147,150,166,172
+src/modules/PluginHost/repositories/pluginBridge/loadPlugin.ts
+  s_9b530f08172a54::t_6dcac08b8e92ab 8-9,11,25
+crates/daw-plugin-host/src/runtime.rs
+  s_9b530f08172a54::t_c9fde522b28548 289-297
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "73f04fc7ed90217dcbe3ac7b40a577536c99487c",
+  "prompts": {},
+  "sessions": {
+    "s_4f08b53210ae1b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4920d977c39994c7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
