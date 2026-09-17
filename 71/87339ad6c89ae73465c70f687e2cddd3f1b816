@@ -1,0 +1,46 @@
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_914af328b3988f::t_4e43cc468a13e7 691-695
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_914af328b3988f::t_063dbca46e5270 112
+  s_914af328b3988f::t_7ed3075147ecb9 66
+src/modules/AiRuntime/useCases/agentDomainPreview/resolveAgentPreviewDomains.ts
+  s_914af328b3988f::t_526903f8cb491c 1,9-13,15-23,31-34,37-39,41-46,48,50-52,56,63-64,66-68,70-71
+  s_914af328b3988f::t_2650b979f5fd0f 53-55
+  s_914af328b3988f::t_dce8f11f43cb31 25-30
+  s_914af328b3988f::t_b467729713aac3 49
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_914af328b3988f::t_10296d8a40bd87 602-604,607
+src/modules/AiRuntime/useCases/__tests__/agentDomainPreviewAdapters.spec.ts
+  s_914af328b3988f::t_521aa408bce08a 159
+  s_914af328b3988f::t_f847c93ecc94bc 135-137
+  s_914af328b3988f::t_c940db8abd7bb8 230,235,240-241,246-249,258-273,280
+  s_914af328b3988f::t_f45a17ff1db1be 143-146
+  s_914af328b3988f::t_4c52fea91cd781 131-134,138-142,147-158,164-165,185-193,200-201
+  s_914af328b3988f::t_984097d5340b62 202
+  s_914af328b3988f::t_e679c7b7dd7ba6 234,236-239
+  s_914af328b3988f::t_bf807f8ac36d64 274-279
+  s_914af328b3988f::t_48ef954f7394d1 289
+  s_914af328b3988f::t_0dfaa569a11d45 311
+  s_914af328b3988f::t_bff98514dbc208 160-162
+  s_914af328b3988f::t_5860397924cfc0 424
+  s_914af328b3988f::t_9be40a9d9387a6 545,561
+  s_914af328b3988f::t_eeaad8e1602739 281
+src/modules/AiRuntime/AGENTS.md
+  s_914af328b3988f::t_448d1a2b5e379c 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7187339ad6c89ae73465c70f687e2cddd3f1b816",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
