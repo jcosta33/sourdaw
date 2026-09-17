@@ -91,7 +91,7 @@ const PLAY_START_PROBE_KEY = '__sourdawPlayStartProbe';
 /** `electron/scan.ts`'s own `SCAN_TIMEOUT_MS` bounds a scan at 120 s; this adds margin on top of it. */
 const SCAN_STEP_TIMEOUT_MS = 150_000;
 
-/** `waitForAudibleLatencyReading`'s inner deadline plus its final diagnostic read must finish before the step's own timer does. */
+/** Deadline, 250 ms sleep, and final read in `waitForAudibleLatencyReading` must finish before the step's timer. */
 const LATENCY_READING_STEP_TIMEOUT_MS = STEP_TIMEOUT_MS + 5_000;
 
 /**
@@ -467,8 +467,8 @@ async function waitForScanToFinish(page: Page): Promise<number> {
 /**
  * Polls the status bar until `isAudibleLatencyReading` accepts it — the
  * audible engine's own Latency figure, not a healthy reading from the engine
- * nobody hears. See the call site in `driveToPlayingProject` for why this
- * wait runs after the play-start probe is read, not before it.
+ * nobody hears. The wait's `page.evaluate` round trips would interleave
+ * with the play-start probe's in-page poll, perturbing the measurement.
  */
 async function waitForAudibleLatencyReading(page: Page): Promise<void> {
     const deadline = Date.now() + STEP_TIMEOUT_MS;
@@ -607,6 +607,9 @@ async function driveToPlayingProject(
     // read (the idle leg's opening sample) has to wait for it: sampling right
     // after the click recorded a healthy Web Audio figure under a native
     // engine on 2026-09-13.
+    // Also placed after the play-start probe is read: this wait consumes up to
+    // STEP_TIMEOUT_MS of `page.evaluate` round trips, which would interleave
+    // with the play-start probe's in-page poll loop and perturb the measurement.
     await step(
         'wait for the audible engine to publish its output latency',
         () => waitForAudibleLatencyReading(page),
