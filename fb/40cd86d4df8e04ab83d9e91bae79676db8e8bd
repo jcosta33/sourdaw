@@ -1,0 +1,41 @@
+src/modules/AiRuntime/AGENTS.md
+  s_914af328b3988f::t_d8355db073f654 25
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  s_914af328b3988f::t_545365015bf389 125-129
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_914af328b3988f::t_7ed3075147ecb9 66
+  s_914af328b3988f::t_063dbca46e5270 112
+src/modules/AiRuntime/useCases/agentDomainPreview/resolveAgentPreviewDomains.ts
+  s_914af328b3988f::t_526903f8cb491c 1,9-13,15-23,25-32,35-37,39-44,46-53,57,64-65,67-69,71-72
+  s_914af328b3988f::t_2650b979f5fd0f 54-56
+src/modules/AiRuntime/useCases/__tests__/agentDomainPreviewAdapters.spec.ts
+  s_914af328b3988f::t_5860397924cfc0 408
+  s_914af328b3988f::t_984097d5340b62 194
+  s_914af328b3988f::t_4c52fea91cd781 131-134,138-145,147-157,177-185,192-193
+  s_914af328b3988f::t_f847c93ecc94bc 135-137
+  s_914af328b3988f::t_9be40a9d9387a6 529,545
+  s_914af328b3988f::t_c940db8abd7bb8 222,226-229,234-237,246-264
+  s_914af328b3988f::t_0dfaa569a11d45 295
+  s_914af328b3988f::t_48ef954f7394d1 273
+  s_914af328b3988f::t_eeaad8e1602739 265
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_914af328b3988f::t_4e43cc468a13e7 691-695
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_914af328b3988f::t_10296d8a40bd87 602-604,607
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fb40cd86d4df8e04ab83d9e91bae79676db8e8bd",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
