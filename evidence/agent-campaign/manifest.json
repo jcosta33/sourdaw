@@ -1,0 +1,949 @@
+{
+    "schemaVersion": 1,
+    "campaign": "sourdaw-agent-production-system",
+    "thresholds": {
+        "path": "docs/architecture/agent-release-gates.md",
+        "digest": "8efdfe9987f459bb8eb8f4e2ea6f711e59f641c071d8acd9aecee93f48a7a846"
+    },
+    "capabilityInventory": {
+        "source": "src/app/getAgentProtocolManifest.ts",
+        "digest": "a333d6c89bd6d6414b69f79afdcd1891eae86c4ec91438c78b2f493ff32c6cbc"
+    },
+    "census": {
+        "digest": "f61deb440af07e248b43f0ba740592ff0c1f6030bbbedde4d0601c58ed14f1da"
+    },
+    "environment": ["package.json", "pnpm-lock.yaml", "Cargo.lock", "tsconfig.json", "vite.config.ts"],
+    "tasks": [
+        {
+            "id": "TASK-SA-00-protocol-governance",
+            "gates": ["AC-006", "AC-007", "AC-008", "AC-017", "AC-055", "AC-060"]
+        },
+        {
+            "id": "TASK-SA-01-project-model-and-query",
+            "gates": ["AC-002", "AC-003", "AC-004", "AC-005", "AC-062"]
+        },
+        {
+            "id": "TASK-SA-02-command-execution",
+            "gates": [
+                "AC-009",
+                "AC-010",
+                "AC-011",
+                "AC-012",
+                "AC-013",
+                "AC-014",
+                "AC-015",
+                "AC-016",
+                "AC-059",
+                "AC-061",
+                "AC-063"
+            ]
+        },
+        {
+            "id": "TASK-SA-03-runtime-lifecycle",
+            "gates": ["AC-018", "AC-019", "AC-020", "AC-050", "AC-052", "AC-053", "AC-058"]
+        },
+        {
+            "id": "TASK-SA-04-providers",
+            "gates": [
+                "AC-021",
+                "AC-022",
+                "AC-023",
+                "AC-024",
+                "AC-025",
+                "AC-026",
+                "AC-027",
+                "AC-028",
+                "AC-029",
+                "AC-030"
+            ]
+        },
+        {
+            "id": "TASK-SA-05-context-and-planning",
+            "gates": [
+                "AC-031",
+                "AC-032",
+                "AC-033",
+                "AC-034",
+                "AC-035",
+                "AC-036",
+                "AC-037",
+                "AC-038",
+                "AC-045",
+                "AC-046"
+            ]
+        },
+        {
+            "id": "TASK-SA-06-devices-assets-audio",
+            "gates": ["AC-039", "AC-040", "AC-041", "AC-042", "AC-043", "AC-049"]
+        },
+        {
+            "id": "TASK-SA-07-media-exclusions",
+            "gates": ["AC-044", "AC-047", "AC-048"]
+        },
+        {
+            "id": "TASK-SA-08-adapters-and-platform",
+            "gates": ["AC-001", "AC-051", "AC-057"]
+        },
+        {
+            "id": "TASK-SA-09-evidence",
+            "gates": ["AC-054", "AC-056"]
+        }
+    ],
+    "suites": [
+        {
+            "id": "AC-001",
+            "task": "TASK-SA-08-adapters-and-platform",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Command/useCases/__tests__/agentControlBoundary.spec.ts src/modules/AiRuntime/useCases/voiceInput/__tests__/localVoiceCommandBoundary.spec.ts && pnpm deps:validate",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/voiceInput/__tests__/localVoiceCommandBoundary.spec.ts",
+                    "digest": "7409a9685b4971ac0141f5be189b1a09fd21b221b87673e1301e16bc12be4f4c"
+                },
+                {
+                    "path": "src/modules/Command/useCases/__tests__/agentControlBoundary.spec.ts",
+                    "digest": "6908a4256aecb19c680cbe9c5783ed8c072056456d7cd54a31c4112239a40f3b"
+                }
+            ]
+        },
+        {
+            "id": "AC-002",
+            "task": "TASK-SA-01-project-model-and-query",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Project/useCases/__tests__/agentProjectModelContract.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Project/useCases/__tests__/agentProjectModelContract.spec.ts",
+                    "digest": "2634b4c59e275a361de86dbad369ded546a67da64ca771b506ff3efb9774cf14"
+                }
+            ]
+        },
+        {
+            "id": "AC-003",
+            "task": "TASK-SA-01-project-model-and-query",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Project/useCases/__tests__/productionBrief.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Project/useCases/__tests__/productionBrief.spec.ts",
+                    "digest": "625e497ae368491fced2d34e1b4d33b96e620623c757d98389dba8b0fbb5c6bb"
+                }
+            ]
+        },
+        {
+            "id": "AC-004",
+            "task": "TASK-SA-01-project-model-and-query",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts",
+                    "digest": "9f5f08ff8e3c8fdcf37128b5eaf37a3cbeb2147e6dd604012e464ba61c32101f"
+                }
+            ]
+        },
+        {
+            "id": "AC-005",
+            "task": "TASK-SA-01-project-model-and-query",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/resolveAgentReference.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/resolveAgentReference.spec.ts",
+                    "digest": null,
+                    "status": "absent"
+                }
+            ]
+        },
+        {
+            "id": "AC-006",
+            "task": "TASK-SA-00-protocol-governance",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Command/useCases/__tests__/versionedCommandContract.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Command/useCases/__tests__/versionedCommandContract.spec.ts",
+                    "digest": "7c1bf815162571113dd60db4a1aa04f6734e708ee2a5f3ff8f345f26fc42deb0"
+                }
+            ]
+        },
+        {
+            "id": "AC-007",
+            "task": "TASK-SA-00-protocol-governance",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts",
+                    "digest": "329deb31b4001d070aa7363b3d0a84e066dece8d13d13b04b6d870f0e632b668"
+                }
+            ]
+        },
+        {
+            "id": "AC-008",
+            "task": "TASK-SA-00-protocol-governance",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Command/useCases/__tests__/agentCommandCoverage.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Command/useCases/__tests__/agentCommandCoverage.spec.ts",
+                    "digest": null,
+                    "status": "absent"
+                }
+            ]
+        },
+        {
+            "id": "AC-009",
+            "task": "TASK-SA-02-command-execution",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts",
+                    "digest": "bc6f9c1473b5a996f7f68546c9d7b32ea994a005250218d15b0cc353f4f5ce86"
+                }
+            ]
+        },
+        {
+            "id": "AC-010",
+            "task": "TASK-SA-02-command-execution",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Command/useCases/__tests__/commandBatchPreflight.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Command/useCases/__tests__/commandBatchPreflight.spec.ts",
+                    "digest": "03e4db7e87e0cb50cb6901c347f6fc5b05f38677c2ad31084e045ba4672661b0"
+                }
+            ]
+        },
+        {
+            "id": "AC-011",
+            "task": "TASK-SA-02-command-execution",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/CrdtDocument/useCases/__tests__/previewCommandBatch.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/CrdtDocument/useCases/__tests__/previewCommandBatch.spec.ts",
+                    "digest": "17ce5f7ca92af879cdec9f2dd329987534694617a531597031d3e6c5efaa47bb"
+                }
+            ]
+        },
+        {
+            "id": "AC-012",
+            "task": "TASK-SA-02-command-execution",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Command/useCases/__tests__/semanticProjectDiff.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Command/useCases/__tests__/semanticProjectDiff.spec.ts",
+                    "digest": "a428971f17f8c00f55e29cf9f272fc51aa21edda295c70210291b26a220d60c5"
+                }
+            ]
+        },
+        {
+            "id": "AC-013",
+            "task": "TASK-SA-02-command-execution",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts",
+                    "digest": "99f4f07d23aaf51a9511ed4841aa4dfa8f2cf43323655a79267a6cfbbfba67dc"
+                }
+            ]
+        },
+        {
+            "id": "AC-014",
+            "task": "TASK-SA-02-command-execution",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts",
+                    "digest": "971760fdf172bea9b2941f2674335bc3f33cc478f395c01d8b839e4ef5fc4002"
+                }
+            ]
+        },
+        {
+            "id": "AC-015",
+            "task": "TASK-SA-02-command-execution",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts",
+                    "digest": "b15e99ffde5fe4079768391f966e48bb60c91eebbdd9eb064fc7904776c223ac"
+                }
+            ]
+        },
+        {
+            "id": "AC-016",
+            "task": "TASK-SA-02-command-execution",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts",
+                    "digest": "e38b38cad8b012b71862e63bc95a57529374cad4d7fa07c001ded1eafbbcb326"
+                }
+            ]
+        },
+        {
+            "id": "AC-017",
+            "task": "TASK-SA-00-protocol-governance",
+            "kind": "unit",
+            "command": "pnpm test:run src/app/__tests__/agentProtocolVersioning.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/app/__tests__/agentProtocolVersioning.spec.ts",
+                    "digest": "08ee50e3a73ef340a560b5fe6c305d984b2c0f0f6536c737b15deca2eae3e0f7"
+                }
+            ]
+        },
+        {
+            "id": "AC-018",
+            "task": "TASK-SA-03-runtime-lifecycle",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentExecutionModes.spec.ts src/modules/Command/useCases/__tests__/commandApprovalBoundary.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentExecutionModes.spec.ts",
+                    "digest": "ea5a02c39295a71e6346c7af152c9ac8039657e8a3bc06cecbde17c3618ef295"
+                },
+                {
+                    "path": "src/modules/Command/useCases/__tests__/commandApprovalBoundary.spec.ts",
+                    "digest": "3bb88fa465851da17a684d6a50f0a81cbe4c59ffb69428b50a94cd9f9612a17e"
+                }
+            ]
+        },
+        {
+            "id": "AC-019",
+            "task": "TASK-SA-03-runtime-lifecycle",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts src/modules/AiRuntime/useCases/__tests__/agentRunWorkLease.spec.ts src/modules/AiRuntime/useCases/__tests__/agentRunControlProjection.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentRunControlProjection.spec.ts",
+                    "digest": "cdda6adf11d171aff5ce7c882b66685ee42cddbc36bc2c7863b9c5969461e479"
+                },
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts",
+                    "digest": "2bd77175d2ab84702e6cc23db8a9ce22397782b1a515cfa98b4192d71d3c130a"
+                },
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentRunWorkLease.spec.ts",
+                    "digest": "7d6ea2dd3da8a26e79491e603a8d4851909c06986f70109cba235ffdd3583940"
+                }
+            ]
+        },
+        {
+            "id": "AC-020",
+            "task": "TASK-SA-03-runtime-lifecycle",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/cancelAgentRun.spec.ts src/modules/AiRuntime/useCases/__tests__/agentRunWorkLease.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentRunWorkLease.spec.ts",
+                    "digest": "7d6ea2dd3da8a26e79491e603a8d4851909c06986f70109cba235ffdd3583940"
+                },
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/cancelAgentRun.spec.ts",
+                    "digest": "2f10f5fe3d61616762a05e2cec656df8796930f1af2eddabad2103bcb337ed7f"
+                }
+            ]
+        },
+        {
+            "id": "AC-021",
+            "task": "TASK-SA-04-providers",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts",
+                    "digest": "9c30303b447d7e628ba1880f6f0c5b5169ac7cd5243f09e21365de8929a6197e"
+                }
+            ]
+        },
+        {
+            "id": "AC-022",
+            "task": "TASK-SA-04-providers",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
+                    "digest": "0cbba1d547240c8fb5a765eb078c0f89e733cea7b68aa17616eb8803f6657dc2"
+                }
+            ]
+        },
+        {
+            "id": "AC-023",
+            "task": "TASK-SA-04-providers",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts",
+                    "digest": "cd434067040ef814498a82381c704bcf31b4dc28b41d8f6604c060c886915e13"
+                }
+            ]
+        },
+        {
+            "id": "AC-024",
+            "task": "TASK-SA-04-providers",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/getBackendChain.spec.ts src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/setAiBackendPreference.spec.ts src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts",
+                    "digest": "2bd77175d2ab84702e6cc23db8a9ce22397782b1a515cfa98b4192d71d3c130a"
+                },
+                {
+                    "path": "src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/getBackendChain.spec.ts",
+                    "digest": "98b952fb3dc047b19f14140824e9e057abaee71be9e25c3513078402f7944282"
+                },
+                {
+                    "path": "src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/setAiBackendPreference.spec.ts",
+                    "digest": "a068fd94c1704aadbdd359e6ae40d8c11bf16d48714fb7aa3486a635907e4baa"
+                },
+                {
+                    "path": "src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx",
+                    "digest": "a43a511e96ced1880007f64dfd8fc82c7eae1adf9001fe01bf5be0aba63b8989"
+                }
+            ]
+        },
+        {
+            "id": "AC-025",
+            "task": "TASK-SA-04-providers",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/repositories/__tests__/openAiProviderAdapter.contract.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/repositories/__tests__/openAiProviderAdapter.contract.spec.ts",
+                    "digest": "4cec9e8e065bc93a20e6b32ffc4bcd6d1cc6d19aeccfc4b8cbd0ce467ea297f1"
+                }
+            ]
+        },
+        {
+            "id": "AC-026",
+            "task": "TASK-SA-04-providers",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/repositories/__tests__/anthropicProviderAdapter.contract.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/repositories/__tests__/anthropicProviderAdapter.contract.spec.ts",
+                    "digest": "16374892544c4a8a3e6877ef738c7d2bcee678bb50f741af2647cfe29048ae79"
+                }
+            ]
+        },
+        {
+            "id": "AC-027",
+            "task": "TASK-SA-04-providers",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts",
+                    "digest": "41cc40efebba7528df06a9d79d814c3973620c37d02a5d5ee0705cd6cf87b2b6"
+                }
+            ]
+        },
+        {
+            "id": "AC-028",
+            "task": "TASK-SA-04-providers",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/resolveModelRoute.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/resolveModelRoute.spec.ts",
+                    "digest": "b69597d820fa8229a801eafd16d982cd1b4cc121db6f79e84b2bc765edb66d35"
+                }
+            ]
+        },
+        {
+            "id": "AC-029",
+            "task": "TASK-SA-04-providers",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/modelStreamProtocol.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/modelStreamProtocol.spec.ts",
+                    "digest": "2c846f6456c8ddcdaddb8201821d951ede8dba459b5de12f66afb3643c558080"
+                }
+            ]
+        },
+        {
+            "id": "AC-030",
+            "task": "TASK-SA-04-providers",
+            "kind": "rust+unit",
+            "command": "cargo test -p sourdaw provider_gateway && pnpm test:run src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts",
+            "fixtures": [
+                {
+                    "path": "crates/sourdaw/src",
+                    "digest": null,
+                    "status": "absent"
+                },
+                {
+                    "path": "src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts",
+                    "digest": "2a4b51ffb904e3f86630fbbfc21ef194f31fcb0016c9c081afe5036d5828445a"
+                }
+            ]
+        },
+        {
+            "id": "AC-031",
+            "task": "TASK-SA-05-context-and-planning",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentDataPolicy.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentDataPolicy.spec.ts",
+                    "digest": "68ee9d58310d80618a739ba1d1fe3dfb457763b99d932e2c4b52c855651777b3"
+                }
+            ]
+        },
+        {
+            "id": "AC-032",
+            "task": "TASK-SA-05-context-and-planning",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentCostBudget.spec.ts src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentCostBudget.spec.ts",
+                    "digest": "015d1a46eba241023db21744932288f58ca9ee8c16568a1dd220056e8ffe9a21"
+                },
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts",
+                    "digest": "6feccacb2f721f38ad925c2fef7de3d692cc6243ed2183c9fde81d4d1025794f"
+                }
+            ]
+        },
+        {
+            "id": "AC-033",
+            "task": "TASK-SA-05-context-and-planning",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
+                    "digest": "6f3ef50b6ee4761eb4a80e1028fe50879b6092d6173a76faba9f582b7b9580ac"
+                }
+            ]
+        },
+        {
+            "id": "AC-034",
+            "task": "TASK-SA-05-context-and-planning",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts",
+                    "digest": "21ae4ccc570be1f0c6cabdfcb07465e7905c9d4095abd6ea84b4d041e22ecadd"
+                }
+            ]
+        },
+        {
+            "id": "AC-035",
+            "task": "TASK-SA-05-context-and-planning",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/planAgentRun.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/planAgentRun.spec.ts",
+                    "digest": "e0e61b256a11cb849f8a56258d2e8fc96f67ea89714b76b905383fc3d3bcfb9b"
+                }
+            ]
+        },
+        {
+            "id": "AC-036",
+            "task": "TASK-SA-05-context-and-planning",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts",
+                    "digest": "e1c5c358581f844b272f95956e4da9f612fa148757c46ae795601b23b155688f"
+                }
+            ]
+        },
+        {
+            "id": "AC-037",
+            "task": "TASK-SA-05-context-and-planning",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Command/useCases/__tests__/agentTransformSandbox.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Command/useCases/__tests__/agentTransformSandbox.spec.ts",
+                    "digest": "6c9cfb53777a9031e3c56284749751a378f313ceed5dfc56d4aab6522abba23d"
+                }
+            ]
+        },
+        {
+            "id": "AC-038",
+            "task": "TASK-SA-05-context-and-planning",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentErrorAndSaga.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentErrorAndSaga.spec.ts",
+                    "digest": "faa32e5df6217707dd71dd78bd257bc562c239bd94c0922ae7d21d648623e70a"
+                }
+            ]
+        },
+        {
+            "id": "AC-039",
+            "task": "TASK-SA-06-devices-assets-audio",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/PluginHost/useCases/__tests__/agentDeviceManifest.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/PluginHost/useCases/__tests__/agentDeviceManifest.spec.ts",
+                    "digest": "514433acc9c28719b03d1019fe66865e8b984d1f3ad243f21ad76fe26f356c5f"
+                }
+            ]
+        },
+        {
+            "id": "AC-040",
+            "task": "TASK-SA-06-devices-assets-audio",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/SampleLibrary/useCases/__tests__/agentCatalogSearch.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/SampleLibrary/useCases/__tests__/agentCatalogSearch.spec.ts",
+                    "digest": "7e3061e9d40c5400c12f199b63dcefe251d0c4735bc4e757a048484baf2582bc"
+                }
+            ]
+        },
+        {
+            "id": "AC-041",
+            "task": "TASK-SA-06-devices-assets-audio",
+            "kind": "unit+rust",
+            "command": "pnpm test:run src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts src/modules/AudioEngine/useCases/__tests__/singleAudioContextInvariant.spec.ts && cargo test -p daw-engine audio_deadline",
+            "fixtures": [
+                {
+                    "path": "crates/daw-engine/src",
+                    "digest": "ce29f77a6d2cdf10ab99252d2d108a6ebcbe87ad35f14bf91415fc720b3006f0"
+                },
+                {
+                    "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
+                    "digest": "3e2aac3f15fcfe44589c5e292bbfeb9ca286140506744f57974c77e910dfe080"
+                },
+                {
+                    "path": "src/modules/AudioEngine/useCases/__tests__/singleAudioContextInvariant.spec.ts",
+                    "digest": "2e6fb938db9ea38757d765861f5f1f0457bb0505af6c288a88691639b7505e00"
+                }
+            ]
+        },
+        {
+            "id": "AC-042",
+            "task": "TASK-SA-06-devices-assets-audio",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AudioRendering/useCases/__tests__/agentOfflineRender.spec.ts src/modules/Arrangement/useCases/freezeBounce/__tests__/agentFreezeRenderReceipt.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Arrangement/useCases/freezeBounce/__tests__/agentFreezeRenderReceipt.spec.ts",
+                    "digest": "7e7c5d4eff18a91b281a4f46b093b77047c176160db44be78bcf60ba979843d2"
+                },
+                {
+                    "path": "src/modules/AudioRendering/useCases/__tests__/agentOfflineRender.spec.ts",
+                    "digest": "1034800372a3c730c20f427f118b45ddebe3bf31a0adc6910726762799958637"
+                }
+            ]
+        },
+        {
+            "id": "AC-043",
+            "task": "TASK-SA-06-devices-assets-audio",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AudioAnalysis/useCases/__tests__/agentObjectiveAnalysis.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AudioAnalysis/useCases/__tests__/agentObjectiveAnalysis.spec.ts",
+                    "digest": "356ee474e1fe04e06bb217943a8ffde79f142297f24b68cf91c1ed8abc1461de"
+                }
+            ]
+        },
+        {
+            "id": "AC-044",
+            "task": "TASK-SA-07-media-exclusions",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentMediaAutonomyBoundary.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentMediaAutonomyBoundary.spec.ts",
+                    "digest": "6745e0e4193d5d406f738a5b3176080ca028680ed1b73791f001d17b34559656"
+                }
+            ]
+        },
+        {
+            "id": "AC-045",
+            "task": "TASK-SA-05-context-and-planning",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/vibeMixingControlLoop.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/vibeMixingControlLoop.spec.ts",
+                    "digest": "8a14eed7a82e940a90c5ab4086cd80dcd3cff47a0dd34f47101de502ef787a7d"
+                }
+            ]
+        },
+        {
+            "id": "AC-046",
+            "task": "TASK-SA-05-context-and-planning",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts",
+                    "digest": "7405b828b125185595f7a27a782310d4ce3053ccae57fdc1a3597587dca6e24e"
+                }
+            ]
+        },
+        {
+            "id": "AC-047",
+            "task": "TASK-SA-07-media-exclusions",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentGeneratedMediaBoundary.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentGeneratedMediaBoundary.spec.ts",
+                    "digest": "87c1c37555bd5a1190f4b5cfeff44e8c17bea06095a09ae5fe386ad5ad3e42a9"
+                }
+            ]
+        },
+        {
+            "id": "AC-048",
+            "task": "TASK-SA-07-media-exclusions",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentReconstructionBoundary.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentReconstructionBoundary.spec.ts",
+                    "digest": "26ecd7f16581e08f6be79ed004b1a5283de68da970d0035881bfb4a9a11ca587"
+                }
+            ]
+        },
+        {
+            "id": "AC-049",
+            "task": "TASK-SA-06-devices-assets-audio",
+            "kind": "rust+unit",
+            "command": "cargo test -p sourdaw agent_asset_saga && pnpm test:run src/modules/Project/useCases/__tests__/agentAssetFileBoundary.spec.ts",
+            "fixtures": [
+                {
+                    "path": "crates/sourdaw/src",
+                    "digest": null,
+                    "status": "absent"
+                },
+                {
+                    "path": "src/modules/Project/useCases/__tests__/agentAssetFileBoundary.spec.ts",
+                    "digest": "a5b81b563e8e0589fa9ed9229f826b55f75164ec798513f7516174ad3199197f"
+                }
+            ]
+        },
+        {
+            "id": "AC-050",
+            "task": "TASK-SA-03-runtime-lifecycle",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx && pnpm test:e2e tests/e2e/agentWorkspace.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
+                    "digest": "01141fbc82142a45636bbf509e2c4abc470d59801992ccc2227daaf3660997c4"
+                },
+                {
+                    "path": "tests/e2e/agentWorkspace.spec.ts",
+                    "digest": "8419e1a3db5310d19e3f2be62769025bebe6cfbde9d62f557fa429082591b147"
+                }
+            ]
+        },
+        {
+            "id": "AC-051",
+            "task": "TASK-SA-08-adapters-and-platform",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AgentAdapters/useCases/__tests__/externalAgentAdapterConformance.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AgentAdapters/useCases/__tests__/externalAgentAdapterConformance.spec.ts",
+                    "digest": "d03cd2b104d1112a7514a5636b30a71f63ff4764e70c2c53082234623f3d0397"
+                }
+            ]
+        },
+        {
+            "id": "AC-052",
+            "task": "TASK-SA-03-runtime-lifecycle",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentRunLogRedaction.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentRunLogRedaction.spec.ts",
+                    "digest": "ebdfba5a35eb6619c129da4880b1a3f12d9759b462c6c32160bd636d38029fe1"
+                }
+            ]
+        },
+        {
+            "id": "AC-053",
+            "task": "TASK-SA-03-runtime-lifecycle",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentResourceLimits.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentResourceLimits.spec.ts",
+                    "digest": "9bae7763ee68412614c12b10ffa1a612ac2d4dab94b29494229e939a22e6442e"
+                }
+            ]
+        },
+        {
+            "id": "AC-054",
+            "task": "TASK-SA-09-evidence",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts && node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --release --manifest evidence/agent-campaign/manifest.json",
+            "fixtures": [
+                {
+                    "path": "scripts/agent-campaign/run-evidence-gate.ts",
+                    "digest": "5d522f749cc6fe0fa218619eda1a9fa42cdb9623d4ff89472cf5bfae5a747fe7"
+                },
+                {
+                    "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
+                    "digest": null,
+                    "status": "absent"
+                }
+            ]
+        },
+        {
+            "id": "AC-055",
+            "task": "TASK-SA-00-protocol-governance",
+            "kind": "unit",
+            "command": "pnpm test:run src/app/__tests__/agentProductionReadiness.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/app/__tests__/agentProductionReadiness.spec.ts",
+                    "digest": null,
+                    "status": "absent"
+                }
+            ]
+        },
+        {
+            "id": "AC-056",
+            "task": "TASK-SA-09-evidence",
+            "kind": "unit",
+            "command": "pnpm test:run src/app/__tests__/agentSourceExamples.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/app/__tests__/agentSourceExamples.spec.ts",
+                    "digest": null,
+                    "status": "absent"
+                }
+            ]
+        },
+        {
+            "id": "AC-057",
+            "task": "TASK-SA-08-adapters-and-platform",
+            "kind": "rust+unit",
+            "command": "cargo test -p sourdaw provider_gateway_webview_boundary && pnpm test:run src/utils/__tests__/agentWebviewSecurity.spec.ts",
+            "fixtures": [
+                {
+                    "path": "crates/sourdaw/src",
+                    "digest": null,
+                    "status": "absent"
+                },
+                {
+                    "path": "src/utils/__tests__/agentWebviewSecurity.spec.ts",
+                    "digest": null,
+                    "status": "absent"
+                }
+            ]
+        },
+        {
+            "id": "AC-058",
+            "task": "TASK-SA-03-runtime-lifecycle",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentRetentionAndDeletion.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentRetentionAndDeletion.spec.ts",
+                    "digest": "407ba45e59be64d32954012a9c0640d7c18c10dd0b905c7520e7d437d88ee18c"
+                }
+            ]
+        },
+        {
+            "id": "AC-059",
+            "task": "TASK-SA-02-command-execution",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Command/useCases/__tests__/commandExecutionOutcome.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Command/useCases/__tests__/commandExecutionOutcome.spec.ts",
+                    "digest": "25c5c28e656b6b5977da7f81df23fc72bea8b279cd0bb423e44a5fb83d67a747"
+                }
+            ]
+        },
+        {
+            "id": "AC-060",
+            "task": "TASK-SA-00-protocol-governance",
+            "kind": "unit",
+            "command": "pnpm test:run src/app/__tests__/agentCampaignBaseline.spec.ts && node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --task TASK-SA-00-protocol-governance --gate AC-060 --manifest evidence/agent-campaign/manifest.json",
+            "fixtures": [
+                {
+                    "path": "scripts/agent-campaign/run-evidence-gate.ts",
+                    "digest": "5d522f749cc6fe0fa218619eda1a9fa42cdb9623d4ff89472cf5bfae5a747fe7"
+                },
+                {
+                    "path": "src/app/__tests__/agentCampaignBaseline.spec.ts",
+                    "digest": "1a9656a913723b2092d708ce8342979a8105e36e87ab5fed83c2db753fb6cb82"
+                }
+            ]
+        },
+        {
+            "id": "AC-061",
+            "task": "TASK-SA-02-command-execution",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/AiRuntime/useCases/__tests__/agentDomainPreviewAdapters.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/AiRuntime/useCases/__tests__/agentDomainPreviewAdapters.spec.ts",
+                    "digest": "ddbe56795829a6276befd9725c29d52e78ad9acf1e504d8911d54a54d0623c98"
+                }
+            ]
+        },
+        {
+            "id": "AC-062",
+            "task": "TASK-SA-01-project-model-and-query",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts",
+                    "digest": "f605c825fcd8d4f9aabb9ef571d3d754458c9f35b5cd353a048366629ddd4f30"
+                }
+            ]
+        },
+        {
+            "id": "AC-063",
+            "task": "TASK-SA-02-command-execution",
+            "kind": "unit",
+            "command": "pnpm test:run src/modules/Command/useCases/__tests__/agentBatchBindings.spec.ts",
+            "fixtures": [
+                {
+                    "path": "src/modules/Command/useCases/__tests__/agentBatchBindings.spec.ts",
+                    "digest": "33761f50ade403b19a2dfc7e9210287386e3f4f002f30dae72cf1c0a5e702af8"
+                }
+            ]
+        }
+    ],
+    "collisions": [
+        {
+            "path": "crates/sourdaw/src",
+            "suites": ["AC-030", "AC-049", "AC-057"]
+        },
+        {
+            "path": "scripts/agent-campaign/run-evidence-gate.ts",
+            "suites": ["AC-054", "AC-060"]
+        },
+        {
+            "path": "src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts",
+            "suites": ["AC-019", "AC-024"]
+        },
+        {
+            "path": "src/modules/AiRuntime/useCases/__tests__/agentRunWorkLease.spec.ts",
+            "suites": ["AC-019", "AC-020"]
+        }
+    ]
+}

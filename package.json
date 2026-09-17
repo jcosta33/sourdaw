@@ -80,6 +80,7 @@
         "deps:unused:production": "pnpm exec knip --production",
         "desktop:dev": "install-electron && NODE_ENV=development vite build && tsc -p electron/tsconfig.dev.json && node scripts/buildElectronPreload.ts && node scripts/buildNativeAddon.ts && SOURDAW_DESKTOP_DEV=1 electron electron/out/main.js 2>&1 | tee electron/out/desktop-dev.log",
         "desktop:build": "install-electron && vite build && rm -rf dist/samples && tsc -p electron/tsconfig.build.json && node scripts/buildElectronPreload.ts && node scripts/buildNativeAddon.ts && electron-builder --config electron-builder.yml --publish never",
+        "evidence:gate": "node scripts/agent-campaign/run-evidence-gate.ts",
         "cargo:fmt": "cargo fmt",
         "cargo:test": "cargo test",
         "cargo:check": "cargo check",
