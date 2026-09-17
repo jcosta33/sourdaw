@@ -19,7 +19,8 @@ view of the first.
 - The step grid is one row per pad. Click a step to toggle it. Alt-drag a step up or down to set
   velocity.
 - **Transport** **Play** runs Toaster's sequencer at the arrangement tempo. **To timeline** writes
-  the pattern onto the track.
+  the pattern onto the track. Play is live only: the sequencer is not part of export or native
+  playback until **To timeline** writes the pattern to the track.
 - **Straight** is the no-op groove. Do not hunt the Template menu for a catalogue; pick a feel and
   set **Amount**.
 
@@ -80,10 +81,10 @@ is no control on this panel to set those; they only show when a step already has
 
 ## Transport
 
-| Control           | What it does                                                                                                   |
-| ----------------- | -------------------------------------------------------------------------------------------------------------- |
-| **Play**/**Stop** | Starts or stops Toaster's sequencer at the arrangement tempo. Disabled when the assigned groove is not usable. |
-| **To timeline**   | Writes the pattern onto the track as MIDI notes. Same disable rule as **Play**.                                |
+| Control           | What it does                                                                                                                                                                                                            |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Play**/**Stop** | Starts or stops Toaster's sequencer at the arrangement tempo. Disabled when the assigned groove is not usable. Live only — not part of export or native playback until **To timeline** writes the pattern to the track. |
+| **To timeline**   | Writes the pattern onto the track as MIDI notes. Same disable rule as **Play**.                                                                                                                                         |
 
 Status copy includes **Straight timing is active; no groove is assigned.** when nothing is assigned,
 and **The assigned groove is compatible with this pattern.** when it is.
