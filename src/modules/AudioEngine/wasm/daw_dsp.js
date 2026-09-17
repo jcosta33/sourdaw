@@ -1042,7 +1042,11 @@ export class GrandBouleInstance {
         return ret >>> 0;
     }
     /**
-     * Panic: silence every voice immediately.
+     * Panic: silence every voice immediately, and drop what has not sounded.
+     *
+     * The queued list is cleared with the voices: a panic asks for silence,
+     * and an event still waiting for its offset would strike a note after the
+     * user pressed the button.
      */
     all_notes_off() {
         wasm.grandbouleinstance_all_notes_off(this.__wbg_ptr);
@@ -1067,6 +1071,10 @@ export class GrandBouleInstance {
     }
     /**
      * Current DSP-owned render lifecycle for the worker host.
+     *
+     * A queued event means the host must render whatever the engine's own
+     * state says: the note has not sounded yet, and a sleeping instrument
+     * would never reach the block that sounds it.
      * @returns {number}
      */
     lifecycle_state() {
@@ -1126,8 +1134,15 @@ export class GrandBouleInstance {
         wasm.grandbouleinstance_note_off_on_channel(this.__wbg_ptr, midi_note, channel);
     }
     /**
-     * Trigger a note. `midi_note` covers the full MIDI range; out-of-piano
-     * notes are silently ignored.
+     * Trigger a note at the head of the next block. `midi_note` covers the
+     * full MIDI range; out-of-piano notes are silently ignored.
+     *
+     * The immediate tier of this instance's note API. It takes effect the
+     * moment it is called, so the next `process` renders every frame with the
+     * note already struck — which is what a key a player is pressing now
+     * wants, having no frame of its own to sound on. A note that *does* carry
+     * a frame belongs on the offset-queued tier ([`Self::push_note_on`] and
+     * its siblings), which sounds it on that frame inside the block.
      * @param {number} midi_note
      * @param {number} velocity
      */
@@ -1155,12 +1170,86 @@ export class GrandBouleInstance {
     /**
      * Render a block of audio and return a pointer to the left channel.
      * The caller reads both channels from WASM memory.
+     *
+     * Consumes every event queued since the last call, splitting the render at
+     * each event's sample offset, and empties the list. A block with nothing
+     * queued renders in one unsplit pass.
      * @param {number} block_size
      * @returns {number}
      */
     process(block_size) {
         const ret = wasm.grandbouleinstance_process(this.__wbg_ptr, block_size);
         return ret >>> 0;
+    }
+    /**
+     * Queue MPE per-note expression at `offset` samples into the next block.
+     *
+     * Queued rather than immediate for an ordering reason, not a timing one:
+     * a host orders a `noteExpression` behind the `noteOn` it bends at the
+     * same frame, and a note-on deferred to its offset while the expression
+     * stayed immediate would bend a voice that does not exist yet. The engine
+     * sounds `bend_semitones` only, as [`Self::note_expression`] states.
+     * @param {number} midi_note
+     * @param {number} channel
+     * @param {number} bend_semitones
+     * @param {number} pressure
+     * @param {number} slide
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_expression(midi_note, channel, bend_semitones, pressure, slide, offset) {
+        const ret = wasm.grandbouleinstance_push_note_expression(this.__wbg_ptr, midi_note, channel, bend_semitones, pressure, slide, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a note-off releasing every voice at `midi_note`, at `offset`
+     * samples into the next rendered block. Ordering and refusal as
+     * [`Self::push_note_on`].
+     * @param {number} midi_note
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_off(midi_note, offset) {
+        const ret = wasm.grandbouleinstance_push_note_off(this.__wbg_ptr, midi_note, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a note-off narrowed to one MPE member channel (audit MD-2), at
+     * `offset` samples into the next rendered block.
+     * @param {number} midi_note
+     * @param {number} channel
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_off_on_channel(midi_note, channel, offset) {
+        const ret = wasm.grandbouleinstance_push_note_off_on_channel(this.__wbg_ptr, midi_note, channel, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a note-on at `offset` samples into the next rendered block.
+     *
+     * The offset-queued tier of this instance's note API: the block's render
+     * splits at `offset` and the note is struck there, so a scheduled note
+     * sounds on the frame it was written for instead of on the block boundary.
+     * An `offset` at or past the block's own length sounds from the first
+     * frame of the block after it.
+     *
+     * Returns `false` when the block's event list is full, so the caller can
+     * hold the event back for the next block instead of losing it. Events are
+     * applied **in the order they were pushed** and are never sorted, so a
+     * note-off and a re-trigger of one pitch on the same sample keep the
+     * sequence the caller intended; an out-of-order offset is applied at the
+     * render cursor rather than retroactively, and the caller owns the
+     * ordering.
+     * @param {number} midi_note
+     * @param {number} velocity
+     * @param {number} channel
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_on(midi_note, velocity, channel, offset) {
+        const ret = wasm.grandbouleinstance_push_note_on(this.__wbg_ptr, midi_note, velocity, channel, offset);
+        return ret !== 0;
     }
     /**
      * Set a global parameter (`master_gain`, `soundboard_send`,

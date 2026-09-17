@@ -226,7 +226,18 @@ export function createGrandBouleBlockViews(): GrandBouleBlockViews {
 }
 
 /**
- * Apply one control message to the engine.
+ * Apply one control message to the engine, `offset` samples into the block it
+ * is about to render.
+ *
+ * Notes take the engine's offset-queued API, so a scheduled note sounds on its
+ * own sample rather than at the block boundary; an offset of 0 is the "voice
+ * now" case both hosts use for a message with no frame of its own. Everything
+ * else — params, pedals, temperament, MIDI 2.0 notes, the panic — is block-rate
+ * and applies immediately, which is what those controls mean.
+ *
+ * Answers `false` only when the engine's block event list refused a note, so
+ * the caller can hold that message (and everything behind it) back for the next
+ * block. Every other message returns `true`.
  *
  * The `default` arm is the whole point of centralising this: a new member of
  * `GrandBouleDispatchMsg` that nobody handles fails to compile here rather than
@@ -234,31 +245,37 @@ export function createGrandBouleBlockViews(): GrandBouleBlockViews {
  * runtime — the senders are not type-welded — so see the arm itself for why it
  * ignores rather than raises.
  */
-export function dispatch(instance: GrandBouleInstance, msg: GrandBouleDispatchMsg): void {
+export function dispatch(instance: GrandBouleInstance, msg: GrandBouleDispatchMsg, offset = 0): boolean {
     switch (msg.type) {
         case 'noteOn':
-            instance.note_on_with_channel(msg.midiNote, msg.velocity, msg.channel ?? 0);
-            break;
+            return instance.push_note_on(msg.midiNote, msg.velocity, msg.channel ?? 0, offset);
         case 'noteExpression':
             // Grand Boule sounds bend only; pressure and slide are dropped
-            // inside the engine rather than faked (audit MD-2).
-            instance.note_expression(msg.midiNote, msg.channel, msg.bendSemitones, msg.pressure, msg.slide);
-            break;
+            // inside the engine rather than faked (audit MD-2). Queued at the
+            // same offset as the note it bends so it cannot overtake it.
+            return instance.push_note_expression(
+                msg.midiNote,
+                msg.channel,
+                msg.bendSemitones,
+                msg.pressure,
+                msg.slide,
+                offset
+            );
         case 'noteOff':
             // `msg.releaseVelocity` (normalized 0..1) is threaded to this engine
             // boundary from the live-MIDI Note Off. The current WASM ABI
-            // (`note_off(midi_note)`) does not yet consume it; it is forwarded as
-            // part of the typed message so the release dynamic is no longer
-            // dropped at the control boundary.
+            // (`push_note_off(midi_note, offset)`) does not yet consume it; it is
+            // forwarded as part of the typed message so the release dynamic is no
+            // longer dropped at the control boundary.
             // Without a channel every voice at the pitch is released — the
             // historical behaviour channel-unaware callers rely on.
             if (msg.channel === undefined) {
-                instance.note_off(msg.midiNote);
-            } else {
-                instance.note_off_on_channel(msg.midiNote, msg.channel);
+                return instance.push_note_off(msg.midiNote, offset);
             }
-            break;
+            return instance.push_note_off_on_channel(msg.midiNote, msg.channel, offset);
         case 'param':
+            // Block-rate: a parameter belongs to the whole block, and the engine
+            // snaps or smooths it once per `process` call either way.
             instance.set_param(PARAM_MAP[msg.name] ?? msg.name, msg.value);
             break;
         case 'sustain':
@@ -306,13 +323,21 @@ export function dispatch(instance: GrandBouleInstance, msg: GrandBouleDispatchMs
             break;
         }
     }
+    return true;
 }
 
 export type GrandBouleFrameQueue = {
     /** Place a framed message at its frame, keeping the queue ordered. */
     enqueue: (msg: GrandBouleQueuedMsg) => void;
-    /** Voice everything due strictly before `blockEndFrame`. */
-    drain: (instance: GrandBouleInstance, blockEndFrame: number) => void;
+    /**
+     * Deliver everything due strictly before `blockEndFrame`, each note at its
+     * own sample offset inside the block starting at `blockStartFrame`.
+     *
+     * Positional arguments rather than a block object: this runs once per
+     * rendered block on both hosts, and an object literal per block would
+     * allocate on the render path.
+     */
+    drain: (instance: GrandBouleInstance, blockStartFrame: number, blockEndFrame: number) => void;
     /** Drop every pending framed message. */
     clear: () => void;
     /** Drop pending notes/expression while preserving scheduled parameter state. */
@@ -355,7 +380,7 @@ export function createGrandBouleFrameQueue(): GrandBouleFrameQueue {
             queue.splice(lo, 0, msg);
         },
 
-        drain(instance, blockEndFrame) {
+        drain(instance, blockStartFrame, blockEndFrame) {
             // `blockEndFrame` is exclusive. Levain, Fermenter, Toaster and
             // Crumbs used to break on `sampleFrame > blockEnd`, which drained a
             // frame sitting exactly on the boundary one block early. All of them
@@ -365,7 +390,16 @@ export function createGrandBouleFrameQueue(): GrandBouleFrameQueue {
                 if (!queued || queued.sampleFrame >= blockEndFrame) {
                     break;
                 }
-                dispatch(instance, queued);
+                // A frame behind this block's start is a message that arrived
+                // late; it sounds at the head of the block rather than being
+                // held back another one.
+                const offset = Math.max(0, queued.sampleFrame - blockStartFrame);
+                if (!dispatch(instance, queued, offset)) {
+                    // The engine's block list is full. Leave this message and
+                    // everything behind it queued for the next block: late,
+                    // never dropped, and still in the order the caller wrote.
+                    break;
+                }
                 head++;
             }
             if (head >= queue.length) {
@@ -407,29 +441,43 @@ export function isFramedGrandBouleMsg(msg: GrandBouleDispatchMsg): msg is GrandB
     return msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression' || msg.type === 'param';
 }
 
+/**
+ * The block the engine is about to produce, on the host clock a message's
+ * `sampleFrame` is expressed in.
+ *
+ * The worker reads it off the ring write head plus the consumer offset, the
+ * offline worklet off `currentFrame`. `endFrame` is exclusive: a frame landing
+ * exactly on it belongs to the next block.
+ */
+export type GrandBouleBlockFrames = {
+    startFrame: number;
+    endFrame: number;
+};
+
 export type ReceiveGrandBouleMessageInput = {
     instance: GrandBouleInstance;
     queue: GrandBouleFrameQueue;
     msg: GrandBouleDispatchMsg;
-    /**
-     * First frame *after* the block the engine is about to produce, on the host
-     * clock the message's `sampleFrame` is expressed in — the ring write head
-     * plus the consumer offset in the worker, `currentFrame + 128` in a worklet.
-     * `null` when the host cannot place a frame yet, which voices immediately.
-     */
-    blockEndFrame: number | null;
+    /** `null` when the host cannot place a frame yet, which voices immediately. */
+    block: GrandBouleBlockFrames | null;
 };
 
 /**
- * Place a message at its frame, or voice it now.
+ * Place a message at its frame, or hand it to the engine for the block about to
+ * render.
  *
  * This is the one entry point both hosts route control messages through, so the
- * enqueue-or-voice decision cannot differ between them. "Now" covers three cases
- * that are all pre-existing behaviour: no frame was given, the host cannot place
- * frames yet, or the frame is inside (or behind) the block about to be produced.
- * A late note sounds late — never dropped, and never held back a further block.
+ * enqueue-or-deliver decision cannot differ between them. A message whose frame
+ * lies inside that block is delivered at its own sample offset; one behind the
+ * block, one with no frame, and one arriving before the host can place frames
+ * at all are delivered at offset 0. A late note sounds late — never dropped,
+ * and never held back a further block.
+ *
+ * A note the engine's block list refuses is queued instead, so the next block
+ * carries it. That is the same "late, never dropped" answer the drain gives,
+ * and the only one available: the list empties on every `process`.
  */
-export function receiveGrandBouleMessage({ instance, queue, msg, blockEndFrame }: ReceiveGrandBouleMessageInput): void {
+export function receiveGrandBouleMessage({ instance, queue, msg, block }: ReceiveGrandBouleMessageInput): void {
     if (msg.type === 'allNotesOff') {
         // A panic must also drop what has not sounded yet, or the pending
         // look-ahead window keeps arriving after the user asked for silence.
@@ -438,14 +486,16 @@ export function receiveGrandBouleMessage({ instance, queue, msg, blockEndFrame }
         return;
     }
 
-    if (!isFramedGrandBouleMsg(msg) || !isPlaceableGrandBouleMsg(msg) || blockEndFrame === null) {
+    if (!isFramedGrandBouleMsg(msg) || !isPlaceableGrandBouleMsg(msg) || block === null) {
         dispatch(instance, msg);
         return;
     }
 
-    if (msg.sampleFrame < blockEndFrame) {
-        dispatch(instance, msg);
-        return;
+    if (msg.sampleFrame < block.endFrame) {
+        const offset = Math.max(0, msg.sampleFrame - block.startFrame);
+        if (dispatch(instance, msg, offset)) {
+            return;
+        }
     }
 
     queue.enqueue(msg);
