@@ -1,0 +1,32 @@
+scripts/__tests__/runEvidenceGate.spec.ts
+  s_914af328b3988f::t_36a2b476944e36 160-163
+  s_914af328b3988f::t_df1647be197832 156-159
+scripts/__tests__/agentCampaignHarness.spec.ts
+  s_914af328b3988f::t_814baf5df8a836 78-85
+  s_914af328b3988f::t_8aa2fc09f0cc0e 11-13,19-37
+  s_9b530f08172a54::t_febb8391d1af34 38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9f28373a9a441d2541cc11fe8cd36bd1388cc501",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
