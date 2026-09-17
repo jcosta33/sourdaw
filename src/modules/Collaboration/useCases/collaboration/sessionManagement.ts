@@ -156,11 +156,6 @@ const sessionState: {
     unsubscribeBranchStore: (() => void) | null;
     /** Unsubscribe from automergeRepository changes (__branches__ doc → branchStore). */
     unsubscribeAutomergeChanges: (() => void) | null;
-    /**
-     * Guard flag to prevent infinite update loop: projecting __branches__ →
-     * branchStore triggers branchStore.subscribe, which must not write back.
-     */
-    isProjectingBranches: boolean;
     /** Canonical JSON for the latest successfully projected branch list. */
     lastProjectedBranchesJson: string | null;
     /**
@@ -182,7 +177,6 @@ const sessionState: {
     branchSession: null,
     unsubscribeBranchStore: null,
     unsubscribeAutomergeChanges: null,
-    isProjectingBranches: false,
     lastProjectedBranchesJson: null,
     sessionEndedByHostDeparture: false,
     synchronizeAssetOwner: null,
@@ -289,26 +283,6 @@ async function startBranchSync(isHost: boolean): Promise<void> {
     sessionState.unsubscribeAutomergeChanges = subscribeBranchProjection(owner, begun.handle);
 }
 
-/**
- * Projection depth, not a boolean.
- *
- * Publishing an incoming branch list is now asynchronous — the durable write
- * takes a lock — so two projections can overlap, and a boolean would be cleared
- * by the first to finish while the second is still writing, reopening the
- * write-back loop this guard exists to close.
- */
-let branchProjectionDepth = 0;
-
-function enterBranchProjection(): void {
-    branchProjectionDepth += 1;
-    sessionState.isProjectingBranches = true;
-}
-
-function exitBranchProjection(): void {
-    branchProjectionDepth = Math.max(0, branchProjectionDepth - 1);
-    sessionState.isProjectingBranches = branchProjectionDepth > 0;
-}
-
 function stopBranchSubscriptions(): void {
     sessionState.unsubscribeBranchStore?.();
     sessionState.unsubscribeBranchStore = null;
@@ -316,16 +290,30 @@ function stopBranchSubscriptions(): void {
     sessionState.unsubscribeAutomergeChanges = null;
 }
 
-/** Mirror local branch mutations into the Automerge doc. */
+/**
+ * Mirror local branch mutations into the Automerge doc.
+ *
+ * The write-back loop is closed by comparing lists, not by a flag raised for the
+ * duration of a projection. Publishing an incoming list is asynchronous — the
+ * durable write takes a lock — and a local branch commit queued behind that same
+ * lock hydrates the store inside the projection's window; a flag would have
+ * swallowed it and the peers would never have seen the branch. The doc read here
+ * is the one the projection wrote the store from, so a pure echo compares equal
+ * and a local write does not.
+ */
 function subscribeBranchMirror(owner: InstalledSessionOwner | null): () => void {
     return branchStore.subscribe((state) => {
         if (!canSessionOwnerWrite(owner)) {
             return;
         }
-        if (sessionState.isProjectingBranches || !state) {
+        if (!state) {
             return;
         }
         if (!hasCrdtDoc(DOC_BRANCHES)) {
+            return;
+        }
+        const mirrored = getCrdtDoc<{ branches: unknown }>(DOC_BRANCHES)?.branches;
+        if (JSON.stringify(state.branches) === JSON.stringify(mirrored)) {
             return;
         }
         const branches = structuredClone(state.branches);
@@ -379,33 +367,26 @@ function subscribeBranchProjection(owner: InstalledSessionOwner | null, handle: 
         if (incomingJson === sessionState.lastProjectedBranchesJson) {
             return;
         }
-        enterBranchProjection();
-        void projectBranchSession(handle, { branches: doc.branches, activeBranchId })
-            .then((result) => {
-                if (result.status === 'committed') {
-                    // Recorded only once the list is durable. Recording it on
-                    // the attempt would make the next identical arrival a
-                    // no-op and leave the failed projection unrepeated.
-                    sessionState.lastProjectedBranchesJson = incomingJson;
-                    return undefined;
-                }
-                if (result.reason === 'superseded') {
-                    // Another instance owns the durable list now. Stop both
-                    // directions: this session can no longer publish what it
-                    // receives, and mirroring local writes into a doc peers
-                    // still sync would hand them a list nobody owns.
-                    logger.warn(
-                        '[Collaboration] The branch list is no longer owned by this session; branch sync stopped.'
-                    );
-                    stopBranchSubscriptions();
-                    return undefined;
-                }
-                logger.warn(`[Collaboration] Incoming branch list could not be persisted (${result.reason})`);
+        void projectBranchSession(handle, { branches: doc.branches, activeBranchId }).then((result) => {
+            if (result.status === 'committed') {
+                // Recorded only once the list is durable. Recording it on
+                // the attempt would make the next identical arrival a
+                // no-op and leave the failed projection unrepeated.
+                sessionState.lastProjectedBranchesJson = incomingJson;
                 return undefined;
-            })
-            .finally(() => {
-                exitBranchProjection();
-            });
+            }
+            if (result.reason === 'superseded') {
+                // Another instance owns the durable list now. Stop both
+                // directions: this session can no longer publish what it
+                // receives, and mirroring local writes into a doc peers
+                // still sync would hand them a list nobody owns.
+                logger.warn('[Collaboration] The branch list is no longer owned by this session; branch sync stopped.');
+                stopBranchSubscriptions();
+                return undefined;
+            }
+            logger.warn(`[Collaboration] Incoming branch list could not be persisted (${result.reason})`);
+            return undefined;
+        });
     });
 }
 
@@ -429,18 +410,17 @@ function stopBranchSync(): Promise<BranchSessionEndOutcome> | null {
     // — stopping the sync, closing the WebRTC peers — runs after this, and a
     // refused durable write used to unwind from here and leave live peers
     // connected to a session the user had left. See #1557.
-    enterBranchProjection();
-    return endBranchSession(handle)
-        .then(
-            (outcome) => outcome,
-            (error: unknown): BranchSessionEndOutcome => {
-                logger.warn('[Collaboration] Branch list restore failed:', error);
-                return 'write-failed';
-            }
-        )
-        .finally(() => {
-            exitBranchProjection();
-        });
+    //
+    // No mirror guard around the restore: `stopBranchSubscriptions` above has
+    // already removed both subscriptions, so the hydration this end performs
+    // reaches no mirror callback.
+    return endBranchSession(handle).then(
+        (outcome) => outcome,
+        (error: unknown): BranchSessionEndOutcome => {
+            logger.warn('[Collaboration] Branch list restore failed:', error);
+            return 'write-failed';
+        }
+    );
 }
 
 /**

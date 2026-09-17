@@ -98,13 +98,21 @@ async function recoverFailedTransition({
         logger.warn('[CrdtDocument] Failed to reload persistence after branch rollback:', recoveryError);
     }
 
-    branchStore.set(recoveredState);
     if (committedRevision !== null) {
         // Only the transition's own commit can be rolled back, and only against
         // the revision it produced. A refusal means a successor committed in
         // the meantime, and that successor's list is the newer truth — the
         // transaction leaves the store holding it. Undoing it here would revert
         // a branch the user created after this transition failed.
+        //
+        // Memory goes back only on this path. When the transition's own commit
+        // never landed, the list the caller captured is stale by definition: a
+        // refused commit hydrated the store with the fresh durable envelope
+        // (`conflict`, `session-active`), and a write that never reached storage
+        // (`write-failed`) left the store on whatever was already there. Putting
+        // `previousState` back over either would show a branch list no revision
+        // describes.
+        branchStore.set(recoveredState);
         const rolledBack = await branchStateAuthority.commit({
             expectedRevision: committedRevision,
             next: recoveredState,

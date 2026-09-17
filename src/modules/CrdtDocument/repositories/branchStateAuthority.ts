@@ -75,7 +75,6 @@ let ownSession: { owner: string; release: () => void } | null = null;
  * the boot read keeps its protection.
  */
 let capturedForeignSession: { owner: string; baseRevision: number; backup: BranchStoreState } | null = null;
-let projectionTail: Promise<unknown> = Promise.resolve();
 
 function sessionLockName(owner: string): string {
     return `${BRANCH_SESSION_LOCK_PREFIX}${owner}`;
@@ -352,7 +351,7 @@ async function beginSession(): Promise<BranchSessionBeginResult> {
     return { status: 'begun', handle: { owner } };
 }
 
-async function projectSessionNow(
+async function projectSession(
     handle: BranchSessionHandle,
     state: BranchStoreState
 ): Promise<BranchStateCommitResult<'superseded'>> {
@@ -476,21 +475,12 @@ export const branchStateAuthority = {
     /**
      * Publish a session's projected list.
      *
-     * Serialized against the other projections of this instance so they reach
-     * storage in call order; a later projection overtaking an earlier one would
-     * durably resurrect the branch list the peer had already replaced.
+     * Call order is already storage order: every projection awaits the same
+     * settled boot promise and then queues on the one transaction lock, so a
+     * later projection cannot overtake an earlier one and durably resurrect the
+     * branch list the peer had already replaced.
      */
-    projectSession(
-        handle: BranchSessionHandle,
-        state: BranchStoreState
-    ): Promise<BranchStateCommitResult<'superseded'>> {
-        const projection = projectionTail.then(async () => projectSessionNow(handle, state));
-        projectionTail = projection.then(
-            () => undefined,
-            () => undefined
-        );
-        return projection;
-    },
+    projectSession,
 
     /** Put the pre-session list back and hand the durable list back to local writers. */
     endSession,

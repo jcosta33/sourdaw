@@ -157,12 +157,15 @@ describe('forkProjectBranch', () => {
         await expect(forkProjectBranch('feature')).rejects.toThrow(/Branch state could not be persisted \(conflict\)/);
 
         // A refused commit unwinds like a failed persistence: the documents go
-        // back, memory holds the list the refusal left durable, and nothing
-        // rolls back a revision this transition never wrote.
+        // back and nothing rolls back a revision this transition never wrote.
         expect(mocks.removeDoc).toHaveBeenCalledTimes(2);
-        expect(mocks.storeSet).toHaveBeenLastCalledWith(mocks.storeValue);
         expect(mocks.commit).toHaveBeenCalledTimes(1);
         expect(mocks.projectCrdtToStores).toHaveBeenCalled();
+        // Memory is left exactly where the refused transaction put it. The
+        // authority hydrates the store from the envelope it read before
+        // refusing, so writing the captured pre-fork list back here would
+        // replace a fresh durable list with a stale one.
+        expect(mocks.storeSet).not.toHaveBeenCalled();
     });
 
     it('throws when there is no root document to fork', async () => {

@@ -255,6 +255,42 @@ describe('resetCrdtProjectAuthority', () => {
             expect(mocks.branchStoreSet).toHaveBeenCalledWith(mocks.defaultBranchState);
         });
 
+        it('keeps the reset project on Main when a live foreign session owns the durable list', async () => {
+            // A collaboration session another window still owns holds the
+            // envelope, so the commit is refused with `session-active` — and a
+            // refused transaction hydrates the store from the envelope it read.
+            // That list names documents this project does not have.
+            const foreignSessionList = {
+                branches: [
+                    ...mocks.defaultBranchState.branches,
+                    {
+                        branchId: 'peer-feature',
+                        name: 'Peer feature',
+                        rootDocId: 'branch_peer_feature',
+                        sourceBranchId: 'main',
+                        createdAt: 400,
+                        createdFromHeads: [],
+                        note: '',
+                    },
+                ],
+                activeBranchId: 'peer-feature',
+            };
+            mocks.commit.mockImplementationOnce(async () => {
+                mocks.branchStoreSet(foreignSessionList);
+                return { status: 'refused', reason: 'session-active' };
+            });
+
+            resetCrdtProjectAuthority('New Project');
+            await vi.waitFor(() => expect(mocks.commit).toHaveBeenCalledTimes(1));
+            // The refusal hydrated the foreign list into memory, so the reset is
+            // only correct if a later write puts Main back.
+            expect(mocks.branchStoreSet).toHaveBeenCalledWith(foreignSessionList);
+
+            // Last write wins, and it has to be Main: a freshly reset project
+            // showing a peer's branches is the observable defect.
+            await vi.waitFor(() => expect(mocks.branchStoreSet).toHaveBeenLastCalledWith(mocks.defaultBranchState));
+        });
+
         it('reports the replacement before anything that runs after it', () => {
             const onAuthorityReplaced = vi.fn();
             // Any post-swap step can still fail; the caller must already know

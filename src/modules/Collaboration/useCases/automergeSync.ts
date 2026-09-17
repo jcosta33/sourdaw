@@ -334,8 +334,8 @@ export class AutomergeSync {
     /**
      * Guard set while a received remote sync is being written into the
      * repository. The change subscription checks it and skips re-broadcasting
-     * so a received sync doesn't bounce straight back to every peer (mirrors
-     * the isProjectingBranches pattern in sessionManagement).
+     * so a received sync doesn't bounce straight back to every peer. Safe as a
+     * flag here because the write it brackets is synchronous.
      */
     private isApplyingRemoteSync = false;
     /**

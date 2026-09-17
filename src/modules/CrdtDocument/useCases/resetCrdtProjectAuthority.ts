@@ -82,6 +82,12 @@ export function resetCrdtProjectAuthority(name: string, onAuthorityReplaced?: ()
                         `[resetCrdtProjectAuthority] Failed to publish the new branch state (${committed.reason})`
                     )
                 );
+                // A refused commit hydrates the store from the durable
+                // envelope, and that list describes documents this project no
+                // longer has — a freshly reset project would show a foreign
+                // session's branches. Memory goes back to Main; making the
+                // durable record follow is a later slice.
+                branchStore.set(defaultBranchState);
             }
         });
 }

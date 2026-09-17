@@ -141,9 +141,12 @@ describe('mergeBranch', () => {
 
         await expect(mergeBranch('src')).rejects.toBe(error);
         expect(mocks.loadCrdtProject).toHaveBeenCalledOnce();
-        expect(mocks.storeSet).toHaveBeenLastCalledWith(mocks.storeValue);
-        // Nothing was committed, so the rollback has no revision to swap back.
+        // A merge leaves the branch list alone, so it never commits — and with
+        // no commit there is neither a revision to swap back nor a hydration to
+        // undo. Writing the captured list back here would replace whatever is
+        // durable now with a snapshot this transition never superseded.
         expect(mocks.commit).not.toHaveBeenCalled();
+        expect(mocks.storeSet).not.toHaveBeenCalled();
         expect(docs.root).toEqual(TARGET_DOC);
         expect(docs.branch_feat).toEqual(ACTIVE_SNAPSHOT);
         expect(mocks.rootIdentityEpoch).toBe(rootIdentity);

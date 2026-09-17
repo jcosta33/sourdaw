@@ -184,11 +184,14 @@ describe('runBranchLineageTransition', () => {
             })
         ).rejects.toThrow('apply failed');
 
-        // Recovery: snapshots restored, branch store reset to previous, stores re-projected
-        expect(mockBranchStore.set).toHaveBeenCalledWith(previousState);
+        // Recovery: snapshots restored and stores re-projected. The throw came
+        // before the commit, so the branch list was never touched — and a
+        // memory write here would put a captured list back over one this
+        // transition never replaced.
         expect(mockProjectCrdtToStores).toHaveBeenCalled();
         expect(mockLoadCrdtProject).toHaveBeenCalled();
         expect(mockBranchStateAuthority.commit).not.toHaveBeenCalled();
+        expect(mockBranchStore.set).not.toHaveBeenCalled();
     });
 
     it('rolls back and throws when the durable commit is refused', async () => {
@@ -207,9 +210,11 @@ describe('runBranchLineageTransition', () => {
         ).rejects.toThrow(/Branch state could not be persisted \(conflict\)/);
 
         expect(mockAutomergeRepo.replaceDoc).not.toHaveBeenCalledWith('doc-1', nextState);
-        expect(mockBranchStore.set).toHaveBeenCalledWith(previousState);
-        // A refused commit wrote nothing, so there is no revision to swap back.
+        // A refused commit wrote nothing, so there is no revision to swap back
+        // — and memory is left where the refused transaction put it, which is
+        // the list whose revision the refusal was measured against.
         expect(mockBranchStateAuthority.commit).toHaveBeenCalledTimes(1);
+        expect(mockBranchStore.set).not.toHaveBeenCalled();
         expect(mockProjectCrdtToStores).toHaveBeenCalled();
     });
 

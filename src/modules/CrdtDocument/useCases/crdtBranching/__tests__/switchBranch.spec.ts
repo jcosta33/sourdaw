@@ -508,10 +508,12 @@ describe('switchBranch', () => {
         await expect(switchBranch('other')).rejects.toThrow(/Branch state could not be persisted \(conflict\)/);
 
         // The refusal means another instance owns a later revision: the switch
-        // unwinds whole — documents, memory list and undo stack — and consumes
-        // no revision of its own.
-        expect(mocks.storeSet).toHaveBeenLastCalledWith(expect.objectContaining({ activeBranchId: 'feat' }));
+        // unwinds documents and undo stack and consumes no revision of its own.
+        // The branch list is not among them — the refused transaction left
+        // memory on the list it measured the refusal against, and re-seating
+        // the captured one would hide that newer list from the user.
         expect(mocks.commit).toHaveBeenCalledTimes(1);
+        expect(mocks.storeSet).not.toHaveBeenCalled();
         expect(docs.root).toEqual(ROOT_LIVE_DOC);
         expect(docs.branch_feat).toEqual(FEATURE_SNAPSHOT);
         expect(mocks.restoreUndoHistory).toHaveBeenCalledOnce();
