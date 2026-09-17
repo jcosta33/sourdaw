@@ -1,0 +1,26 @@
+src/modules/Command/models/AgentCommandLedger.ts
+  s_914af328b3988f::t_bd115c155edcfd 75-90
+src/app/__tests__/agentProductionReadiness.spec.ts
+  s_914af328b3988f::t_47c2588010f628 428-473
+src/modules/Command/useCases/getAgentCommandLedger.ts
+  s_914af328b3988f::t_05fa6f5ab6e37d 6
+src/modules/Command/useCases/__tests__/agentCommandCoverage.spec.ts
+  s_914af328b3988f::t_12bca03e0192b7 143-199
+  s_914af328b3988f::t_f52d5919e36c2b 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f54e65e6ff84f16fcbfacff11b65fce07be68422",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
