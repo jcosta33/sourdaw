@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/reduceAgentRunTransition.ts
+  s_914af328b3988f::t_8232869548e6f6 1
+  s_914af328b3988f::t_ab25348bb436f3 40
+  s_914af328b3988f::t_6a01bc66c94065 65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bafe5789b586af6f6c722b9f70d1ada0e1f98baa",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
