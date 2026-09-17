@@ -22,6 +22,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: (label: string, undo: () => void, redo: () => void) => {
         mocks.pushedUndoEntries.push({ label, undo, redo });
     },
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({

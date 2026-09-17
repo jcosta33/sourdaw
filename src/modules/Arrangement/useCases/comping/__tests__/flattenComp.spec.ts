@@ -17,6 +17,10 @@ import { restoreClipGlueState } from '../../clipEditing/restoreClipGlueState';
 import { resolveClipsWithComping } from '../../resolveComping';
 import { flattenComp } from '../flattenComp';
 
+const notifyUserMock = vi.hoisted(() => vi.fn());
+
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: notifyUserMock }));
+
 // The real transaction, kept observable: the refusal tests have to prove a
 // guard fired BEFORE the clip replacement was attempted, which no store reading
 // can show — the transaction refuses on the same input and leaves the same
@@ -392,7 +396,12 @@ describe('flattenComp', () => {
         expect(liveClips()).toEqual(clipsBeforeUndo);
         expect(laneIds()).toEqual([]);
         expect(warnings()).toEqual([expect.stringContaining('undoing the flatten was refused')]);
-        // A callback entry reports nothing back to `Command`, so the entry is
+        // The musician asked for this and nothing happened, so it has to be
+        // said out loud rather than left in a developer log.
+        expect(notifyUserMock.mock.calls).toEqual([
+            ['Failed to undo flatten comp - the clips no longer match the flattened result', 'error'],
+        ]);
+        // An undo callback reports nothing back to `Command`, so the entry is
         // consumed either way and moves to `future`, leaving redo reachable
         // rather than wedging the stack. The refusal shows in the stores.
         expect(result.headConsumed).toBe(true);
@@ -437,6 +446,14 @@ describe('flattenComp', () => {
         expect(liveClips()).toEqual(clipsBeforeRedo);
         expect(laneIds()).toEqual([lane.id, siblingLane.id]);
         expect(warnings()).toEqual([expect.stringContaining('redoing the flatten was refused')]);
+        expect(notifyUserMock.mock.calls).toEqual([
+            ['Failed to redo flatten comp - the clips no longer match the flattened state', 'error'],
+        ]);
+        // Reported not-applied: the entry leaves `future` and never reaches
+        // `past`, so the entries behind it stay redoable instead of queueing
+        // behind a forward path that can no longer run.
+        expect(undoStore.value!.future).toEqual([]);
+        expect(undoStore.value!.past).toEqual([]);
     });
 
     it('refuses to flatten a MIDI take whose probability roll depends on its clip id', () => {

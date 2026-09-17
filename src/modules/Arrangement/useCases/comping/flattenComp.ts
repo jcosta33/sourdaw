@@ -1,7 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 import { prepareMidiClipFanOutState } from '#/modules/MIDI/useCases';
 import { type ClipGlueActionSnapshot } from '#/utils/handlerContract';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
@@ -177,16 +178,25 @@ export function flattenComp(trackId: string): boolean {
                 logger.warn(
                     'flattenComp: undoing the flatten was refused — the clips stand and the lane stays retired'
                 );
+                notifyUser('Failed to undo flatten comp - the clips no longer match the flattened result', 'error');
                 return;
             }
             insertTakeLane(lane, laneIndex);
         },
         () => {
             removeTakeLane(lane.id);
-            if (!restoreClipGlueState({ expected: plan.previous, replacement: plan.next })) {
-                insertTakeLane(lane, laneIndex);
-                logger.warn('flattenComp: redoing the flatten was refused — the clips and the lane stand');
+            if (restoreClipGlueState({ expected: plan.previous, replacement: plan.next })) {
+                return undefined;
             }
+            insertTakeLane(lane, laneIndex);
+            logger.warn('flattenComp: redoing the flatten was refused — the clips and the lane stand');
+            notifyUser('Failed to redo flatten comp - the clips no longer match the flattened state', 'error');
+            // This forward path is gone for good: the clips it would retire are
+            // not the clips on the track. Reporting not-applied drops the entry
+            // instead of pinning it at the head of `future`, where it would
+            // wedge every redoable entry behind it (`splitClipWithUndo`
+            // precedent).
+            return REDO_NOT_APPLIED;
         }
     );
     return true;

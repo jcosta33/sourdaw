@@ -26,6 +26,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
     executeUserAppAction: executeUserAppActionMock,
     pushUndoEntry: pushUndoEntryMock,
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
