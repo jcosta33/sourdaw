@@ -1,0 +1,88 @@
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_914af328b3988f::t_5d46b0926fe304 8-13
+  s_86fc14d5ef1d2d::t_52ca949f7aff44 146-152,154-161,163-168,170,181-186,188
+src/modules/Project/models/SemanticProjectQuery.ts
+  s_914af328b3988f::t_519cc82b746e46 5-16
+src/modules/AgentAdapters/useCases/runCliClientRequest.ts
+  s_914af328b3988f::t_97eeefa7b1cff1 43-49,51,59
+  s_914af328b3988f::t_aa27fbd28c17ac 19-24
+src/modules/Project/models/AgentDiscoveryQuery.ts
+  s_914af328b3988f::t_6f83cf17ae00a1 27-37
+src/modules/AgentAdapters/AGENTS.md
+  s_914af328b3988f::t_4c5410e0899cfd 28-29
+  s_914af328b3988f::t_2130743995e014 18
+  s_914af328b3988f::t_43ca96d79097a9 20,22
+src/modules/Project/AGENTS.md
+  s_914af328b3988f::t_e452ffd2771350 18
+src/modules/AgentAdapters/useCases/__tests__/externalAgentAdapterConformance.spec.ts
+  s_914af328b3988f::t_29cad1d68563c5 113,128-135,139
+  s_914af328b3988f::t_bc679938974c88 361
+  s_914af328b3988f::t_2197a3e797759a 44
+  s_914af328b3988f::t_3d6b9869b9f958 60-61
+  s_914af328b3988f::t_30e120c7bc438f 75-76
+  s_914af328b3988f::t_b84d21755f0342 52
+  s_914af328b3988f::t_fb6f154d9d1d14 222-227
+  s_914af328b3988f::t_20506944200767 68-69
+  s_914af328b3988f::t_e4a95cfe842078 62-63
+  s_914af328b3988f::t_acfbb183d7e95b 110-112
+  s_914af328b3988f::t_68b7ae215d38c7 114
+  s_914af328b3988f::t_413a2273a6827f 136-138
+  s_914af328b3988f::t_c9c08f64571c33 140
+  s_914af328b3988f::t_4339732514bf97 219-221
+  s_914af328b3988f::t_18152fb502288d 228-230
+  s_914af328b3988f::t_1a5a47a4c33171 358-360
+  s_914af328b3988f::t_ced02827a58fe7 362-363
+  s_9fb0180c94e77c::t_eb59d6193c8b48 6-8,10-17,27,29,31,84,98-100,106-109,122,180-181,205-218,231-236,239-240,253,263,279,290,317,335-357,366,377-378
+src/modules/AgentAdapters/models/ExternalClientContract.ts
+  s_914af328b3988f::t_3ad0aafb9fcf00 10-17,20-21,45-53,61-64,74,85,130-139,143-153
+src/modules/AgentAdapters/repositories/__tests__/nativeTransportRepository.spec.ts
+  s_914af328b3988f::t_a85376062a4ad6 1-28
+src/modules/AgentAdapters/useCases/admitExternalClientRequest.ts
+  s_914af328b3988f::t_c7e13018043990 10-17,22,25,32-41,49
+src/modules/AgentAdapters/useCases/enableExternalClientTransport.ts
+  s_914af328b3988f::t_d3ac57a536b307 7-13,16-21,24-27,29-30,32
+src/modules/AgentAdapters/useCases/issueExternalClientGrant.ts
+  s_914af328b3988f::t_0cd99f72b5b611 4,6-15,19-20,34-43,51,57,62
+src/modules/Project/useCases/__tests__/parseSemanticProjectQueryInput.spec.ts
+  s_914af328b3988f::t_6dad142435eca6 1-117
+src/modules/Project/useCases/index.ts
+  s_914af328b3988f::t_4ca47b83ff032f 39-40
+src/modules/Project/useCases/parseAgentDiscoveryInput.ts
+  s_914af328b3988f::t_af8035f3fef712 2,4-12,15-27,29,31-32,42-46,50,52,66-71,77,85,87-89,91,93-95,97,101-102,104
+src/modules/Project/useCases/parseSemanticProjectQueryInput.ts
+  s_914af328b3988f::t_4d140eedfc0dba 2,4-9,11-13,16-25,27-28,30-36,52-66,76-77,92-96,100,102,119-120,134,138,153-158,164,172-174,176-177,179-181,183,187-188,190,194-196,198
+src/modules/Project/useCases/semanticProjectQueries.ts
+  s_914af328b3988f::t_401f47c2a992d1 6-7,9,53,56,83,118-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d193897658da1ba5815ef68ddc0605d47c596704",
+  "prompts": {},
+  "sessions": {
+    "s_86fc14d5ef1d2d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ab24ff10bdcceabad",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9fb0180c94e77c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa32623a18dea48e0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
