@@ -194,6 +194,7 @@ function createFixtureRun(): AgentRun {
         mode: 'macro',
         createdRevision: 'heads-redaction-created',
         createdAt: CREATED_AT,
+        budgets: { limits: {}, consumed: {} },
     });
     agentRunLifecycle.recordPlan({
         runId: RUN_ID,

@@ -5,6 +5,7 @@ import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../mode
 import { AGENT_DATA_CATEGORIES, type AgentDataCategory } from '../models/AgentDataPolicy';
 import { AGENT_EXECUTION_MODES } from '../models/AgentExecutionMode';
 import {
+    AGENT_RUN_ACTIVE_PHASES,
     AGENT_RUN_PHASES,
     AGENT_RUN_PREPARED_STEM_IMPORT_RECOVERY_SCHEMA_VERSION,
     AGENT_RUN_SCHEMA_VERSION,
@@ -1394,6 +1395,11 @@ function readAgentRun(value: unknown): AgentRun | null {
     ) {
         return null;
     }
+    // Records written before the wall-clock anchor existed carry no `activeSince`: an active stored
+    // phase dates its stretch from creation, and any other phase holds no stretch at all.
+    const storedActiveSince = readNullableTimestamp(value.activeSince);
+    const defaultActiveSince = AGENT_RUN_ACTIVE_PHASES.has(phase) ? createdAt : null;
+    const activeSince = storedActiveSince === undefined ? defaultActiveSince : storedActiveSince;
     const createdRevision = readNullableString(value.revisions.created);
     const plannedRevision = readNullableString(value.revisions.planned);
     const approvedRevision = readNullableString(value.revisions.approved);
@@ -1685,6 +1691,7 @@ function readAgentRun(value: unknown): AgentRun | null {
         workLeases,
         contextEvidence,
         createdAt,
+        activeSince,
         updatedAt,
     };
 }

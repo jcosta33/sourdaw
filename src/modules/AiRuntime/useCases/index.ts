@@ -49,6 +49,8 @@ export { describePlannedAction } from './describePlannedAction';
 
 export { submitAdmittedPromptRequest } from './submitAdmittedPromptRequest';
 
+export { configureAgentResourceLimits } from './configureAgentResourceLimits';
+
 export { injectVoicePromptDraft } from './injectVoicePromptDraft';
 export { injectPromptDraft } from './injectPromptDraft';
 export { onPromptDraft } from './onPromptDraft';
