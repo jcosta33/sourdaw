@@ -52,3 +52,14 @@ export function describeAgentRunCreationRefusal(reason: AgentRunCreationRefusalR
         ? 'The request is longer than the configured requestChars limit for one agent run.'
         : 'The configured concurrentRuns limit for agent runs is already reached.';
 }
+
+/**
+ * Names a refused reservation to the user. The wall-clock ceiling is not a budget the work overspent
+ * — the run itself timed out — so it reads as an exhausted run the user can submit again, while every
+ * spendable category names the budget the named work exceeded.
+ */
+export function describeAgentRunHardLimit(reason: string | undefined, work: string): string {
+    return reason === 'runDurationMs'
+        ? `The agent run exceeded its wall-clock limit before the ${work} could start; submit the request again.`
+        : `The ${work} exceeds the user budget for ${reason}.`;
+}

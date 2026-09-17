@@ -850,7 +850,7 @@ describe('submitAdmittedPromptRequest', () => {
         });
     });
 
-    it('rejects a prompt longer than the configured request ceiling without storing a run', async () => {
+    it('rejects a prompt longer than the configured request ceiling and reports the refusal', async () => {
         agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, requestChars: 10 });
 
         await expect(submitAdmittedPromptRequest({ prompt: 'x'.repeat(11), source: 'prompt-bar' })).resolves.toEqual({
@@ -860,6 +860,10 @@ describe('submitAdmittedPromptRequest', () => {
 
         expect(agentRunLifecycle.get(RUN_ID)).toBeNull();
         expect(mocks.planPromptActions).not.toHaveBeenCalled();
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            'The request is longer than the configured requestChars limit for one agent run.',
+            []
+        );
     });
 
     it.each(['committed', 'executed', 'failed', 'cancelled', 'ambiguous', 'no-op'] as const)(

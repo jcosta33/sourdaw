@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { AGENT_RESOURCE_LIMIT_CATEGORIES, DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
+import {
+    AGENT_RESOURCE_LIMIT_CATEGORIES,
+    DEFAULT_AGENT_RESOURCE_LIMITS,
+    describeAgentRunHardLimit,
+} from '../../models/AgentResourceLimits';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentWorkBudget } from '../agentWorkBudget';
@@ -144,7 +148,7 @@ describe('agent resource limits', () => {
 
         expect(createRun('concurrent-run-c')).toEqual({ status: 'hard-limit-reached', reason: 'concurrentRuns' });
 
-        agentRunLifecycle.transitionPhase({ runId: 'concurrent-run-a', phase: 'completed' });
+        agentRunLifecycle.transitionPhase({ runId: 'concurrent-run-a', phase: 'paused' });
         expect(createRun('concurrent-run-c')).toEqual({ status: 'created' });
 
         agentRunLifecycle.transitionPhase({ runId: 'concurrent-run-c', phase: 'planning' });
@@ -161,8 +165,8 @@ describe('agent resource limits', () => {
             createdRevision: 'revision-a',
             createdAt: 1_000,
         });
-        agentRunLifecycle.transitionPhase({ runId: 'aging-run-a', phase: 'planning' });
-        agentRunLifecycle.transitionPhase({ runId: 'aging-run-a', phase: 'executing' });
+        agentRunLifecycle.transitionPhase({ runId: 'aging-run-a', phase: 'planning', transitionedAt: 1_000 });
+        agentRunLifecycle.transitionPhase({ runId: 'aging-run-a', phase: 'executing', transitionedAt: 1_000 });
 
         expect(
             agentRunLifecycle.create({
@@ -195,6 +199,8 @@ describe('agent resource limits', () => {
             createdRevision: 'revision-a',
             createdAt,
         });
+        agentRunLifecycle.transitionPhase({ runId: 'timed-run', phase: 'planning', transitionedAt: createdAt });
+        agentRunLifecycle.transitionPhase({ runId: 'timed-run', phase: 'executing', transitionedAt: createdAt });
 
         expect(
             agentRunLifecycle.reserveBudget({
@@ -219,5 +225,98 @@ describe('agent resource limits', () => {
             })
         ).toEqual({ status: 'hard-limit-reached', reason: 'runDurationMs' });
         expect(agentRunLifecycle.get('timed-run')?.budgetAttempts).toHaveLength(1);
+    });
+
+    it('admits the reservation an approval makes after the run waited longer than its wall-clock limit', () => {
+        configureAgentResourceLimits({ runDurationMs: 1000 });
+        const createdAt = 1_700_000_000_000;
+        agentRunLifecycle.create({
+            runId: 'deliberated-run',
+            request: 'Arrange this project.',
+            mode: 'apply',
+            createdRevision: 'revision-a',
+            createdAt,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'deliberated-run', phase: 'planning', transitionedAt: createdAt });
+        agentRunLifecycle.transitionPhase({
+            runId: 'deliberated-run',
+            phase: 'waiting-for-approval',
+            transitionedAt: createdAt,
+        });
+
+        expect(agentRunLifecycle.get('deliberated-run')?.activeSince).toBeNull();
+        expect(
+            agentRunLifecycle.reserveBudget({
+                runId: 'deliberated-run',
+                attemptId: 'approved-after-deliberation',
+                category: 'remoteTokens',
+                estimate: 1,
+                provenance: 'versioned-estimate',
+                reservedAt: createdAt + 1000 + 60_000,
+            })
+        ).toEqual({ status: 'reserved' });
+    });
+
+    it('refuses the reservation an executing run makes past its current active stretch', () => {
+        configureAgentResourceLimits({ runDurationMs: 1000 });
+        const createdAt = 1_700_000_000_000;
+        const executingSince = createdAt + 5_000;
+        agentRunLifecycle.create({
+            runId: 'stretched-run',
+            request: 'Arrange this project.',
+            mode: 'apply',
+            createdRevision: 'revision-a',
+            createdAt,
+        });
+        agentRunLifecycle.transitionPhase({
+            runId: 'stretched-run',
+            phase: 'planning',
+            transitionedAt: executingSince,
+        });
+        agentRunLifecycle.transitionPhase({
+            runId: 'stretched-run',
+            phase: 'executing',
+            transitionedAt: executingSince + 10,
+        });
+
+        expect(agentRunLifecycle.get('stretched-run')?.activeSince).toBe(executingSince);
+        expect(
+            agentRunLifecycle.reserveBudget({
+                runId: 'stretched-run',
+                attemptId: 'past-active-stretch',
+                category: 'remoteTokens',
+                estimate: 1,
+                provenance: 'versioned-estimate',
+                reservedAt: executingSince + 1001,
+            })
+        ).toEqual({ status: 'hard-limit-reached', reason: 'runDurationMs' });
+    });
+
+    it('re-anchors the active stretch when a parked run resumes into an active phase', () => {
+        agentRunLifecycle.create({
+            runId: 'resumed-run',
+            request: 'Arrange this project.',
+            mode: 'apply',
+            createdRevision: 'revision-a',
+            createdAt: 1_000,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'resumed-run', phase: 'planning', transitionedAt: 2_000 });
+        agentRunLifecycle.transitionPhase({
+            runId: 'resumed-run',
+            phase: 'waiting-for-approval',
+            transitionedAt: 3_000,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'resumed-run', phase: 'executing', transitionedAt: 4_000 });
+
+        expect(agentRunLifecycle.get('resumed-run')?.activeSince).toBe(4_000);
+    });
+
+    it('names an exhausted wall-clock limit apart from an overspent budget category', () => {
+        expect(describeAgentRunHardLimit('runDurationMs', 'confirmed command work')).toBe(
+            'The agent run exceeded its wall-clock limit before the confirmed command work could start; submit the request again.'
+        );
+        expect(describeAgentRunHardLimit('maxCommands', 'confirmed command work')).toBe(
+            'The confirmed command work exceeds the user budget for maxCommands.'
+        );
     });
 });

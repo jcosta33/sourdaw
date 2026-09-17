@@ -4,6 +4,7 @@ import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocu
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
+import { describeAgentRunCreationRefusal } from '../models/AgentResourceLimits';
 import { type ModelProviderResult } from '../models/ModelProviderProtocol';
 import { describePlanningOutcome } from '../transformers/describePlanningOutcome';
 
@@ -78,6 +79,7 @@ export async function submitAdmittedPromptRequest(
         createdRevision,
     });
     if (admission.status === 'hard-limit-reached') {
+        notifyAiChange(describeAgentRunCreationRefusal(admission.reason), []);
         return { status: 'rejected', runId };
     }
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning', revision: createdRevision });

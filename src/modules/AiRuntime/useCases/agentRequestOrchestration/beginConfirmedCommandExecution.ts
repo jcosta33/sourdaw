@@ -4,6 +4,7 @@ import {
     projectRevisionMatchesLiveIgnoringCommandCheckpoint,
 } from '#/modules/CrdtDocument/useCases';
 
+import { describeAgentRunHardLimit } from '../../models/AgentResourceLimits';
 import { type AgentRun, type AgentRunWorkLease } from '../../models/AgentRun';
 import { updateChatMessage } from '../../stores/chatStore';
 import {
@@ -190,7 +191,7 @@ export function beginConfirmedCommandExecution(
                 status: 'settled',
                 result: confirmationTerminalSettlement.failApprovalPreflight(
                     confirmation,
-                    `The confirmed command work exceeds the user budget for ${budgetReservation.reason}.`,
+                    describeAgentRunHardLimit(budgetReservation.reason, 'confirmed command work'),
                     'budget'
                 ),
             };
