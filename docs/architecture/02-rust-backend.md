@@ -280,8 +280,8 @@ state bridging.
 
 ### Which formats it hosts
 
-CLAP is the format Sourdaw hosts. VST® 3 is committed to and not yet implemented. VST2 and Audio Units
-are permanently excluded. [ADR 0031](../../.agents/decisions/0031-native-plugin-format-strategy.md)
+CLAP and VST® 3 are both hosted, behind the one `HostedRuntime` seam. VST2 and Audio Units are
+permanently excluded. [ADR 0031](../../.agents/decisions/0031-native-plugin-format-strategy.md)
 is the record, including the licensing basis for each and the obligations VST3 carries.
 
 A format this crate does not load is still recognised, and the refusal names the format and the
