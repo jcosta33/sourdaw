@@ -27,7 +27,13 @@ describe('projectNativeDeviceState', () => {
         resetGrandBouleStores();
     });
 
-    it('projects a calibrated Grand Boule store by deviceId, ignoring deviceState', () => {
+    it('projects a calibrated Grand Boule store by deviceId, ignoring a committed deviceState chunk', () => {
+        // A committed chunk, not `undefined`: every Grand Boule that has had one
+        // morph edit carries one (`commitGrandBouleDeviceState`), so a case that
+        // only ever passes `undefined` cannot tell this arm apart from one that
+        // reads `deviceState` after all — a chunk-dependent
+        // `deviceState ? null : projectGrandBouleCalibrationToNativePatch(...)`
+        // would stay green here.
         const deviceId = 'grand-boule-device-a';
         const store = createGrandBouleStore(deviceId);
         const state = createDefaultGrandBouleState();
@@ -35,8 +41,18 @@ describe('projectNativeDeviceState', () => {
             ...state,
             midiCalibration: { ...state.midiCalibration, sustainThreshold: 0.6, ccSmoothingMs: 40 },
         });
+        const deviceState = {
+            version: 1,
+            data: {
+                modelA: 'balanced-grand',
+                modelB: 'clear-grand',
+                morphPosition: 0.3,
+                layerBalance: 0,
+                enabled: true,
+            },
+        };
 
-        const projected = projectNativeDeviceState({ deviceId, deviceType: 'grand-boule', deviceState: undefined });
+        const projected = projectNativeDeviceState({ deviceId, deviceType: 'grand-boule', deviceState });
 
         expect(projected).toEqual({ sustain_threshold: 0.6, cc_smoothing_ms: 40 });
     });

@@ -24,10 +24,15 @@ export type ProjectGrandBouleCalibrationToNativePatchInput = {
  * `peekGrandBouleStore` rather than `createGrandBouleStore`: a projection
  * asked about a device with no open panel must not bring a store into
  * existence, or building a native body would leave behind a stray
- * default-valued store no panel ever opened. No store, or a store never
- * given a calibration, both mean the DSP defaults are correct and this
- * answers `null` — the same "nothing to project" answer Toaster and Levain
- * give for a state-free chunk.
+ * default-valued store no panel ever opened. The per-device store is the
+ * calibration's single source of truth for every body once it exists —
+ * `reconcileGrandBouleDeviceStateFromProject.ts` hydrates one for every
+ * Grand Boule device on load, so a store "never given a calibration" still
+ * holds real values (the same defaults `createDefaultMidiCalibration`
+ * gives every fresh store) and this projects them like any other. `null`
+ * answers only the one case where no store exists at all — the same
+ * "nothing to project" answer Toaster and Levain give for a state-free
+ * chunk.
  */
 export function projectGrandBouleCalibrationToNativePatch(
     input: ProjectGrandBouleCalibrationToNativePatchInput

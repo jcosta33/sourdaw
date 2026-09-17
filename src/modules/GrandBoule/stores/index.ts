@@ -4,6 +4,7 @@ export {
     grandBouleStore,
     createGrandBouleStore,
     peekGrandBouleStore,
+    subscribeToGrandBouleStoreCreation,
     resetGrandBouleStores,
 } from './grandBouleStore';
 

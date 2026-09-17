@@ -20,6 +20,7 @@ import {
     createGrandBouleStore,
     peekGrandBouleStore,
     resetGrandBouleStores,
+    subscribeToGrandBouleStoreCreation,
 } from '../../stores/grandBouleStore';
 import { projectGrandBouleCalibrationToNativePatch } from '../projectGrandBouleCalibrationToNativePatch';
 
@@ -37,11 +38,33 @@ describe('projectGrandBouleCalibrationToNativePatch', () => {
 
     it('answers null for a device with no store, and never creates one', () => {
         const deviceId = 'grand-boule-no-store';
+        // A peek→create swap would still fail the return-value assertion below,
+        // but only after line 43; nothing there observes whether a store was
+        // stood up in passing. `createGrandBouleStore` notifies every listener
+        // on creation, so a listener that never fires for this id is the direct
+        // observation that `peekGrandBouleStore` — not `createGrandBouleStore`
+        // — is what this projection calls.
+        const created: string[] = [];
+        const unsubscribe = subscribeToGrandBouleStoreCreation((createdDeviceId) => created.push(createdDeviceId));
 
         const projected = projectGrandBouleCalibrationToNativePatch({ deviceId });
 
         expect(projected).toBeNull();
         expect(peekGrandBouleStore(deviceId)).toBeUndefined();
+        expect(created).not.toContain(deviceId);
+        unsubscribe();
+    });
+
+    it('projects the store defaults for a store that exists but was never calibrated, e.g. hydration', () => {
+        // Distinguishes "no store" (null, above) from "a store exists at its
+        // untouched defaults" (projected, not null) — the distinction the
+        // projection's own doc comment used to get backwards (#4310).
+        const deviceId = 'grand-boule-hydrated-uncalibrated';
+        createGrandBouleStore(deviceId);
+
+        const projected = projectGrandBouleCalibrationToNativePatch({ deviceId });
+
+        expect(projected).toEqual({ sustain_threshold: 0.15, cc_smoothing_ms: 5 });
     });
 
     it('projects a calibrated store into the DSP names', () => {

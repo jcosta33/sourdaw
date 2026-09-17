@@ -244,7 +244,7 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
 
         await prepareOfflineDeviceSetup({ deviceId: 'grand-1', deviceType: 'grand-boule', deviceState, port });
 
-        expect(prepareOfflineGrandBoule).toHaveBeenCalledExactlyOnceWith({ deviceState, port });
+        expect(prepareOfflineGrandBoule).toHaveBeenCalledExactlyOnceWith({ deviceId: 'grand-1', deviceState, port });
     });
 
     it('does nothing for a device type no native factory builds', async () => {
