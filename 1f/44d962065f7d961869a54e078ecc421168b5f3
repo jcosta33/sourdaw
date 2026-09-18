@@ -1,0 +1,22 @@
+crates/daw-dsp/benches/wasm/measurementCensus.mjs
+  h_1228e573df1f42 27-37,41-43,46
+crates/daw-dsp/benches/wasm/pageHarness.d.mts
+  h_1228e573df1f42 1-71
+crates/daw-dsp/benches/wasm/run.mjs
+  h_1228e573df1f42 108-259,377-380,417-421,430-433,436-439,466-470,490-492,494-498,531-533,538-543,575-576,591,594-619,627,643,700-711,740,746,751-752,782-783,785,789,879-882,934,957,970-974,979,1030-1044
+eslint.config.mjs
+  h_1228e573df1f42 2839-2857
+release/open-source-inventory.json
+  h_1228e573df1f42 1206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1f44d962065f7d961869a54e078ecc421168b5f3",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
