@@ -3,17 +3,17 @@
 //!
 //! `reverse_engine_character.rs` measures the two things that make Reverse a
 //! distinct engine — a late onset and a rising envelope — on a single decaying
-//! burst that is over long before the second grain begins. The impulse sweeps
-//! beside the engine (`phase_sweep_over_a_small_window_loses_no_impulse`,
-//! `phase_sweep_interior_achieves_near_full_amplitude`,
-//! `production_rate_window_survives_boundary_phases`) sweep impulses through
-//! every phase of the capture, boundary included, and
-//! `steady_tone_produces_continuous_output` checks a sustained tone never gates
-//! the wet path. None of them compares the running output level across the
-//! boundary — the property a listener hears as a stutter. That is where this
-//! engine spends most of its life: fed sustained material it re-arms its two
-//! alternating grain readers every `reverse_len − crossfade_len` samples,
-//! forever.
+//! burst that is over long before the second grain begins. The impulse tests
+//! beside the engine cover different phases: `phase_sweep_over_a_small_window_loses_no_impulse`
+//! sweeps every phase of a 512-sample window, boundary included, and
+//! `production_rate_window_survives_boundary_phases` probes the boundary cases
+//! at production rate; `phase_sweep_interior_achieves_near_full_amplitude`
+//! deliberately excludes the ramps to check the flat middle. `steady_tone_produces_continuous_output`
+//! checks a sustained tone never gates the wet path. None of them compares the
+//! running output level across the boundary — the property a listener hears as
+//! a stutter. That is where this engine spends most of its life: fed sustained
+//! material it re-arms its two alternating grain readers every
+//! `reverse_len − crossfade_len` samples, forever.
 //!
 //! The property under test is the one every windowed-grain engine has to
 //! satisfy and the one a listener notices immediately: **the output level does
