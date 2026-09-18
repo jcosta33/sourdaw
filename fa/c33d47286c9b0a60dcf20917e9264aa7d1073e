@@ -1,0 +1,23 @@
+src/modules/Arrangement/handlers/track/handleConsolidateAllTracks.ts
+  s_9b530f08172a54::t_03bea75a387d2d 66
+src/modules/AudioEngine/repositories/deviceStrategy/isEngineHostedPluginDeviceType.ts
+  s_9b530f08172a54::t_a6181fb823d9e1 19-25
+src/modules/Arrangement/handlers/track/__tests__/handleConsolidateAllTracks.spec.ts
+  s_9b530f08172a54::t_fbdefbe0c03075 115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fac33d47286c9b0a60dcf20917e9264aa7d1073e",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
