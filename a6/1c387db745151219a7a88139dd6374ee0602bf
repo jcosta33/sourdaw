@@ -1,0 +1,32 @@
+src/modules/Command/useCases/index.ts
+  s_914af328b3988f::t_29600c1894c8dd 53
+evidence/agent-campaign/corpora/source-examples.json
+  s_914af328b3988f::t_7046326a3f5ce9 94
+src/app/__tests__/agentSourceExamples.spec.ts
+  s_914af328b3988f::t_7e252e1e10b1df 117
+  s_914af328b3988f::t_dcab106d20cd75 64
+  s_914af328b3988f::t_3be768fcdac5bf 5
+  s_914af328b3988f::t_c7ff8de92cc416 7-8
+  s_914af328b3988f::t_1d75b1c548fa53 140-142,151,153
+docs/architecture/agent-release-gates.md
+  s_914af328b3988f::t_1671a27660572d 22-30
+  s_914af328b3988f::t_0131ac906caedf 109-111
+evidence/agent-campaign/manifest.json
+  s_914af328b3988f::t_5bf137b9792922 6,800,829,883
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a61c387db745151219a7a88139dd6374ee0602bf",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
