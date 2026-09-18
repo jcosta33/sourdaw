@@ -1,0 +1,20 @@
+src/modules/AiRuntime/repositories/webLlm/__tests__/generateWebLlmCompletion.spec.ts
+  h_1228e573df1f42 131,135
+src/modules/AiRuntime/repositories/webLlm/webLlmRequestCoordinator.ts
+  h_1228e573df1f42 74,77,133
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  h_1228e573df1f42 1169-1171,1197,1219-1220,1224,1281
+src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts
+  h_1228e573df1f42 86,92-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "584fa1a26090eb3e35b7b2104612dd87f926f8cd",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
