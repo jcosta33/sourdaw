@@ -940,6 +940,9 @@ describe('bootstrap', () => {
     it('wires an unload plugin release report to narrow the native chain session AudioEngine holds', () => {
         expect(registerReleasedStripReportSinkMock).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
         const [registered] = registerReleasedStripReportSinkMock.mock.calls[0] ?? [];
+        if (registered === undefined) {
+            throw new Error('expected the sink registration to carry a function');
+        }
         const reports = [{ id: 'audio-1', deviceIds: ['comp'] }];
         const returned = registered(reports);
         expect(recordNativeChainReleasesMock).toHaveBeenCalledExactlyOnceWith(reports);
