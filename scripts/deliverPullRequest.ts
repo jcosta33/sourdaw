@@ -2987,10 +2987,12 @@ function capture(command: string, args: string[]): string {
     return result.stdout.trim();
 }
 
-function run(command: string, args: string[]): void {
+export function run(command: string, args: string[]): void {
     const result = spawnSync(command, args, {
         cwd: process.cwd(),
-        stdio: 'inherit',
+        // stderr is captured rather than inherited so a failing child names its own failure —
+        // the git-ai authorship sync's exit 1 was unattributable without it (#4344).
+        stdio: ['inherit', 'inherit', 'pipe'],
         shell: false,
         ...(command === 'git' ? { env: trustedDeliveryGitEnv() } : {}),
     });
@@ -2998,6 +3000,11 @@ function run(command: string, args: string[]): void {
         throw result.error;
     }
     if (result.status !== 0) {
+        const stderr = result.stderr === null ? '' : result.stderr.toString().trim();
+        if (stderr !== '') {
+            console.error(stderr);
+            throw new Error(`${command} failed with exit ${result.status ?? 'signal'}: ${stderr}`);
+        }
         throw new Error(`${command} failed with exit ${result.status ?? 'signal'}`);
     }
 }

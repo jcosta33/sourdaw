@@ -637,13 +637,19 @@ export function spawnRun(
     const result = spawnSync(childCommand, args, {
         cwd: options.cwd ?? process.cwd(),
         env: options.env,
-        stdio: 'inherit',
+        // Captured stderr keeps a failing child's own words in the thrown error (#4344).
+        stdio: ['inherit', 'inherit', 'pipe'],
         shell: false,
     });
     if (result.error !== undefined) {
         throw result.error;
     }
     if (result.status !== 0) {
+        const stderr = result.stderr === null ? '' : result.stderr.toString().trim();
+        if (stderr !== '') {
+            console.error(stderr);
+            throw new Error(`${childCommand} failed with exit ${result.status ?? 'signal'}: ${stderr}`);
+        }
         throw new Error(`${childCommand} failed with exit ${result.status ?? 'signal'}`);
     }
 }
