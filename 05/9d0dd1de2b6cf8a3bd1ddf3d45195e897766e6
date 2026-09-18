@@ -1,0 +1,21 @@
+scripts/__tests__/publishLane.spec.ts
+  s_914af328b3988f::t_00907061f5426f 1852-1889
+  s_914af328b3988f::t_92917c947ce5f6 21,27
+  s_914af328b3988f::t_2a8014caed9e49 1851
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "059d0dd1de2b6cf8a3bd1ddf3d45195e897766e6",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
