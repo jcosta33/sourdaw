@@ -503,4 +503,18 @@ describe('payloadMatches', () => {
     it('matches when actual carries a field the oracle never named', () => {
         expect(payloadMatches({ name: 'x', kind: 'audio' }, { name: 'x' })).toBe(true);
     });
+
+    it('returns false when the oracle pins a different array length', () => {
+        const actual = { notes: [{ pitch: 60 }, { pitch: 62 }, { pitch: 64 }] };
+
+        expect(payloadMatches(actual, { notes: [{ pitch: 60 }, { pitch: 62 }] })).toBe(false);
+        expect(payloadMatches(actual, { notes: [{ pitch: 60 }, { pitch: 62 }, { pitch: 999 }] })).toBe(false);
+    });
+
+    it('throws naming the indexed path when a record inside an array names no fields', () => {
+        const throwsFromNestedHollowRecord = () => payloadMatches({ notes: [{ pitch: 60 }] }, { notes: [{}] });
+
+        expect(throwsFromNestedHollowRecord).toThrow(/payload\.notes\[0\]/);
+        expect(throwsFromNestedHollowRecord).toThrow(/names no fields to pin/);
+    });
 });
