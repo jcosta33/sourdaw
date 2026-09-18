@@ -359,27 +359,34 @@ function isSameResetRecord(fresh: BranchResetRecord | null, observed: BranchRese
 }
 
 /**
+ * Whether one authority is the project the other names.
+ *
+ * The epoch names the side: a reset mints a fresh epoch for the project it is
+ * writing, so the target epoch is the replacement and the old epoch is the
+ * project being replaced. The root lineage then proves the branch list this
+ * marker carries still describes the durable root — a fork landing a new
+ * lineage under the same epoch moved the project to a root that list does not
+ * name. The revision is free: it only counts ordinary saves, and a save does
+ * not change which project is durable.
+ */
+function isSameResetSide(durable: CrdtPersistenceAuthority, side: CrdtPersistenceAuthority): boolean {
+    return durable.epoch === side.epoch && durable.rootLineage === side.rootLineage;
+}
+
+/**
  * Which side of the replacement the durable persistence authority proves.
  *
- * The epoch decides it. A reset mints a fresh epoch for the project it is
- * writing, so the target epoch names the replacement and the old epoch names
- * the project it is replacing; nothing else can be writing under either one.
- * Revision and lineage cannot take part: an ordinary save advances the revision
- * on whichever side survived — this instance saving the replacement after a
- * failed finalization, or another tab saving the outgoing project — and that
- * save does not change which project is durable.
- *
- * `null` only for a third epoch, which says the durable project is neither side
- * of this reset, so no branch list this marker carries describes it.
+ * `null` when it proves neither, so no branch list this marker carries
+ * describes the durable project and only a later boot can settle the reset.
  */
 function getResetSettlement(
     reset: BranchResetRecord,
     durable: CrdtPersistenceAuthority
 ): { current: BranchStoreState; outcome: 'reset-rolled-back' | 'reset-finalized' } | null {
-    if (durable.epoch === reset.old.epoch) {
+    if (isSameResetSide(durable, reset.old)) {
         return { current: reset.previous, outcome: 'reset-rolled-back' };
     }
-    if (durable.epoch === reset.target.epoch) {
+    if (isSameResetSide(durable, reset.target)) {
         return { current: reset.intended, outcome: 'reset-finalized' };
     }
     return null;
@@ -713,11 +720,10 @@ async function beginReset({
  * Publish the replacement's branch list and clear the marker.
  *
  * `committed` is the authority the replacement actually reached storage with.
- * Its epoch is what decides: this reset minted the target epoch for the project
- * it is writing, so a commit under that epoch is a commit of this replacement
- * whatever revision it carries — an incremental save landing between the
- * snapshot and this call advances the revision without changing which project
- * is durable. A commit under any other epoch is not this replacement.
+ * It counts when it names this reset's target side: the epoch this reset minted
+ * for the project it is writing, under the root lineage the intended branch list
+ * describes. The revision is free — an incremental save landing between the
+ * snapshot and this call advances it without changing which project is durable.
  *
  * The comparison is against the target from memory, before any transaction: the
  * envelope's `current` is still the replaced project's list, so a refusing
@@ -732,7 +738,7 @@ async function finalizeReset(
     if (own?.owner !== handle.owner) {
         return 'superseded';
     }
-    if (committed === null || committed.epoch !== own.target.epoch) {
+    if (committed === null || !isSameResetSide(committed, own.target)) {
         // The marker stays durable: a boot reading the authority is the only
         // thing that can say which project this half-finished reset left.
         return 'authority-mismatch';

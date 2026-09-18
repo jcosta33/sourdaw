@@ -728,6 +728,22 @@ describe('branchStateAuthority', () => {
             expect(instance.store.value).toEqual(intended);
         });
 
+        it('leaves the reset pending when the replacement committed under another root lineage', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const begun = await beginReset(instance, branchList());
+            const before = readStoredEnvelope();
+
+            await expect(
+                instance.authority.finalizeReset(begun, {
+                    ...replacementAuthority,
+                    rootLineage: 'lineage-forked',
+                })
+            ).resolves.toBe('authority-mismatch');
+
+            expect(readStoredEnvelope()).toEqual(before);
+            await expect(isBranchStateLockFree(manager, resetLockName(begun.owner))).resolves.toBe(false);
+        });
+
         it('leaves the reset pending when no save of the replacement committed at all', async () => {
             const instance = await bootAt(5, branchList(feature));
             const begun = await beginReset(instance, branchList());
@@ -885,6 +901,32 @@ describe('branchStateAuthority', () => {
                 reset: null,
             });
             expect(booted.store.value).toEqual(intended);
+        });
+
+        it('leaves the marker when a fork moved the outgoing project to another root lineage', async () => {
+            const marker = writeAbandonedReset();
+            const forked = { ...outgoingAuthority, rootLineage: 'lineage-forked' };
+            durableAuthority(forked);
+
+            const booted = await bootBranchStateInstance();
+
+            expect(booted.outcome).toBe('reset-unavailable');
+            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 5, current, session: null, reset: marker });
+            expect(booted.store.value).toEqual(current);
+            expect(reportedResetError()).toContain(`epoch ${forked.epoch} revision ${forked.revision}`);
+        });
+
+        it('leaves the marker when the replacement is durable under another root lineage', async () => {
+            const marker = writeAbandonedReset();
+            const forked = { ...replacementAuthority, rootLineage: 'lineage-forked' };
+            durableAuthority(forked);
+
+            const booted = await bootBranchStateInstance();
+
+            expect(booted.outcome).toBe('reset-unavailable');
+            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 5, current, session: null, reset: marker });
+            expect(booted.store.value).toEqual(current);
+            expect(reportedResetError()).toContain(`epoch ${forked.epoch} revision ${forked.revision}`);
         });
 
         it('leaves the marker when the durable authority belongs to a third epoch', async () => {
