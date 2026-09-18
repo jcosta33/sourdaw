@@ -5,7 +5,7 @@ import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type AnthropicCloudRuntime } from '../cloudSession';
 
 import { buildWireToolNameCodec } from './buildWireToolNameCodec';
-import { type HostedToolPlan, type HostedToolPlanUsage } from './hostedToolPlan';
+import { type HostedToolPlan, type HostedToolPlanUsage, readHostedTokenCount } from './hostedToolPlan';
 import { projectAnthropicStrictToolSchema } from './projectAnthropicStrictToolSchema';
 import { readProviderRequestId } from './readProviderRequestId';
 import { requestAnthropicProvider } from './requestAnthropicProvider';
@@ -18,19 +18,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function readTokenCount(value: unknown): number | null {
-    return typeof value === 'number' ? value : null;
-}
-
 function readUsage(payload: Record<string, unknown>): HostedToolPlanUsage | null {
     if (!isRecord(payload.usage)) {
         return null;
     }
     return {
-        inputTokens: readTokenCount(payload.usage.input_tokens),
-        outputTokens: readTokenCount(payload.usage.output_tokens),
-        cacheReadInputTokens: readTokenCount(payload.usage.cache_read_input_tokens),
-        cacheWriteInputTokens: readTokenCount(payload.usage.cache_creation_input_tokens),
+        inputTokens: readHostedTokenCount(payload.usage.input_tokens),
+        outputTokens: readHostedTokenCount(payload.usage.output_tokens),
+        cacheReadInputTokens: readHostedTokenCount(payload.usage.cache_read_input_tokens),
+        cacheWriteInputTokens: readHostedTokenCount(payload.usage.cache_creation_input_tokens),
     };
 }
 

@@ -5,7 +5,7 @@ import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type OpenAiCloudRuntime } from '../cloudSession';
 
 import { buildWireToolNameCodec } from './buildWireToolNameCodec';
-import { type HostedToolPlan, type HostedToolPlanUsage } from './hostedToolPlan';
+import { type HostedToolPlan, type HostedToolPlanUsage, readHostedTokenCount } from './hostedToolPlan';
 import { isGpt56FamilyModel } from './openAiModelFamilies';
 import { parseToolCallArguments } from './parseToolCallArguments';
 import { projectOpenAiStrictToolSchema } from './projectOpenAiStrictToolSchema';
@@ -122,19 +122,15 @@ function hasErrorName(value: unknown, name: string): boolean {
     return isRecord(value) && value.name === name;
 }
 
-function readTokenCount(value: unknown): number | null {
-    return typeof value === 'number' ? value : null;
-}
-
 function readUsage(payload: Record<string, unknown>): HostedToolPlanUsage | null {
     if (!isRecord(payload.usage)) {
         return null;
     }
     const details = isRecord(payload.usage.input_tokens_details) ? payload.usage.input_tokens_details : null;
     return {
-        inputTokens: readTokenCount(payload.usage.input_tokens),
-        outputTokens: readTokenCount(payload.usage.output_tokens),
-        cacheReadInputTokens: readTokenCount(details?.cached_tokens),
+        inputTokens: readHostedTokenCount(payload.usage.input_tokens),
+        outputTokens: readHostedTokenCount(payload.usage.output_tokens),
+        cacheReadInputTokens: readHostedTokenCount(details?.cached_tokens),
         // The Responses API reports no separate cache-write figure.
         cacheWriteInputTokens: null,
     };

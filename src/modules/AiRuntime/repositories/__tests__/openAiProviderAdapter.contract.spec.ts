@@ -1,4 +1,4 @@
-import { afterEach, expect, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
 import { generateOpenAiResponsesToolCalls } from '../cloudLlm/cloudInference/generateOpenAiResponsesToolCalls';
@@ -299,4 +299,35 @@ describeProviderProtocolConformance('OpenAI responses', {
         const wireTool = tool as { strict?: unknown; parameters?: unknown };
         return { strict: wireTool.strict, parameters: wireTool.parameters };
     },
+});
+
+describe('generateOpenAiResponsesToolCalls usage admission', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.clearAllMocks();
+    });
+
+    it('reads a fractional usage figure as null instead of destroying an admitted plan', async () => {
+        installProviderResponse(
+            JSON.stringify({
+                id: FIXTURE.providerRequestId,
+                status: 'completed',
+                output: [functionCall(dottedCall?.id, dottedCall?.wireName, JSON.stringify(dottedCall?.arguments))],
+                // A sampled or averaged `input_tokens` is not a safe non-negative integer;
+                // it must not throw out of `admitEvent`'s usage guard.
+                usage: { input_tokens: 12.5, output_tokens: FIXTURE.toolUsage.outputTokens },
+            }),
+            'application/json'
+        );
+
+        const plan = await generateOpenAiResponsesToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'mute drums',
+            toolSchemas: PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
+            maxOutputTokens: 8_192,
+        });
+
+        expect(plan.usage).toMatchObject({ inputTokens: null, outputTokens: FIXTURE.toolUsage.outputTokens });
+    });
 });

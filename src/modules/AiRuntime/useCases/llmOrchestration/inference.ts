@@ -89,6 +89,35 @@ function isUnknownArray(value: unknown): value is unknown[] {
     return Array.isArray(value);
 }
 
+/**
+ * Drops `null`-valued arguments for properties the advertised (unprojected) tool
+ * schema leaves optional, before a tool-call event reaches `admitEvent`'s
+ * `matchesJsonSchema` check. OpenAI's strict projection (`projectOpenAiStrictToolSchema.ts`)
+ * forces every optional property into `required` and nullable, so a conforming
+ * strict reply carries an explicit `null` for an argument the caller never meant to
+ * set — but `admitEvent` validates against the source schema's `type: 'string'` (or
+ * other single, non-nullable type), which rejects `null`. Only an optional
+ * property's `null` is dropped here; a `null` on a property the source schema
+ * already requires is left in place so the existing validator still rejects it.
+ */
+function admissibleToolCallArguments(
+    args: Record<string, unknown>,
+    advertisedTool: ToolSchema | undefined
+): Record<string, unknown> {
+    if (advertisedTool === undefined) {
+        return args;
+    }
+    const requiredProperties = new Set(advertisedTool.function.parameters.required);
+    const admissible: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(args)) {
+        if (value === null && !requiredProperties.has(key)) {
+            continue;
+        }
+        admissible[key] = value;
+    }
+    return admissible;
+}
+
 function normalizeGeneratedToolPlanningOutcome(value: unknown): ToolPlanningOutcome {
     if (!isRecord(value)) {
         return { status: 'rejected', reason: 'The model provider returned an invalid planning result.' };
@@ -540,12 +569,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 if (outcome.status === 'complete') {
                     const providerCallIds = outcome.toolCalls.map((call) => call.id);
                     for (const [index, call] of outcome.toolCalls.entries()) {
+                        const advertisedTool = providerTools.find((tool) => tool.function.name === call.name);
                         providerSource.push({
                             type: 'tool-call',
                             call: {
                                 id: call.id ?? `${providerRequest.correlationId}:${String(index)}`,
                                 name: call.name,
-                                arguments: call.arguments,
+                                arguments: admissibleToolCallArguments(call.arguments, advertisedTool),
                             },
                         });
                     }

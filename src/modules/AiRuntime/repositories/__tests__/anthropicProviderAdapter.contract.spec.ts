@@ -1,4 +1,4 @@
-import { afterEach, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
 import { generateAnthropicToolCalls } from '../cloudLlm/cloudInference/generateAnthropicToolCalls';
@@ -276,4 +276,37 @@ describeProviderProtocolConformance('Anthropic messages', {
         const wireTool = tool as { strict?: unknown; input_schema?: unknown };
         return { strict: wireTool.strict, parameters: wireTool.input_schema };
     },
+});
+
+describe('generateAnthropicToolCalls usage admission', () => {
+    afterEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('reads a fractional usage figure as null instead of destroying an admitted plan', async () => {
+        installProviderResponse(
+            JSON.stringify({
+                id: FIXTURE.providerRequestId,
+                content: [
+                    { type: 'tool_use', id: dottedCall?.id, name: dottedCall?.wireName, input: dottedCall?.arguments },
+                ],
+                stop_reason: 'tool_use',
+                // A sampled or averaged `input_tokens` is not a safe non-negative integer;
+                // it must not throw out of `admitEvent`'s usage guard.
+                usage: { input_tokens: 12.5, output_tokens: FIXTURE.toolUsage.outputTokens },
+            }),
+            'application/json'
+        );
+
+        const plan = await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'mute drums',
+            toolSchemas: PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
+            maxOutputTokens: 8_192,
+            signal: new AbortController().signal,
+        });
+
+        expect(plan.usage).toMatchObject({ inputTokens: null, outputTokens: FIXTURE.toolUsage.outputTokens });
+    });
 });

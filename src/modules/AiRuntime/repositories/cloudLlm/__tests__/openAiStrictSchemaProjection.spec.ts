@@ -16,7 +16,12 @@ const BOUND_KEYWORDS = [
     'pattern',
     'format',
     'maxItems',
+    'uniqueItems',
 ] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 function tool(parameters: Record<string, unknown>): ToolSchema {
     return {
@@ -58,11 +63,108 @@ function findBoundKeywords(node: unknown, found: string[] = []): string[] {
             }
             continue;
         }
-        if (key === 'items' || key === 'anyOf' || key === 'oneOf' || key === 'allOf') {
+        if (key === 'oneOf') {
+            // `oneOf` is not itself a bound keyword, but neither dialect supports it: a
+            // projection that failed to rewrite it onto `anyOf` must still be caught here.
+            found.push('oneOf');
+            findBoundKeywords(value, found);
+            continue;
+        }
+        if (key === 'items' || key === 'anyOf' || key === 'allOf') {
             findBoundKeywords(value, found);
         }
     }
     return found;
+}
+
+const BOUND_PRESENCE_KEYWORDS = [
+    'minimum',
+    'maximum',
+    'exclusiveMinimum',
+    'exclusiveMaximum',
+    'multipleOf',
+    'minLength',
+    'maxLength',
+    'pattern',
+    'format',
+    'maxItems',
+] as const;
+
+function nodeCarriesBound(node: Record<string, unknown>): boolean {
+    if (BOUND_PRESENCE_KEYWORDS.some((key) => key in node)) {
+        return true;
+    }
+    if (node.uniqueItems === true) {
+        return true;
+    }
+    return typeof node.minItems === 'number' && node.minItems > 1;
+}
+
+/**
+ * Unwraps the OpenAI nullable wrapper `makeNullable` builds around a non-plain-type
+ * child (`{ anyOf: [child, { type: 'null' }], description }`), so a parallel walk can
+ * keep descending into the child's own `properties`/`items`/`anyOf` alongside the
+ * matching source node. A schema without that exact two-branch, null-terminated shape
+ * passes through unchanged.
+ */
+function unwrapNullableWrapper(node: Record<string, unknown>): Record<string, unknown> {
+    if (!Array.isArray(node.anyOf) || node.anyOf.length !== 2) {
+        return node;
+    }
+    const [first, second] = node.anyOf as unknown[];
+    if (isRecord(first) && isRecord(second) && second.type === 'null') {
+        return first;
+    }
+    return node;
+}
+
+/**
+ * Walks the source schema and its projected counterpart together and asserts that
+ * every node the source carries a bound on projects a non-empty restated
+ * description. A projection that strips a bound without restating it (69 of 75
+ * bounded catalog nodes carry no description of their own) stays undetected by a
+ * check that only asserts the bound keyword's absence.
+ */
+function assertBoundsRestated(source: unknown, projected: unknown): void {
+    if (Array.isArray(source)) {
+        const projectedEntries = Array.isArray(projected) ? projected : [];
+        for (const [index, entry] of source.entries()) {
+            assertBoundsRestated(entry, projectedEntries[index]);
+        }
+        return;
+    }
+    if (!isRecord(source)) {
+        return;
+    }
+    const projectedNode = isRecord(projected) ? projected : {};
+    if (nodeCarriesBound(source)) {
+        expect(typeof projectedNode.description).toBe('string');
+        expect((projectedNode.description as string).length).toBeGreaterThan(0);
+    }
+    const effectiveProjected = unwrapNullableWrapper(projectedNode);
+    if (isRecord(source.properties)) {
+        let projectedProperties: Record<string, unknown> = {};
+        if (isRecord(effectiveProjected.properties)) {
+            projectedProperties = effectiveProjected.properties;
+        }
+        for (const [key, propertySchema] of Object.entries(source.properties)) {
+            assertBoundsRestated(propertySchema, projectedProperties[key]);
+        }
+    }
+    if (source.items !== undefined) {
+        assertBoundsRestated(source.items, effectiveProjected.items);
+    }
+    if (Array.isArray(source.anyOf)) {
+        assertBoundsRestated(source.anyOf, effectiveProjected.anyOf);
+    }
+    if (Array.isArray(source.oneOf)) {
+        // The source's `oneOf` branches land on the projected `anyOf` (`walkSchemaNode`
+        // rewrites `oneOf` onto `anyOf`), in the same order.
+        assertBoundsRestated(source.oneOf, effectiveProjected.anyOf);
+    }
+    if (Array.isArray(source.allOf)) {
+        assertBoundsRestated(source.allOf, effectiveProjected.allOf);
+    }
 }
 
 /** Recursively asserts every object node in the projected schema is strict: additionalProperties: false, every property key present in required. */
@@ -199,6 +301,30 @@ describe('projectOpenAiStrictToolSchema', () => {
             const projected = projectOpenAiStrictToolSchema(schema);
             expect(findBoundKeywords(projected.function.parameters)).toEqual([]);
             assertEveryObjectNodeIsAllRequired(projected.function.parameters);
+            assertBoundsRestated(schema.function.parameters, projected.function.parameters);
         }
+    });
+
+    it('wraps an optional enum property in anyOf with a null branch, keeping the enum', () => {
+        const schema = tool({
+            type: 'object',
+            properties: {
+                bpm: { type: 'number' },
+                unit: { enum: ['beats', 'bars'], description: 'Unit for the value.' },
+            },
+            required: ['bpm'],
+            additionalProperties: false,
+        });
+
+        const projected = projectOpenAiStrictToolSchema(schema);
+        const unitProperty = (projected.function.parameters.properties as { unit: Record<string, unknown> }).unit;
+
+        expect(unitProperty).not.toHaveProperty('enum');
+        expect(Array.isArray(unitProperty.anyOf)).toBe(true);
+        const branches = unitProperty.anyOf as Record<string, unknown>[];
+        expect(branches).toHaveLength(2);
+        expect(branches[0]?.enum).toEqual(['beats', 'bars']);
+        expect(branches[1]?.type).toBe('null');
+        expect(unitProperty.description).toBe('Unit for the value. Null when not applicable.');
     });
 });

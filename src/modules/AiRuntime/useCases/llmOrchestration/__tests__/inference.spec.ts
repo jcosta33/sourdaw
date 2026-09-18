@@ -218,6 +218,73 @@ describe('generateToolPlanningOutcome', () => {
         });
     });
 
+    it('admits a tool-call reply carrying null for an argument the source schema leaves optional', async () => {
+        mocks.backendChain.value = ['cloud'];
+        const addDeviceToolSchema: ToolSchema = {
+            type: 'function',
+            function: {
+                name: 'addDevice',
+                description: 'Add a device to the chain.',
+                parameters: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                        deviceType: { type: 'string' },
+                        afterDeviceId: { type: 'string' },
+                    },
+                    required: ['deviceType'],
+                },
+            },
+        };
+        // OpenAI's strict projection forces every optional property into `required` and
+        // nullable, so a conforming reply carries an explicit `null` for `afterDeviceId`
+        // even though the source schema (what `admitEvent` validates against) leaves it
+        // optional and typed `string`. Without dropping it first, `admitEvent` rejects it.
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'addDevice', arguments: { deviceType: 'eq', afterDeviceId: null } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        const outcome = await generateToolPlanningOutcome('system', 'add an eq', [addDeviceToolSchema]);
+
+        expect(outcome).toMatchObject({ status: 'complete' });
+        expect(outcome.status === 'complete' ? outcome.toolCalls : []).toEqual([
+            { id: 'provider-call', name: 'addDevice', arguments: { deviceType: 'eq' } },
+        ]);
+    });
+
+    it('still rejects a null value on an argument the source schema requires', async () => {
+        mocks.backendChain.value = ['cloud'];
+        const addDeviceToolSchema: ToolSchema = {
+            type: 'function',
+            function: {
+                name: 'addDevice',
+                description: 'Add a device to the chain.',
+                parameters: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                        deviceType: { type: 'string' },
+                        afterDeviceId: { type: 'string' },
+                    },
+                    required: ['deviceType'],
+                },
+            },
+        };
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'addDevice', arguments: { deviceType: null } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        await expect(generateToolPlanningOutcome('system', 'add an eq', [addDeviceToolSchema])).rejects.toThrow(
+            'The model provider request failed.'
+        );
+    });
+
     it('admits the compiled request with the single-sourced output budget and wires it to the provider call', async () => {
         mocks.backendChain.value = ['cloud'];
         mocks.generateCloudToolCalls.mockResolvedValue({

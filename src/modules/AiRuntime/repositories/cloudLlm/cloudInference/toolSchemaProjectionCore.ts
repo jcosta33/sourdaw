@@ -4,8 +4,23 @@ import { ToolSchemaProjectionError } from './ToolSchemaProjectionError';
  * Keywords both hosted strict-schema dialects drop: Anthropic's structured-output
  * subset never accepted them, and Sourdaw keeps every numeric or string bound in
  * `validateActionPayload.ts` — one source of truth the wire schema never duplicates.
- * `maxItems` joins this list; `minItems` gets its own clamp below instead, since a
- * value of 0 or 1 survives unstripped.
+ * `maxItems` and `uniqueItems` join this list; `minItems` gets its own clamp below
+ * instead, since a value of 0 or 1 survives unstripped.
+ *
+ * Live-doc-verified 2026-09-18:
+ * - Anthropic (`platform.claude.com/docs/en/build-with-claude/structured-outputs`,
+ *   "Not supported"): "Array constraints beyond `minItems` of 0 or 1" — this covers
+ *   both `maxItems` and `uniqueItems`; `minItems` itself is separately documented as
+ *   "only values 0 and 1 supported".
+ * - OpenAI (`developers.openai.com/api/docs/guides/structured-outputs`, "Supported
+ *   array properties"): only `minItems` and `maxItems` are listed as supported array
+ *   keywords — `uniqueItems` never appears in the supported list, so it 400s under
+ *   `strict: true`. `minItems`/`maxItems` are supported for the models Sourdaw calls;
+ *   the doc's "For fine-tuned models, we additionally do not support... `minItems`,
+ *   `maxItems`" carve-out does not apply, since Sourdaw never calls a fine-tuned
+ *   model. `minItems` therefore needs no OpenAI-specific stripping: the existing
+ *   0/1 clamp below, written for Anthropic, is a stricter-than-required but
+ *   harmless no-op for OpenAI's wider support.
  */
 const STRIPPED_BOUND_KEYWORDS = [
     'minimum',
@@ -18,6 +33,7 @@ const STRIPPED_BOUND_KEYWORDS = [
     'pattern',
     'format',
     'maxItems',
+    'uniqueItems',
 ] as const;
 
 const STRIPPED_BOUND_KEYWORD_SET = new Set<string>(STRIPPED_BOUND_KEYWORDS);
@@ -85,6 +101,9 @@ function collectBoundsDescriptionParts(node: Record<string, unknown>): string[] 
     }
     if ('maxItems' in node) {
         parts.push(describeBound('Maximum items', node.maxItems));
+    }
+    if (node.uniqueItems === true) {
+        parts.push('Items must be unique.');
     }
     return parts;
 }
@@ -203,7 +222,16 @@ export function walkSchemaNode(
             projected.items = walkChildSchema(value, [...path, 'items'], mode);
             continue;
         }
-        if (key === 'anyOf' || key === 'oneOf' || key === 'allOf') {
+        if (key === 'oneOf') {
+            // Neither dialect documents `oneOf` as a supported composition keyword (Anthropic
+            // lists only `anyOf`/`allOf`; OpenAI's supported-types list stops at `anyOf`), so a
+            // `oneOf` branch set is rewritten onto `anyOf` — same branches, same "exactly one
+            // must match" intent collapsed to "any may match", which both dialects already
+            // constrain structurally through each branch's own required/type shape.
+            projected.anyOf = walkComposedBranch('oneOf', node, path, mode);
+            continue;
+        }
+        if (key === 'anyOf' || key === 'allOf') {
             projected[key] = walkComposedBranch(key, node, path, mode);
             continue;
         }

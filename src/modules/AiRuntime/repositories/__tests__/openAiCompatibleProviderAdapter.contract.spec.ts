@@ -1,4 +1,4 @@
-import { afterEach, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
 import { generateOpenAiCompatibleToolCalls } from '../cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
@@ -274,7 +274,52 @@ describeProviderProtocolConformance('OpenAI-compatible chat completions', {
         }
     },
     readWireTool: (tool) => {
-        const wireTool = tool as { strict?: unknown; function?: { parameters?: unknown } };
-        return { strict: wireTool.strict, parameters: wireTool.function?.parameters };
+        const wireTool = tool as { function?: { strict?: unknown; parameters?: unknown } };
+        return { strict: wireTool.function?.strict, parameters: wireTool.function?.parameters };
     },
+});
+
+describe('generateOpenAiCompatibleToolCalls usage admission', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.clearAllMocks();
+    });
+
+    it('reads a fractional usage figure as null instead of destroying an admitted plan', async () => {
+        installProviderResponse(
+            JSON.stringify({
+                id: FIXTURE.providerRequestId,
+                choices: [
+                    {
+                        finish_reason: 'tool_calls',
+                        message: {
+                            tool_calls: [
+                                {
+                                    id: dottedCall?.id,
+                                    function: {
+                                        name: dottedCall?.wireName,
+                                        arguments: JSON.stringify(dottedCall?.arguments),
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                ],
+                // A sampled or averaged `prompt_tokens` is not a safe non-negative integer;
+                // it must not throw out of `admitEvent`'s usage guard.
+                usage: { prompt_tokens: 12.5, completion_tokens: FIXTURE.toolUsage.outputTokens },
+            }),
+            'application/json'
+        );
+
+        const plan = await generateOpenAiCompatibleToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'mute drums',
+            toolSchemas: PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
+            maxOutputTokens: 8_192,
+        });
+
+        expect(plan.usage).toMatchObject({ inputTokens: null, outputTokens: FIXTURE.toolUsage.outputTokens });
+    });
 });

@@ -24,3 +24,15 @@ export type HostedToolPlan = {
     strictToolSchemas: boolean;
     usage: HostedToolPlanUsage | null;
 };
+
+/**
+ * Admits a wire usage figure only as a safe non-negative integer, mirroring
+ * `modelProviderProtocol.ts`'s own `isUsageCounter` guard on the pushed usage event.
+ * A provider that reports a fractional or negative figure (for example a sampled or
+ * averaged `prompt_tokens`) would otherwise throw out of `admitEvent` and destroy an
+ * already-admitted tool plan; reading `null` for that field here is the same
+ * "no figure reported" outcome the protocol already tolerates.
+ */
+export function readHostedTokenCount(value: unknown): number | null {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}

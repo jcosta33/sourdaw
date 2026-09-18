@@ -14,16 +14,21 @@ import { walkSchemaNode } from './toolSchemaProjectionCore';
  *   confirmed by direct page read on 2026-09-18): every object node must set
  *   `additionalProperties: false` and every key in `properties` must appear in `required`
  *   — there is no concept of an optional property in strict mode, only a required property
- *   whose type is unioned with `null`. `allOf`, `not`, `dependentRequired`,
- *   `dependentSchemas`, and `if`/`then`/`else` are unsupported unconditionally. Root-level
- *   validation keywords such as `minimum`, `maximum`, `multipleOf`, `minLength`, `maxLength`,
- *   `pattern`, `format`, `minItems`, and `maxItems` ARE accepted by the API for standard
- *   models (only a *fine-tuned* model additionally drops them) — narrower than a first read
- *   of "unsupported keywords" suggests. Sourdaw does not target fine-tuned models, so this
- *   projection strips them anyway: `validateActionPayload.ts` is the single source of every
- *   bound after a tool call resolves, and the wire schema must not carry a second, divergent
- *   copy of the same limit. This is a deliberate Sourdaw policy choice layered on top of what
- *   the API would technically accept, not a misreading of the OpenAI limitation list.
+ *   whose type is unioned with `null`. "Supported types" lists `anyOf` but not `oneOf`, so a
+ *   `oneOf` branch set 400s and is rewritten onto `anyOf`. `allOf`, `not`,
+ *   `dependentRequired`, `dependentSchemas`, and `if`/`then`/`else` are unsupported
+ *   unconditionally. Root-level validation keywords `minimum`, `maximum`, `multipleOf`,
+ *   `minLength`, `maxLength`, `pattern`, and `format` are also unsupported unconditionally
+ *   and are stripped. `minItems`/`maxItems` are different: "Supported array properties"
+ *   names both as accepted, and the doc's fine-tuned-model carve-out ("For fine-tuned
+ *   models, we additionally do not support... `minItems`, `maxItems`") does not apply,
+ *   since Sourdaw never calls a fine-tuned model — so OpenAI would accept them. Sourdaw
+ *   strips `maxItems` anyway as policy (`validateActionPayload.ts` is the single source of
+ *   every bound after a tool call resolves, and the wire schema must not carry a second,
+ *   divergent copy) but leaves `minItems` to the shared 0/1 clamp below, written for
+ *   Anthropic's narrower support — a harmless no-op here since OpenAI accepts it unclamped.
+ *   `uniqueItems` never appears in "Supported array properties" at all, so it is
+ *   unconditionally unsupported (not a policy choice) and is stripped.
  * - `$ref` is supported only against an in-document `$defs` registry; Sourdaw tool schemas
  *   carry none, so any `$ref` is rejected rather than silently forwarded or dropped.
  *

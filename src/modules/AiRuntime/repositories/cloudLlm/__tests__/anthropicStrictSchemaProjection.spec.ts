@@ -16,7 +16,12 @@ const BOUND_KEYWORDS = [
     'pattern',
     'format',
     'maxItems',
+    'uniqueItems',
 ] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 function tool(parameters: Record<string, unknown>): ToolSchema {
     return {
@@ -58,11 +63,91 @@ function findBoundKeywords(node: unknown, found: string[] = []): string[] {
             }
             continue;
         }
-        if (key === 'items' || key === 'anyOf' || key === 'oneOf' || key === 'allOf') {
+        if (key === 'oneOf') {
+            // `oneOf` is not itself a bound keyword, but neither dialect supports it: a
+            // projection that failed to rewrite it onto `anyOf` must still be caught here.
+            found.push('oneOf');
+            findBoundKeywords(value, found);
+            continue;
+        }
+        if (key === 'items' || key === 'anyOf' || key === 'allOf') {
             findBoundKeywords(value, found);
         }
     }
     return found;
+}
+
+const BOUND_PRESENCE_KEYWORDS = [
+    'minimum',
+    'maximum',
+    'exclusiveMinimum',
+    'exclusiveMaximum',
+    'multipleOf',
+    'minLength',
+    'maxLength',
+    'pattern',
+    'format',
+    'maxItems',
+] as const;
+
+function nodeCarriesBound(node: Record<string, unknown>): boolean {
+    if (BOUND_PRESENCE_KEYWORDS.some((key) => key in node)) {
+        return true;
+    }
+    if (node.uniqueItems === true) {
+        return true;
+    }
+    return typeof node.minItems === 'number' && node.minItems > 1;
+}
+
+/**
+ * Walks the source schema and its projected counterpart together and asserts that
+ * every node the source carries a bound on projects a non-empty restated
+ * description. A projection that strips a bound without restating it (69 of 75
+ * bounded catalog nodes carry no description of their own) stays undetected by a
+ * check that only asserts the bound keyword's absence. Anthropic's projection never
+ * wraps a node (only OpenAI's forced-nullable pattern does), so no unwrap is needed
+ * before descending into `properties`/`items`/`anyOf`/`allOf`.
+ */
+function assertBoundsRestated(source: unknown, projected: unknown): void {
+    if (Array.isArray(source)) {
+        const projectedEntries = Array.isArray(projected) ? projected : [];
+        for (const [index, entry] of source.entries()) {
+            assertBoundsRestated(entry, projectedEntries[index]);
+        }
+        return;
+    }
+    if (!isRecord(source)) {
+        return;
+    }
+    const projectedNode = isRecord(projected) ? projected : {};
+    if (nodeCarriesBound(source)) {
+        expect(typeof projectedNode.description).toBe('string');
+        expect((projectedNode.description as string).length).toBeGreaterThan(0);
+    }
+    if (isRecord(source.properties)) {
+        let projectedProperties: Record<string, unknown> = {};
+        if (isRecord(projectedNode.properties)) {
+            projectedProperties = projectedNode.properties;
+        }
+        for (const [key, propertySchema] of Object.entries(source.properties)) {
+            assertBoundsRestated(propertySchema, projectedProperties[key]);
+        }
+    }
+    if (source.items !== undefined) {
+        assertBoundsRestated(source.items, projectedNode.items);
+    }
+    if (Array.isArray(source.anyOf)) {
+        assertBoundsRestated(source.anyOf, projectedNode.anyOf);
+    }
+    if (Array.isArray(source.oneOf)) {
+        // The source's `oneOf` branches land on the projected `anyOf` (`walkSchemaNode`
+        // rewrites `oneOf` onto `anyOf`), in the same order.
+        assertBoundsRestated(source.oneOf, projectedNode.anyOf);
+    }
+    if (Array.isArray(source.allOf)) {
+        assertBoundsRestated(source.allOf, projectedNode.allOf);
+    }
 }
 
 describe('projectAnthropicStrictToolSchema', () => {
@@ -184,6 +269,7 @@ describe('projectAnthropicStrictToolSchema', () => {
         for (const schema of catalog) {
             const projected = projectAnthropicStrictToolSchema(schema);
             expect(findBoundKeywords(projected.function.parameters)).toEqual([]);
+            assertBoundsRestated(schema.function.parameters, projected.function.parameters);
         }
     });
 });

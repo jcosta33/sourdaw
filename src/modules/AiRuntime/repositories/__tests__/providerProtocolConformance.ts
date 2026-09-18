@@ -20,6 +20,29 @@ const BOUND_KEYWORDS = [
     'maxItems',
 ] as const;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * True when a wire property schema admits `null` through either mechanism the OpenAI
+ * strict projection uses: a widened `type` array, or an `anyOf` branch typed `null`
+ * (the shape `makeNullable` builds for a property whose own schema was not a plain
+ * `type`, e.g. `enum`).
+ */
+function isNullableWireSchema(schema: unknown): boolean {
+    if (!isRecord(schema)) {
+        return false;
+    }
+    if (Array.isArray(schema.type)) {
+        return schema.type.includes('null');
+    }
+    if (Array.isArray(schema.anyOf)) {
+        return schema.anyOf.some((branch) => isRecord(branch) && branch.type === 'null');
+    }
+    return false;
+}
+
 /**
  * Recursively collects every occurrence of a stripped bound keyword still present as a
  * schema node's own keyword. Schema-structure-aware rather than a blind key walk, matching
@@ -297,11 +320,33 @@ export function describeProviderProtocolConformance(name: string, harness: Provi
             expect(Array.isArray(observed.request.tools)).toBe(true);
             const tools = observed.request.tools as unknown[];
             expect(tools.length).toBeGreaterThan(0);
+            let checkedOptionalProperty = false;
             for (const tool of tools) {
                 const { strict, parameters } = harness.readWireTool(tool);
                 expect(strict).toBe(true);
                 expect(findBoundKeywords(parameters)).toEqual([]);
+
+                // `setTempo` carries `label`, the fixture's one optional property, so its
+                // wire shape exercises the dialect's own optional-property mechanism: left
+                // out of `required` for Anthropic, or forced into `required` and made
+                // nullable for the OpenAI dialects. Read from the wire tool itself rather
+                // than branching on the dialect's name, so the assertion holds regardless
+                // of which harness supplies it.
+                const properties = isRecord(parameters) ? parameters.properties : undefined;
+                if (!isRecord(properties) || !('label' in properties)) {
+                    continue;
+                }
+                checkedOptionalProperty = true;
+                const propertyKeys = Object.keys(properties);
+                const required = isRecord(parameters) && Array.isArray(parameters.required) ? parameters.required : [];
+                if (required.includes('label')) {
+                    expect(new Set(required)).toEqual(new Set(propertyKeys));
+                    expect(isNullableWireSchema(properties.label)).toBe(true);
+                } else {
+                    expect(required).not.toContain('label');
+                }
             }
+            expect(checkedOptionalProperty).toBe(true);
             expect(observed.usage).toMatchObject({
                 inputTokens: PROVIDER_CONFORMANCE_FIXTURE.toolUsage.inputTokens,
                 outputTokens: PROVIDER_CONFORMANCE_FIXTURE.toolUsage.outputTokens,
