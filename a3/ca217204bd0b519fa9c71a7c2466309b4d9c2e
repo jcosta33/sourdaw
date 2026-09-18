@@ -1,0 +1,19 @@
+scripts/__tests__/restampWasmInventory.spec.ts
+  s_9b530f08172a54::t_c3a3cd58811b82 73-75,79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a3ca217204bd0b519fa9c71a7c2466309b4d9c2e",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
