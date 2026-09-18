@@ -128,6 +128,19 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                     // engine reads a controller number and a 7-bit value.
                     deviceNode.levainControls.handleCc(cc, value);
                 }
+                // Both carriers, every time, and unconditionally: the native
+                // session carries its own copy of this device, its readiness is
+                // nothing the web node's gate can answer for, and the send is
+                // silent when no session is carrying the strip. The same raw
+                // 7-bit byte, because the engine's own body reads a controller
+                // on that scale.
+                void deps.sendNativeLiveMidiControl({
+                    trackId: targetTrackId,
+                    deviceId: levainDevice.id,
+                    controller: cc,
+                    value,
+                    channel,
+                });
             }
         }
 );

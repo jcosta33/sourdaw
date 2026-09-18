@@ -383,7 +383,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['list_directory', ['path']],
     ['list_midi_inputs', []],
     ['load_cached_whisper_model', []],
-    ['load_plugin', ['plugin_id', 'instance_id', 'sample_rate']],
+    ['load_plugin', ['plugin_id', 'instance_id']],
     ['load_sample', ['instance_id', 'file_path']],
     ['map_graph_batch', ['prior', 'batch', 'sample_rate', 'session']],
     ['open_midi_input', ['port_index']],
@@ -426,7 +426,7 @@ describe('positional argument contract', () => {
         // Named explicitly because these are the two the parity risk is real
         // for: everything in them is a `String`, so nothing downstream rejects
         // a swap.
-        expect(COMMAND_ARGUMENTS.get('load_plugin')).toEqual(['plugin_id', 'instance_id', 'sample_rate']);
+        expect(COMMAND_ARGUMENTS.get('load_plugin')).toEqual(['plugin_id', 'instance_id']);
         expect(COMMAND_ARGUMENTS.get('provider_gateway_request')).toEqual([
             'request_id',
             'session_id',

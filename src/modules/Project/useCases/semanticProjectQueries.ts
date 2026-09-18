@@ -3,7 +3,10 @@ import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
 
 import { CURRENT_PROJECT_VERSION } from '../models/ProjectData';
 import {
+    MAX_SEMANTIC_QUERY_CURSOR_LENGTH,
+    MAX_SEMANTIC_QUERY_FILTER_TEXT_LENGTH,
     MAX_SEMANTIC_QUERY_PAGE_SIZE,
+    MAX_SEMANTIC_QUERY_REVISION_TOKEN_LENGTH,
     SEMANTIC_PROJECT_QUERY_SCHEMA,
     SEMANTIC_PROJECT_QUERY_SCHEMA_VERSION,
     SEMANTIC_PROJECT_QUERY_TYPES,
@@ -26,8 +29,6 @@ const MAX_NESTED_VALUES = 100;
 const MAX_TEXT_LENGTH = 2_048;
 const MAX_VALUE_DEPTH = 6;
 const MAX_WARNINGS = 20;
-const MAX_FILTER_TEXT_LENGTH = 256;
-const MAX_REVISION_TOKEN_LENGTH = 65_536;
 type RetainedSnapshot = Map<string, { item: SemanticIndexEntity; signature: string }>;
 
 const retainedSnapshots = new Map<string, RetainedSnapshot>();
@@ -49,10 +50,10 @@ function assertSemanticProjectQueryInput(input: SemanticProjectQueryInput): void
     if (input.page?.cursor !== undefined && typeof input.page.cursor !== 'string') {
         throw new Error('Semantic query cursor must be a string');
     }
-    if (input.page?.cursor && input.page.cursor.length > MAX_FILTER_TEXT_LENGTH) {
+    if (input.page?.cursor && input.page.cursor.length > MAX_SEMANTIC_QUERY_CURSOR_LENGTH) {
         throw new Error('Semantic query cursor is too long');
     }
-    if (input.sinceRevision !== undefined && input.sinceRevision.length > MAX_REVISION_TOKEN_LENGTH) {
+    if (input.sinceRevision !== undefined && input.sinceRevision.length > MAX_SEMANTIC_QUERY_REVISION_TOKEN_LENGTH) {
         throw new Error('Semantic query revision token is too long');
     }
     const filters = input.filters;
@@ -79,7 +80,7 @@ function assertSemanticProjectQueryInput(input: SemanticProjectQueryInput): void
         throw new Error('Semantic query confidence must be between 0 and 1');
     }
     for (const value of Object.values(filters)) {
-        if (typeof value === 'string' && value.length > MAX_FILTER_TEXT_LENGTH) {
+        if (typeof value === 'string' && value.length > MAX_SEMANTIC_QUERY_FILTER_TEXT_LENGTH) {
             throw new Error('Semantic query text filter is too long');
         }
     }
@@ -114,8 +115,8 @@ function inferredNameConfidence(name: string | undefined, fuzzyName: string | un
     if (!name) {
         return 0;
     }
-    const normalizedName = normalizeText(name).slice(0, MAX_FILTER_TEXT_LENGTH);
-    const normalizedQuery = normalizeText(fuzzyName).slice(0, MAX_FILTER_TEXT_LENGTH);
+    const normalizedName = normalizeText(name).slice(0, MAX_SEMANTIC_QUERY_FILTER_TEXT_LENGTH);
+    const normalizedQuery = normalizeText(fuzzyName).slice(0, MAX_SEMANTIC_QUERY_FILTER_TEXT_LENGTH);
     if (normalizedName.includes(normalizedQuery) || normalizedQuery.includes(normalizedName)) {
         return 1;
     }

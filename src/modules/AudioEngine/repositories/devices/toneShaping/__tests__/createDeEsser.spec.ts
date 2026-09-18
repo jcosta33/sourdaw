@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
 import { chromium, type Browser, type Page } from 'playwright';
-import { describe, expect, it, type TestContext } from 'vitest';
+import { beforeAll, describe, expect, it, type TestContext } from 'vitest';
 
 import { dbToGain, gainToDb } from '#/utils/audioLevelLaw';
 
@@ -435,6 +435,16 @@ function skipWithoutRenderProof(ctx: TestContext): void {
 }
 
 describe('createDeEsser real OfflineAudioContext renders', () => {
+    // The cold start — Chromium launch, the esbuild child bundle, page
+    // preparation — nondeterministically exceeds a test timeout under CI
+    // shard load (#4330): it hung the first render for its full 30s while
+    // its warm siblings finished in seconds. Warm it once here with a
+    // budget that covers a loaded runner, so each test's timeout describes
+    // a render, not the setup it happens to be first for.
+    beforeAll(async () => {
+        await pageOnce();
+    }, 120_000);
+
     it('renders a below-threshold band tone at unity — output approximates input within 1e-3', async (ctx) => {
         const page = await pageOnce();
         if (!page) {

@@ -53,7 +53,7 @@ export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
 export const REQUIRED_BODY_HEADINGS = [
     '### 🎯 What does this PR do?',
     '### 🧪 How to test',
-    '### 📌 Related tickets & additional notes',
+    '### 📌 Related issues & additional notes',
 ] as const;
 
 /**
@@ -67,7 +67,7 @@ const TEMPLATE_BODY_HEADINGS = [
     '### 🎯 What does this PR do?',
     '### 🧪 How to test',
     '### 🖼️ Screenshots',
-    '### 📌 Related tickets & additional notes',
+    '### 📌 Related issues & additional notes',
 ] as const;
 
 export const PULL_REQUEST_BODY_BYTE_LIMIT = 4_000;
@@ -267,12 +267,35 @@ function assertIssueClosingReferences(
     }
 }
 
+/**
+ * The heading's pre-rename spelling. Bodies published before the Related-issues rename still carry
+ * it, and `lane:publish` must read their sections to recompose them under the canonical heading —
+ * reading accepts the legacy spelling exactly once, while everything written stays canonical.
+ */
+const LEGACY_RELATED_HEADING = '### 📌 Related tickets & additional notes';
+
 function relatedTicketLines(body: string): string[] {
     const heading = REQUIRED_BODY_HEADINGS.at(-1);
-    const headingIndex = heading === undefined ? -1 : body.indexOf(heading);
-    if (heading === undefined || headingIndex < 0 || headingIndex !== body.lastIndexOf(heading)) {
-        fail('pull-request body must contain exactly one Related tickets section');
+    if (heading === undefined) {
+        fail('pull-request body must contain exactly one Related issues section');
     }
+    const legacyCount = body.split(LEGACY_RELATED_HEADING).length - 1;
+    const headingIndex = body.indexOf(heading);
+    if (headingIndex >= 0) {
+        if (headingIndex !== body.lastIndexOf(heading) || legacyCount > 0) {
+            fail('pull-request body must contain exactly one Related issues section');
+        }
+    } else {
+        const legacyIndex = body.indexOf(LEGACY_RELATED_HEADING);
+        if (legacyIndex < 0 || legacyIndex !== body.lastIndexOf(LEGACY_RELATED_HEADING)) {
+            fail('pull-request body must contain exactly one Related issues section');
+        }
+        return sectionLinesAfter(body, legacyIndex, LEGACY_RELATED_HEADING);
+    }
+    return sectionLinesAfter(body, headingIndex, heading);
+}
+
+function sectionLinesAfter(body: string, headingIndex: number, heading: string): string[] {
     return body
         .slice(headingIndex + heading.length)
         .trim()
@@ -476,7 +499,7 @@ export function issueRelationshipFromBody(
     });
     if (issue === undefined) {
         if (lines[0] !== NO_RELATED_TICKETS || relationships.length > 0) {
-            fail('issueless pull-request body must start its Related tickets section with None.');
+            fail('issueless pull-request body must start its Related issues section with None.');
         }
         assertIssueClosingReferences(body, issue, undefined, repository);
         return undefined;
@@ -517,7 +540,7 @@ ${howToTest}
 ### 🖼️ Screenshots
 None.
 
-### 📌 Related tickets & additional notes
+### 📌 Related issues & additional notes
 ${relatedTickets}
 `;
     assertPullRequestBody(body, 'pull-request body', title);

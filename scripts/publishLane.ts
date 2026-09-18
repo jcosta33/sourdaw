@@ -144,7 +144,13 @@ export type PublishMetadataFlags = {
     labels?: string[];
 };
 
-export type PullRequestMetadata = { labels: string[]; milestoneTitle?: string; projectTitles: string[] };
+export type PullRequestMetadata = {
+    labels: string[];
+    /** Fenced authorship labels (`Authored by …` description) the pull request wears now. */
+    fencedAuthorLabels: string[];
+    milestoneTitle?: string;
+    projectTitles: string[];
+};
 
 /** The metadata a publication must leave on its pull request. `labels` leads with the model label. */
 export type PublishMetadataTarget = {
@@ -154,8 +160,16 @@ export type PublishMetadataTarget = {
     projectTitles: string[];
 };
 
-/** The pieces of the target a pull request is missing, or `undefined` when it is already complete. */
-export type MetadataEditPlan = { addLabels: string[]; milestoneTitle?: string; addProjectTitles: string[] };
+/**
+ * The pieces of the target a pull request is missing, plus the fenced authorship labels a model
+ * change supersedes, or `undefined` when it is already complete.
+ */
+export type MetadataEditPlan = {
+    addLabels: string[];
+    removeLabels: string[];
+    milestoneTitle?: string;
+    addProjectTitles: string[];
+};
 
 export const MODEL_LABEL_COLOR = '8250df';
 
@@ -301,6 +315,9 @@ export function pullRequestMetadataFromRow(row: PullRequestMetadataRow): PullReq
     const milestoneTitle = titleOf(row.milestone);
     return {
         labels: labelNamesFromRow(row.labels),
+        fencedAuthorLabels: labelRowsFromRow(row.labels)
+            .filter(isAuthorshipLabel)
+            .map((label) => label.name),
         ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
         projectTitles: [
             ...new Set(
@@ -405,24 +422,40 @@ export function labelRowsFromListing(rows: unknown): LabelRow[] {
 }
 
 /**
- * The missing pieces only, so a rerun after a partial metadata write converges without churning
- * what a previous publish already set. `undefined` means the pull request already carries the
- * whole target and no `gh pr edit` is issued at all.
+ * The missing pieces plus the superseded fences, so a rerun after a partial metadata write
+ * converges without churning what a previous publish already set. `undefined` means the pull
+ * request already carries the whole target and no `gh pr edit` is issued at all.
+ *
+ * Removals are fence-derived only: a label leaves the plan's crosshairs by carrying the
+ * `Authored by ` description, never by name, so a descriptive label that merely shares a
+ * model's name is never removed. The current model's own fence is kept by name equality.
  */
 export function metadataEditPlan(
     target: PublishMetadataTarget,
     current: PullRequestMetadata
 ): MetadataEditPlan | undefined {
+    const currentModelLabel = modelLabelName(target.model).toLowerCase();
+    const removeLabels = current.fencedAuthorLabels.filter((label) => label.toLowerCase() !== currentModelLabel);
     const addLabels = target.labels.filter((label) => !current.labels.includes(label));
     const milestoneTitle =
         target.milestoneTitle !== undefined && current.milestoneTitle !== target.milestoneTitle
             ? target.milestoneTitle
             : undefined;
     const addProjectTitles = target.projectTitles.filter((title) => !current.projectTitles.includes(title));
-    if (addLabels.length === 0 && milestoneTitle === undefined && addProjectTitles.length === 0) {
+    if (
+        addLabels.length === 0 &&
+        removeLabels.length === 0 &&
+        milestoneTitle === undefined &&
+        addProjectTitles.length === 0
+    ) {
         return undefined;
     }
-    return { addLabels, ...(milestoneTitle === undefined ? {} : { milestoneTitle }), addProjectTitles };
+    return {
+        addLabels,
+        removeLabels,
+        ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
+        addProjectTitles,
+    };
 }
 
 export function applyPullRequestMetadataArgs(number: number, plan: MetadataEditPlan): string[] {
@@ -433,6 +466,7 @@ export function applyPullRequestMetadataArgs(number: number, plan: MetadataEditP
         '--repo',
         REQUIRED_REPOSITORY,
         ...plan.addLabels.flatMap((label) => ['--add-label', label]),
+        ...plan.removeLabels.flatMap((label) => ['--remove-label', label]),
         ...(plan.milestoneTitle === undefined ? [] : ['--milestone', plan.milestoneTitle]),
         ...plan.addProjectTitles.flatMap((title) => ['--add-project', title]),
     ];

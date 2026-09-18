@@ -10,6 +10,7 @@ import { getMidiTransform, getMidiTransformDescriptors, getMidiTransformNames } 
 import { getToasterPresetDeviceState } from '#/modules/Toaster/useCases';
 
 import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
+import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
 
 import type { setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import type {
@@ -151,6 +152,7 @@ const {
     setNotificationEventBusMock,
     setProjectIdentityTransitionDependenciesMock,
     commandRuntimeRepairPortMock,
+    externalClientManifestPortMock,
     repairRuntimeGraphFromProjectMock,
     sessionUndoWitnessStampPortMock,
     stampSessionUndoWitnessMock,
@@ -251,6 +253,7 @@ const {
         },
         setNotificationEventBusMock: vi.fn<(eventBus: NotificationEventBus) => void>(),
         commandRuntimeRepairPortMock: { setProvider: vi.fn() },
+        externalClientManifestPortMock: { setProvider: vi.fn() },
         repairRuntimeGraphFromProjectMock: vi.fn(() => Promise.resolve()),
         sessionUndoWitnessStampPortMock: { setProvider: vi.fn() },
         stampSessionUndoWitnessMock: vi.fn(),
@@ -266,6 +269,10 @@ const {
 
 vi.mock('#/infra/logger/runtimeLogger', () => ({ setRuntimeLogger: noop }));
 
+vi.mock('#/modules/AgentAdapters/useCases', () => ({
+    externalClientManifestPort: externalClientManifestPortMock,
+}));
+
 vi.mock('#/modules/AiGeneration/useCases', () => ({
     getGenerationHandlers: sentinelHandlers('AiGeneration'),
     getAiMidiHandlers: sentinelHandlers('AiMidi'),
@@ -276,6 +283,8 @@ vi.mock('#/modules/AiGeneration/useCases', () => ({
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     assertCanonicalLlmActionStrategies: assertCanonicalLlmActionStrategiesMock,
+    getAgentCapabilityCatalog: noop,
+    getAiRuntimeProtocolContracts: noop,
     beginMixAnalysis: noop,
     completeMixAnalysis: noop,
     failMixAnalysis: noop,
@@ -294,6 +303,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    getDeviceManifestProtocolContract: noop,
     setClipAudioAssetStager: noop,
     stageAudioBufferAsset: noop,
     acceptsExternalPluginAutomationParameter: noop,
@@ -395,6 +405,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getCommandProtocolContracts: noop,
     commandBatchPreflightPort: { setProvider: noop },
     commandBatchPreviewPort: { setProvider: noop, setRecoveryProvider: noop },
     configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
@@ -499,6 +510,7 @@ vi.mock('#/modules/Levain/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    getMidiTransformProtocolContract: noop,
     getChordTrackHandlers: sentinelHandlers('ChordTrack'),
     getMidiGrooveHandlers: sentinelHandlers('MidiGroove'),
     getMidiNoteTransformHandlers: sentinelHandlers('MidiNoteTransform'),
@@ -522,6 +534,8 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
+    agentCapabilityDiscoveryPort: { setProvider: noop },
+    getProjectProtocolContracts: noop,
     collectDurableOwnedAudioBufferIds: collectDurableOwnedAudioBufferIdsMock,
     productionBriefActionBatchAdmission: { capture: () => ({ allowsCurrent: () => true }) },
     getProjectHandlers: sentinelHandlers('Project'),
@@ -884,6 +898,10 @@ describe('bootstrap', () => {
         expect(commandRuntimeRepairPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(
             repairRuntimeGraphFromProjectMock
         );
+    });
+
+    it('offers external clients the published protocol manifest, not a second list', () => {
+        expect(externalClientManifestPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(getAgentProtocolManifest);
     });
 
     it('wires the undo session witness stamp port to the real production stamp (#3331)', () => {

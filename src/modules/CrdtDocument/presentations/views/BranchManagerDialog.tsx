@@ -99,10 +99,10 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
         }
     };
 
-    const handleDelete = (branchId: string) => {
+    const handleDelete = async (branchId: string) => {
         setOperationError(null);
         try {
-            deleteBranch(branchId);
+            await deleteBranch(branchId);
         } catch (error) {
             reportFailure('delete', findBranchName(branchId), error);
         }
@@ -151,7 +151,7 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
                                     isActive={branch.branchId === state.activeBranchId}
                                     onSwitch={() => handleSwitch(branch.branchId)}
                                     onMerge={() => void handleMerge(branch.branchId)}
-                                    onDelete={() => handleDelete(branch.branchId)}
+                                    onDelete={() => void handleDelete(branch.branchId)}
                                 />
                             ))}
                         </Stack>

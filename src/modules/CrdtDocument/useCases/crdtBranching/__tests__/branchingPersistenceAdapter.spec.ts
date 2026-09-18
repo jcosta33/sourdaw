@@ -2,6 +2,7 @@ import { clone as cloneDoc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort, createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 
 import { automergeRepository } from '../../../repositories/automergeRepository';
 import { branchStore, type BranchRecord, MAIN_BRANCH_ID } from '../../../stores/branchStore';
@@ -56,6 +57,10 @@ describe('CRDT branch persistence adapter interleavings', () => {
         vi.stubGlobal('cancelAnimationFrame', (id: number) => {
             scheduledFrames.delete(id);
         });
+
+        // The real branch-state authority sequences every durable write on a
+        // Web Lock, and jsdom ships no Web Locks API.
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
 
         automergeRepository.reset();
         configureRealStorageAdapter();

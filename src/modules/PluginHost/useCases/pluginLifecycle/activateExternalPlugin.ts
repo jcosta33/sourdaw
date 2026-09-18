@@ -29,19 +29,6 @@ type ActivateExternalPluginInput = {
     instanceId: string;
     stateChunk?: string;
     /**
-     * The sample rate of the engine whose audio this instance will process.
-     *
-     * The plugin is activated at this rate and every samples→ms conversion the
-     * host makes for it is against this rate, because this is the clock the
-     * audio it is fed was rendered on. The host used to pick the output
-     * device's own default instead, which is a different number on any machine
-     * whose device is not running at the engine rate.
-     *
-     * Supplied by the caller rather than read here: this module keeps no
-     * AudioEngine edge, for the same reason `onLatencyMs` is injected.
-     */
-    engineSampleRate: number;
-    /**
      * Sink for this instance's latency in MILLISECONDS (PH-4): the value read at
      * activation, and every runtime change the native host pushes afterwards.
      * Callers wire it to their latency registry keyed by engine device id;
@@ -86,7 +73,6 @@ export function activateExternalPlugin({
     pluginId,
     instanceId,
     stateChunk,
-    engineSampleRate,
     onLatencyMs,
 }: ActivateExternalPluginInput): Promise<ExternalPluginActivationResult> {
     const rebuildCompletion = pluginLifecycleScheduler.currentRebuildCompletion();
@@ -96,7 +82,6 @@ export function activateExternalPlugin({
                 pluginId,
                 instanceId,
                 stateChunk,
-                engineSampleRate,
                 onLatencyMs,
             })
         );
@@ -173,7 +158,7 @@ export function activateExternalPlugin({
     const activationTask = (async (): Promise<ExternalPluginActivationResult> => {
         let attachment: ExternalPluginActivationResult | null = null;
         try {
-            const instance = await loadPlugin(pluginId, instanceId, engineSampleRate);
+            const instance = await loadPlugin(pluginId, instanceId);
             if (activationEpoch !== externalPluginActivationEpoch.current) {
                 return {
                     status: 'failed',

@@ -38,19 +38,21 @@ const wasmStub = vi.hoisted(() => {
             readonly voiceCount: number
         ) {}
 
-        note_on(midiNote: number, _velocity: number): void {
+        push_note_on(midiNote: number, _velocity: number, _channel: number, _offset: number): boolean {
             this.phases.set(midiNote, this.phases.get(midiNote) ?? 0);
+            return true;
         }
-        note_on_with_channel(midiNote: number, velocity: number, _channel: number): void {
-            this.note_on(midiNote, velocity);
-        }
-        note_off(midiNote: number): void {
+        push_note_off(midiNote: number, _offset: number): boolean {
             this.phases.delete(midiNote);
+            return true;
         }
-        note_off_on_channel(midiNote: number, _channel: number): void {
+        push_note_off_on_channel(midiNote: number, _channel: number, _offset: number): boolean {
             this.phases.delete(midiNote);
+            return true;
         }
-        note_expression(): void {}
+        push_note_expression(): boolean {
+            return true;
+        }
         set_param(): void {}
         set_sustain(): void {}
         set_una_corda(): void {}

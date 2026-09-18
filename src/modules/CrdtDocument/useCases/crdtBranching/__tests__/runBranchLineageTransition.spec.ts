@@ -5,8 +5,10 @@ const {
     mockIsAppError,
     mockLogger,
     mockFlushStorage,
+    mockCaptureTransactionScope,
     mockAutomergeRepo,
     mockBranchStore,
+    mockBranchStateAuthority,
     mockCompactProject,
     mockLoadCrdtProject,
     mockProjectCrdtToStores,
@@ -16,6 +18,13 @@ const {
     mockIsAppError: vi.fn(() => false),
     mockLogger: { warn: vi.fn() },
     mockFlushStorage: vi.fn(),
+    // No ambient action transaction in this unit, so the captured scope runs
+    // its callback where it stands — what the real capture returns outside one.
+    mockCaptureTransactionScope: vi.fn(
+        () =>
+            <Result>(run: () => Result) =>
+                run()
+    ),
     mockAutomergeRepo: {
         getDoc: vi.fn(() => null),
         getRootId: vi.fn(() => 'root'),
@@ -26,12 +35,12 @@ const {
         replaceRootContentPreservingIdentity: vi.fn(),
         insertDoc: vi.fn(),
     },
-    mockBranchStore: {
-        set: vi.fn(),
-        // The rollback path writes with trySet — a throw there would skip the
-        // projection that puts the stores back in step with the restored
-        // documents. See #1557.
-        trySet: vi.fn(() => true),
+    mockBranchStore: { set: vi.fn() },
+    mockBranchStateAuthority: {
+        captureRevision: vi.fn(() => 4),
+        commit: vi.fn((): Promise<{ status: string; revision?: number; reason?: string }> =>
+            Promise.resolve({ status: 'committed', revision: 5 })
+        ),
     },
     mockCompactProject: vi.fn(() => Promise.resolve()),
     mockLoadCrdtProject: vi.fn(() => Promise.resolve(true)),
@@ -43,10 +52,14 @@ vi.mock('@automerge/automerge', () => ({ clone: mockCloneDoc }));
 vi.mock('#/infra/errors/isAppError', () => ({ isAppError: mockIsAppError }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
+    captureAutomergeStorageTransactionScope: mockCaptureTransactionScope,
     flushAutomergeStorageWrites: mockFlushStorage,
 }));
 vi.mock('../../../repositories/automergeRepository', () => ({ automergeRepository: mockAutomergeRepo }));
 vi.mock('../../../stores/branchStore', () => ({ branchStore: mockBranchStore }));
+vi.mock('../../../repositories/branchStateAuthority', () => ({
+    branchStateAuthority: mockBranchStateAuthority,
+}));
 vi.mock('../../compactProject', () => ({ compactProject: mockCompactProject }));
 vi.mock('../../loadCrdtProject', () => ({ loadCrdtProject: mockLoadCrdtProject }));
 vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mockProjectCrdtToStores }));
@@ -77,10 +90,14 @@ describe('runBranchLineageTransition', () => {
         mockLoadCrdtProject.mockResolvedValue(true);
         mockCompactProject.mockResolvedValue(undefined);
         mockRunPersistenceOp.mockResolvedValue(undefined);
+        mockBranchStateAuthority.captureRevision.mockReturnValue(4);
+        mockBranchStateAuthority.commit.mockResolvedValue({ status: 'committed', revision: 5 });
     });
 
-    it('applies the transition, sets next state, and returns the result', async () => {
+    it('applies the transition, commits next state, and returns the result', async () => {
         const nextState = { ...previousState, activeBranchId: 'branch-b' };
+        const capturedScope = <Result>(run: () => Result): Result => run();
+        mockCaptureTransactionScope.mockReturnValueOnce(capturedScope);
         const result = await runBranchLineageTransition({
             affectedDocIds: ['doc-1'],
             apply: () => ({ nextState, result: 'success' }),
@@ -89,7 +106,14 @@ describe('runBranchLineageTransition', () => {
             to: 'branch-b',
         });
         expect(result).toBe('success');
-        expect(mockBranchStore.set).toHaveBeenCalledWith(nextState);
+        // The durable commit is the write: it carries the revision the
+        // transition observed and the storage transaction the caller was still
+        // inside, and the authority is what projects it to memory.
+        expect(mockBranchStateAuthority.commit).toHaveBeenCalledWith({
+            expectedRevision: 4,
+            next: nextState,
+            projectionScope: capturedScope,
+        });
         expect(mockProjectCrdtToStores).toHaveBeenCalledTimes(1);
         expect(mockRunPersistenceOp).toHaveBeenCalledWith({
             type: 'root-lineage-transition',
@@ -160,10 +184,38 @@ describe('runBranchLineageTransition', () => {
             })
         ).rejects.toThrow('apply failed');
 
-        // Recovery: snapshots restored, branch store reset to previous, stores re-projected
-        expect(mockBranchStore.trySet).toHaveBeenCalledWith(previousState);
+        // Recovery: snapshots restored and stores re-projected. The throw came
+        // before the commit, so the branch list was never touched — and a
+        // memory write here would put a captured list back over one this
+        // transition never replaced.
         expect(mockProjectCrdtToStores).toHaveBeenCalled();
         expect(mockLoadCrdtProject).toHaveBeenCalled();
+        expect(mockBranchStateAuthority.commit).not.toHaveBeenCalled();
+        expect(mockBranchStore.set).not.toHaveBeenCalled();
+    });
+
+    it('rolls back and throws when the durable commit is refused', async () => {
+        (mockAutomergeRepo.getDoc as ReturnType<typeof vi.fn>).mockReturnValue({ data: 'doc-1-content' });
+        mockBranchStateAuthority.commit.mockResolvedValueOnce({ status: 'refused', reason: 'conflict' });
+        const nextState = { ...previousState, activeBranchId: 'branch-b' };
+
+        await expect(
+            runBranchLineageTransition({
+                affectedDocIds: ['doc-1'],
+                apply: () => ({ nextState, result: 'success' }),
+                from: 'branch-a',
+                previousState,
+                to: 'branch-b',
+            })
+        ).rejects.toThrow(/Branch state could not be persisted \(conflict\)/);
+
+        expect(mockAutomergeRepo.replaceDoc).not.toHaveBeenCalledWith('doc-1', nextState);
+        // A refused commit wrote nothing, so there is no revision to swap back
+        // — and memory is left where the refused transaction put it, which is
+        // the list whose revision the refusal was measured against.
+        expect(mockBranchStateAuthority.commit).toHaveBeenCalledTimes(1);
+        expect(mockBranchStore.set).not.toHaveBeenCalled();
+        expect(mockProjectCrdtToStores).toHaveBeenCalled();
     });
 
     it('deduplicates affectedDocIds when creating snapshots', async () => {

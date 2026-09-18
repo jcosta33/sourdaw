@@ -180,6 +180,8 @@ locally at other lanes' expense.
 | Prove wasm freshness      | `pnpm wasm:verify`                           |
 | Restamp a dependency bump | `pnpm release:restamp`                       |
 
+Structural code search uses the pinned read-only `ast-grep` (`pnpm exec ast-grep run`) per [`.agents/skills/ast-grep/`](./.agents/skills/ast-grep/); rewrite modes are forbidden.
+
 Tests use at most two workers. Playwright uses one. See [testing](./docs/06-testing.md).
 
 Never rerun a failed check to obtain green, bump a head to reroll it, or treat retry passes as
@@ -416,6 +418,13 @@ successful-CI narration, passed-check inventories, or links repeating required-c
 always disclose material failed, skipped, or incomplete verification, keep discriminating checks
 in structured evidence, and report the outcome and material exceptions; do not add a closing
 comment that only repeats the merged state.
+
+Write every approval, acceptance, and review body as a human reviewer would: what the change
+does, what was attacked, what held, and any remaining concerns. Never announce your role,
+identity, or authority chain — the posting identity already carries it. Never cite check
+counts, hash footers, or tool-generated provenance artifacts in the body. The reader is a
+teammate reviewing the work, not an auditor verifying the pipeline ran. If the sentence could
+appear unchanged in a CI log, it does not belong in a review.
 
 Approvals carry no inline comments; `review:publish` rejects APPROVE documents with comments.
 Each inline comment opens a merge-blocking thread; `review:resolve` replies `Done`, asserting a

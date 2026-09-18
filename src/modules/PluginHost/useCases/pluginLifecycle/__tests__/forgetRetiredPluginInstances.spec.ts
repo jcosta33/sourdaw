@@ -22,7 +22,7 @@ import { loadedExternalInstances } from '../loadedExternalInstances';
 import type { PluginLatencyChange } from '../../../repositories/pluginBridge/types';
 
 const mocks = vi.hoisted(() => ({
-    loadPluginRepo: vi.fn<(pluginId: string, instanceId: string, sampleRate: number) => Promise<unknown>>(),
+    loadPluginRepo: vi.fn<(pluginId: string, instanceId: string) => Promise<unknown>>(),
     setPluginStateRepo: vi.fn<(instanceId: string, state: Uint8Array) => Promise<void>>(),
     subscribe: vi.fn<(handler: (change: PluginLatencyChange) => void) => Promise<() => void>>(),
     warn: vi.fn(),
@@ -35,10 +35,8 @@ vi.mock('../../../repositories/pluginBridge/onPluginLatencyChanged', () => ({
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: mocks.warn } }));
 
-const ENGINE_SAMPLE_RATE = 48_000;
-
 function load(instanceId: string): Promise<unknown> {
-    return activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId });
+    return activateExternalPlugin({ pluginId: 'p', instanceId });
 }
 
 describe('forgetRetiredPluginInstances', () => {

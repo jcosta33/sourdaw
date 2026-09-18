@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { add_midi_track, launch_new_project, setupWorkspace } from './e2eUtils';
 
 test.describe('Recording Transport', () => {
     test.beforeEach(async ({ page }) => {
@@ -15,6 +15,9 @@ test.describe('Recording Transport', () => {
         const recordButton = page
             .getByRole('button', { name: 'Record', exact: true })
             .or(page.getByRole('button', { name: 'Stop recording', exact: true }));
+        // A fresh project starts with zero tracks; add one before arming (#4299).
+        await add_midi_track(page);
+
         // Arm the first track so Record has an eligible target (#3679).
         const armButton = page.locator('[data-testid^="track-arm-"]').first();
         await armButton.click();

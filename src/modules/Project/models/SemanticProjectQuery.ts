@@ -2,6 +2,18 @@ export const SEMANTIC_PROJECT_QUERY_SCHEMA = 'sourdaw.semantic-project-query';
 export const SEMANTIC_PROJECT_QUERY_SCHEMA_VERSION = 1;
 export const MAX_SEMANTIC_QUERY_PAGE_SIZE = 50;
 
+/**
+ * How long a filter string, a page cursor and a revision token may be.
+ *
+ * Stated with the contract rather than inside one caller, because the runtime
+ * that answers a query and every parser that admits one have to agree: a
+ * request refused by one bound and accepted by another spelling of it is two
+ * contracts wearing one name.
+ */
+export const MAX_SEMANTIC_QUERY_FILTER_TEXT_LENGTH = 256;
+export const MAX_SEMANTIC_QUERY_CURSOR_LENGTH = 256;
+export const MAX_SEMANTIC_QUERY_REVISION_TOKEN_LENGTH = 65_536;
+
 export const SEMANTIC_PROJECT_QUERY_TYPES = [
     'project-summary',
     'selection',

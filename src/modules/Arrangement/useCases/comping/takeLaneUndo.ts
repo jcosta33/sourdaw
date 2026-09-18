@@ -3,6 +3,9 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
+import { insertTakeLane } from './insertTakeLane';
+import { removeTakeLane } from './removeTakeLane';
+
 type TakeLaneFacetState =
     | { readonly kind: 'takes'; readonly value: readonly Take[] }
     | { readonly kind: 'activeCompRegions'; readonly value: readonly CompRegion[] };
@@ -44,25 +47,6 @@ function applyFacetState(laneId: string, facet: TakeLaneFacetState): void {
     });
 }
 
-function insertLane(lane: TakeLane, laneIndex: number): void {
-    const state = takeLaneStore.value;
-    if (!state || lanePresent(state.lanes, lane.id)) {
-        return;
-    }
-    const insertAt = Math.min(laneIndex, state.lanes.length);
-    takeLaneStore.set({
-        lanes: [...state.lanes.slice(0, insertAt), lane, ...state.lanes.slice(insertAt)],
-    });
-}
-
-function removeLane(laneId: string): void {
-    const state = takeLaneStore.value;
-    if (!state || !lanePresent(state.lanes, laneId)) {
-        return;
-    }
-    takeLaneStore.set({ lanes: state.lanes.filter((existing) => existing.id !== laneId) });
-}
-
 /**
  * Undo entry for a take-lane edit whose capture holds only the state the edit
  * actually changed (#4081): one lane's takes, one lane's comp regions, or one
@@ -78,10 +62,10 @@ export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void 
             return;
         }
         if (edit.kind === 'lane-added') {
-            removeLane(edit.lane.id);
+            removeTakeLane(edit.lane.id);
             return;
         }
-        insertLane(edit.lane, edit.laneIndex);
+        insertTakeLane(edit.lane, edit.laneIndex);
     };
     const redo = () => {
         if (edit.kind === 'facet') {
@@ -89,10 +73,10 @@ export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void 
             return;
         }
         if (edit.kind === 'lane-added') {
-            insertLane(edit.lane, edit.laneIndex);
+            insertTakeLane(edit.lane, edit.laneIndex);
             return;
         }
-        removeLane(edit.lane.id);
+        removeTakeLane(edit.lane.id);
     };
     pushUndoEntry(edit.label, undo, redo);
 }

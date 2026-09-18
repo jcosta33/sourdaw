@@ -31,6 +31,7 @@ export { isCloudAvailable } from './cloudApiManagement/isCloudAvailable';
 
 export { getProjectContext } from './getProjectContext';
 export { getAiRuntimeProtocolContracts } from './getAiRuntimeProtocolContracts';
+export { getAgentCapabilityCatalog } from './getAgentCapabilityCatalog';
 export { assertCanonicalLlmActionStrategies } from './assertCanonicalLlmActionStrategies';
 
 export { resolveBackend } from './llmOrchestration/backendResolution/helpers';
@@ -90,3 +91,8 @@ export { projectAgentRunTelemetry } from './projectAgentRunTelemetry';
 export { projectAgentRunDiagnostics } from './projectAgentRunDiagnostics';
 export { settleRetainedSectionRenderManualReview } from './settleRetainedSectionRenderManualReview';
 export { selectRetainedSectionRenderManualReviews } from './selectRetainedSectionRenderManualReviews';
+export { auditionAgentCatalogCandidate } from './agentCatalogAudition/auditionAgentCatalogCandidate';
+export { applyAgentAuditionCandidate } from './agentCatalogAudition/applyAgentAuditionCandidate';
+export { resolveAgentPreviewDomains } from './agentDomainPreview/resolveAgentPreviewDomains';
+export { resolveAgentDomainPreviewSupport } from './agentDomainPreview/resolveAgentDomainPreviewSupport';
+export { buildAgentDomainPreviews } from './agentDomainPreview/buildAgentDomainPreviews';

@@ -173,6 +173,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         midiClipSplitStateMatches: vi.fn(),
         migrateAbsoluteMidiNotes: vi.fn(),
         panicLiveNotes: vi.fn(),
+        prepareMidiClipFanOutState: vi.fn(),
         prepareMidiClipGlueState: vi.fn(),
         prepareMidiClipSplit: vi.fn(),
         projectClipMidiEvents: vi.fn(),
@@ -236,6 +237,7 @@ vi.mock('#/modules/Knead/useCases', async () => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getAgentBuiltinDeviceRuntimeManifest: vi.fn(() => []),
     forgetProjectLatchedPedals: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
     startFaustNote: vi.fn(),
@@ -251,10 +253,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     holdWebFallbackDeviceParam: vi.fn(),
     getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
     // The rate `projectTrackToLiveStrip` activates external plugins at. It must
-    // agree with the mocked context above: a live engine has exactly one clock,
-    // and `undefined` here would mean the engine is not rendering, which leaves
-    // the restored track's plugin dormant instead of rebuilt.
-    getLiveEngineSampleRate: vi.fn(() => 48000),
     getRuntimeGraphRevision: vi.fn(() => 0),
     initializeTrackStripFromSnapshot: vi.fn(() => ({
         acceptance: 'accepted' as const,
@@ -310,6 +308,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     isDeviceCarriedByNativeSession: vi.fn(),
     matchesRuntimeDeviceChainTopology: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(),
+    projectsToDifferentNativeBank: vi.fn(() => false),
     nativeLiveGraphSessionSplice: vi.fn(),
     prepareCachedAudioBuffersFromIdb: vi.fn(),
     readNativeEnginePlayheadSeconds: vi.fn(),
@@ -361,6 +360,7 @@ vi.mock('#/modules/Routing/useCases', () => ({
     wireSidechainRoutes: vi.fn(),
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
+    getAgentDeviceFactoryManifest: vi.fn(() => ({ devices: [] })),
     activateExternalPlugin: vi.fn(() => Promise.resolve()),
     beginProjectSessionPluginRetirement: vi.fn(),
     clearExternalPluginRestoreFailure: vi.fn(),

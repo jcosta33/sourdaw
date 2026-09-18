@@ -63,13 +63,14 @@ vi.mock('#/modules/CrdtDocument/useCases', async () => {
         settlePendingProjectWritesAndCaptureRevision: original.settlePendingProjectWritesAndCaptureRevision,
     };
 });
-// submitAdmittedPromptRequest imports parseVersionedCommandBatchEnvelope; compileAgentActionExecution imports compileVersionedCommandBatchEnvelope and parseVersionedCommandBatchEnvelope; compilePlannedActionCommandBatch imports compileVersionedCommandBatchEnvelope and parseVersionedCommandEnvelope; compilePendingActionCommandEnvelopes imports migrateLegacyAppActionToVersionedCommandEnvelope and serializeVersionedCommandEnvelope; compileAgentRiskApproval imports commandBatchPreflightPort, getAgentActionRiskPolicy, getVersionedCommandBatchDivergenceTargetIds, and parseVersionedCommandBatchEnvelope; reconcilePreparedStemImportRecovery imports getVersionedCommandBatchIdempotentReplay and parseVersionedCommandBatchEnvelope; executePlannedActions imports executeVersionedCommandBatchEnvelope and generateGroupId; executePromptActionGroup imports generateGroupId, isExecutableAppActionType, and parseVersionedCommandBatchEnvelope; createStemImportConfirmationResourceLease imports getVersionedCommandBatchCommitProof; issueAgentCommandApprovalBinding imports issueCommandApprovalBinding; completeMidiLearn imports executeUserAppAction when the CrdtDocument useCases barrel loads at runtime.
+// submitAdmittedPromptRequest imports parseVersionedCommandBatchEnvelope; compileAgentActionExecution imports compileVersionedCommandBatchEnvelope and parseVersionedCommandBatchEnvelope; compilePlannedActionCommandBatch imports compileVersionedCommandBatchEnvelope and parseVersionedCommandEnvelope; compilePendingActionCommandEnvelopes imports migrateLegacyAppActionToVersionedCommandEnvelope and serializeVersionedCommandEnvelope; compileAgentRiskApproval imports commandBatchPreflightPort, getAgentActionRiskPolicy, getVersionedCommandBatchDivergenceTargetIds, and parseVersionedCommandBatchEnvelope, and reaches getExecutableAppActionEffect through resolveAgentPreviewDomains; reconcilePreparedStemImportRecovery imports getVersionedCommandBatchIdempotentReplay and parseVersionedCommandBatchEnvelope; executePlannedActions imports executeVersionedCommandBatchEnvelope and generateGroupId; executePromptActionGroup imports generateGroupId, isExecutableAppActionType, and parseVersionedCommandBatchEnvelope; createStemImportConfirmationResourceLease imports getVersionedCommandBatchCommitProof; issueAgentCommandApprovalBinding imports issueCommandApprovalBinding; completeMidiLearn imports executeUserAppAction when the CrdtDocument useCases barrel loads at runtime.
 vi.mock('#/modules/Command/useCases', async () => {
     const original = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
     return {
         commandBatchPreflightPort: original.commandBatchPreflightPort,
         compileVersionedCommandBatchEnvelope: original.compileVersionedCommandBatchEnvelope,
         configureCommandBatchIdempotency: original.configureCommandBatchIdempotency,
+        getAppActionPreviewExecution: original.getAppActionPreviewExecution,
         executeAppAction: original.executeAppAction,
         pushUndoEntry: original.pushUndoEntry,
         executeUserAppAction: vi.fn(),
@@ -108,6 +109,7 @@ vi.mock('#/modules/Command/useCases', async () => {
         },
         generateGroupId: original.generateGroupId,
         getAgentActionRiskPolicy: original.getAgentActionRiskPolicy,
+        getExecutableAppActionEffect: original.getExecutableAppActionEffect,
         getVersionedCommandBatchCommitProof: original.getVersionedCommandBatchCommitProof,
         getVersionedCommandBatchDivergenceTargetIds: original.getVersionedCommandBatchDivergenceTargetIds,
         getVersionedCommandBatchIdempotentReplay: async (
@@ -154,6 +156,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureBusStrip: vi.fn(),
     getCompensationDelay: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
+    getCachedAudioBuffer: vi.fn(() => null),
     getEngineState: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,

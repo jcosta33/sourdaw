@@ -237,7 +237,7 @@ Change.
 Run.
 ### 🖼️ Screenshots
 None.
-### 📌 Related tickets & additional notes
+### 📌 Related issues & additional notes
 ${relationship}`;
 }
 

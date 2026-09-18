@@ -98,6 +98,7 @@ const EMPTY_RETAINED_EVENT: MidiNoteEvent = MidiNoteEvent {
     event_id_hash: 0,
     absolute_occurrence_index: 0,
     frame_offset: 0,
+    articulation_id: None,
 };
 
 /// Run one of the non-RT control path's blocking bodies — lock acquisition,
@@ -2855,6 +2856,7 @@ mod tests {
             clip_id_hash: 0,
             event_id_hash: 0,
             absolute_occurrence_index: 0,
+            articulation_id: None,
         }
     }
 

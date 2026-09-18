@@ -233,6 +233,9 @@ type RunInput = {
     withPrebuiltChain?: boolean;
     changes?: Parameters<typeof scheduleTrackClips>[0]['changes'];
     projector?: Parameters<typeof scheduleTrackClips>[0]['projections']['projectPpqEndpoints'];
+    /** One beat per second at 60, so a beat figure reads straight off the
+     *  scheduled seconds. */
+    defaultTempo?: number;
 };
 
 async function run({
@@ -243,6 +246,7 @@ async function run({
     withPrebuiltChain = true,
     changes = [],
     projector = projectPpqEndpoints,
+    defaultTempo = 120,
 }: RunInput): Promise<{
     trackInputNode: GainNode;
     trackGainNode: GainNode;
@@ -263,7 +267,7 @@ async function run({
         trackPanNode,
         destination,
         durationSeconds: 60,
-        defaultTempo: 120,
+        defaultTempo,
         changes,
         projections: {
             projectMidiEvents,
@@ -810,6 +814,33 @@ describe('scheduleTrackClips — comping (take-lane) resolution edges', () => {
         // Region disjoint from clip in the gap loop too (startBeat 10 >= endBeat 8)
         // → no split → whole clip is one gap → 1 source.
         expect(sources).toHaveLength(1);
+    });
+
+    it('enters the buffer at each fragment’s own displacement, not the clip’s', async () => {
+        // 60 BPM, so one beat is one second and every scheduled figure reads
+        // straight off the beat figure. Clip [0,8) slipped half a beat into its
+        // buffer, one comp region [2,4): the three fragments must enter the
+        // buffer 0.5, 2.5 and 4.5 seconds in. Before the displacement fold all
+        // three entered at 0.5 and the region replayed the clip's opening.
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(20));
+        setLane({
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [{ id: 'take-1', clipId: 'clip-1', name: 'T1', startBeat: 0, endBeat: 8, selected: true }],
+            activeCompRegions: [{ startBeat: 2, endBeat: 4, takeId: 'take-1' }],
+        });
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({
+            clips: [makeAudioClip({ startBeat: 0, endBeat: 8, audioOffsetBeats: 0.5 })],
+        });
+
+        await run({ track, ctx, defaultTempo: 60 });
+
+        expect(sources.map((source) => source.start.mock.calls[0])).toEqual([
+            [0, 0.5, 2],
+            [2, 2.5, 2],
+            [4, 4.5, 4],
+        ]);
     });
 
     it('splits a clip into a comp segment plus the trailing gap', async () => {

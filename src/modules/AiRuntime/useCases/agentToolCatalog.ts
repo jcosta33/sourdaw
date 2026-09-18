@@ -11,6 +11,7 @@ import {
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
     MAX_DISCOVERED_COMMAND_SCHEMAS,
+    PROJECT_DISCOVERY_TOOL_NAME,
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
@@ -34,6 +35,7 @@ export {
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
+    PROJECT_DISCOVERY_TOOL_NAME,
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
@@ -100,6 +102,35 @@ function getProjectQuerySchema(): ToolSchema {
     );
 }
 
+function getProjectDiscoverySchema(): ToolSchema {
+    const domains = getProjectProtocolContracts().discovery.operations.map((operation) => operation.name);
+    return tool(
+        PROJECT_DISCOVERY_TOOL_NAME,
+        'Discover the devices, presets, samples, assets and capabilities their owners publish, as one bounded revision-bearing page.',
+        {
+            domain: { type: 'string', enum: domains },
+            filters: {
+                type: 'object',
+                properties: {
+                    text: { type: 'string', minLength: 1, maxLength: 256 },
+                    stableId: { type: 'string', minLength: 1, maxLength: 256 },
+                    kind: { type: 'string', minLength: 1, maxLength: 256 },
+                },
+                additionalProperties: false,
+            },
+            page: {
+                type: 'object',
+                properties: {
+                    limit: { type: 'integer', minimum: 1, maximum: 50 },
+                    cursor: { type: 'string', maxLength: 256 },
+                },
+                additionalProperties: false,
+            },
+        },
+        ['domain']
+    );
+}
+
 function getCatalogDiscoverySchema(): ToolSchema {
     const page = {
         type: 'object',
@@ -148,6 +179,7 @@ function getCommandIndexSearchSchema(): ToolSchema {
 export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
     return [
         getProjectQuerySchema(),
+        getProjectDiscoverySchema(),
         tool(
             PROJECT_RESOLVE_TOOL_NAME,
             'Resolve one stable project identity through bounded, revision-bearing application evidence.',

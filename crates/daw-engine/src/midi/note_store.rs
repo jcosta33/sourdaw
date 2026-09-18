@@ -284,6 +284,7 @@ mod tests {
                 clip_id_hash: 0,
                 event_id_hash: 0,
                 absolute_occurrence_index: 0,
+                articulation_id: None,
             },
         }
     }

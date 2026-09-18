@@ -7,6 +7,7 @@ Application composition root: dependency registration, DI container initializati
 - Owns top-level DAW bootstrap sequence (`bootstrap.ts`, `main.tsx`, `App.tsx`).
 - Owns central dependency injection registry (`registerDependencies.ts`, `registerGlobalErrorHandlers.ts`).
 - Owns global command handler map aggregation (`getProductionCommandHandlerMaps.ts`, `captureCommandBatchPreflightState.ts`).
+- Owns the agent production-readiness evaluation (`getAgentProductionReadiness.ts`): a phase is `blocked` by any unmet earlier phase regardless of its own gate, and a completion claim requires every phase `passed` and an empty command-ledger uncovered-category list.
 - Owns TanStack Router instance (`router.ts`) and global React Query client (`queryClient.ts`).
 - Does not own domain business logic or direct audio synthesis (delegated to `src/modules/*`).
 

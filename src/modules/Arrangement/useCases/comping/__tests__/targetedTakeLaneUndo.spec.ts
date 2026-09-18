@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
 import { type TakeLaneStoreState, takeLaneStore } from '../../../stores/takeLaneStore';
+import { trackStore } from '../../../stores/trackStore';
 import { addTake } from '../addTake';
 import { addTakeLane } from '../addTakeLane';
 import { flattenComp } from '../flattenComp';
@@ -15,10 +17,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: (label: string, undo: () => void, redo: () => void) => {
         mocks.pushedUndoEntries.push({ label, undo, redo });
     },
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
@@ -157,6 +161,14 @@ describe('targeted take-lane undo entries (#4081)', () => {
 
     it('flattenComp undo restores the removed lane in its original position and preserves later edits elsewhere', () => {
         seedLanes([makeLane('t1'), makeLane('t2'), makeLane('t3')]);
+        // Flatten reads the track to materialise the comp programme onto it;
+        // a lane selecting nothing takes the lane-only route either way, which
+        // is the route this test is about.
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 't2', clips: [] })],
+            selectedTrackId: 't2',
+            ghostClips: [],
+        });
 
         flattenComp('t2');
         expect(laneOrder()).toEqual(['t1', 't3']);

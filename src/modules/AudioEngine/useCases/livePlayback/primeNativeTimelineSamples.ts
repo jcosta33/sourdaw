@@ -22,6 +22,7 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { registerNativeTimelineSamples } from '../../repositories/nativeGraph/nativeTimelineSamplePool';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
@@ -47,8 +48,13 @@ export type PrimeNativeTimelineSamplesResult =
  */
 function projectLiveProgrammeBatch(sampleRate: number): ReturnType<typeof projectLiveGraphTopology> {
     const stripTracks = readLiveStripTracks();
+    // The same source `readLiveStripTracks` filters, so the pad-ordinal law
+    // this batch's carrier reading applies counts every project track exactly
+    // as routing does, whether or not it built a live strip.
+    const projectTracks = trackStore.value?.tracks ?? [];
     return projectLiveGraphTopology({
         stripTracks,
+        projectTracks,
         // The prime cares about material, not about mix state or which chains
         // the engine can build: neither changes a source id, and both arrive at
         // their real values with the batch the session actually sends.

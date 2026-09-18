@@ -6,15 +6,18 @@ import {
     AGENT_CATALOG_SEARCH_SCHEMA,
     AGENT_CATALOG_SEARCH_SCHEMA_VERSION,
     type AgentCatalogCandidate,
-    type AgentCatalogDescriptors,
     type AgentCatalogEvidence,
-    type AgentCatalogLicensing,
-    type AgentCatalogProvenance,
     type AgentCatalogSearchInput,
     type AgentCatalogSearchResult,
 } from '../models/AgentCatalogTypes';
-import { type LibraryRoot, type SampleRecord, type SpectralDescriptors } from '../models/LibraryTypes';
-import { type LibraryState, libraryStore } from '../stores/libraryStore';
+import { type SampleRecord } from '../models/LibraryTypes';
+import {
+    collectIndexedEntries,
+    describeCatalogEntry,
+    type IndexedEntry,
+    toDescriptors,
+} from '../services/agentCatalog/indexedCatalogEntries';
+import { libraryStore } from '../stores/libraryStore';
 
 import { findSimilarSamples } from './findSimilarSamples';
 
@@ -22,9 +25,6 @@ import { findSimilarSamples } from './findSimilarSamples';
 const TEXT_EVIDENCE_WEIGHTS = { name: 3, tag: 2, path: 1 } as const;
 
 const displayNameCollator = new Intl.Collator();
-
-/** A record paired with the root that supplies its provenance. */
-type IndexedEntry = { record: SampleRecord; root: LibraryRoot };
 
 type EvidenceMatch = { entry: IndexedEntry; evidence: readonly AgentCatalogEvidence[] };
 
@@ -83,30 +83,6 @@ function getQueryText(query: ResolvedQuery): string | null {
         return null;
     }
     return query.text;
-}
-
-/**
- * Records the catalog may answer with: present on disk, and belonging to a root
- * still in the store. A record whose root is gone has no provenance to derive,
- * and provenance is never guessed.
- */
-function collectIndexedEntries(state: LibraryState | null): readonly IndexedEntry[] {
-    if (state === null) {
-        return [];
-    }
-    const rootsById = new Map(state.roots.map((root) => [root.id, root]));
-    const entries: IndexedEntry[] = [];
-    for (const record of state.samples) {
-        if (!record.sync.exists) {
-            continue;
-        }
-        const root = rootsById.get(record.libraryRootId);
-        if (root === undefined) {
-            continue;
-        }
-        entries.push({ record, root });
-    }
-    return entries;
 }
 
 /** The LibraryBrowser text law: lowercase `includes` on name, path, and each tag. */
@@ -203,56 +179,11 @@ function scoreEvidence(evidence: readonly AgentCatalogEvidence[]): number {
     return score;
 }
 
-function toLicensing(origin: AgentCatalogProvenance['origin']): AgentCatalogLicensing {
-    if (origin === 'factory') {
-        return { source: 'factory', rightsHolder: 'sourdaw', terms: 'bundled-with-sourdaw' };
-    }
-    return { source: 'user-library', rightsHolder: 'user', terms: 'as-licensed-to-the-user' };
-}
-
-function toSpectralDescriptors(descriptors: SpectralDescriptors | undefined): SpectralDescriptors | null {
-    if (descriptors === undefined) {
-        return null;
-    }
-    return structuredClone(descriptors);
-}
-
-function toDescriptors(record: SampleRecord): AgentCatalogDescriptors {
-    return {
-        textual: {
-            displayName: record.displayName,
-            folder: record.folder,
-            ext: record.ext,
-            tags: [...record.tags],
-        },
-        measurable: {
-            durationSec: record.format.durationSec ?? null,
-            sampleRate: record.format.sampleRate ?? null,
-            channels: record.format.channels ?? null,
-            bpm: record.analysis?.bpm ?? null,
-            key: record.analysis?.key ?? null,
-            spectral: toSpectralDescriptors(record.analysis?.descriptors),
-        },
-    };
-}
-
 function toCandidate(match: EvidenceMatch): AgentCatalogCandidate {
-    const { record, root } = match.entry;
-    const origin = record.libraryRootId === FACTORY_LIBRARY_ROOT_ID ? 'factory' : 'connected-library';
     return {
-        id: record.id,
+        ...describeCatalogEntry(match.entry, FACTORY_LIBRARY_ROOT_ID),
         kind: 'sample',
-        displayName: record.displayName,
-        provenance: {
-            origin,
-            libraryRootId: record.libraryRootId,
-            libraryRootName: root.name,
-            provider: root.provider,
-            relativePath: record.relativePath,
-            indexStatus: record.sync.status,
-        },
-        licensing: toLicensing(origin),
-        descriptors: toDescriptors(record),
+        descriptors: toDescriptors(match.entry.record),
         evidence: [...match.evidence],
         score: scoreEvidence(match.evidence),
     };

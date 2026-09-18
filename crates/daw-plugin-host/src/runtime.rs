@@ -286,4 +286,13 @@ impl HostedRuntime {
             Self::Vst3(_) => crate::scanner::PluginFormat::Vst3,
         }
     }
+
+    /// The rate this instance was activated at.
+    ///
+    /// The engine that registers this runtime compares its own rate against
+    /// this one: a runtime activated on one clock renders mistuned on another,
+    /// so the two must match before the runtime is ever handed to an engine.
+    pub fn activation_sample_rate(&self) -> f64 {
+        delegate!(self, backend => backend.sample_rate())
+    }
 }

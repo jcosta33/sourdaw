@@ -34,6 +34,7 @@ export { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
 export { getVerifiedBatchReceiptIdentity } from './getVerifiedBatchReceiptIdentity';
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
 export { getAppActionStaticAuthority } from './getAppActionStaticAuthority';
+export { getAppActionPreviewExecution } from './getAppActionPreviewExecution';
 export { getAgentActionRiskPolicy } from './getAgentActionRiskPolicy';
 export { getExecutableAppActionIntentCatalog } from './getExecutableAppActionIntentCatalog';
 export {
@@ -78,6 +79,7 @@ export { getVersionedCommandBatchCommitDisposition } from './getVersionedCommand
 export { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 export { getVersionedCommandTargetRanges } from './getVersionedCommandTargetRanges';
 export { getCommandProtocolContracts } from './getCommandProtocolContracts';
+export { getAgentCommandLedger } from './getAgentCommandLedger';
 export { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 export { createAppActionCommittedError } from './createAppActionCommittedError';
 export { isAppActionCommittedError } from './isAppActionCommittedError';

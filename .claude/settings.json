@@ -78,7 +78,28 @@
       "Bash(ast-grep * --rewrite*)",
       "Bash(ast-grep * --update-all*)",
       "Bash(sg * --rewrite*)",
-      "Bash(sg * --update-all*)"
+      "Bash(sg * --update-all*)",
+      "Bash(pnpm exec ast-grep * --rewrite*)",
+      "Bash(pnpm exec ast-grep * --update-all*)",
+      "Bash(ast-grep * -U*)",
+      "Bash(ast-grep * -r*)",
+      "Bash(pnpm exec ast-grep * -U*)",
+      "Bash(pnpm exec ast-grep * -r*)",
+      "Bash(*ast-grep*--rewrite*)",
+      "Bash(*ast-grep*--update-all*)",
+      "Bash(*ast-grep* -U*)",
+      "Bash(*ast-grep* -r*)",
+      "Bash(*ast-grep* --interactive*)",
+      "Bash(*ast-grep* -i*)",
+      "Bash(*ast-grep* new *)",
+      "Bash(sg *)",
+      "Bash(pnpm sg *)",
+      "Bash(pnpm exec sg *)",
+      "Bash(npx sg *)",
+      "Bash(npx -y sg *)",
+      "Bash(*bin/sg *)",
+      "Bash(pnpm dlx @ast-grep/cli*)",
+      "Bash(pnpm dlx ast-grep*)"
     ]
   }
 }

@@ -1,14 +1,6 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
-
-async function addMidiTrack(page: Page): Promise<void> {
-    const emptyStateMidiButton = page.locator('button').filter({ hasText: 'MIDI' }).filter({ hasText: 'Keys' });
-    await emptyStateMidiButton.waitFor({ state: 'visible' });
-    await emptyStateMidiButton.click();
-    const trackList = page.getByRole('grid', { name: /Track list/i });
-    await trackList.getByRole('row').filter({ hasText: /MIDI/i }).first().waitFor();
-}
+import { add_midi_track, launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function openEditorDock(page: Page): Promise<void> {
     const dockToggle = page.getByTestId('toggle-bottom-dock');
@@ -67,7 +59,7 @@ test.describe('Record, edit, playback — MIDI clip lifecycle', () => {
         test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
-        await addMidiTrack(page);
+        await add_midi_track(page);
 
         // Open the on-screen keyboard — the E2E stand-in for a MIDI input.
         await page.getByTestId('toggle-virtual-keyboard').click();
