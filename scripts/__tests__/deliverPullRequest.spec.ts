@@ -11816,6 +11816,34 @@ describe('delivery shell boundary', () => {
         ]);
     });
 
+    it('syncs authorship notes through the trusted git-ai path the launcher froze', () => {
+        const runs: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: () => '',
+            run: (command, args) => runs.push({ command, args }),
+        });
+        const previous = process.env.SOURDAW_TRUSTED_GIT_AI_PATH;
+        process.env.SOURDAW_TRUSTED_GIT_AI_PATH = '/trusted/bin/git-ai';
+        try {
+            port.syncAuthorshipNotes?.({
+                mergeCommitSha: 'merge-sha-123',
+                headSha: 'head-sha-456',
+                baseSha: 'base-sha-789',
+                headRef: 'feat/test',
+                baseRef: 'main',
+            });
+        } finally {
+            if (previous === undefined) {
+                delete process.env.SOURDAW_TRUSTED_GIT_AI_PATH;
+            } else {
+                process.env.SOURDAW_TRUSTED_GIT_AI_PATH = previous;
+            }
+        }
+
+        expect(runs[0]?.command).toBe('/trusted/bin/git-ai');
+        expect(runs[0]?.args).toContain('--merge-commit-sha');
+    });
+
     it('syncs authorship notes authenticated using credential helper', () => {
         const helperDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-helper-'));
         const runs: Array<{ command: string; args: string[] }> = [];
