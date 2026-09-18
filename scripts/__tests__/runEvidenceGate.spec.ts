@@ -342,7 +342,7 @@ describe('source examples corpus', () => {
         expect(sourceExampleReleaseBlockers(root)).toEqual(['source examples corpus missing']);
     });
 
-    it('wires the corpus blockers into the --release report', async () => {
+    it('wires the missing-corpus blocker into the --release report', async () => {
         const { manifestPath } = fixture();
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -350,6 +350,28 @@ describe('source examples corpus', () => {
 
         expect(exitCode).toBe(1);
         expect(errorSpy.mock.calls.flat()).toContainEqual('source examples corpus missing');
+        errorSpy.mockRestore();
+    });
+
+    it('wires the unrecovered source-example blocker into the --release report', async () => {
+        const { root, manifestPath } = fixture();
+        write(
+            root,
+            SOURCE_EXAMPLES_CORPUS_PATH,
+            JSON.stringify({
+                schemaVersion: 1,
+                examples: [
+                    { id: 'EX-01', disposition: 'recovered' },
+                    { id: 'EX-09', disposition: 'unrecovered' },
+                ],
+            })
+        );
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const exitCode = await main(['--release', '--manifest', manifestPath]);
+
+        expect(exitCode).toBe(1);
+        expect(errorSpy.mock.calls.flat()).toContainEqual('source-example EX-09: unrecovered');
         errorSpy.mockRestore();
     });
 });
