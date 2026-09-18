@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileSha256, wasmReleaseInventoryContract } from './checkReleaseInventory.ts';
 import { fail } from './prContract.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
-import { wasmArtifacts } from './wasm-artifacts.ts';
+import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
 export const RELEASE_INVENTORY_PATH = 'release/open-source-inventory.json';
 const WASM_SURFACE_ID = 'project-wasm';
@@ -77,8 +77,7 @@ export function wasmRestampPlan(
  * artifacts were genuinely rebuilt. A crate-source hash that moved without its package's
  * rebuild is a release-surface change nobody accepted, so it refuses and names the package.
  */
-function assertCommittedArtifactsAreFresh(): void {
-    const manifest = readManifest();
+export function assertCommittedArtifactsAreFresh(manifest: WasmManifest): void {
     for (const [id, entry] of Object.entries(manifest.packages)) {
         if (hashCrateClosure(entry.crate) !== entry.crateSourceHash) {
             fail(
@@ -89,15 +88,42 @@ function assertCommittedArtifactsAreFresh(): void {
     }
 }
 
+/**
+ * Apply a plan in place and render the inventory's canonical serialization (4-indent, trailing
+ * newline — byte-identical in style to restampDependencyBump), so a spec can pin exactly what a
+ * write moves without touching a committed tree.
+ */
+export function applyWasmRestamp(
+    inventory: ReleaseInventory,
+    recordedSurface: InventorySurface,
+    recordedSnapshot: { path: string; sha256: string },
+    expected: ExpectedSurface,
+    plan: WasmRestampPlan
+): string {
+    for (const [field, value] of Object.entries(expected)) {
+        recordedSurface[field] = value;
+    }
+    if (plan.snapshotSha !== undefined) {
+        recordedSnapshot.sha256 = plan.snapshotSha.to;
+    }
+    return `${JSON.stringify(inventory, null, 4)}\n`;
+}
+
 function run(): void {
-    assertCommittedArtifactsAreFresh();
-    const root = process.cwd();
     const manifest = readManifest();
+    assertCommittedArtifactsAreFresh(manifest);
+    const root = process.cwd();
     const expected = wasmReleaseInventoryContract(root, manifest);
     const inventoryPath = `${root}/${RELEASE_INVENTORY_PATH}`;
     const inventory = parseJsonWithUniqueKeys<ReleaseInventory>(readFileSync(inventoryPath, 'utf8'), inventoryPath);
     const recordedSurface = inventory.surfaces.find((surface) => surface.id === WASM_SURFACE_ID);
+    if (recordedSurface === undefined) {
+        fail('project-wasm surface is absent from the inventory; surface shape changes need a person');
+    }
     const recordedSnapshot = inventory.snapshots.find((entry) => entry.path === MANIFEST_SNAPSHOT_PATH);
+    if (recordedSnapshot === undefined) {
+        fail('manifest snapshot entry is absent from the inventory; surface shape changes need a person');
+    }
     const plan = wasmRestampPlan(
         recordedSurface,
         expected,
@@ -114,18 +140,11 @@ function run(): void {
     if (plan.snapshotSha !== undefined) {
         console.log(`snapshot ${plan.snapshotSha.path}: ${plan.snapshotSha.from} -> ${plan.snapshotSha.to}`);
     }
-    for (const [field, value] of Object.entries(expected)) {
-        if (recordedSurface !== undefined) {
-            recordedSurface[field] = value;
-        }
-    }
-    if (recordedSurface === undefined) {
-        inventory.surfaces.push({ id: WASM_SURFACE_ID, ...expected });
-    }
-    if (recordedSnapshot !== undefined && plan.snapshotSha !== undefined) {
-        recordedSnapshot.sha256 = plan.snapshotSha.to;
-    }
-    writeFileSync(inventoryPath, `${JSON.stringify(inventory, null, 4)}\n`, 'utf8');
+    writeFileSync(
+        inventoryPath,
+        applyWasmRestamp(inventory, recordedSurface, recordedSnapshot, expected, plan),
+        'utf8'
+    );
     console.log(`restamped ${RELEASE_INVENTORY_PATH}; verify with pnpm test:release-inventory`);
 }
 

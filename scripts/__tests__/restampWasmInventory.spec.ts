@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 
-import { wasmRestampPlan } from '../restampWasmInventory.ts';
+import { applyWasmRestamp, assertCommittedArtifactsAreFresh, wasmRestampPlan } from '../restampWasmInventory.ts';
+import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts.ts';
 
 const expectedSurface = {
     kind: 'generated-binary',
@@ -58,5 +59,48 @@ describe('wasm restamp plan', () => {
             encoding: 'utf8',
         });
         expect(output).toContain('already current');
+    });
+});
+
+describe('wasm restamp write and refusals', () => {
+    const freshSurface = { id: 'project-wasm', ...expectedSurface };
+
+    it('writes every contract field, the snapshot target digest, and the canonical serialization', () => {
+        const inventory = {
+            surfaces: [{ ...freshSurface, revisions: ['stale'] }],
+            snapshots: [{ path: 'public/wasm/manifest.json', sha256: 'older-snapshot' }],
+        };
+        const plan = wasmRestampPlan(inventory.surfaces[0]!, expectedSurface, inventory.snapshots[0]!, 'current');
+        if (plan === undefined || plan.snapshotSha === undefined) {
+            throw new Error('expected a full plan');
+        }
+        const written = applyWasmRestamp(
+            inventory,
+            inventory.surfaces[0]!,
+            inventory.snapshots[0]!,
+            expectedSurface,
+            plan
+        );
+        const parsed = JSON.parse(written) as { surfaces: unknown[]; snapshots: { sha256: string }[] };
+        expect(parsed.surfaces[0]).toEqual({ id: 'project-wasm', ...expectedSurface });
+        expect(parsed.snapshots[0]?.sha256).toBe('current');
+        expect(written.endsWith('}\n')).toBe(true);
+        expect(written).toContain('\n    "surfaces"');
+    });
+
+    it('refuses, naming the package, when a recorded crate hash moved without a rebuild', () => {
+        const manifest: WasmManifest = wasmArtifacts.readManifest();
+        const [id, entry] = Object.entries(manifest.packages)[0]!;
+        const tampered: WasmManifest = {
+            ...manifest,
+            packages: { ...manifest.packages, [id]: { ...entry, crateSourceHash: 'sha256:tampered' } },
+        };
+        expect(() => assertCommittedArtifactsAreFresh(tampered)).toThrow(
+            new RegExp(`crate sources of ${id}.*moved without a rebuild`)
+        );
+    });
+
+    it('accepts the committed manifest on a fresh tree', () => {
+        expect(() => assertCommittedArtifactsAreFresh(wasmArtifacts.readManifest())).not.toThrow();
     });
 });
