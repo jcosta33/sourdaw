@@ -40,9 +40,10 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 merged or closed. It retains a branch that is the last remote holder of a
 measurement source revision a tracked table records, because the admission
 resolves that revision by SHA and squash delivery never lands the lane head on
-`main`. A recorded revision the remote confirms is gone is reported by name and
-skipped, so one stale table entry cannot abort the run; any comparison that
-merely cannot be answered still refuses and deletes nothing.
+`main`. A recorded revision the remote independently confirms is gone is
+reported by name and skipped, so one stale table entry cannot abort the run; a
+branch that merely cannot be compared holds nothing and is passed over, while
+any comparison that cannot be answered still refuses and deletes nothing.
 
 ## Claim at lane open
 

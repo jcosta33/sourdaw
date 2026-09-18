@@ -3,7 +3,10 @@ import { REQUIRED_BASE_BRANCH, REQUIRED_REPOSITORY } from './githubAppIdentity.t
 export const MEASUREMENT_REVISION = /^[0-9a-f]{40}$/u;
 
 export type RemoteBranch = { name: string; tip: string };
-export type BranchRevisionReader = { branchHoldsRevision: (branch: RemoteBranch, revision: string) => boolean };
+export type BranchRevisionReader = {
+    baseBranchTip: () => RemoteBranch;
+    branchHoldsRevision: (branch: RemoteBranch, revision: string) => boolean;
+};
 export type BranchClass = 'protected' | 'unlisted' | 'open' | 'unpublished' | 'moved' | 'spent';
 
 type Gh = (args: string[]) => string;
@@ -53,38 +56,78 @@ export function branchHoldsRevision(branch: RemoteBranch, revision: string, gh: 
 }
 
 /**
- * Every branch whose tip reaches the revision. A revision GitHub confirms is gone has no holder,
- * and a stale table entry recording one must not abort pruning, so that case reports the revision
- * and answers no holders; any other comparison failure stays unanswerable and propagates.
- *
- * The classification keys on the `gh: Not Found (HTTP 404)` text gh surfaces and on a well-formed
- * full revision, because that text is the only status signal the wrapper carries. The exact shape
- * was reproduced read-only against the live API with
+ * Whether GitHub answered that it cannot resolve a comparison at all. The text is the only status
+ * signal the gh wrapper carries, and the exact shape was reproduced read-only against the live API
+ * with
  * `gh api repos/:owner/:repo/compare/0000000000000000000000000000000000000000...<tip> --jq .status`.
+ *
+ * The identical answer covers a missing revision and an unresolvable branch tip, so this alone
+ * never proves a revision gone: it only means the pair could not be compared.
  */
-function branchesHoldingRevision(
+export function isUnresolvableRevisionError(error: unknown): error is Error {
+    return error instanceof Error && /\bHTTP 404\b/u.test(error.message);
+}
+
+/**
+ * Whether the base comparison answered that the revision is not reachable from the base tip, or
+ * itself could not resolve the revision. Both outcomes mean the same thing for a recorded
+ * revision, because the base branch tip reaches every revision `main` holds. An unanswerable
+ * failure is anything else and stays unanswerable.
+ */
+function revisionMissingFromBase(
+    revision: string,
+    port: BranchRevisionReader,
+    compare: (branch: RemoteBranch, revision: string) => boolean
+): boolean {
+    try {
+        return !compare(port.baseBranchTip(), revision);
+    } catch (error) {
+        if (isUnresolvableRevisionError(error)) {
+            return true;
+        }
+        throw error;
+    }
+}
+
+/**
+ * Every branch whose tip reaches the revision, scanning all of them so a branch that cannot be
+ * compared never hides a later holder. A 404 on one branch means that pair cannot be compared, not
+ * that the revision is gone, so it is held back while the scan continues. If no branch anywhere
+ * holds the revision, the base comparison decides whether the revision itself is missing and the
+ * run reports and skips it, or the comparison was merely unanswerable and the failure propagates.
+ * Any non-404 comparison failure propagates immediately, deleting nothing.
+ */
+function resolveRevisionHolders(
     branches: RemoteBranch[],
     revision: string,
     port: BranchRevisionReader,
     log: (message: string) => void
 ): RemoteBranch[] {
     const holding: RemoteBranch[] = [];
+    let unresolved: Error | undefined;
     for (const branch of branches) {
         try {
             if (port.branchHoldsRevision(branch, revision)) {
                 holding.push(branch);
             }
         } catch (error) {
-            const gone =
-                MEASUREMENT_REVISION.test(revision) && error instanceof Error && /\bHTTP 404\b/u.test(error.message);
-            if (!gone) {
+            if (!isUnresolvableRevisionError(error)) {
                 throw error;
             }
-            log(`unresolvable measurement revision ${revision}: no remote branch holds it`);
-            return [];
+            unresolved = error;
         }
     }
-    return holding;
+    if (holding.length > 0 || unresolved === undefined) {
+        return holding;
+    }
+    if (!MEASUREMENT_REVISION.test(revision)) {
+        throw unresolved;
+    }
+    if (!revisionMissingFromBase(revision, port, (branch, candidate) => port.branchHoldsRevision(branch, candidate))) {
+        throw unresolved;
+    }
+    log(`unresolvable measurement revision ${revision}: no remote branch holds it`);
+    return [];
 }
 
 /**
@@ -96,8 +139,8 @@ function branchesHoldingRevision(
  *
  * A revision some surviving branch still holds pins nothing, and one no branch holds at all is
  * already unresolvable, so both cases prune as before. A retained branch is reclassified as `open`
- * (kept) exactly like the base-dependent guard, leaving the plan's shape intact. A revision the
- * remote confirms gone is reported by name and skipped, because a stale table entry must not abort
+ * (kept) exactly like the base-dependent guard, leaving the plan's shape intact. A revision proven
+ * gone from the remote is reported by name and skipped, because a stale table entry must not abort
  * a plan that has no other reason to stop; a comparison nothing can answer still refuses.
  */
 export function retainMeasurementRevisionHolders(
@@ -107,7 +150,7 @@ export function retainMeasurementRevisionHolders(
     log: (message: string) => void
 ): void {
     for (const revision of port.recordedMeasurementRevisions()) {
-        const holders = branchesHoldingRevision(branches, revision, port, log);
+        const holders = resolveRevisionHolders(branches, revision, port, log);
         if (holders.some((branch) => classes.get(branch.name) !== 'spent')) {
             continue;
         }

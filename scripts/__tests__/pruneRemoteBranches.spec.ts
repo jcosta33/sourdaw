@@ -177,6 +177,7 @@ type FakePortInput = {
     branchTip?: (name: string) => string | undefined;
     deleteBranch?: (name: string) => DeleteOutcome;
     recordedMeasurementRevisions?: () => string[];
+    baseBranchTip?: () => RemoteBranch;
     branchHoldsRevision?: (branch: RemoteBranch, revision: string) => boolean;
 };
 function toListing(value: FakePullRequestsResult | undefined): PullRequestListing {
@@ -216,6 +217,10 @@ function fakePort(input: FakePortInput): {
             return input.deleteBranch === undefined ? 'deleted' : input.deleteBranch(name);
         },
         recordedMeasurementRevisions: () => input.recordedMeasurementRevisions?.() ?? [],
+        baseBranchTip: () =>
+            input.baseBranchTip?.() ??
+            input.branches.find((candidate) => candidate.name === 'main') ??
+            input.branches[0] ?? { name: 'main', tip: 'tip-main' },
         branchHoldsRevision: (branch, revision) => input.branchHoldsRevision?.(branch, revision) ?? false,
     };
     return { port, deleteCalls, pullRequestBatchSizes, branchTipCalls };
@@ -530,6 +535,7 @@ describe('pruneRemoteBranches', () => {
                 return 'deleted';
             },
             recordedMeasurementRevisions: () => [],
+            baseBranchTip: () => branch('main', 'tip-main'),
             branchHoldsRevision: () => false,
         };
         const { log, lines } = collectingLog();
@@ -622,6 +628,7 @@ describe('pruneRemoteBranches', () => {
                     ['ordinary', [mergedPr(2, 'tip-ordinary')]],
                 ]),
             recordedMeasurementRevisions: () => [goneRevision, heldRevision],
+            baseBranchTip: () => branch('main', 'tip-main'),
             branchHoldsRevision: (_candidate, revision) => {
                 if (revision === goneRevision) {
                     throw new Error('gh: Not Found (HTTP 404)');
@@ -652,6 +659,7 @@ describe('pruneRemoteBranches', () => {
                     ['other', [mergedPr(2, 'tip-other')]],
                 ]),
             recordedMeasurementRevisions: () => [goneRevision, heldRevision],
+            baseBranchTip: () => branch('main', 'tip-main'),
             branchHoldsRevision: (candidate, revision) => {
                 if (revision === goneRevision) {
                     throw new Error('gh: Not Found (HTTP 404)');
@@ -703,6 +711,7 @@ describe('pruneRemoteBranches', () => {
             branches: [branch('spent-branch', 'tip-spent')],
             pullRequestsFor: () => new Map([['spent-branch', [mergedPr(1, 'tip-spent')]]]),
             recordedMeasurementRevisions: () => [goneRevision, unanswerableRevision],
+            baseBranchTip: () => branch('main', 'tip-main'),
             branchHoldsRevision: (_candidate, revision) => {
                 if (revision === goneRevision) {
                     throw new Error('gh: Not Found (HTTP 404)');
@@ -718,6 +727,43 @@ describe('pruneRemoteBranches', () => {
         expect(lines).not.toContain(
             `unresolvable measurement revision ${unanswerableRevision}: no remote branch holds it`
         );
+    });
+
+    it('retains a later holder when an earlier listed branch cannot be compared', () => {
+        // gh answers the same 404 for a vanished branch tip as for a missing revision, so a branch
+        // that cannot be compared must mean only "this branch holds nothing". Aborting the scan
+        // there would both discard holders already found and abandon the remaining branches, so the
+        // resolver would answer no holders and the prune would delete the branch that is the
+        // revision's last remote holder. The reference branch is compared successfully, so the
+        // revision is provably live and must never be reported as unresolvable.
+        const revision = '9999999999999999999999999999999999999999';
+        const { port, deleteCalls } = fakePort({
+            branches: [
+                branch('vanished', 'tip-vanished'),
+                branch('measured', 'tip-measured'),
+                branch('ordinary', 'tip-ordinary'),
+            ],
+            pullRequestsFor: () =>
+                new Map([
+                    ['vanished', [openPr(9, 'tip-elsewhere')]],
+                    ['measured', [mergedPr(1, 'tip-measured')]],
+                    ['ordinary', [mergedPr(2, 'tip-ordinary')]],
+                ]),
+            recordedMeasurementRevisions: () => [revision],
+            baseBranchTip: () => branch('reference', 'tip-reference'),
+            branchHoldsRevision: (candidate) => {
+                if (candidate.name === 'vanished') {
+                    throw new Error('gh: Not Found (HTTP 404)');
+                }
+                return candidate.name === 'measured';
+            },
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual(['ordinary']);
+        expect(lines).toContain(`kept measured: last remote holder of recorded measurement revision ${revision}`);
+        expect(lines.some((line) => line.startsWith('unresolvable measurement revision'))).toBe(false);
     });
 
     it('does not retain a holder when a surviving branch still holds the recorded revision', () => {
@@ -865,11 +911,15 @@ describe('branchHoldsRevision', () => {
 describe('pruneRemoteBranches comparison-failure classification', () => {
     const revision = 'dddddddddddddddddddddddddddddddddddddddd';
 
-    function pruneWithComparisonFailure(failure: () => never): { deleteCalls: string[]; lines: string[] } {
+    function pruneWithComparisonFailure(failure: (branch: RemoteBranch, revision: string) => boolean): {
+        deleteCalls: string[];
+        lines: string[];
+    } {
         const { port, deleteCalls } = fakePort({
             branches: [branch('measured', 'tip-measured')],
             pullRequestsFor: () => new Map([['measured', [mergedPr(1, 'tip-measured')]]]),
             recordedMeasurementRevisions: () => [revision],
+            baseBranchTip: () => branch('main', 'tip-main'),
             branchHoldsRevision: failure,
         });
         const { log, lines } = collectingLog();
@@ -905,11 +955,23 @@ describe('pruneRemoteBranches comparison-failure classification', () => {
         });
     });
 
+    it('refuses the run when only the base comparison cannot be answered, so an unproven revision is never skipped', () => {
+        // A 404 on every listed branch is not proof on its own: if the independent base comparison
+        // fails for any other reason, reachability is unknown and the run must still refuse.
+        pruneWithComparisonFailure((candidate) => {
+            if (candidate.name === 'main') {
+                throw new Error('gh: Server Error (HTTP 502)');
+            }
+            throw new Error('gh: Not Found (HTTP 404)');
+        });
+    });
+
     it('refuses the run on an HTTP 404 for a revision that is not full hexadecimal, so a malformed name never reads as gone', () => {
         const { port, deleteCalls } = fakePort({
             branches: [branch('measured', 'tip-measured')],
             pullRequestsFor: () => new Map([['measured', [mergedPr(1, 'tip-measured')]]]),
             recordedMeasurementRevisions: () => ['revision-sha'],
+            baseBranchTip: () => branch('main', 'tip-main'),
             branchHoldsRevision: () => {
                 throw new Error('gh: Not Found (HTTP 404)');
             },

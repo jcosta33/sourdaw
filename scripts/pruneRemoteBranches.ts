@@ -36,6 +36,7 @@ export type PruneRemoteBranchesPort = {
     branchTip: (name: string) => string | undefined;
     deleteBranch: (name: string) => DeleteOutcome;
     recordedMeasurementRevisions: () => string[];
+    baseBranchTip: () => RemoteBranch;
     branchHoldsRevision: (branch: RemoteBranch, revision: string) => boolean;
 };
 
@@ -554,6 +555,13 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prun
         branchTip: (name) => fetchBranchTip(name, gh),
         deleteBranch: (name) => deleteRemoteBranch(name, gh),
         recordedMeasurementRevisions: () => fetchRecordedMeasurementRevisions(gh),
+        baseBranchTip: () => {
+            const base = listRemoteBranches(gh).find((branch) => branch.name === REQUIRED_BASE_BRANCH);
+            if (base === undefined) {
+                fail(`remote branch listing is missing ${REQUIRED_BASE_BRANCH}`);
+            }
+            return base;
+        },
         branchHoldsRevision: (branch, revision) => branchHoldsRevision(branch, revision, gh),
     };
 }
