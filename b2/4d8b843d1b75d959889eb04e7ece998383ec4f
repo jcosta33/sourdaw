@@ -1,0 +1,14 @@
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  h_1228e573df1f42 556-560,604
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b24d8b843d1b75d959889eb04e7ece998383ec4f",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
