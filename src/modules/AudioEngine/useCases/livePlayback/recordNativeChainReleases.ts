@@ -9,9 +9,18 @@
  * the session never built, this only ever narrows one it already holds: an
  * unload never creates a strip, and a report naming one this session did not
  * build has nothing here to narrow.
+ *
+ * The write runs through `queueOnNativeLiveGraphSession`, taking its place in
+ * the session order behind any mirror batch already in flight (#3888): the
+ * reply carrying a report returns only after third-party plugin teardown of
+ * unbounded length, so a report captured before a concurrent mirror batch
+ * commits could otherwise be applied after that batch's own report and
+ * re-widen the mirror with devices the engine no longer holds. The filter
+ * runs inside the queued work for the same reason — the set of held strips is
+ * read at the moment the write lands, not when the reply arrived.
  */
 
-import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 
 /**
  * One strip's chain as an unload's release left it, as this use case reads
@@ -27,14 +36,16 @@ export type NativeChainRelease = {
     deviceIds: readonly string[];
 };
 
-export function recordNativeChainReleases(reports: readonly NativeChainRelease[]): void {
-    const held = reports.filter((report) => nativeLiveGraphSession.nativeChainByStripId.has(report.id));
-    if (held.length === 0) {
-        return;
-    }
-    const next = new Map(nativeLiveGraphSession.nativeChainByStripId);
-    for (const report of held) {
-        next.set(report.id, report.deviceIds);
-    }
-    nativeLiveGraphSession.nativeChainByStripId = next;
+export function recordNativeChainReleases(reports: readonly NativeChainRelease[]): Promise<void> {
+    return queueOnNativeLiveGraphSession(async () => {
+        const held = reports.filter((report) => nativeLiveGraphSession.nativeChainByStripId.has(report.id));
+        if (held.length === 0) {
+            return;
+        }
+        const next = new Map(nativeLiveGraphSession.nativeChainByStripId);
+        for (const report of held) {
+            next.set(report.id, report.deviceIds);
+        }
+        nativeLiveGraphSession.nativeChainByStripId = next;
+    });
 }
