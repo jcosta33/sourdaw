@@ -887,6 +887,9 @@ describe('lane publish', () => {
 
         expect(calls).toContain('mergeability:88');
         expect(calls.some((call) => call.startsWith('conflicts:'))).toBe(false);
+        // The uncertainty report also avoids the word `conflict`, so quiet must be observed against
+        // every report this check can emit: any line mentioning mergeability is a report.
+        expect(logs.some((line) => line.includes('mergeability'))).toBe(false);
         expect(logs.some((line) => line.includes('conflict'))).toBe(false);
         expect(logs.at(-1)).toBe('88');
     });
