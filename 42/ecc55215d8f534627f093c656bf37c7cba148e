@@ -1,0 +1,16 @@
+scripts/__tests__/restampWasmInventory.spec.ts
+  h_1228e573df1f42 4-5,64-106
+scripts/restampWasmInventory.ts
+  h_1228e573df1f42 7,80,91-111,114-115,120-122,124-126,143-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "42ecc55215d8f534627f093c656bf37c7cba148e",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
