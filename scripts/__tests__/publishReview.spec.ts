@@ -2848,6 +2848,57 @@ describe('shellPort postReview state verification', () => {
         }
     });
 
+    it.each([
+        ['a prepared owner', 'prepared' as const, undefined],
+        ['a journaled HTTP 422 owner', 'remote-mutation-attempted' as const, 422 as const],
+    ])(
+        'releases %s with --attest-absent under the journal authorization without recording the attestation',
+        async (_label, phase, definitiveNoMutationHttpStatus) => {
+            const fixture = createJournaledRecoveryFixture(phase, definitiveNoMutationHttpStatus);
+            let inspections = 0;
+            try {
+                await expect(
+                    runRecoverPublishReviewLockCli(
+                        [String(fixture.number), '--owner', fixture.ownerOid, '--attest-absent'],
+                        recoveryDependencies(fixture.root, (expectedHead) => {
+                            inspections += 1;
+                            return { state: 'OPEN', head: expectedHead, reviews: [] };
+                        })
+                    )
+                ).resolves.toBe(0);
+                expect(inspections).toBe(2);
+                expect(
+                    readPullRequestMutationLockOid(
+                        fixture.root,
+                        pullRequestMutationLockRef(fixture.number),
+                        fixture.number
+                    )
+                ).toBeUndefined();
+                const receipt = readPullRequestMutationLockReceipt(fixture.root, fixture.number, fixture.ownerOid);
+                expect(receipt).toEqual({
+                    version: 2,
+                    operation: 'review-publication-recovery',
+                    number: fixture.number,
+                    ownerOid: fixture.ownerOid,
+                    adoptedOwnerOid: expect.stringMatching(/^[0-9a-f]{40}$/),
+                    head: fixture.head,
+                    payloadDigest: reviewPublicationPayloadDigest(
+                        reviewPublicationPayload({
+                            commitId: fixture.head,
+                            event: 'APPROVE',
+                            body: 'Attacked; held.',
+                            comments: [],
+                        })
+                    ),
+                    outcome: 'absent',
+                });
+                expect(receipt).not.toHaveProperty('absentAttestation');
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        }
+    );
+
     it('keeps the no-mutation attestation on the adopted owner when recovery is interrupted before the receipt', async () => {
         const fixture = createJournaledRecoveryFixture('remote-mutation-attempted', 422);
         let inspections = 0;
