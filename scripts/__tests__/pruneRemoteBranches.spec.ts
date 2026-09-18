@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { REQUIRED_REPOSITORY } from '../githubAppIdentity.ts';
 import {
+    branchHoldsRevision,
     classifyRemoteBranch,
     deleteRemoteBranch,
     encodeBranchRefPath,
@@ -9,6 +10,7 @@ import {
     parsePullRequestListing,
     pruneRemoteBranches,
     queryBaseDependents,
+    recordedRevisionsInTables,
     type BranchPullRequest,
     type DeleteOutcome,
     type PruneRemoteBranchesArgs,
@@ -176,6 +178,8 @@ type FakePortInput = {
     baseDependentsFor?: (names: string[]) => Map<string, FakePullRequestsResult>;
     branchTip?: (name: string) => string | undefined;
     deleteBranch?: (name: string) => DeleteOutcome;
+    recordedMeasurementRevisions?: () => string[];
+    branchHoldsRevision?: (branch: RemoteBranch, revision: string) => boolean;
 };
 function toListing(value: FakePullRequestsResult | undefined): PullRequestListing {
     if (value === undefined) {
@@ -213,6 +217,8 @@ function fakePort(input: FakePortInput): {
             deleteCalls.push(name);
             return input.deleteBranch === undefined ? 'deleted' : input.deleteBranch(name);
         },
+        recordedMeasurementRevisions: () => input.recordedMeasurementRevisions?.() ?? [],
+        branchHoldsRevision: (branch, revision) => input.branchHoldsRevision?.(branch, revision) ?? false,
     };
     return { port, deleteCalls, pullRequestBatchSizes, branchTipCalls };
 }
@@ -525,6 +531,8 @@ describe('pruneRemoteBranches', () => {
                 deleteCalls.push(name);
                 return 'deleted';
             },
+            recordedMeasurementRevisions: () => [],
+            branchHoldsRevision: () => false,
         };
         const { log, lines } = collectingLog();
         const code = pruneRemoteBranches(dryArgs(), port, log);
@@ -556,6 +564,179 @@ describe('pruneRemoteBranches', () => {
         expect(code).toBe(0);
         expect(deleteCalls).toEqual([]);
         expect(lines).toContain('kept busy: unlisted at re-check');
+    });
+
+    it('retains the last remote holder of a recorded measurement revision and names both', () => {
+        // Deleting this merged branch would make the recorded revision unresolvable, which
+        // breaks the required Gate on main for every later pull request (#4364). Without the
+        // measurement guard the branch is spent and deleted, so this test fails.
+        const target = branch('measured', 'tip-measured');
+        const { port, deleteCalls } = fakePort({
+            branches: [target],
+            pullRequestsFor: () => new Map([['measured', [mergedPr(1, 'tip-measured')]]]),
+            recordedMeasurementRevisions: () => ['1111111111111111111111111111111111111111'],
+            branchHoldsRevision: (candidate, revision) =>
+                candidate.name === 'measured' && revision === '1111111111111111111111111111111111111111',
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual([]);
+        expect(lines).toContain(
+            'kept measured: last remote holder of recorded measurement revision 1111111111111111111111111111111111111111'
+        );
+    });
+
+    it('still prunes an ordinary merged branch that holds no recorded measurement revision', () => {
+        const { port, deleteCalls } = fakePort({
+            branches: [branch('measured', 'tip-measured'), branch('ordinary', 'tip-ordinary')],
+            pullRequestsFor: () =>
+                new Map([
+                    ['measured', [mergedPr(1, 'tip-measured')]],
+                    ['ordinary', [mergedPr(2, 'tip-ordinary')]],
+                ]),
+            recordedMeasurementRevisions: () => ['2222222222222222222222222222222222222222'],
+            branchHoldsRevision: (candidate) => candidate.name === 'measured',
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual(['ordinary']);
+        expect(lines).toContain('deleted ordinary (tip-ordin, #2 MERGED)');
+        expect(lines).toContain(
+            'kept measured: last remote holder of recorded measurement revision 2222222222222222222222222222222222222222'
+        );
+    });
+
+    it('does not retain a holder when a surviving branch still holds the recorded revision', () => {
+        const { port, deleteCalls } = fakePort({
+            branches: [branch('measured', 'tip-measured'), branch('other', 'tip-other')],
+            pullRequestsFor: () =>
+                new Map([
+                    ['measured', [mergedPr(1, 'tip-measured')]],
+                    ['other', [openPr(2, 'tip-other')]],
+                ]),
+            recordedMeasurementRevisions: () => ['3333333333333333333333333333333333333333'],
+            branchHoldsRevision: () => true,
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual(['measured']);
+        expect(lines.some((line) => line.startsWith('kept measured:'))).toBe(false);
+    });
+
+    it('does not retain a holder when the recorded revision already reached the protected base branch', () => {
+        const { port, deleteCalls } = fakePort({
+            branches: [branch('main', 'tip-main'), branch('measured', 'tip-measured')],
+            pullRequestsFor: () =>
+                new Map([
+                    ['main', [mergedPr(1, 'tip-main')]],
+                    ['measured', [mergedPr(2, 'tip-measured')]],
+                ]),
+            recordedMeasurementRevisions: () => ['4444444444444444444444444444444444444444'],
+            branchHoldsRevision: (candidate) => candidate.name === 'main' || candidate.name === 'measured',
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual(['measured']);
+        expect(lines.some((line) => line.startsWith('kept measured:'))).toBe(false);
+    });
+
+    it('retains every holder when each holder of the recorded revision would itself be deleted', () => {
+        const { port, deleteCalls } = fakePort({
+            branches: [branch('first', 'tip-first'), branch('second', 'tip-second')],
+            pullRequestsFor: () =>
+                new Map([
+                    ['first', [mergedPr(1, 'tip-first')]],
+                    ['second', [mergedPr(2, 'tip-second')]],
+                ]),
+            recordedMeasurementRevisions: () => ['5555555555555555555555555555555555555555'],
+            branchHoldsRevision: () => true,
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual([]);
+        expect(lines).toContain(
+            'kept first: last remote holder of recorded measurement revision 5555555555555555555555555555555555555555'
+        );
+        expect(lines).toContain(
+            'kept second: last remote holder of recorded measurement revision 5555555555555555555555555555555555555555'
+        );
+    });
+
+    it('reports a retained measurement holder on a dry run without deleting anything', () => {
+        const target = branch('measured', 'tip-measured');
+        const { port, deleteCalls } = fakePort({
+            branches: [target],
+            pullRequestsFor: () => new Map([['measured', [mergedPr(1, 'tip-measured')]]]),
+            recordedMeasurementRevisions: () => ['6666666666666666666666666666666666666666'],
+            branchHoldsRevision: () => true,
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(dryArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual([]);
+        expect(lines).toContain(
+            'kept measured: last remote holder of recorded measurement revision 6666666666666666666666666666666666666666'
+        );
+        expect(lines).toContain('dry run: 0 branches would be deleted; pass --apply to delete');
+    });
+});
+
+describe('recordedRevisionsInTables', () => {
+    it('derives the recorded revisions from the table contents, sorted and deduplicated', () => {
+        expect(
+            recordedRevisionsInTables([
+                JSON.stringify({ sourceRevision: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }),
+                JSON.stringify({ sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }),
+                JSON.stringify({ sourceRevision: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }),
+            ])
+        ).toEqual(['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']);
+    });
+
+    it('ignores a table that records no full hexadecimal revision', () => {
+        expect(
+            recordedRevisionsInTables([
+                JSON.stringify({ sourceRevision: 'not-a-revision' }),
+                JSON.stringify({ machine: {} }),
+            ])
+        ).toEqual([]);
+    });
+});
+
+describe('branchHoldsRevision', () => {
+    it('compares the revision against the branch tip on GitHub and accepts ahead or identical', () => {
+        const calls: string[][] = [];
+        const statuses = ['ahead', 'identical', 'behind', 'diverged'];
+        const runner = (args: string[]): string => {
+            calls.push(args);
+            return statuses[calls.length - 1] ?? '';
+        };
+        const target = branch('alpha', 'tip-alpha');
+
+        expect(branchHoldsRevision(target, 'revision-sha', runner)).toBe(true);
+        expect(branchHoldsRevision(target, 'revision-sha', runner)).toBe(true);
+        expect(branchHoldsRevision(target, 'revision-sha', runner)).toBe(false);
+        expect(branchHoldsRevision(target, 'revision-sha', runner)).toBe(false);
+        expect(calls[0]).toEqual([
+            'api',
+            `repos/${REQUIRED_REPOSITORY}/compare/revision-sha...tip-alpha`,
+            '--jq',
+            '.status',
+        ]);
+    });
+
+    it('propagates a comparison that cannot be answered instead of guessing', () => {
+        const runner = (): string => {
+            throw new Error('gh: Not Found (HTTP 404)');
+        };
+
+        expect(() => branchHoldsRevision(branch('alpha', 'tip-alpha'), 'revision-sha', runner)).toThrow(
+            'gh: Not Found (HTTP 404)'
+        );
     });
 });
 

@@ -37,7 +37,10 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Prune lane artifacts         | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                      |
 
 `branch:prune` defaults to dry run and deletes only branches whose every PR is
-merged or closed.
+merged or closed. It retains a branch that is the last remote holder of a
+measurement source revision a tracked table records, because the admission
+resolves that revision by SHA and squash delivery never lands the lane head on
+`main`.
 
 ## Claim at lane open
 
