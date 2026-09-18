@@ -32,6 +32,7 @@
         "test:electron-runtime": "node scripts/checkElectronRuntimeProvenance.ts",
         "test:electron-runtime:online": "node scripts/checkElectronRuntimeProvenance.ts --online",
         "release:restamp": "node scripts/restampDependencyBump.ts",
+        "release:restamp:wasm": "node scripts/restampWasmInventory.ts",
         "release:proof": "node scripts/releaseProof.ts check",
         "release:proof:assemble": "node scripts/releaseProof.ts assemble",
         "release:propose": "node scripts/proposeRelease.ts",
