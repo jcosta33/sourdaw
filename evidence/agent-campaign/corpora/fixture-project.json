@@ -1,0 +1,639 @@
+{
+    "tempo": 120,
+    "timeSignature": [4, 4],
+    "isPlaying": false,
+    "isRecording": false,
+    "isLooping": false,
+    "loopStart": 0,
+    "loopEnd": 0,
+    "punchInEnabled": false,
+    "punchInBeat": 0,
+    "punchOutBeat": 16,
+    "metronomeEnabled": false,
+    "metronomeVolume": 0.5,
+    "masterGain": 0.8,
+    "availableDeviceTypes": [
+        {
+            "id": "builtin-compressor",
+            "name": "Compressor",
+            "parameters": [
+                {
+                    "id": "comp-threshold",
+                    "name": "Threshold",
+                    "type": "float",
+                    "value": -20,
+                    "minValue": -60,
+                    "maxValue": 0,
+                    "unit": "dB"
+                },
+                {
+                    "id": "comp-ratio",
+                    "name": "Ratio",
+                    "type": "float",
+                    "value": 4,
+                    "minValue": 1,
+                    "maxValue": 20,
+                    "unit": ":1"
+                },
+                {
+                    "id": "comp-attack",
+                    "name": "Attack",
+                    "type": "float",
+                    "value": 10,
+                    "minValue": 0.1,
+                    "maxValue": 100,
+                    "unit": "ms"
+                },
+                {
+                    "id": "comp-release",
+                    "name": "Release",
+                    "type": "float",
+                    "value": 100,
+                    "minValue": 10,
+                    "maxValue": 1000,
+                    "unit": "ms"
+                },
+                {
+                    "id": "comp-knee",
+                    "name": "Knee",
+                    "type": "float",
+                    "value": 6,
+                    "minValue": 0,
+                    "maxValue": 30,
+                    "unit": "dB"
+                },
+                {
+                    "id": "comp-makeup",
+                    "name": "Makeup",
+                    "type": "float",
+                    "value": 0,
+                    "minValue": 0,
+                    "maxValue": 30,
+                    "unit": "dB"
+                }
+            ]
+        },
+        {
+            "id": "builtin-eq",
+            "name": "EQ",
+            "parameters": [
+                {
+                    "id": "eq-low-gain",
+                    "name": "Low Gain",
+                    "type": "float",
+                    "value": 0,
+                    "minValue": -24,
+                    "maxValue": 24,
+                    "unit": "dB"
+                },
+                {
+                    "id": "eq-low-freq",
+                    "name": "Low Freq",
+                    "type": "float",
+                    "value": 100,
+                    "minValue": 20,
+                    "maxValue": 500,
+                    "unit": "Hz"
+                },
+                {
+                    "id": "eq-low-q",
+                    "name": "Low Q",
+                    "type": "float",
+                    "value": 1,
+                    "minValue": 0.1,
+                    "maxValue": 10,
+                    "unit": ""
+                },
+                {
+                    "id": "eq-mid-gain",
+                    "name": "Mid Gain",
+                    "type": "float",
+                    "value": 0,
+                    "minValue": -24,
+                    "maxValue": 24,
+                    "unit": "dB"
+                },
+                {
+                    "id": "eq-mid-freq",
+                    "name": "Mid Freq",
+                    "type": "float",
+                    "value": 1000,
+                    "minValue": 200,
+                    "maxValue": 8000,
+                    "unit": "Hz"
+                },
+                {
+                    "id": "eq-mid-q",
+                    "name": "Mid Q",
+                    "type": "float",
+                    "value": 1,
+                    "minValue": 0.1,
+                    "maxValue": 10,
+                    "unit": ""
+                },
+                {
+                    "id": "eq-high-gain",
+                    "name": "High Gain",
+                    "type": "float",
+                    "value": 0,
+                    "minValue": -24,
+                    "maxValue": 24,
+                    "unit": "dB"
+                },
+                {
+                    "id": "eq-high-freq",
+                    "name": "High Freq",
+                    "type": "float",
+                    "value": 8000,
+                    "minValue": 2000,
+                    "maxValue": 20000,
+                    "unit": "Hz"
+                },
+                {
+                    "id": "eq-high-q",
+                    "name": "High Q",
+                    "type": "float",
+                    "value": 1,
+                    "minValue": 0.1,
+                    "maxValue": 10,
+                    "unit": ""
+                }
+            ]
+        },
+        {
+            "id": "builtin-reverb",
+            "name": "Reverb",
+            "parameters": [
+                {
+                    "id": "rev-size",
+                    "name": "Size",
+                    "type": "float",
+                    "value": 0.5,
+                    "minValue": 0,
+                    "maxValue": 1,
+                    "unit": ""
+                },
+                {
+                    "id": "rev-decay",
+                    "name": "Decay",
+                    "type": "float",
+                    "value": 2,
+                    "minValue": 0.1,
+                    "maxValue": 20,
+                    "unit": "s"
+                },
+                {
+                    "id": "rev-damping",
+                    "name": "Damping",
+                    "type": "float",
+                    "value": 0.5,
+                    "minValue": 0,
+                    "maxValue": 1,
+                    "unit": ""
+                },
+                {
+                    "id": "rev-predelay",
+                    "name": "Pre-Delay",
+                    "type": "float",
+                    "value": 10,
+                    "minValue": 0,
+                    "maxValue": 200,
+                    "unit": "ms"
+                },
+                {
+                    "id": "rev-lowcut",
+                    "name": "Low Cut",
+                    "type": "float",
+                    "value": 80,
+                    "minValue": 20,
+                    "maxValue": 2000,
+                    "unit": "Hz"
+                },
+                {
+                    "id": "rev-mix",
+                    "name": "Dry/Wet",
+                    "type": "float",
+                    "value": 0.3,
+                    "minValue": 0,
+                    "maxValue": 1,
+                    "unit": ""
+                }
+            ]
+        },
+        {
+            "id": "builtin-delay",
+            "name": "Delay",
+            "parameters": [
+                {
+                    "id": "delay-time",
+                    "name": "Time",
+                    "type": "float",
+                    "value": 250,
+                    "minValue": 1,
+                    "maxValue": 2000,
+                    "unit": "ms"
+                },
+                {
+                    "id": "delay-feedback",
+                    "name": "Feedback",
+                    "type": "float",
+                    "value": 0.4,
+                    "minValue": 0,
+                    "maxValue": 0.95,
+                    "unit": ""
+                },
+                {
+                    "id": "delay-lowcut",
+                    "name": "Low Cut",
+                    "type": "float",
+                    "value": 80,
+                    "minValue": 20,
+                    "maxValue": 2000,
+                    "unit": "Hz"
+                },
+                {
+                    "id": "delay-highcut",
+                    "name": "High Cut",
+                    "type": "float",
+                    "value": 12000,
+                    "minValue": 1000,
+                    "maxValue": 20000,
+                    "unit": "Hz"
+                },
+                {
+                    "id": "delay-mix",
+                    "name": "Dry/Wet",
+                    "type": "float",
+                    "value": 0.3,
+                    "minValue": 0,
+                    "maxValue": 1,
+                    "unit": ""
+                }
+            ]
+        },
+        {
+            "id": "builtin-distortion",
+            "name": "Distortion",
+            "parameters": [
+                {
+                    "id": "dist-drive",
+                    "name": "Drive",
+                    "type": "float",
+                    "value": 20,
+                    "minValue": 0,
+                    "maxValue": 100,
+                    "unit": ""
+                },
+                {
+                    "id": "dist-tone",
+                    "name": "Tone",
+                    "type": "float",
+                    "value": 4000,
+                    "minValue": 200,
+                    "maxValue": 8000,
+                    "unit": "Hz"
+                },
+                {
+                    "id": "dist-output",
+                    "name": "Output Level",
+                    "type": "float",
+                    "value": 0,
+                    "minValue": -24,
+                    "maxValue": 0,
+                    "unit": "dB"
+                },
+                {
+                    "id": "dist-mix",
+                    "name": "Dry/Wet",
+                    "type": "float",
+                    "value": 0.5,
+                    "minValue": 0,
+                    "maxValue": 1,
+                    "unit": ""
+                }
+            ]
+        }
+    ],
+    "sections": [
+        {
+            "id": "section-intro",
+            "name": "Intro",
+            "startBeat": 0,
+            "endBeat": 16
+        },
+        {
+            "id": "section-verse",
+            "name": "Verse",
+            "startBeat": 16,
+            "endBeat": 48
+        },
+        {
+            "id": "section-chorus",
+            "name": "Chorus",
+            "startBeat": 48,
+            "endBeat": 80
+        }
+    ],
+    "tracks": [
+        {
+            "id": "track-kick",
+            "name": "Kick",
+            "kind": "audio",
+            "muted": false,
+            "soloed": false,
+            "soloSafe": false,
+            "armed": false,
+            "frozen": false,
+            "gain": 1,
+            "pan": 0,
+            "automationMode": "read",
+            "clipCount": 0,
+            "deviceCount": 0,
+            "clips": [],
+            "devices": [],
+            "sends": [
+                {
+                    "busId": "track-drum-bus",
+                    "level": 1,
+                    "preFader": false
+                }
+            ]
+        },
+        {
+            "id": "track-snare",
+            "name": "Snare",
+            "kind": "audio",
+            "muted": false,
+            "soloed": false,
+            "soloSafe": false,
+            "armed": false,
+            "frozen": false,
+            "gain": 1,
+            "pan": 0,
+            "automationMode": "read",
+            "clipCount": 0,
+            "deviceCount": 0,
+            "clips": [],
+            "devices": [],
+            "sends": [
+                {
+                    "busId": "track-drum-bus",
+                    "level": 1,
+                    "preFader": false
+                }
+            ]
+        },
+        {
+            "id": "track-hi-hat",
+            "name": "Hi-Hat",
+            "kind": "audio",
+            "muted": false,
+            "soloed": false,
+            "soloSafe": false,
+            "armed": false,
+            "frozen": false,
+            "gain": 1,
+            "pan": 0,
+            "automationMode": "read",
+            "clipCount": 0,
+            "deviceCount": 0,
+            "clips": [],
+            "devices": [],
+            "sends": [
+                {
+                    "busId": "track-drum-bus",
+                    "level": 1,
+                    "preFader": false
+                }
+            ]
+        },
+        {
+            "id": "track-overheads",
+            "name": "Overheads",
+            "kind": "audio",
+            "muted": false,
+            "soloed": false,
+            "soloSafe": false,
+            "armed": false,
+            "frozen": false,
+            "gain": 1,
+            "pan": 0,
+            "automationMode": "read",
+            "clipCount": 0,
+            "deviceCount": 0,
+            "clips": [],
+            "devices": [],
+            "sends": [
+                {
+                    "busId": "track-drum-bus",
+                    "level": 1,
+                    "preFader": false
+                }
+            ]
+        },
+        {
+            "id": "track-bass-di",
+            "name": "Bass DI",
+            "kind": "audio",
+            "muted": false,
+            "soloed": false,
+            "soloSafe": false,
+            "armed": false,
+            "frozen": false,
+            "gain": 1,
+            "pan": 0,
+            "automationMode": "read",
+            "clipCount": 0,
+            "deviceCount": 1,
+            "clips": [],
+            "devices": [
+                {
+                    "id": "device-bass-di-compressor",
+                    "name": "Compressor",
+                    "type": "builtin-compressor",
+                    "bypassed": false,
+                    "parameters": [
+                        {
+                            "id": "comp-threshold",
+                            "name": "Threshold",
+                            "type": "float",
+                            "value": -20,
+                            "minValue": -60,
+                            "maxValue": 0,
+                            "unit": "dB"
+                        },
+                        {
+                            "id": "comp-ratio",
+                            "name": "Ratio",
+                            "type": "float",
+                            "value": 4,
+                            "minValue": 1,
+                            "maxValue": 20,
+                            "unit": ":1"
+                        },
+                        {
+                            "id": "comp-attack",
+                            "name": "Attack",
+                            "type": "float",
+                            "value": 10,
+                            "minValue": 0.1,
+                            "maxValue": 100,
+                            "unit": "ms"
+                        },
+                        {
+                            "id": "comp-release",
+                            "name": "Release",
+                            "type": "float",
+                            "value": 100,
+                            "minValue": 10,
+                            "maxValue": 1000,
+                            "unit": "ms"
+                        },
+                        {
+                            "id": "comp-knee",
+                            "name": "Knee",
+                            "type": "float",
+                            "value": 6,
+                            "minValue": 0,
+                            "maxValue": 30,
+                            "unit": "dB"
+                        },
+                        {
+                            "id": "comp-makeup",
+                            "name": "Makeup",
+                            "type": "float",
+                            "value": 0,
+                            "minValue": 0,
+                            "maxValue": 30,
+                            "unit": "dB"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "track-lead-vocal",
+            "name": "Lead Vocal",
+            "kind": "audio",
+            "muted": false,
+            "soloed": false,
+            "soloSafe": false,
+            "armed": false,
+            "frozen": false,
+            "gain": 1,
+            "pan": 0,
+            "automationMode": "read",
+            "clipCount": 0,
+            "deviceCount": 0,
+            "clips": [],
+            "devices": []
+        },
+        {
+            "id": "track-backing-vocal-left",
+            "name": "Backing Vocals L",
+            "kind": "audio",
+            "muted": false,
+            "soloed": false,
+            "soloSafe": false,
+            "armed": false,
+            "frozen": false,
+            "gain": 1,
+            "pan": 0,
+            "automationMode": "read",
+            "clipCount": 0,
+            "deviceCount": 0,
+            "clips": [],
+            "devices": []
+        },
+        {
+            "id": "track-backing-vocal-right",
+            "name": "Backing Vocals R",
+            "kind": "audio",
+            "muted": false,
+            "soloed": false,
+            "soloSafe": false,
+            "armed": false,
+            "frozen": false,
+            "gain": 1,
+            "pan": 0,
+            "automationMode": "read",
+            "clipCount": 0,
+            "deviceCount": 0,
+            "clips": [],
+            "devices": []
+        },
+        {
+            "id": "track-guitar",
+            "name": "Guitar",
+            "kind": "audio",
+            "muted": false,
+            "soloed": false,
+            "soloSafe": false,
+            "armed": false,
+            "frozen": false,
+            "gain": 1,
+            "pan": 0,
+            "automationMode": "read",
+            "clipCount": 0,
+            "deviceCount": 0,
+            "clips": [],
+            "devices": []
+        },
+        {
+            "id": "track-keys",
+            "name": "Keys",
+            "kind": "midi",
+            "muted": false,
+            "soloed": false,
+            "soloSafe": false,
+            "armed": false,
+            "frozen": false,
+            "gain": 1,
+            "pan": 0,
+            "automationMode": "read",
+            "clipCount": 0,
+            "deviceCount": 0,
+            "clips": [],
+            "devices": []
+        },
+        {
+            "id": "track-drum-bus",
+            "name": "Drum Bus",
+            "kind": "bus",
+            "muted": false,
+            "soloed": false,
+            "soloSafe": false,
+            "armed": false,
+            "frozen": false,
+            "gain": 1,
+            "pan": 0,
+            "automationMode": "read",
+            "clipCount": 0,
+            "deviceCount": 0,
+            "clips": [],
+            "devices": []
+        },
+        {
+            "id": "track-reverb-bus",
+            "name": "Reverb Bus",
+            "kind": "bus",
+            "muted": false,
+            "soloed": false,
+            "soloSafe": false,
+            "armed": false,
+            "frozen": false,
+            "gain": 1,
+            "pan": 0,
+            "automationMode": "read",
+            "clipCount": 0,
+            "deviceCount": 0,
+            "clips": [],
+            "devices": []
+        }
+    ],
+    "selectedTrackId": null,
+    "selectedClipId": null,
+    "selectedClipIds": [],
+    "activeView": "arrange",
+    "playheadPosition": 0
+}

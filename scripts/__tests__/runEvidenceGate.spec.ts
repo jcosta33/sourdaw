@@ -10,7 +10,9 @@ import { sharedFixturePaths } from '../agent-campaign/evidenceManifest';
 import {
     EVIDENCE_MANIFEST_PATH,
     EVIDENCE_RECORDS_DIRECTORY,
+    ACCEPTANCE_CORPUS_PATHS,
     SOURCE_EXAMPLES_CORPUS_PATH,
+    acceptanceCorpusReleaseBlockers,
     buildEvidenceManifest,
     compareDigests,
     evaluateRelease,
@@ -388,6 +390,88 @@ describe('source examples corpus', () => {
 
         expect(exitCode).toBe(1);
         expect(errorSpy.mock.calls.flat()).toContainEqual('source-example EX-09: unrecovered');
+        errorSpy.mockRestore();
+    });
+});
+
+describe('acceptance corpora sealing', () => {
+    /** The thirteen prompt classes a schema-2 corpus names, with only the given ones left unsealed. */
+    function corpusText(unsealed: Readonly<Record<string, string>>): string {
+        const names = [
+            'literal-structural',
+            'named-target-with-unit',
+            'device-insert-with-parameter',
+            'new-bus-send-with-level',
+            'time-scoped-level',
+            'bulk-by-role',
+            'comparative-by-measurement',
+            'perceptual-single-target',
+            'perceptual-multi-target',
+            'whole-project-vibe-with-constraint',
+            'refinement',
+            'question',
+            'boundary',
+        ];
+        function entryFor(name: string): [string, Record<string, unknown>] {
+            if (name in unsealed) {
+                return [name, { sealed: false, pendingContract: unsealed[name] }];
+            }
+            return [name, { sealed: true }];
+        }
+        return JSON.stringify({
+            schemaVersion: 2,
+            fixtureProject: 'fixture-project.json',
+            classes: Object.fromEntries(names.map(entryFor)),
+            cases: [],
+        });
+    }
+
+    function writeCorpora(root: string, unsealed: Readonly<Record<string, string>>): void {
+        for (const path of Object.values(ACCEPTANCE_CORPUS_PATHS)) {
+            write(root, path, corpusText(unsealed));
+        }
+    }
+
+    it('blocks release once per unsealed scored class per corpus, naming the contract it waits for', () => {
+        const { root } = fixture();
+        writeCorpora(root, { 'time-scoped-level': 'automateParameterRange over a musical range in either direction' });
+
+        expect(acceptanceCorpusReleaseBlockers(root)).toEqual([
+            'corpus development class time-scoped-level: unsealed (pending automateParameterRange over a musical range in either direction)',
+            'corpus held-out class time-scoped-level: unsealed (pending automateParameterRange over a musical range in either direction)',
+        ]);
+    });
+
+    it('blocks nothing once every scored class is sealed', () => {
+        const { root } = fixture();
+        writeCorpora(root, {});
+
+        expect(acceptanceCorpusReleaseBlockers(root)).toEqual([]);
+    });
+
+    it('blocks release for each corpus file that is absent', () => {
+        const { root } = fixture();
+
+        expect(acceptanceCorpusReleaseBlockers(root)).toEqual([
+            'corpus development missing',
+            'corpus held-out missing',
+        ]);
+    });
+
+    it('wires the unsealed-class blocker into the --release report', async () => {
+        const { root, manifestPath } = fixture();
+        writeCorpora(root, { question: 'PlanningOutcome kind answer' });
+        // The corpora are manifest fixtures, so writing them moves their digests: the manifest is
+        // regenerated over the tree the release evaluation will actually read.
+        write(root, EVIDENCE_MANIFEST_PATH, `${JSON.stringify(buildEvidenceManifest(root, APP_DIGESTS), null, 4)}\n`);
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const exitCode = await main(['--release', '--manifest', manifestPath]);
+
+        expect(exitCode).toBe(1);
+        expect(errorSpy.mock.calls.flat()).toContainEqual(
+            'corpus development class question: unsealed (pending PlanningOutcome kind answer)'
+        );
         errorSpy.mockRestore();
     });
 });
