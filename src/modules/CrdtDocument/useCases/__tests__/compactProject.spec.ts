@@ -3,12 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromIdb';
-import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthorityModel';
+import {
+    EMPTY_PERSISTENCE_AUTHORITY,
+    PERSISTENCE_AUTHORITY_KEY,
+} from '../../repositories/crdtPersistence/persistenceAuthorityModel';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
-import { beginPersistenceReplacement } from '../beginPersistenceReplacement';
 import { compactProject } from '../compactProject';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
 import { persistCrdtProject } from '../persistCrdtProject';
+import { runCrdtPersistenceLoad } from '../runCrdtPersistenceLoad';
 
 const mocks = vi.hoisted(() => ({
     openDatabase: vi.fn(),
@@ -47,15 +50,36 @@ async function flushMicrotasks(): Promise<void> {
     await Promise.resolve();
 }
 
+/**
+ * The queue state an ordinary editing session sits in: a project loaded, its
+ * durable authority adopted, and the root already a base record incrementals
+ * can extend. A queue with a replacement still pending writes a full bundle
+ * instead.
+ *
+ * The authority is the empty one because this fixture's store starts empty, so
+ * the first save's compare-and-swap claims exactly the revision that is there.
+ */
+async function loadRootOnlyProject(): Promise<void> {
+    await runCrdtPersistenceLoad(() =>
+        Promise.resolve({
+            loaded: true,
+            snapshot: {
+                authority: EMPTY_PERSISTENCE_AUTHORITY,
+                bundle: new Map([['root', new Uint8Array([1])]]),
+            },
+        })
+    );
+}
+
 describe('compactProject', () => {
     let persistence: TransactionalPersistence;
 
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.clearAllMocks();
         persistence = new TransactionalPersistence();
         mocks.openDatabase.mockResolvedValue(persistence.database);
         automergeRepository.reset();
-        beginPersistenceReplacement({ epoch: crypto.randomUUID(), old: null });
+        await loadRootOnlyProject();
         crdtProjectCompactionState.incrementalSaveCount = 0;
     });
 

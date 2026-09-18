@@ -289,15 +289,22 @@ describe('CRDT persistence across independent queue contexts', () => {
         const transaction = await persistence.waitForTransaction('readwrite', 2);
         expect(transaction.writes.some((write) => write.key.startsWith('root:incremental:'))).toBe(true);
         transaction.complete();
-        context.queue.beginPersistenceReplacement({ epoch: crypto.randomUUID(), old: null });
+        // An ordinary project load supersedes the in-flight generation without
+        // pending a replacement: the live documents already are the durable
+        // project, so this load only re-adopts its authority.
+        const supersedingLoad = context.queue.runCrdtPersistenceLoad(async () => ({
+            loaded: true,
+            snapshot: await context.snapshot.loadPersistenceSnapshotFromIdb(),
+        }));
 
         await expect(superseded).resolves.toMatchObject({
             status: 'superseded',
             durable: { write: 'committed', authority: { revision: 2 } },
         });
+        await expect(supersedingLoad).resolves.toBe(true);
         const snapshot = await context.snapshot.loadPersistenceSnapshotFromIdb();
         if (!snapshot?.bundle) {
-            throw new Error('Expected the synchronously committed root after queue reset');
+            throw new Error('Expected the synchronously committed root after the superseding load');
         }
         const reload = await importContext();
         await reload.repository.automergeRepository.loadAll({ bundle: snapshot.bundle, shouldCommit: () => true });
