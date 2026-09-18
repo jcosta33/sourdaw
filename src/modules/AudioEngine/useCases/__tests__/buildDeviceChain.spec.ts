@@ -195,26 +195,124 @@ describe('buildDeviceChain', () => {
     // live playback too (no descriptor matches, so `TrackNode` builds no node),
     // so dropping it offline reproduces playback rather than diverging from it.
     // Refusing would make those projects permanently unexportable.
-    it.each([
-        ['Drum Comp', 'a stale factory-preset display name'],
-        ['external-plugin', 'a third-party plugin an OfflineAudioContext cannot host'],
-    ])('degrades %s (%s) instead of failing the export', async (deviceType) => {
+    it.each([['Drum Comp', 'a stale factory-preset display name']])(
+        'degrades %s (%s) instead of failing the export',
+        async (deviceType) => {
+            vi.stubGlobal('AudioWorkletNode', undefined);
+            const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+            const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+            const onWarning = vi.fn();
+            mocks.isFaustModule.mockReturnValue(false);
+            const device: Device = {
+                id: 'd1',
+                name: deviceType,
+                type: deviceType,
+                bypassed: false,
+                parameterValues: {},
+            };
+
+            const entries = await buildDeviceChain({} as BaseAudioContext, [device], input, output, {
+                trackName: 'Drums',
+                onWarning,
+            });
+
+            expect(entries).toEqual([]);
+            const warning = onWarning.mock.calls[0]?.[0] as string;
+            expect(warning).toContain(deviceType);
+            expect(warning).toContain('Drums');
+            expect(input.connect).toHaveBeenCalledWith(output);
+        }
+    );
+
+    // A hosted plugin sounds live through the native engine (the Web Audio
+    // graph carries only a unity pass-through for it), so it is not the "never
+    // sounded live" case above. Freeze and mixdown could not previously build
+    // it either, and used to drop it silently as a coverage-hole degrade — the
+    // dry render then diverges from what the session actually plays, worst on
+    // freeze where it replaces the audible track. The native offline path
+    // cannot host a plugin instance yet, so refusing is the honest behaviour
+    // until a bounce through the live engine exists.
+    it('refuses the export for a hosted plugin the offline path cannot render', async () => {
         vi.stubGlobal('AudioWorkletNode', undefined);
         const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const onWarning = vi.fn();
         mocks.isFaustModule.mockReturnValue(false);
-        const device: Device = { id: 'd1', name: deviceType, type: deviceType, bypassed: false, parameterValues: {} };
+        const plugin: Device = {
+            id: 'd1',
+            name: 'Analog EQ',
+            type: 'external-plugin',
+            bypassed: false,
+            parameterValues: {},
+        };
 
-        const entries = await buildDeviceChain({} as BaseAudioContext, [device], input, output, {
-            trackName: 'Drums',
+        const failure = await buildDeviceChain({} as BaseAudioContext, [plugin], input, output, {
+            trackName: 'Guitar',
+            onWarning,
+        }).catch((error: unknown) => error);
+
+        expect(failure).toMatchObject({ _tag: 'Export' });
+        const message = (failure as Error).message;
+        expect(message).toContain('Guitar');
+        expect(message).toContain('Analog EQ');
+        expect(message).toContain('external-plugin');
+        expect(message).toContain('Bypass or remove');
+        expect(onWarning).not.toHaveBeenCalled();
+        expect(input.connect).not.toHaveBeenCalledWith(output);
+    });
+
+    // A strip that is never scheduled contributes silence by construction, so
+    // a hosted plugin on it cannot make the file differ from the session —
+    // mirrors the catalog-device case above for the plugin refusal.
+    it('degrades a hosted plugin on a track that contributes no audio', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const onWarning = vi.fn();
+        mocks.isFaustModule.mockReturnValue(false);
+        const plugin: Device = {
+            id: 'd1',
+            name: 'Analog EQ',
+            type: 'external-plugin',
+            bypassed: false,
+            parameterValues: {},
+        };
+
+        const entries = await buildDeviceChain({} as BaseAudioContext, [plugin], input, output, {
+            trackName: 'Muted guitar',
+            onWarning,
+            contributesAudio: false,
+        });
+
+        expect(entries).toEqual([]);
+        expect(onWarning).toHaveBeenCalledTimes(1);
+        expect(input.connect).toHaveBeenCalledWith(output);
+    });
+
+    // The catch this refusal lives in is only reached for a device the chain
+    // tries to build. A bypassed device is filtered out before construction,
+    // so bypassing a hosted plugin is a real remedy, not a dead end.
+    it('skips a bypassed hosted plugin without refusing or warning', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const onWarning = vi.fn();
+        mocks.isFaustModule.mockReturnValue(false);
+        const plugin: Device = {
+            id: 'd1',
+            name: 'Analog EQ',
+            type: 'external-plugin',
+            bypassed: true,
+            parameterValues: {},
+        };
+
+        const entries = await buildDeviceChain({} as BaseAudioContext, [plugin], input, output, {
+            trackName: 'Guitar',
             onWarning,
         });
 
         expect(entries).toEqual([]);
-        const warning = onWarning.mock.calls[0]?.[0] as string;
-        expect(warning).toContain(deviceType);
-        expect(warning).toContain('Drums');
+        expect(onWarning).not.toHaveBeenCalled();
         expect(input.connect).toHaveBeenCalledWith(output);
     });
 

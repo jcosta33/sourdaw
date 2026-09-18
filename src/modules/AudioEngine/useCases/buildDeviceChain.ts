@@ -18,6 +18,7 @@ import {
     type DeviceNoteOnRequest,
 } from '../repositories/deviceStrategy/AudioDeviceStrategy';
 import { createWithheldDeviceStrategy } from '../repositories/deviceStrategy/createWithheldDeviceStrategy';
+import { isEngineHostedPluginDeviceType } from '../repositories/deviceStrategy/isEngineHostedPluginDeviceType';
 import { isNodelessOfflineDeviceType } from '../repositories/deviceStrategy/nodelessOfflineDeviceTypes';
 import { createDeviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
 import { isUnrenderableCatalogDeviceType } from '../repositories/deviceStrategy/unrenderableCatalogDeviceTypes';
@@ -197,6 +198,17 @@ export type BuildDeviceChainContext = {
  *   no `instrumentControls`, an unrenderable *instrument* came back as the
  *   builtin fallback synth (sawtooth at 0.3) — wrong in a way that sounds
  *   deliberate. A render must contain what playback contains.
+ * - An `external-plugin` device (`isEngineHostedPluginDeviceType`) is the same
+ *   refusal for a different reason: it is not a coverage hole, it is a device
+ *   family this render path cannot reach at all. It is *not* silent in live
+ *   playback — the native engine hosts and sounds it inline on its own audio
+ *   callback, with the Web Audio graph carrying only a unity pass-through — so
+ *   dropping it here would diverge from what the session actually plays, worst
+ *   of all on freeze, where the resulting dry render replaces the audible
+ *   track. The native offline path cannot host a plugin instance either (it
+ *   maps against an empty instance table by design), so there is no render to
+ *   build toward yet; refusing until a bounce through the live engine exists
+ *   is the honest behaviour.
  * - Everything else degrades and reaches the user through the export warning
  *   channel instead of only the log: a real implementation that failed at
  *   runtime (missing WASM asset, unavailable worklet, Faust compile error), and
@@ -204,7 +216,8 @@ export type BuildDeviceChainContext = {
  *   live playback too — `TrackNode` returns without a node when no descriptor
  *   matches — so dropping it offline matches playback rather than diverging
  *   from it. Refusing there would make a project unexportable over a device it
- *   never sounded.
+ *   never sounded. (A stale factory-preset display name, e.g. `Drum Comp`, is
+ *   this case, not the plugin case above.)
  *
  * Device types rendered by another offline path never reach either branch; see
  * `isNodelessOfflineDeviceType`.
@@ -287,27 +300,33 @@ export const buildDeviceChain = inject({ logger })(
                         // Refuse only when the product claims this device and we
                         // cannot render it — that is the case where dropping it
                         // hands back a file the session does not play. A type the
-                        // catalog does not know (a stale preset string, a
-                        // third-party plugin an OfflineAudioContext cannot host) is
-                        // already silent in live playback, so dropping it offline
-                        // reproduces playback exactly and degrades instead.
+                        // catalog does not know (a stale factory-preset display
+                        // name) is already silent in live playback, so dropping it
+                        // offline reproduces playback exactly and degrades instead.
                         //
                         // A track whose audio cannot reach the file at all is never
                         // worth refusing over; see `contributesAudio`.
-                        if (
-                            isUnsupportedDeviceTypeError(error) &&
-                            contributesAudio &&
-                            isUnrenderableCatalogDeviceType(device.type)
-                        ) {
-                            // Name it both ways: the rack chip the user has to find
-                            // is labelled with the display name, while the type is
-                            // what a bug report or a project file will show.
-                            throw createExportError(
-                                `Track "${trackLabel}" uses the device "${device.name}" (${device.type}), which this ` +
-                                    `build cannot render offline. Export stopped rather than producing a file without ` +
-                                    `it. Remove the device from the track to export.`,
-                                error
-                            );
+                        if (isUnsupportedDeviceTypeError(error) && contributesAudio) {
+                            if (isEngineHostedPluginDeviceType(device.type)) {
+                                throw createExportError(
+                                    `Track "${trackLabel}" hosts the plugin "${device.name}" (${device.type}), which ` +
+                                        `only the native engine can render; this export cannot include it. Export ` +
+                                        `stopped rather than producing a file without it. Bypass or remove the ` +
+                                        `plugin to export without it.`,
+                                    error
+                                );
+                            }
+                            if (isUnrenderableCatalogDeviceType(device.type)) {
+                                // Name it both ways: the rack chip the user has to find
+                                // is labelled with the display name, while the type is
+                                // what a bug report or a project file will show.
+                                throw createExportError(
+                                    `Track "${trackLabel}" uses the device "${device.name}" (${device.type}), which this ` +
+                                        `build cannot render offline. Export stopped rather than producing a file without ` +
+                                        `it. Remove the device from the track to export.`,
+                                    error
+                                );
+                            }
                         }
                         // When the plugin fails because it requires cross-origin
                         // isolation (SharedArrayBuffer), surface a user-visible message —
