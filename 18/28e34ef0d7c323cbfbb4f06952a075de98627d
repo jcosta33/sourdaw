@@ -1,0 +1,34 @@
+.agents/decisions/open-decision-docket.md
+  h_1228e573df1f42 170
+crates/daw-dsp/src/grand_boule/engine.rs
+  h_1228e573df1f42 4,690,693,699
+crates/daw-engine/src/scheduler.rs
+  h_1228e573df1f42 1870-1871
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_1228e573df1f42 1,1097-1137
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_1228e573df1f42 1,161-201
+public/wasm/manifest.json
+  h_1228e573df1f42 12,15-18,20-21
+release/open-source-inventory.json
+  h_1228e573df1f42 1198,1202-1203,1205,1336,1342,1723
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_1228e573df1f42 1,1097-1137
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.dispatch.spec.ts
+  h_1228e573df1f42 5
+src/modules/GrandBoule/repositories/grandBouleEngineHandle.ts
+  h_1228e573df1f42 45
+src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts
+  h_1228e573df1f42 63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1828e34ef0d7c323cbfbb4f06952a075de98627d",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
