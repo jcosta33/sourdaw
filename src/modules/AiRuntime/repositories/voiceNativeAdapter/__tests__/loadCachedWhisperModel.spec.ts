@@ -5,6 +5,7 @@ import { desktopInvoke } from '#/utils/desktopBridge';
 import { loadCachedWhisperModel } from '../loadCachedWhisperModel';
 
 vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: () => false,
     desktopInvoke: vi.fn().mockResolvedValue(undefined),
 }));
 

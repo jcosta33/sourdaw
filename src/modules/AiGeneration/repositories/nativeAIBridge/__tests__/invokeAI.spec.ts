@@ -5,6 +5,7 @@ import { desktopInvoke } from '#/utils/desktopBridge';
 import { invokeAI } from '../invokeAI';
 
 vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: () => false,
     desktopInvoke: vi.fn(),
 }));
 

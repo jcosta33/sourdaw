@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: () => false,
     writeFileBytes: mocks.writeFileBytes,
 }));
 

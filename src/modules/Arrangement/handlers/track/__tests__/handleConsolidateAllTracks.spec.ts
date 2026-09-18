@@ -90,6 +90,38 @@ describe('handleConsolidateAllTracks', () => {
             expect(mocks.bounceInPlace).not.toHaveBeenCalled();
             expect(result).toEqual({ status: 'no-write' });
         });
+
+        // A refused bounce (an unrenderable device on the track, see
+        // `buildDeviceChain`'s plugin refusal) resolves `false`. A loop where
+        // every eligible track refused wrote nothing, so filing `written`
+        // would leave an inert undo entry with no change behind it.
+        it('returns no-write when every bounce in the loop refuses', async () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: mixedTracks() });
+            mocks.bounceInPlace.mockResolvedValue(false);
+
+            const result = await handleConsolidateAllTracks.execute({
+                type: 'consolidateAllTracks',
+                payload: undefined,
+            });
+
+            expect(mocks.bounceInPlace).toHaveBeenCalledTimes(2);
+            expect(result).toEqual({ status: 'no-write' });
+        });
+
+        // A partial write is still a write: one bounced track changed real
+        // clips, so the undo unit this command files has content to restore.
+        it('returns written when at least one bounce in the loop writes', async () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: mixedTracks() });
+            mocks.bounceInPlace.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+            const result = await handleConsolidateAllTracks.execute({
+                type: 'consolidateAllTracks',
+                payload: undefined,
+            });
+
+            expect(mocks.bounceInPlace).toHaveBeenCalledTimes(2);
+            expect(result).toEqual({ status: 'written' });
+        });
     });
 
     describe('describe', () => {

@@ -37,6 +37,7 @@ const desktopHarness = vi.hoisted(() => {
 });
 
 vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: () => false,
     createChannel: desktopHarness.createChannel,
     desktopInvoke: desktopHarness.invoke,
 }));

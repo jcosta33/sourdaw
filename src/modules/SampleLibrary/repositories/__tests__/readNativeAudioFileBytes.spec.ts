@@ -5,6 +5,7 @@ import { readFileBytes } from '#/utils/desktopBridge';
 import { readNativeAudioFileBytes } from '../readNativeAudioFileBytes';
 
 vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: () => false,
     readFileBytes: vi.fn(),
 }));
 

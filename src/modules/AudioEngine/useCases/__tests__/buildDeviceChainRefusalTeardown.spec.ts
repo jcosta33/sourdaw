@@ -24,7 +24,8 @@ const { mocks } = vi.hoisted(() => ({
         createDevice: vi.fn<(ctx: BaseAudioContext, device: Device) => Promise<AudioDeviceStrategy>>(),
         destroy: vi.fn(),
         loggerWarn: vi.fn(),
-        readAttachedEngineInstanceIds: vi.fn<() => ReadonlySet<string>>(() => new Set()),
+        readLoadedExternalInstanceIds: vi.fn<() => ReadonlySet<string>>(() => new Set()),
+        isDesktopRuntime: vi.fn<() => boolean>(() => true),
     },
 }));
 
@@ -43,8 +44,12 @@ vi.mock('../../repositories/deviceStrategy/setupDeviceStrategies', () => ({
     createDeviceRegistry: () => ({ createDevice: mocks.createDevice }),
 }));
 
-vi.mock('../livePlayback/readAttachedEngineInstanceIds', () => ({
-    readAttachedEngineInstanceIds: mocks.readAttachedEngineInstanceIds,
+vi.mock('../livePlayback/readLoadedExternalInstanceIds', () => ({
+    readLoadedExternalInstanceIds: mocks.readLoadedExternalInstanceIds,
+}));
+
+vi.mock('../../repositories/deviceStrategy/isDesktopExternalPluginRuntime', () => ({
+    isDesktopExternalPluginRuntime: mocks.isDesktopRuntime,
 }));
 
 function audioNode(): AudioNode {
@@ -71,7 +76,8 @@ describe('buildDeviceChain — teardown when a refusal aborts the rack', () => {
         // Reset rather than clear: one test installs a throwing `destroy`.
         vi.resetAllMocks();
         vi.stubGlobal('AudioWorkletNode', undefined);
-        mocks.readAttachedEngineInstanceIds.mockReturnValue(new Set(['inst-1']));
+        mocks.readLoadedExternalInstanceIds.mockReturnValue(new Set(['inst-1']));
+        mocks.isDesktopRuntime.mockReturnValue(true);
         mocks.createDevice.mockImplementation((_ctx, device) => {
             if (device.type === 'external-plugin') {
                 return Promise.reject(

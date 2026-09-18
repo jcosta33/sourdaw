@@ -5,6 +5,7 @@ import { desktopInvoke } from '#/utils/desktopBridge';
 import { parseScl } from '../parseScl';
 
 vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: () => false,
     desktopInvoke: vi.fn(),
 }));
 

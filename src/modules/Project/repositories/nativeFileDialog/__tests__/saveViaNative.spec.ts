@@ -5,6 +5,7 @@ import { desktopSaveDialog } from '#/utils/desktopBridge';
 import { saveViaNative } from '../saveViaNative';
 
 vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: () => false,
     desktopSaveDialog: vi.fn(),
 }));
 

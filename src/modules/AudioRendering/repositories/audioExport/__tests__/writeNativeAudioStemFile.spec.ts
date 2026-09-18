@@ -5,6 +5,7 @@ import { desktopPathJoin, writeFileBytes } from '#/utils/desktopBridge';
 import { writeNativeAudioStemFile } from '../writeNativeAudioStemFile';
 
 vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: () => false,
     desktopPathJoin: vi.fn(),
     writeFileBytes: vi.fn(),
 }));

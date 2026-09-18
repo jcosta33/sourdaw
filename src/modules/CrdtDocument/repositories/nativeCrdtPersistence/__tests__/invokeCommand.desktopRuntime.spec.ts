@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const mockInvoke = vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>();
 
 vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: () => false,
     desktopInvoke: mockInvoke,
 }));
 

@@ -5,6 +5,7 @@ import { desktopOpenDialog } from '#/utils/desktopBridge';
 import { pickNativeSampleFolder } from '../pickNativeSampleFolder';
 
 vi.mock('#/utils/desktopBridge', () => ({
+    isDesktopRuntime: () => false,
     desktopOpenDialog: vi.fn(),
 }));
 
