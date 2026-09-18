@@ -1,0 +1,49 @@
+.github/workflows/validation.yml
+  s_914af328b3988f::t_15eff8e041f2f9 542
+crates/daw-dsp/src/crumbs/voice.rs
+  s_914af328b3988f::t_bdeada837918bb 1470,1484,1489
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_914af328b3988f::t_72336d147844f0 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_914af328b3988f::t_3474961da0d330 1
+public/wasm/manifest.json
+  s_914af328b3988f::t_f049d2420e9bfb 12,17-18,21
+release/open-source-inventory.json
+  s_9b530f08172a54::t_7bfad004852ab8 1336,1342,1723
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_914af328b3988f::t_1e719dd6d40b56 40,433,1603-1658
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_914af328b3988f::t_90fa156f94868e 11819-11846
+scripts/deliverPullRequest.ts
+  s_914af328b3988f::t_5f75f7f846b3a0 3699-3701
+scripts/prContract.ts
+  s_914af328b3988f::t_452f8d8a1b524d 43
+scripts/trustedGithubWriteBootstrap.ts
+  s_914af328b3988f::t_18f189370f628e 26,49,1102,1174,1188-1190,1241,1261-1276,1324
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_914af328b3988f::t_d811caf8a6f280 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c652574fe7a50fc0b8bf92fd7beab961a3210711",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
