@@ -38,6 +38,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { PROJECT_LICENSE_ID } from './checkProjectLicense.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
 
@@ -189,8 +190,8 @@ export function validateWasmPackageMetadata(path: string, metadata: WasmPackageM
     if (metadata.private !== true) {
         errors.push(`${path}: internal WASM package must set private: true`);
     }
-    if (metadata.license !== 'Apache-2.0') {
-        errors.push(`${path}: internal WASM package must set license: Apache-2.0`);
+    if (metadata.license !== PROJECT_LICENSE_ID) {
+        errors.push(`${path}: internal WASM package must set license: ${PROJECT_LICENSE_ID}`);
     }
     return errors;
 }

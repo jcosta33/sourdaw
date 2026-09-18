@@ -12,7 +12,7 @@ import {
     captureProjectRevision,
     compactProject,
     projectActionHistoryToStore,
-    resetCrdtProjectAuthority,
+    resetCrdtProject,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin } from '#/modules/PluginHost/useCases';
@@ -32,10 +32,14 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 // importCachedAudioBuffers, prepareCachedAudioBuffersFromIdb, and resetAudioGraph; every other
 // AudioEngine key in this factory is an unread graph-coverage stub (`vi.fn()` and `audioEngine: {}`).
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    forgetProjectLatchedPedals: vi.fn(),
+    stopTrackInputMonitoring: vi.fn(),
+
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    projectsToDifferentNativeBank: vi.fn(() => false),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     discardDecodedAudioFile: vi.fn(),
     cancelPendingAudioBufferImport: vi.fn(),
@@ -63,7 +67,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDeviceChainTailSeconds: vi.fn(),
     getEngineState: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
-    getLiveEngineSampleRate: vi.fn(),
     getRuntimeGraphRevision: vi.fn(),
     getTrackStrip: vi.fn(),
     initializeTrackStripFromSnapshot: vi.fn(),
@@ -91,6 +94,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
@@ -115,15 +119,18 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     hasCrdtDoc: vi.fn(),
     mutateCrdtDoc: vi.fn(),
     persistCrdtProject: vi.fn(),
-    preserveBranchStateForSession: vi.fn(),
+    beginBranchSession: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
-    replaceBranchState: vi.fn(),
+    projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
     replaceCrdtDocInLineage: vi.fn(),
-    resetCrdtProjectAuthority: vi.fn(),
-    restoreBranchStateAfterSession: vi.fn(),
+    resetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
+        onAuthorityReplaced?.();
+        return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
+    }),
+    endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
     setupProjectionBridge: vi.fn(),
@@ -141,7 +148,11 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     hasUnresolvedExternalPluginRestoreFailure: vi.fn(() => false),
     restorePluginState: vi.fn(),
 }));
-vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), stopPlayback: vi.fn() }));
+vi.mock('#/modules/Transport/useCases', () => ({
+    ensureTrackStrips: vi.fn(),
+    stopPlayback: vi.fn(),
+    stopTrackInputMonitoring: vi.fn(),
+}));
 vi.mock('../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
 vi.mock('../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: vi.fn() }));
 vi.mock('../helpers/hydrateModuleStoresFromProjectData', () => ({ hydrateModuleStoresFromProjectData: vi.fn() }));
@@ -193,7 +204,7 @@ describe('discardProjectChanges real load path', () => {
         vi.mocked(resetActionReplayAuthority).mockReset();
         vi.mocked(clearUndoHistory).mockReset();
         vi.mocked(projectActionHistoryToStore).mockReset();
-        vi.mocked(resetCrdtProjectAuthority).mockReset();
+        vi.mocked(resetCrdtProject).mockReset();
         vi.mocked(startCrdtAutoSave).mockReset().mockReturnValue(vi.fn());
         vi.mocked(getAudioContext).mockClear();
     });
@@ -217,6 +228,6 @@ describe('discardProjectChanges real load path', () => {
         await expect(discard).resolves.toBe(false);
         expect(projectStore.value?.projectId).toBe('original-project');
         expect(projectStore.value?.dirty).toBe(true);
-        expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(resetCrdtProject).not.toHaveBeenCalled();
     });
 });

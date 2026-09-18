@@ -3,15 +3,28 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 
+import { showDevicePanelForType } from '../../../useCases/panels/devicePanels/showDevicePanelForType';
 import { setWorkspaceEventBus, type WorkspaceEventBus } from '../../../useCases/workspaceEventBus';
 import { useActiveDevicePanel } from '../useActiveDevicePanel';
 
 type Handler = (payload: unknown) => void;
 
-function createFakeEventBus(): WorkspaceEventBus & { fire: (event: string, payload?: unknown) => void } {
+type EmittedEvent = { event: string; payload: unknown };
+
+function createFakeEventBus(): WorkspaceEventBus & {
+    fire: (event: string, payload?: unknown) => void;
+    emitted: EmittedEvent[];
+} {
     const handlersByEvent = new Map<string, Set<Handler>>();
+    const emitted: EmittedEvent[] = [];
     return {
-        emit: vi.fn().mockResolvedValue(undefined),
+        emit: vi.fn((event: string, payload: unknown) => {
+            emitted.push({ event, payload });
+            for (const handler of handlersByEvent.get(event) ?? []) {
+                handler(payload);
+            }
+            return Promise.resolve();
+        }),
         on: vi.fn((event: string, handler: Handler) => {
             const set = handlersByEvent.get(event) ?? new Set<Handler>();
             set.add(handler);
@@ -25,6 +38,7 @@ function createFakeEventBus(): WorkspaceEventBus & { fire: (event: string, paylo
                 handler(payload);
             }
         },
+        emitted,
     };
 }
 
@@ -81,7 +95,7 @@ describe('useActiveDevicePanel', () => {
         const { result } = renderHook(() => useActiveDevicePanel());
 
         act(() => {
-            bus.fire('panel.showFermenter', { deviceId: 'fermenter-device-1' });
+            bus.fire('panel.showDevice', { deviceType: 'fermenter', deviceId: 'fermenter-device-1' });
         });
 
         expect(result.current.activePanel).toEqual({
@@ -95,12 +109,12 @@ describe('useActiveDevicePanel', () => {
         setSelectedTrack('track-1');
         const { result } = renderHook(() => useActiveDevicePanel());
         act(() => {
-            bus.fire('panel.showToaster', { deviceId: 'toaster-1' });
+            bus.fire('panel.showDevice', { deviceType: 'toaster', deviceId: 'toaster-1' });
         });
         expect(result.current.activePanel).not.toBeNull();
 
         act(() => {
-            bus.fire('panel.showToaster', { deviceId: null });
+            bus.fire('panel.showDevice', { deviceType: 'toaster', deviceId: null });
         });
 
         expect(result.current.activePanel).toBeNull();
@@ -111,7 +125,7 @@ describe('useActiveDevicePanel', () => {
         const { result } = renderHook(() => useActiveDevicePanel());
 
         act(() => {
-            bus.fire('panel.showYeast', { deviceId: null });
+            bus.fire('panel.showDevice', { deviceType: 'yeast', deviceId: null });
         });
 
         // The mock track store carries no devices, so a null deviceId cannot
@@ -124,7 +138,7 @@ describe('useActiveDevicePanel', () => {
         const { result } = renderHook(() => useActiveDevicePanel());
 
         act(() => {
-            bus.fire('panel.showYeast', { deviceId: 'yeast-9' });
+            bus.fire('panel.showDevice', { deviceType: 'yeast', deviceId: 'yeast-9' });
         });
 
         expect(result.current.activePanel).toEqual({ kind: 'yeast', deviceId: 'yeast-9', trackId: 'track-yeast' });
@@ -144,18 +158,40 @@ describe('useActiveDevicePanel', () => {
     it('ignores generic panel.showDevice events for unrelated device types', () => {
         const { result } = renderHook(() => useActiveDevicePanel());
 
+        // `automation` rides the same event (AppShell routes it to the bottom
+        // dock) but owns no device panel, so the hook must let it pass by.
         act(() => {
-            bus.fire('panel.showDevice', { deviceType: 'sampler', deviceId: 'sampler-1' });
+            bus.fire('panel.showDevice', { deviceType: 'automation', deviceId: null });
         });
 
         expect(result.current.activePanel).toBeNull();
+    });
+
+    it('opens a representative panel end-to-end through the generic event alone', async () => {
+        setSelectedTrack('track-1');
+        const { result } = renderHook(() => useActiveDevicePanel());
+
+        act(() => {
+            showDevicePanelForType('fermenter', 'fermenter-device-1');
+        });
+
+        expect(result.current.activePanel).toEqual({
+            kind: 'fermenter',
+            deviceId: 'fermenter-device-1',
+            trackId: 'track-1',
+        });
+        // The open travelled on exactly one event — the generic one, with no
+        // per-device twin alongside it.
+        expect(bus.emitted).toEqual([
+            { event: 'panel.showDevice', payload: { deviceType: 'fermenter', deviceId: 'fermenter-device-1' } },
+        ]);
     });
 
     it('closes the panel when the track selection changes away from the captured track', () => {
         setSelectedTrack('track-1');
         const { result } = renderHook(() => useActiveDevicePanel());
         act(() => {
-            bus.fire('panel.showFermenter', { deviceId: 'device-1' });
+            bus.fire('panel.showDevice', { deviceType: 'fermenter', deviceId: 'device-1' });
         });
         expect(result.current.activePanel).not.toBeNull();
 
@@ -170,7 +206,7 @@ describe('useActiveDevicePanel', () => {
         setSelectedTrack('track-1');
         const { result } = renderHook(() => useActiveDevicePanel());
         act(() => {
-            bus.fire('panel.showFermenter', { deviceId: 'device-1' });
+            bus.fire('panel.showDevice', { deviceType: 'fermenter', deviceId: 'device-1' });
         });
 
         act(() => {
@@ -185,7 +221,7 @@ describe('useActiveDevicePanel', () => {
         setSelectedTrack(null);
         const { result } = renderHook(() => useActiveDevicePanel());
         act(() => {
-            bus.fire('panel.showLevain', { deviceId: 'levain-1' });
+            bus.fire('panel.showDevice', { deviceType: 'levain', deviceId: 'levain-1' });
         });
         expect(result.current.activePanel).toEqual({ kind: 'levain', deviceId: 'levain-1', trackId: null });
 
@@ -210,7 +246,7 @@ describe('useActiveDevicePanel', () => {
         setSelectedTrack('track-1');
         const { result } = renderHook(() => useActiveDevicePanel());
         act(() => {
-            bus.fire('panel.showFermenter', { deviceId: 'device-1' });
+            bus.fire('panel.showDevice', { deviceType: 'fermenter', deviceId: 'device-1' });
         });
         expect(result.current.activePanel).not.toBeNull();
 
@@ -226,7 +262,7 @@ describe('useActiveDevicePanel', () => {
         expect(trackStoreSubscribers.size).toBe(1);
 
         unmount();
-        bus.fire('panel.showFermenter', { deviceId: 'device-1' });
+        bus.fire('panel.showDevice', { deviceType: 'fermenter', deviceId: 'device-1' });
 
         expect(trackStoreSubscribers.size).toBe(0);
         expect(result.current.activePanel).toBeNull();

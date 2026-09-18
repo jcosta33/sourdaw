@@ -1,3 +1,4 @@
+import { FLANGER_MIN_DELAY_SECONDS } from '../../../models/DeviceParamLaws';
 import { type OfflineDeviceNode } from '../types';
 
 export function applyFlangerParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
@@ -13,7 +14,7 @@ export function applyFlangerParams(dn: OfflineDeviceNode, params: Record<string,
     }
     if (params['flanger-depth'] !== undefined) {
         lfoGainF.gain.value = params['flanger-depth'] / 1000;
-        delayF.delayTime.value = Math.max(0.001, params['flanger-depth'] / 1000);
+        delayF.delayTime.value = Math.max(FLANGER_MIN_DELAY_SECONDS, params['flanger-depth'] / 1000);
     }
     if (params['flanger-feedback'] !== undefined) {
         feedbackF.gain.value = params['flanger-feedback'];

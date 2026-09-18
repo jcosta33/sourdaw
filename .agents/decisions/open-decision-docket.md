@@ -704,8 +704,12 @@ code: no (all dormant).
   operations? `events/index.ts` is empty (no toaster.* events for
   CRDT/persistence/AI). Blocks code: no. Source:
   `src/modules/Toaster/events/index.ts:1`.
-- **Is exportPatternToTimeline meant to be lossy or full-fidelity?** Blocks
-  code: no. Source: `src/modules/Toaster/useCases/exportPatternToTimeline.ts:30-69`.
+- ~~**Is exportPatternToTimeline meant to be lossy or full-fidelity?**~~ **DECIDED 2026-09-17 — lossy
+  by design; the sequencer stays session-only.** Recorded in
+  [ADR 0045](0045-toaster-sequencer-is-a-session-performance-tool.md). The bake is faithful to every
+  dimension a plain MIDI note can carry (timing, swing, retrigger, meter) and intentionally drops
+  per-step probability, conditions, sound locks and param locks — play-time state with no static
+  representation. Source: `src/modules/Toaster/useCases/exportPatternToTimeline.ts:13-33`.
 - **Is sequencer pause-and-resume a desired feature?** `stopSequencer` zeros
   playCount/currentStep so no playhead state survives a stop. Blocks code:
   no. Source: `src/modules/Toaster/useCases/stopSequencer.ts:20-22`.

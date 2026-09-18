@@ -17,6 +17,7 @@ import { type IntentResult, type PlannedIntentResult } from '../models/IntentRes
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
+import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import {
@@ -82,6 +83,22 @@ type CreateFastPathResultInput = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The rejected fragment a correction attempt gets to see. Provider-authored
+ * content stays bounded here; the context labels it untrusted where it is
+ * serialized.
+ */
+const MAX_REJECTED_FRAGMENT_LENGTH = 512;
+
+function boundedProviderFragment(value: unknown): string | undefined {
+    try {
+        const serialized = JSON.stringify(value);
+        return serialized === undefined ? undefined : serialized.slice(0, MAX_REJECTED_FRAGMENT_LENGTH);
+    } catch {
+        return undefined;
+    }
 }
 
 function expandCatalogProposals(calls: readonly ToolCallResult[]) {
@@ -303,7 +320,10 @@ const planPromptIntent = inject({ logger })(
             onProviderResult?: (result: ModelProviderResult) => void,
             streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>,
             onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult,
-            correction?: { creativeAuthority: CreativeRequestAuthority | null }
+            correction?: {
+                creativeAuthority: CreativeRequestAuthority | null;
+                rejectionEvidence?: PlanningRejectionEvidence;
+            }
         ): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
             const trimmedPrompt = prompt.trim();
@@ -374,11 +394,7 @@ const planPromptIntent = inject({ logger })(
                 const syncopatedArpeggioScope = getSyncopatedArpeggioPromptScope(context, projectRevision);
                 const syncopatedArpeggioCapability =
                     syncopatedArpeggioScope.status === 'request' ? syncopatedArpeggioScope.capability : undefined;
-                const wholeProjectVibeMixCapability = getWholeProjectVibeMixScope(
-                    prompt,
-                    context,
-                    projectRevision
-                )?.capability;
+                const wholeProjectVibeMixCapability = getWholeProjectVibeMixScope(context, projectRevision)?.capability;
                 const creativeCatalog = prepareCreativeInterpretationCatalog({
                     prompt,
                     context,
@@ -435,6 +451,7 @@ const planPromptIntent = inject({ logger })(
                             creativeInterpretationCatalog: creativeCatalog,
                         },
                         validationFailures: agentRun?.errors.map((error) => ({ code: error.code })),
+                        rejectionEvidence: correction?.rejectionEvidence,
                         priorEvidence: agentRun?.contextEvidence,
                     });
                     if (agentRun) {
@@ -592,6 +609,21 @@ const planPromptIntent = inject({ logger })(
                         ...applicationToolReceiptFields,
                         ...creativeAuthorityFields,
                         rejectionReason: `Provider action rejected: ${compiledList.reason}`,
+                        rejectionEvidence: {
+                            kind: compiledList.detail?.kind ?? 'schema',
+                            reason: compiledList.reason,
+                            ...(compiledList.detail
+                                ? {
+                                      itemId: compiledList.detail.itemId,
+                                      candidateIds: compiledList.detail.candidateIds,
+                                      resolution: {
+                                          resolvedCount: compiledList.detail.resolvedCount,
+                                          expectedCount: compiledList.detail.expectedCount,
+                                      },
+                                  }
+                                : {}),
+                            rejectedFragment: boundedProviderFragment(planningOutcome.toolCalls),
+                        },
                     };
                 }
                 const expandedProposal = expandCatalogProposals(compiledList.calls);
@@ -603,6 +635,11 @@ const planPromptIntent = inject({ logger })(
                         ...applicationToolReceiptFields,
                         ...creativeAuthorityFields,
                         rejectionReason: `Provider action rejected: ${expandedProposal.reason}`,
+                        rejectionEvidence: {
+                            kind: 'schema',
+                            reason: expandedProposal.reason,
+                            rejectedFragment: boundedProviderFragment(providerProposal),
+                        },
                     };
                 }
                 const providerToolCalls = expandedProposal.calls;
@@ -744,6 +781,11 @@ const planPromptIntent = inject({ logger })(
                     const reason = bridged.rejections
                         .map((rejection) => `${rejection.name}: ${rejection.reason}`)
                         .join('; ');
+                    // The correction gets one bounded, structured diagnostic for
+                    // the first failing item: which command, what the app
+                    // expects, and the provider's own rejected arguments.
+                    const firstRejection = bridged.rejections[0]!;
+                    const rejectedCall = toolCalls[firstRejection.index];
                     return {
                         actions: [],
                         rawText: prompt,
@@ -751,6 +793,14 @@ const planPromptIntent = inject({ logger })(
                         ...applicationToolReceiptFields,
                         ...creativeAuthorityFields,
                         rejectionReason: `Provider action rejected: ${reason}`,
+                        rejectionEvidence: {
+                            kind: 'constraint',
+                            command: { index: firstRejection.index, name: firstRejection.name },
+                            reason: firstRejection.reason,
+                            ...(rejectedCall
+                                ? { rejectedFragment: boundedProviderFragment(rejectedCall.arguments) }
+                                : {}),
+                        },
                     };
                 }
 
@@ -932,7 +982,10 @@ export async function parsePromptToActions(
     onProviderResult?: (result: ModelProviderResult) => void,
     streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>,
     onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult,
-    correction?: { creativeAuthority: CreativeRequestAuthority | null }
+    correction?: {
+        creativeAuthority: CreativeRequestAuthority | null;
+        rejectionEvidence?: PlanningRejectionEvidence;
+    }
 ): Promise<PlannedIntentResult> {
     const result = await planPromptIntent(
         prompt,

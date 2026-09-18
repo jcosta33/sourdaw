@@ -5,6 +5,7 @@
 //!   Reverb tail path: Simple AR envelope with longer decay.
 
 use super::lfsr::Lfsr31;
+use crate::params::DECAY;
 use crate::primitives::flush_denormal_in_place;
 use crate::toaster::dc_block::DcBlocker;
 
@@ -154,7 +155,7 @@ impl Clap909Engine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "decay" => self.decay = value.clamp(0.0, 1.0),
+            DECAY => self.decay = value.clamp(0.0, 1.0),
             _ => {}
         }
     }

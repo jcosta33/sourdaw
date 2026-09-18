@@ -8,7 +8,10 @@
 //! is honoured even where the 4x reconstruction reads marginally low.
 
 use super::clamped_param;
+use super::metering::SILENCE_DB;
 use super::true_peak::TruePeakUpsampler;
+use crate::params::LIM_LOOKAHEAD;
+use crate::primitives::LINEAR_TO_DB_FLOOR;
 use std::collections::VecDeque;
 
 struct MonotonicPeakWindow {
@@ -108,8 +111,10 @@ const TRANSIENT_DEADBAND: f32 = 0.05;
 /// Time constant of the running gain average. Long enough that a 2 ms
 /// transient barely moves it, short enough that genuinely sustained limiting
 /// pulls it down within a syllable — which is what collapses the gap and hands
-/// the release back to the nominal setting.
-const GAIN_AVERAGE_MS: f32 = 250.0;
+/// the release back to the nominal setting. Shared with crust's safety
+/// limiter, whose gain average separates "isolated transient" from "sustained
+/// limiting" on the same time scale.
+pub(crate) const GAIN_AVERAGE_MS: f32 = 250.0;
 
 /// Declared look-ahead range, in milliseconds. `MAX_LOOKAHEAD_MS` also sizes
 /// every buffer at construction: `lim_lookahead` is a live control that lands
@@ -230,7 +235,7 @@ impl LookaheadLimiter {
                 self.release_coeff = release_coeff(ms, self.sample_rate);
                 self.release_coeff_fast = release_coeff(fast_release_ms(ms), self.sample_rate);
             }
-            "lim_lookahead" => {
+            LIM_LOOKAHEAD => {
                 // Live control: this runs on the AudioWorklet render thread.
                 // Every buffer was built at construction with room for
                 // `max_lookahead_samples`, so `resize` only moves the logical
@@ -360,10 +365,10 @@ impl LookaheadLimiter {
         }
 
         self.meter_gr_db = max_gr;
-        self.meter_output_peak = if peak_out > 1e-10 {
+        self.meter_output_peak = if peak_out > LINEAR_TO_DB_FLOOR {
             20.0 * peak_out.log10()
         } else {
-            -100.0
+            SILENCE_DB
         };
     }
 

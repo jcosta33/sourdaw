@@ -8,6 +8,7 @@ import { branchStore } from '../stores/branchStore';
 
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
 import { runCrdtPersistenceLoad } from './runCrdtPersistenceLoad';
+import { whenBranchStateSettled } from './whenBranchStateSettled';
 
 const MAX_SANITIZATION_ATTEMPTS = 3;
 
@@ -68,6 +69,11 @@ export function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {}): Pr
         if (!committed || !canCommit()) {
             return { loaded: false, snapshot: null };
         }
+        // The active branch is only meaningful once the boot recovery has
+        // decided who owns the branch list. Read before it, the first project
+        // load can open the branch an abandoned collaboration session projected
+        // and make it the live root.
+        await whenBranchStateSettled();
         restoreActiveBranchSlot();
         return {
             loaded: true,

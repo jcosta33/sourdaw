@@ -1,12 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
+import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import {
     MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
     type ModelProviderFinish,
     type ModelProviderPartialOutputDisposition,
     type ModelProviderResult,
 } from '../../models/ModelProviderProtocol';
+import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { configureAgentResourceLimits } from '../configureAgentResourceLimits';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 
 import { createRequest, eventEnvelope, finishEnvelope, readyRequest } from './modelProviderProtocolFixture';
@@ -97,6 +100,10 @@ const RESULT_KEYS = [
 ].sort();
 
 describe('model provider protocol', () => {
+    afterEach(() => {
+        agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
+    });
+
     it('accumulates delta usage counters until a terminal outcome and reports the last provenance', () => {
         const { protocol, request } = readyRequest();
         const session = protocol.start(request);
@@ -336,5 +343,72 @@ describe('model provider protocol', () => {
 
         expect(Object.keys(remoteResult).sort()).toEqual(RESULT_KEYS);
         expect(remoteResult).not.toHaveProperty('remoteDisclosure');
+    });
+
+    it('refuses a provider stream carrying more tool calls than the configured loop ceiling', () => {
+        const tools = [
+            {
+                name: 'setTempo',
+                description: 'Set the project tempo.',
+                parameters: {
+                    type: 'object',
+                    properties: { tempo: { type: 'number' } },
+                    required: ['tempo'],
+                    additionalProperties: false,
+                },
+            },
+        ];
+        function pushTwoToolCalls(): void {
+            const { protocol, request } = readyRequest({ operation: 'tools', tools });
+            const session = protocol.start(request);
+            for (const [index, id] of ['call-1', 'call-2'].entries()) {
+                session.push(
+                    eventEnvelope(request, index, {
+                        type: 'tool-call',
+                        call: { id, name: 'setTempo', arguments: { tempo: 120 } },
+                    })
+                );
+            }
+        }
+
+        expect(pushTwoToolCalls).not.toThrow();
+
+        expect(configureAgentResourceLimits({ maxProviderToolCalls: 1 })).toMatchObject({ status: 'configured' });
+
+        expect(pushTwoToolCalls).toThrow('Provider stream tool arguments are incomplete or invalid.');
+    });
+
+    it('admits a started stream by the loop ceiling it captured, not by one configured mid-stream', () => {
+        const tools = [
+            {
+                name: 'setTempo',
+                description: 'Set the project tempo.',
+                parameters: {
+                    type: 'object',
+                    properties: { tempo: { type: 'number' } },
+                    required: ['tempo'],
+                    additionalProperties: false,
+                },
+            },
+        ];
+        const { protocol, request } = readyRequest({ operation: 'tools', tools });
+        const session = protocol.start(request);
+        session.push(
+            eventEnvelope(request, 0, {
+                type: 'tool-call',
+                call: { id: 'call-1', name: 'setTempo', arguments: { tempo: 120 } },
+            })
+        );
+
+        expect(configureAgentResourceLimits({ maxProviderToolCalls: 1 })).toMatchObject({ status: 'configured' });
+
+        expect(() =>
+            session.push(
+                eventEnvelope(request, 1, {
+                    type: 'tool-call',
+                    call: { id: 'call-2', name: 'setTempo', arguments: { tempo: 90 } },
+                })
+            )
+        ).not.toThrow();
     });
 });

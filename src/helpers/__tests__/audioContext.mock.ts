@@ -84,6 +84,7 @@ type MockOscillatorNode = MockAudioNodeBase & {
     onended: ((this: AudioScheduledSourceNode, ev: Event) => unknown) | null;
 };
 type MockDelayNode = MockAudioNodeBase & { delayTime: MockAudioParam };
+type MockConstantSourceNode = MockAudioNodeBase & { offset: MockAudioParam; start: Mock; stop: Mock };
 type MockBufferSourceNode = MockAudioNodeBase & {
     buffer: AudioBuffer | null;
     playbackRate: MockAudioParam;
@@ -118,6 +119,7 @@ type MockAudioNodeKind = {
     convolver: MockConvolverNode;
     oscillator: MockOscillatorNode;
     delay: MockDelayNode;
+    'constant-source': MockConstantSourceNode;
     'channel-splitter': MockChannelNode;
     'channel-merger': MockChannelNode;
     destination: MockChannelNode;
@@ -149,7 +151,7 @@ export type MockAudioContext = MockEventTarget & {
     createWaveShaper: Mock;
     createPeriodicWave: Mock;
     createIIRFilter: Mock;
-    createConstantSource: Mock;
+    createConstantSource: Mock<() => MockConstantSourceNode>;
     decodeAudioData: Mock;
     resume: Mock;
     suspend: Mock;
@@ -258,6 +260,13 @@ const buildDelay = (): MockDelayNode => ({
     ...createBaseNode(),
     delayTime: createMockAudioParam(0),
 });
+// Spec default: an unstarted ConstantSourceNode's offset sits at 1.
+const buildConstantSource = (): MockConstantSourceNode => ({
+    ...createBaseNode(),
+    offset: createMockAudioParam(1),
+    start: vi.fn(),
+    stop: vi.fn(),
+});
 const buildBufferSource = (): MockBufferSourceNode => ({
     ...createBaseNode(),
     buffer: null,
@@ -312,6 +321,8 @@ export function createMockAudioNode<Kind extends keyof MockAudioNodeKind>(kind: 
             return buildOscillator() as MockAudioNodeKind[Kind];
         case 'delay':
             return buildDelay() as MockAudioNodeKind[Kind];
+        case 'constant-source':
+            return buildConstantSource() as MockAudioNodeKind[Kind];
         case 'channel-splitter':
         case 'channel-merger':
         case 'destination':
@@ -381,6 +392,7 @@ export function createMockAudioContext(): MockAudioContext {
         createConvolver: vi.fn(() => buildConvolver()),
         createOscillator: vi.fn(() => buildOscillator()),
         createDelay: vi.fn((_maxDelayTime = 1) => buildDelay()),
+        createConstantSource: vi.fn(() => buildConstantSource()),
         createBufferSource: vi.fn(() => buildBufferSource()),
         createBuffer: vi.fn((channels: number, length: number, sampleRate: number) =>
             MockAudioBuffer.create(channels, length, sampleRate)
@@ -388,7 +400,6 @@ export function createMockAudioContext(): MockAudioContext {
         createWaveShaper: vi.fn(() => createBaseNode()),
         createPeriodicWave: vi.fn(),
         createIIRFilter: vi.fn(() => createBaseNode()),
-        createConstantSource: vi.fn(),
         decodeAudioData: vi.fn().mockResolvedValue(MockAudioBuffer.create(2, 1024, 48000)),
         resume: vi.fn().mockResolvedValue(undefined),
         suspend: vi.fn().mockResolvedValue(undefined),

@@ -12,6 +12,7 @@ type BranchStoreValue = {
     branches: Array<{ branchId: string; rootDocId: string }>;
     activeBranchId: string;
 };
+type BranchStateCommitOutcome = { status: string; revision?: number; reason?: string };
 
 const ROOT_LIVE_DOC = { tag: 'root-live' };
 const FEATURE_SNAPSHOT = { tag: 'feature-snap' };
@@ -99,10 +100,14 @@ const mocks = vi.hoisted(() => ({
         activeBranchId: 'feat',
     },
     storeSet: vi.fn<(state: BranchStoreValue) => void>(),
-    // The rollback path writes with trySet: it runs after the documents have
-    // been restored, where a throw would skip the projection that puts the
-    // stores back in step with them. See #1557.
-    storeTrySet: vi.fn<(state: BranchStoreValue) => boolean>(() => true),
+    captureRevision: vi.fn(() => 4),
+    commit: vi.fn<
+        (input: {
+            expectedRevision: number;
+            next: BranchStoreValue;
+            projectionScope?: (project: () => void) => void;
+        }) => Promise<BranchStateCommitOutcome>
+    >(),
     projectCrdtToStores: vi.fn(),
     compactProject: vi.fn(() => Promise.resolve()),
     loadCrdtProject: vi.fn(() => Promise.resolve(true)),
@@ -131,8 +136,11 @@ vi.mock('../../../repositories/automergeRepository', () => ({
 }));
 vi.mock('../../../stores/branchStore', () => ({
     get branchStore() {
-        return { value: mocks.storeValue, set: mocks.storeSet, trySet: mocks.storeTrySet };
+        return { value: mocks.storeValue, set: mocks.storeSet };
     },
+}));
+vi.mock('../../../repositories/branchStateAuthority', () => ({
+    branchStateAuthority: { captureRevision: mocks.captureRevision, commit: mocks.commit },
 }));
 vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mocks.projectCrdtToStores }));
 vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject }));
@@ -206,9 +214,12 @@ describe('switchBranch', () => {
         mocks.storeSet.mockImplementation((state) => {
             mocks.storeValue = state;
         });
-        mocks.storeTrySet.mockImplementation((state) => {
-            mocks.storeValue = state;
-            return true;
+        mocks.captureRevision.mockReturnValue(4);
+        // The authority is what projects a committed list into memory, so the
+        // stand-in does too: the cases below read the active branch back.
+        mocks.commit.mockImplementation(({ expectedRevision, next }) => {
+            mocks.storeValue = next;
+            return Promise.resolve({ status: 'committed', revision: expectedRevision + 1 });
         });
     });
 
@@ -254,7 +265,7 @@ describe('switchBranch', () => {
 
         expect(mocks.insertDoc).toHaveBeenCalledWith('branch_main', expect.anything());
         expect(mocks.replaceDoc).toHaveBeenCalledWith('root', expect.anything());
-        const nextState = mocks.storeSet.mock.calls[0]?.[0];
+        const nextState = mocks.commit.mock.calls[0]?.[0].next;
         expect(nextState?.activeBranchId).toBe('other');
         expect(nextState?.branches).toContainEqual(
             expect.objectContaining({ branchId: 'main', rootDocId: 'branch_main' })
@@ -268,7 +279,11 @@ describe('switchBranch', () => {
             from: 'feat',
             to: 'other',
         });
-        expect(mocks.storeSet).toHaveBeenCalledWith(expect.objectContaining({ activeBranchId: 'other' }));
+        expect(mocks.commit).toHaveBeenCalledWith({
+            expectedRevision: 4,
+            next: expect.objectContaining({ activeBranchId: 'other' }),
+            projectionScope: expect.any(Function),
+        });
         expect(mocks.compactProject).toHaveBeenCalled();
     });
 
@@ -280,7 +295,13 @@ describe('switchBranch', () => {
         await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
 
         expect(mocks.loadCrdtProject).toHaveBeenCalledOnce();
-        expect(mocks.storeTrySet).toHaveBeenLastCalledWith(expect.objectContaining({ activeBranchId: 'feat' }));
+        expect(mocks.storeSet).toHaveBeenLastCalledWith(expect.objectContaining({ activeBranchId: 'feat' }));
+        // The switch's own revision is swapped back, so the durable list stops
+        // naming a branch the root slot no longer holds.
+        expect(mocks.commit).toHaveBeenLastCalledWith({
+            expectedRevision: 5,
+            next: expect.objectContaining({ activeBranchId: 'feat' }),
+        });
         expect(docs.root).toEqual(ROOT_LIVE_DOC);
         expect(docs.branch_feat).toEqual(FEATURE_SNAPSHOT);
         expect(mocks.rootIdentityEpoch).toBeGreaterThan(rootIdentity);
@@ -474,8 +495,29 @@ describe('switchBranch', () => {
 
         expect(mocks.replaceDoc).not.toHaveBeenCalled();
         expect(mocks.storeSet).not.toHaveBeenCalled();
+        expect(mocks.commit).not.toHaveBeenCalled();
         expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
         expect(mocks.undoHistory).toBe(unchangedSnapshot);
+    });
+
+    it('restores the prior branch and its undo history when the durable commit is refused', async () => {
+        const preSwitchSnapshot = createUndoSnapshot('undo-before-refusal');
+        mocks.undoHistory = preSwitchSnapshot;
+        mocks.commit.mockResolvedValueOnce({ status: 'refused', reason: 'conflict' });
+
+        await expect(switchBranch('other')).rejects.toThrow(/Branch state could not be persisted \(conflict\)/);
+
+        // The refusal means another instance owns a later revision: the switch
+        // unwinds documents and undo stack and consumes no revision of its own.
+        // The branch list is not among them — the refused transaction left
+        // memory on the list it measured the refusal against, and re-seating
+        // the captured one would hide that newer list from the user.
+        expect(mocks.commit).toHaveBeenCalledTimes(1);
+        expect(mocks.storeSet).not.toHaveBeenCalled();
+        expect(docs.root).toEqual(ROOT_LIVE_DOC);
+        expect(docs.branch_feat).toEqual(FEATURE_SNAPSHOT);
+        expect(mocks.restoreUndoHistory).toHaveBeenCalledOnce();
+        expect(mocks.undoHistory).toBe(preSwitchSnapshot);
     });
 
     it('rejects when the target branch does not exist', async () => {

@@ -1,8 +1,13 @@
 // MIDI/stores — public contract surface for cross-module store access.
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
-export { isValidMidiProbabilitySeed, LEGACY_MIDI_PROBABILITY_SEED, midiStore } from './midiStore';
-export type { MidiStoreState } from './midiStore';
+export {
+    defaultMidiStoreState,
+    isValidMidiProbabilitySeed,
+    LEGACY_MIDI_PROBABILITY_SEED,
+    midiStore,
+} from './midiStore';
+export type { MidiNote, MidiStoreState } from './midiStore';
 
 export {
     GROOVE_CONSUMER_TYPES,

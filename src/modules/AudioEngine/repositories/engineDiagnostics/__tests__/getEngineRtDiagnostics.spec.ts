@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '#/infra/logger/appLogger';
 import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
+import { resetEngineDiagnosticsNativeSurface } from '../../../services/engineDiagnosticsNativeSurface';
 import { getEngineRtDiagnostics } from '../getEngineRtDiagnostics';
 
-vi.mock('#/utils/desktopBridge', () => ({
+vi.mock('#/utils/desktopBridge', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/utils/desktopBridge')>()),
     isDesktopRuntime: vi.fn(),
     desktopInvoke: vi.fn(),
 }));
@@ -40,6 +42,7 @@ const nativePayload = {
 describe('getEngineRtDiagnostics', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        resetEngineDiagnosticsNativeSurface();
     });
 
     it('maps every counter and event of the native payload', async () => {
@@ -177,5 +180,46 @@ describe('getEngineRtDiagnostics', () => {
         expect(diagnostics.unmappedSetParamCalls).toBe(0);
         expect(diagnostics.captureConsumerRefusals).toBe(0);
         expect(diagnostics.events).toEqual([]);
+    });
+
+    describe('native host absent', () => {
+        it('answers the not-running web shape on the native-host refusal', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(desktopInvoke).mockRejectedValue(
+                new Error('engine_rt_diagnostics rejected: the native host is not available')
+            );
+
+            const diagnostics = await getEngineRtDiagnostics();
+
+            expect(desktopInvoke).toHaveBeenCalledTimes(1);
+            expect(diagnostics.running).toBe(false);
+            expect(diagnostics.events).toEqual([]);
+        });
+
+        it('stops calling the bridge once the surface reported itself absent', async () => {
+            // The status bar polls this command every second; a host that never
+            // loaded answers every call with the same refusal, so the poll must
+            // retire itself after the first one instead of rejecting forever.
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(desktopInvoke).mockRejectedValue(
+                new Error('engine_rt_diagnostics rejected: the native host is not available')
+            );
+
+            await getEngineRtDiagnostics();
+            await getEngineRtDiagnostics();
+            const diagnostics = await getEngineRtDiagnostics();
+
+            expect(desktopInvoke).toHaveBeenCalledTimes(1);
+            expect(diagnostics.running).toBe(false);
+        });
+
+        it('still rejects an ordinary failure instead of retiring the surface', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(desktopInvoke).mockRejectedValue(new Error('Failed to lock engine: poisoned'));
+
+            await expect(getEngineRtDiagnostics()).rejects.toThrow('Failed to lock engine: poisoned');
+            await expect(getEngineRtDiagnostics()).rejects.toThrow('Failed to lock engine: poisoned');
+            expect(desktopInvoke).toHaveBeenCalledTimes(2);
+        });
     });
 });

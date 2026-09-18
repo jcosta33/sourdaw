@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
-import { fail } from './prContract.ts';
+import { fail, TRUSTED_GH_PATH_ENV, TRUSTED_GIT_PATH_ENV } from './prContract.ts';
 
 export const AUTHOR_BOT_NODE_ID = 'BOT_kgDOEv71mA';
 export const REVIEWER_BOT_NODE_ID = 'BOT_kgDOEv74EA';
@@ -64,8 +64,18 @@ export const AUTHOR_MINT_PERMISSIONS = {
     pull_requests: 'write',
 } as const;
 
-export const AUTHOR_WORKFLOW_MINT_PERMISSIONS = {
+/**
+ * Publishing asserts pull-request metadata — `gh label create` and `gh pr edit --add-label`/
+ * `--milestone` — which needs issues write on top of the ordinary author scope. Publishing keeps
+ * its own sets so no other author command's token is broadened.
+ */
+export const PUBLISH_AUTHOR_MINT_PERMISSIONS = {
     ...AUTHOR_MINT_PERMISSIONS,
+    issues: 'write',
+} as const;
+
+export const PUBLISH_AUTHOR_WORKFLOW_MINT_PERMISSIONS = {
+    ...PUBLISH_AUTHOR_MINT_PERMISSIONS,
     workflows: 'write',
 } as const;
 
@@ -433,7 +443,9 @@ export async function authenticatePublishingAuthor(input: {
     const authorization = resolvePublishingAuthorAuthorization(input.lane, input.baseSha, input.capture, input.env);
     const authentication = await authenticateWithPermissions(
         { ...input, role: 'author' },
-        authorization.permissionClass === 'workflow' ? AUTHOR_WORKFLOW_MINT_PERMISSIONS : AUTHOR_MINT_PERMISSIONS
+        authorization.permissionClass === 'workflow'
+            ? PUBLISH_AUTHOR_WORKFLOW_MINT_PERMISSIONS
+            : PUBLISH_AUTHOR_MINT_PERMISSIONS
     );
     return { ...authentication, authorization };
 }
@@ -493,12 +505,28 @@ export function createGhSession(token: string, parent: NodeJS.ProcessEnv = proce
     };
 }
 
+export type OrchestratorAuthenticationInput = {
+    env?: NodeJS.ProcessEnv;
+    capture?: (command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => string;
+};
+
+export type OrchestratorAuthentication = { minted: { actorNodeId: string }; session: GhSession };
+
 export async function authenticateOrchestrator(
-    input: {
-        env?: NodeJS.ProcessEnv;
-        capture?: (command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => string;
-    } = {}
-): Promise<{ minted: { actorNodeId: string }; session: GhSession }> {
+    input: OrchestratorAuthenticationInput = {}
+): Promise<OrchestratorAuthentication> {
+    return authenticateOrchestratorSession(input);
+}
+
+/**
+ * The orchestrator credential resolves through synchronous captures alone, so the verification is
+ * exposed in both spellings from one body: `authenticateOrchestrator` for the awaiting callers, and
+ * this one for callers whose own boundary cannot await. Both accept only the immutable orchestrator
+ * actor, so neither is a weaker door than the other.
+ */
+export function authenticateOrchestratorSession(
+    input: OrchestratorAuthenticationInput = {}
+): OrchestratorAuthentication {
     const env = githubAuthorizationGitEnv(input.env ?? process.env);
     const capture = input.capture ?? spawnCapture;
     let token: string;
@@ -609,13 +637,22 @@ export function spawnRun(
     const result = spawnSync(childCommand, args, {
         cwd: options.cwd ?? process.cwd(),
         env: options.env,
-        stdio: 'inherit',
+        // Captured stderr keeps a failing child's own words in the thrown error (#4344).
+        stdio: ['inherit', 'inherit', 'pipe'],
+        maxBuffer: 64 * 1024 * 1024,
         shell: false,
     });
     if (result.error !== undefined) {
         throw result.error;
     }
+    if (result.stderr !== null && result.stderr.length > 0) {
+        console.error(result.stderr.toString().trim());
+    }
     if (result.status !== 0) {
+        const stderr = result.stderr === null ? '' : result.stderr.toString().trim();
+        if (stderr !== '') {
+            throw new Error(`${childCommand} failed with exit ${result.status ?? 'signal'}: ${stderr}`);
+        }
         throw new Error(`${childCommand} failed with exit ${result.status ?? 'signal'}`);
     }
 }
@@ -623,9 +660,9 @@ export function spawnRun(
 export function trustedChildExecutable(command: string, env: NodeJS.ProcessEnv = process.env): string {
     let trustedPath: string | undefined;
     if (command === 'git') {
-        trustedPath = env.SOURDAW_TRUSTED_GIT_PATH;
+        trustedPath = env[TRUSTED_GIT_PATH_ENV];
     } else if (command === 'gh') {
-        trustedPath = env.SOURDAW_TRUSTED_GH_PATH;
+        trustedPath = env[TRUSTED_GH_PATH_ENV];
     }
     if (trustedPath === undefined) {
         return command;

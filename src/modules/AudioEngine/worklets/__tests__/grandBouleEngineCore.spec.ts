@@ -21,22 +21,34 @@ type EngineCall = { method: string; args: readonly unknown[] };
 
 type RecordingInstance = {
     calls: EngineCall[];
+    /** Make the next `refusals` pushes answer `false`, as a full block list does. */
+    refuseNextPushes: (refusals: number) => void;
     instance: Parameters<typeof receiveGrandBouleMessage>[0]['instance'];
 };
 
 function createRecordingInstance(): RecordingInstance {
     const calls: EngineCall[] = [];
+    let refusals = 0;
     const record =
         (method: string) =>
         (...args: unknown[]): void => {
             calls.push({ method, args });
         };
+    const recordPush =
+        (method: string) =>
+        (...args: unknown[]): boolean => {
+            if (refusals > 0) {
+                refusals--;
+                return false;
+            }
+            calls.push({ method, args });
+            return true;
+        };
     const instance = {
-        note_on: record('note_on'),
-        note_on_with_channel: record('note_on_with_channel'),
-        note_off: record('note_off'),
-        note_off_on_channel: record('note_off_on_channel'),
-        note_expression: record('note_expression'),
+        push_note_on: recordPush('push_note_on'),
+        push_note_off: recordPush('push_note_off'),
+        push_note_off_on_channel: recordPush('push_note_off_on_channel'),
+        push_note_expression: recordPush('push_note_expression'),
         set_param: record('set_param'),
         set_sustain: record('set_sustain'),
         set_una_corda: record('set_una_corda'),
@@ -48,16 +60,22 @@ function createRecordingInstance(): RecordingInstance {
         process: vi.fn(() => 0),
         get_right_ptr: vi.fn(() => 0),
     };
-    return { calls, instance: instance as unknown as Parameters<typeof receiveGrandBouleMessage>[0]['instance'] };
+    return {
+        calls,
+        refuseNextPushes(count) {
+            refusals = count;
+        },
+        instance: instance as unknown as Parameters<typeof receiveGrandBouleMessage>[0]['instance'],
+    };
 }
 
 function receive(
     instance: Parameters<typeof receiveGrandBouleMessage>[0]['instance'],
     queue: ReturnType<typeof createGrandBouleFrameQueue>,
     msg: GrandBouleDispatchMsg,
-    blockEndFrame: number | null
+    block: { startFrame: number; endFrame: number } | null
 ): void {
-    receiveGrandBouleMessage({ instance, queue, msg, blockEndFrame });
+    receiveGrandBouleMessage({ instance, queue, msg, block });
 }
 
 describe('an unrecognised message', () => {
@@ -76,7 +94,7 @@ describe('an unrecognised message', () => {
         // unknowns; that is the behaviour to keep at runtime. The `never` arm is
         // still there, and it is what fails the build.
         const unknown = { type: 'shutdown' } as unknown as GrandBouleDispatchMsg;
-        expect(() => receive(instance, queue, unknown, 128)).not.toThrow();
+        expect(() => receive(instance, queue, unknown, { startFrame: 0, endFrame: 128 })).not.toThrow();
         expect(calls).toEqual([]);
     });
 });
@@ -86,11 +104,19 @@ describe('the Grand Boule frame queue', () => {
         const { calls, instance } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
 
-        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 5_000 }, 128);
+        receive(
+            instance,
+            queue,
+            { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 5_000 },
+            {
+                startFrame: 0,
+                endFrame: 128,
+            }
+        );
         const queuedBeforePanic = queue.size();
 
-        receive(instance, queue, { type: 'allNotesOff' }, 128);
-        queue.drain(instance, 10_000);
+        receive(instance, queue, { type: 'allNotesOff' }, { startFrame: 0, endFrame: 128 });
+        queue.drain(instance, 9_872, 10_000);
 
         // Without the clear, the look-ahead window keeps arriving after the user
         // asked for silence: note 60 would voice on the next drain, seconds after
@@ -105,11 +131,12 @@ describe('the Grand Boule frame queue', () => {
     it('preserves a scheduled parameter when panic discards pending notes', () => {
         const { calls, instance } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
 
-        receive(instance, queue, { type: 'param', name: 'toneColor', value: 0.3, sampleFrame: 500 }, 128);
-        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 500 }, 128);
-        receive(instance, queue, { type: 'allNotesOff' }, 128);
-        queue.drain(instance, 1_000);
+        receive(instance, queue, { type: 'param', name: 'toneColor', value: 0.3, sampleFrame: 500 }, block);
+        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 500 }, block);
+        receive(instance, queue, { type: 'allNotesOff' }, block);
+        queue.drain(instance, 384, 512);
 
         expect(calls).toEqual([
             { method: 'all_notes_off', args: [] },
@@ -121,11 +148,40 @@ describe('the Grand Boule frame queue', () => {
         const { calls, instance } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
 
-        receive(instance, queue, { type: 'param', name: 'masterGain', value: 0.7, sampleFrame: 128 }, 128);
+        receive(
+            instance,
+            queue,
+            { type: 'param', name: 'masterGain', value: 0.7, sampleFrame: 128 },
+            {
+                startFrame: 0,
+                endFrame: 128,
+            }
+        );
         expect(calls).toEqual([]);
 
-        queue.drain(instance, 256);
+        queue.drain(instance, 128, 256);
         expect(calls).toEqual([{ method: 'set_param', args: ['master_gain', 0.7] }]);
+    });
+
+    it('applies a parameter at the head of its block rather than at its frame', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        // A parameter belongs to the whole block: the engine snaps or smooths it
+        // once per `process` either way, so there is no offset to carry. Only
+        // notes take the offset-queued path.
+        receive(
+            instance,
+            queue,
+            { type: 'param', name: 'toneColor', value: 0.25, sampleFrame: 500 },
+            {
+                startFrame: 0,
+                endFrame: 128,
+            }
+        );
+        queue.drain(instance, 384, 512);
+
+        expect(calls).toEqual([{ method: 'set_param', args: ['tone_color', 0.25] }]);
     });
 
     it('places a frame sitting exactly on a block boundary in that block, not the one before', () => {
@@ -133,12 +189,44 @@ describe('the Grand Boule frame queue', () => {
         const queue = createGrandBouleFrameQueue();
 
         // Block 0 ends at frame 128, exclusive. Frame 128 belongs to block 1.
-        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 128 }, 128);
+        receive(
+            instance,
+            queue,
+            { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 128 },
+            {
+                startFrame: 0,
+                endFrame: 128,
+            }
+        );
         const voicedInBlock0 = calls.length;
 
-        queue.drain(instance, 256);
+        queue.drain(instance, 128, 256);
 
-        expect({ voicedInBlock0, voicedByBlock1: calls.length }).toEqual({ voicedInBlock0: 0, voicedByBlock1: 1 });
+        expect({ voicedInBlock0, calls }).toEqual({
+            voicedInBlock0: 0,
+            calls: [{ method: 'push_note_on', args: [60, 1, 0, 0] }],
+        });
+    });
+
+    it('drains a note at its own sample offset inside the block', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        // Frame 500 sits 116 samples into the block that starts at 384. Voicing
+        // it at the head would move the onset 2.6 ms early at 44.1 kHz and put
+        // the worklet render off the native one.
+        receive(
+            instance,
+            queue,
+            { type: 'noteOn', midiNote: 60, velocity: 0.5, sampleFrame: 500 },
+            {
+                startFrame: 0,
+                endFrame: 128,
+            }
+        );
+        queue.drain(instance, 384, 512);
+
+        expect(calls).toEqual([{ method: 'push_note_on', args: [60, 0.5, 0, 116] }]);
     });
 
     it('voices a note whose frame the engine has already passed instead of holding it', () => {
@@ -147,10 +235,18 @@ describe('the Grand Boule frame queue', () => {
 
         // A note that arrives late sounds late. Holding it would silently drop
         // every note of a part scheduled behind the render cursor.
-        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 10 }, 1_280);
+        receive(
+            instance,
+            queue,
+            { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 10 },
+            {
+                startFrame: 1_152,
+                endFrame: 1_280,
+            }
+        );
 
         expect({ calls, queued: queue.size() }).toEqual({
-            calls: [{ method: 'note_on_with_channel', args: [60, 1, 0] }],
+            calls: [{ method: 'push_note_on', args: [60, 1, 0, 0] }],
             queued: 0,
         });
     });
@@ -158,8 +254,9 @@ describe('the Grand Boule frame queue', () => {
     it('keeps an expression behind the note-on it shares a frame with', () => {
         const { calls, instance } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
 
-        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 500 }, 128);
+        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 500 }, block);
         receive(
             instance,
             queue,
@@ -172,13 +269,44 @@ describe('the Grand Boule frame queue', () => {
                 slide: 0,
                 sampleFrame: 500,
             },
-            128
+            block
         );
-        queue.drain(instance, 1_000);
+        queue.drain(instance, 384, 512);
 
         // The voice has to exist before it is bent; an unstable insert would bend
-        // a voice that is not there yet and drop the bend.
-        expect(calls.map(({ method }) => method)).toEqual(['note_on_with_channel', 'note_expression']);
+        // a voice that is not there yet and drop the bend. Both carry the same
+        // offset, and the engine applies events in push order, so the bend lands
+        // on the sample the note starts on.
+        expect(calls).toEqual([
+            { method: 'push_note_on', args: [60, 1, 0, 116] },
+            { method: 'push_note_expression', args: [60, 0, 2, 0, 0, 116] },
+        ]);
+    });
+
+    it('holds a refused note and everything behind it for the next block', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
+
+        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 400 }, block);
+        receive(instance, queue, { type: 'noteOn', midiNote: 64, velocity: 1, sampleFrame: 420 }, block);
+
+        // The engine's block event list is full: the first push answers `false`.
+        // Draining past it would sound note 64 before note 60.
+        refuseNextPushes(1);
+        queue.drain(instance, 384, 512);
+        const afterRefusal = { calls: [...calls], queued: queue.size() };
+
+        queue.drain(instance, 512, 640);
+
+        expect({ afterRefusal, calls, queued: queue.size() }).toEqual({
+            afterRefusal: { calls: [], queued: 2 },
+            calls: [
+                { method: 'push_note_on', args: [60, 1, 0, 0] },
+                { method: 'push_note_on', args: [64, 1, 0, 0] },
+            ],
+            queued: 0,
+        });
     });
 
     it('voices immediately when the host cannot place a frame yet', () => {
@@ -190,7 +318,7 @@ describe('the Grand Boule frame queue', () => {
         receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 9_999 }, null);
 
         expect({ calls, queued: queue.size() }).toEqual({
-            calls: [{ method: 'note_on_with_channel', args: [60, 1, 0] }],
+            calls: [{ method: 'push_note_on', args: [60, 1, 0, 0] }],
             queued: 0,
         });
     });
@@ -199,12 +327,48 @@ describe('the Grand Boule frame queue', () => {
         const { calls, instance } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();
 
-        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: Number.NaN }, 128);
+        receive(
+            instance,
+            queue,
+            { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: Number.NaN },
+            {
+                startFrame: 0,
+                endFrame: 128,
+            }
+        );
 
         // `NaN >= blockEnd` is false and `NaN < blockEnd` is false, so a frame
         // check that forgot to test finiteness would queue this forever.
         expect({ calls, queued: queue.size() }).toEqual({
-            calls: [{ method: 'note_on_with_channel', args: [60, 1, 0] }],
+            calls: [{ method: 'push_note_on', args: [60, 1, 0, 0] }],
+            queued: 0,
+        });
+    });
+
+    it('queues a note the engine refuses on arrival instead of dropping it', () => {
+        const { calls, instance, refuseNextPushes } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+
+        // Inside the block about to render, so `receive` pushes rather than
+        // queues — and the list is full. The message has to survive as a queued
+        // one, or the note is lost with no error anywhere.
+        refuseNextPushes(1);
+        receive(
+            instance,
+            queue,
+            { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 100 },
+            {
+                startFrame: 0,
+                endFrame: 128,
+            }
+        );
+        const afterRefusal = { calls: [...calls], queued: queue.size() };
+
+        queue.drain(instance, 128, 256);
+
+        expect({ afterRefusal, calls, queued: queue.size() }).toEqual({
+            afterRefusal: { calls: [], queued: 1 },
+            calls: [{ method: 'push_note_on', args: [60, 1, 0, 0] }],
             queued: 0,
         });
     });

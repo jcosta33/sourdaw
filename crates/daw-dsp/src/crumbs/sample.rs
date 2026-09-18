@@ -135,6 +135,22 @@ impl SampleData {
 /// allocated there (audit F4). Storing is now an in-place write into a slot
 /// that already exists, so the RT-reachable path allocates nothing; the `Arc`
 /// itself was built off-thread by whoever sent the command.
+///
+/// ## The bound is a per-instance budget, and ids are never reclaimed
+///
+/// Ids come from a monotonic `next_id` and slots are never freed: a session
+/// that loads and replaces samples indefinitely on one device instance will
+/// eventually exhaust the id space, after which new samples stop landing (a
+/// counted, non-panicking refusal — see `store`). This is the accepted
+/// contract rather than a defect to fix with a free list: the pool lives and
+/// dies with its engine instance, device instances are rebuilt when a project
+/// (re)loads, so the budget resets with the project — 4096 sample loads on one
+/// device instance within one project session is the documented allowance.
+/// Reclaiming ids instead would need an audio-thread-safe free list consulted
+/// while a stolen voice may still be reading the slot, which buys lifetime the
+/// per-instance budget already provides. Exhaustion is observable, not silent:
+/// `dropped_write_count` is mirrored into `CrumbsMetering::dropped_sample_writes`
+/// every block and surfaced by the host as a warning.
 #[derive(Debug, Clone)]
 pub struct SamplePool {
     samples: Vec<Option<std::sync::Arc<SampleData>>>,

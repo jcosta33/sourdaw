@@ -109,7 +109,6 @@ export const NATIVE_DSP_ENGINE_GAPS: readonly NativeDspEngineGap[] = [
         deviceId: 'dutch-oven',
         engineId: 'spring',
         params: [
-            { paramId: 'predelay', kind: 'unbuilt' },
             { paramId: 'mod_rate', kind: 'unbuilt' },
             { paramId: 'freeze', kind: 'unbuilt' },
             { paramId: 'shimmer', kind: 'unbuilt' },
@@ -126,11 +125,11 @@ export const NATIVE_DSP_ENGINE_GAPS: readonly NativeDspEngineGap[] = [
             { paramId: 'density', kind: 'unbuilt' },
         ],
         reason:
-            '`SpringReverb::set_param` (`spring.rs`) answers to mix, decay, feedback, damping, size, dispersion ' +
-            'and mod_depth, and forwards high_cut/low_cut/width to the shared `OutputStage`. Its `param_names()` ' +
-            'advertises exactly what it answers to, so the engine is honest with a host that asks; the descriptor ' +
-            'is the layer that over-promises. `early_late` is the one structural row: an earlier revision of this ' +
-            'table called it "the same reason it was on the plate before #1481", and #1506\'s survey does not ' +
+            '`SpringReverb::set_param` (`spring.rs`) answers to mix, decay, feedback, damping, size, predelay, ' +
+            'dispersion and mod_depth, and forwards high_cut/low_cut/width to the shared `OutputStage`. Its ' +
+            '`param_names()` advertises exactly what it answers to, so the engine is honest with a host that asks; ' +
+            'the descriptor is the layer that over-promises. `early_late` is the one structural row: an earlier ' +
+            'revision of this table called it "the same reason it was on the plate before #1481", and #1506\'s survey does not ' +
             'support that reading — zero of nine spring products expose an early/late balance, and a tank has no ' +
             'early-reflection stage for one to act on.',
     },

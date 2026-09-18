@@ -33,6 +33,14 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-09-18 — a command whose own spec imported it, and a freshness check that healed the state it asserted (escaped via PR #4356)
+
+`scripts/restampWasmInventory.ts` ended in a bare `run();` with no entry guard, and its spec imported the module for its helpers, so collecting the spec executed the command: running it rewrote `release/open-source-inventory.json`, the spec's "the command reports a current inventory on a fresh committed tree" case then observed the file it had just healed and could never fail on a drifted tree, and on a tree the command would refuse the module-level throw prevented the file's tests from running at all. The same head's refusal also told the reader to run "its wasm:* script", a name that does not exist for every package.
+
+Blind spot: the stance asked what each assertion would do under a mutation of the logic under test, but treated one spawned end-to-end case as covering the command without checking which branch it took — that tree had nothing to restamp, so every write-path mutation stayed green — and it never asked what the spec's own imports do to the tree.
+
+Probe that would have caught it: for a spec that imports the module it tests, import it against a deliberately drifted fixture and require every tracked file to be unchanged; then require the command's happy path to be exercised on a drifted fixture and delete the write, retarget the path, drop the refusal call and remove the printing, requiring each mutation to fail the suite.
+
 ### 2026-09-02 — a rejected review stranded its mutation lock (escaped via PR #3342)
 
 Review publication treated a definitive GitHub validation rejection as an ordinary failed write and retained a generic lock owner with no immutable publication intent. A later operator could not prove whether the review landed, so neither release nor replay was safe.
@@ -270,3 +278,19 @@ Probe that would have caught it: clone snapshots with each optional absent, expl
 `undefined`, and populated. Use `toStrictEqual` plus `Object.hasOwn` to verify exact property presence,
 mutate every populated nested container to prove source isolation, then run the connected glue
 apply/undo/redo path and retain a changed-value conflict case.
+
+### 2026-09-16 — a merge-conflict fixture left the winning actor to chance (escaped via PR #4292)
+
+The repair-route integration spec cloned the remote side with actor `'b'.repeat(64)` against a local document holding a random `init()` actor, and asserted the remote value won. Automerge picks the concurrent value by greatest opId, actor deciding at equal counters, so about one run in four kept the local value and the spec failed on main with `expected 0.6 to be 0.7` on unrelated heads.
+
+Blind spot: the fixture's chosen actor looked deterministic, and the stance never asked what the other side's actor was or which side the assertion assumed would win.
+
+Probe that would have caught it: for any fixture that merges two concurrent writes to one key and asserts the surviving value, name both actors; if either is random, require the fixture to fix the ordering (an actor that sorts above or below every possible peer) and run the spec with the chosen actor flipped to the opposite extreme, expecting it to redden.
+
+### 2026-09-17 — an arm click waited for a track a fresh project never has (escaped via commit 32179299b)
+
+Two Playwright specs added `await page.locator('[data-testid^="track-arm-"]').first().click()` right after `launch_new_project(page)`. A new project starts with zero tracks, so the locator never resolved and both tests hit the 90 s suite timeout on every nightly run. E2E never runs on pull requests, only on approving-review runs and the nightly train, so Gate never executed the edited specs.
+
+Blind spot: an E2E spec edit was accepted on a Gate that never runs E2E; the added step's precondition (a track exists) was never traced to the fixture (`launch_new_project` yields an empty arrangement).
+
+Probe that would have caught it: for every edited or added Playwright step, name the fixture state the locator needs and trace it to the helper that produces it; run the edited spec locally with `pnpm test:e2e <spec>` because Gate will not; a locator whose precondition no helper in the test produces is the finding.

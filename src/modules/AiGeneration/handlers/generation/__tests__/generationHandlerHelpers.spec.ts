@@ -4,7 +4,7 @@ import { type InjectableFunction } from '#/infra/di/inject';
 
 import { CHORD_PROGRESSION_STYLES } from '../../../useCases/generateChordProgression/algorithm';
 import { DRUM_PATTERN_STYLES } from '../../../useCases/generateDrumPattern/algorithm';
-import { MELODY_STYLES, SCALE_TYPES } from '../../../useCases/generateMelody/algorithm';
+import { MELODY_SCALE_TYPES, MELODY_STYLES } from '../../../useCases/generateMelody/algorithm';
 import {
     resolveOrCreateMidiTrack,
     getPlayheadBeat,
@@ -157,11 +157,11 @@ describe('generationHandlerHelpers', () => {
         });
 
         it('accepts every scale the algorithm handles', () => {
-            expect(SCALE_TYPES.length).toBe(14);
-            for (const scale of SCALE_TYPES) {
+            expect(MELODY_SCALE_TYPES.length).toBe(14);
+            for (const scale of MELODY_SCALE_TYPES) {
                 expect(VALID_SCALES.has(scale)).toBe(true);
             }
-            expect(VALID_SCALES.size).toBe(SCALE_TYPES.length);
+            expect(VALID_SCALES.size).toBe(MELODY_SCALE_TYPES.length);
             expect(VALID_SCALES.has('lydian')).toBe(true);
             expect(VALID_SCALES.has('chromatic')).toBe(true);
         });

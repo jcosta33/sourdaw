@@ -3,6 +3,7 @@
 //! Two sine body resonators (~180Hz, ~330Hz) with fast decay,
 //! plus bandpass-filtered white noise for the snare wire "snap".
 
+use crate::params::{DECAY, DRIVE, TONE, TUNE};
 use std::f32::consts::TAU;
 
 /// xorshift32 noise
@@ -154,15 +155,15 @@ impl SnareEngine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "tune" => self.tune = value.clamp(-24.0, 24.0),
-            "decay" => {
+            TUNE => self.tune = value.clamp(-24.0, 24.0),
+            DECAY => {
                 // Normalize 0-1 to body decay 0.02-0.25s and noise decay 0.03-0.25s
                 let v = value.clamp(0.0, 1.0);
                 self.body_decay = 0.02 + v * 0.23;
                 self.noise_decay = 0.03 + v * 0.22;
             }
-            "tone" => self.tone = value.clamp(0.0, 1.0),
-            "drive" => self.drive = value.clamp(0.0, 10.0),
+            TONE => self.tone = value.clamp(0.0, 1.0),
+            DRIVE => self.drive = value.clamp(0.0, 10.0),
             "body_decay" => self.body_decay = value.clamp(0.02, 0.5),
             "snappy" => self.snappy = value.clamp(0.0, 1.0),
             "noise_color" => self.noise_color = value.clamp(0.0, 1.0),

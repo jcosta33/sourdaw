@@ -26,6 +26,7 @@ import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Row, Stack } from '#/components/layout';
 import { executeAddDeviceAction } from '#/modules/Arrangement/useCases';
+import { PLUGIN_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 
@@ -197,10 +198,7 @@ export const EffectItem = ({
         className="group rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 hover:border-border/40 hover:from-surface-overlay transition-all cursor-grab active:cursor-grabbing relative overflow-hidden mb-1.5 shadow-sm"
         draggable
         onDragStart={(event) => {
-            event.dataTransfer.setData(
-                'application/x-sourdaw-plugin',
-                JSON.stringify({ name: plugin.name, id: plugin.id })
-            );
+            event.dataTransfer.setData(PLUGIN_DRAG_MIME_TYPE, JSON.stringify({ name: plugin.name, id: plugin.id }));
             event.dataTransfer.effectAllowed = 'copy';
         }}
         onClick={() => {

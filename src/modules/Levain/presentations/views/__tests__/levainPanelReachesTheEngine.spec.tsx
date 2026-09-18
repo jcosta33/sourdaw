@@ -38,6 +38,7 @@ const DEVICE_ID = 'levain-1';
  * on a natively carried strip.
  */
 const writeNativeBuiltinParameters = vi.fn();
+const sendNativeLiveMidiControl = vi.fn(() => Promise.resolve(true));
 
 /** Value the native carrier was last told for one engine parameter, or undefined. */
 function lastNativeValue(name: string): number | undefined {
@@ -157,6 +158,7 @@ describe('LevainPanel edits reach the live engine', () => {
             resolveEligibleDeviceWriteTarget,
             autoLoadLevainSamples: mocks.autoLoadLevainSamples,
             writeNativeBuiltinParameters,
+            sendNativeLiveMidiControl,
         });
 
         trackStore.set({ ...defaultTrackState, tracks: makeLevainTracks() });
@@ -214,6 +216,7 @@ describe('LevainPanel edits reach the live engine', () => {
             resolveEligibleDeviceWriteTarget: () => ({ status: 'missing' as const }),
             autoLoadLevainSamples: mocks.autoLoadLevainSamples,
             writeNativeBuiltinParameters,
+            sendNativeLiveMidiControl,
         });
         render(<LevainPanel deviceId={DEVICE_ID} />);
 

@@ -1,4 +1,5 @@
 import { clampDeviceParameterValue, quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
 type NormalizeGrandBoulePersistedParamValueInput = {
     defaultValue: number;
@@ -14,12 +15,12 @@ export function normalizeGrandBoulePersistedParamValue({
 }: NormalizeGrandBoulePersistedParamValueInput): number {
     const finiteValue = typeof value === 'number' && Number.isFinite(value) ? value : defaultValue;
     const clampedValue = clampDeviceParameterValue({
-        deviceType: 'grand-boule',
+        deviceType: DEVICE_TYPE_IDS.grandBoule,
         paramId,
         value: finiteValue,
     });
     return quantiseDeviceParameterValue({
-        deviceType: 'grand-boule',
+        deviceType: DEVICE_TYPE_IDS.grandBoule,
         paramId,
         value: clampedValue,
     });

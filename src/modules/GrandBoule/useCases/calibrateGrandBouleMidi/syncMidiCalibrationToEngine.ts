@@ -9,7 +9,7 @@ type SyncMidiCalibrationToEngineInput = {
 };
 
 /**
- * Push the engine-consumed half of the MIDI calibration to the DSP.
+ * Push the engine-consumed half of the MIDI calibration to both bodies.
  *
  * Three of the five calibration values (`velocityCurveExponent`,
  * `velocityFloor`, `velocityCeiling`) are not engine parameters — they shape
@@ -23,6 +23,12 @@ type SyncMidiCalibrationToEngineInput = {
  * * `ccSmoothingMs` is the time constant applied to the continuous CC64
  *   position on its way into that curve.
  *
+ * `GrandBouleEngineHandle.setCalibration` is the one door for both: the Web
+ * Audio `grandBouleControls` node, and — when this device is carried natively
+ * — the daw-engine `GrandBouleBody` sharing the same daw-dsp engine. Without
+ * the second half a calibrated half-pedal would damp at two different
+ * positions depending on which carrier is sounding.
+ *
  * Every writer of those two values calls this, and so does the panel once its
  * engine reports ready: a value that only reached the store would leave the
  * readout describing a piano that is not playing.
@@ -34,6 +40,8 @@ export function syncMidiCalibrationToEngine(input: SyncMidiCalibrationToEngineIn
     }
     // The clamped, stored values rather than whatever was requested, so the
     // engine cannot drift away from what the panel displays.
-    input.engine.setParam({ name: 'sustain_threshold', value: calibration.sustainThreshold });
-    input.engine.setParam({ name: 'cc_smoothing_ms', value: calibration.ccSmoothingMs });
+    input.engine.setCalibration({
+        sustainThreshold: calibration.sustainThreshold,
+        ccSmoothingMs: calibration.ccSmoothingMs,
+    });
 }

@@ -3,16 +3,25 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { DEFAULT_CRUST_PATCH } from '../../models/CrustPatch';
 import {
     crustStore,
+    crustMeterStore,
+    defaultCrustInstanceState,
     defaultCrustState,
+    deleteCrustMeters,
+    getCrustMeters,
+    getCrustState,
+    INITIAL_METERS,
+    loadCrustPatch,
+    resetCrustMeters,
     setCrustParam,
     setCrustUiLevel,
-    loadCrustPatch,
     updateCrustMeters,
-    resetCrustMeters,
 } from '../crustStore';
 
+const A = 'crust-a';
+const B = 'crust-b';
+
 describe('crustStore defaults', () => {
-    it('seeds meters at silence and the patch at DEFAULT_CRUST_PATCH', () => {
+    it('seeds the combined read shape with meters at silence and the patch at DEFAULT_CRUST_PATCH', () => {
         expect(defaultCrustState).toEqual({
             patch: DEFAULT_CRUST_PATCH,
             grDb: 0,
@@ -26,143 +35,150 @@ describe('crustStore defaults', () => {
             truepeakExceeded: false,
         });
     });
+
+    it('answers reads for an unknown device from the default instance, writing nothing', () => {
+        expect(getCrustState('ghost').patch).toEqual(DEFAULT_CRUST_PATCH);
+        expect(getCrustMeters('ghost')).toEqual(INITIAL_METERS);
+        expect(crustStore.value).toEqual({});
+    });
 });
 
 describe('setCrustParam', () => {
     beforeEach(() => {
-        crustStore.set({ ...defaultCrustState, patch: { ...defaultCrustState.patch, gain: 3 } });
+        crustStore.set({});
+        crustMeterStore.set({});
     });
 
-    it('writes a single patch field while leaving the rest of the patch untouched', () => {
-        setCrustParam('ceiling', -1.5);
+    it('writes a single patch field for the addressed device only', () => {
+        setCrustParam(A, 'gain', 3);
+        setCrustParam(B, 'ceiling', -1.5);
 
-        expect(crustStore.value?.patch.ceiling).toBe(-1.5);
-        expect(crustStore.value?.patch.gain).toBe(3);
+        expect(getCrustState(A).patch.gain).toBe(3);
+        expect(getCrustState(A).patch.ceiling).toBe(DEFAULT_CRUST_PATCH.ceiling);
+        expect(getCrustState(B).patch.ceiling).toBe(-1.5);
+        // Instance isolation is the defect #3672 fixes: B's write must not
+        // surface through A's slice.
+        expect(getCrustState(B).patch.gain).toBe(DEFAULT_CRUST_PATCH.gain);
     });
 
-    it('leaves the meter fields untouched', () => {
-        crustStore.set({ ...crustStore.value!, grDb: -6, inputDb: -20 });
+    it('preserves the other patch fields of the addressed instance', () => {
+        setCrustParam(A, 'gain', 3);
+        setCrustParam(A, 'ceiling', -1.5);
 
-        setCrustParam('algorithm', 'aggressive');
-
-        expect(crustStore.value?.grDb).toBe(-6);
-        expect(crustStore.value?.inputDb).toBe(-20);
-    });
-
-    it('does not throw when Crust state is unavailable', () => {
-        crustStore.set(null);
-
-        expect(() => setCrustParam('gain', 9)).not.toThrow();
-        expect(crustStore.value).toBeNull();
+        const state = getCrustState(A);
+        expect(state.patch.ceiling).toBe(-1.5);
+        expect(state.patch.gain).toBe(3);
     });
 });
 
 describe('setCrustUiLevel', () => {
     beforeEach(() => {
-        crustStore.set({ ...defaultCrustState, patch: { ...defaultCrustState.patch, uiLevel: 2, name: 'Kept' } });
+        crustStore.set({});
+        crustMeterStore.set({});
     });
 
-    it('writes the uiLevel field while preserving the rest of the patch', () => {
-        setCrustUiLevel(5);
+    it('discloses instances independently', () => {
+        setCrustParam(A, 'name', 'Kept');
+        setCrustUiLevel(A, 5);
+        setCrustUiLevel(B, 1);
 
-        expect(crustStore.value?.patch.uiLevel).toBe(5);
-        expect(crustStore.value?.patch.name).toBe('Kept');
-    });
-
-    it('does not throw when Crust state is unavailable', () => {
-        crustStore.set(null);
-
-        expect(() => setCrustUiLevel(1)).not.toThrow();
-        expect(crustStore.value).toBeNull();
+        expect(getCrustState(A).patch.uiLevel).toBe(5);
+        expect(getCrustState(A).patch.name).toBe('Kept');
+        expect(getCrustState(B).patch.uiLevel).toBe(1);
     });
 });
 
 describe('loadCrustPatch', () => {
     beforeEach(() => {
-        crustStore.set({
-            ...defaultCrustState,
-            grDb: -4,
-            inputDb: -18,
-            patch: { ...defaultCrustState.patch, name: 'Old patch' },
-        });
+        crustStore.set({});
+        crustMeterStore.set({});
     });
 
-    it('replaces the entire patch while preserving current meter values', () => {
+    it('replaces one instance’s patch and leaves the other instance untouched', () => {
+        setCrustParam(B, 'name', 'Untouched');
         const nextPatch = { ...DEFAULT_CRUST_PATCH, name: 'Loaded patch', gain: 12 };
 
-        loadCrustPatch(nextPatch);
+        loadCrustPatch(A, nextPatch);
 
-        expect(crustStore.value?.patch).toEqual(nextPatch);
-        expect(crustStore.value?.grDb).toBe(-4);
-        expect(crustStore.value?.inputDb).toBe(-18);
-    });
-
-    it('does not throw when Crust state is unavailable', () => {
-        crustStore.set(null);
-
-        expect(() => loadCrustPatch(DEFAULT_CRUST_PATCH)).not.toThrow();
-        expect(crustStore.value).toBeNull();
+        expect(getCrustState(A).patch).toEqual(nextPatch);
+        expect(getCrustState(B).patch.name).toBe('Untouched');
     });
 });
 
 describe('updateCrustMeters', () => {
     beforeEach(() => {
-        crustStore.set({ ...defaultCrustState, patch: { ...defaultCrustState.patch, name: 'Kept patch' } });
+        crustStore.set({});
+        crustMeterStore.set({});
     });
 
-    it('merges a partial meter patch, leaving unmentioned meter fields untouched', () => {
-        updateCrustMeters({ grDb: -3.2, truepeakExceeded: true });
+    it('merges a partial meter patch into the addressed device’s slice only', () => {
+        updateCrustMeters(A, { grDb: -3.2, truepeakExceeded: true });
 
-        expect(crustStore.value?.grDb).toBe(-3.2);
-        expect(crustStore.value?.truepeakExceeded).toBe(true);
-        expect(crustStore.value?.inputDb).toBe(-100);
-        expect(crustStore.value?.lufsIntegrated).toBe(-100);
+        expect(getCrustMeters(A)).toMatchObject({ grDb: -3.2, truepeakExceeded: true, inputDb: -100 });
+        expect(getCrustMeters(B)).toEqual(INITIAL_METERS);
     });
 
-    it('leaves the patch untouched', () => {
-        updateCrustMeters({ outputDb: -5 });
+    it('keeps a meter tick off one device from rewriting another device’s snapshot', () => {
+        updateCrustMeters(A, { grDb: -12 });
+        updateCrustMeters(B, { grDb: -30 });
 
-        expect(crustStore.value?.patch.name).toBe('Kept patch');
+        const before = crustMeterStore.value?.[A];
+        updateCrustMeters(B, { grDb: -31 });
+
+        // Referential identity for the untouched slice is what lets the
+        // `useCrustMeters` subscriber for A skip its re-render.
+        expect(crustMeterStore.value?.[A]).toBe(before);
+        expect(crustMeterStore.value?.[A]?.grDb).toBe(-12);
     });
 
-    it('does not throw when Crust state is unavailable', () => {
-        crustStore.set(null);
+    it('keeps meters out of the patch store', () => {
+        updateCrustMeters(A, { outputDb: -5 });
 
-        expect(() => updateCrustMeters({ grDb: -1 })).not.toThrow();
-        expect(crustStore.value).toBeNull();
+        expect(Object.hasOwn(crustStore.value?.[A] ?? {}, 'outputDb')).toBe(false);
+        expect(getCrustState(A)).toEqual(defaultCrustInstanceState);
     });
 });
 
 describe('resetCrustMeters', () => {
     beforeEach(() => {
-        crustStore.set({
-            ...defaultCrustState,
-            patch: { ...defaultCrustState.patch, name: 'Edited patch', gain: 9 },
-            grDb: -8,
-            inputDb: -12,
-            outputDb: -2,
-            lufsIntegrated: -9,
-            lufsShortTerm: -7,
-            lufsMomentary: -6,
-            lra: 11,
-            truepeakMax: -0.2,
-            truepeakExceeded: true,
-        });
+        crustStore.set({});
+        crustMeterStore.set({});
     });
 
-    it('resets every meter field to silence while preserving the current patch', () => {
-        resetCrustMeters();
+    it('resets one device’s meters to silence while leaving its patch and the other device intact', () => {
+        setCrustParam(A, 'name', 'Edited patch');
+        updateCrustMeters(A, { grDb: -8, inputDb: -12, truepeakExceeded: true });
+        updateCrustMeters(B, { grDb: -4 });
 
-        expect(crustStore.value).toEqual({
-            ...defaultCrustState,
-            patch: { ...defaultCrustState.patch, name: 'Edited patch', gain: 9 },
-        });
+        resetCrustMeters(A);
+
+        expect(getCrustMeters(A)).toEqual(INITIAL_METERS);
+        expect(getCrustState(A).patch.name).toBe('Edited patch');
+        expect(getCrustMeters(B).grDb).toBe(-4);
+    });
+});
+
+describe('deleteCrustMeters', () => {
+    beforeEach(() => {
+        crustStore.set({});
+        crustMeterStore.set({});
     });
 
-    it('does not throw when Crust state is unavailable', () => {
-        crustStore.set(null);
+    it('drops only the destroyed device’s slice; the survivor keeps reading and ticking', () => {
+        setCrustParam(A, 'ceiling', -1.5);
+        updateCrustMeters(A, { inputDb: -12 });
+        updateCrustMeters(B, { inputDb: -30 });
 
-        expect(() => resetCrustMeters()).not.toThrow();
-        expect(crustStore.value).toBeNull();
+        deleteCrustMeters(B);
+
+        expect(crustMeterStore.value && Object.hasOwn(crustMeterStore.value, B)).toBe(false);
+        expect(getCrustMeters(A).inputDb).toBe(-12);
+        // Removing one instance must not touch the survivor's patch either.
+        expect(getCrustState(A).patch.ceiling).toBe(-1.5);
+
+        // A late frame for the destroyed device re-creates only its own slice.
+        updateCrustMeters(B, { inputDb: -30 });
+        expect(getCrustMeters(B).inputDb).toBe(-30);
+        expect(getCrustMeters(A).inputDb).toBe(-12);
     });
 });

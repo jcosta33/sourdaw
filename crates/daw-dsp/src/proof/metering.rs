@@ -1,6 +1,12 @@
 //! Mastering metering — LUFS (ITU-R BS.1770), LRA, true peak, crest factor.
 
-use crate::primitives::{flush_denormal, flush_denormal_f64};
+use crate::primitives::{flush_denormal, flush_denormal_f64, LINEAR_TO_DB_FLOOR};
+
+/// The dB reading every meter in the crate reports for silence: the floor the
+/// loudness, true-peak, and per-channel peak/RMS paths all return when there is
+/// no signal to measure, so a silent path reads identically at every tap.
+/// Below the [`LINEAR_TO_DB_FLOOR`] amplitude, this is the answer.
+pub const SILENCE_DB: f32 = -100.0;
 
 /// One direct-form-I biquad section, normalised so `a0 == 1`.
 ///
@@ -221,12 +227,12 @@ const LOUDNESS_OFFSET_DB: f64 = -0.691;
 
 /// Block loudness in LUFS from block energy (K-weighted mean square).
 ///
-/// Energies at or below zero have no loudness; they report the same `-100.0`
-/// floor the meters have always shown for silence.
+/// Energies at or below zero have no loudness; they report the same
+/// [`SILENCE_DB`] floor the meters have always shown for silence.
 #[inline]
 fn loudness_from_energy(energy: f64) -> f32 {
     if !(energy > 1e-20) {
-        return -100.0;
+        return SILENCE_DB;
     }
     (LOUDNESS_OFFSET_DB + 10.0 * energy.log10()) as f32
 }
@@ -677,7 +683,7 @@ impl BlockStore {
 /// Allocation-free: two passes over a borrowed slice, no scratch.
 fn gated_integrated_lufs(blocks: &[f64]) -> f32 {
     if blocks.is_empty() {
-        return -100.0;
+        return SILENCE_DB;
     }
 
     // Absolute gate, Γ_a = −70 LUFS, expressed as the energy at that loudness.
@@ -691,7 +697,7 @@ fn gated_integrated_lufs(blocks: &[f64]) -> f32 {
         }
     }
     if count == 0 {
-        return -100.0;
+        return SILENCE_DB;
     }
 
     // Relative gate, Γ_r = 10 LU below the loudness of the absolute-gated mean
@@ -707,7 +713,7 @@ fn gated_integrated_lufs(blocks: &[f64]) -> f32 {
         }
     }
     if gated_count == 0 {
-        return -100.0;
+        return SILENCE_DB;
     }
     loudness_from_energy(gated_sum / gated_count as f64)
 }
@@ -807,7 +813,7 @@ impl IntegratedLufs {
         Self {
             momentary,
             blocks: BlockStore::new(),
-            cached_lufs: -100.0,
+            cached_lufs: SILENCE_DB,
             hop_counter: 0,
             hop_size,
             warmup_remaining: window_size,
@@ -859,7 +865,7 @@ impl IntegratedLufs {
     pub fn reset(&mut self) {
         self.momentary.reset();
         self.blocks.clear();
-        self.cached_lufs = -100.0;
+        self.cached_lufs = SILENCE_DB;
         self.hop_counter = 0;
         self.warmup_remaining = self.window_size;
     }
@@ -897,10 +903,10 @@ impl TruePeakDetector {
     }
 
     pub fn get_true_peak_db(&self) -> f32 {
-        if self.peak > 1e-10 {
+        if self.peak > LINEAR_TO_DB_FLOOR {
             20.0 * self.peak.log10()
         } else {
-            -100.0
+            SILENCE_DB
         }
     }
 
@@ -1272,31 +1278,31 @@ impl MeterTap {
     }
 
     pub fn peak_db_l(&self) -> f32 {
-        if self.peak_l > 1e-10 {
+        if self.peak_l > LINEAR_TO_DB_FLOOR {
             20.0 * self.peak_l.log10()
         } else {
-            -100.0
+            SILENCE_DB
         }
     }
     pub fn peak_db_r(&self) -> f32 {
-        if self.peak_r > 1e-10 {
+        if self.peak_r > LINEAR_TO_DB_FLOOR {
             20.0 * self.peak_r.log10()
         } else {
-            -100.0
+            SILENCE_DB
         }
     }
     pub fn rms_db_l(&self) -> f32 {
         if self.rms_sq_l > 1e-20 {
             10.0 * self.rms_sq_l.log10()
         } else {
-            -100.0
+            SILENCE_DB
         }
     }
     pub fn rms_db_r(&self) -> f32 {
         if self.rms_sq_r > 1e-20 {
             10.0 * self.rms_sq_r.log10()
         } else {
-            -100.0
+            SILENCE_DB
         }
     }
 }

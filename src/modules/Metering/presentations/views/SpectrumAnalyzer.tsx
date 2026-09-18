@@ -8,6 +8,7 @@ import { type ReactElement, useRef, useEffect } from 'react';
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { dbToYLiveAnalyser as dbToY, freqToLogX } from '#/components/daw/spectrumMath';
 import { getMasterAnalyser, getTrackAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/useCases';
+import { METER_FLOOR_DB } from '#/utils/audioLevelLaw';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type SpectrumAnalyzerProps = {
@@ -92,7 +93,7 @@ export const SpectrumAnalyzer = ({
             }
 
             // Grid lines (dB) — subtle dashed
-            const dbMarks = [-60, -48, -36, -24, -12, 0];
+            const dbMarks = [METER_FLOOR_DB, -48, -36, -24, -12, 0];
             ctx.fillStyle = 'rgba(255,255,255,0.15)';
             ctx.font = '7px monospace';
             for (const db of dbMarks) {

@@ -51,6 +51,7 @@ describe('openViaBrowser', () => {
     it('configures multiple selection and the accept filter from the requested extensions', () => {
         const realCreateElement = document.createElement.bind(document);
         let capturedInput: HTMLInputElement | undefined;
+        // @ts-expect-error the Electron DOM augmentation adds a createElement("webview") overload this mock does not satisfy
         vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
             const element = realCreateElement(tagName);
             if (element instanceof HTMLInputElement) {

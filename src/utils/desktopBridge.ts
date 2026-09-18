@@ -30,6 +30,25 @@ const sourdawBridge = (): SourdawDesktopBridge => {
 const snakeToCamel = (parameter: string): string =>
     parameter.replaceAll(/_([a-z0-9])/gu, (_match, first: string) => first.toUpperCase());
 
+/**
+ * The refusal the main process answers every command with when its native addon
+ * never loaded (`electron/router.ts`). The suffix is a wire contract: it is how
+ * the renderer tells "this feature's host is absent" — a deployment state to
+ * degrade from, like the web platform — apart from a command that ran and failed.
+ */
+const NATIVE_HOST_UNAVAILABLE_REFUSAL = 'rejected: the native host is not available';
+
+/**
+ * True when `error` is the router's native-host-absent refusal.
+ *
+ * Consumers gate native-only surfaces on this instead of treating the rejection
+ * as a hard failure: in a shell without the addon no native feature can exist,
+ * so the web-equivalent state is the honest answer, not an error.
+ */
+export function isNativeHostUnavailableError(error: unknown): boolean {
+    return error instanceof Error && error.message.endsWith(NATIVE_HOST_UNAVAILABLE_REFUSAL);
+}
+
 const isByteView = (value: unknown): boolean => ArrayBuffer.isView(value) || value instanceof ArrayBuffer;
 
 /**

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type GrinderImportedNeuralModel } from '../../../models/GrinderPatch';
 import { downloadGrinderNeuralModelFile } from '../downloadGrinderNeuralModelFile';
-import { persistGrinderNeuralLibrary } from '../persistGrinderNeuralLibrary';
+import { NEURAL_LIBRARY_BYTE_BUDGET, persistGrinderNeuralLibrary } from '../persistGrinderNeuralLibrary';
 import { restoreGrinderNeuralLibraryResult } from '../restoreGrinderNeuralLibrary';
 
 function make_entry(overrides: Partial<GrinderImportedNeuralModel> = {}): GrinderImportedNeuralModel {
@@ -142,6 +142,7 @@ describe('neuralLibraryPersistence', () => {
             vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
             const anchor = document.createElement('a');
             const click = vi.spyOn(anchor, 'click').mockImplementation(() => {});
+            // @ts-expect-error the Electron DOM augmentation adds a createElement("webview") overload this mock does not satisfy
             vi.spyOn(document, 'createElement').mockReturnValue(anchor);
 
             downloadGrinderNeuralModelFile({ file_name: 'capture.nam', file_text: '{"name":"x"}' });
@@ -174,9 +175,11 @@ describe('neuralLibraryPersistence', () => {
         it('should refuse oversized payloads with a quota_exceeded error before writing', async () => {
             // Regression for #27: the full multi-MB source text is written with no
             // quota guard. A payload past the budget must be rejected up front.
-            const huge = 'x'.repeat(30 * 1024 * 1024);
+            // One entry measured at just past the budget keeps the fixture's
+            // memory footprint proportional to the bound itself.
+            const huge = 'x'.repeat(NEURAL_LIBRARY_BYTE_BUDGET / 2 + 1024);
             const result = await persistGrinderNeuralLibrary({
-                entries: [make_entry({ id: 'a', sourceFileText: huge }), make_entry({ id: 'b', sourceFileText: huge })],
+                entries: [make_entry({ id: 'a', sourceFileText: huge })],
             });
 
             expect(result.ok).toBe(false);

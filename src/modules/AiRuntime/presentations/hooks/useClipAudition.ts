@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { playAuditionNote } from '#/modules/AudioEngine/useCases';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
+import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -29,7 +30,7 @@ export function startClipAudition(target: ClipAuditionTarget, onEnded: () => voi
         return null;
     }
 
-    const tempo = getTransportState()?.tempo ?? 120;
+    const tempo = getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM;
     const msPerBeat = MS_PER_MINUTE / tempo;
     const timers = new Set<ReturnType<typeof setTimeout>>();
     const stopNoteFns: Array<() => void> = [];

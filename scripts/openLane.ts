@@ -15,12 +15,39 @@ import {
     nodeModulesLinkTarget as resolveNodeModulesLinkTarget,
     outsideSymlinkRefusal,
 } from './pnpmModulesPreflight.ts';
-import { assertIssueNumber, assertLaneSlug, fail, isIssueArgument, laneBranchName } from './prContract.ts';
+import {
+    AUTHOR_LANE_BRANCH_PREFIX,
+    assertIssueNumber,
+    assertLaneSlug,
+    fail,
+    isIssueArgument,
+    laneBranchName,
+} from './prContract.ts';
 import { assertStackAcyclic, readLaneStack, writeLaneStack, type LaneStack } from './stackedLanes.ts';
 
-export const OPEN_LANE_USAGE = 'usage: pnpm lane:open [issue-number] [slug] [--stack-on <absolute-parent-lane>]';
+export const OPEN_LANE_USAGE =
+    'usage: pnpm lane:open [issue-number] [slug] --model <model> [--stack-on <absolute-parent-lane>]';
 
 const DEFAULT_LANE_SLUG = 'work';
+
+export const AUTHOR_MODEL_PATTERN = /^[a-z0-9][a-z0-9.+-]{0,39}$/;
+
+/**
+ * The token names the model, not the family: capability variants within one family
+ * (glm-5.3-flash versus glm-5.3) are distinct models, and collapsing them to the family would
+ * make the bare authorship labels misattribute pull requests. Only deployment-routing prefixes
+ * and date snapshots are dropped, because they change under the same model.
+ */
+export const AUTHOR_MODEL_RULE =
+    'the lowercase public name of the model itself, keeping every qualifier that distinguishes capability or edition within the family (flash, mini, pro, air, codex, thinking) and dropping only deployment-routing prefixes and date-snapshot suffixes, e.g. glm-5.3-flash, glm-5.3, claude-sonnet-4.5, gpt-5.2-codex, kimi-k2.5';
+
+export function normalizeAuthorModel(token: string): string {
+    const normalized = token.trim().toLowerCase();
+    if (!AUTHOR_MODEL_PATTERN.test(normalized)) {
+        fail(`--model must be ${AUTHOR_MODEL_RULE}`);
+    }
+    return normalized;
+}
 
 export type OpenLanePort = {
     primaryRoot: () => string;
@@ -29,6 +56,8 @@ export type OpenLanePort = {
     ensureWorktreeParent: (path: string) => void;
     fetchMain: () => void;
     worktreeAdd: (path: string, branch: string, reservedBranch?: boolean) => void;
+    /** Records `branch.<branch>.sourdaw-author-model` in the primary checkout's git config. */
+    saveAuthorModel: (branch: string, model: string) => void;
     stackParent?: (path: string, childBranch: string) => LaneStack;
     saveStack?: (descriptor: LaneStack) => void;
     reserveStackBranch?: (branch: string, head: string) => void;
@@ -38,7 +67,13 @@ export type OpenLanePort = {
     log: (message: string) => void;
 };
 
-export function parseOpenLaneArgs(args: string[]): { issue?: number; slug: string; help: boolean; stackOn?: string } {
+export function parseOpenLaneArgs(args: string[]): {
+    issue?: number;
+    slug: string;
+    help: boolean;
+    stackOn?: string;
+    model?: string;
+} {
     const selector = args.indexOf('--stack-on');
     if (selector !== -1) {
         const parent = args[selector + 1];
@@ -50,6 +85,18 @@ export function parseOpenLaneArgs(args: string[]): { issue?: number; slug: strin
             fail(OPEN_LANE_USAGE);
         }
         return { ...parseOpenLaneArgs(rest), stackOn: parent };
+    }
+    const modelIndex = args.indexOf('--model');
+    if (modelIndex !== -1) {
+        const token = args[modelIndex + 1];
+        if (token === undefined || token.startsWith('--')) {
+            fail('--model requires the authoring model, e.g. glm-5.3-flash');
+        }
+        const rest = [...args.slice(0, modelIndex), ...args.slice(modelIndex + 2)];
+        if (rest.includes('--model')) {
+            fail(OPEN_LANE_USAGE);
+        }
+        return { ...parseOpenLaneArgs(rest), model: normalizeAuthorModel(token) };
     }
     if (args[0] === '--help') {
         if (args.length !== 1) {
@@ -103,7 +150,13 @@ function createStackWorktree(stack: LaneStack, lanePath: string, port: OpenLaneP
     }
 }
 
-export function openLane(issue: number | undefined, slug: string, port: OpenLanePort, stackOn?: string): string {
+export function openLane(
+    issue: number | undefined,
+    slug: string,
+    model: string,
+    port: OpenLanePort,
+    stackOn?: string
+): string {
     const branch = laneBranchName(issue, slug);
     const lanePath = join(port.primaryRoot(), '.agents', 'worktrees', laneDirectoryName(issue, slug));
     if (port.pathExists(lanePath)) {
@@ -121,6 +174,9 @@ export function openLane(issue: number | undefined, slug: string, port: OpenLane
     } else {
         port.worktreeAdd(lanePath, branch);
     }
+    // The branch records its authoring model the same way it records stack lineage: in the primary
+    // checkout's git config, where lane:publish reads it back at publication time.
+    port.saveAuthorModel(branch, model);
     // Issue #4118: a lane node_modules that symlinks into another checkout makes every pnpm run
     // through it rewrite that checkout's install metadata, which later aborts every trusted
     // delivery script. Refusing before the lock leaves the created worktree unlocked, so the fix
@@ -138,6 +194,9 @@ export function openLane(issue: number | undefined, slug: string, port: OpenLane
         }
     }
     port.lock(lanePath);
+    // The declaring session sees its own attribution; the path stays the final line because
+    // consumers parse it from the tail of the output.
+    port.log(`authoring model: ${model}`);
     port.log(lanePath);
     return lanePath;
 }
@@ -180,6 +239,9 @@ export function shellPort(
                 run('git', ['worktree', 'add', '-b', branch, path, 'origin/main'], { cwd: primaryRoot });
             }
         },
+        saveAuthorModel: (branch, model) => {
+            run('git', ['config', `branch.${branch}.sourdaw-author-model`, model], { cwd: primaryRoot });
+        },
         reserveStackBranch: (branch, head) => {
             run('git', ['branch', branch, head], { cwd: primaryRoot });
         },
@@ -199,7 +261,7 @@ export function shellPort(
             if (
                 parentPath === realpathSync(primaryRoot) ||
                 parentBranch === undefined ||
-                !parentBranch.startsWith('agent/') ||
+                !parentBranch.startsWith(AUTHOR_LANE_BRANCH_PREFIX) ||
                 !fields.includes(`locked ${AUTHOR_LOCK_REASON}`)
             ) {
                 fail('stack parent must be an exact author-locked lane in this primary repository');
@@ -268,8 +330,12 @@ export function runCli(argv: string[], cli: OpenLaneCli = shellCli, cwd: string 
             console.log(OPEN_LANE_USAGE.replace('usage:', 'Usage:'));
             return 0;
         }
+        // Refused before the port exists, so a missing model can leave no worktree or branch behind.
+        if (parsed.model === undefined) {
+            fail(`lane:open requires --model <model>: ${AUTHOR_MODEL_RULE}`);
+        }
         cli.verifyTrustedBlob(cwd);
-        openLane(parsed.issue, parsed.slug, cli.createPort(cwd), parsed.stackOn);
+        openLane(parsed.issue, parsed.slug, parsed.model, cli.createPort(cwd), parsed.stackOn);
         return 0;
     } catch (error) {
         console.error(error instanceof Error ? error.message : error);

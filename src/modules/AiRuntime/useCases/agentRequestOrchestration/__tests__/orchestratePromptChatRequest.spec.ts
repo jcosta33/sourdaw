@@ -13,7 +13,11 @@ const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(),
     cancel: vi.fn(),
     claim: vi.fn(),
-    create: vi.fn(),
+    create: vi.fn(
+        (): { status: 'created' } | { status: 'hard-limit-reached'; reason: 'requestChars' | 'concurrentRuns' } => ({
+            status: 'created',
+        })
+    ),
     executeImmediatePromptCommand: vi.fn(),
     executePromptCommandPreview: vi.fn(),
     getActiveModelId: vi.fn(),
@@ -52,16 +56,17 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     loadCrdtProject: vi.fn(),
     mutateCrdtDoc: vi.fn(),
     persistCrdtProject: vi.fn(),
-    preserveBranchStateForSession: vi.fn(),
+    beginBranchSession: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     projectCrdtToStores: vi.fn(),
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
-    replaceBranchState: vi.fn(),
+    projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
     replaceCrdtDocInLineage: vi.fn(),
     resetCrdtProjectAuthority: vi.fn(),
-    restoreBranchStateAfterSession: vi.fn(),
+    resetCrdtProject: vi.fn(),
+    endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
     setupProjectionBridge: vi.fn(),
@@ -179,6 +184,31 @@ describe('orchestratePromptChatRequest', () => {
         mocks.bindAbortController.mockReturnValue(releaseProviderCancellation);
         mocks.settleSafely.mockReturnValue({ accepted: true, warning: null });
         mocks.normalizeAgentFailure.mockReturnValue({ code: 'agent.fixture' });
+    });
+
+    it('reports a refused run admission in chat and claims no provider work', async () => {
+        mocks.create.mockReturnValueOnce({ status: 'hard-limit-reached', reason: 'concurrentRuns' });
+
+        await expect(
+            orchestratePromptChatRequest({
+                userText: 'add a track',
+                requestedRoute: 'auto',
+                backend: 'webllm',
+                interactionMode: 'apply',
+                options: undefined,
+            })
+        ).resolves.toBeUndefined();
+
+        const refusal = 'The configured concurrentRuns limit for agent runs is already reached.';
+        expect(mocks.appendChatMessage).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ role: 'user', content: 'add a track' })
+        );
+        expect(mocks.appendChatMessage).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({ role: 'assistant', content: refusal, error: refusal })
+        );
+        expect(mocks.claim).not.toHaveBeenCalled();
     });
 
     it('settles provider planning before mapping a rejected plan to the retained terminal chat messages', async () => {

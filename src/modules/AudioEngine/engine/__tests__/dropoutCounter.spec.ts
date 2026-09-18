@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { DROPOUT_IDX, dropoutCounters } from '../dropoutCounter';
 
@@ -24,6 +24,53 @@ describe('dropoutCounters — engine dropout tally (audit RT-10)', () => {
             silentFrames: 0,
             lastUnderrunAtFrame: 0,
         });
+    });
+
+    it('separates having no counter from counting zero', async () => {
+        // A fresh module instance: the singleton under test has already been
+        // handed its buffer by the cases around this one.
+        vi.resetModules();
+        const { dropoutCounters: unwired } = await import('../dropoutCounter');
+
+        expect(unwired.hasCoverage()).toBe(false);
+        expect(unwired.read().detectedUnderrunBlocks).toBe(0);
+
+        // Handing the buffer out is not coverage: the worklet has been sent an
+        // `init` it has not answered, and nothing is writing into the buffer yet.
+        unwired.getSab();
+
+        expect(unwired.hasCoverage()).toBe(false);
+
+        unwired.openCoverage();
+
+        expect(unwired.hasCoverage()).toBe(true);
+    });
+
+    it('holds coverage while any transport still counts and closes it with the last one', () => {
+        dropoutCounters.openCoverage();
+        dropoutCounters.openCoverage();
+
+        dropoutCounters.closeCoverage();
+
+        expect(dropoutCounters.hasCoverage()).toBe(true);
+
+        dropoutCounters.closeCoverage();
+
+        expect(dropoutCounters.hasCoverage()).toBe(false);
+    });
+
+    it('does not let an extra close hide the next transport that starts counting', () => {
+        // A close with nothing open must clamp at zero. Were it allowed to go
+        // negative, the next transport's open would leave the count at zero and
+        // its dropouts would read as no coverage at all.
+        dropoutCounters.closeCoverage();
+        dropoutCounters.openCoverage();
+
+        expect(dropoutCounters.hasCoverage()).toBe(true);
+
+        dropoutCounters.closeCoverage();
+
+        expect(dropoutCounters.hasCoverage()).toBe(false);
     });
 
     it('surfaces block count, silent frames and the render frame a writer records', () => {

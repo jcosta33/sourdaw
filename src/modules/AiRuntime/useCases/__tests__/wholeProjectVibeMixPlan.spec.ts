@@ -610,6 +610,83 @@ describe('whole-project vibe-mix planning', () => {
         expect(getWebLlmUserMessage()).toContain('documentIdentityEpoch');
     });
 
+    // #2002 — the demo sentence is not workflow authority. Admission lives in
+    // the provider's typed selection of the app-owned capability, and the
+    // application derives every target, protection, and bound from project
+    // truth alone. A paraphrase must therefore reach the identical scope.
+    const PARAPHRASE =
+        'Lift the rhythm section in the second chorus a touch — vocals, tempo map, and the master chain must stay untouched.';
+
+    it('reaches the same semantic workflow from a paraphrase (#2002)', async () => {
+        const { result, projectRevision } = await planPromptActions({
+            prompt: PARAPHRASE,
+            onProviderAttempt: admitProviderAttempt,
+        });
+        const plan = result.wholeProjectVibeMixPlan;
+        if (!plan) {
+            throw new Error('Expected one structured whole-project vibe-mix plan');
+        }
+
+        expect(plan.baseRevision).toBe(projectRevision);
+        expect(plan.sectionMap.target).toEqual({
+            id: 'section-chorus-two',
+            name: 'Chorus Two',
+            startBeat: 56,
+            endBeat: 72,
+        });
+        expect(plan.globalConstraints.map((constraint) => constraint.id)).toEqual([
+            'track-lead-vocal',
+            'clip-locked-lead-vocal',
+            'track-master',
+            'project:tempo-map',
+        ]);
+        expect(plan.commandBatch).toHaveLength(1);
+        // The batch is grounded with app-derived section/track evidence; the
+        // bounded edit itself is the assertion.
+        expect(plan.commandBatch[0]).toMatchObject({
+            type: 'automateTrackGainRange',
+            payload: { trackIds: ['bus-drums', 'bus-bass'], sectionName: 'Chorus Two', gainDb: 1.5 },
+        });
+    });
+
+    it('lets unrelated text enlarge nothing — the derived scope stays the project-derived bound (#2002)', async () => {
+        const unrelated =
+            'totally unrelated rambling about mastering, the second chorus, and hitting harder drums, please ignore';
+        const { result } = await planPromptActions({ prompt: unrelated, onProviderAttempt: admitProviderAttempt });
+        const plan = result.wholeProjectVibeMixPlan;
+        if (!plan) {
+            throw new Error('Expected one structured whole-project vibe-mix plan');
+        }
+
+        // The text contributed nothing: targets, bounds, and protections are
+        // exactly what the project context yields, not what the request says.
+        expect(plan.commandBatch).toHaveLength(1);
+        expect(plan.commandBatch[0]).toMatchObject({
+            type: 'automateTrackGainRange',
+            payload: { trackIds: ['bus-drums', 'bus-bass'], sectionName: 'Chorus Two', gainDb: 1.5 },
+        });
+        expect(plan.dynamicTrajectory).toEqual({
+            gainDb: 1.5,
+            startBeat: 56,
+            endBeat: 72,
+            before: 'preserve-current',
+            inside: 'lift-impact-buses',
+            after: 'restore-current',
+        });
+        expect(plan.trackRoles.map((role) => role.trackId)).toEqual([
+            'bus-drums',
+            'bus-bass',
+            'track-lead-vocal',
+            'track-master',
+        ]);
+        expect(plan.globalConstraints.map((constraint) => constraint.id)).toEqual([
+            'track-lead-vocal',
+            'clip-locked-lead-vocal',
+            'track-master',
+            'project:tempo-map',
+        ]);
+    });
+
     it('selects the actual second chorus without counting a pre-chorus substring impostor', async () => {
         landProjectEdit(() => {
             markerStore.set({

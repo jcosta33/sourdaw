@@ -12,11 +12,11 @@ const mocks = vi.hoisted(() => ({
     resolveNormalizationGain: vi.fn(),
 }));
 
-vi.mock('../measureIntegratedLoudness', () => ({
+vi.mock('#/utils/audioMetering/measureIntegratedLoudness', () => ({
     measureIntegratedLoudness: mocks.measureIntegratedLoudness,
 }));
 
-vi.mock('../measureTruePeak', () => ({
+vi.mock('#/utils/audioMetering/measureTruePeak', () => ({
     measureTruePeak: mocks.measureTruePeak,
 }));
 

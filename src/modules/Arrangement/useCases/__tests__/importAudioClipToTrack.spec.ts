@@ -13,6 +13,9 @@ const mocks = vi.hoisted(() => {
         getTrackById: vi.fn<(id: string) => { clips: { id: string; endBeat: number }[] } | undefined>(),
         addClip: vi.fn(),
         transport,
+        stageLocalAsset: vi.fn<(blob: Blob, name: string) => Promise<{ hash: string; leaseId: string }>>(),
+        releaseStagedAsset: vi.fn<(leaseId: string) => void>(),
+        promoteStagedAsset: vi.fn<(leaseId: string) => void>(),
     };
 });
 
@@ -21,7 +24,21 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     discardDecodedAudioFile: mocks.discardDecodedAudioFile,
 }));
 
+vi.mock('#/modules/Collaboration/useCases', () => ({
+    getAssetTransfer: () => {
+        if (!mocks.stageLocalAsset) {
+            return null;
+        }
+        return {
+            stageLocalAsset: mocks.stageLocalAsset,
+            releaseStagedAsset: mocks.releaseStagedAsset,
+            promoteStagedAsset: mocks.promoteStagedAsset,
+        };
+    },
+}));
+
 vi.mock('#/modules/Transport/stores', () => ({
+    DEFAULT_TEMPO_BPM: 120,
     transportStore: {
         get value() {
             return mocks.transport.value;
@@ -50,6 +67,7 @@ describe('importAudioClipToTrack', () => {
         vi.clearAllMocks();
         mocks.transport.value = { tempo: 120 };
         mocks.addClip.mockReturnValue({ id: 'clip-imported' });
+        mocks.stageLocalAsset.mockResolvedValue({ hash: 'asset-hash', leaseId: 'asset-lease' });
     });
 
     it('appends an audio clip after the last clip end, sized to the buffer duration', async () => {
@@ -81,6 +99,45 @@ describe('importAudioClipToTrack', () => {
             type: 'audio',
             audioBufferId: 'buf-1',
         });
+    });
+
+    // #3759 — the existing-track Import Audio route used to publish a shareable
+    // clip with no assetHash, so a receiving peer could never request its bytes.
+    it('stages the imported file, binds the staged hash on the clip, and promotes the lease', async () => {
+        mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-1', buffer: fakeBuffer(2) });
+        mocks.getTrackById.mockReturnValue({ clips: [] });
+
+        await subject.importAudioClipToTrack('t1', new File([], 'loop.wav'), { shouldContinue: () => true });
+
+        expect(mocks.stageLocalAsset).toHaveBeenCalledTimes(1);
+        const input = mocks.addClip.mock.calls[0]?.[0] as { assetHash?: string };
+        expect(input.assetHash).toBe('asset-hash');
+        expect(mocks.promoteStagedAsset).toHaveBeenCalledWith('asset-lease');
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+    });
+
+    it('releases the staged lease when no clip accepts the import', async () => {
+        mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-1', buffer: fakeBuffer(2) });
+        mocks.getTrackById.mockReturnValue({ clips: [] });
+        mocks.addClip.mockReturnValue(null);
+
+        await subject.importAudioClipToTrack('t1', new File([], 'loop.wav'), { shouldContinue: () => true });
+
+        expect(mocks.promoteStagedAsset).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledWith('asset-lease');
+        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('buf-1');
+    });
+
+    it('refuses the import when asset registration fails instead of publishing an unhashed clip', async () => {
+        mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-1', buffer: fakeBuffer(2) });
+        mocks.getTrackById.mockReturnValue({ clips: [] });
+        mocks.stageLocalAsset.mockRejectedValue(new Error('stage failed'));
+
+        await subject.importAudioClipToTrack('t1', new File([], 'loop.wav'), { shouldContinue: () => true });
+
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('asset registration failed'), 'error');
+        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('buf-1');
     });
 
     it('starts the clip at beat 0 when the track has no existing clips', async () => {

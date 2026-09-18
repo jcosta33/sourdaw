@@ -1,4 +1,3 @@
-import { logger } from '#/infra/logger/appLogger';
 import {
     flushAutomergeStorageWrites,
     resetAutomergeStorageProjections,
@@ -6,29 +5,62 @@ import {
 import { resetActionReplayAuthority } from '#/modules/Command/useCases';
 
 import { automergeRepository } from '../repositories/automergeRepository';
+import { type CrdtPersistenceAuthority } from '../repositories/crdtPersistence/persistenceAuthorityModel';
 import { agentProjectRepairStateStore } from '../stores/agentProjectRepairStateStore';
-import { branchStore, MAIN_BRANCH_ID } from '../stores/branchStore';
+import { branchStore, createDefaultBranchStoreState, type BranchStoreState } from '../stores/branchStore';
 
+import { beginPersistenceReplacement } from './beginPersistenceReplacement';
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
-import { runCrdtPersistenceOperation } from './runCrdtPersistenceOperation';
 
 /**
+ * The replacement a durable reset has already recorded.
+ *
+ * `epoch` and `old` must be the pair the durable marker carries, so the first
+ * full save of the new project compare-and-swaps on exactly the authority the
+ * marker says it left. `branchState` is the list the marker promises to publish
+ * — passed in rather than built here because the default list carries a
+ * creation timestamp, and a second call to the factory would project a list no
+ * durable record describes.
+ */
+export type CrdtProjectReplacement = {
+    epoch: string;
+    old: CrdtPersistenceAuthority;
+    branchState: BranchStoreState;
+};
+
+/**
+ * Swap the CRDT authority to a fresh project, synchronously and irreversibly.
+ *
+ * This is the switch itself, not the durable contract around it: nothing here
+ * awaits, so every reader after it already sees the new project. A caller that
+ * needs the replacement to survive a crash goes through `resetCrdtProject`,
+ * which records the reset durably first and passes the `replacement` it
+ * recorded. Without one, the queue reads its own authority lazily on first save
+ * and the branch list is published to memory only.
+ *
  * @param onAuthorityReplaced Called once the previous project is unrecoverable,
  * before any of the follow-up work that can still throw. A caller that aborts
  * on a throw needs to know which side of that line it landed on: before it, the
  * previous session is intact and can be restored; after it, there is nothing
  * left to restore and pretending otherwise hides the loss.
  *
- * Positional rather than the house object-param shape on purpose — 4 production
- * call sites and 25 spec files pass `name` alone, and none of them should have
- * to change to learn a fact only one caller needs.
+ * Positional rather than the house object-param shape on purpose — the spec
+ * bootstraps across the repository pass `name` alone, and none of them should
+ * have to change to learn a fact only the durable path needs.
  */
-export function resetCrdtProjectAuthority(name: string, onAuthorityReplaced?: () => void): void {
+export function resetCrdtProjectAuthority(
+    name: string,
+    onAuthorityReplaced?: () => void,
+    replacement?: CrdtProjectReplacement
+): void {
     // Drain writes owned by the outgoing repository before replacing its root.
     // The branch update below must then be the first store write observed by
     // the new authority.
     flushAutomergeStorageWrites();
-    void runCrdtPersistenceOperation('reset');
+    beginPersistenceReplacement({
+        epoch: replacement?.epoch ?? crypto.randomUUID(),
+        old: replacement?.old ?? null,
+    });
     try {
         automergeRepository.createProject(name);
     } catch (error) {
@@ -61,29 +93,7 @@ export function resetCrdtProjectAuthority(name: string, onAuthorityReplaced?: ()
     // the top (where it used to be), every abort before `createProject` left the
     // user's undo entries still rendered and silently inert.
     resetActionReplayAuthority();
-    // `branchStore` is localStorage-backed, and that adapter deliberately
-    // propagates a failed write so callers can retry (see `createLocalStorage`).
-    // This caller cannot: it is the last statement of the authority switch, and
-    // the switch is already irreversible by the time it runs. Letting a full
-    // origin quota throw from here would abort a project load back into a
-    // session that no longer exists. The branch record is rebuilt by the next
-    // reset or load, so a failure to persist it is degraded, not fatal.
-    try {
-        branchStore.set({
-            branches: [
-                {
-                    branchId: MAIN_BRANCH_ID,
-                    name: 'Main',
-                    rootDocId: DOC_PREFIX_ROOT,
-                    sourceBranchId: null,
-                    createdAt: Date.now(),
-                    createdFromHeads: [],
-                    note: '',
-                },
-            ],
-            activeBranchId: MAIN_BRANCH_ID,
-        });
-    } catch (error) {
-        logger.error(new Error('[resetCrdtProjectAuthority] Failed to publish the new branch state', { cause: error }));
-    }
+    // The memory projection is the last statement of the authority switch:
+    // every reader after it must already see the replacement's branch list.
+    branchStore.set(replacement?.branchState ?? createDefaultBranchStoreState());
 }

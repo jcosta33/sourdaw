@@ -19,6 +19,14 @@ type AgentRiskPolicyInput = {
         capabilityDegraded?: boolean;
         stale?: boolean;
         unexpectedlyBroad?: boolean;
+        /**
+         * Domains whose owner could not produce a preview of this batch. A
+         * change nobody can inspect before it lands is confirmed explicitly,
+         * never direct-committed, whatever the registry policy allows. It is
+         * not a rejection and it raises no risk class: the operation is as
+         * risky as it was, only unwitnessed.
+         */
+        unsupportedPreviewDomains?: readonly string[];
     };
 };
 
@@ -72,6 +80,12 @@ export function getAgentActionRiskPolicy(input: AgentRiskPolicyInput) {
         highestRisk = 'broad-reversible';
         reasons.push('The resolved operation is broader than its bounded default.');
     }
+    const unsupportedPreviewDomains = input.signals?.unsupportedPreviewDomains ?? [];
+    if (unsupportedPreviewDomains.length > 0) {
+        reasons.push(
+            `Preview is unsupported for ${unsupportedPreviewDomains.join(', ')}; explicit acceptance is required.`
+        );
+    }
     const consequences = input.consequences;
     const hasExternalDataEffect =
         consequences?.audioUpload === true ||
@@ -107,8 +121,14 @@ export function getAgentActionRiskPolicy(input: AgentRiskPolicyInput) {
     const requiresBatchConfirmation = input.operationTypes.length > 1;
     const requiresContextualConfirmation =
         hasExternalDataEffect || hasAuthorityEffect || hasMaterialCost || input.signals?.unexpectedlyBroad;
+    const requiresUnpreviewableConfirmation = unsupportedPreviewDomains.length > 0;
     let decision: 'allow' | 'confirm' = 'allow';
-    if (requiresRegistryConfirmation || requiresBatchConfirmation || requiresContextualConfirmation) {
+    if (
+        requiresRegistryConfirmation ||
+        requiresBatchConfirmation ||
+        requiresContextualConfirmation ||
+        requiresUnpreviewableConfirmation
+    ) {
         decision = 'confirm';
     }
     return {

@@ -29,15 +29,17 @@
  * anything after the drain, and closing them would make the cursor freeze mid-quit
  * for no gain.
  */
+import { APPLY_GRAPH_COMMANDS, RETIRE_NATIVE_ENGINE, SCAN_PLUGINS } from './commands.js';
+
 export const PLUGIN_RUNTIME_COMMANDS = [
-    'apply_graph_commands',
+    APPLY_GRAPH_COMMANDS,
     'close_plugin_gui',
     'get_plugin_parameters',
     'get_plugin_state_bytes',
     'load_plugin',
     'open_plugin_gui',
-    'retire_native_engine',
-    'scan_plugins',
+    RETIRE_NATIVE_ENGINE,
+    SCAN_PLUGINS,
     'set_plugin_bypass',
     'set_plugin_parameter',
     'set_plugin_state_bytes',

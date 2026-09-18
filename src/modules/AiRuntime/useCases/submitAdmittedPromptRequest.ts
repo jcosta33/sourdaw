@@ -4,6 +4,7 @@ import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocu
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
+import { describeAgentRunCreationRefusal } from '../models/AgentResourceLimits';
 import { type ModelProviderResult } from '../models/ModelProviderProtocol';
 import { describePlanningOutcome } from '../transformers/describePlanningOutcome';
 
@@ -71,12 +72,16 @@ export async function submitAdmittedPromptRequest(
     const prompt = input.prompt.trim();
     const runId = `agent-run-${crypto.randomUUID()}`;
     const createdRevision = settlePendingProjectWritesAndCaptureRevision();
-    agentRunLifecycle.create({
+    const admission = agentRunLifecycle.create({
         runId,
         request: prompt,
         mode: getPromptRunMode(input.source),
         createdRevision,
     });
+    if (admission.status === 'hard-limit-reached') {
+        notifyAiChange(describeAgentRunCreationRefusal(admission.reason), []);
+        return { status: 'rejected', runId };
+    }
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning', revision: createdRevision });
 
     let cancellationAttempt: Promise<void> | null = null;

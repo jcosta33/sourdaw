@@ -227,4 +227,106 @@ describe('handleGenerateMidiPrompt', () => {
             expect.objectContaining({ status: 'error', error: 'No notes generated — try rephrasing the prompt' })
         );
     });
+
+    it('routes an accepted Drum Kit choice on a new track to a playable drum kit in the same batch', async () => {
+        await handleGenerateMidiPrompt('[Instrument: Drum Kit] one bar of kick, snare, and hats');
+
+        const [actions] = mocks.executeAppActionBatch.mock.calls[0] as [
+            Array<{ type: string; payload: Record<string, unknown> }>,
+            unknown,
+        ];
+        expect(actions.map((action) => action.type)).toEqual(['addTrack', 'addDevice', 'addClip', 'addNotes']);
+        const addTrack = actions[0]!;
+        const addDevice = actions[1]!;
+        // The default synth would leave GM drum pitches playing as pitched
+        // notes, so the new track is created without it.
+        expect(addTrack.payload.withoutDefaultDevice).toBe(true);
+        expect(addDevice.payload).toMatchObject({
+            trackId: addTrack.payload.id,
+            deviceType: 'builtin-drum-kit',
+        });
+        expect(actions[2]?.payload.trackId).toBe(addTrack.payload.id);
+    });
+
+    it('adds the drum kit to an instrument-less selected MIDI track', async () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'midi-1', kind: 'midi', clips: [], devices: [] }],
+            selectedTrackId: 'midi-1',
+        });
+
+        await handleGenerateMidiPrompt('[Instrument: Drum Kit] four on the floor');
+
+        const [actions] = mocks.executeAppActionBatch.mock.calls[0] as [
+            Array<{ type: string; payload: Record<string, unknown> }>,
+            unknown,
+        ];
+        expect(actions.map((action) => action.type)).toEqual(['addDevice', 'addClip', 'addNotes']);
+        expect(actions[0]?.payload).toMatchObject({ trackId: 'midi-1', deviceType: 'builtin-drum-kit' });
+    });
+
+    it('asks for clarification instead of replacing an existing instrument before any mutation', async () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'midi-1',
+                    kind: 'midi',
+                    clips: [],
+                    devices: [
+                        { id: 'dev-1', name: 'Synth', type: 'builtin-synth', bypassed: false, parameterValues: {} },
+                    ],
+                },
+            ],
+            selectedTrackId: 'midi-1',
+        });
+
+        await handleGenerateMidiPrompt('[Instrument: Drum Kit] beat please');
+
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        expect(mocks.updateTask).toHaveBeenCalledWith(
+            'task-1',
+            expect.objectContaining({
+                status: 'error',
+                error: expect.stringContaining('needs clarification'),
+            })
+        );
+        const errorUpdate = mocks.updateTask.mock.calls.find(([, patch]) => patch.status === 'error')?.[1];
+        expect(errorUpdate?.error).toContain('"Synth"');
+    });
+
+    it('generates on a selected track that already owns a drum kit without touching its instruments', async () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'midi-1',
+                    kind: 'midi',
+                    clips: [],
+                    devices: [
+                        { id: 'dev-kit', name: 'Kit', type: 'builtin-drum-kit', bypassed: false, parameterValues: {} },
+                    ],
+                },
+            ],
+            selectedTrackId: 'midi-1',
+        });
+
+        await handleGenerateMidiPrompt('[Instrument: Drum Kit] beat please');
+
+        const [actions] = mocks.executeAppActionBatch.mock.calls[0] as [
+            Array<{ type: string; payload: Record<string, unknown> }>,
+            unknown,
+        ];
+        expect(actions.map((action) => action.type)).toEqual(['addClip', 'addNotes']);
+        expect(mocks.updateTask).toHaveBeenCalledWith('task-1', expect.objectContaining({ status: 'success' }));
+    });
+
+    it('leaves non-drum instrument choices on the default instrument path', async () => {
+        await handleGenerateMidiPrompt('[Instrument: Acoustic Piano] a melody');
+
+        const [actions] = mocks.executeAppActionBatch.mock.calls[0] as [
+            Array<{ type: string; payload: Record<string, unknown> }>,
+            unknown,
+        ];
+        expect(actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes']);
+        expect(actions[0]?.payload.withoutDefaultDevice).toBeUndefined();
+        expect(actions.some((action) => action.type === 'addDevice')).toBe(false);
+    });
 });

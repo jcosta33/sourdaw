@@ -18,7 +18,7 @@ vi.mock('#/infra/store/useStore', () => ({
  * the readout already says. This spec replaces the resolver so the "engine is
  * ready" edge can be driven without a worklet.
  */
-const setParam = vi.fn<(input: { name: string; value: number }) => void>();
+const setCalibration = vi.fn<(input: { sustainThreshold: number; ccSmoothingMs: number }) => void>();
 let engineIsReady = false;
 
 const noop = (): void => {};
@@ -28,7 +28,8 @@ vi.mock('../../../useCases/resolveGrandBouleEngine', () => ({
         noteOn: noop,
         noteOnMidi2: noop,
         noteOff: noop,
-        setParam,
+        setParam: noop,
+        setCalibration,
         setSustain: noop,
         setUnaCorda: noop,
         setSostenuto: noop,
@@ -46,11 +47,12 @@ const mockEventBus = {
     on: vi.fn(() => () => {}),
 };
 
-/** The `setParam` payloads the engine received, keyed by parameter name. */
+/** The `setCalibration` payloads the engine received, keyed by wire name. */
 function dispatchedParams(): Record<string, number> {
     const byName: Record<string, number> = {};
-    for (const [payload] of setParam.mock.calls) {
-        byName[payload.name] = payload.value;
+    for (const [payload] of setCalibration.mock.calls) {
+        byName.sustain_threshold = payload.sustainThreshold;
+        byName.cc_smoothing_ms = payload.ccSmoothingMs;
     }
     return byName;
 }

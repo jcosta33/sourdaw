@@ -105,8 +105,10 @@ const arrangementMocks = {
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
     updateClip: vi.fn(),
+    removeClip: vi.fn(),
     updateTransportState: vi.fn(),
 };
+const notifyUserMock = vi.fn<(message: string, level: string) => void>();
 const automationMocks = {
     startAutomationRecording: vi.fn(),
     applyModulation: vi.fn(),
@@ -123,8 +125,12 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     addTakeLane: (...args: unknown[]) => (arrangementMocks.addTakeLane as (...a: unknown[]) => unknown)(...args),
     addTake: (...args: unknown[]) => (arrangementMocks.addTake as (...a: unknown[]) => unknown)(...args),
     updateClip: (...args: unknown[]) => (arrangementMocks.updateClip as (...a: unknown[]) => unknown)(...args),
+    removeClip: (...args: unknown[]) => (arrangementMocks.removeClip as (...a: unknown[]) => unknown)(...args),
     updateTransportState: (...args: unknown[]) =>
         (arrangementMocks.updateTransportState as (...a: unknown[]) => unknown)(...args),
+}));
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: (...args: unknown[]) => (notifyUserMock as (...a: unknown[]) => unknown)(...args),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: () => audioEngineMocks.getAudioContext(),
@@ -205,6 +211,7 @@ describe('startPlayheadScheduler', () => {
             ...Object.values(arrangementMocks),
             ...Object.values(automationMocks),
             evaluateFollowActionsMock,
+            notifyUserMock,
         ]) {
             if (typeof fn === 'function' && 'mockClear' in fn) {
                 (fn as ReturnType<typeof vi.fn>).mockClear();
@@ -1246,6 +1253,9 @@ describe('startPlayheadScheduler', () => {
             bufferId: expect.any(String),
         });
         expect(arrangementMocks.updateClip).toHaveBeenCalledWith('clip-rec-1', expect.any(Function));
+        // A delivered take is kept: no retirement and no failure notice.
+        expect(arrangementMocks.removeClip).not.toHaveBeenCalled();
+        expect(notifyUserMock).not.toHaveBeenCalled();
     });
 
     it('does not cache or update a punched clip for a failed recording result', async () => {
@@ -1273,6 +1283,10 @@ describe('startPlayheadScheduler', () => {
 
         expect(capturedOnTerminal).not.toBeNull();
         capturedOnTerminal!({ kind: 'failed', reason: 'worker-crash' });
+        // The failure is surfaced instead of swallowed and the empty
+        // provisional clip is retired from the arrangement.
+        expect(notifyUserMock).toHaveBeenCalledWith(expect.stringContaining('Punch-in recording failed'), 'error');
+        expect(arrangementMocks.removeClip).toHaveBeenCalledWith('clip-rec-1');
         expect(audioEngineMocks.cacheAudioBuffer).not.toHaveBeenCalled();
         expect(arrangementMocks.updateClip).not.toHaveBeenCalled();
     });

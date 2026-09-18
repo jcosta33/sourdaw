@@ -8,6 +8,7 @@ import {
 import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
 import { type AgentWorkOwnerIdentity } from '#/utils/agentRenderReceipt';
 
+import { describeAgentRunHardLimit } from '../../models/AgentResourceLimits';
 import { type AgentRunWorkLease, type AgentRunWorkTerminalState } from '../../models/AgentRun';
 import { chatStore, setChatGenerating, updateChatMessage } from '../../stores/chatStore';
 import {
@@ -258,7 +259,7 @@ function failHardBudgetLimit(confirmation: PendingAppActionConfirmation, budget:
     if (budget.reservation.status !== 'hard-limit-reached') {
         return null;
     }
-    const reason = `The missing section renders exceed the user budget for ${budget.reservation.reason}.`;
+    const reason = describeAgentRunHardLimit(budget.reservation.reason, 'missing section render retry');
     updatePendingActionFollowUp({ confirmationId: confirmation.id, error: reason, status: 'retryable' });
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed', error: reason });
     updateChatMessage(confirmation.assistantMessageId, {

@@ -372,7 +372,12 @@ describe('high-level intent conformance', () => {
 
     it('refuses the whole batch when the proposal carries a project-wide change the request never asked for', async () => {
         const searchedNames = [...PROPOSED_COMMAND_NAMES, 'setTempo'];
-        scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+        // The ungrounded proposal is correctable now, so the run repeats the
+        // attempt once with the rejection diagnostic. The provider keeps
+        // proposing the same batch — the grounding refusal is app-owned and
+        // cannot be repaired away — and the repeated batch is refused again,
+        // terminally.
+        cycleProviderAttempt(runtimeMocks.generateWebLlmCompletion, [
             () => searchCalls([...SEARCH_INTENTS, TEMPO_SEARCH_INTENT]),
             discoverSearchedCalls(searchedNames),
             proposeDiscoveredCalls(

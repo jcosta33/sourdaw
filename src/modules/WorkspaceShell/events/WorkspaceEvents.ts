@@ -1,7 +1,4 @@
-/** Payload for panel-toggle events that carry an optional device ID. */
-export type ShowDevicePanelPayload = { deviceId: string | null };
-
-/** Payload for the unified device-panel event (replaces per-device events). */
+/** Payload for the unified device-panel event — one event for every panel open. */
 export type ShowDevicePanelGenericPayload = { deviceType: string; deviceId: string | null };
 
 /** Payload for events that carry no data. */

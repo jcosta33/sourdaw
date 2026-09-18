@@ -1,7 +1,14 @@
 import { type AgentContextEvidence } from '../models/AgentContext';
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
 import {
+    type AgentResourceLimitCategory,
+    type AgentResourceLimits,
+    type AgentRunCreationRefusalReason,
+} from '../models/AgentResourceLimits';
+import {
+    AGENT_RUN_ACTIVE_PHASES,
     AGENT_RUN_SCHEMA_VERSION,
+    AGENT_RUN_TERMINAL_PHASES,
     type AgentRun,
     type AgentRunArtifact,
     type AgentRunBatch,
@@ -24,10 +31,12 @@ import {
     type AgentRunState,
     type AgentRunWorkOwnerKind,
     type AgentRunWorkTerminalState,
+    trackActiveSince,
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
 import { type AiBackendPreference } from '../models/LlmOrchestrationTypes';
+import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 import { persistAgentRunState, readAgentRunState, resetAgentRunState } from '../stores/agentRunStore';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
 
@@ -69,7 +78,42 @@ const DEFAULT_GRANTS: AgentRunGrants = {
     autoCommit: false,
 };
 
-const DEFAULT_BUDGETS: AgentRunBudgets = { limits: {}, consumed: {} };
+/** Limits the lifecycle enforces itself; they are ceilings on the run, never spendable budgets. */
+const LIFECYCLE_ENFORCED_LIMIT_CATEGORIES: ReadonlySet<string> = new Set<AgentResourceLimitCategory>([
+    'requestChars',
+    'concurrentRuns',
+    'runDurationMs',
+]);
+
+/** Limits the provider boundary reads on every request; a run's budgets never carry them either. */
+const PROVIDER_BOUNDARY_LIMIT_CATEGORIES: ReadonlySet<string> = new Set<AgentResourceLimitCategory>([
+    'maxProviderToolCalls',
+    'maxModelOutputTokens',
+]);
+
+/**
+ * A run counts toward `concurrentRuns` only while it can still reserve work. Once its current active
+ * stretch exceeds `runDurationMs`, `reserveAgentRunBudgetBatch` refuses every further reservation for
+ * it, so it holds no live capacity and must not go on blocking new runs forever — an active-phase run
+ * abandoned by an interrupted session or a thrown caller ages out instead of counting indefinitely.
+ */
+function isRunHoldingCapacity(run: AgentRun, now: number, limits: AgentResourceLimits): boolean {
+    return (
+        AGENT_RUN_ACTIVE_PHASES.has(run.phase) &&
+        run.activeSince !== null &&
+        now - run.activeSince <= limits.runDurationMs
+    );
+}
+
+function armConfiguredAgentRunBudgets(limits: AgentResourceLimits): AgentRunBudgets {
+    const armed: Record<string, number> = {};
+    for (const [category, limit] of Object.entries(limits)) {
+        if (!LIFECYCLE_ENFORCED_LIMIT_CATEGORIES.has(category) && !PROVIDER_BOUNDARY_LIMIT_CATEGORIES.has(category)) {
+            armed[category] = limit;
+        }
+    }
+    return { limits: armed, consumed: {} };
+}
 
 /**
  * Agent media listening and generated media are deferred capabilities (AC-047), so no run records
@@ -91,8 +135,6 @@ function mergeAgentRunBudgets(current: AgentRunBudgets, next: AgentRunBudgets): 
     return { limits, consumed };
 }
 
-const TERMINAL_PHASES = new Set<AgentRunPhase>(['completed', 'failed', 'cancelled', 'partially-completed']);
-
 type CreateAgentRunInput = {
     runId: string;
     request: string;
@@ -107,6 +149,9 @@ type CreateAgentRunInput = {
     resume?: AgentRunDecisionResume;
 };
 
+export type CreateAgentRunResult =
+    { status: 'created' } | { status: 'hard-limit-reached'; reason: AgentRunCreationRefusalReason };
+
 function assertNonEmpty(value: string, field: string): void {
     if (value.trim().length === 0) {
         throw new Error(`${field} must not be empty`);
@@ -116,7 +161,7 @@ function assertNonEmpty(value: string, field: string): void {
 // A run that has reached a terminal phase proposes no further mutation, so the rendered receipts its
 // flights retained describe audio nothing can consume; the run's retention map goes with it.
 function releaseRetainedRenderReceiptsOnTerminalPhase(current: AgentRun, next: AgentRun): void {
-    if (!TERMINAL_PHASES.has(current.phase) && TERMINAL_PHASES.has(next.phase)) {
+    if (!AGENT_RUN_TERMINAL_PHASES.has(current.phase) && AGENT_RUN_TERMINAL_PHASES.has(next.phase)) {
         retainedRenderReceipts.releaseRun(next.runId);
     }
 }
@@ -128,10 +173,10 @@ function updateAgentRun(runId: string, updatedAt: number, update: (run: AgentRun
         throw new Error(`Unknown agent run: ${runId}`);
     }
     const current = state.runs[index]!;
-    const next = { ...update(structuredClone(current)), updatedAt };
+    const next = trackActiveSince(current, { ...update(structuredClone(current)), updatedAt }, updatedAt);
     const runs = [...state.runs];
     runs[index] = next;
-    persistAgentRunState({ ...state, runs });
+    persistAgentRunState({ ...state, runs }, updatedAt);
     releaseRetainedRenderReceiptsOnTerminalPhase(current, next);
     return structuredClone(next);
 }
@@ -147,10 +192,10 @@ function updateAgentRunIfPresent(
         return null;
     }
     const current = state.runs[index]!;
-    const next = { ...update(structuredClone(current)), updatedAt };
+    const next = trackActiveSince(current, { ...update(structuredClone(current)), updatedAt }, updatedAt);
     const runs = [...state.runs];
     runs[index] = next;
-    persistAgentRunState({ ...state, runs });
+    persistAgentRunState({ ...state, runs }, updatedAt);
     releaseRetainedRenderReceiptsOnTerminalPhase(current, next);
     return structuredClone(next);
 }
@@ -302,20 +347,31 @@ function retryAgentRunPersistence(runId: string): AgentRun | null {
     return structuredClone(run);
 }
 
-function createAgentRun(input: CreateAgentRunInput): AgentRun {
+function createAgentRun(input: CreateAgentRunInput): CreateAgentRunResult {
     assertNonEmpty(input.runId, 'runId');
     assertNonEmpty(input.request, 'request');
     const state = readAgentRunState();
     if (state.runs.some((run) => run.runId === input.runId)) {
         throw new Error(`Agent run already exists: ${input.runId}`);
     }
+    const configuredLimits = readAgentResourceLimits();
     const createdAt = input.createdAt ?? Date.now();
+    if (input.request.length > configuredLimits.requestChars) {
+        return { status: 'hard-limit-reached', reason: 'requestChars' };
+    }
+    if (
+        state.runs.filter((run) => isRunHoldingCapacity(run, createdAt, configuredLimits)).length >=
+        configuredLimits.concurrentRuns
+    ) {
+        return { status: 'hard-limit-reached', reason: 'concurrentRuns' };
+    }
+    const phase: AgentRunPhase = 'created';
     const run: AgentRun = {
         schemaVersion: AGENT_RUN_SCHEMA_VERSION,
         runId: input.runId,
         request: input.request,
         mode: input.mode,
-        phase: 'created',
+        phase,
         revisions: {
             created: input.createdRevision,
             planned: null,
@@ -324,7 +380,7 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         },
         scope: structuredClone(input.scope ?? DEFAULT_SCOPE),
         grants: structuredClone(refuseDeferredMediaGrants(input.grants ?? DEFAULT_GRANTS)),
-        budgets: structuredClone(input.budgets ?? DEFAULT_BUDGETS),
+        budgets: structuredClone(input.budgets ?? armConfiguredAgentRunBudgets(configuredLimits)),
         budgetAttempts: [],
         plan: null,
         decision: null,
@@ -357,10 +413,11 @@ function createAgentRun(input: CreateAgentRunInput): AgentRun {
         workLeases: [],
         contextEvidence: null,
         createdAt,
+        activeSince: AGENT_RUN_ACTIVE_PHASES.has(phase) ? createdAt : null,
         updatedAt: createdAt,
     };
-    persistAgentRunState({ ...state, runs: [...state.runs, run] });
-    return structuredClone(run);
+    persistAgentRunState({ ...state, runs: [...state.runs, run] }, createdAt);
+    return { status: 'created' };
 }
 
 function recordAgentRunContextEvidence(input: {
@@ -410,7 +467,7 @@ function recordAgentRunPlan(input: {
     recordedAt?: number;
 }): AgentRun {
     return updateAgentRun(input.runId, input.recordedAt ?? Date.now(), (run) => {
-        if (TERMINAL_PHASES.has(run.phase)) {
+        if (AGENT_RUN_TERMINAL_PHASES.has(run.phase)) {
             throw new Error(`Terminal agent run cannot record a plan: ${run.runId}`);
         }
         return {
@@ -567,6 +624,13 @@ function reserveAgentRunBudgetBatch(input: {
     if (run === null) {
         throw new Error(`Unknown agent run: ${input.runId}`);
     }
+    const reservedAt = input.reservedAt ?? Date.now();
+    // The wall-clock limit bounds the stretch a run is actually working, not the wall time since it
+    // was created: a run parked for approval spends no machine resources, and its approval must still
+    // be able to reserve the work it was parked for.
+    if (run.activeSince !== null && reservedAt - run.activeSince > readAgentResourceLimits().runDurationMs) {
+        return { status: 'hard-limit-reached', reason: 'runDurationMs' };
+    }
     const attemptIds = new Set<string>();
     const newAttempts: AgentRunBudgetReservation[] = [];
     const additionalByCategory = new Map<string, number>();
@@ -597,7 +661,7 @@ function reserveAgentRunBudgetBatch(input: {
     if (newAttempts.length === 0) {
         return { status: 'reserved' };
     }
-    updateAgentRun(input.runId, input.reservedAt ?? Date.now(), (current) => {
+    updateAgentRun(input.runId, reservedAt, (current) => {
         const consumed = { ...current.budgets.consumed };
         for (const [category, additional] of additionalByCategory) {
             consumed[category] = (consumed[category] ?? 0) + additional;
@@ -956,8 +1020,11 @@ function recordAgentRunReceiptSaga(input: AgentRunReceiptSagaInput): { effectsPe
     });
     const applied = applyAgentRunReceiptSagaProjection(run, getPendingEffectRecoveryLedger(state), projection);
     const runs = [...state.runs];
-    runs[runIndex] = applied.run;
-    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, applied.pendingEffectRecoveryLedger));
+    runs[runIndex] = trackActiveSince(run, applied.run, projection.recordedAt);
+    persistAgentRunState(
+        withPendingEffectRecoveryLedger({ ...state, runs }, applied.pendingEffectRecoveryLedger),
+        projection.recordedAt
+    );
     return { effectsPending: projection.effectsPending };
 }
 
@@ -983,16 +1050,23 @@ function recordAgentRunCommittedRecoveryFailure(input: AgentRunReceiptSagaInput 
     });
     const applied = applyAgentRunReceiptSagaProjection(run, getPendingEffectRecoveryLedger(state), projection);
     const runs = [...state.runs];
-    runs[runIndex] = {
-        ...applied.run,
-        phase: reduceAgentRunTransition(applied.run.phase, {
-            type: 'error-recorded',
-            terminal: true,
-            hasCommittedWork: true,
-        }),
-        errors: [...applied.run.errors, structuredClone(input.error)],
-    };
-    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, applied.pendingEffectRecoveryLedger));
+    runs[runIndex] = trackActiveSince(
+        run,
+        {
+            ...applied.run,
+            phase: reduceAgentRunTransition(applied.run.phase, {
+                type: 'error-recorded',
+                terminal: true,
+                hasCommittedWork: true,
+            }),
+            errors: [...applied.run.errors, structuredClone(input.error)],
+        },
+        input.error.occurredAt
+    );
+    persistAgentRunState(
+        withPendingEffectRecoveryLedger({ ...state, runs }, applied.pendingEffectRecoveryLedger),
+        input.error.occurredAt
+    );
     return structuredClone(runs[runIndex]);
 }
 
@@ -1112,31 +1186,35 @@ function recordAgentRunPendingEffectContinuation(input: {
     const index = state.runs.findIndex((run) => run.runId === input.runId);
     if (index < 0) {
         if (existingRecovery) {
-            persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger));
+            persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger), recordedAt);
             return null;
         }
         throw new Error(`Unknown agent run: ${input.runId}`);
     }
     const current = state.runs[index]!;
-    const next = {
-        ...current,
-        updatedAt: recordedAt,
-        phase: reduceAgentRunTransition(current.phase, {
-            type: 'pending-effect-recorded',
-            hasCommittedWork: current.committedWork.length > 0,
-        }),
-        pendingEffectContinuations: [
-            ...current.pendingEffectContinuations.filter((candidate) => candidate.batchId !== continuation.batchId),
-            continuation,
-        ],
-        saga: {
-            schemaVersion: 1,
-            steps: projectManualRenderRepairSagaSteps(current, continuation, recordedAt),
-        },
-    } satisfies AgentRun;
+    const next = trackActiveSince(
+        current,
+        {
+            ...current,
+            updatedAt: recordedAt,
+            phase: reduceAgentRunTransition(current.phase, {
+                type: 'pending-effect-recorded',
+                hasCommittedWork: current.committedWork.length > 0,
+            }),
+            pendingEffectContinuations: [
+                ...current.pendingEffectContinuations.filter((candidate) => candidate.batchId !== continuation.batchId),
+                continuation,
+            ],
+            saga: {
+                schemaVersion: 1,
+                steps: projectManualRenderRepairSagaSteps(current, continuation, recordedAt),
+            },
+        } satisfies AgentRun,
+        recordedAt
+    );
     const runs = [...state.runs];
     runs[index] = next;
-    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
+    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger), recordedAt);
     return structuredClone(next);
 }
 
@@ -1198,7 +1276,7 @@ function failAgentRunPendingEffectContinuation(input: {
     );
     const index = state.runs.findIndex((run) => run.runId === input.runId);
     if (index < 0) {
-        persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger));
+        persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger), failedAt);
         return null;
     }
     const runs = [...state.runs];
@@ -1210,7 +1288,7 @@ function failAgentRunPendingEffectContinuation(input: {
         ),
     };
     runs[index] = next;
-    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
+    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger), failedAt);
     return structuredClone(next);
 }
 
@@ -1300,7 +1378,7 @@ function requireAgentRunPendingEffectManualRepair(input: {
                   }
                 : candidate
     );
-    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
+    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger), requiredAt);
     return structuredClone(next);
 }
 
@@ -1323,7 +1401,7 @@ function completeAgentRunPendingEffectContinuation(input: {
         if (!completedRecovery) {
             throw new Error(`Unknown pending effect continuation: ${input.batchId}`);
         }
-        persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger));
+        persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger), completedAt);
         return null;
     }
     const run = structuredClone(state.runs[index]!);
@@ -1332,7 +1410,7 @@ function completeAgentRunPendingEffectContinuation(input: {
         completedRecovery;
     if (!completedContinuation) {
         if (hasExactlySettledPendingEffectContinuation(run, input)) {
-            persistAgentRunState(state);
+            persistAgentRunState(state, completedAt);
             return structuredClone(run);
         }
         throw new Error(`Unknown pending effect continuation: ${input.batchId}`);
@@ -1391,25 +1469,29 @@ function completeAgentRunPendingEffectContinuation(input: {
                   receiptIdentity: input.receiptIdentity,
               },
           ];
-    const next = {
-        ...run,
-        updatedAt: completedAt,
-        phase: reduceAgentRunTransition(run.phase, {
-            type: 'pending-effect-completed',
-            hasRecoveryObligation,
-        }),
-        batches,
-        receipts: [...run.receipts.filter((receipt) => receipt.workId !== input.batchId), completedLedgerEntry],
-        committedWork: [...run.committedWork.filter((work) => work.workId !== input.batchId), completedLedgerEntry],
-        pendingEffectContinuations,
-        manualResume: hasRecoveryObligation
-            ? run.manualResume
-            : { required: false, reason: null, workIds: [], requiredAt: null },
-        saga: { schemaVersion: 1, steps },
-    } satisfies AgentRun;
+    const next = trackActiveSince(
+        run,
+        {
+            ...run,
+            updatedAt: completedAt,
+            phase: reduceAgentRunTransition(run.phase, {
+                type: 'pending-effect-completed',
+                hasRecoveryObligation,
+            }),
+            batches,
+            receipts: [...run.receipts.filter((receipt) => receipt.workId !== input.batchId), completedLedgerEntry],
+            committedWork: [...run.committedWork.filter((work) => work.workId !== input.batchId), completedLedgerEntry],
+            pendingEffectContinuations,
+            manualResume: hasRecoveryObligation
+                ? run.manualResume
+                : { required: false, reason: null, workIds: [], requiredAt: null },
+            saga: { schemaVersion: 1, steps },
+        } satisfies AgentRun,
+        completedAt
+    );
     const runs = [...state.runs];
     runs[index] = next;
-    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
+    persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger), completedAt);
     return structuredClone(next);
 }
 
@@ -1450,10 +1532,10 @@ function settleAgentRunPendingEffectManualReview(input: {
             (candidate) => candidate !== recovery
         );
         try {
-            persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger));
+            persistAgentRunState(withPendingEffectRecoveryLedger(state, pendingEffectRecoveryLedger), settledAt);
         } catch (error) {
             try {
-                persistAgentRunState(state);
+                persistAgentRunState(state, settledAt);
             } catch {
                 // The original durable capsule remains authoritative when restoring the live cache also fails.
             }
@@ -1509,25 +1591,32 @@ function settleAgentRunPendingEffectManualReview(input: {
         run.temporaryAssets.some((asset) => asset.status !== 'released') ||
         remainingManualResumeWorkIds.length > 0;
     const runs = [...state.runs];
-    runs[runIndex] = {
-        ...run,
-        updatedAt: settledAt,
-        phase: reduceAgentRunTransition(run.phase, { type: 'pending-effect-completed', hasRecoveryObligation }),
-        pendingEffectContinuations,
-        manualResume:
-            remainingManualResumeWorkIds.length > 0
-                ? { ...run.manualResume, required: true, workIds: remainingManualResumeWorkIds }
-                : { required: false, reason: null, workIds: [], requiredAt: null },
-        saga: { schemaVersion: 1, steps },
-    } satisfies AgentRun;
+    runs[runIndex] = trackActiveSince(
+        run,
+        {
+            ...run,
+            updatedAt: settledAt,
+            phase: reduceAgentRunTransition(run.phase, { type: 'pending-effect-completed', hasRecoveryObligation }),
+            pendingEffectContinuations,
+            manualResume:
+                remainingManualResumeWorkIds.length > 0
+                    ? { ...run.manualResume, required: true, workIds: remainingManualResumeWorkIds }
+                    : { required: false, reason: null, workIds: [], requiredAt: null },
+            saga: { schemaVersion: 1, steps },
+        } satisfies AgentRun,
+        settledAt
+    );
     const pendingEffectRecoveryLedger = getPendingEffectRecoveryLedger(state).filter(
         (candidate) => !isPendingEffectRecovery(candidate, input)
     );
     try {
-        persistAgentRunState(withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger));
+        persistAgentRunState(
+            withPendingEffectRecoveryLedger({ ...state, runs }, pendingEffectRecoveryLedger),
+            settledAt
+        );
     } catch (error) {
         try {
-            persistAgentRunState(state);
+            persistAgentRunState(state, settledAt);
         } catch {
             // The original durable state remains authoritative even when restoring the live cache also cannot persist.
         }
@@ -1757,11 +1846,15 @@ function recordAgentRunPreparedStemImportRecovery(input: {
     if (nextRun) {
         runs[index] = nextRun;
     }
-    persistAgentRunState(withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger));
+    persistAgentRunState(
+        withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger),
+        recordedAt
+    );
     return nextRun ? structuredClone(nextRun) : null;
 }
 
 function forgetAgentRunPreparedStemImportRecovery(input: { runId: string; batchId: string }): AgentRun | null {
+    const forgottenAt = Date.now();
     const state = readAgentRunState();
     const preparedStemImportRecoveryLedger = getPreparedStemImportRecoveryLedger(state).filter(
         (candidate) => !isPreparedStemImportRecovery(candidate, input)
@@ -1771,19 +1864,25 @@ function forgetAgentRunPreparedStemImportRecovery(input: { runId: string; batchI
         if (preparedStemImportRecoveryLedger.length === getPreparedStemImportRecoveryLedger(state).length) {
             return null;
         }
-        persistAgentRunState(withPreparedStemImportRecoveryLedger(state, preparedStemImportRecoveryLedger));
+        persistAgentRunState(
+            withPreparedStemImportRecoveryLedger(state, preparedStemImportRecoveryLedger),
+            forgottenAt
+        );
         return null;
     }
     const next = {
         ...state.runs[index]!,
-        updatedAt: Date.now(),
+        updatedAt: forgottenAt,
         preparedStemImports: state.runs[index]!.preparedStemImports.filter(
             (recovery) => recovery.batchId !== input.batchId
         ),
     } satisfies AgentRun;
     const runs = [...state.runs];
     runs[index] = next;
-    persistAgentRunState(withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger));
+    persistAgentRunState(
+        withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger),
+        forgottenAt
+    );
     return structuredClone(next);
 }
 
@@ -1830,7 +1929,7 @@ function requireAgentRunPreparedStemManualRepair(input: {
         ) {
             throw new Error(`Unknown agent run prepared-stem recovery: ${input.runId}`);
         }
-        persistAgentRunState(withPreparedStemImportRecoveryLedger(state, preparedStemImportRecoveryLedger));
+        persistAgentRunState(withPreparedStemImportRecoveryLedger(state, preparedStemImportRecoveryLedger), requiredAt);
         return null;
     }
     const run = state.runs[index]!;
@@ -1863,7 +1962,10 @@ function requireAgentRunPreparedStemManualRepair(input: {
           };
     const runs = [...state.runs];
     runs[index] = next;
-    persistAgentRunState(withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger));
+    persistAgentRunState(
+        withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger),
+        requiredAt
+    );
     return structuredClone(next);
 }
 
@@ -1949,6 +2051,7 @@ function transferAgentRunPreparedStemImportResources(input: {
     if (recoveryBatchIds.size !== input.recoveryBatchIds.length) {
         throw new Error(`Agent prepared stem recoveries contain duplicate batch identities: ${input.runId}`);
     }
+    const transferredAt = Date.now();
     const state = readAgentRunState();
     const index = state.runs.findIndex((run) => run.runId === input.runId);
     if (index < 0) {
@@ -1968,7 +2071,7 @@ function transferAgentRunPreparedStemImportResources(input: {
     if (!assetsStillPresent && !recoveriesStillPresent) {
         // `trySet` keeps a rejected state live. Persisting that exact snapshot
         // retries the transfer without detaching its still-registered cleanup owners.
-        persistAgentRunState(state);
+        persistAgentRunState(state, transferredAt);
         return structuredClone(run);
     }
     for (const asset of input.assets) {
@@ -1979,7 +2082,7 @@ function transferAgentRunPreparedStemImportResources(input: {
     }
     const next = {
         ...run,
-        updatedAt: Date.now(),
+        updatedAt: transferredAt,
         temporaryAssets: run.temporaryAssets.filter(
             (asset) => !assetKeys.has(`${asset.assetId}\u0000${asset.cleanupOwner}`)
         ),
@@ -1990,7 +2093,10 @@ function transferAgentRunPreparedStemImportResources(input: {
     const preparedStemImportRecoveryLedger = getPreparedStemImportRecoveryLedger(state).filter(
         (recovery) => recovery.runId !== input.runId || !recoveryBatchIds.has(recovery.batchId)
     );
-    persistAgentRunState(withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger));
+    persistAgentRunState(
+        withPreparedStemImportRecoveryLedger({ ...state, runs }, preparedStemImportRecoveryLedger),
+        transferredAt
+    );
     return structuredClone(next);
 }
 
@@ -2002,7 +2108,7 @@ function requireAgentRunManualResume(input: {
 }): AgentRun {
     const requiredAt = input.requiredAt ?? Date.now();
     return updateAgentRun(input.runId, requiredAt, (run) => {
-        if (TERMINAL_PHASES.has(run.phase)) {
+        if (AGENT_RUN_TERMINAL_PHASES.has(run.phase)) {
             throw new Error(`Terminal agent run cannot require resume: ${run.runId}`);
         }
         return {
@@ -2078,7 +2184,7 @@ function selectAgentRunDecisionAlternative(input: {
 function cancelAgentRun(input: { runId: string; reason: string; requestedAt?: number }): AgentRun {
     const requestedAt = input.requestedAt ?? Date.now();
     return updateAgentRun(input.runId, requestedAt, (run) => {
-        if (TERMINAL_PHASES.has(run.phase)) {
+        if (AGENT_RUN_TERMINAL_PHASES.has(run.phase)) {
             return run;
         }
         return {
@@ -2134,7 +2240,7 @@ function recoverInterruptedAgentRunState(input?: { recoveredAt?: number }): { re
     const current = readAgentRunState();
     const recovery = recoverInterruptedRunState(current, recoveredAt);
     if (recovery.recoveredRunIds.length > 0) {
-        persistAgentRunState(recovery.state);
+        persistAgentRunState(recovery.state, recoveredAt);
     }
     return { recoveredRunIds: recovery.recoveredRunIds };
 }

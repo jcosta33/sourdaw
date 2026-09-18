@@ -1,5 +1,5 @@
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 
 import { snapSplitBeatToZeroCrossing as snapSplitBeatToZeroCrossingService } from '../../services/snapSplitBeatToZeroCrossing';
 import { type Clip } from '../../stores/trackStore';
@@ -19,6 +19,6 @@ export function snapToZeroCrossing(clip: Clip, beat: number): number {
         splitBeat: beat,
         channelData: buffer.getChannelData(0),
         sampleRate: buffer.sampleRate,
-        tempo: transportStore.value?.tempo ?? 120,
+        tempo: transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM,
     });
 }

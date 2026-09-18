@@ -74,6 +74,7 @@ import { interleaveAudioBufferPcm } from './interleaveAudioBufferPcm';
 import { type NativeGraphTransport } from './nativeGraphTransport';
 import { readNativeStripReports } from './readNativeStripReports';
 import { registerNativeSampleBanks, type AcquireNativeSampleBank } from './registerNativeSampleBanks';
+import { releaseNativeSampleBankClaims } from './releaseNativeSampleBankClaims';
 import { type NativeGraphWireCommand } from './serializeAudioGraphCommand';
 import { serializeAudioGraphCommandBatch } from './serializeAudioGraphCommandBatch';
 
@@ -195,6 +196,15 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
      * backend so two renders can never resume each other's history.
      */
     const sessionId = `offline-${crypto.randomUUID()}`;
+    /**
+     * This instance's own name in {@link claimedNativeSampleBankKeysByBackend},
+     * suffixed with `sessionId` rather than reused as the public `backendId`:
+     * two bounces may overlap, and the public id names the implementation for
+     * diagnostics and parity reports, not one running instance of it. Claims
+     * only — nothing that reads `backendId` off this backend compares it to
+     * this value.
+     */
+    const claimBackendId = `${NATIVE_OFFLINE_BACKEND_ID}:${sessionId}`;
     /** Source ids of material an *accepted* batch put in the native pool. */
     const registeredSourceIds = new Set<string>();
     let runtimeRevision = 0;
@@ -263,6 +273,7 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
                     commands: batch.commands,
                     acquire: acquireNativeSampleBank,
                     replaceTopology: batch.replaceTopology,
+                    backendId: claimBackendId,
                 });
             }
 
@@ -370,6 +381,10 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
             // stale — and the pool is process-wide, bounded by native LRU
             // byte-budget eviction (#2229).
             wireCommands = [];
+            // This bounce's own sample-bank claim names nothing once it can
+            // send no further batch, so a later replacement elsewhere is free
+            // to reclaim a bank this bounce used to name.
+            releaseNativeSampleBankClaims(claimBackendId);
         },
     };
 }

@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_PATCH, type BacteriaPatch } from '../../../models/BacteriaPatch';
-import { type BacteriaState } from '../../../stores/bacteriaStore';
+import { bacteriaStore, type BacteriaState } from '../../../stores/bacteriaStore';
 import { BacteriaPanel } from '../BacteriaPanel';
 
 /**
@@ -40,9 +40,12 @@ vi.mock('#/components/daw/RotaryKnob', () => ({
     ),
 }));
 
-let stateForTest: BacteriaState;
+// The panel reads two stores (bacteria instances and the project track state
+// its hydration follows). Honour each call's own store default, and drive the
+// bacteria instance through the real store — the panel falls back to
+// `getBacteriaState(deviceId)`, which reads it directly.
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: () => ({ 'dev-1': stateForTest }),
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => defaultValue),
 }));
 
 function makeState(): BacteriaState {
@@ -66,7 +69,7 @@ describe('BacteriaPanel morph wiring', () => {
     });
 
     it('routes a pad gesture to the morph use case as one (x, y) position', () => {
-        stateForTest = makeState();
+        bacteriaStore.set({ 'dev-1': makeState() });
         render(<BacteriaPanel deviceId="dev-1" />);
 
         fireEvent.click(screen.getByText('morph pad'));
@@ -76,7 +79,7 @@ describe('BacteriaPanel morph wiring', () => {
     });
 
     it('routes each corner capture chip to its own corner index', () => {
-        stateForTest = makeState();
+        bacteriaStore.set({ 'dev-1': makeState() });
         render(<BacteriaPanel deviceId="dev-1" />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Capture snapshot A' }));

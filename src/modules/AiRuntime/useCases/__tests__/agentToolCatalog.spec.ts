@@ -205,6 +205,7 @@ describe('agent tool catalog', () => {
     it('keeps provider planning on a compact catalog, discovers command schemas dynamically, and returns only a proposal', async () => {
         expect(APPLICATION_OWNED_TOOL_SCHEMAS.map((schema: ToolSchema) => schema.function.name)).toEqual([
             'project.query',
+            'project.discover',
             'project.resolve',
             'agent.capabilities',
             'agent.catalog.discover',

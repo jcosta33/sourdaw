@@ -9,11 +9,21 @@
 
 import { GLUTEN_DSP_PARAM_NAMES } from '../models/GlutenDspParamNames';
 import { GLUTEN_RUNTIME_PARAMETER_COUNT, isGlutenRuntimeParameterId } from '../models/GlutenRuntimeControl';
+import { SET_FALLBACK_PARAM_COMMAND } from '../models/RuntimeDeviceControl';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, GlutenInstance } from '../wasm/daw_dsp.js';
 
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
+
+/**
+ * Port message discriminants, restated from the app-side owner
+ * `src/infra/audioWorklet/workletPortMessages.ts` because this processor runs
+ * in the isolated worklet realm and must not import app-side code; pinned
+ * equal by `__tests__/workletPortMessageParity.spec.ts`.
+ */
+export const INIT_SAB_MESSAGE_TYPE = 'init-sab';
+export const LATENCY_CHANGED_MESSAGE_TYPE = 'latency-changed';
 
 type UnknownRecord = Record<string, unknown>;
 const MAX_ID_LENGTH = 128;
@@ -80,7 +90,7 @@ class GlutenProcessor extends AudioWorkletProcessor {
                     this._initWasm(wasmModule);
                     wasmModule = null;
                 } else if (
-                    msg.type === 'init-sab' &&
+                    msg.type === INIT_SAB_MESSAGE_TYPE &&
                     msg.sab instanceof SharedArrayBuffer &&
                     isNonNegativeSafeInteger(msg.byteOffset)
                 ) {
@@ -143,7 +153,7 @@ class GlutenProcessor extends AudioWorkletProcessor {
         if (
             !hasOnlyKeys(message, ['schemaVersion', 'command', 'target', 'value', 'correlation', 'scheduling']) ||
             message.schemaVersion !== 1 ||
-            message.command !== 'set-fallback-param' ||
+            message.command !== SET_FALLBACK_PARAM_COMMAND ||
             !isRecord(message.target) ||
             !hasOnlyKeys(message.target, ['trackId', 'deviceId', 'deviceType', 'parameterId']) ||
             !isBoundedId(message.target.trackId) ||
@@ -186,7 +196,7 @@ class GlutenProcessor extends AudioWorkletProcessor {
         );
         const newLatency = this._instance.get_latency_samples();
         if (newLatency !== oldLatency) {
-            this.port.postMessage({ type: 'latency-changed', latency: newLatency });
+            this.port.postMessage({ type: LATENCY_CHANGED_MESSAGE_TYPE, latency: newLatency });
         }
     }
 

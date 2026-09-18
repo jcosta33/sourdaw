@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { querySemanticProject } from '#/modules/Project/useCases';
+import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ToolSchema } from '../../models/ToolDefinitions';
@@ -354,6 +354,7 @@ describe('application-owned tool loop', () => {
             'command.batch.propose',
             'command.history',
             'device.factory-manifest.read',
+            'project.discover',
             'project.query',
             'project.resolve',
             'render.request',
@@ -1102,6 +1103,123 @@ describe('application-owned tool loop', () => {
                 reason: 'Provider exceeded the total application tool-call budget.',
                 turns: 3,
             });
+        });
+    });
+});
+
+describe('project discovery tool', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('offers the semantic query types alone and answers discovery through its own tool', () => {
+        const contracts = getProjectProtocolContracts();
+        const querySchema = APPLICATION_OWNED_TOOL_SCHEMAS.find((schema) => schema.function.name === 'project.query');
+        const discoverySchema = APPLICATION_OWNED_TOOL_SCHEMAS.find(
+            (schema) => schema.function.name === 'project.discover'
+        );
+
+        expect(querySchema?.function.parameters.properties.type).toEqual({
+            type: 'string',
+            enum: contracts.query.operations.map((operation) => operation.name),
+        });
+        expect(contracts.query.operations.some((operation) => operation.name.startsWith('discovery.'))).toBe(false);
+        expect(discoverySchema?.function.parameters.properties.domain).toEqual({
+            type: 'string',
+            enum: contracts.discovery.operations.map((operation) => operation.name),
+        });
+        expect(discoverySchema?.function.parameters.required).toEqual(['domain']);
+    });
+
+    it('answers a device discovery call from the discovery owner rather than the semantic query', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'discover-device',
+                        name: 'project.discover',
+                        arguments: { domain: 'device', page: { limit: 1 } },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-discovery',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+        const receipt = result.receipts.find((entry) => entry.callId === 'discover-device');
+
+        expect(querySemanticProject).not.toHaveBeenCalled();
+        expect(receipt).toMatchObject({ toolName: 'project.discover', status: 'success' });
+        expect(receipt?.data).toMatchObject({ schema: 'sourdaw.agent-discovery-receipt', domain: 'device' });
+        expect(receipt?.revision).toEqual(expect.any(String));
+    });
+
+    it.each([
+        {
+            label: 'a domain no owner publishes',
+            callArguments: { domain: 'ghost' },
+            verdict: { status: 'unsupported', domain: 'ghost', reason: 'unknown-domain' },
+            code: 'invalid-tool-arguments',
+        },
+        {
+            label: 'a catalog whose provider is unregistered',
+            callArguments: { domain: 'capability' },
+            verdict: { status: 'unavailable', domain: 'capability', reason: 'capability-provider-unregistered' },
+            code: 'unavailable-tool',
+        },
+    ])('reports $label as the owner verdict, unretryable', async ({ callArguments, verdict, code }) => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ id: 'discover-verdict', name: 'project.discover', arguments: callArguments }],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-discovery-verdict',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+        const receipt = result.receipts.find((entry) => entry.callId === 'discover-verdict');
+
+        expect(receipt).toMatchObject({
+            toolName: 'project.discover',
+            status: 'failure',
+            data: verdict,
+            error: { code, retryable: false },
+        });
+    });
+
+    it('rejects discovery arguments the strict contract cannot read', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'discover-invalid',
+                        name: 'project.discover',
+                        arguments: { domain: 'device', filters: { unexpected: 'value' } },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-discovery-invalid',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(result.receipts.find((entry) => entry.callId === 'discover-invalid')).toMatchObject({
+            status: 'failure',
+            error: { code: 'invalid-tool-arguments' },
         });
     });
 });

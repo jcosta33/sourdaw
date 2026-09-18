@@ -1,3 +1,4 @@
+import { APP_TITLE } from './protocol.js';
 import { systemTimers, type TimerHandle, type Timers } from './timers.js';
 
 /** Project persistence may cross CRDT and IndexedDB, but close cannot wait forever. */
@@ -41,7 +42,7 @@ export const createWindowCloseCoordinator = ({
     onApprovalRevoked,
     timers = systemTimers,
 }: CreateWindowCloseCoordinatorInput) => {
-    let project: ProjectCloseState = { title: 'Sourdaw', dirty: true, durabilityPending: true, rendererReady: false };
+    let project: ProjectCloseState = { title: APP_TITLE, dirty: true, durabilityPending: true, rendererReady: false };
     let phase: 'idle' | 'deciding' | 'saving' | 'approved' | 'closing' = 'idle';
     let pendingSave:
         | {
@@ -123,7 +124,7 @@ export const createWindowCloseCoordinator = ({
     const clearWindowAuthority = (): void => {
         invalidateWindowRequests();
         awaitingRendererTruth = false;
-        project = { title: 'Sourdaw', dirty: false, durabilityPending: false, rendererReady: true };
+        project = { title: APP_TITLE, dirty: false, durabilityPending: false, rendererReady: true };
     };
 
     const requestClose = async (): Promise<boolean> => {

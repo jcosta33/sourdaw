@@ -10,6 +10,14 @@ const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 
 
 type AutomationRecordDeps = {
     getTransportValue: () => (typeof transportStore)['value'];
+    /**
+     * The beat this gesture happened at, from the authoritative moving playback
+     * clock (`captureGestureBeat`). The transport store's `playheadPosition` is
+     * written on discrete transitions only, so during playback it holds the beat
+     * playback started at — stamping from it collapses a whole ride onto the
+     * start beat (#3799).
+     */
+    getGestureBeat: () => number;
     getTrackById: typeof getTrackById;
     recordAutomationValue: typeof recordAutomationValue;
 };
@@ -43,5 +51,8 @@ export function maybeRecordAutomation(
         return;
     }
 
-    deps.recordAutomationValue(trackId, parameterId, value, transport.playheadPosition);
+    // Stamp the sample at the event's own beat: this call runs synchronously on
+    // the gesture's path, so the capture answers for the instant the sample was
+    // taken — not for whenever deferred work happens to complete.
+    deps.recordAutomationValue(trackId, parameterId, value, deps.getGestureBeat());
 }

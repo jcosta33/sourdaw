@@ -109,7 +109,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
             );
             installedOwner = runtime.captureOwner();
             runtime.startPlayheadBroadcast();
-            runtime.startBranchSync(false);
+            await runtime.startBranchSync(false);
             return { peerId, peer: peerManager.createPeer(invite.peerId) };
         });
 

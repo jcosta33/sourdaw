@@ -196,6 +196,8 @@ describe('prepareCreativeInterpretationCatalog', () => {
         expect(catalog.targets).toEqual([]);
         expect(catalog.creationSlots).toEqual([
             { candidateId: 'slot-1', objectType: 'track', parentCandidateId: null, budget: 4 },
+            { candidateId: 'slot-2', objectType: 'device', parentCandidateId: 'slot-1', budget: 4 },
+            { candidateId: 'slot-3', objectType: 'clip', parentCandidateId: 'slot-1', budget: 8 },
         ]);
         expect(catalog.modes).toEqual(['create', 'read-only']);
     });
@@ -211,7 +213,14 @@ describe('prepareCreativeInterpretationCatalog', () => {
         expect(new Set(candidateIds).size).toBe(candidateIds.length);
         // A duplicate id resolves to whichever slot came first, so the later ones could never be
         // selected at all: the device slot below is exactly the one a processing request needs.
-        expect(catalog.creationSlots.map((slot) => slot.objectType)).toEqual(['track', 'clip', 'notes', 'device']);
+        expect(catalog.creationSlots).toEqual([
+            { candidateId: 'slot-1', objectType: 'track', parentCandidateId: null, budget: 4 },
+            { candidateId: 'slot-2', objectType: 'clip', parentCandidateId: 'target-1', budget: 8 },
+            { candidateId: 'slot-3', objectType: 'notes', parentCandidateId: 'target-1', budget: 256 },
+            { candidateId: 'slot-4', objectType: 'device', parentCandidateId: 'target-1', budget: 4 },
+            { candidateId: 'slot-5', objectType: 'device', parentCandidateId: 'slot-1', budget: 4 },
+            { candidateId: 'slot-6', objectType: 'clip', parentCandidateId: 'slot-1', budget: 8 },
+        ]);
     });
 
     it('keeps the catalog id stable for equal inputs and moves it when the request changes', () => {

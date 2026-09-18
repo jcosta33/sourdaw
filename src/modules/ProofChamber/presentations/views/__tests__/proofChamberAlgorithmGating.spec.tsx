@@ -44,6 +44,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(() => Promise.resolve({ status: 'committed', actions: [] })),
     // The real one returns `{ groupId, groupLabel }`; a mock returning a bare
@@ -270,7 +271,7 @@ describe('the Dutch Oven panel offers only controls the live algorithm can hear'
             ])
         );
 
-        expect(perEngine).toEqual({ fdn: 9, spring: 11, reverse: 21 });
+        expect(perEngine).toEqual({ fdn: 9, spring: 10, reverse: 21 });
         expect(chamberEngineIdForAlgorithm('fdn-16')).toBe('fdn');
         expect(chamberEngineIdForAlgorithm('plate')).toBe('plate');
     });

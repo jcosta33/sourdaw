@@ -12,6 +12,12 @@
  * sound. A built-in is a sink by its type alone, since the engine builds it
  * with the strip rather than attaching it later.
  *
+ * Crumbs is a sink on the attach state too (#4204), under the device's own id.
+ * The engine registers its note store when it splices the instance in, not when
+ * it builds the strip, so a Crumbs device the engine is not holding names no
+ * note store — exactly the hosted-plugin case, and the reason the same attach
+ * set answers for both.
+ *
  * One law, two readers, on the sink alone. `projectLiveMidiProgramme` reads the
  * device so it can address the notes; `projectLiveGraphProgramme` reads only
  * whether the outcome is `voiced`, and a second copy of the sink rule there is
@@ -43,6 +49,7 @@
 
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 
+import { isCrumbsChainDevice } from './isCrumbsChainDevice';
 import { soundsNativeNotes } from './soundsNativeNotes';
 
 /** What a `yeast` strip is told, and the one exclusion this law reports. */
@@ -53,7 +60,7 @@ const GENERATIVE_DEVICE_TYPE = 'yeast';
 
 export type NativeMidiNoteSinkInput = Readonly<{
     track: Track;
-    /** The external plugin instances the native engine currently owns. */
+    /** The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}. */
     attachedInstanceIds: ReadonlySet<string>;
     /** The strips whose device chain the programme replaces with a bake. */
     bakedStripIds: ReadonlySet<string>;
@@ -67,11 +74,16 @@ export type NativeMidiNoteSink =
     /** Nothing native was ever in question here. */
     | Readonly<{ outcome: 'none' }>;
 
+function isEngineHeldSink(device: Device, attachedInstanceIds: ReadonlySet<string>): boolean {
+    if (device.externalInstanceId !== undefined) {
+        return attachedInstanceIds.has(device.externalInstanceId);
+    }
+    return isCrumbsChainDevice(device.type) && attachedInstanceIds.has(device.id);
+}
+
 function noteSinkDevice(input: NativeMidiNoteSinkInput): Device | undefined {
     return input.track.devices.find(
-        (device) =>
-            (device.externalInstanceId !== undefined && input.attachedInstanceIds.has(device.externalInstanceId)) ||
-            soundsNativeNotes(device.type)
+        (device) => isEngineHeldSink(device, input.attachedInstanceIds) || soundsNativeNotes(device.type)
     );
 }
 

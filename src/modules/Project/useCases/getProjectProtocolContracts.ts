@@ -1,3 +1,4 @@
+import { AGENT_DISCOVERY_DOMAINS, AGENT_DISCOVERY_SCHEMA_VERSION } from '../models/AgentDiscoveryQuery';
 import { PRODUCTION_BRIEF_OPERATIONS, PRODUCTION_BRIEF_SCHEMA_VERSION } from '../models/ProductionBrief';
 import { SEMANTIC_PROJECT_QUERY_SCHEMA_VERSION, SEMANTIC_PROJECT_QUERY_TYPES } from '../models/SemanticProjectQuery';
 
@@ -17,6 +18,24 @@ export function getProjectProtocolContracts() {
             compatibility: {
                 mode: 'reject-unsupported' as const,
                 behavior: 'Reject unsupported query schemas; query receipts remain read-only evidence.',
+                canonicalProjectRequiresCommandReplay: false as const,
+            },
+        },
+        discovery: {
+            id: 'discovery' as const,
+            owner: 'Project' as const,
+            schemaVersion: AGENT_DISCOVERY_SCHEMA_VERSION,
+            capabilities: ['owner-catalog-discovery', 'revision-bound-read', 'pagination'] as const,
+            operations: AGENT_DISCOVERY_DOMAINS.map((domain) => ({
+                name: domain,
+                version: String(AGENT_DISCOVERY_SCHEMA_VERSION),
+                availability: 'available' as const,
+            })),
+            availability: 'available' as const,
+            compatibility: {
+                mode: 'reject-unsupported' as const,
+                behavior:
+                    'Reject a domain no owner publishes; discovery receipts carry owner-published entries as read-only evidence.',
                 canonicalProjectRequiresCommandReplay: false as const,
             },
         },

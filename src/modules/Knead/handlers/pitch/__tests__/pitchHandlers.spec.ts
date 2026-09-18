@@ -87,7 +87,7 @@ describe('Command Pitch Handlers', () => {
         expect(
             handleCommitPitchEdit.describe({
                 type: 'commitPitchEdit',
-                payload: { clipId: 'c1', segments: [], contour },
+                payload: { clipId: 'c1', segments: [], contour, retuneSpeedMs: 25, formantPreserve: true },
             })
         ).toEqual({
             label: 'Commit Pitch Edit',
@@ -103,7 +103,7 @@ describe('Command Pitch Handlers', () => {
         expect(
             handleCommitPitchEdit.describe({
                 type: 'commitPitchEdit',
-                payload: { clipId: 'missing', segments: [], contour },
+                payload: { clipId: 'missing', segments: [], contour, retuneSpeedMs: 25, formantPreserve: true },
             })
         ).toEqual({ label: 'Commit Pitch Edit', inverseAction: null });
     });

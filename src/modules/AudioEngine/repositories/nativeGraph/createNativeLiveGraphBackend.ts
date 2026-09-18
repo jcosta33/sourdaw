@@ -48,6 +48,7 @@
 
 import {
     type AudioGraphApplyResult,
+    type AudioGraphAttachedCrumbsInstance,
     type AudioGraphAttachedPlugin,
     type AudioGraphBackend,
     type AudioGraphCommandBatch,
@@ -56,6 +57,7 @@ import {
 import { type NativeGraphTransport } from './nativeGraphTransport';
 import { readNativeStripReports } from './readNativeStripReports';
 import { registerNativeSampleBanks, type AcquireNativeSampleBank } from './registerNativeSampleBanks';
+import { releaseNativeSampleBankClaims } from './releaseNativeSampleBankClaims';
 import { serializeAudioGraphCommandBatch } from './serializeAudioGraphCommandBatch';
 
 export const NATIVE_LIVE_BACKEND_ID = 'native/live';
@@ -76,8 +78,19 @@ export type NativeLiveGraphBackendDeps = Readonly<{
     acquireNativeSampleBank?: AcquireNativeSampleBank;
 }>;
 
-function rejected(reason: string): AudioGraphApplyResult {
-    return { acceptance: 'rejected', application: 'not-applied', reason };
+/**
+ * A refusal, with whatever the call attached before refusing.
+ *
+ * The default is the honest answer for every refusal this module raises
+ * itself — a transport that never reached the engine, a disposed backend —
+ * because no such call ran an attach. Only a refusal read back from a payload
+ * can carry one.
+ */
+function rejected(
+    reason: string,
+    attachedCrumbs: readonly AudioGraphAttachedCrumbsInstance[] = []
+): AudioGraphApplyResult {
+    return { acceptance: 'rejected', application: 'not-applied', reason, attachedCrumbs };
 }
 
 function reasonOf(error: unknown): string {
@@ -113,6 +126,29 @@ function readAttachedPlugins(value: unknown): readonly AudioGraphAttachedPlugin[
 }
 
 /**
+ * Read the Crumbs instances the same applied batch says its engine start took
+ * over, under the same rule: absent is empty, and an entry naming no instance
+ * is dropped rather than guessed at.
+ *
+ * A Crumbs instance is named by the device's own id, because that is the id the
+ * renderer created it with, so these ids join the hosted plugins' in one attach
+ * set without colliding with them.
+ */
+function readAttachedCrumbsInstances(value: unknown): readonly AudioGraphAttachedCrumbsInstance[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value.flatMap((entry) => {
+        const attached = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : null;
+        const instanceId = attached?.instanceId;
+        if (typeof instanceId !== 'string') {
+            return [];
+        }
+        return [{ instanceId }];
+    });
+}
+
+/**
  * Read `apply_graph_commands`'s mirror of {@link AudioGraphApplyResult}.
  *
  * The correlation is echoed verbatim by the native side, so it is carried back
@@ -123,7 +159,13 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
     const payload = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
     if (payload?.acceptance === 'rejected') {
         const reason = payload.reason;
-        return rejected(typeof reason === 'string' ? reason : 'refused without a reason');
+        // A refused batch can still have attached instances: the Crumbs attach
+        // runs before the batch is mapped, so it has already happened by the
+        // time anything can refuse the batch.
+        return rejected(
+            typeof reason === 'string' ? reason : 'refused without a reason',
+            readAttachedCrumbsInstances(payload.attachedCrumbs)
+        );
     }
     // The outcome is decided before any of its payload is read, so an answer
     // in no known shape is reported as the unknown outcome it is rather than as
@@ -152,6 +194,7 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
             ...admittedBatch,
             reports,
             attachedPlugins: readAttachedPlugins(payload.attachedPlugins),
+            attachedCrumbs: readAttachedCrumbsInstances(payload.attachedCrumbs),
         };
     }
     const reason = payload.reason;
@@ -166,12 +209,23 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
         reason: typeof reason === 'string' ? reason : 'partially applied without a reason',
         runtimeRevision,
         reports,
+        attachedCrumbs: readAttachedCrumbsInstances(payload.attachedCrumbs),
     };
 }
 
 export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): AudioGraphBackend {
     const { transport, acquireNativeSampleBank } = deps;
     let disposed = false;
+    /**
+     * This instance's own name in {@link claimedNativeSampleBankKeysByBackend},
+     * suffixed with a per-instance token rather than reused as the public
+     * `backendId`: a held instrument can swap live backends mid-roll (#4203),
+     * so two instances of this same implementation can be claiming banks at
+     * once, and the public id names the implementation for diagnostics and
+     * parity reports, not one running instance of it. Claims only — nothing
+     * that reads `backendId` off this backend compares it to this value.
+     */
+    const claimBackendId = `${NATIVE_LIVE_BACKEND_ID}:${crypto.randomUUID()}`;
 
     return {
         backendId: NATIVE_LIVE_BACKEND_ID,
@@ -192,6 +246,7 @@ export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): 
                     commands: batch.commands,
                     acquire: acquireNativeSampleBank,
                     replaceTopology: batch.replaceTopology,
+                    backendId: claimBackendId,
                 });
             }
             let raw: unknown;
@@ -206,8 +261,13 @@ export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): 
         dispose(): void {
             // The engine is process-wide and outlives this handle: it hosts the
             // plugin runtimes, and stopping it here would retire instances this
-            // backend never owned. Disposal closes the handle, nothing else.
+            // backend never owned. Disposal closes the handle, nothing else —
+            // except this backend's own sample-bank claim, which names nothing
+            // once nothing here can send another batch to keep it fresh; a
+            // later replacement elsewhere is then free to reclaim a bank this
+            // backend used to name.
             disposed = true;
+            releaseNativeSampleBankClaims(claimBackendId);
         },
     };
 }

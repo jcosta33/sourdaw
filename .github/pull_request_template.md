@@ -10,9 +10,9 @@
 
 (if applicable, add screenshots here)
 
-### 📌 Related tickets & additional notes
+### 📌 Related issues & additional notes
 
-(`Closes #N`, links to past PRs, and any good-to-know info)
+(`Closes #N` — always link the issue this PR resolves; links to past PRs; any good-to-know info)
 
 <!--
 Title: type(scope): subject — conventional commits, matching git log.

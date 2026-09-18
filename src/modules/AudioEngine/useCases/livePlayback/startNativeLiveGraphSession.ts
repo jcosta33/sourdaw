@@ -115,6 +115,7 @@ import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
+import { latchedPedalCommands } from './latchedPedalCommands';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
 import {
@@ -123,7 +124,7 @@ import {
     type LiveGraphTopologyInput,
 } from './projectLiveGraphTopology';
 import { projectRollPosition } from './projectRollPosition';
-import { readAttachedExternalInstanceIds } from './readAttachedExternalInstanceIds';
+import { readAttachedEngineInstanceIds } from './readAttachedEngineInstanceIds';
 import { readLiveStripTracks } from './readLiveStripTracks';
 import { readSessionProgramme } from './readSessionProgramme';
 import { replaceNativeChains } from './replaceNativeChains';
@@ -255,6 +256,7 @@ function receivesLiveInput(track: Track): boolean {
  */
 function readSessionTopology(): Readonly<{
     stripTracks: readonly Track[];
+    projectTracks: readonly Track[];
     soloGatedTrackIds: ReadonlySet<string>;
     vcaMultiplierByTrackId: ReadonlyMap<string, number>;
     attachedInstanceIds: ReadonlySet<string>;
@@ -278,6 +280,7 @@ function readSessionTopology(): Readonly<{
     const vcaGroups = getVcaGroupsState();
     return {
         stripTracks,
+        projectTracks,
         soloGatedTrackIds: new Set(
             stripTracks.filter((track) => soloGatedByTrackId.get(track.id) ?? false).map((track) => track.id)
         ),
@@ -287,7 +290,7 @@ function readSessionTopology(): Readonly<{
                 deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups: vcaGroups }),
             ])
         ),
-        attachedInstanceIds: readAttachedExternalInstanceIds(),
+        attachedInstanceIds: readAttachedEngineInstanceIds(),
         inputMonitoredTrackIds: new Set(stripTracks.filter(receivesLiveInput).map((track) => track.id)),
     };
 }
@@ -369,6 +372,7 @@ function notifySilentHostedPlugins(input: {
 function claimCarriersOf(input: {
     commands: readonly AudioGraphCommand[];
     stripTracks: readonly Track[];
+    projectTracks: readonly Track[];
     attachedInstanceIds: ReadonlySet<string>;
     programme: LiveGraphProgramme;
     inputMonitoredTrackIds: ReadonlySet<string>;
@@ -378,6 +382,7 @@ function claimCarriersOf(input: {
         stripTracks: input.stripTracks,
         carriers: projectStripCarriers({
             stripTracks: input.stripTracks,
+            projectTracks: input.projectTracks,
             attachedInstanceIds: input.attachedInstanceIds,
             programme: input.programme,
             inputMonitoredTrackIds: input.inputMonitoredTrackIds,
@@ -400,6 +405,37 @@ function programmeEndSeconds(programme: LiveGraphProgramme): number {
         }
     }
     return end;
+}
+
+/**
+ * Every device a batch builds a body for, addressed the way a controller
+ * addresses one.
+ *
+ * A topology batch states a whole chain on the command that creates its strip,
+ * and the mapper registers each of those devices as it maps that command — so
+ * a strip's chain is where a session start's bodies come from, and a bare
+ * `insert-device` is the same thing for a batch that edits a chain it already
+ * built. Both are read here so one reading serves every topology this function
+ * sends.
+ *
+ * What the batch *asked for*, not what the engine reports: the reports arrive
+ * after the batch, and a pedal has to be inside it.
+ */
+function builtDeviceAddresses(
+    commands: readonly AudioGraphCommand[]
+): readonly Readonly<{ trackId: string; deviceId: string }>[] {
+    return commands.flatMap((command) => {
+        if (command.kind === 'create-track-strip') {
+            return command.devices.map((device) => ({ trackId: command.trackId, deviceId: device.id }));
+        }
+        if (command.kind === 'create-bus-strip') {
+            return command.devices.map((device) => ({ trackId: command.busId, deviceId: device.id }));
+        }
+        if (command.kind === 'insert-device') {
+            return [{ trackId: command.trackId, deviceId: command.device.id }];
+        }
+        return [];
+    });
 }
 
 /**
@@ -437,30 +473,47 @@ type TopologyBatchOutcome =
  * with its own strip ids the second time; replacing also means topology the
  * engineer changed between plays actually reaches the engine, rather than only
  * the transport doing so.
+ *
+ * Every body it builds comes up with its pedals raised, so the batch carries
+ * the pedals the player is standing on behind the commands that build them
+ * ({@link latchedPedalCommands}) rather than leaving them to a send behind this
+ * task — the engine would render that round trip with the foot lifted. The
+ * material registration reads the batch as projected: it looks for sample
+ * material, and a controller carries none.
  */
 async function applyTopologyBatch(input: {
     transport: NativeGraphTransport;
     backend: ReturnType<typeof createNativeLiveGraphBackend>;
     commands: readonly AudioGraphCommand[];
 }): Promise<TopologyBatchOutcome> {
-    const { transport, backend, commands } = input;
-    const material = await registerNativeTimelineSamples({ transport, commands });
+    const { transport, backend } = input;
+    const material = await registerNativeTimelineSamples({ transport, commands: input.commands });
     if (material.outcome === 'declined') {
         // No batch was sent, so nothing in the graph moved.
         return { outcome: 'refused', reason: material.reason };
     }
+    const commands = [...input.commands, ...latchedPedalCommands(builtDeviceAddresses(input.commands))];
     const result = await backend.apply({ schemaVersion: 1, replaceTopology: true, commands });
+    // A batch that starts the engine takes over the plugin instances loaded
+    // before there was one — reported to their devices as loaded but processing
+    // no audio, and corrected nowhere else. Reported before the session
+    // bookkeeping, because a device told late has already been read as degraded.
+    //
+    // Ahead of the acceptance checks, as every other route reports, because the
+    // native Crumbs attach pass runs *before* the batch is mapped: a batch the
+    // ring or the mapper then refuses has still taken those instances and names
+    // them. Judging acceptance first would drop the only report of an attach
+    // this Play will get, leaving the sampler on Web Audio with the engine
+    // holding it. The plugin half is unaffected — its attach is behind the
+    // fence, and both `markAttachedInstances` and `spliceInstancesAttachedBy`
+    // read applied answers only.
+    reportAttachedPlugins(result);
     if (result.acceptance === 'rejected') {
         return { outcome: 'refused', reason: result.reason };
     }
     if (result.application !== 'applied') {
         return { outcome: 'unreconciled', reason: result.reason };
     }
-    // A batch that starts the engine takes over the plugin instances loaded
-    // before there was one — reported to their devices as loaded but processing
-    // no audio, and corrected nowhere else. Reported before the session
-    // bookkeeping, because a device told late has already been read as degraded.
-    reportAttachedPlugins(result);
     // Replaced rather than merged: this batch tore every strip down inside its
     // own fence, so a strip missing from these reports is a strip the engine no
     // longer has, and a mirror addressing one must find nothing.
@@ -797,13 +850,43 @@ type InstalledProjection = Readonly<{
 }>;
 
 /**
+ * Instances the batch reported held that the projection it was built from
+ * lacked — hosted plugins and Crumbs alike.
+ *
+ * The comparison, not the count, is what says a re-send has anything to do. A
+ * report names every instance the engine holds, including the ones the first
+ * projection already knew about and bound, so a batch answering "still held"
+ * would re-send on every Play. Only a name the projection did not carry can
+ * have gone out with no body.
+ */
+function instancesTheProjectionLacked(
+    result: Extract<AudioGraphApplyResult, { application: 'applied' }>,
+    projected: ReadonlySet<string>
+): readonly string[] {
+    const reported = [
+        ...(result.attachedPlugins ?? []).map((plugin) => plugin.instanceId),
+        ...(result.attachedCrumbs ?? []).map((instance) => instance.instanceId),
+    ];
+    return reported.filter((instanceId) => !projected.has(instanceId));
+}
+
+/**
  * Send the topology once more, bound to the instances the first batch attached.
  *
  * The batch that attached them was mapped before the engine held them, so their
  * strips went out with no body for the plugin; one more parked batch, built
  * against the attach state those reports have just written, is what binds them
  * — see the header for why there is never a third. Nothing is re-sent when the
- * first batch attached nothing, because there is nothing new to bind.
+ * first batch bound nothing the first projection lacked, because there is
+ * nothing new to bind.
+ *
+ * Crumbs instances count here for the same reason hosted ones do, and on a
+ * first Play they are the only ones that can (#4204). A lazily started engine
+ * answers `createCrumbsInstance` with `attached: false`, so the first
+ * projection sees an empty mirror and marks that strip web-carried; the batch
+ * then attaches the instance and reports it under `attachedCrumbs` while
+ * `attachedPlugins` stays empty. Reading the plugin report alone left the
+ * sampler on Web Audio for the whole take.
  *
  * The re-send answers with what now stands rather than only what was applied: a
  * refused re-send leaves the *first* batch's graph installed, and that graph is
@@ -823,10 +906,10 @@ async function bindAttachedPlugins(input: {
 }): Promise<Readonly<{ resent: TopologyBatchOutcome; installed: InstalledProjection }>> {
     const { transport, backend, topology, started, programme, projectTopology } = input;
     const first: InstalledProjection = { attachedInstanceIds: topology.attachedInstanceIds, programme };
-    if ((started.result.attachedPlugins ?? []).length === 0) {
+    if (instancesTheProjectionLacked(started.result, topology.attachedInstanceIds).length === 0) {
         return { resent: started, installed: first };
     }
-    const attachedInstanceIds = readAttachedExternalInstanceIds();
+    const attachedInstanceIds = readAttachedEngineInstanceIds();
     // Re-projected, not reused: binding an instrument moves a MIDI strip out of
     // `webVoicedStripIds`, and the first programme was read before the engine
     // held that instrument.
@@ -834,6 +917,7 @@ async function bindAttachedPlugins(input: {
         attachedInstanceIds,
         programme: readSessionProgramme({
             stripTracks: topology.stripTracks,
+            projectTracks: topology.projectTracks,
             inputMonitoredTrackIds: topology.inputMonitoredTrackIds,
             attachedInstanceIds,
             sampleRate: input.sampleRate,
@@ -972,12 +1056,7 @@ export function startNativeLiveGraphSession(
             // (`advance_playhead` returns on `!is_playing`), so nothing can be
             // rendered ahead of the region that governs it.
             const monitor = input.monitor ?? DEFAULT_MONITOR;
-            const programme = readSessionProgramme({
-                stripTracks: topology.stripTracks,
-                inputMonitoredTrackIds: topology.inputMonitoredTrackIds,
-                attachedInstanceIds: topology.attachedInstanceIds,
-                sampleRate: input.sampleRate,
-            });
+            const programme = readSessionProgramme({ ...topology, sampleRate: input.sampleRate });
             // Here, because this is where the programme is applied.
             logProgrammeExclusions(programme);
             // Material before the batch that names it, always: the native side
@@ -1059,11 +1138,10 @@ export function startNativeLiveGraphSession(
                 // was made before the engine held it.
                 if (audible) {
                     claimCarriersOf({
+                        ...topology,
                         commands: rebound.commands,
-                        stripTracks: topology.stripTracks,
                         attachedInstanceIds: installed.attachedInstanceIds,
                         programme: installed.programme,
-                        inputMonitoredTrackIds: topology.inputMonitoredTrackIds,
                     });
                 }
                 await installRolledSession({

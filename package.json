@@ -32,6 +32,7 @@
         "test:electron-runtime": "node scripts/checkElectronRuntimeProvenance.ts",
         "test:electron-runtime:online": "node scripts/checkElectronRuntimeProvenance.ts --online",
         "release:restamp": "node scripts/restampDependencyBump.ts",
+        "release:restamp:wasm": "node scripts/restampWasmInventory.ts",
         "release:proof": "node scripts/releaseProof.ts check",
         "release:proof:assemble": "node scripts/releaseProof.ts assemble",
         "release:propose": "node scripts/proposeRelease.ts",
@@ -80,6 +81,7 @@
         "deps:unused:production": "pnpm exec knip --production",
         "desktop:dev": "install-electron && NODE_ENV=development vite build && tsc -p electron/tsconfig.dev.json && node scripts/buildElectronPreload.ts && node scripts/buildNativeAddon.ts && SOURDAW_DESKTOP_DEV=1 electron electron/out/main.js 2>&1 | tee electron/out/desktop-dev.log",
         "desktop:build": "install-electron && vite build && rm -rf dist/samples && tsc -p electron/tsconfig.build.json && node scripts/buildElectronPreload.ts && node scripts/buildNativeAddon.ts && electron-builder --config electron-builder.yml --publish never",
+        "evidence:gate": "node scripts/agent-campaign/run-evidence-gate.ts",
         "cargo:fmt": "cargo fmt",
         "cargo:test": "cargo test",
         "cargo:check": "cargo check",
@@ -124,6 +126,7 @@
         "tailwindcss": "^4.3.3"
     },
     "devDependencies": {
+        "@ast-grep/cli": "0.45.3",
         "@electron/asar": "3.4.1",
         "@electron/fuses": "^2.1.3",
         "@eslint-community/eslint-plugin-eslint-comments": "^4.7.2",

@@ -25,7 +25,7 @@
  * edges are stubbed, because they reach IndexedDB and an AudioContext.
  *
  * Scope, stated so it is not read as more than it is: every assertion here
- * reads `projectStore` or `trackStore`. `resetCrdtProjectAuthority`,
+ * reads `projectStore` or `trackStore`. `resetCrdtProject`,
  * `resetAudioGraph` and `ensureTrackStrips` are no-op mocks, so this spec says
  * nothing about whether the previous CRDT authority or audio graph survives an
  * abort — only about the transient flags and the two stores' contents.
@@ -42,7 +42,7 @@ const {
     mockClearUndoHistory,
     mockCompactProject,
     mockProjectActionHistoryToStore,
-    mockResetCrdtProjectAuthority,
+    mockResetCrdtProject,
     mockStartCrdtAutoSave,
     mockUnloadLoadedExternalPlugins,
     mockEnsureTrackStrips,
@@ -72,7 +72,7 @@ const {
     mockClearUndoHistory: vi.fn(),
     mockCompactProject: vi.fn(() => Promise.resolve()),
     mockProjectActionHistoryToStore: vi.fn(),
-    mockResetCrdtProjectAuthority: vi.fn(),
+    mockResetCrdtProject: vi.fn(),
     mockStartCrdtAutoSave: vi.fn(() => () => {}),
     mockUnloadLoadedExternalPlugins: vi.fn(() => Promise.resolve()),
     mockEnsureTrackStrips: vi.fn(),
@@ -103,10 +103,14 @@ vi.mock('#/infra/store/createStore', async (importOriginal) => {
 });
 // Four hoisted bindings stay live; newly listed names are unread graph-coverage stubs.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    forgetProjectLatchedPedals: vi.fn(),
+    stopTrackInputMonitoring: vi.fn(),
+
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    projectsToDifferentNativeBank: vi.fn(() => false),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     discardDecodedAudioFile: vi.fn(),
     getAudioContext: mockGetAudioContext,
@@ -134,7 +138,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDeviceChainTailSeconds: vi.fn(),
     getEngineState: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
-    getLiveEngineSampleRate: vi.fn(),
     getRuntimeGraphRevision: vi.fn(),
     getTrackStrip: vi.fn(),
     initializeTrackStripFromSnapshot: vi.fn(),
@@ -163,6 +166,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
@@ -187,15 +191,15 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     hasCrdtDoc: vi.fn(),
     mutateCrdtDoc: vi.fn(),
     persistCrdtProject: vi.fn(),
-    preserveBranchStateForSession: vi.fn(),
+    beginBranchSession: vi.fn(),
     projectActionHistoryToStore: mockProjectActionHistoryToStore,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
-    replaceBranchState: vi.fn(),
+    projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
     replaceCrdtDocInLineage: vi.fn(),
-    resetCrdtProjectAuthority: mockResetCrdtProjectAuthority,
-    restoreBranchStateAfterSession: vi.fn(),
+    resetCrdtProject: mockResetCrdtProject,
+    endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
     setupProjectionBridge: vi.fn(),
@@ -214,6 +218,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     restorePluginState: vi.fn(),
 }));
 vi.mock('#/modules/Transport/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
     ensureTrackStrips: mockEnsureTrackStrips,
     stopPlayback: mockStopPlayback,
     defaultTransportState: { masterGain: 75, isPlaying: false },
@@ -389,7 +394,7 @@ const restoringAborts: Array<{ label: string; arrange: () => void }> = [
     {
         label: 'handing CRDT authority to the incoming project throws',
         arrange: () => {
-            mockResetCrdtProjectAuthority.mockImplementation(() => {
+            mockResetCrdtProject.mockImplementation(() => {
                 throw new Error('authority reset failed');
             });
         },
@@ -451,7 +456,10 @@ describe('interrupted project load dirty tracking', () => {
         mockPrepareCachedAudioBuffersFromIdb.mockImplementation(readStoredBuffers);
         mockStopPlayback.mockResolvedValue(undefined);
         mockCompactProject.mockResolvedValue(undefined);
-        mockResetCrdtProjectAuthority.mockImplementation(() => {});
+        mockResetCrdtProject.mockImplementation((_name: string, onAuthorityReplaced?: () => void) => {
+            onAuthorityReplaced?.();
+            return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
+        });
         mockStartCrdtAutoSave.mockReturnValue(() => {});
         trackStore.set(structuredClone(defaultTrackState));
         projectStore.set({
@@ -495,7 +503,7 @@ describe('interrupted project load dirty tracking', () => {
                 //
                 // NOT covered here, and deliberately not claimed: whether the
                 // previous CRDT authority or audio graph survived.
-                // `resetCrdtProjectAuthority`, `resetAudioGraph` and
+                // `resetCrdtProject`, `resetAudioGraph` and
                 // `ensureTrackStrips` are all no-op mocks in this spec, so
                 // nothing below could detect a regression in them.
                 expect(trackStore.value?.tracks.map((track) => track.name)).toContain(OPEN_TRACK_NAME);
@@ -557,7 +565,7 @@ describe('interrupted project load dirty tracking', () => {
                 const current = trackStore.value ?? defaultTrackState;
                 trackStore.set({ ...current, selectedTrackId: null });
             });
-            mockResetCrdtProjectAuthority.mockImplementation(() => {
+            mockResetCrdtProject.mockImplementation(() => {
                 throw new Error('authority reset failed');
             });
 
@@ -690,8 +698,8 @@ describe('interrupted project load dirty tracking', () => {
      */
     describe('a throw after the authority switch', () => {
         function replaceAuthorityThenThrow(): void {
-            mockResetCrdtProjectAuthority.mockImplementation(
-                (_name: string, onAuthorityReplaced?: () => void): void => {
+            mockResetCrdtProject.mockImplementation(
+                (_name: string, onAuthorityReplaced?: () => void): Promise<never> => {
                     onAuthorityReplaced?.();
                     // What `resetAutomergeStorageProjections` does to every
                     // root-doc projection: the user's project leaves the stores.
@@ -774,7 +782,7 @@ describe('interrupted project load dirty tracking', () => {
             mockEnsureTrackStrips.mockClear();
             // Throws without ever reporting a replacement — `createProject`
             // itself failing.
-            mockResetCrdtProjectAuthority.mockImplementation((): void => {
+            mockResetCrdtProject.mockImplementation((): Promise<never> => {
                 throw new Error('createProject failed');
             });
 

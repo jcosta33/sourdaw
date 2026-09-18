@@ -5,6 +5,7 @@
 //! Shimmer: slow LFO modulates the bandpass frequency for movement in the
 //! decay tail.
 
+use crate::params::{DECAY, DRIVE, TONE, TUNE};
 use std::f32::consts::TAU;
 
 /// Inharmonic frequency ratios for metallic cymbal spectrum.
@@ -154,18 +155,18 @@ impl CymbalEngine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "decay" => {
+            DECAY => {
                 // Normalize 0-1 to amp decay range 0.5-8.0s
                 let v = value.clamp(0.0, 1.0);
                 self.decay = 0.5 + v * 7.5;
             }
-            "tune" => {
+            TUNE => {
                 // Shift all oscillator frequencies by semitones from default 260Hz
                 let ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0);
                 self.base_freq = (260.0 * ratio).clamp(100.0, 600.0);
             }
-            "tone" => self.tone = value.clamp(0.0, 1.0),
-            "drive" => {
+            TONE => self.tone = value.clamp(0.0, 1.0),
+            DRIVE => {
                 // 0-10 drive: increase shimmer depth for more aggressive character
                 let v = value.clamp(0.0, 10.0);
                 self.shimmer_depth = v / 10.0 * 0.5;

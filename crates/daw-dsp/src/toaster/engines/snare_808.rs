@@ -8,6 +8,7 @@
 //! Snappy knob controls noise VCA amplitude.
 //! Noise source: white noise through Sallen-Key 2-pole HPF at ~2749 Hz.
 
+use crate::params::{DECAY, TONE};
 use crate::primitives::flush_denormal;
 use crate::toaster::bridged_t::BridgedTFilter;
 use crate::toaster::dc_block::DcBlocker;
@@ -210,9 +211,9 @@ impl Snare808Engine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "tone" => self.tone = value.clamp(0.0, 1.0),
+            TONE => self.tone = value.clamp(0.0, 1.0),
             "snappy" => self.snappy = value.clamp(0.0, 1.0),
-            "decay" => self.decay = value.clamp(0.0, 1.0),
+            DECAY => self.decay = value.clamp(0.0, 1.0),
             _ => {}
         }
     }

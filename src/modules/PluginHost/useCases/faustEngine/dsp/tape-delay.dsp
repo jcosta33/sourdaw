@@ -26,4 +26,12 @@ feedback = hslider("feedback", 0.5, 0, 0.95, 0.01);
 tone = hslider("tone", 4000, 500, 12000, 100);
 wet = (+ : fi.lowpass(1, tone) : de.fdelay(ma.SR * maxdel, delay * ma.SR)) ~ *(feedback);
 
-process = _ <: *(1 - mix), (wet : *(mix)) :> _;
+// Stereo (#3730): the mono dry/wet blend — including its delay line, tone
+// filter and feedback loop — is duplicated per channel, so a stereo insert
+// keeps independent L/R instead of being downmixed to (L+R)/2 by the
+// explicit-speakers mono worklet input. The two copies share one control
+// surface: same-path UI items merge into a single zone, so every slider
+// drives both channels and the addresses/automation are unchanged.
+mono = _ <: *(1 - mix), (wet : *(mix)) :> _;
+
+process = par(i, 2, mono);

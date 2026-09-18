@@ -27,7 +27,7 @@
  * not the seam's, and a native backend answers none of them.
  */
 
-import { clampFaderGain } from '#/utils/audioLevelLaw';
+import { clampFaderGain, toStereoPan } from '#/utils/audioLevelLaw';
 
 import {
     type AudioGraphApplyResult,
@@ -156,7 +156,7 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
             case 'track-pan':
                 return {
                     param: strip.panNode.pan,
-                    toNodeValue: (value) => Math.max(-1, Math.min(1, value / 50)),
+                    toNodeValue: toStereoPan,
                 };
             case 'track-mute-gate':
                 return { param: strip.postFaderGain.gain, toNodeValue: (value) => value };
@@ -232,6 +232,7 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
             playDuration: playback.durationSeconds,
             playbackRate: playback.playbackRate,
             clipGainValue: playback.gain,
+            envelope: playback.envelope,
             // A fade with no absolute time on it is the anti-click micro-fade;
             // the scheduler reads an absent time as exactly that, so the
             // contract's optional time passes straight through.
@@ -362,9 +363,10 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
                 // engine instrument — so a producer never aims one here.
                 return null;
             case 'send-midi-note':
-                // An offline render has no live keys: there is no player, and a
-                // note with no timeline position has no frame this carrier
-                // could place it on.
+            case 'send-midi-control':
+                // An offline render has no player: no live keys, and no foot on
+                // a pedal. A message with no timeline position has no frame
+                // this carrier could place it on.
                 return null;
             case 'insert-device':
             case 'remove-device':

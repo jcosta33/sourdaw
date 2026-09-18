@@ -31,6 +31,11 @@ use wasm_bindgen::prelude::*;
 /// frames per call — `LevainInstance::new` sizes `left_buf` and `right_buf` at
 /// exactly this length, and `process` clamps its requested size to it to
 /// avoid audio-thread allocation.
+///
+/// Restatement of the engine's callback ceiling,
+/// `daw_engine::audio_thread::MAX_CALLBACK_FRAMES`: `daw-dsp` cannot depend
+/// on the engine, so the figure is restated here and every copy must move
+/// with the ceiling.
 pub const LEVAIN_BLOCK_FRAMES: usize = 4096;
 
 /// WASM-exported Levain instance for AudioWorklet.
@@ -288,6 +293,27 @@ impl LevainInstance {
             sample_id,
             crossfade_out_ms,
         });
+    }
+
+    /// Register one articulation switch with the engine's articulation map.
+    ///
+    /// - `kind` 0: keyswitch on note `a` (`momentary` reverts on release).
+    /// - `kind` 1: velocity split across `[a, b]`.
+    /// - `kind` 2: CC split across `[a, b]` of the switch CC.
+    ///
+    /// Note-on and CC routing already consult the map; this is the binding
+    /// that lets a bank configure it. Keyswitches are baseline
+    /// orchestral-sampler behaviour.
+    pub fn add_articulation_switch(
+        &mut self,
+        kind: u8,
+        a: u8,
+        b: u8,
+        articulation_id: u16,
+        momentary: bool,
+    ) {
+        self.engine
+            .add_articulation_switch(kind, a, b, articulation_id, momentary);
     }
 
     /// Build the zone lookup table after all zones and samples are loaded.

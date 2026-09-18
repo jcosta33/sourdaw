@@ -1,18 +1,25 @@
-import { stringify } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { createControlledLockManager, type ControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
+import {
+    blockEveryDurableRead,
+    holdBranchStateLock,
+    readStoredEnvelope,
+    sessionLockName,
+    writeStoredEnvelope,
+} from '../../repositories/__tests__/branchStateHarness';
 
 const mockLogger = vi.hoisted(() => ({
     debug: vi.fn(),
     info: vi.fn(),
-    warn: vi.fn(),
+    warn: vi.fn<(message: string) => void>(),
     error: vi.fn<(error: Error) => void>(),
     setWriters: vi.fn(),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 
-const BRANCH_STORAGE_KEY = 'sourdaw-branches';
-const BRANCH_SESSION_BACKUP_STORAGE_KEY = 'sourdaw-branch-session-backup';
 const MAIN_BRANCH_ID = 'main';
 
 const mainBranch = {
@@ -25,123 +32,156 @@ const mainBranch = {
     note: '',
 };
 
-const localOnlyBranch = {
-    branchId: 'local-only',
-    name: 'Local only',
-    rootDocId: 'branch_local_only',
+const preSessionBranch = {
+    branchId: 'pre-session',
+    name: 'Pre session',
+    rootDocId: 'branch_pre_session',
     sourceBranchId: MAIN_BRANCH_ID,
     createdAt: 200,
     createdFromHeads: [],
     note: '',
 };
 
-const hostProjectedState = { branches: [mainBranch], activeBranchId: MAIN_BRANCH_ID };
-const backupState = { branches: [mainBranch, localOnlyBranch], activeBranchId: MAIN_BRANCH_ID };
-
-function blockEveryDurableWrite(): void {
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-        throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-    });
-}
+const sessionProjectedState = { branches: [mainBranch], activeBranchId: MAIN_BRANCH_ID };
+const preSessionState = { branches: [mainBranch, preSessionBranch], activeBranchId: MAIN_BRANCH_ID };
 
 /**
- * Both `branchStore` and the session-backup adapter cache, so every case needs
- * a fresh module graph — the same shape a real boot has.
+ * The authority carries the revision, the boot promise and the session holds in
+ * module state, so every case needs a fresh module graph — the same shape a
+ * real boot has.
  */
-async function loadInitBranchState(): Promise<{
+async function loadInitBranchState(manager: ControlledLockManager | null): Promise<{
     initBranchState: () => void;
+    whenBranchStateSettled: () => Promise<void>;
     readBranchIds: () => string[] | undefined;
 }> {
     vi.resetModules();
+    // The authority resolves the lock manager off `navigator`, so a stub is
+    // what a runtime with (or without) the Web Locks API looks like here.
+    vi.stubGlobal('navigator', { ...navigator, locks: manager?.locks });
     const stores = await import('../../stores/branchStore');
     const useCase = await import('../initBranchState');
+    const settled = await import('../whenBranchStateSettled');
     return {
         initBranchState: useCase.initBranchState,
+        whenBranchStateSettled: settled.whenBranchStateSettled,
         readBranchIds: () => stores.branchStore.value?.branches.map((branch) => branch.branchId),
     };
 }
 
 describe('initBranchState', () => {
+    let manager: ControlledLockManager;
+
     beforeEach(() => {
         vi.clearAllMocks();
         window.localStorage.clear();
-        window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(hostProjectedState));
+        manager = createControlledLockManager();
     });
 
     afterEach(() => {
         vi.restoreAllMocks();
+        vi.unstubAllGlobals();
         window.localStorage.clear();
     });
 
-    it('consumes a session backup left behind by a session that never tore down', async () => {
-        window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(backupState));
+    it('hydrates the durable branch list before anything can read a branch id', async () => {
+        writeStoredEnvelope({ version: 1, revision: 4, current: preSessionState, session: null, reset: null });
 
-        const { initBranchState, readBranchIds } = await loadInitBranchState();
+        const { initBranchState, readBranchIds, whenBranchStateSettled } = await loadInitBranchState(manager);
         initBranchState();
 
-        expect(readBranchIds()).toEqual([MAIN_BRANCH_ID, localOnlyBranch.branchId]);
-        expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBeNull();
+        // Synchronous on purpose: the composition root reads the active branch
+        // in the same tick, before the asynchronous recovery can settle.
+        expect(readBranchIds()).toEqual([MAIN_BRANCH_ID, preSessionBranch.branchId]);
+
+        await whenBranchStateSettled();
+        expect(mockLogger.error).not.toHaveBeenCalled();
+        expect(mockLogger.warn).not.toHaveBeenCalled();
+    });
+
+    it('restores the pre-session list of a session whose instance never tore down', async () => {
+        writeStoredEnvelope({
+            version: 1,
+            revision: 7,
+            current: sessionProjectedState,
+            session: { owner: 'o1', backup: preSessionState, baseRevision: 6, sequence: 1 },
+            reset: null,
+        });
+
+        const { initBranchState, readBranchIds, whenBranchStateSettled } = await loadInitBranchState(manager);
+        initBranchState();
+        await whenBranchStateSettled();
+
+        expect(readBranchIds()).toEqual([MAIN_BRANCH_ID, preSessionBranch.branchId]);
+        expect(readStoredEnvelope()).toEqual({
+            version: 1,
+            revision: 8,
+            current: preSessionState,
+            session: null,
+            reset: null,
+        });
         expect(mockLogger.error).not.toHaveBeenCalled();
     });
 
-    it('leaves the store alone and stays silent when there is no backup', async () => {
-        const { initBranchState, readBranchIds } = await loadInitBranchState();
-        initBranchState();
+    it('warns without restoring when another window still holds the session', async () => {
+        writeStoredEnvelope({
+            version: 1,
+            revision: 7,
+            current: sessionProjectedState,
+            session: { owner: 'o1', backup: preSessionState, baseRevision: 6, sequence: 1 },
+            reset: null,
+        });
+        const releaseLifetime = holdBranchStateLock(manager, sessionLockName('o1'));
 
+        const { initBranchState, readBranchIds, whenBranchStateSettled } = await loadInitBranchState(manager);
+        initBranchState();
+        await whenBranchStateSettled();
+
+        // The other window owns the list: restoring its backup here is exactly
+        // the overwrite this protocol exists to prevent, so this is a warning
+        // about refused local writes, not an error.
         expect(readBranchIds()).toEqual([MAIN_BRANCH_ID]);
+        expect(readStoredEnvelope()?.revision).toBe(7);
         expect(mockLogger.error).not.toHaveBeenCalled();
+        expect(mockLogger.warn.mock.calls[0]?.[0]).toContain('owns the branch list');
+        releaseLifetime();
     });
 
-    it('applies the recovered state and reports the loss when it cannot be persisted', async () => {
-        window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(backupState));
+    it('reports an unsequenceable boot when the Web Locks API is absent', async () => {
+        writeStoredEnvelope({ version: 1, revision: 4, current: preSessionState, session: null, reset: null });
 
-        const { initBranchState, readBranchIds } = await loadInitBranchState();
-        blockEveryDurableWrite();
+        const { initBranchState, readBranchIds, whenBranchStateSettled } = await loadInitBranchState(null);
+        expect(() => {
+            initBranchState();
+        }).not.toThrow();
+        await whenBranchStateSettled();
+
+        expect(readBranchIds()).toEqual([MAIN_BRANCH_ID, preSessionBranch.branchId]);
+        expect(mockLogger.error.mock.calls[0]?.[0]?.message).toContain('cannot be sequenced');
+    });
+
+    it('starts on the default list and reports when durable storage cannot be read', async () => {
+        writeStoredEnvelope({ version: 1, revision: 4, current: preSessionState, session: null, reset: null });
+
+        const { initBranchState, readBranchIds, whenBranchStateSettled } = await loadInitBranchState(manager);
+        const restoreReads = blockEveryDurableRead();
 
         expect(() => {
             initBranchState();
         }).not.toThrow();
-
-        expect(readBranchIds()).toEqual([MAIN_BRANCH_ID, localOnlyBranch.branchId]);
-        // The backup is the retry: dropping it here would turn a recoverable
-        // failure into a permanent one.
-        expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(backupState));
-        expect(mockLogger.error.mock.calls[0]?.[0]?.message).toContain('could not be persisted');
-    });
-
-    it('reports a retained backup separately from a refused state write', async () => {
-        window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(backupState));
-
-        const { initBranchState, readBranchIds } = await loadInitBranchState();
-        vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
-            throw new DOMException('The operation is insecure.', 'SecurityError');
-        });
-
-        initBranchState();
-
-        // The state is durable here — reporting it as "could not be persisted"
-        // would be wrong, and reporting nothing at all is what left the backup
-        // silently re-applying at every boot.
-        expect(readBranchIds()).toEqual([MAIN_BRANCH_ID, localOnlyBranch.branchId]);
-        expect(mockLogger.error.mock.calls[0]?.[0]?.message).toContain('could not be cleared');
-    });
-
-    it('leaves branch state untouched and reports when durable storage cannot be read', async () => {
-        window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(backupState));
-
-        const { initBranchState, readBranchIds } = await loadInitBranchState();
-        const refusedRead = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-            throw new DOMException('The operation is insecure.', 'SecurityError');
-        });
-
-        expect(() => {
-            initBranchState();
-        }).not.toThrow();
+        await whenBranchStateSettled();
 
         expect(readBranchIds()).toEqual([MAIN_BRANCH_ID]);
         expect(mockLogger.error.mock.calls[0]?.[0]?.message).toContain('could not be read');
 
-        refusedRead.mockRestore();
-        expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(backupState));
+        restoreReads();
+        // Nothing was written over the list this boot could not see.
+        expect(readStoredEnvelope()).toEqual({
+            version: 1,
+            revision: 4,
+            current: preSessionState,
+            session: null,
+            reset: null,
+        });
     });
 });

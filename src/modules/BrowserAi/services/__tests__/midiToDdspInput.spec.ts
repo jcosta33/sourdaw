@@ -105,3 +105,75 @@ describe('midiToDdspInput', () => {
         expect(peakIndex).toBeGreaterThan(0);
     });
 });
+
+describe('midiToDdspInput — monophonic input contract (issue #3789)', () => {
+    const chord = (order: Array<number>): MidiNote[] =>
+        order.map((pitch) => ({ pitch, velocity: 100, startSec: 0, durationSec: 1 }));
+
+    it('refuses a simultaneous chord instead of rendering an arbitrary surviving voice', () => {
+        expect(() => midiToDdspInput({ notes: chord([60, 64, 67]), durationSec: 1 })).toThrow(
+            /polyphonic.*C4 and E4.*monophonic/u
+        );
+    });
+
+    it('names the same overlap regardless of the notes input order', () => {
+        let forward: string | null = null;
+        let reverse: string | null = null;
+        try {
+            midiToDdspInput({ notes: chord([60, 64, 67]), durationSec: 1 });
+        } catch (error) {
+            forward = (error as Error).message;
+        }
+        try {
+            midiToDdspInput({ notes: chord([67, 64, 60]), durationSec: 1 });
+        } catch (error) {
+            reverse = (error as Error).message;
+        }
+        expect(forward).toBe(reverse);
+    });
+
+    it('refuses partial overlaps and overlapping repeated pitches', () => {
+        const partial = [
+            { pitch: 69, velocity: 100, startSec: 0, durationSec: 0.5 },
+            { pitch: 71, velocity: 100, startSec: 0.4, durationSec: 0.5 },
+        ];
+        expect(() => midiToDdspInput({ notes: partial, durationSec: 1 })).toThrow(/polyphonic/u);
+
+        const repeated = [
+            { pitch: 60, velocity: 100, startSec: 0, durationSec: 0.5 },
+            { pitch: 60, velocity: 100, startSec: 0.25, durationSec: 0.5 },
+        ];
+        expect(() => midiToDdspInput({ notes: repeated, durationSec: 1 })).toThrow(/polyphonic/u);
+    });
+
+    it('renders a nonoverlapping monophonic phrase with its timing and pitch intact', () => {
+        const phrase: MidiNote[] = [
+            { pitch: 60, velocity: 100, startSec: 0, durationSec: 0.5 },
+            { pitch: 62, velocity: 100, startSec: 0.5, durationSec: 0.25 },
+            { pitch: 64, velocity: 100, startSec: 0.875, durationSec: 0.125 },
+        ];
+        const { pitchHz, nFrames } = midiToDdspInput({ notes: phrase, durationSec: 1 });
+
+        // pitchHz is a Float32Array, so compare at float32 precision.
+        expect(pitchHz[10]).toBeCloseTo(midiToHz(60), 3);
+        expect(pitchHz[150]).toBeCloseTo(midiToHz(62), 3);
+        expect(pitchHz[230]).toBeCloseTo(midiToHz(64), 3);
+        // The 0.75–0.875s gap between notes 2 and 3 stays silent.
+        expect(pitchHz[200]).toBe(0);
+        expect(nFrames).toBe(250);
+    });
+
+    it('renders an empty clip as silence and tolerates sub-microsecond float adjacency', () => {
+        const silence = midiToDdspInput({ notes: [], durationSec: 1 });
+        expect(silence.pitchHz.every((value) => value === 0)).toBe(true);
+        expect(silence.loudnessDb.every((value) => value === -120)).toBe(true);
+
+        // 0.1 + 0.2 lands adjacent to 0.3 with float dust; a real phrase must
+        // not be refused for sub-microsecond overlap.
+        const floatAdjacent: MidiNote[] = [
+            { pitch: 60, velocity: 100, startSec: 0, durationSec: 0.1 + 0.2 },
+            { pitch: 62, velocity: 100, startSec: 0.3, durationSec: 0.5 },
+        ];
+        expect(() => midiToDdspInput({ notes: floatAdjacent, durationSec: 1 })).not.toThrow();
+    });
+});

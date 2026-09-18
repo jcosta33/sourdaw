@@ -1106,6 +1106,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 workletNode: makeWorkletNode(),
                 setParam: vi.fn(),
                 setBypass: vi.fn(),
+                setModAssignments: vi.fn(),
                 onMeterData: vi.fn(),
                 onLatencyChanged: vi.fn((cb) => {
                     latencyCallback = cb;

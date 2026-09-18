@@ -15,6 +15,7 @@ import { type MixAnalysis } from '../../models/MixAnalysis';
 import { mixAnalysisStore, toggleMixAnalysisPanel } from '../../stores/mixAnalysisStore';
 import { runAppAction } from '../../useCases/aiPanelActions/runAppAction';
 import {
+    EvidenceStatus,
     OverallLevel,
     FrequencyBalance,
     TrackLevelsList,
@@ -100,6 +101,7 @@ export const MixAnalysisPanel = (): ReactElement | null => {
             <ScrollArea className="flex-1 max-h-[60vh]">
                 {state.result ? (
                     <Stack gap={3} className="p-3">
+                        <EvidenceStatus status={state.result.status} />
                         <OverallLevel level={state.result.overallLevel} />
                         <FrequencyBalance bands={state.result.frequencyBalance} />
                         <TrackLevelsList trackLevels={state.result.trackLevels} />
@@ -127,6 +129,8 @@ export const MixAnalysisPanel = (): ReactElement | null => {
                                     onClick={handleAutoFix}
                                     disabled={
                                         state.isAnalyzing ||
+                                        // An insufficient measurement is not evidence for gain changes.
+                                        state.result.status.availability === 'insufficient' ||
                                         state.result.issues.filter((index) => index.severity !== 'info').length === 0
                                     }
                                 >

@@ -2,7 +2,13 @@
 //! Supports one-shot, looping, and ping-pong modes.
 //! Start/end points and crossfade for seamless loops.
 
+/// The buffer's authored length in frames, and the source rate it was rendered
+/// at: one second of material at 44.1 kHz. Playback owes its pitch and duration
+/// to that pair, not to the engine's output rate, so `tick` converts — a fixed
+/// 44,100-frame source answered one frame per output sample plays ~8.8% sharp
+/// and short at 48 kHz, nearly an octave at 96 kHz (issue #3710).
 pub const SAMPLE_BUFFER_SIZE: usize = 44100; // 1 second at 44.1kHz
+pub const SOURCE_SAMPLE_RATE: f32 = SAMPLE_BUFFER_SIZE as f32;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum PlaybackMode {
@@ -110,8 +116,13 @@ impl SamplerEngine {
     }
 
     /// Process one sample. Returns the sample value.
+    ///
+    /// `sample_rate` is the engine's output rate. The source advances by
+    /// `rate · direction · SOURCE_SAMPLE_RATE / sample_rate` frames per tick,
+    /// so `rate` stays a pure musical ratio: 1.0 reproduces the source's
+    /// authored pitch and duration at any output rate.
     #[inline]
-    pub fn tick(&mut self, _sample_rate: f32) -> f32 {
+    pub fn tick(&mut self, sample_rate: f32) -> f32 {
         if !self.active {
             return 0.0;
         }
@@ -158,8 +169,15 @@ impl SamplerEngine {
             }
         }
 
-        // Advance position
-        self.position += self.rate * self.direction;
+        // Advance position: the musical ratio times the source-to-output rate
+        // conversion. A degenerate output rate cannot be multiplied through —
+        // treat it as if the source were already at rate 1:1.
+        let rate_step = if sample_rate > 0.0 {
+            SOURCE_SAMPLE_RATE / sample_rate
+        } else {
+            1.0
+        };
+        self.position += self.rate * self.direction * rate_step;
 
         match self.mode {
             PlaybackMode::OneShot => {
@@ -390,5 +408,103 @@ mod tests {
             pinger.tick(44_100.0);
         }
         assert!(pinger.is_active(), "ping-pong stopped at a region bound");
+    }
+
+    // ── Source rate vs output rate (issue #3710) ──────────────────────────
+
+    /// Rising crossings per output second between the first and last crossing
+    /// above 25% of peak — the default buffer is a *decaying* 440 Hz burst, so
+    /// a whole-render crossing count would dilute the pitch with its quiet
+    /// tail.
+    fn measured_hz(rendered: &[f32], output_rate: f32) -> f32 {
+        let peak = rendered.iter().fold(0.0_f32, |acc, s| acc.max(s.abs()));
+        assert!(
+            peak > 0.05,
+            "render was near-silent (peak {peak}); nothing to measure"
+        );
+        let floor = peak * 0.25;
+        let mut first: Option<usize> = None;
+        let mut last = 0;
+        let mut crossings = 0;
+        let mut armed = false;
+        for (index, &sample) in rendered.iter().enumerate() {
+            if sample < -floor {
+                armed = true;
+            } else if sample > floor && armed {
+                crossings += 1;
+                armed = false;
+                if first.is_none() {
+                    first = Some(index);
+                }
+                last = index;
+            }
+        }
+        let span_secs =
+            (last - first.expect("at least one crossing above the floor")) as f32 / output_rate;
+        (crossings as f32 - 1.0) / span_secs
+    }
+
+    /// The issue's own oracle: `new()`, One-Shot, Start 0, End 1, trigger(1.0),
+    /// count ticks until inactive and measure the fundamental. The buffer is
+    /// one second of 440 Hz at 44.1 kHz, so every output rate must terminate
+    /// after `sample_rate` ticks — 44,100 at 44.1 kHz, 48,000 at 48 kHz,
+    /// 96,000 at 96 kHz — with the fundamental unchanged. Pre-fix, all three
+    /// rates terminated after 44,100 ticks at 440 · rate/44100 Hz.
+    #[test]
+    fn one_second_of_source_lasts_one_second_of_output_at_every_rate() {
+        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
+            let mut s = SamplerEngine::new();
+            s.set_mode(0); // OneShot, Start 0, End 1
+            s.trigger(1.0);
+
+            let mut rendered = Vec::with_capacity(sample_rate as usize + 64);
+            while s.is_active() {
+                rendered.push(s.tick(sample_rate));
+            }
+
+            let expected = sample_rate as usize; // 1.000 s of output
+                                                 // 0.2% slack: the f32 playhead loses a few frames of drift per
+                                                 // ~50k accumulated adds (measured 23 at 48 kHz — 0.8 cents, far
+                                                 // under audibility). The pre-fix bug misses by 8.8% at 48 kHz and
+                                                 // 50% at 96 kHz.
+            assert!(
+                (rendered.len() as f64 - expected as f64).abs() <= expected as f64 * 0.002,
+                "at {sample_rate} Hz the one-second source must spend ~{expected} output frames, spent {}",
+                rendered.len()
+            );
+            let hz = measured_hz(&rendered, sample_rate);
+            assert!(
+                (hz - 440.0).abs() < 440.0 * 0.05,
+                "at {sample_rate} Hz the trigger-1.0 render measured {hz:.1} Hz, not 440"
+            );
+        }
+    }
+
+    /// `rate` stays a pure musical ratio: at 2.0 the render lasts half as long
+    /// at every output rate and measures an octave up.
+    #[test]
+    fn pitch_ratio_scales_duration_and_pitch_alone() {
+        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
+            let mut s = SamplerEngine::new();
+            s.set_mode(0);
+            s.trigger(2.0);
+
+            let mut rendered = Vec::with_capacity(sample_rate as usize + 64);
+            while s.is_active() {
+                rendered.push(s.tick(sample_rate));
+            }
+
+            let expected = sample_rate as usize / 2; // 0.5 s of output
+            assert!(
+                (rendered.len() as f64 - expected as f64).abs() <= expected as f64 * 0.002,
+                "at {sample_rate} Hz a 2.0 ratio must spend ~{expected} output frames, spent {}",
+                rendered.len()
+            );
+            let hz = measured_hz(&rendered, sample_rate);
+            assert!(
+                (hz - 880.0).abs() < 880.0 * 0.05,
+                "at {sample_rate} Hz the 2.0 render measured {hz:.1} Hz, not 880"
+            );
+        }
     }
 }

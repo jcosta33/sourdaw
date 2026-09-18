@@ -125,6 +125,7 @@ impl DrumMode {
             velocity,
             sample_id,
             root_note: pad.root_note,
+            source_sample_rate: 0.0,
             choke_group: pad.choke_group,
             playback_mode: pad.playback_mode,
             loop_mode: super::super::types::LoopMode::Off,

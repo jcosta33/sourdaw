@@ -1,6 +1,6 @@
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { recordAutomationValue } from '#/modules/Automation/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { captureGestureBeat, transportStore } from '#/modules/Transport/stores';
 import { type AutomationRecordingPolicy } from '#/utils/handlerContract';
 
 import { clampDeviceParameterValue, isInternalDeviceParameter } from '../../../models/DeviceParameterLaw';
@@ -91,7 +91,11 @@ export function setDeviceParameter(
     }));
 
     // Record automation if playing in a recording mode, unless this write
-    // declares itself a static edit rather than a gesture.
+    // declares itself a static edit rather than a gesture. The beat comes from
+    // the moving playback clock, not the transport store: during playback the
+    // store holds the beat playback started at, so stamping from it lands a
+    // knob ride at the start beat (#3799). This call is synchronous from the
+    // gesture, so the capture answers for the event's own instant.
     const transport = transportStore.value;
     if (
         !options.projectOnly &&
@@ -99,7 +103,7 @@ export function setDeviceParameter(
         transport?.isPlaying &&
         RECORDING_MODES.has(track.automationMode)
     ) {
-        recordAutomationValue(target.trackId, `${target.deviceId}:${paramId}`, clamped, transport.playheadPosition);
+        recordAutomationValue(target.trackId, `${target.deviceId}:${paramId}`, clamped, captureGestureBeat());
     }
 
     return true;

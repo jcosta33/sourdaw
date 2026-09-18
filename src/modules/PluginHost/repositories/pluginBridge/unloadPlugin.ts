@@ -1,4 +1,4 @@
-import { desktopInvoke, isDesktopRuntime } from '#/utils/desktopBridge';
+import { desktopInvoke, isNativeHostUnavailableError, isDesktopRuntime } from '#/utils/desktopBridge';
 
 /**
  * One strip's chain as an unload left it, after releasing every chain entry
@@ -71,7 +71,18 @@ export async function unloadPlugin(instanceId?: string): Promise<PluginUnloadRes
     if (!isDesktopRuntime()) {
         return { unloadedInstanceIds: instanceId ? [instanceId] : [], errors: [], reports: [] };
     }
-    return parsePluginUnloadResult(
-        await desktopInvoke('unload_plugin', instanceId === undefined ? {} : { instanceId })
-    );
+    try {
+        return parsePluginUnloadResult(
+            await desktopInvoke('unload_plugin', instanceId === undefined ? {} : { instanceId })
+        );
+    } catch (error) {
+        // A shell whose addon never loaded has no native plugin instances, so
+        // the honest unload result is the browser's: nothing to retire. Every
+        // other rejection — a real engine error list, a malformed reply — still
+        // propagates, because those describe an unload that should have worked.
+        if (isNativeHostUnavailableError(error)) {
+            return { unloadedInstanceIds: instanceId ? [instanceId] : [], errors: [], reports: [] };
+        }
+        throw error;
+    }
 }

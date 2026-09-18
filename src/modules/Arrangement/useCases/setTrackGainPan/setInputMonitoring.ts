@@ -1,4 +1,4 @@
-import { startInputMonitoring, stopInputMonitoring } from '#/modules/AudioEngine/useCases';
+import { startInputMonitoring, stopTrackInputMonitoring } from '#/modules/AudioEngine/useCases';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -15,9 +15,11 @@ export function setInputMonitoring(trackId: string, mode: InputMonitoring): void
     }
     updateTrack(trackId, (time) => ({ ...time, inputMonitoring: mode }));
 
+    // Stopping is per track: other tracks keep their monitor edges and the
+    // shared capture stays live while any of them still listens.
     if (mode === 'on') {
         void startInputMonitoring(trackId);
     } else {
-        stopInputMonitoring();
+        stopTrackInputMonitoring(trackId);
     }
 }

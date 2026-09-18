@@ -175,7 +175,7 @@ pub fn db_to_linear(db: f32) -> f32 {
 }
 pub fn linear_to_db(linear: f32) -> f32 {
     if linear <= 0.0 {
-        -100.0
+        crate::proof::metering::SILENCE_DB
     } else {
         20.0 * linear.log10()
     }

@@ -34,6 +34,17 @@ import {
     REVIEWER_BOT_NODE_ID,
 } from '../githubAppIdentity.ts';
 import {
+    TRUSTED_COMMON_DIR_ENV,
+    TRUSTED_GATE_WORKFLOW_ENV,
+    TRUSTED_GH_PATH_ENV,
+    TRUSTED_GIT_AI_PATH_ENV,
+    TRUSTED_GIT_PATH_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV,
+    TRUSTED_POWERSHELL_PATH_ENV,
+    TRUSTED_PRIMARY_ROOT_ENV,
+    TRUSTED_PS_PATH_ENV,
+} from '../prContract.ts';
+import {
     coordinatePublishReview,
     runPublishReviewCli,
     type PublishReviewCoordinatorDependencies,
@@ -227,7 +238,7 @@ function pullRequestSnapshot(overrides: Partial<PullRequestSnapshot> = {}): Pull
             '### 🖼️ Screenshots',
             'None.',
             '',
-            '### 📌 Related tickets & additional notes',
+            '### 📌 Related issues & additional notes',
             'Closes #2406',
         ].join('\n'),
         headRefName: 'agent/2495/delivery-lock',
@@ -407,6 +418,26 @@ try {
     }
 }
 
+/**
+ * The real loader imports its trusted env names from `prContract.ts`, so any
+ * fixture that copies the loader verbatim must give its `prContract` stub
+ * those exports or Node refuses the import mid-launcher. Generated from the
+ * real constants so a renamed binding fails this spec, not a delivery.
+ */
+const PR_CONTRACT_TRUSTED_ENV_STUB = [
+    ['TRUSTED_PRIMARY_ROOT_ENV', TRUSTED_PRIMARY_ROOT_ENV],
+    ['TRUSTED_COMMON_DIR_ENV', TRUSTED_COMMON_DIR_ENV],
+    ['TRUSTED_GIT_PATH_ENV', TRUSTED_GIT_PATH_ENV],
+    ['TRUSTED_GH_PATH_ENV', TRUSTED_GH_PATH_ENV],
+    ['TRUSTED_PS_PATH_ENV', TRUSTED_PS_PATH_ENV],
+    ['TRUSTED_GIT_AI_PATH_ENV', TRUSTED_GIT_AI_PATH_ENV],
+    ['TRUSTED_POWERSHELL_PATH_ENV', TRUSTED_POWERSHELL_PATH_ENV],
+    ['TRUSTED_ORIGIN_COMMIT_ENV', TRUSTED_ORIGIN_COMMIT_ENV],
+    ['TRUSTED_GATE_WORKFLOW_ENV', TRUSTED_GATE_WORKFLOW_ENV],
+]
+    .map(([name, value]) => `export const ${name} = ${JSON.stringify(value)};\n`)
+    .join('');
+
 function runPackageRoute(repository: string, args: string[]): string {
     const pnpmCli = process.env.npm_execpath;
     if (!pnpmCli) {
@@ -444,7 +475,7 @@ function trustedPublishFixture(root: string, policy: string): void {
             `export async function runPublishLaneCli(args) { appendFileSync(args.at(-1), ${JSON.stringify(policy)} + ':' + publishingPermission + '\\n'); return 0; }\n`
     );
     writeFileSync(join(root, 'scripts/githubAppIdentity.ts'), 'export const publishingPermission = "ordinary";\n');
-    writeFileSync(join(root, 'scripts/prContract.ts'), 'export {};\n');
+    writeFileSync(join(root, 'scripts/prContract.ts'), PR_CONTRACT_TRUSTED_ENV_STUB);
     for (const path of stackSummarySources) {
         writeFileSync(join(root, path), 'export {};\n');
     }
@@ -527,13 +558,15 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
             '}',
         ].join('\n')
     );
+    writeFileSync(join(root, 'scripts/prContract.ts'), PR_CONTRACT_TRUSTED_ENV_STUB);
     for (const path of [
         'githubAppIdentity.ts',
-        'prContract.ts',
         'reviewPublicationLegacyIncidents.ts',
         'prepareReview.ts',
         'recoverPublishReviewLock.ts',
         'reviewCommentDiffPreflight.ts',
+        'reviewDocumentParser.ts',
+        'reviewerModelDiversity.ts',
         'reviewPublicationRecoveryReceipt.ts',
         'reviewPublicationRemoteInspection.ts',
         'pullRequestReviewState.ts',
@@ -962,6 +995,8 @@ describe('package scripts and gitignore', () => {
             'publishReview.ts',
             'recoverPublishReviewLock.ts',
             'reviewCommentDiffPreflight.ts',
+            'reviewDocumentParser.ts',
+            'reviewerModelDiversity.ts',
             'reviewPublicationRecoveryReceipt.ts',
             'reviewPublicationRemoteInspection.ts',
             'deliverPullRequest.ts',
@@ -1017,6 +1052,8 @@ describe('package scripts and gitignore', () => {
             'scripts/publishReview.ts',
             'scripts/pullRequestReviewState.ts',
             'scripts/reviewCommentDiffPreflight.ts',
+            'scripts/reviewDocumentParser.ts',
+            'scripts/reviewerModelDiversity.ts',
             'scripts/reviewPublicationLegacyIncidents.ts',
             'scripts/reviewPublicationRecoveryReceipt.ts',
             'scripts/reviewPublicationRemoteInspection.ts',
@@ -1126,6 +1163,8 @@ describe('package scripts and gitignore', () => {
                     'scripts/publishReview.ts',
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
+                    'scripts/reviewDocumentParser.ts',
+                    'scripts/reviewerModelDiversity.ts',
                     'scripts/prepareReview.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
@@ -1142,6 +1181,8 @@ describe('package scripts and gitignore', () => {
                     'scripts/publishReview.ts',
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
+                    'scripts/reviewDocumentParser.ts',
+                    'scripts/reviewerModelDiversity.ts',
                     'scripts/prepareReview.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
@@ -1159,6 +1200,8 @@ describe('package scripts and gitignore', () => {
                     'scripts/publishReview.ts',
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
+                    'scripts/reviewDocumentParser.ts',
+                    'scripts/reviewerModelDiversity.ts',
                     'scripts/reviewPublicationLegacyIncidents.ts',
                     'scripts/reviewPublicationRecoveryReceipt.ts',
                     'scripts/reviewPublicationRemoteInspection.ts',
@@ -1552,6 +1595,62 @@ describe('package scripts and gitignore', () => {
                         ]),
                     ].join(delimiter)
                 );
+            } finally {
+                removeTemporaryDirectory(fixtureRoot);
+            }
+        });
+
+        it('resolves an optional git-ai path for delivery and carries it into the snapshot environment', () => {
+            const { fixtureRoot, primary } = cloneTrustedPublishPrimaryFixture('sourdaw-trusted-git-ai-');
+            const gitBin = join(fixtureRoot, 'git-bin');
+            const ghBin = join(fixtureRoot, 'gh-bin');
+            const gitAiBin = join(fixtureRoot, 'git-ai-bin');
+            const psBin = join(fixtureRoot, 'ps-bin');
+            const realGit = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
+            const realGh = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
+            try {
+                for (const directory of [gitBin, ghBin, gitAiBin, psBin]) {
+                    mkdirSync(directory);
+                }
+                writeFileSync(join(gitBin, 'git'), `#!/bin/sh\nexec ${JSON.stringify(realGit)} "$@"\n`);
+                writeFileSync(join(ghBin, 'gh'), `#!/bin/sh\nexec ${JSON.stringify(realGh)} "$@"\n`);
+                writeFileSync(join(gitAiBin, 'git-ai'), '#!/bin/sh\nexit 0\n');
+                writeFileSync(join(psBin, 'ps'), '#!/bin/sh\nexit 0\n');
+                for (const wrapper of [
+                    join(gitBin, 'git'),
+                    join(ghBin, 'gh'),
+                    join(gitAiBin, 'git-ai'),
+                    join(psBin, 'ps'),
+                ]) {
+                    chmodSync(wrapper, 0o700);
+                }
+                const pathValue = [gitBin, ghBin, gitAiBin, psBin].join(delimiter);
+
+                const deliver = resolveTrustedLauncherBinding(primary, { PATH: pathValue }, 'deliver');
+                expect(deliver.gitAiPath).toBe(realpathSync(join(gitAiBin, 'git-ai')));
+                const env = trustedSnapshotEnv({
+                    commit: 'a'.repeat(40),
+                    sources: new Map(),
+                    launcher: deliver,
+                });
+                expect(env.SOURDAW_TRUSTED_GIT_AI_PATH).toBe(deliver.gitAiPath);
+                expect(env.PATH).toContain(realpathSync(gitAiBin));
+
+                // Only delivery asks for it, and an operator without git-ai keeps the documented skip.
+                const review = resolveTrustedLauncherBinding(primary, { PATH: pathValue }, 'review:publish');
+                expect(review.gitAiPath).toBeUndefined();
+                const bare = resolveTrustedLauncherBinding(
+                    primary,
+                    { PATH: [gitBin, ghBin, psBin].join(delimiter) },
+                    'deliver'
+                );
+                expect(bare.gitAiPath).toBeUndefined();
+                const bareEnv = trustedSnapshotEnv({
+                    commit: 'a'.repeat(40),
+                    sources: new Map(),
+                    launcher: bare,
+                });
+                expect(bareEnv.SOURDAW_TRUSTED_GIT_AI_PATH).toBeUndefined();
             } finally {
                 removeTemporaryDirectory(fixtureRoot);
             }
@@ -2192,6 +2291,7 @@ describe('package scripts and gitignore', () => {
                         },
                     ],
                 },
+                reviewerModel: 'glm-5.3-flash',
             })
         );
         writeFileSync(join(bundle, 'diff.patch'), '');

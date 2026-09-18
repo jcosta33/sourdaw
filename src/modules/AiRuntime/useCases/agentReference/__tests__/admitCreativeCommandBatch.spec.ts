@@ -4,6 +4,7 @@ import { type CreativeRequestAuthority } from '../../../models/CreativeInterpret
 import { type ProjectContext, type ProjectContextTrack } from '../../../models/ProjectContext';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { admitCreativeCommandBatch, type CreativeCallAdmission } from '../admitCreativeCommandBatch';
+import { getSpentCreationBudgetReason } from '../creativeAuthorityReasons';
 
 const guitarTrack: ProjectContextTrack = {
     id: 'guitar',
@@ -57,6 +58,19 @@ const bassTrack: ProjectContextTrack = {
     ],
 };
 
+/** The identity an earlier accepted batch stamped on a track that is now part of the project. */
+const STAMPED_TRACK_ID = 'track-ai-11111111-1111-4111-8111-111111111111';
+
+const stampedTrack: ProjectContextTrack = {
+    ...bassTrack,
+    id: STAMPED_TRACK_ID,
+    name: 'Synth',
+    clipCount: 0,
+    deviceCount: 0,
+    clips: [],
+    devices: [],
+};
+
 const context: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],
@@ -82,6 +96,8 @@ const context: ProjectContext = {
     activeView: 'arrange',
     playheadPosition: 0,
 };
+
+const stampedTrackContext: ProjectContext = { ...context, tracks: [...context.tracks, stampedTrack] };
 
 const guitarTrackTarget = {
     provenance: 'contextual-selection' as const,
@@ -115,11 +131,44 @@ function buildAuthority(overrides: Partial<CreativeRequestAuthority>): CreativeR
     };
 }
 
+const createdTrackSlot = { objectType: 'track' as const, parentObjectId: null, budget: 4 };
+
+/** What the catalog publishes for a device hanging under a track the same batch creates. */
+const nestedDeviceSlot = {
+    objectType: 'device' as const,
+    parentObjectId: null,
+    parentCreatedObjectType: 'track' as const,
+    budget: 4,
+};
+
+function buildCreateAuthority(creationSlots: CreativeRequestAuthority['creationSlots']): CreativeRequestAuthority {
+    return buildAuthority({
+        mode: 'create',
+        targets: [],
+        editDimensions: ['processing', 'arrangement'],
+        creationSlots,
+    });
+}
+
+const addSynthTrack: ToolCallResult = {
+    name: 'addTrack',
+    arguments: { name: 'Synth', kind: 'midi', binding: 'synth' },
+};
+
+function addDeviceOnSynth(deviceType: string, binding?: string): ToolCallResult {
+    return {
+        name: 'addDevice',
+        arguments:
+            binding === undefined ? { trackId: '$synth', deviceType } : { trackId: '$synth', deviceType, binding },
+    };
+}
+
 function admitBatch(
     authority: CreativeRequestAuthority,
-    calls: readonly ToolCallResult[]
+    calls: readonly ToolCallResult[],
+    batchContext: ProjectContext = context
 ): readonly CreativeCallAdmission[] {
-    const admissions = admitCreativeCommandBatch({ authority, calls, context });
+    const admissions = admitCreativeCommandBatch({ authority, calls, context: batchContext });
     expect(admissions.size).toBe(calls.length);
     return calls.map((_call, index) => {
         const admission = admissions.get(index);
@@ -392,5 +441,126 @@ describe('admitCreativeCommandBatch', () => {
             admitOne(buildAuthority({}), { name: 'summonReverb', arguments: {} }),
             'cannot admit the unknown command summonReverb'
         );
+    });
+
+    it('admits a track creation under the published track slot', () => {
+        const admission = admitOne(buildCreateAuthority([createdTrackSlot]), addSynthTrack);
+
+        expect(admission).toEqual({ status: 'admitted', targets: [] });
+    });
+
+    it('admits a device and its setting on a track the same batch creates', () => {
+        const admissions = admitBatch(buildCreateAuthority([createdTrackSlot, nestedDeviceSlot]), [
+            addSynthTrack,
+            addDeviceOnSynth('eq', 'radio'),
+            { name: 'setDeviceParameter', arguments: { deviceId: '$radio', paramId: 'gain', value: -6 } },
+        ]);
+
+        expect(admissions.map((admission) => admission.status)).toEqual(['admitted', 'admitted', 'admitted']);
+        expect(admissions[1]).toEqual({
+            status: 'admitted',
+            targets: [{ argument: 'trackId', capability: 'device-host-track', objectId: '$synth' }],
+        });
+    });
+
+    it('spends the nested device slot once per device and refuses the one past its budget', () => {
+        const admissions = admitBatch(buildCreateAuthority([createdTrackSlot, nestedDeviceSlot]), [
+            addSynthTrack,
+            addDeviceOnSynth('eq'),
+            addDeviceOnSynth('compressor'),
+            addDeviceOnSynth('eq'),
+            addDeviceOnSynth('compressor'),
+            addDeviceOnSynth('eq'),
+        ]);
+
+        expect(admissions.slice(0, 5).map((admission) => admission.status)).toEqual([
+            'admitted',
+            'admitted',
+            'admitted',
+            'admitted',
+            'admitted',
+        ]);
+        expectRejection(admissions[5] as CreativeCallAdmission, getSpentCreationBudgetReason('device', 4));
+    });
+
+    it('refuses a device on the created track when the authority published no nested device slot', () => {
+        const admissions = admitBatch(buildCreateAuthority([createdTrackSlot]), [
+            addSynthTrack,
+            addDeviceOnSynth('eq'),
+        ]);
+
+        expect(admissions[0]?.status).toBe('admitted');
+        expectRejection(admissions[1] as CreativeCallAdmission, 'publishes no device creation slot here');
+    });
+
+    it('refuses a device that runs before the batch call creating its track', () => {
+        const admissions = admitBatch(buildCreateAuthority([createdTrackSlot, nestedDeviceSlot]), [
+            addDeviceOnSynth('eq'),
+            addSynthTrack,
+        ]);
+
+        expectRejection(admissions[0] as CreativeCallAdmission, 'does not cover the track $synth');
+        expect(admissions[1]?.status).toBe('admitted');
+    });
+
+    it('admits a device on a stamped track no project track carries once the batch has created a track', () => {
+        const stampedTrackNoProjectTrackCarries = 'track-ai-22222222-2222-4222-8222-222222222222';
+        const admissions = admitBatch(buildCreateAuthority([createdTrackSlot, nestedDeviceSlot]), [
+            addSynthTrack,
+            { name: 'addDevice', arguments: { trackId: stampedTrackNoProjectTrackCarries, deviceType: 'eq' } },
+        ]);
+
+        expect(admissions[0]?.status).toBe('admitted');
+        expect(admissions[1]).toEqual({
+            status: 'admitted',
+            targets: [
+                { argument: 'trackId', capability: 'device-host-track', objectId: stampedTrackNoProjectTrackCarries },
+            ],
+        });
+    });
+
+    it('refuses a device on a stamped track the project holds and the authority does not name', () => {
+        const admissions = admitBatch(
+            buildCreateAuthority([createdTrackSlot, nestedDeviceSlot]),
+            [addSynthTrack, { name: 'addDevice', arguments: { trackId: STAMPED_TRACK_ID, deviceType: 'eq' } }],
+            stampedTrackContext
+        );
+
+        expect(admissions[0]?.status).toBe('admitted');
+        expectRejection(admissions[1] as CreativeCallAdmission, `does not cover the track ${STAMPED_TRACK_ID}`);
+    });
+
+    it('spends the slot naming a stamped track the project holds rather than a nested one', () => {
+        const admissions = admitBatch(
+            buildAuthority({
+                targets: [
+                    {
+                        provenance: 'contextual-selection',
+                        objectType: 'track',
+                        objectIds: [STAMPED_TRACK_ID],
+                        parentTrackId: null,
+                    },
+                ],
+                creationSlots: [{ objectType: 'device', parentObjectId: STAMPED_TRACK_ID, budget: 1 }],
+            }),
+            [
+                { name: 'addDevice', arguments: { trackId: STAMPED_TRACK_ID, deviceType: 'eq' } },
+                { name: 'addDevice', arguments: { trackId: STAMPED_TRACK_ID, deviceType: 'compressor' } },
+            ],
+            stampedTrackContext
+        );
+
+        expect(admissions[0]?.status).toBe('admitted');
+        expectRejection(admissions[1] as CreativeCallAdmission, getSpentCreationBudgetReason('device', 1));
+    });
+
+    it('refuses a command outside the plan-created set that names the track the batch creates', () => {
+        const admissions = admitBatch(buildCreateAuthority([createdTrackSlot, nestedDeviceSlot]), [
+            addSynthTrack,
+            { name: 'setTrackGain', arguments: { trackId: '$synth', gain: 0.5 } },
+        ]);
+
+        expect(admissions[0]?.status).toBe('admitted');
+        expectRejection(admissions[1] as CreativeCallAdmission, 'does not cover the track $synth');
     });
 });

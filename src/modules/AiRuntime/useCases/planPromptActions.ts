@@ -2,6 +2,7 @@ import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } 
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
+import { type AgentRunCreationRefusalReason, describeAgentRunCreationRefusal } from '../models/AgentResourceLimits';
 import { getCreativeSelectionSnapshot } from '../models/CreativeInterpretation';
 import { type PlannedIntentResult } from '../models/IntentResult';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
@@ -40,25 +41,76 @@ export type PlannedPromptActions = {
     result: PlannedIntentResult;
 };
 
+/**
+ * A rejection the bounded correction may be admitted to repair. Schema and
+ * resolution vocabulary classifies older rejection strings; every
+ * application-owned bridge or compilation rejection names a concrete violated
+ * constraint, so it is correctable by construction.
+ */
+function isCorrectableRejection(rejectionReason: string | undefined): boolean {
+    if (rejectionReason === undefined) {
+        return false;
+    }
+    return /schema|target|resolv/iu.test(rejectionReason) || rejectionReason.startsWith('Provider action rejected:');
+}
+
+type PlanningRunStreamIdentity = Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>;
+
+type PlanningRunAdmission =
+    | { status: 'admitted'; streamIdentity: PlanningRunStreamIdentity }
+    | { status: 'hard-limit-reached'; reason: AgentRunCreationRefusalReason };
+
+function admitPlanningRun(input: {
+    prompt: string;
+    projectRevision: string;
+    streamIdentity?: PlanningRunStreamIdentity;
+}): PlanningRunAdmission {
+    if (input.streamIdentity !== undefined) {
+        if (agentRunLifecycle.get(input.streamIdentity.runId) === null) {
+            throw new Error('Executable provider planning requires an admitted agent run.');
+        }
+        return { status: 'admitted', streamIdentity: input.streamIdentity };
+    }
+    const runId = `agent-run-${crypto.randomUUID()}`;
+    const created = agentRunLifecycle.create({
+        runId,
+        request: input.prompt,
+        mode: 'plan',
+        createdRevision: input.projectRevision,
+    });
+    if (created.status === 'hard-limit-reached') {
+        return { status: 'hard-limit-reached', reason: created.reason };
+    }
+    return {
+        status: 'admitted',
+        streamIdentity: { runId, requestId: `planning:${runId}`, cancellationGeneration: 0 },
+    };
+}
+
 export async function planPromptActions(input: PlanPromptActionsInput): Promise<PlannedPromptActions> {
     const projectRevision = settlePendingProjectWritesAndCaptureRevision();
     const context = getProjectContext();
-    const streamIdentity = (() => {
-        if (input.streamIdentity !== undefined) {
-            if (agentRunLifecycle.get(input.streamIdentity.runId) === null) {
-                throw new Error('Executable provider planning requires an admitted agent run.');
-            }
-            return input.streamIdentity;
-        }
-        const runId = `agent-run-${crypto.randomUUID()}`;
-        agentRunLifecycle.create({
-            runId,
-            request: input.prompt,
-            mode: 'plan',
-            createdRevision: projectRevision,
-        });
-        return { runId, requestId: `planning:${runId}`, cancellationGeneration: 0 };
-    })();
+    const admission = admitPlanningRun({
+        prompt: input.prompt,
+        projectRevision,
+        streamIdentity: input.streamIdentity,
+    });
+    if (admission.status === 'hard-limit-reached') {
+        return {
+            context,
+            projectRevision,
+            result: {
+                actions: [],
+                rawText: input.prompt,
+                requiresConfirmation: false,
+                planningOutcome: {
+                    kind: 'denied' as const,
+                    reason: describeAgentRunCreationRefusal(admission.reason),
+                },
+            },
+        };
+    }
+    const streamIdentity = admission.streamIdentity;
     // Read once, here: the correction compares against the authority this run started with, not
     // against whatever the run has become by the time the correction is admitted.
     const runAtCapture = agentRunLifecycle.get(streamIdentity.runId);
@@ -141,8 +193,8 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             onProviderAttempt
         );
         const initialCreativeAuthority = result.creativeAuthority ?? null;
-        const correctableValidationFailure =
-            result.rejectionReason !== undefined && /schema|target|resolv/i.test(result.rejectionReason);
+        const rejectionEvidence = result.rejectionEvidence;
+        const correctableValidationFailure = isCorrectableRejection(result.rejectionReason);
         const correctionAdmission = input.onProviderAttempt;
         if (
             correctableValidationFailure &&
@@ -155,7 +207,16 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 error: normalizeAgentFailure({
                     category: result.rejectionReason?.includes('schema') ? 'schema' : 'resolution',
                     source: 'provider-planning',
-                    related: { workIds: [streamIdentity.requestId] },
+                    related: {
+                        workIds: [streamIdentity.requestId],
+                        // Durable identity of the failing proposal item, so the
+                        // run record says what was rejected, not just that
+                        // something was.
+                        commandIds: rejectionEvidence?.command ? [rejectionEvidence.command.name] : undefined,
+                        targetIds: rejectionEvidence?.candidateIds
+                            ? [...rejectionEvidence.candidateIds].slice(0, 8)
+                            : undefined,
+                    },
                     retry: 'read-only',
                     knownDomain: true,
                 }),
@@ -199,7 +260,13 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 input.onProviderResult,
                 streamIdentity,
                 admitCorrectionAttempt,
-                { creativeAuthority: initialCreativeAuthority }
+                {
+                    creativeAuthority: initialCreativeAuthority,
+                    // The correction attempt repairs the named failure; without
+                    // this evidence both a missing and an ambiguous target
+                    // arrived as the same bare `agent.resolution` code.
+                    rejectionEvidence,
+                }
             );
         }
         if (result.preparationRequest === 'stem-import') {
@@ -266,7 +333,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         await discardStemImportScope();
     }
 
-    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(input.prompt, context, projectRevision);
+    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(context, projectRevision);
     const wholeProjectVibeMixAction = result.actions.find((action) => action.type === 'automateTrackGainRange');
     if (wholeProjectVibeMixScope && wholeProjectVibeMixAction) {
         result.wholeProjectVibeMixPlan = {

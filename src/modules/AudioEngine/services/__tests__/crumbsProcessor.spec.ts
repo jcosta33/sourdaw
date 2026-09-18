@@ -28,6 +28,7 @@ const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
 
 const calls: Array<{ method: string; args: unknown[] }> = [];
 let sampleLoadFailure: Error | null = null;
+let droppedSampleWrites = 0;
 
 class CrumbsInstanceMock {
     free(): void {
@@ -54,6 +55,10 @@ class CrumbsInstanceMock {
     }
     set_active_sample(id: number): void {
         calls.push({ method: 'set_active_sample', args: [id] });
+    }
+    dropped_sample_writes(): number {
+        calls.push({ method: 'dropped_sample_writes', args: [] });
+        return droppedSampleWrites;
     }
     set_param(name: string, value: number): void {
         calls.push({ method: 'set_param', args: [name, value] });
@@ -104,6 +109,7 @@ describe('CrumbsProcessor scheduled note queue', () => {
         resetGrowableMemory(memory, HEAP_BYTES);
         calls.length = 0;
         sampleLoadFailure = null;
+        droppedSampleWrites = 0;
         vi.stubGlobal('currentFrame', 0);
     });
 
@@ -124,8 +130,36 @@ describe('CrumbsProcessor scheduled note queue', () => {
             sampleRate: 48_000,
         });
 
-        expect(calls.map((call) => call.method)).toEqual(['add_sample', 'set_active_sample']);
-        expect(proc.port.postMessage).toHaveBeenCalledWith({ type: 'sampleLoaded', loadToken: 7 });
+        expect(calls.map((call) => call.method)).toEqual(['add_sample', 'set_active_sample', 'dropped_sample_writes']);
+        expect(proc.port.postMessage).toHaveBeenCalledWith({
+            type: 'sampleLoaded',
+            loadToken: 7,
+            droppedWrites: 0,
+        });
+    });
+
+    it('reports refused sample writes on the load ack', async () => {
+        // A full pool refuses writes as a counted no-op (PR #2033); the ack is
+        // the only channel the main thread has for noticing, so the count must
+        // ride it rather than vanish inside the worklet.
+        const proc = await loadProcessor();
+        send(proc, { type: 'init' });
+        proc.port.postMessage.mockClear();
+        droppedSampleWrites = 3;
+
+        send(proc, {
+            type: 'loadSample',
+            loadToken: 9,
+            data: new Float32Array([0.25]),
+            channels: 1,
+            sampleRate: 48_000,
+        });
+
+        expect(proc.port.postMessage).toHaveBeenCalledWith({
+            type: 'sampleLoaded',
+            loadToken: 9,
+            droppedWrites: 3,
+        });
     });
 
     it('correlates a DSP sample-commit failure with the requested load', async () => {

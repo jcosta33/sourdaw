@@ -17,6 +17,7 @@
 //!
 //! Choke: closed hat triggers fast fade (≤1 ms = ~48 samples at 48 kHz).
 
+use crate::params::{DECAY, TONE, TUNE};
 use crate::primitives::flush_denormal_in_place;
 use crate::toaster::dc_block::DcBlocker;
 use crate::toaster::poly_blep::PolyBlepSquare;
@@ -155,9 +156,9 @@ impl HiHat808Engine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "tune" => self.tune = value.clamp(-24.0, 24.0),
-            "decay" => self.decay = value.clamp(0.0, 1.0),
-            "tone" => self.tone = value.clamp(0.0, 1.0),
+            TUNE => self.tune = value.clamp(-24.0, 24.0),
+            DECAY => self.decay = value.clamp(0.0, 1.0),
+            TONE => self.tone = value.clamp(0.0, 1.0),
             "open" => self.is_open = value > 0.5,
             _ => {}
         }

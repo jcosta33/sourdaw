@@ -14,6 +14,7 @@ use super::linear_phase_eq::LinearPhaseEq;
 use super::match_eq::MatchEq;
 use super::metering::{
     IntegratedLufs, LoudnessRange, MeterTap, MomentaryLufs, ShortTermLufs, TruePeakDetector,
+    SILENCE_DB,
 };
 use super::multiband::MultibandDynamics;
 use std::collections::VecDeque;
@@ -403,7 +404,7 @@ impl ProofChain {
         if !self.bypassed {
             let in_lufs = self.input_lufs.get_lufs();
             let out_lufs = self.output_lufs.get_lufs();
-            if in_lufs > -100.0 && out_lufs > -100.0 {
+            if in_lufs > SILENCE_DB && out_lufs > SILENCE_DB {
                 self.ab_gain_offset = out_lufs - in_lufs;
             }
         }

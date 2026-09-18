@@ -30,6 +30,8 @@ import { recoverQuarantinedHarnessPlugin } from './desktopLatencyPreferencesReco
 import {
     computeCounterDeltas,
     computeGaugeReadings,
+    isAudibleLatencyReading,
+    isRunningEngineTitle,
     parseEngineTitle,
     parseLatencyMs,
     parseMasterLevelDb,
@@ -88,6 +90,9 @@ const PLAY_START_PROBE_KEY = '__sourdawPlayStartProbe';
 
 /** `electron/scan.ts`'s own `SCAN_TIMEOUT_MS` bounds a scan at 120 s; this adds margin on top of it. */
 const SCAN_STEP_TIMEOUT_MS = 150_000;
+
+/** Deadline, 250 ms sleep, and final read in `waitForAudibleLatencyReading` must finish before the step's timer. */
+const LATENCY_READING_STEP_TIMEOUT_MS = STEP_TIMEOUT_MS + 5_000;
 
 /**
  * `openEffectsTab` performs up to five operations in sequence, each
@@ -336,6 +341,12 @@ async function readPlayStartProbe(page: Page): Promise<PlayStartProbe> {
 
 async function sample(page: Page, t: number): Promise<{ record: SampleRecord; events: EngineEventRecord[] }> {
     const status = await readStatusBar(page);
+    if (!isAudibleLatencyReading(status)) {
+        throw new Error(
+            `sample() read a Latency figure that does not describe the audible engine — latency "${status.latencyText}", ` +
+                `title "${status.latencyTitle.slice(0, 80)}", engine dot "${status.engineTitle.slice(0, 80)}"`
+        );
+    }
     const diagnostics = await readEngineDiagnostics(page);
     const engine = parseEngineTitle(status.engineTitle);
     return {
@@ -453,6 +464,28 @@ async function waitForScanToFinish(page: Page): Promise<number> {
     throw new Error(`the plugin scan did not finish within ${SCAN_STEP_TIMEOUT_MS} ms`);
 }
 
+/**
+ * Polls the status bar until `isAudibleLatencyReading` accepts it — the
+ * audible engine's own Latency figure, not a healthy reading from the engine
+ * nobody hears. The wait's `page.evaluate` round trips would interleave
+ * with the play-start probe's in-page poll, perturbing the measurement.
+ */
+async function waitForAudibleLatencyReading(page: Page): Promise<void> {
+    const deadline = Date.now() + STEP_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+        const status = await readStatusBar(page);
+        if (isAudibleLatencyReading(status)) {
+            return;
+        }
+        await sleep(250);
+    }
+    const status = await readStatusBar(page);
+    throw new Error(
+        `the audible engine never published its output latency — latency "${status.latencyText}", ` +
+            `title "${status.latencyTitle.slice(0, 80)}", engine dot "${status.engineTitle.slice(0, 80)}"`
+    );
+}
+
 type AppStartedResult = { startedAt: AppStartedAt; playStart: PlayStartRecord };
 
 async function driveToPlayingProject(
@@ -537,7 +570,7 @@ async function driveToPlayingProject(
         const deadline = Date.now() + STEP_TIMEOUT_MS;
         while (Date.now() < deadline) {
             const status = await readStatusBar(page);
-            if (status.masterLevelText.trim() !== 'n/a' && status.engineTitle.startsWith('Engine: running')) {
+            if (status.masterLevelText.trim() !== 'n/a' && isRunningEngineTitle(status.engineTitle)) {
                 return;
             }
             await sleep(250);
@@ -566,6 +599,22 @@ async function driveToPlayingProject(
     );
     const playStart = resolvePlayStart(probe);
     process.stdout.write(`${describePlayStart(playStart)}\n`);
+
+    // The native session only becomes the audible carrier here, inside the
+    // play click just taken — before it, the engine dot and Latency readout
+    // both describe Web Audio. The native figure lands with the diagnostics
+    // poll after that flip, not with the click itself, so `sample()`'s first
+    // read (the idle leg's opening sample) has to wait for it: sampling right
+    // after the click recorded a healthy Web Audio figure under a native
+    // engine on 2026-09-13.
+    // Also placed after the play-start probe is read: this wait consumes up to
+    // STEP_TIMEOUT_MS of `page.evaluate` round trips, which would interleave
+    // with the play-start probe's in-page poll loop and perturb the measurement.
+    await step(
+        'wait for the audible engine to publish its output latency',
+        () => waitForAudibleLatencyReading(page),
+        LATENCY_READING_STEP_TIMEOUT_MS
+    );
 
     return { startedAt, playStart };
 }

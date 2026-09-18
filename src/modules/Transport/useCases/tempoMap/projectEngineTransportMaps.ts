@@ -27,7 +27,7 @@ import { secondsBetweenBeats } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { tempoMapStore, type TempoMapStoreState } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore, type TimeSignatureMapStoreState } from '../../stores/timeSignatureMapStore';
-import { type TransportState } from '../../stores/transportStore';
+import { DEFAULT_TEMPO_BPM, type TransportState } from '../../stores/transportStore';
 
 import type { startNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
 
@@ -275,7 +275,7 @@ function projectTimeSignature(
 export function projectEngineTransportMaps(): EngineTransportMaps {
     const transport: TransportState | null = getTransportState();
     const tempoChanges = tempoMapStore.value?.changes ?? [];
-    const defaultTempo = transport?.tempo ?? 120;
+    const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
     const atBeat = createBeatClock(tempoChanges, defaultTempo);
 
     // Beats are visited in ascending order across all three projections because

@@ -5,16 +5,26 @@ type MixAnalysisDisplayIssue = {
     trackId?: string;
 };
 
+type MixAnalysisDisplayEvidenceStatus =
+    | { availability: 'measured'; provenance: 'live-analyser-snapshot' }
+    | {
+          availability: 'insufficient';
+          reason: 'audio-context-suspended' | 'no-signal';
+          provenance: 'live-analyser-snapshot';
+      };
+
 type MixAnalysisDisplayResult = {
     timestamp: number;
+    status: MixAnalysisDisplayEvidenceStatus;
     overallLevel: { peakDb: number; rmsDb: number };
+    /** Per-band levels in dB; `null` marks a band this analyser cannot resolve. */
     frequencyBalance: {
-        sub: number;
-        bass: number;
-        lowMid: number;
-        mid: number;
-        highMid: number;
-        high: number;
+        sub: number | null;
+        bass: number | null;
+        lowMid: number | null;
+        mid: number | null;
+        highMid: number | null;
+        high: number | null;
     };
     trackLevels: Array<{
         trackId: string;
