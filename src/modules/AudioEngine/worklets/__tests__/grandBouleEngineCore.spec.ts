@@ -55,7 +55,6 @@ function createRecordingInstance(): RecordingInstance {
         set_sostenuto: record('set_sostenuto'),
         note_on_midi2: record('note_on_midi2'),
         set_temperament: record('set_temperament'),
-        load_attack_clip: record('load_attack_clip'),
         all_notes_off: record('all_notes_off'),
         process: vi.fn(() => 0),
         get_right_ptr: vi.fn(() => 0),

@@ -66,7 +66,6 @@ class GrandBouleInstanceMock {
     set_sostenuto(): void {}
     note_on_midi2(): void {}
     set_temperament(): void {}
-    load_attack_clip(): void {}
     all_notes_off(): void {}
     process(_frames: number): number {
         return LEFT_PTR;

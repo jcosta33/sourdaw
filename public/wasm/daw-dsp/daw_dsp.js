@@ -905,16 +905,6 @@ export class GrandBouleInstance {
         return ret >>> 0;
     }
     /**
-     * Load an attack-sample clip into the hybrid sampled-attack set.
-     * @param {number} key
-     * @param {Float32Array} samples
-     */
-    load_attack_clip(key, samples) {
-        const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        wasm.grandbouleinstance_load_attack_clip(this.__wbg_ptr, key, ptr0, len0);
-    }
-    /**
      * @param {number} sample_rate
      * @param {number} voice_count
      */

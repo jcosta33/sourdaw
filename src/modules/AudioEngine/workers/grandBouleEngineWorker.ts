@@ -47,7 +47,6 @@
  *   ← { type: 'sostenuto', engaged }
  *   ← { type: 'noteOnMidi2', midiNote, velocity16bit, pitchOffsetQ24 }
  *   ← { type: 'temperament', index }
- *   ← { type: 'loadAttackClip', key, samples }
  *   ← { type: 'allNotesOff' }
  *   ← { type: 'stop' }
  */
