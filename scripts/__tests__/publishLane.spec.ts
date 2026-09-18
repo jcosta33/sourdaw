@@ -1643,6 +1643,35 @@ describe('lane publish', () => {
     });
 
     /**
+     * A fake `gh` that only logs its token and argv per call, shared by the two guard cases below:
+     * one proves the App edit stays silent on a project-only plan, the other proves the operator
+     * edit stays silent on a board-less plan. Neither case needs stdout, so the script never prints.
+     */
+    function realGhHarness(root: string): {
+        ghPath: string;
+        readEntries: () => { token: string; args: string[] }[];
+    } {
+        const log = join(root, 'gh.log');
+        const ghPath = join(root, 'gh');
+        writeFileSync(
+            ghPath,
+            '#!/usr/bin/env node\n' +
+                "import { appendFileSync } from 'node:fs';\n" +
+                'const args = process.argv.slice(2);\n' +
+                `appendFileSync(${JSON.stringify(log)}, JSON.stringify({ token: process.env.GH_TOKEN, args }) + '\\n');\n`
+        );
+        chmodSync(ghPath, 0o700);
+        return {
+            ghPath,
+            readEntries: () =>
+                readFileSync(log, 'utf8')
+                    .trim()
+                    .split('\n')
+                    .map((line) => JSON.parse(line) as { token: string; args: string[] }),
+        };
+    }
+
+    /**
      * A plan that only touches project membership must never fire the App edit: the call-site
      * guard exists precisely because `gh pr edit` with no `--add-label`/`--remove-label`/
      * `--milestone` flag is refused, so an unguarded call would still reach a real `gh` with
@@ -1651,16 +1680,7 @@ describe('lane publish', () => {
     it('carries a project-only plan through the operator edit alone, never the App edit', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-publish-project-only-'));
         try {
-            const log = join(root, 'gh.log');
-            const ghPath = join(root, 'gh');
-            writeFileSync(
-                ghPath,
-                '#!/usr/bin/env node\n' +
-                    "import { appendFileSync } from 'node:fs';\n" +
-                    'const args = process.argv.slice(2);\n' +
-                    `appendFileSync(${JSON.stringify(log)}, JSON.stringify({ token: process.env.GH_TOKEN, args }) + '\\n');\n`
-            );
-            chmodSync(ghPath, 0o700);
+            const { ghPath, readEntries } = realGhHarness(root);
             const app: GhSession = {
                 configDir: join(root, 'app'),
                 env: { PATH: process.env.PATH, GH_TOKEN: 'app-token' },
@@ -1681,16 +1701,56 @@ describe('lane publish', () => {
                 addProjectTitles: ['Sourdaw Bugs'],
             });
 
-            const entries = readFileSync(log, 'utf8')
-                .trim()
-                .split('\n')
-                .map((line) => JSON.parse(line) as { token: string; args: string[] });
-            const edits = entries.filter((entry) => entry.args[0] === 'pr' && entry.args[1] === 'edit');
+            const edits = readEntries().filter((entry) => entry.args[0] === 'pr' && entry.args[1] === 'edit');
             expect(edits.filter((entry) => entry.token === 'app-token')).toEqual([]);
             expect(edits).toEqual([
                 {
                     token: 'operator-token',
                     args: ['pr', 'edit', '88', '--repo', 'jcosta33/sourdaw', '--add-project', 'Sourdaw Bugs'],
+                },
+            ]);
+        } finally {
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    /**
+     * The mirror of the case above: a plan with no project titles must never fire the operator
+     * edit. The call-site guard on `plan.addProjectTitles.length > 0` exists precisely because
+     * `gh pr edit --add-project` with no title still reaches a real `gh` with nothing to add, and
+     * would needlessly mint an operator session for a plan that never touches the board. Only a
+     * real `gh` child proves the operator edit never happened at all.
+     */
+    it('keeps a board-less plan on the App edit alone, never the operator edit', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-publish-board-less-'));
+        try {
+            const { ghPath, readEntries } = realGhHarness(root);
+            const app: GhSession = {
+                configDir: join(root, 'app'),
+                env: { PATH: process.env.PATH, GH_TOKEN: 'app-token' },
+                dispose: () => {},
+            };
+            const operator = operatorSessionAccess({}, () => ({
+                session: {
+                    configDir: join(root, 'operator'),
+                    env: { PATH: process.env.PATH, GH_TOKEN: 'operator-token' },
+                    dispose: () => {},
+                },
+            }));
+            const port = shellPort(app, root, root, { git: 'git', gh: ghPath }, operator);
+
+            port.applyPullRequestMetadata(88, {
+                addLabels: ['bug'],
+                removeLabels: [],
+                addProjectTitles: [],
+            });
+
+            const edits = readEntries().filter((entry) => entry.args[0] === 'pr' && entry.args[1] === 'edit');
+            expect(edits.filter((entry) => entry.token === 'operator-token')).toEqual([]);
+            expect(edits).toEqual([
+                {
+                    token: 'app-token',
+                    args: ['pr', 'edit', '88', '--repo', 'jcosta33/sourdaw', '--add-label', 'bug'],
                 },
             ]);
         } finally {
