@@ -2343,6 +2343,7 @@ export default defineConfig(
             'public/',
             'coverage/',
             'storybook-static/',
+            'electron/out/**',
             // Standalone agent helper scripts run directly under `node`, not
             // part of the `src` app tree and intentionally excluded from
             // tsconfig.eslint.json — ignore so the type-aware parser does not

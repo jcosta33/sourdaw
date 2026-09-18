@@ -44,10 +44,12 @@ export const requestApprovedWindowClose = ({
     );
 };
 
+export type ShellQuitDependencies = Required<Pick<QuitDependencies, 'canQuit' | 'beforeRun'>> &
+    Omit<QuitDependencies, 'canQuit' | 'beforeRun'>;
+
 export const composeQuitHandler = (
     run: () => Promise<ShutdownOutcome>,
-    dependencies: Required<Pick<QuitDependencies, 'canQuit' | 'beforeRun'>> &
-        Omit<QuitDependencies, 'canQuit' | 'beforeRun'>
+    dependencies: ShellQuitDependencies
 ): ((event: PreventableEvent) => void) => createQuitHandler(run, dependencies);
 
 export const shouldRecreateRendererAfterCrash = (lifecycle: {
@@ -75,8 +77,7 @@ export const createShellComposition = <Menu>({
     readonly sendToNativeResponder?: (action: NativeResponderEditAction) => void;
     readonly dispatchMenuIntent: (intent: NativeMenuIntent) => void;
     readonly runShutdown: () => Promise<ShutdownOutcome>;
-    readonly quitDependencies: Required<Pick<QuitDependencies, 'canQuit' | 'beforeRun'>> &
-        Omit<QuitDependencies, 'canQuit' | 'beforeRun'>;
+    readonly quitDependencies: ShellQuitDependencies;
     readonly lifecycle: { readonly shouldRecreateAfterCrash: () => boolean };
 }) => ({
     sendMenuIntent: (intent: NativeMenuIntent): void => {
@@ -136,7 +137,7 @@ export const createProductionShellComposition = <Menu>({
         readonly shouldRecreateAfterCrash: () => boolean;
     };
 }) => {
-    const quitDependencies: QuitDependencies = {
+    const quitDependencies: ShellQuitDependencies = {
         canQuit: async () => {
             const approved = await closeCoordinator.requestClose();
             if (approved) {
