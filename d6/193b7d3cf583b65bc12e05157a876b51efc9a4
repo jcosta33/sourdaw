@@ -1,0 +1,19 @@
+crates/proof-chamber/tests/vintage_character.rs
+  s_8b2c82bc006c01::t_e4b2acc9af7d65 170-180,195-220,240-244,263-266,271,277-278,284,286-287,289-295,298-325
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d6193b7d3cf583b65bc12e05157a876b51efc9a4",
+  "prompts": {},
+  "sessions": {
+    "s_8b2c82bc006c01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a566a86e5d63ba20d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
