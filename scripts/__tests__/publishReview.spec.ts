@@ -42,6 +42,7 @@ import {
 } from '../pullRequestMutationLock.ts';
 import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
 import { legacyReviewPublicationIncidents } from '../reviewPublicationLegacyIncidents.ts';
+import { OPERATOR_ABSENT_ATTESTATION, type RecoveryReceipt } from '../reviewPublicationRecoveryReceipt.ts';
 import { exactPublishedReview, inspectReviewPublicationRemote } from '../reviewPublicationRemoteInspection.ts';
 
 const validComment = {
@@ -2547,6 +2548,306 @@ describe('shellPort postReview state verification', () => {
         }
     );
 
+    it.each(['gh: Conflict (HTTP 409)', 'gh: Internal Server Error (HTTP 500)', 'socket hang up'])(
+        'releases an operator-attested absent owner whose review POST failed with %s, then replays its receipt',
+        async (failureMessage) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-attested-recovery-'));
+            const number = 3344;
+            const head = 'a'.repeat(40);
+            const restorePs = writeTrustedPsFixture(root);
+            try {
+                runGit(root, ['init']);
+                await runFailingReviewPublication(root, number, head, failureMessage);
+                const retainedOid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
+                expect(retainedOid).toMatch(/^[0-9a-f]{40}$/);
+                const retained = readPullRequestMutationLockOwner(root, retainedOid!, number);
+                if (retained.version !== 3) {
+                    throw new Error('retained owner is not a journaled publication owner');
+                }
+                expect(retained.mutation).toEqual({ phase: 'remote-mutation-attempted', epoch: 1 });
+
+                let inspections = 0;
+                const inspectedHeads: string[] = [];
+                await expect(
+                    runRecoverPublishReviewLockCli(
+                        [String(number), '--owner', retainedOid!, '--attest-absent'],
+                        recoveryDependencies(root, (expectedHead) => {
+                            inspections += 1;
+                            inspectedHeads.push(expectedHead);
+                            return { state: 'OPEN', head: expectedHead, reviews: [] };
+                        })
+                    )
+                ).resolves.toBe(0);
+                expect(inspections).toBe(2);
+                expect(inspectedHeads).toEqual([head, head]);
+                expect(
+                    readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)
+                ).toBeUndefined();
+                expect(readPullRequestMutationLockReceipt(root, number, retainedOid!)).toEqual({
+                    version: 3,
+                    operation: 'review-publication-recovery',
+                    number,
+                    ownerOid: retainedOid,
+                    adoptedOwnerOid: expect.stringMatching(/^[0-9a-f]{40}$/),
+                    head,
+                    payloadDigest: reviewPublicationPayloadDigest(
+                        reviewPublicationPayload({
+                            commitId: head,
+                            event: 'APPROVE',
+                            body: 'Attacked; held.',
+                            comments: [],
+                        })
+                    ),
+                    outcome: 'absent',
+                    absentAttestation: OPERATOR_ABSENT_ATTESTATION,
+                });
+
+                let authenticated = false;
+                await expect(
+                    runRecoverPublishReviewLockCli([String(number), '--owner', retainedOid!], {
+                        ...recoveryDependencies(root, () => {
+                            throw new Error('replay must not inspect');
+                        }),
+                        authenticateReviewer: async () => {
+                            authenticated = true;
+                            throw new Error('replay must not authenticate');
+                        },
+                    })
+                ).resolves.toBe(0);
+                expect(authenticated).toBe(false);
+            } finally {
+                restorePs();
+                removeTemporaryDirectory(root);
+            }
+        }
+    );
+
+    it.each([
+        [
+            'ambiguous landed review evidence',
+            (fixture: ReturnType<typeof createJournaledRecoveryFixture>) => {
+                const exact = {
+                    id: 1,
+                    state: 'APPROVED',
+                    body: 'Attacked; held.',
+                    commitId: fixture.head,
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    comments: [],
+                };
+                return {
+                    ownerOid: fixture.ownerOid,
+                    inspect: (expectedHead: string) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [exact, { ...exact, id: 2 }],
+                    }),
+                    error: /ambiguous or non-exact remote review evidence/,
+                };
+            },
+        ],
+        [
+            'non-exact landed review evidence',
+            (fixture: ReturnType<typeof createJournaledRecoveryFixture>) => ({
+                ownerOid: fixture.ownerOid,
+                inspect: (expectedHead: string) => ({
+                    state: 'OPEN',
+                    head: expectedHead,
+                    reviews: [
+                        {
+                            id: 1,
+                            state: 'APPROVED',
+                            body: 'drifted body',
+                            commitId: fixture.head,
+                            actorNodeId: REVIEWER_BOT_NODE_ID,
+                            comments: [],
+                        },
+                    ],
+                }),
+                error: /ambiguous or non-exact remote review evidence/,
+            }),
+        ],
+        [
+            'unauthorized landed review evidence',
+            (fixture: ReturnType<typeof createJournaledRecoveryFixture>) => ({
+                ownerOid: fixture.ownerOid,
+                inspect: (expectedHead: string) => ({
+                    state: 'OPEN',
+                    head: expectedHead,
+                    reviews: [],
+                    otherActorReviews: [
+                        {
+                            id: 3,
+                            state: 'APPROVED',
+                            body: 'Attacked; held.',
+                            commitId: expectedHead,
+                            actorNodeId: 'human-actor',
+                            comments: [],
+                        },
+                    ],
+                }),
+                error: /unauthorized landed review evidence/,
+            }),
+        ],
+        [
+            'payload digest drift from the retained lock',
+            (fixture: ReturnType<typeof createJournaledRecoveryFixture>) => {
+                const owner = readPullRequestMutationLockOwner(fixture.root, fixture.ownerOid, fixture.number);
+                if (owner.version !== 3) {
+                    throw new Error('test fixture is not a journaled publication owner');
+                }
+                const driftedOid = writePullRequestMutationLockOwner(
+                    fixture.root,
+                    { ...owner, payloadDigest: 'c'.repeat(64) },
+                    fixture.number
+                );
+                runGit(fixture.root, [
+                    'update-ref',
+                    pullRequestMutationLockRef(fixture.number),
+                    driftedOid,
+                    fixture.ownerOid,
+                ]);
+                return {
+                    ownerOid: driftedOid,
+                    inspect: (expectedHead: string) => ({ state: 'OPEN', head: expectedHead, reviews: [] }),
+                    error: /payload does not match the retained lock/,
+                };
+            },
+        ],
+        [
+            'bundle document drift from the retained lock',
+            (fixture: ReturnType<typeof createJournaledRecoveryFixture>) => {
+                writeFileSync(
+                    join(fixture.root, '.agents', 'review-bundles', `${fixture.number}-${fixture.head}`, 'review.json'),
+                    JSON.stringify({ event: 'APPROVE', body: 'drifted body', comments: [] })
+                );
+                return {
+                    ownerOid: fixture.ownerOid,
+                    inspect: (expectedHead: string) => ({ state: 'OPEN', head: expectedHead, reviews: [] }),
+                    error: /payload does not match the retained lock/,
+                };
+            },
+        ],
+        [
+            'a missing bundle document',
+            (fixture: ReturnType<typeof createJournaledRecoveryFixture>) => {
+                rmSync(join(fixture.root, '.agents', 'review-bundles', `${fixture.number}-${fixture.head}`), {
+                    recursive: true,
+                    force: true,
+                });
+                return {
+                    ownerOid: fixture.ownerOid,
+                    inspect: (expectedHead: string) => ({ state: 'OPEN', head: expectedHead, reviews: [] }),
+                    error: /ENOENT/,
+                };
+            },
+        ],
+    ])('does not release an operator-attested absent owner on %s', async (_label, prepare) => {
+        const fixture = createJournaledRecoveryFixture();
+        try {
+            const { ownerOid, inspect, error } = prepare(fixture);
+            const lockedOid = readPullRequestMutationLockOid(
+                fixture.root,
+                pullRequestMutationLockRef(fixture.number),
+                fixture.number
+            );
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', ownerOid, '--attest-absent'],
+                    recoveryDependencies(fixture.root, inspect)
+                )
+            ).rejects.toThrow(error);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(lockedOid);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('retains a live remote-mutation-attempted owner even when the operator attests the review absent', async () => {
+        const fixture = createJournaledRecoveryFixture();
+        let inspections = 0;
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid, '--attest-absent'],
+                    {
+                        ...recoveryDependencies(fixture.root, (expectedHead) => {
+                            inspections += 1;
+                            return { state: 'OPEN', head: expectedHead, reviews: [] };
+                        }),
+                        isOwnerLive: () => true,
+                    }
+                )
+            ).rejects.toThrow(/still held by a live process/);
+            expect(inspections).toBe(0);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(fixture.ownerOid);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('replays an operator-attested absent receipt after the adopted owner survives an interrupted release', async () => {
+        const fixture = createJournaledRecoveryFixture();
+        let persistedReceipt: RecoveryReceipt | undefined;
+        let inspections = 0;
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid, '--attest-absent'],
+                    {
+                        ...recoveryDependencies(fixture.root, (expectedHead) => {
+                            inspections += 1;
+                            return { state: 'OPEN', head: expectedHead, reviews: [] };
+                        }),
+                        afterRecoveryReceiptPersisted: (receipt) => {
+                            persistedReceipt = receipt;
+                            expect(receipt).toMatchObject({
+                                version: 3,
+                                outcome: 'absent',
+                                absentAttestation: OPERATOR_ABSENT_ATTESTATION,
+                            });
+                            expect(
+                                readPullRequestMutationLockOid(
+                                    fixture.root,
+                                    pullRequestMutationLockRef(fixture.number),
+                                    fixture.number
+                                )
+                            ).toBe(receipt.adoptedOwnerOid);
+                            throw new Error('injected crash after exact receipt persistence');
+                        },
+                    }
+                )
+            ).rejects.toThrow(/injected crash after exact receipt persistence/);
+            expect(inspections).toBe(2);
+            expect(persistedReceipt).toBeDefined();
+
+            let authenticated = false;
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.number), '--owner', fixture.ownerOid], {
+                    ...recoveryDependencies(fixture.root, () => {
+                        throw new Error('replay must not inspect');
+                    }),
+                    authenticateReviewer: async () => {
+                        authenticated = true;
+                        throw new Error('replay must not authenticate');
+                    },
+                })
+            ).resolves.toBe(0);
+            expect(authenticated).toBe(false);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBeUndefined();
+            expect(readPullRequestMutationLockReceipt(fixture.root, fixture.number, fixture.ownerOid)).toEqual(
+                persistedReceipt
+            );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
     it('keeps the no-mutation attestation on the adopted owner when recovery is interrupted before the receipt', async () => {
         const fixture = createJournaledRecoveryFixture('remote-mutation-attempted', 422);
         let inspections = 0;
@@ -2650,17 +2951,7 @@ describe('shellPort postReview state verification', () => {
 
     it('retains the adopted lock after an injected crash following exact receipt persistence', async () => {
         const fixture = createJournaledRecoveryFixture('prepared');
-        let persistedReceipt:
-            | {
-                  version: 2;
-                  number: number;
-                  ownerOid: string;
-                  adoptedOwnerOid: string;
-                  head: string;
-                  payloadDigest: string;
-                  outcome: 'absent' | 'landed';
-              }
-            | undefined;
+        let persistedReceipt: RecoveryReceipt | undefined;
         try {
             await expect(
                 runRecoverPublishReviewLockCli([String(fixture.number), '--owner', fixture.ownerOid], {
