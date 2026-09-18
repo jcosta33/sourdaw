@@ -1,0 +1,26 @@
+public/wasm/manifest.json
+  h_1228e573df1f42 12,15-18,20-21,26,30-32,35,40,44-46,49,54,58
+public/wasm/proof-chamber/proof_chamber.d.ts
+  h_1228e573df1f42 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  h_1228e573df1f42 1
+public/wasm/scoring/scoring.d.ts
+  h_1228e573df1f42 1
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  h_1228e573df1f42 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  h_1228e573df1f42 1
+src/modules/AudioEngine/wasm/scoring.d.ts
+  h_1228e573df1f42 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f249c95a41d78a854dd2af5dc62a7b52b0cb87b2",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
