@@ -1,0 +1,39 @@
+scripts/__tests__/pruneRemoteBranches.spec.ts
+  s_9e15f5b7ec3308::t_bde71a1d92049b 4,615-630,632-661,663-713,715-731,899-913,918-921,923-957,969-973,975-983
+scripts/measurementRevisionHolders.ts
+  s_e703e32ff68acb::t_eeeb4817d3122c 1-5,10-58,62,66,101-106,108-113,115-116,118-119,131-141,144-152,154-162
+scripts/pruneRemoteBranches.ts
+  s_728d23f5458683::t_01e3ce9483ecc9 18-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "aff4dafca870fa59d8f0296cc15c99bd0bff8d0e",
+  "prompts": {},
+  "sessions": {
+    "s_728d23f5458683": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af8333e68e899c0e9",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e703e32ff68acb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa43314667015337f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
