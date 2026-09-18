@@ -1169,6 +1169,7 @@
                 "crates/daw-dsp/benches/wasm/deviceRecipes.js",
                 "crates/daw-dsp/benches/wasm/quantumCostProcessor.js",
                 "crates/daw-dsp/benches/wasm/run.mjs",
+                "scripts/quantumMeasurementCalibration.ts",
                 "crates/daw-dsp/benches/wasm/measurementCensus.mjs",
                 "crates/daw-dsp/benches/wasm/measurementCensus.d.mts",
                 "crates/daw-dsp/benches/wasm/renderTable.mjs",
@@ -1202,7 +1203,7 @@
                 "tracked-set-sha256:8891ee4b3cdeee4ccc119ea720db966d655e432290c91cdaad8b4d15bcd4ac12:grand-boule-live-runtime",
                 "tracked-set-sha256:20060e9f5b6717e11d5d5594757367a4044522e7d1fd421eec57ae926e7c3cf0:grand-boule-project-state",
                 "tracked-set-sha256:f477b8a0fb088965c5e5529a215874567d525d71d3e6d24a786f4278c76c4f36:grand-boule-offline-composition",
-                "tracked-set-sha256:3afa305427c40996688d2dac9ba10e8395d84b3622b7b76f8cf3241737f54705:grand-boule-release-proof"
+                "tracked-set-sha256:29534ab1d660b456498245547d8f57853aafef18b2b88fee9ed8adc684584665:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
