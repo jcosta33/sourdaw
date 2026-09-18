@@ -6,7 +6,6 @@ import { createDesktopNativeGraphTransport, type NativeLevainBankLayout } from '
 import { type NativeGraphWireBatch } from '../serializeAudioGraphCommand';
 
 vi.mock('#/utils/desktopBridge', () => ({
-    isDesktopRuntime: () => false,
     desktopInvoke: vi.fn(),
     invokeForBinaryResponse: vi.fn(),
 }));

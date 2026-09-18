@@ -5,7 +5,6 @@ import { desktopInvoke } from '#/utils/desktopBridge';
 import { readNativeDirectory } from '../readNativeDirectory';
 
 vi.mock('#/utils/desktopBridge', () => ({
-    isDesktopRuntime: () => false,
     desktopInvoke: vi.fn(),
 }));
 

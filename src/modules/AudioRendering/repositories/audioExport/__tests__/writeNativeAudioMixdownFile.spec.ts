@@ -5,7 +5,6 @@ import { writeFileBytes } from '#/utils/desktopBridge';
 import { writeNativeAudioMixdownFile } from '../writeNativeAudioMixdownFile';
 
 vi.mock('#/utils/desktopBridge', () => ({
-    isDesktopRuntime: () => false,
     writeFileBytes: vi.fn(),
 }));
 

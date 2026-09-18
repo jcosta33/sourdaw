@@ -112,7 +112,7 @@ describe('handleConsolidateAllTracks', () => {
         // clips, so the undo unit this command files has content to restore.
         it('returns written when at least one bounce in the loop writes', async () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: mixedTracks() });
-            mocks.bounceInPlace.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+            mocks.bounceInPlace.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
             const result = await handleConsolidateAllTracks.execute({
                 type: 'consolidateAllTracks',

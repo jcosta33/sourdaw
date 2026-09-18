@@ -12,7 +12,6 @@ import { stageAgentAssetExport } from '../stageAgentAssetExport';
 import type { AgentAssetSagaReceipt, AgentWorkOwner } from '../agentAssetSagaWire';
 
 vi.mock('#/utils/desktopBridge', () => ({
-    isDesktopRuntime: () => false,
     desktopInvoke: vi.fn(),
 }));
 

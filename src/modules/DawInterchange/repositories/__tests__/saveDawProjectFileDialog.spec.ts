@@ -6,7 +6,6 @@ import { saveDawProjectFileDialog } from '../saveDawProjectFileDialog';
 import { writeDawProjectFile } from '../writeDawProjectFile';
 
 vi.mock('#/utils/desktopBridge', () => ({
-    isDesktopRuntime: () => false,
     desktopSaveDialog: vi.fn(),
     writeFileBytes: vi.fn(),
 }));

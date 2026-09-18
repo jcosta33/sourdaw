@@ -6,7 +6,6 @@ import { desktopInvoke } from '../desktopInvoke';
 import { isNativeAvailable } from '../helpers';
 
 vi.mock('#/utils/desktopBridge', () => ({
-    isDesktopRuntime: () => false,
     desktopInvoke: vi.fn(),
 }));
 

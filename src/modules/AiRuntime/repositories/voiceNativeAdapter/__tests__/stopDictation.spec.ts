@@ -5,7 +5,6 @@ import { desktopStopVoiceDictation } from '#/utils/desktopBridge';
 import { stopDictation } from '../stopDictation';
 
 vi.mock('#/utils/desktopBridge', () => ({
-    isDesktopRuntime: () => false,
     desktopStopVoiceDictation: vi.fn().mockResolvedValue(undefined),
 }));
 

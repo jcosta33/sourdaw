@@ -5,7 +5,6 @@ import { desktopOpenDialog } from '#/utils/desktopBridge';
 import { selectNativeAudioExportDirectory } from '../selectNativeAudioExportDirectory';
 
 vi.mock('#/utils/desktopBridge', () => ({
-    isDesktopRuntime: () => false,
     desktopOpenDialog: vi.fn(),
 }));
 

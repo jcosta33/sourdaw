@@ -6,7 +6,6 @@ import { openViaBrowser } from '../helpers';
 import { openViaNative } from '../openViaNative';
 
 vi.mock('#/utils/desktopBridge', () => ({
-    isDesktopRuntime: () => false,
     desktopOpenDialog: vi.fn(),
 }));
 

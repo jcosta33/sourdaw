@@ -5,7 +5,6 @@ import { desktopStartVoiceDictation } from '#/utils/desktopBridge';
 import { startDictation } from '../startDictation';
 
 vi.mock('#/utils/desktopBridge', () => ({
-    isDesktopRuntime: () => false,
     desktopStartVoiceDictation: vi.fn().mockResolvedValue('session-1'),
 }));
 

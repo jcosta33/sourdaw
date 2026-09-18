@@ -5,7 +5,6 @@ import { desktopListenVoiceDictationTerminal } from '#/utils/desktopBridge';
 import { onDictationError } from '../onDictationError';
 
 vi.mock('#/utils/desktopBridge', () => ({
-    isDesktopRuntime: () => false,
     desktopListenVoiceDictationTerminal: vi.fn(),
 }));
 

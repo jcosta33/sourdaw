@@ -63,7 +63,7 @@ export const handleConsolidateAllTracks = createHandler<'consolidateAllTracks'>(
             // taken part-way through the loop — so undoing past this command would put the
             // earlier bounces back rather than continue unwinding.
             const wrote = await bounceInPlace(trackId, { recordUndoEntry: false, transactionScope });
-            wroteAnyTrack = wroteAnyTrack || wrote;
+            wroteAnyTrack ||= wrote;
         }
 
         // A pure read settling the undo payload: `bounceInPlace` (via
