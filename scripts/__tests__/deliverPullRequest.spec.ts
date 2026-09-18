@@ -11792,7 +11792,7 @@ describe('delivery shell boundary', () => {
         expect(runs).toEqual([
             {
                 command: 'git',
-                args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', 'merge-sha-123'],
+                args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', '+main'],
             },
             {
                 command: 'git-ai',
@@ -11847,7 +11847,7 @@ describe('delivery shell boundary', () => {
 
         expect(runs[0]).toEqual({
             command: 'git',
-            args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', 'merge-sha-123'],
+            args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', '+main'],
         });
         expect(runs[1]?.command).toBe('/trusted/bin/git-ai');
         expect(runs[1]?.args).toContain('--merge-commit-sha');
@@ -11877,7 +11877,7 @@ describe('delivery shell boundary', () => {
             expect(runs).toHaveLength(3);
             expect(runs[0]).toEqual({
                 command: 'git',
-                args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', 'merge-sha-123'],
+                args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', '+main'],
             });
             expect(runs[1]).toEqual({
                 command: 'git-ai',
