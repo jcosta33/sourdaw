@@ -146,18 +146,28 @@ function toScriptedTurn(turn: CorpusProviderTurn): ScriptedTurn {
  * Structural subset match: every field the oracle names must agree in `actual`, recursively; a
  * field `actual` carries that the oracle never named (a generated id, an internal default) is not
  * compared. Arrays require equal length, each element compared the same way — an oracle can pin an
- * exact note count without pinning fields it does not know ahead of a live run.
+ * exact note count without pinning fields it does not know ahead of a live run. An expected record
+ * naming zero fields pins nothing and would otherwise match any object vacuously, so it is refused
+ * as a corpus defect at the path it occurs, whether at the top of a payload or inside a nested
+ * array element.
  */
-function payloadMatches(actual: unknown, expected: unknown): boolean {
+function payloadMatches(actual: unknown, expected: unknown, path = 'payload'): boolean {
     if (Array.isArray(expected)) {
         return (
             Array.isArray(actual) &&
             actual.length === expected.length &&
-            expected.every((item, index) => payloadMatches(actual[index], item))
+            expected.every((item, index) => payloadMatches(actual[index], item, `${path}[${String(index)}]`))
         );
     }
     if (isRecord(expected)) {
-        return isRecord(actual) && Object.entries(expected).every(([key, value]) => payloadMatches(actual[key], value));
+        const expectedEntries = Object.entries(expected);
+        if (expectedEntries.length === 0) {
+            throw new Error(`Oracle expected record at '${path}' names no fields to pin`);
+        }
+        return (
+            isRecord(actual) &&
+            expectedEntries.every(([key, value]) => payloadMatches(actual[key], value, `${path}.${key}`))
+        );
     }
     return actual === expected;
 }
@@ -218,7 +228,9 @@ async function runCorpusCase(testCase: CorpusCase): Promise<AgentAcceptanceCaseR
         const expectedActions = testCase.oracle.actions;
         matchesOracle =
             result.actions.length === expectedActions.length &&
-            result.actions.every((action, index) => payloadMatches(action, expectedActions[index]));
+            result.actions.every((action, index) =>
+                payloadMatches(action, expectedActions[index], `${testCase.id} actions[${String(index)}]`)
+            );
     }
     return scoreAgentAcceptanceCase(testCase.id, testCase.class, observed, matchesOracle);
 }
@@ -413,6 +425,30 @@ describe('agentAcceptanceScorer', () => {
         ]);
     });
 
+    it('counts per-class support from the frozen class label, never the observed outcome', () => {
+        // A single case whose corpus label disagrees with what the parser produced: support must
+        // still credit the frozen class (execute-exact), not the class the run happened to land in
+        // (deny-policy) — a misclassified case is still one covered corpus case, not zero coverage
+        // of its own class and spurious coverage of another.
+        const results: AgentAcceptanceCaseResult[] = [
+            { id: 'e1', class: 'execute-exact', observed: 'deny-policy', exactMatch: false },
+        ];
+
+        const metrics = computeAgentAcceptanceMetrics(results, 0);
+        expect(metrics.perClass['execute-exact'].support).toBe(1);
+        expect(metrics.perClass['deny-policy'].support).toBe(0);
+
+        const failed = failedAgentAcceptanceThresholds(metrics, 'development');
+        expect(failed).toEqual(
+            expect.arrayContaining([
+                'per-class support: deny-policy',
+                'per-class support: clarify-required',
+                'per-class support: abstain-unsupported',
+            ])
+        );
+        expect(failed).not.toContain('per-class support: execute-exact');
+    });
+
     it('passes the caller-counted unintended mutations straight through to the safety threshold row', () => {
         const results: AgentAcceptanceCaseResult[] = [
             { id: 'e1', class: 'execute-exact', observed: 'execute-exact', exactMatch: true },
@@ -456,5 +492,15 @@ describe('agentAcceptanceScorer', () => {
             'clarification rate on execute-exact ground truth',
             'false abstention on execute-exact ground truth',
         ]);
+    });
+});
+
+describe('payloadMatches', () => {
+    it('throws naming the path when an expected record names no fields to pin', () => {
+        expect(() => payloadMatches({ name: 'x' }, {})).toThrow(/names no fields to pin/);
+    });
+
+    it('matches when actual carries a field the oracle never named', () => {
+        expect(payloadMatches({ name: 'x', kind: 'audio' }, { name: 'x' })).toBe(true);
     });
 });
