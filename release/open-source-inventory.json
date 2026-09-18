@@ -18,6 +18,7 @@
                 ".github/**",
                 "crates/**",
                 "docs/**",
+                "evidence/**",
                 "measurements/**",
                 "release/desktop-runtime-material.json",
                 "release/open-source-inventory.json",
@@ -61,6 +62,8 @@
                 "eslint.size-baseline.mjs",
                 "index.html",
                 "knip.json",
+                "oxlint.craft-baseline.d.mts",
+                "oxlint.craft-baseline.mjs",
                 "package.json",
                 "playwright.config.ts",
                 "pnpm-lock.yaml",
@@ -162,8 +165,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:ecd14c8008c16acf0774259aeb2e91edc7ec3b39815e3634e4d86a486fba02e9:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:4b9471d74e59988d10e733b6a0035e50fb59265758ca0fa246e9106703bd17ee:release/dependency-license-proofs.json"
+                "sha256:df7f22dfb518328a0665e7ab55a3b6b1bda29fca0fa62c53c737d81fccd35eed:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:9405011f0d6f0aaa9a02a142a994b40e1eff350e3b2e844f20e5e7210882e6fa:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -273,7 +276,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:e32901cc92a925c47678229f62cfc1b85144fbf4fb5b667e6c1958c79dd0d424",
+                "sha256:16413f208fbad9a082f89b17c0a4eaff440557c615be1f5617018288ef0a47ac",
                 "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
             "licenses": [
@@ -344,7 +347,7 @@
                 "sha256:c4e4e5ba9ceb16f7da586195bbc498d4235fefaae49f068f934234bf5fbb723b:src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts",
                 "sha256:7e5f06c67a7824cf43f307d7e1c92d8de1c1396759c52f43d7564f05c17a8848:src/modules/BrowserAi/services/computeDdspSessionKey.ts",
                 "sha256:08c788a4bde41fa1248ede289e1381137bce202196315dcbd2837d158ce92469:src/modules/BrowserAi/workers/tfjsInferenceWorker.ts",
-                "sha256:036c6cc37096f5042a69f12a865fd36afb792f537f407a96f5e8f372f50e0a47:src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts",
+                "sha256:5f1f9ff20d903c3bec83dc38cd49956da251b5743c5c805cbf02b8efe8a464de:src/modules/BrowserAi/workers/tfjsInferenceWorkerRuntime.ts",
                 "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
                 "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
@@ -396,7 +399,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:a88ccc73408bb82bab88511476987345c001f47ac729284fcaa9acd173fbb7e5",
+                "sha256:5ac230db621b42340a8e97d10d6460958b95cb03d56062723b509b9ec7a6fc1e",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -780,7 +783,7 @@
             ],
             "digests": [
                 "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
-                "sha256:534ebb2d4919ea10c93745f7ca17039a9302e1f40b8389493128192e7b64ff5e:electron/protocol.ts",
+                "sha256:afbcd1fda4eec505c482eb20c390e3fe61d29a14109d93c8200e6cecfc16b1b7:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
                 "sha256:61bf6ba1b489e37730605d318698ba64167301cc55cadfc73c8da5ae2b97f90c:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c05c0f10685919a7045fa160a6df7fbea08c7d71af7b5110ebbabdb09084c8c0:src/modules/BrowserAi/repositories/modelDownloadManager.ts",
@@ -789,11 +792,11 @@
                 "sha256:7a6960f30b3f7778d1821d1420c88355ec1ed27791a5776b6ca38009d7ae4b68:src/modules/BrowserAi/repositories/publishDdspInstrumentGeneration.ts",
                 "sha256:1fc46a75c0a7ac07cddd2ffbdfc405e4bff96afb018c0df63e96d7ea21d1d74f:src/modules/BrowserAi/repositories/checkDdspInstrumentReady.ts",
                 "sha256:dcff9ac063ca5a3d40fd064be346187526d17fb847c1fb8b9855c0542db3da91:src/modules/BrowserAi/repositories/cleanupUnpublishedDdspGeneration.ts",
-                "sha256:56a0ef9c5e5b22f27289e01b1a5e792de520ac43d9e3c1de9675281cc6f87a52:src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts",
-                "sha256:360d7385f8450d219e77a7ae373a9a67f3bc02c213a0e25a8a25bb9630adf540:src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts",
+                "sha256:0e1d1d8ede0160fad1cb864979233f757673d75c1bc3f235ded99ae1f28e8739:src/modules/BrowserAi/repositories/ddspGenerationStorageSupport.ts",
+                "sha256:556d1e1b766aba32aa3ef0cadbbf45e6dabb321b2178b59988d60862a339cdf7:src/modules/BrowserAi/repositories/modelStorageWorkerBridge.ts",
                 "sha256:2eda85bf62b8b8b63bef3a86f7b10009ab0e4c6a1e17cac7e1897943d3ca1ca0:src/modules/BrowserAi/repositories/withDdspInstrumentLock.ts",
                 "sha256:6c7d4d4b94518787ed0d28ccaef0e60019cd71c0305cc513e344fe049fc8a9b2:src/modules/BrowserAi/workers/modelStorageWorker.ts",
-                "sha256:2c7c2b09e316033b878869ec0e4a801e7499e3485f1cebe57931ccb6d614528f:src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
+                "sha256:c03d9cc5e52de843b6e2da16c13f68e2d1788d4e7f919e00f743efbffd5730cb:src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
                 "sha256:c6df6f09c03d695c05eee4b411f46bfd5cd6d661415d0f51da293ee06000d6e6:src/infra/release/modelReleaseAdmission.ts",
                 "sha256:18b18d9f09369884d0a41b78fa584c04858c167e1738fe56f7cf524960511a8a:src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
                 "sha256:cf08e9ea6716c0a9f82b5f91f6ba7b370ac804d55f823cfe6fc140d03db816b2:src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
@@ -802,7 +805,7 @@
                 "sha256:f59b8857e8986c66e485394a293eddb66b422589f181ee990fac15cdd3bad45f:src/modules/BrowserAi/useCases/initBrowserAi.ts",
                 "sha256:a320fa6f542de69d260c1fab0ec6c6de78493f724461a148c12c3678efef8019:src/modules/BrowserAi/useCases/removeDdspInstrument.ts",
                 "sha256:e255c65348b8fd18a1bdc230c2688ee5667cba4ec56d3355a942d6fdc033fd17:src/modules/BrowserAi/useCases/removeModel.ts",
-                "sha256:0aab87014023a08b11385f296dc893e60cd88a0ba5cfa7490009b996e7d7870a:src/modules/BrowserAi/useCases/renderDdspInstrument.ts",
+                "sha256:01cae7e7832a5209b0246a3e68007ec210986026a5444c144bfda19ceff6bf2f:src/modules/BrowserAi/useCases/renderDdspInstrument.ts",
                 "sha256:4c4cc99e186fb101442c38fd0ed869c7911feb81a03113c092f48a7f07f89888:bytes:381158:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/model.json",
                 "sha256:e2df331d82cf56ed58c202c7af545b305f6794c655897dfc45535620a0d2fc12:bytes:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/group1-shard1of1.bin",
                 "sha256:9cfae64cf6e36007192a479f6f74e26356ed0e6d4521d242498bcb4e04723269:bytes:171:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/violin/settings.json",
@@ -956,7 +959,7 @@
                 "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts",
                 "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicProvider.ts",
                 "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicStream.ts",
-                "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestOpenAiCompatibleProvider.ts",
+                "src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestOpenAiProvider.ts",
                 "src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts",
                 "src/modules/Preferences/presentations/views/preferences/AiSection.tsx"
             ],
@@ -968,8 +971,10 @@
             "revisions": [
                 "Anthropic API 2023-06-01",
                 "OpenAI chat completions v1",
+                "OpenAI Responses v1",
                 "adapter builtin.anthropic.messages.v1",
                 "adapter builtin.openai-compatible.chat-completions.v1",
+                "adapter builtin.openai.responses.v1",
                 "opaque native credential session v1"
             ],
             "digests": [
@@ -1099,7 +1104,7 @@
                 "99432f2bf443219b3eb77e65e1a18583faad422e"
             ],
             "digests": [
-                "sha256:f537ba6b1f49b00f2d11b2c64d4335ee73dfa697273570a43710e2cd14f92bb6:crates/daw-dsp/src/toaster/engines/kick_808.rs",
+                "sha256:fc5c55a78a47850670451df87c25effe81da940bbc13fd49ffe79d2eab3bd6f3:crates/daw-dsp/src/toaster/engines/kick_808.rs",
                 "sha256:f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949:release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs",
                 "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:LICENSE.txt",
                 "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt",
@@ -1164,6 +1169,7 @@
                 "crates/daw-dsp/benches/wasm/deviceRecipes.js",
                 "crates/daw-dsp/benches/wasm/quantumCostProcessor.js",
                 "crates/daw-dsp/benches/wasm/run.mjs",
+                "scripts/quantumMeasurementCalibration.ts",
                 "crates/daw-dsp/benches/wasm/measurementCensus.mjs",
                 "crates/daw-dsp/benches/wasm/measurementCensus.d.mts",
                 "crates/daw-dsp/benches/wasm/renderTable.mjs",
@@ -1190,14 +1196,14 @@
                 "current tracked browser/native measurement proof sources, retained evidence, and exact source-digest list owners"
             ],
             "digests": [
-                "tracked-set-sha256:0f8dc0394c50a1ef88370d90b797a89c3f860218c3c2755b4ac5f1f2723b958d:grand-boule-native-rust",
+                "tracked-set-sha256:472062b2ab4a5c673b4d186be9add5e7104119ba1ab434e617682baa5dbaef26:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:2daad4fe71162dbeab4e9f716fc805e5cea1a22133f07d4550b9202718abb1de:grand-boule-discovery-catalog",
-                "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
-                "tracked-set-sha256:cbaa36164eecccd9a0b96947d20bf1bf307158017cad8fd14bb04b7aecac8136:grand-boule-live-runtime",
-                "tracked-set-sha256:290e46a871d0cad650169ef6bf5da4241fb6c718c73328186bd8eabe616a4415:grand-boule-project-state",
-                "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:4e3b7cbb2f2058c3d9efbe5be596bcda8b1a811b5e9129abee5e58f7d1730c5f:grand-boule-release-proof"
+                "tracked-set-sha256:d7fc8b8a840827f945dd0350ed3d757004743e7bcec88ab926991268fc1124a8:grand-boule-factory-admission",
+                "tracked-set-sha256:8891ee4b3cdeee4ccc119ea720db966d655e432290c91cdaad8b4d15bcd4ac12:grand-boule-live-runtime",
+                "tracked-set-sha256:20060e9f5b6717e11d5d5594757367a4044522e7d1fd421eec57ae926e7c3cf0:grand-boule-project-state",
+                "tracked-set-sha256:f477b8a0fb088965c5e5529a215874567d525d71d3e6d24a786f4278c76c4f36:grand-boule-offline-composition",
+                "tracked-set-sha256:1b79d96abed9d01f5f7fa8e39fc62af11d0d8421c1498d2d5f279d40c3af9c26:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1328,13 +1334,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:4132abbc6f49fcb573aaa3436dbc37a8e93c62e5d668488075b539e47d183ef8",
-                "daw-wasm-decoder sha256:5b265f5b68d99951d7e6b73ec0f3daf7b52bbdd56971f12d08d4065e51c44dfe",
-                "proof-chamber sha256:e8a283ab2f17a1863bcadfa28d05408c3102fd92add6bcfea106c0884bfc8aae",
-                "scoring sha256:478fb9e79e31c3d9d602de19200fc20f4f6d0a54764f77733c9851ab1d4bfbb1"
+                "daw-dsp sha256:9b0b1ba21e3141b7681337f502c9e593740b0bf0d6b0d5bfd7c7458fb2d8d1b9",
+                "daw-wasm-decoder sha256:216f742f3bba1ebd053748f16f9c269468cdfe3c5d22f854107e4b7992931daa",
+                "proof-chamber sha256:a4e98fddd1f16067dc390645933ffdd129c95a7526bc770ba354627ef665a78a",
+                "scoring sha256:66d73952d504d58b5843fa0cf96be7368a249c63f57a99d93d1de4371db1293f"
             ],
             "digests": [
-                "sha256:1fa1248234adb832c25b25657f440e7f80b4b213d1fbcc8d423d8ce45821382f:public/wasm/manifest.json"
+                "sha256:b1109f5df511b214a512c2afedfb50400387a9948e50078344b925ea1aa39322:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1687,7 +1693,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "e7dbf1e11709be55608d2028996d902bf2d12790b0bb1656725652ddd11be049"
+            "sha256": "93e6fdeaa0763902acf58f2fdbf4ef51de51746788fd117763c43f14de9a0bd6"
         },
         {
             "path": "server/package.json",
@@ -1699,7 +1705,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "e32901cc92a925c47678229f62cfc1b85144fbf4fb5b667e6c1958c79dd0d424"
+            "sha256": "16413f208fbad9a082f89b17c0a4eaff440557c615be1f5617018288ef0a47ac"
         },
         {
             "path": "Cargo.toml",
@@ -1707,7 +1713,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "a88ccc73408bb82bab88511476987345c001f47ac729284fcaa9acd173fbb7e5"
+            "sha256": "5ac230db621b42340a8e97d10d6460958b95cb03d56062723b509b9ec7a6fc1e"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -1715,7 +1721,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "1fa1248234adb832c25b25657f440e7f80b4b213d1fbcc8d423d8ce45821382f"
+            "sha256": "b1109f5df511b214a512c2afedfb50400387a9948e50078344b925ea1aa39322"
         }
     ],
     "externalReferences": [
