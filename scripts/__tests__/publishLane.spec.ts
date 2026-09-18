@@ -83,11 +83,32 @@ const CLEANUP_LANE = '/repo/.agents/worktrees/agent--cleanup';
 const LEGACY_LANE = '/repo/.agents/worktrees/collab-sync-state';
 const LEGACY_BRANCH = 'fix/collab-sync-state-2039';
 
+/**
+ * Fixture Git runs without the ambient global and system configuration. That configuration can wire
+ * Git tracing into a developer's local git-ai daemon, which answers a fixture commit by extending
+ * `refs/notes/ai` in the background; the authorship-notes case reads the note its own fixture just
+ * created and asserts the push carried it, so a daemon write landing in between ships a note commit
+ * the fixture never made. The same configuration can enable `commit.gpgsign`, making fixture commits
+ * depend on a local signing key. Fixtures own their identity, refs, and objects, so ambient
+ * configuration is noise; the production GitHub child is isolated the same way (`githubChildEnv`).
+ */
+const HERMETIC_GIT_CONFIG: NodeJS.ProcessEnv = {
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_SYSTEM: '/dev/null',
+};
+
+function fixtureGitEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    for (const key of Object.keys(env)) {
+        if (key.startsWith('GIT_')) {
+            delete env[key];
+        }
+    }
+    return { ...env, ...HERMETIC_GIT_CONFIG, ...overrides };
+}
+
 function fixtureGit(repository: string, args: string[]): string {
-    const env = { ...process.env };
-    delete env.GIT_DIR;
-    delete env.GIT_WORK_TREE;
-    return execFileSync('git', args, { cwd: repository, env, encoding: 'utf8' }).trim();
+    return execFileSync('git', args, { cwd: repository, env: fixtureGitEnv(), encoding: 'utf8' }).trim();
 }
 
 function runTrustedLanePublish(cwd: string, args: string[], env: NodeJS.ProcessEnv): string {
@@ -778,7 +799,11 @@ describe('lane publish', () => {
             fixtureGit(lane, ['commit', '--no-gpg-sign', '-m', 'test: add hostile pre-push hook']);
             fixtureGit(primary, ['config', 'core.hooksPath', '.githooks']);
 
-            execFileSync(systemGit, ['init', '--bare', remote], { cwd: fixtureRoot, encoding: 'utf8' });
+            execFileSync(systemGit, ['init', '--bare', remote], {
+                cwd: fixtureRoot,
+                env: fixtureGitEnv(),
+                encoding: 'utf8',
+            });
             fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
             const headSha = fixtureGit(lane, ['rev-parse', 'HEAD']);
             session = createGhSession('ghs_hook_marker', { PATH: process.env.PATH });
@@ -819,7 +844,11 @@ describe('lane publish', () => {
             fixtureGit(lane, ['notes', '--ref=ai', 'add', '-m', 'ai authorship note', headSha]);
             const noteSha = fixtureGit(lane, ['rev-parse', 'refs/notes/ai']);
 
-            execFileSync(systemGit, ['init', '--bare', remote], { cwd: fixtureRoot, encoding: 'utf8' });
+            execFileSync(systemGit, ['init', '--bare', remote], {
+                cwd: fixtureRoot,
+                env: fixtureGitEnv(),
+                encoding: 'utf8',
+            });
             fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
             session = createGhSession('ghs_hook_marker', { PATH: process.env.PATH });
 
@@ -1970,7 +1999,7 @@ describe('lane publish', () => {
             execFileSync('git', args, {
                 cwd: repository,
                 encoding: 'utf8',
-                env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+                env: fixtureGitEnv({ GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date }),
             }).trim();
         const commit = (file: string, message: string, date: string) => {
             writeFileSync(join(repository, file), `${message}\n`);
@@ -2017,10 +2046,10 @@ describe('lane publish', () => {
         const repository = mkdtempSync(join(tmpdir(), 'sourdaw-trial-merge-'));
         const session: GhSession = {
             configDir: '/tmp/sourdaw-gh',
-            env: { PATH: process.env.PATH },
+            env: { PATH: process.env.PATH, ...HERMETIC_GIT_CONFIG },
             dispose: () => undefined,
         };
-        const git = (args: string[]) => execFileSync('git', args, { cwd: repository, encoding: 'utf8' }).trim();
+        const git = (args: string[]) => fixtureGit(repository, args);
         const write = (file: string, content: string) => writeFileSync(join(repository, file), content);
         try {
             git(['init', '-b', 'main']);
