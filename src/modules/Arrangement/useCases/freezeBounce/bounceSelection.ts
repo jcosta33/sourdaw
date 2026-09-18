@@ -71,11 +71,21 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
     }
 
     let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
-    const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat, {
-        onScheduled: (tally) => {
-            scheduleTally = tally;
-        },
-    });
+    // Same refusal channel as `bounceTrack`: the render throws rather than hand
+    // back a buffer missing a device the session is sounding, and this bounce is
+    // the most destructive of the bake paths — it removes MIDI data outright —
+    // so the message has to reach the user before anything is written.
+    let renderedBuffer: AudioBuffer | null;
+    try {
+        renderedBuffer = await renderTrackOffline(track, startBeat, endBeat, {
+            onScheduled: (tally) => {
+                scheduleTally = tally;
+            },
+        });
+    } catch (error) {
+        notifyUser(error instanceof Error ? error.message : String(error), 'error');
+        return false;
+    }
 
     if (!renderedBuffer) {
         return false;

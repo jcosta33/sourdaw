@@ -12,7 +12,15 @@ const { mocks } = vi.hoisted(() => ({
         isFaustInstrumentModule: vi.fn(),
         loggerWarn: vi.fn(),
         isUnrenderableCatalogDeviceType: vi.fn<(deviceType: string) => boolean>(() => false),
+        readAttachedEngineInstanceIds: vi.fn<() => ReadonlySet<string>>(() => new Set()),
     },
+}));
+
+// The engine's attach state decides the plugin refusal, so these tests state it
+// directly instead of reaching through PluginHost's and Crumbs' stores. What
+// populates the real set is pinned by those modules' own specs.
+vi.mock('../livePlayback/readAttachedEngineInstanceIds', () => ({
+    readAttachedEngineInstanceIds: mocks.readAttachedEngineInstanceIds,
 }));
 
 // `UNRENDERABLE_CATALOG_DEVICE_TYPES` is empty today: its one entry was `crust`,
@@ -51,6 +59,7 @@ describe('buildDeviceChain', () => {
         mocks.isFaustModule.mockReturnValue(false);
         mocks.isFaustInstrumentModule.mockReturnValue(false);
         mocks.isUnrenderableCatalogDeviceType.mockReturnValue(false);
+        mocks.readAttachedEngineInstanceIds.mockReturnValue(new Set());
     });
 
     it('should connect input to output when there are no active devices', async () => {
@@ -160,8 +169,12 @@ describe('buildDeviceChain', () => {
             trackName: 'Sampler',
         }).catch((error: unknown) => error);
 
-        expect((failure as Error).message).toContain('Remove the device from the track to export.');
+        expect((failure as Error).message).toContain('Remove the device from the track to render without it.');
         expect((failure as Error).message).not.toContain('freeze');
+        // The same sentence is what Freeze, Bounce and the stems warning show,
+        // so naming one command ("Export stopped") was wrong on three of four.
+        expect((failure as Error).message).not.toContain('Export');
+        expect((failure as Error).message).not.toContain('export');
     });
 
     // The user has to find the device in the rack, and the chip there shows the
@@ -224,29 +237,36 @@ describe('buildDeviceChain', () => {
         }
     );
 
-    // A hosted plugin sounds live through the native engine (the Web Audio
-    // graph carries only a unity pass-through for it), so it is not the "never
-    // sounded live" case above. Freeze and mixdown could not previously build
-    // it either, and used to drop it silently as a coverage-hole degrade — the
-    // dry render then diverges from what the session actually plays, worst on
-    // freeze where it replaces the audible track. The native offline path
-    // cannot host a plugin instance yet, so refusing is the honest behaviour
-    // until a bounce through the live engine exists.
-    it('refuses the export for a hosted plugin the offline path cannot render', async () => {
-        vi.stubGlobal('AudioWorkletNode', undefined);
-        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
-        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
-        const onWarning = vi.fn();
-        mocks.isFaustModule.mockReturnValue(false);
-        const plugin: Device = {
+    /** A plugin device naming instance `inst-1`; the set decides attachment. */
+    function hostedPlugin(overrides: Partial<Device> = {}): Device {
+        return {
             id: 'd1',
             name: 'Analog EQ',
             type: 'external-plugin',
             bypassed: false,
             parameterValues: {},
+            externalInstanceId: 'inst-1',
+            ...overrides,
         };
+    }
 
-        const failure = await buildDeviceChain({} as BaseAudioContext, [plugin], input, output, {
+    // A hosted plugin whose instance the engine holds sounds live through the
+    // native engine (the Web Audio graph carries only a unity pass-through for
+    // it), so it is not the "never sounded live" case above. Freeze and mixdown
+    // could not previously build it either, and used to drop it silently as a
+    // coverage-hole degrade — the dry render then diverges from what the session
+    // actually plays, worst on freeze where it replaces the audible track. The
+    // native offline path cannot host a plugin instance yet, so refusing is the
+    // honest behaviour until a bounce through the live engine exists.
+    it('refuses the render for an attached hosted plugin the offline path cannot render', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const onWarning = vi.fn();
+        mocks.isFaustModule.mockReturnValue(false);
+        mocks.readAttachedEngineInstanceIds.mockReturnValue(new Set(['inst-1']));
+
+        const failure = await buildDeviceChain({} as BaseAudioContext, [hostedPlugin()], input, output, {
             trackName: 'Guitar',
             onWarning,
         }).catch((error: unknown) => error);
@@ -256,29 +276,74 @@ describe('buildDeviceChain', () => {
         expect(message).toContain('Guitar');
         expect(message).toContain('Analog EQ');
         expect(message).toContain('external-plugin');
-        expect(message).toContain('Bypass or remove');
+        expect(message).toContain('Bypass or remove the plugin to render without it.');
+        // Freeze and Bounce show this same sentence, so it names no command.
+        expect(message).not.toContain('Export');
+        expect(message).not.toContain('export');
         expect(onWarning).not.toHaveBeenCalled();
         expect(input.connect).not.toHaveBeenCalledWith(output);
     });
 
-    // A strip that is never scheduled contributes silence by construction, so
-    // a hosted plugin on it cannot make the file differ from the session —
-    // mirrors the catalog-device case above for the plugin refusal.
-    it('degrades a hosted plugin on a track that contributes no audio', async () => {
+    // The device type alone is not the question; the engine's attach state is.
+    // A device carrying no instance id was never bound to one — `duplicateTrack`
+    // clears `externalInstanceId`, and a track template or a browser-build
+    // project never had one — so `TrackNode` gives it a unity pass-through and
+    // it is silent in live playback. Refusing would make such a project
+    // permanently unrenderable over a device it never sounded.
+    it('degrades a hosted plugin that names no engine instance', async () => {
         vi.stubGlobal('AudioWorkletNode', undefined);
         const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const onWarning = vi.fn();
         mocks.isFaustModule.mockReturnValue(false);
-        const plugin: Device = {
-            id: 'd1',
-            name: 'Analog EQ',
-            type: 'external-plugin',
-            bypassed: false,
-            parameterValues: {},
-        };
+        mocks.readAttachedEngineInstanceIds.mockReturnValue(new Set(['inst-1']));
 
-        const entries = await buildDeviceChain({} as BaseAudioContext, [plugin], input, output, {
+        const entries = await buildDeviceChain(
+            {} as BaseAudioContext,
+            [hostedPlugin({ externalInstanceId: undefined })],
+            input,
+            output,
+            { trackName: 'Duplicated guitar', onWarning }
+        );
+
+        expect(entries).toEqual([]);
+        expect(onWarning).toHaveBeenCalledTimes(1);
+        expect(input.connect).toHaveBeenCalledWith(output);
+    });
+
+    // An instance id the engine does not hold is the same silence: the plugin
+    // was never attached, or its attachment was retracted, and nothing is
+    // sounding it live either.
+    it('degrades a hosted plugin whose instance the engine does not hold', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const onWarning = vi.fn();
+        mocks.isFaustModule.mockReturnValue(false);
+        mocks.readAttachedEngineInstanceIds.mockReturnValue(new Set(['some-other-instance']));
+
+        const entries = await buildDeviceChain({} as BaseAudioContext, [hostedPlugin()], input, output, {
+            trackName: 'Guitar',
+            onWarning,
+        });
+
+        expect(entries).toEqual([]);
+        expect(onWarning).toHaveBeenCalledTimes(1);
+        expect(input.connect).toHaveBeenCalledWith(output);
+    });
+
+    // A strip that is never scheduled contributes silence by construction, so
+    // a hosted plugin on it cannot make the file differ from the session —
+    // mirrors the catalog-device case above for the plugin refusal.
+    it('degrades an attached hosted plugin on a track that contributes no audio', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const onWarning = vi.fn();
+        mocks.isFaustModule.mockReturnValue(false);
+        mocks.readAttachedEngineInstanceIds.mockReturnValue(new Set(['inst-1']));
+
+        const entries = await buildDeviceChain({} as BaseAudioContext, [hostedPlugin()], input, output, {
             trackName: 'Muted guitar',
             onWarning,
             contributesAudio: false,
@@ -292,24 +357,21 @@ describe('buildDeviceChain', () => {
     // The catch this refusal lives in is only reached for a device the chain
     // tries to build. A bypassed device is filtered out before construction,
     // so bypassing a hosted plugin is a real remedy, not a dead end.
-    it('skips a bypassed hosted plugin without refusing or warning', async () => {
+    it('skips a bypassed attached hosted plugin without refusing or warning', async () => {
         vi.stubGlobal('AudioWorkletNode', undefined);
         const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const onWarning = vi.fn();
         mocks.isFaustModule.mockReturnValue(false);
-        const plugin: Device = {
-            id: 'd1',
-            name: 'Analog EQ',
-            type: 'external-plugin',
-            bypassed: true,
-            parameterValues: {},
-        };
+        mocks.readAttachedEngineInstanceIds.mockReturnValue(new Set(['inst-1']));
 
-        const entries = await buildDeviceChain({} as BaseAudioContext, [plugin], input, output, {
-            trackName: 'Guitar',
-            onWarning,
-        });
+        const entries = await buildDeviceChain(
+            {} as BaseAudioContext,
+            [hostedPlugin({ bypassed: true })],
+            input,
+            output,
+            { trackName: 'Guitar', onWarning }
+        );
 
         expect(entries).toEqual([]);
         expect(onWarning).not.toHaveBeenCalled();
