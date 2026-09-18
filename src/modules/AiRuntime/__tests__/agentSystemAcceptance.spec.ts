@@ -9,10 +9,15 @@ import * as commandUseCases from '#/modules/Command/useCases';
 import {
     AGENT_ACCEPTANCE_CORPORA,
     AGENT_ACCEPTANCE_THRESHOLDS,
+    AGENT_PROMPT_CLASSES,
+    AGENT_SCORED_PROMPT_CLASSES,
     type AgentAcceptanceCaseResult,
     type AgentAcceptanceCorpusName,
+    type AgentAcceptanceOracleKind,
     type AgentAcceptanceOutcomeClass,
     type AgentAcceptanceThresholds,
+    type AgentPromptClass,
+    type AgentScoredPromptClass,
 } from '../models/AgentAcceptanceOutcome';
 import { type ProjectContext } from '../models/ProjectContext';
 import {
@@ -30,6 +35,8 @@ import {
     searchCalls,
     type ScriptedTurn,
 } from '../useCases/__tests__/highLevelIntentWorkflowFixture';
+import { GENERATED_BATCH_LOCAL_ID_PREFIXES } from '../useCases/agentReference/batchLocalBindingProducers';
+import { getPlannedActionAffectedIds } from '../useCases/getPlannedActionAffectedIds';
 import { parsePromptToActions } from '../useCases/parsePromptToActions';
 
 const runtimeMocks = vi.hoisted(() => ({ generateWebLlmCompletion: vi.fn() }));
@@ -47,12 +54,27 @@ vi.mock('../repositories/webLlm/isWebLlmLoaded', () => ({ isWebLlmLoaded: () => 
 
 const REPOSITORY_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../..');
 
+const CORPORA_DIRECTORY = 'evidence/agent-campaign/corpora';
+
 const CORPUS_PATHS: Record<AgentAcceptanceCorpusName, string> = {
-    development: 'evidence/agent-campaign/corpora/development.json',
-    'held-out': 'evidence/agent-campaign/corpora/held-out.json',
+    development: `${CORPORA_DIRECTORY}/development.json`,
+    'held-out': `${CORPORA_DIRECTORY}/held-out.json`,
 };
 
 const THRESHOLDS_DOC_PATH = 'docs/architecture/agent-release-gates.md';
+
+/** The file name both corpora must name, so one project answers every case in both of them. */
+const FIXTURE_PROJECT_FILE = 'fixture-project.json';
+
+/** The outcome classes the `boundary` prompt class exists to hold, each needing a case of its own. */
+const BOUNDARY_OUTCOME_CLASSES: readonly AgentAcceptanceOutcomeClass[] = [
+    'clarify-required',
+    'abstain-unsupported',
+    'deny-policy',
+];
+
+/** How many cases a sealed scored prompt class must carry before its floors mean anything. */
+const MINIMUM_SEALED_CLASS_CASES = 3;
 
 /**
  * A local, minimal type for the corpus files: nothing under `src/` may import from `scripts/`, so
@@ -70,23 +92,41 @@ type CorpusProviderTurn =
  *  ahead of a live run, so a case whose oracle relies on one is a corpus defect, never a real pin. */
 type CorpusOracleAction = { type: string; payload: Record<string, unknown> };
 
+/**
+ * What the batch may and may not reach, beyond the commands it compiles to. `touchedIdsWithin`
+ * bounds the project ids the batch is allowed to affect; ids the batch itself mints carry a
+ * published creation prefix and belong to no project snapshot, so they are read as inside by
+ * construction rather than listed.
+ */
+type CorpusOracleInvariants = {
+    touchedIdsWithin: string[];
+    protectedIds: string[];
+    maxCommands: number;
+};
+
 type CorpusOracle =
-    | { kind: 'proposal'; actions: CorpusOracleAction[] }
+    | { kind: 'proposal'; actions: CorpusOracleAction[]; invariants?: CorpusOracleInvariants }
     | { kind: 'clarify' }
     | { kind: 'unsupported' }
-    | { kind: 'denied' };
+    | { kind: 'denied' }
+    | { kind: 'pending' };
 
 type CorpusCase = {
     id: string;
+    promptClass: AgentPromptClass;
     class: AgentAcceptanceOutcomeClass;
     prompt: string;
     providerTurns: readonly CorpusProviderTurn[];
     oracle: CorpusOracle;
 };
 
+type CorpusClassState = { sealed: boolean; pendingContract?: string };
+
 type Corpus = {
-    schemaVersion: 1;
+    schemaVersion: 2;
     corpus: AgentAcceptanceCorpusName;
+    fixtureProject: string;
+    classes: Record<AgentPromptClass, CorpusClassState>;
     cases: readonly CorpusCase[];
 };
 
@@ -100,27 +140,31 @@ const corpora: Record<AgentAcceptanceCorpusName, Corpus> = {
     'held-out': loadCorpus('held-out'),
 };
 
-const context: ProjectContext = {
-    tempo: 120,
-    timeSignature: [4, 4],
-    isPlaying: false,
-    isRecording: false,
-    isLooping: false,
-    loopStart: 0,
-    loopEnd: 0,
-    punchInEnabled: false,
-    punchInBeat: 0,
-    punchOutBeat: 16,
-    metronomeEnabled: false,
-    metronomeVolume: 0.5,
-    masterGain: 0.8,
-    tracks: [],
-    selectedTrackId: null,
-    selectedClipId: null,
-    selectedClipIds: [],
-    activeView: 'arrange',
-    playheadPosition: 0,
-};
+/** The one project every case in both corpora plans against, read from the file the corpora name. */
+const context: ProjectContext = JSON.parse(
+    readFileSync(resolve(REPOSITORY_ROOT, CORPORA_DIRECTORY, FIXTURE_PROJECT_FILE), 'utf8')
+) as ProjectContext;
+
+const GENERATED_ID_PREFIXES: readonly string[] = Object.values(GENERATED_BATCH_LOCAL_ID_PREFIXES);
+
+/** An id this batch minted, rather than one it took from the project snapshot. */
+function isBatchMintedId(id: string): boolean {
+    return GENERATED_ID_PREFIXES.some((prefix) => id.startsWith(prefix));
+}
+
+function sealedClasses(corpus: Corpus): readonly AgentPromptClass[] {
+    return AGENT_PROMPT_CLASSES.filter((promptClass) => corpus.classes[promptClass]?.sealed === true);
+}
+
+function sealedScoredClasses(corpus: Corpus): readonly AgentScoredPromptClass[] {
+    return AGENT_SCORED_PROMPT_CLASSES.filter((promptClass) => corpus.classes[promptClass]?.sealed === true);
+}
+
+/** Only cases whose prompt class has been sealed are scored; the rest are frozen prompts waiting on a contract. */
+function scoredCases(corpus: Corpus): readonly CorpusCase[] {
+    const sealed = new Set(sealedClasses(corpus));
+    return corpus.cases.filter((testCase) => sealed.has(testCase.promptClass));
+}
 
 /** Maps one corpus-declared provider turn to the same scripted-turn builders the workflow fixture proves against production. */
 function toScriptedTurn(turn: CorpusProviderTurn): ScriptedTurn {
@@ -176,12 +220,30 @@ function payloadMatches(actual: unknown, expected: unknown, path = 'payload'): b
 const PROVIDER_FAILURE_REASON_PREFIX = 'Provider planning failed';
 
 /** Maps a corpus case's `class` to the `PlanningOutcome.kind` the frozen oracle contract requires it to declare. */
-const ORACLE_KIND_BY_CLASS: Record<AgentAcceptanceOutcomeClass, CorpusOracle['kind']> = {
+const ORACLE_KIND_BY_CLASS: Record<AgentAcceptanceOutcomeClass, AgentAcceptanceOracleKind> = {
     'execute-exact': 'proposal',
     'clarify-required': 'clarify',
     'abstain-unsupported': 'unsupported',
     'deny-policy': 'denied',
 };
+
+type PlannedActions = Awaited<ReturnType<typeof parsePromptToActions>>['actions'];
+
+/** Asserts the reach invariants a proposal oracle declares against the batch the run actually compiled. */
+function assertProposalInvariants(id: string, actions: PlannedActions, invariants: CorpusOracleInvariants): void {
+    expect(actions.length, `Case ${id} compiled more commands than its oracle admits`).toBeLessThanOrEqual(
+        invariants.maxCommands
+    );
+    const affectedIds = [...new Set(actions.flatMap((action) => getPlannedActionAffectedIds(action)))];
+    const outsideScope = affectedIds
+        .filter((affectedId) => !isBatchMintedId(affectedId))
+        .filter((affectedId) => !invariants.touchedIdsWithin.includes(affectedId));
+    expect(outsideScope, `Case ${id} affected project ids its oracle does not admit`).toEqual([]);
+    expect(
+        affectedIds.filter((affectedId) => invariants.protectedIds.includes(affectedId)),
+        `Case ${id} reached an id its oracle protects`
+    ).toEqual([]);
+}
 
 /**
  * Runs one corpus case through the live parser and scores it. A planning outcome this scorer's four
@@ -231,8 +293,18 @@ async function runCorpusCase(testCase: CorpusCase): Promise<AgentAcceptanceCaseR
             result.actions.every((action, index) =>
                 payloadMatches(action, expectedActions[index], `${testCase.id} actions[${String(index)}]`)
             );
+        if (testCase.oracle.invariants !== undefined) {
+            assertProposalInvariants(testCase.id, result.actions, testCase.oracle.invariants);
+        }
     }
-    return scoreAgentAcceptanceCase(testCase.id, testCase.class, observed, matchesOracle);
+    return scoreAgentAcceptanceCase({
+        id: testCase.id,
+        expectedClass: testCase.class,
+        promptClass: testCase.promptClass,
+        oracleKind: testCase.oracle.kind,
+        observed,
+        matchesOracle,
+    });
 }
 
 type ThresholdCells = { development: number; heldOut: number };
@@ -263,7 +335,7 @@ function readThresholdRow(doc: string, label: string): ThresholdCells {
 }
 
 /**
- * Parses the frozen thresholds table's eight scorable rows straight from the governing document, so
+ * Parses the frozen thresholds table's scorable rows straight from the governing document, so
  * a changed cell or a changed label reddens this spec rather than only the document.
  */
 function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, AgentAcceptanceThresholds> {
@@ -275,11 +347,16 @@ function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, A
     );
     const executeExactMatchRate = readThresholdRow(doc, 'execute-exact exact-match rate');
     const perClassF1Min = readThresholdRow(doc, 'per-class F1 (each of four classes)');
-    const clarifyRequiredPrecision = readThresholdRow(doc, 'clarify-required precision');
-    const clarificationRateOnExecuteExactMax = readThresholdRow(
+    const promptClassExecuteRecallMin = readThresholdRow(
         doc,
-        'clarification rate on execute-exact ground truth'
+        'per-prompt-class execute recall (each sealed class of twelve)'
     );
+    const promptClassExecutePrecisionMin = readThresholdRow(
+        doc,
+        'per-prompt-class execute precision (each sealed class of twelve)'
+    );
+    const clarifyRequiredPrecision = readThresholdRow(doc, 'clarify-required precision');
+    const clarificationOnNonClarifyOracleMax = readThresholdRow(doc, 'clarification on non-clarify oracles');
     const falseAbstentionOnExecuteExactMax = readThresholdRow(doc, 'false abstention on execute-exact ground truth');
     return {
         development: {
@@ -288,8 +365,10 @@ function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, A
             abstainUnsupportedRecallOnDeferred: abstainUnsupportedRecallOnDeferred.development,
             executeExactMatchRate: executeExactMatchRate.development,
             perClassF1Min: perClassF1Min.development,
+            promptClassExecuteRecallMin: promptClassExecuteRecallMin.development,
+            promptClassExecutePrecisionMin: promptClassExecutePrecisionMin.development,
             clarifyRequiredPrecision: clarifyRequiredPrecision.development,
-            clarificationRateOnExecuteExactMax: clarificationRateOnExecuteExactMax.development,
+            clarificationOnNonClarifyOracleMax: clarificationOnNonClarifyOracleMax.development,
             falseAbstentionOnExecuteExactMax: falseAbstentionOnExecuteExactMax.development,
         },
         'held-out': {
@@ -298,8 +377,10 @@ function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, A
             abstainUnsupportedRecallOnDeferred: abstainUnsupportedRecallOnDeferred.heldOut,
             executeExactMatchRate: executeExactMatchRate.heldOut,
             perClassF1Min: perClassF1Min.heldOut,
+            promptClassExecuteRecallMin: promptClassExecuteRecallMin.heldOut,
+            promptClassExecutePrecisionMin: promptClassExecutePrecisionMin.heldOut,
             clarifyRequiredPrecision: clarifyRequiredPrecision.heldOut,
-            clarificationRateOnExecuteExactMax: clarificationRateOnExecuteExactMax.heldOut,
+            clarificationOnNonClarifyOracleMax: clarificationOnNonClarifyOracleMax.heldOut,
             falseAbstentionOnExecuteExactMax: falseAbstentionOnExecuteExactMax.heldOut,
         },
     };
@@ -321,14 +402,81 @@ describe('agent acceptance corpora', () => {
         expect(parseFrozenThresholds(doc)).toEqual(AGENT_ACCEPTANCE_THRESHOLDS);
     });
 
+    describe.each(AGENT_ACCEPTANCE_CORPORA)('%s corpus schema', (corpusName) => {
+        const corpus = corpora[corpusName];
+
+        it('declares schema version 2 against the shared fixture project', () => {
+            expect(corpus.schemaVersion).toBe(2);
+            expect(corpus.corpus).toBe(corpusName);
+            expect(corpus.fixtureProject).toBe(FIXTURE_PROJECT_FILE);
+        });
+
+        it('names every prompt class and gives every case one of them', () => {
+            expect(Object.keys(corpus.classes).sort()).toEqual([...AGENT_PROMPT_CLASSES].sort());
+            for (const testCase of corpus.cases) {
+                expect(AGENT_PROMPT_CLASSES, `Case ${testCase.id} declares an unknown prompt class`).toContain(
+                    testCase.promptClass
+                );
+            }
+            expect(corpus.classes.boundary.sealed).toBe(true);
+        });
+
+        it('binds every unsealed class to the contract it waits for, and its cases to a pending oracle', () => {
+            for (const promptClass of AGENT_PROMPT_CLASSES) {
+                const state = corpus.classes[promptClass];
+                if (state.sealed) {
+                    expect(state.pendingContract, `${promptClass} is sealed yet names a pending contract`).toBe(
+                        undefined
+                    );
+                    continue;
+                }
+                expect(
+                    (state.pendingContract ?? '').length,
+                    `${promptClass} is unsealed and names no contract`
+                ).toBeGreaterThan(0);
+                for (const testCase of corpus.cases.filter((entry) => entry.promptClass === promptClass)) {
+                    expect(testCase.oracle.kind, `Case ${testCase.id} sits in unsealed ${promptClass}`).toBe('pending');
+                }
+            }
+        });
+
+        it('covers every sealed scored class with enough cases and no pending oracle', () => {
+            for (const promptClass of sealedScoredClasses(corpus)) {
+                const cases = corpus.cases.filter((entry) => entry.promptClass === promptClass);
+                expect(cases.length, `Sealed class ${promptClass} carries too few cases`).toBeGreaterThanOrEqual(
+                    MINIMUM_SEALED_CLASS_CASES
+                );
+                for (const testCase of cases) {
+                    expect(
+                        testCase.oracle.kind,
+                        `Case ${testCase.id} is pending inside sealed ${promptClass}`
+                    ).not.toBe('pending');
+                }
+            }
+        });
+
+        it('covers every outcome class the boundary cases answer for', () => {
+            const boundaryCases = corpus.cases.filter((entry) => entry.promptClass === 'boundary');
+            for (const outcomeClass of BOUNDARY_OUTCOME_CLASSES) {
+                expect(
+                    boundaryCases.filter((entry) => entry.class === outcomeClass).length,
+                    `The boundary class covers no ${outcomeClass} case`
+                ).toBeGreaterThanOrEqual(1);
+            }
+            for (const testCase of boundaryCases) {
+                expect(testCase.oracle.kind, `Boundary case ${testCase.id} is pending`).not.toBe('pending');
+            }
+        });
+    });
+
     describe.each(AGENT_ACCEPTANCE_CORPORA)('%s corpus', (corpusName) => {
-        it('scores every case within the frozen thresholds with zero unintended mutations', async () => {
+        it('scores every sealed-class case within the frozen thresholds with zero unintended mutations', async () => {
             const executeAppActionSpy = vi.spyOn(commandUseCases, 'executeAppAction');
             const executeAppActionBatchSpy = vi.spyOn(commandUseCases, 'executeAppActionBatch');
             executeAppActionSpy.mockClear();
             executeAppActionBatchSpy.mockClear();
 
-            const cases = corpora[corpusName].cases;
+            const cases = scoredCases(corpora[corpusName]);
             const results: AgentAcceptanceCaseResult[] = [];
             for (const testCase of cases) {
                 results.push(await runCorpusCase(testCase));
@@ -344,7 +492,11 @@ describe('agent acceptance corpora', () => {
             const metrics = computeAgentAcceptanceMetrics(results, unintendedMutations);
             expect(metrics.unintendedMutations).toBe(0);
 
-            const failed = failedAgentAcceptanceThresholds(metrics, corpusName);
+            const failed = failedAgentAcceptanceThresholds(
+                metrics,
+                corpusName,
+                sealedScoredClasses(corpora[corpusName])
+            );
             expect(failed).toEqual([]);
 
             executeAppActionSpy.mockRestore();
@@ -352,6 +504,25 @@ describe('agent acceptance corpora', () => {
         });
     });
 });
+
+const SEALED_LITERAL_ONLY: readonly AgentScoredPromptClass[] = ['literal-structural'];
+
+function caseResult(
+    id: string,
+    expectedClass: AgentAcceptanceOutcomeClass,
+    observed: AgentAcceptanceOutcomeClass,
+    exactMatch: boolean,
+    promptClass: AgentPromptClass = 'literal-structural'
+): AgentAcceptanceCaseResult {
+    return {
+        id,
+        class: expectedClass,
+        promptClass,
+        oracleKind: ORACLE_KIND_BY_CLASS[expectedClass],
+        observed,
+        exactMatch,
+    };
+}
 
 describe('agentAcceptanceScorer', () => {
     it('classifies every planning outcome kind the scored corpora observe', () => {
@@ -366,20 +537,50 @@ describe('agentAcceptanceScorer', () => {
     });
 
     it('requires both the class label and the oracle content to agree for an exact match', () => {
-        expect(scoreAgentAcceptanceCase('c1', 'execute-exact', 'execute-exact', true).exactMatch).toBe(true);
-        expect(scoreAgentAcceptanceCase('c2', 'execute-exact', 'execute-exact', false).exactMatch).toBe(false);
-        expect(scoreAgentAcceptanceCase('c3', 'execute-exact', 'clarify-required', true).exactMatch).toBe(false);
+        const score = (expected: AgentAcceptanceOutcomeClass, observed: AgentAcceptanceOutcomeClass, ok: boolean) =>
+            scoreAgentAcceptanceCase({
+                id: 'c',
+                expectedClass: expected,
+                promptClass: 'literal-structural',
+                oracleKind: 'proposal',
+                observed,
+                matchesOracle: ok,
+            }).exactMatch;
+
+        expect(score('execute-exact', 'execute-exact', true)).toBe(true);
+        expect(score('execute-exact', 'execute-exact', false)).toBe(false);
+        expect(score('execute-exact', 'clarify-required', true)).toBe(false);
+    });
+
+    it('carries the prompt class and oracle kind the corpus declared onto the result', () => {
+        expect(
+            scoreAgentAcceptanceCase({
+                id: 'c',
+                expectedClass: 'clarify-required',
+                promptClass: 'boundary',
+                oracleKind: 'clarify',
+                observed: 'clarify-required',
+                matchesOracle: true,
+            })
+        ).toEqual({
+            id: 'c',
+            class: 'clarify-required',
+            promptClass: 'boundary',
+            oracleKind: 'clarify',
+            observed: 'clarify-required',
+            exactMatch: true,
+        });
     });
 
     it('computes non-trivial per-class precision, recall and F1 from a mixed synthetic result set', () => {
         const results: AgentAcceptanceCaseResult[] = [
-            { id: 'e1', class: 'execute-exact', observed: 'execute-exact', exactMatch: true },
-            { id: 'e2', class: 'execute-exact', observed: 'execute-exact', exactMatch: true },
+            caseResult('e1', 'execute-exact', 'execute-exact', true),
+            caseResult('e2', 'execute-exact', 'execute-exact', true),
             // Misclassified: the frozen class is execute-exact, but the parser observed clarify-required.
-            { id: 'e3', class: 'execute-exact', observed: 'clarify-required', exactMatch: false },
-            { id: 'c1', class: 'clarify-required', observed: 'clarify-required', exactMatch: true },
-            { id: 'a1', class: 'abstain-unsupported', observed: 'abstain-unsupported', exactMatch: true },
-            { id: 'd1', class: 'deny-policy', observed: 'deny-policy', exactMatch: true },
+            caseResult('e3', 'execute-exact', 'clarify-required', false),
+            caseResult('c1', 'clarify-required', 'clarify-required', true, 'boundary'),
+            caseResult('a1', 'abstain-unsupported', 'abstain-unsupported', true, 'boundary'),
+            caseResult('d1', 'deny-policy', 'deny-policy', true, 'boundary'),
         ];
 
         const metrics = computeAgentAcceptanceMetrics(results, 0);
@@ -393,19 +594,52 @@ describe('agentAcceptanceScorer', () => {
         expect(metrics.perClass['clarify-required'].f1).toBeCloseTo(2 / 3, 5);
 
         expect(metrics.exactMatchRate).toBeCloseTo(2 / 3, 5);
-        expect(metrics.clarificationRateOnExecuteExact).toBeCloseTo(1 / 3, 5);
+        expect(metrics.clarificationOnNonClarifyOracle).toBeCloseTo(1 / 5, 5);
         expect(metrics.falseAbstentionOnExecuteExact).toBe(0);
 
-        const failed = failedAgentAcceptanceThresholds(metrics, 'development');
+        const failed = failedAgentAcceptanceThresholds(metrics, 'development', SEALED_LITERAL_ONLY);
         expect(failed).toEqual(
             expect.arrayContaining([
                 'execute-exact exact-match rate',
                 'per-class F1: execute-exact',
                 'per-class F1: clarify-required',
+                'per-prompt-class execute recall: literal-structural',
                 'clarify-required precision',
-                'clarification rate on execute-exact ground truth',
+                'clarification on non-clarify oracles',
             ])
         );
+    });
+
+    it('scores each prompt class on its own cases rather than on the corpus average', () => {
+        const results: AgentAcceptanceCaseResult[] = [
+            caseResult('l1', 'execute-exact', 'execute-exact', true),
+            caseResult('l2', 'execute-exact', 'execute-exact', true),
+            caseResult('l3', 'execute-exact', 'execute-exact', true),
+            // The device class proposes on both of its cases but matches the oracle on only one.
+            caseResult('d1', 'execute-exact', 'execute-exact', true, 'device-insert-with-parameter'),
+            caseResult('d2', 'execute-exact', 'execute-exact', false, 'device-insert-with-parameter'),
+        ];
+
+        const metrics = computeAgentAcceptanceMetrics(results, 0);
+
+        expect(metrics.perPromptClass['literal-structural']).toEqual({ recall: 1, precision: 1, support: 3 });
+        expect(metrics.perPromptClass['device-insert-with-parameter']).toEqual({
+            recall: 0.5,
+            precision: 0.5,
+            support: 2,
+        });
+
+        const failed = failedAgentAcceptanceThresholds(metrics, 'development', [
+            'literal-structural',
+            'device-insert-with-parameter',
+        ]);
+        expect(failed).toEqual(
+            expect.arrayContaining([
+                'per-prompt-class execute recall: device-insert-with-parameter',
+                'per-prompt-class execute precision: device-insert-with-parameter',
+            ])
+        );
+        expect(failed).not.toContain('per-prompt-class execute recall: literal-structural');
     });
 
     it('reports a failing support row for every class with zero corpus cases', () => {
@@ -415,14 +649,27 @@ describe('agentAcceptanceScorer', () => {
         expect(metrics.perClass['clarify-required'].support).toBe(0);
         expect(metrics.perClass['abstain-unsupported'].support).toBe(0);
         expect(metrics.perClass['deny-policy'].support).toBe(0);
+        expect(metrics.perPromptClass['literal-structural'].support).toBe(0);
 
-        const failed = failedAgentAcceptanceThresholds(metrics, 'development');
+        const failed = failedAgentAcceptanceThresholds(metrics, 'development', SEALED_LITERAL_ONLY);
         expect(failed).toEqual([
             'per-class support: execute-exact',
             'per-class support: clarify-required',
             'per-class support: abstain-unsupported',
             'per-class support: deny-policy',
+            'per-prompt-class support: literal-structural',
         ]);
+    });
+
+    it('scores no row for a prompt class its corpus has not sealed', () => {
+        const metrics = computeAgentAcceptanceMetrics([caseResult('l1', 'execute-exact', 'execute-exact', true)], 0);
+
+        const failed = failedAgentAcceptanceThresholds(metrics, 'development', SEALED_LITERAL_ONLY);
+
+        expect(failed).not.toContain('per-prompt-class support: time-scoped-level');
+        expect(
+            failedAgentAcceptanceThresholds(metrics, 'development', ['literal-structural', 'time-scoped-level'])
+        ).toContain('per-prompt-class support: time-scoped-level');
     });
 
     it('counts per-class support from the frozen class label, never the observed outcome', () => {
@@ -430,15 +677,13 @@ describe('agentAcceptanceScorer', () => {
         // still credit the frozen class (execute-exact), not the class the run happened to land in
         // (deny-policy) — a misclassified case is still one covered corpus case, not zero coverage
         // of its own class and spurious coverage of another.
-        const results: AgentAcceptanceCaseResult[] = [
-            { id: 'e1', class: 'execute-exact', observed: 'deny-policy', exactMatch: false },
-        ];
+        const results: AgentAcceptanceCaseResult[] = [caseResult('e1', 'execute-exact', 'deny-policy', false)];
 
         const metrics = computeAgentAcceptanceMetrics(results, 0);
         expect(metrics.perClass['execute-exact'].support).toBe(1);
         expect(metrics.perClass['deny-policy'].support).toBe(0);
 
-        const failed = failedAgentAcceptanceThresholds(metrics, 'development');
+        const failed = failedAgentAcceptanceThresholds(metrics, 'development', SEALED_LITERAL_ONLY);
         expect(failed).toEqual(
             expect.arrayContaining([
                 'per-class support: deny-policy',
@@ -451,33 +696,38 @@ describe('agentAcceptanceScorer', () => {
 
     it('passes the caller-counted unintended mutations straight through to the safety threshold row', () => {
         const results: AgentAcceptanceCaseResult[] = [
-            { id: 'e1', class: 'execute-exact', observed: 'execute-exact', exactMatch: true },
-            { id: 'c1', class: 'clarify-required', observed: 'clarify-required', exactMatch: true },
-            { id: 'a1', class: 'abstain-unsupported', observed: 'abstain-unsupported', exactMatch: true },
-            { id: 'd1', class: 'deny-policy', observed: 'deny-policy', exactMatch: true },
+            caseResult('e1', 'execute-exact', 'execute-exact', true),
+            caseResult('e2', 'execute-exact', 'execute-exact', true),
+            caseResult('e3', 'execute-exact', 'execute-exact', true),
+            caseResult('c1', 'clarify-required', 'clarify-required', true, 'boundary'),
+            caseResult('a1', 'abstain-unsupported', 'abstain-unsupported', true, 'boundary'),
+            caseResult('d1', 'deny-policy', 'deny-policy', true, 'boundary'),
         ];
 
         const metrics = computeAgentAcceptanceMetrics(results, 3);
         expect(metrics.unintendedMutations).toBe(3);
 
-        const failed = failedAgentAcceptanceThresholds(metrics, 'development');
+        const failed = failedAgentAcceptanceThresholds(metrics, 'development', SEALED_LITERAL_ONLY);
         expect(failed).toEqual(['safety: unintended-mutation count']);
     });
 
     it('trips every frozen threshold row, in the documented order, from one adversarial result set', () => {
         const results: AgentAcceptanceCaseResult[] = [
-            { id: 'e1', class: 'execute-exact', observed: 'clarify-required', exactMatch: false },
-            { id: 'e2', class: 'execute-exact', observed: 'abstain-unsupported', exactMatch: false },
-            { id: 'e3', class: 'execute-exact', observed: 'execute-exact', exactMatch: false },
-            { id: 'c1', class: 'clarify-required', observed: 'clarify-required', exactMatch: true },
-            { id: 'd1', class: 'deny-policy', observed: 'deny-policy', exactMatch: true },
-            { id: 'd2', class: 'deny-policy', observed: 'abstain-unsupported', exactMatch: false },
-            { id: 'a1', class: 'abstain-unsupported', observed: 'abstain-unsupported', exactMatch: true },
-            { id: 'a2', class: 'abstain-unsupported', observed: 'deny-policy', exactMatch: false },
+            caseResult('e1', 'execute-exact', 'clarify-required', false),
+            caseResult('e2', 'execute-exact', 'abstain-unsupported', false),
+            caseResult('e3', 'execute-exact', 'execute-exact', false),
+            caseResult('c1', 'clarify-required', 'clarify-required', true, 'boundary'),
+            caseResult('d1', 'deny-policy', 'deny-policy', true, 'boundary'),
+            caseResult('d2', 'deny-policy', 'abstain-unsupported', false, 'boundary'),
+            caseResult('a1', 'abstain-unsupported', 'abstain-unsupported', true, 'boundary'),
+            caseResult('a2', 'abstain-unsupported', 'deny-policy', false, 'boundary'),
         ];
 
         const metrics = computeAgentAcceptanceMetrics(results, 3);
-        const failed = failedAgentAcceptanceThresholds(metrics, 'development');
+        const failed = failedAgentAcceptanceThresholds(metrics, 'development', [
+            'literal-structural',
+            'time-scoped-level',
+        ]);
 
         expect(failed).toEqual([
             'safety: unintended-mutation count',
@@ -488,8 +738,11 @@ describe('agentAcceptanceScorer', () => {
             'per-class F1: clarify-required',
             'per-class F1: abstain-unsupported',
             'per-class F1: deny-policy',
+            'per-prompt-class execute recall: literal-structural',
+            'per-prompt-class execute precision: literal-structural',
+            'per-prompt-class support: time-scoped-level',
             'clarify-required precision',
-            'clarification rate on execute-exact ground truth',
+            'clarification on non-clarify oracles',
             'false abstention on execute-exact ground truth',
         ]);
     });

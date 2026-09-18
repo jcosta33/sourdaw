@@ -42,6 +42,27 @@ const EXPECTED_COLLISIONS: readonly EvidenceCollision[] = [
  */
 const VITE_CONFIG_PATH = 'vite.config.ts';
 
+const THRESHOLDS_DOC_PATH = 'docs/architecture/agent-release-gates.md';
+
+/**
+ * The version-1 values schema 2 replaces, written out verbatim. A schema bump that drops one of
+ * these from the supersession paragraph retires a frozen threshold without saying so.
+ */
+const SUPERSEDED_VERSION_1_VALUES: readonly string[] = [
+    'clarification rate on execute-exact ground truth ≤ 0.10',
+    'human panel: median acceptance, ≥3 raters, ≥20 held-out items ≥ 4.0 / 5',
+    'per-class F1 (each of four classes)',
+];
+
+/** The thresholds document's section bodies, keyed by heading. */
+function sectionsOf(document: string): ReadonlyMap<string, string> {
+    const sections = new Map<string, string>();
+    for (const match of document.matchAll(/^## (?<heading>.+)\n(?<body>(?:(?!^## ).*\n)*)/gmu)) {
+        sections.set(match.groups?.heading?.trim() ?? '', match.groups?.body ?? '');
+    }
+    return sections;
+}
+
 /** The exact gate the serving-checkout marker plugin carries in that configuration. */
 const SERVING_CHECKOUT_APPLY =
     "apply: (_config, { command, mode }) => command === 'serve' && isSourdawE2eServeMode(mode),";
@@ -56,6 +77,23 @@ describe('agent campaign harness boundary', () => {
         expect(isSourdawE2eServeMode('e2e')).toBe(true);
         expect(isSourdawE2eServeMode('development')).toBe(false);
         expect(isSourdawE2eServeMode('production')).toBe(false);
+    });
+});
+
+describe('agent release thresholds document', () => {
+    const document = readFileSync(resolve(REPOSITORY_ROOT, THRESHOLDS_DOC_PATH), 'utf8');
+
+    it('declares the schema version the corpora and the scorer are written against', () => {
+        expect(document).toContain('Schema version 2.');
+    });
+
+    it('names every superseded version-1 value in its supersession section', () => {
+        const supersession = sectionsOf(document).get('Supersession');
+
+        expect(supersession).toBeDefined();
+        for (const value of SUPERSEDED_VERSION_1_VALUES) {
+            expect(supersession).toContain(value);
+        }
     });
 });
 
