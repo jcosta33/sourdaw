@@ -19,22 +19,6 @@
 //! compared against the mean of the same measure. A ratio, not an absolute
 //! level, so it says nothing about how loud the engine is and everything about
 //! whether it is continuous.
-//!
-//! # Why this test is `#[ignore]`d
-//!
-//! It is red against the shipped engine. `ReverseReverb::process`
-//! (`src/reverse.rs:108`-`:120`) applies a Hann fade-out over the last
-//! `crossfade_len` samples of a grain and a Hann fade-in over the first
-//! `crossfade_len` samples of the next, but the two are **sequential rather
-//! than overlapped**: `read_pos` is reset to 0 in the same step that swaps the
-//! buffers (`:133`-`:137`), so the envelope reaches exactly 0 at the boundary
-//! and the two half-windows sum to a notch instead of to unity. At the shipped
-//! 15 ms crossfade the output falls to roughly a tenth of its running level
-//! across a 10 ms window, once every reverse time.
-//!
-//! Un-ignore this when the grains overlap. The bound below is loose on purpose
-//! — a quarter of the running level is already a 12 dB hole — so a repair that
-//! cannot clear it has not made the engine continuous.
 
 use proof_chamber::ProofChamberInstance;
 
@@ -113,7 +97,6 @@ fn render() -> Vec<f32> {
 }
 
 #[test]
-#[ignore = "pins the Reverse engine's grain-boundary dropout — sequential rather than overlapped Hann half-windows in src/reverse.rs:108-120, with read_pos reset alongside the buffer swap at :133-137. Red until the reverse grain-overlap lane lands."]
 fn reverse_does_not_drop_out_at_a_grain_boundary() {
     let output = render();
 
