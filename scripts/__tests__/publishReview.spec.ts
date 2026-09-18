@@ -3441,6 +3441,102 @@ describe('shellPort postReview state verification', () => {
         }
     });
 
+    it('recovers a reviewer publication past the orchestrator acceptance already landed at the same body', async () => {
+        const fixture = createJournaledRecoveryFixture('prepared');
+        try {
+            const bundle = join(fixture.root, '.agents', 'review-bundles', `${fixture.number}-${fixture.head}`);
+            const document = parseReviewDocument({
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'Attacked; held.',
+                evidence: approvalEvidence(fixture.head),
+                reviewerModel: 'claude-sonnet-5',
+            });
+            writeFileSync(join(bundle, 'review.json'), JSON.stringify(document));
+            const owner = readPullRequestMutationLockOwner(fixture.root, fixture.ownerOid, fixture.number);
+            if (owner.version !== 3) {
+                throw new Error('expected publication owner');
+            }
+            const ownerOid = writePullRequestMutationLockOwner(
+                fixture.root,
+                {
+                    ...owner,
+                    reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+                    payloadDigest: reviewPublicationPayloadDigest(
+                        reviewPublicationPayload({
+                            commitId: fixture.head,
+                            event: document.event,
+                            body: renderReviewDocumentBody(document),
+                            comments: document.comments,
+                        })
+                    ),
+                },
+                fixture.number
+            );
+            runGit(fixture.root, [
+                'update-ref',
+                pullRequestMutationLockRef(fixture.number),
+                ownerOid,
+                fixture.ownerOid,
+            ]);
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.number), '--owner', ownerOid], {
+                    ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                        otherActorReviews: [
+                            {
+                                id: 8,
+                                state: 'APPROVED',
+                                body: 'Attacked; held.',
+                                commitId: expectedHead,
+                                actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                                comments: [],
+                            },
+                        ],
+                    })),
+                })
+            ).resolves.toBe(0);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBeUndefined();
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('recovers a reviewer approval publication past the orchestrator acceptance already landed at the same body', async () => {
+        const fixture = createJournaledRecoveryFixture('prepared');
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                        otherActorReviews: [
+                            {
+                                id: 8,
+                                state: 'APPROVED',
+                                body: 'Attacked; held.',
+                                commitId: expectedHead,
+                                actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                                comments: [],
+                            },
+                        ],
+                    }))
+                )
+            ).resolves.toBe(0);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBeUndefined();
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
     it('retains the adopted owner when unauthorized landed evidence appears only on the second read', async () => {
         const fixture = createJournaledRecoveryFixture();
         let calls = 0;

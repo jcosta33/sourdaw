@@ -445,13 +445,19 @@ function requireMatchingRecoveryDigest(
 /**
  * The other sanctioned publication identity for a recovery: recovering the orchestrator's
  * acceptance treats a landed reviewer approval as authorized, and recovering the reviewer's
- * approval treats a landed orchestrator acceptance as authorized. Compact-v1 documents carry no
- * evidence footer, so the acceptance body (review body minus `reviewerModel`) and the reviewer's
- * approval body are routinely identical at one head — that overlap is expected, not evidence of
- * an unauthorized third party.
+ * approval treats a landed orchestrator acceptance as authorized. The reviewer's approval and the
+ * orchestrator's acceptance are independently written prose that can be byte-identical at one
+ * head, and compact-v1 carries no evidence footer to disambiguate them — that overlap alone is
+ * expected, not evidence of an unauthorized third party.
  */
 function sanctionedOtherPublicationActorNodeId(expectedActorNodeId: string): string {
-    return expectedActorNodeId === ORCHESTRATOR_USER_NODE_ID ? REVIEWER_BOT_NODE_ID : ORCHESTRATOR_USER_NODE_ID;
+    if (expectedActorNodeId === ORCHESTRATOR_USER_NODE_ID) {
+        return REVIEWER_BOT_NODE_ID;
+    }
+    if (expectedActorNodeId === REVIEWER_BOT_NODE_ID) {
+        return ORCHESTRATOR_USER_NODE_ID;
+    }
+    fail(`review-publication recovery attested an unexpected actor: ${expectedActorNodeId}`);
 }
 
 function assertNoUnauthorizedLandedEvidence(
