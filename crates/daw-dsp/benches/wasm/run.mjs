@@ -105,6 +105,158 @@ import { COST_SITE, DUTY_CYCLE } from './deviceRecipes.js';
 import { grandBouleMeasurementSourcePaths } from './measurementCensus.mjs';
 import { startServer } from './server.mjs';
 
+/**
+ * The page realm's contract, declared in `pageHarness.d.mts` — the entry point
+ * lives in an inline `index.html` script and the rows are posted by
+ * `quantumCostProcessor.js`, both plain JavaScript.
+ *
+ * @typedef {import('./pageHarness.mjs').QuantumCostTableConfig} QuantumCostTableConfig
+ * @typedef {import('./pageHarness.mjs').QuantumCostOccupancyCheck} QuantumCostOccupancyCheck
+ * @typedef {import('./pageHarness.mjs').QuantumCostPagePayload} QuantumCostPagePayload
+ * @typedef {import('./pageHarness.mjs').QuantumCostPageRow} QuantumCostPageRow
+ */
+
+/**
+ * One entry of the load timeline, sampled once a second across the run so each
+ * row can report the contention it was measured under.
+ *
+ * @typedef {object} LoadSample
+ * @property {number} atMs
+ * @property {number} load
+ */
+
+/**
+ * The runner's parsed command line.
+ *
+ * @typedef {object} RunOptions
+ * @property {number} warmupQuanta
+ * @property {number} measureQuanta
+ * @property {number} segmentTargetMs
+ * @property {string | null} json
+ * @property {boolean} headed
+ * @property {string[]} deviceIds
+ */
+
+/**
+ * Distribution of one row's calibrated per-quantum samples, in milliseconds.
+ * `floor` is the published quantile and `min` the raw minimum.
+ *
+ * @typedef {object} SampleSummary
+ * @property {number} n
+ * @property {number} mean
+ * @property {number} floor
+ * @property {number} median
+ * @property {number} p95
+ * @property {number} p99
+ * @property {number} p999
+ * @property {number} max
+ * @property {number} min
+ * @property {number} firstFiveHundredMean
+ * @property {number} lastFiveHundredMean
+ */
+
+/**
+ * A duty-cycled row split into its expensive tick and the idle quanta between
+ * ticks.
+ *
+ * @typedef {object} DutyCycleSplit
+ * @property {number} periodQuanta
+ * @property {number} dutyPct
+ * @property {number} tickFloorMs
+ * @property {number} tickCostMs
+ * @property {number} idleFloorMs
+ * @property {number} idleCostMs
+ * @property {number} amortisedMeanMs
+ * @property {number} amortisedFloorMs
+ */
+
+/**
+ * The in-window tick-rate statistics published beside a row.
+ *
+ * @typedef {object} RowCalibration
+ * @property {number} segments
+ * @property {number} medianTicksPerMs
+ * @property {number} minTicksPerMs
+ * @property {number} maxTicksPerMs
+ * @property {number} spreadPct
+ */
+
+/**
+ * The contention a row was actually timed under.
+ *
+ * @typedef {object} RowLoadSummary
+ * @property {number} samples
+ * @property {number} mean
+ * @property {number} min
+ * @property {number} max
+ */
+
+/**
+ * One device's analyzed row: the retained record before the raw samples are
+ * dropped from the JSON.
+ *
+ * @typedef {object} AnalyzedRow
+ * @property {string} id
+ * @property {string} label
+ * @property {string} note
+ * @property {string} costSite
+ * @property {QuantumCostOccupancyCheck | null} warmVerify
+ * @property {QuantumCostOccupancyCheck | null} lateVerify
+ * @property {SampleSummary} stats
+ * @property {SampleSummary} harnessFloor
+ * @property {DutyCycleSplit | null} dutyCycle
+ * @property {string | null} dutyCycleSource
+ * @property {RowCalibration} calibration
+ * @property {number} timedTotalMs
+ * @property {number} warmupTotalMs
+ * @property {number} mainThreadWallMs
+ * @property {number} wallRatio
+ * @property {number} driftPct
+ * @property {boolean} stationary
+ * @property {boolean} medianTrustworthy
+ * @property {number} zeroTickSamples
+ * @property {number} zeroFraction
+ * @property {boolean} floorMeasurable
+ * @property {RowLoadSummary} load
+ * @property {number[]} samplesMs
+ */
+
+/**
+ * The reference project's retained totals. Null on a `--devices` subset run,
+ * which cannot produce a project figure.
+ *
+ * @typedef {object} ReferenceProjectRecord
+ * @property {ReadonlyArray<readonly [string, number]>} audioThread
+ * @property {ReadonlyArray<readonly [string, number]>} worker
+ * @property {number} audioFloorMs
+ * @property {string[]} audioFloorPartialFrom
+ * @property {number} audioUpperBoundMs
+ * @property {number} audioWorstQuantumUpperMs
+ * @property {number} audioMedianMs
+ * @property {number} meanLoad
+ * @property {number} workerFloorMs
+ * @property {number} workerMedianMs
+ */
+
+/**
+ * The machine a table was taken on, recorded beside every figure.
+ *
+ * @typedef {object} MachineRecord
+ * @property {string} cpu
+ * @property {number} logicalCores
+ * @property {string} arch
+ * @property {string} platform
+ * @property {number} memoryGb
+ * @property {string} hardwareModel
+ * @property {string} performanceCores
+ * @property {string} efficiencyCores
+ * @property {string} os
+ * @property {string} gitSha
+ * @property {string} gitBase
+ * @property {string} workingTree
+ * @property {string} takenAt
+ */
+
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
 
@@ -222,6 +374,10 @@ const MAX_ZERO_TICK_FRACTION_FOR_MEDIAN = 0.4;
  */
 const WALL_RATIO_TOLERANCE = 1.15;
 
+/**
+ * @param {string[]} argv
+ * @returns {RunOptions}
+ */
 function parseArgs(argv) {
     const options = {
         warmupQuanta: DEFAULT_WARMUP_QUANTA,
@@ -258,6 +414,11 @@ function parseArgs(argv) {
     return options;
 }
 
+/**
+ * @param {readonly number[] | Float64Array} sorted
+ * @param {number} fraction
+ * @returns {number}
+ */
 function quantile(sorted, fraction) {
     if (sorted.length === 0) {
         return Number.NaN;
@@ -266,8 +427,16 @@ function quantile(sorted, fraction) {
     return sorted[index];
 }
 
+/**
+ * @param {readonly number[]} values
+ * @returns {number}
+ */
 const meanOf = (values) => values.reduce((total, value) => total + value, 0) / values.length;
 
+/**
+ * @param {readonly number[]} samplesMs
+ * @returns {SampleSummary}
+ */
 function summarise(samplesMs) {
     const sorted = Float64Array.from(samplesMs).sort();
     return {
@@ -294,6 +463,11 @@ function summarise(samplesMs) {
  * cycle happens to sit relative to 95%, which is a fact about the percentile
  * and not about the device.
  */
+/**
+ * @param {readonly number[]} samplesMs
+ * @param {number} periodQuanta
+ * @returns {DutyCycleSplit}
+ */
 function dutyCycleSplit(samplesMs, periodQuanta) {
     const sorted = Array.from(samplesMs).sort((a, b) => a - b);
     const tickCount = Math.max(1, Math.round(sorted.length / periodQuanta));
@@ -313,7 +487,15 @@ function dutyCycleSplit(samplesMs, periodQuanta) {
     };
 }
 
+/**
+ * @returns {MachineRecord}
+ */
 function machineRecord() {
+    /**
+     * @param {string} bin
+     * @param {string[]} args
+     * @returns {string}
+     */
     const read = (bin, args) => {
         try {
             return execFileSync(bin, args, { encoding: 'utf8' }).trim();
@@ -346,11 +528,19 @@ function machineRecord() {
  * worktree ran the whole vitest suite — load average 25 on a 12-core machine —
  * and nothing in the output said so.
  */
+/**
+ * @returns {number}
+ */
 function loadCeiling() {
     return os.cpus().length / 2;
 }
 
-/** Two significant figures. The mechanism does not sustain more. */
+/**
+ * Two significant figures. The mechanism does not sustain more.
+ *
+ * @param {number} value
+ * @returns {string}
+ */
 function sig2(value) {
     if (!Number.isFinite(value) || value === 0) {
         return '0';
@@ -382,6 +572,8 @@ function reportFailedRun({ headline, failures, failedRun, jsonPath }) {
 /**
  * The reference project, defined here because **nothing in the repository
  * defines it**, split by where each device's cost is actually charged.
+ *
+ * @type {ReadonlyArray<readonly [string, number]>}
  */
 const REFERENCE_PROJECT_AUDIO_THREAD = [
     ['grand_boule_ring_consumer', 1],
@@ -396,8 +588,35 @@ const REFERENCE_PROJECT_AUDIO_THREAD = [
     ['gluten', 3],
     ['proof_chamber_plate', 1],
 ];
+/** @type {ReadonlyArray<readonly [string, number]>} */
 const REFERENCE_PROJECT_WORKER = [['grand_boule', 1]];
 
+/**
+ * @param {AnalyzedRow} row
+ * @returns {row is AnalyzedRow & { dutyCycle: DutyCycleSplit }}
+ */
+const hasDutyCycle = (row) => row.dutyCycle !== null;
+
+/**
+ * A row's per-quantum floor for the reference project total: its amortised
+ * floor when its expensive work is duty-cycled, otherwise its own floor. A row
+ * whose floor was withheld contributes nothing, which is what keeps the sum a
+ * lower bound.
+ *
+ * @param {AnalyzedRow} row
+ * @returns {number}
+ */
+const audioThreadFloorMs = (row) => {
+    if (!row.floorMeasurable) {
+        return 0;
+    }
+    if (row.dutyCycle) {
+        return row.dutyCycle.amortisedFloorMs;
+    }
+    return row.stats.floor;
+};
+
+/** @returns {Promise<void>} */
 async function main() {
     const options = parseArgs(process.argv.slice(2));
     const loadBefore = os.loadavg()[0];
@@ -405,6 +624,7 @@ async function main() {
     // Sample the load average throughout, so every row can report the
     // contention it was actually measured under. Recorded, not gated: the
     // figures this run publishes are floors, and a floor is valid under load.
+    /** @type {LoadSample[]} */
     const loadTimeline = [];
     const loadSampler = setInterval(() => {
         loadTimeline.push({ atMs: Date.now(), load: os.loadavg()[0] });
@@ -420,6 +640,7 @@ async function main() {
         args: ['--autoplay-policy=no-user-gesture-required'],
     });
 
+    /** @type {QuantumCostPagePayload} */
     let payload;
     try {
         const page = await browser.newPage();
@@ -461,7 +682,6 @@ async function main() {
 
     const machine = machineRecord();
     const loadAfter = os.loadavg()[0];
-    const busiestLoad = Math.max(loadBefore, loadAfter);
 
     // -- analysis ----------------------------------------------------------
     const calibration = calibrateQuantumMeasurementPayload(payload);
@@ -477,7 +697,18 @@ async function main() {
     }
 
     let calibratedRowIndex = 0;
-    const rows = payload.results.map((result) => {
+    // The page's recipe tables, read as lookups keyed by whatever device id a
+    // row reports: a `--devices` subset run, or a table recorded before a
+    // device was added, can name an id the table does not carry.
+    /** @type {Readonly<Record<string, string | undefined>>} */
+    const costSiteByDeviceId = COST_SITE;
+    /** @type {Readonly<Record<string, { periodQuanta: number; source: string } | undefined>>} */
+    const dutyCycleByDeviceId = DUTY_CYCLE;
+    /**
+     * @param {QuantumCostPageRow} result
+     * @returns {AnalyzedRow}
+     */
+    const analyzeResult = (result) => {
         const rates = result.segmentRates.filter((rate) => Number.isFinite(rate) && rate > 0);
         const sortedRates = [...rates].sort((a, b) => a - b);
         const medianRate = quantile(Float64Array.from(sortedRates), 0.5);
@@ -506,18 +737,19 @@ async function main() {
             (sample) => sample.atMs >= result.timedStartedAtMs && sample.atMs <= result.timedFinishedAtMs
         );
         const loadSamples = inWindow.length > 0 ? inWindow.map((sample) => sample.load) : [os.loadavg()[0]];
+        const dutyRecipe = dutyCycleByDeviceId[result.id];
 
         return {
             id: result.id,
             label: result.label,
             note: result.note,
-            costSite: COST_SITE[result.id] ?? 'unknown',
+            costSite: costSiteByDeviceId[result.id] ?? 'unknown',
             warmVerify: result.warmVerify,
             lateVerify: result.lateVerify,
             stats,
             harnessFloor: summarise(floorMs),
-            dutyCycle: DUTY_CYCLE[result.id] ? dutyCycleSplit(samplesMs, DUTY_CYCLE[result.id].periodQuanta) : null,
-            dutyCycleSource: DUTY_CYCLE[result.id]?.source ?? null,
+            dutyCycle: dutyRecipe ? dutyCycleSplit(samplesMs, dutyRecipe.periodQuanta) : null,
+            dutyCycleSource: dutyRecipe?.source ?? null,
             calibration: {
                 segments: rates.length,
                 medianTicksPerMs: medianRate,
@@ -547,11 +779,14 @@ async function main() {
             },
             samplesMs,
         };
-    });
+    };
+    const rows = payload.results.map(analyzeResult);
 
+    /** @type {Record<string, AnalyzedRow>} */
     const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
 
     // -- gates, all evaluated BEFORE anything is printed --------------------
+    /** @type {string[]} */
     const failures = [];
     for (const row of rows) {
         if (!row.warmVerify?.ok || !row.lateVerify?.ok) {
@@ -641,6 +876,10 @@ async function main() {
     console.log('holds the median to roughly +/-10% and inflates the p95 by +4% to +31% on constant work.');
     console.log('');
 
+    /**
+     * @param {string} title
+     * @param {readonly AnalyzedRow[]} members
+     */
     const printRows = (title, members) => {
         if (members.length === 0) {
             return;
@@ -692,7 +931,7 @@ async function main() {
     }
     console.log('');
 
-    const duty = rows.filter((row) => row.dutyCycle !== null);
+    const duty = rows.filter(hasDutyCycle);
     if (duty.length > 0) {
         console.log('DUTY CYCLES, not tails — a p95 on these describes the percentile, not the device:');
         for (const row of duty) {
@@ -715,6 +954,7 @@ async function main() {
     // it would read as a project figure while silently omitting devices.
     const referenceMemberIds = [...REFERENCE_PROJECT_AUDIO_THREAD, ...REFERENCE_PROJECT_WORKER].map(([id]) => id);
     const referenceMissing = [...new Set(referenceMemberIds.filter((id) => byId[id] === undefined))];
+    /** @type {ReferenceProjectRecord | null} */
     let referenceProjectJson = null;
     if (referenceMissing.length > 0) {
         console.log('=== Reference project — NOT COMPUTED ===');
@@ -727,13 +967,16 @@ async function main() {
         console.log('  figures above stand on their own; the project total needs a full run.');
         console.log('');
     } else {
+        /**
+         * @param {ReadonlyArray<readonly [string, number]>} members
+         * @param {(row: AnalyzedRow) => number} pick
+         * @returns {number}
+         */
         const sumOver = (members, pick) => members.reduce((total, [id, count]) => total + pick(byId[id]) * count, 0);
 
         // A lower bound stays a lower bound if an unmeasurable term is counted as
         // zero, so rows whose floor was withheld simply contribute nothing.
-        const audioFloor = sumOver(REFERENCE_PROJECT_AUDIO_THREAD, (row) =>
-            row.floorMeasurable ? (row.dutyCycle ? row.dutyCycle.amortisedFloorMs : row.stats.floor) : 0
-        );
+        const audioFloor = sumOver(REFERENCE_PROJECT_AUDIO_THREAD, audioThreadFloorMs);
         const floorRowsMissing = REFERENCE_PROJECT_AUDIO_THREAD.filter(([id]) => !byId[id].floorMeasurable).map(
             ([id]) => id
         );
@@ -784,15 +1027,21 @@ async function main() {
             `  worst quantum <= ${sig2(audioWorstUpper)} ms  (${pct(audioWorstUpper)} of budget)   upper bound, + the largest duty spike`
         );
         console.log('');
-        const verdict =
-            audioWorstUpper < BUDGET_MS
-                ? `  DECIDED: the upper bound already fits. Even measured under load ${meanLoad.toFixed(0)}, the reference\n` +
-                  "  project's audio thread does not approach the deadline on compute. A quieter machine can only\n" +
-                  '  lower these numbers. Compute is not the obstacle.'
-                : audioFloor > BUDGET_MS
-                  ? '  DECIDED THE OTHER WAY: the lower bound already exceeds budget. No quieter machine will fix it.'
-                  : `  UNDECIDED on this machine: the bounds straddle the budget (${pct(audioFloor)} to ${pct(audioWorstUpper)}).\n` +
-                    '  A quiet-machine run would narrow it; AC-3 would answer the deadline question directly.';
+        /** @type {string} */
+        let verdict;
+        if (audioWorstUpper < BUDGET_MS) {
+            verdict =
+                `  DECIDED: the upper bound already fits. Even measured under load ${meanLoad.toFixed(0)}, the reference\n` +
+                "  project's audio thread does not approach the deadline on compute. A quieter machine can only\n" +
+                '  lower these numbers. Compute is not the obstacle.';
+        } else if (audioFloor > BUDGET_MS) {
+            verdict =
+                '  DECIDED THE OTHER WAY: the lower bound already exceeds budget. No quieter machine will fix it.';
+        } else {
+            verdict =
+                `  UNDECIDED on this machine: the bounds straddle the budget (${pct(audioFloor)} to ${pct(audioWorstUpper)}).\n` +
+                '  A quiet-machine run would narrow it; AC-3 would answer the deadline question directly.';
+        }
         console.log(verdict);
         console.log('');
         console.log(

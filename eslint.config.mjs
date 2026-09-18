@@ -2836,6 +2836,25 @@ export default defineConfig(
         },
     },
 
+    // ─── Benchmark harness tooling ───────────────────────────────────────────
+    // The per-quantum cost harness runs under `node` from `crates/`, outside
+    // every project `tsconfig.eslint.json` names, so the type-aware parser
+    // fatals on it before any rule runs. Same treatment as the Node scripts
+    // block above. Typing this harness is oxlint's job: `.oxlintrc.json` runs
+    // its type-aware pass over these files against their JSDoc annotations.
+    {
+        files: ['crates/daw-dsp/benches/wasm/**/*.{js,mjs,d.mts}'],
+        extends: [tseslint.configs.disableTypeChecked, eslintPluginReact.configs['disable-type-checked']],
+        languageOptions: {
+            globals: {
+                ...globals.node,
+            },
+            parserOptions: {
+                project: false,
+            },
+        },
+    },
+
     // ─── d.ts files ──────────────────────────────────────────────────────────
     {
         files: ['**/*.d.ts'],
