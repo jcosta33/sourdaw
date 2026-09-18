@@ -1,0 +1,48 @@
+scripts/agent-campaign/run-evidence-gate.ts
+  s_914af328b3988f::t_0f58b5af296b8f 311-313
+  s_914af328b3988f::t_57f78a2abbd98d 310
+  s_914af328b3988f::t_6147f0d1845ea0 314-316
+  s_b6ac65c18842e3::t_26ade07a6531ed 317-367,523
+evidence/agent-campaign/corpora/source-examples.json
+  s_914af328b3988f::t_f4c98353bd12b1 1-166
+scripts/__tests__/runEvidenceGate.spec.ts
+  s_9b530f08172a54::t_9d2c326c279b8e 13,22,304-356
+src/app/__tests__/agentSourceExamples.spec.ts
+  s_914af328b3988f::t_5e9a7c8ea04d04 1-211
+src/modules/AiRuntime/useCases/index.ts
+  s_9b530f08172a54::t_917e5ee4ac5017 36
+src/modules/Command/useCases/index.ts
+  s_9b530f08172a54::t_7e44782d133756 53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "539473553ddc4cc9c4bc18de3de7bdd80dc7f79c",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b6ac65c18842e3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a087e49633493de6b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
