@@ -235,22 +235,7 @@ fn render_panned(sample_rate: f32, vintage: f32) -> StereoImage {
 ///
 /// Nothing else in this crate feeds the vintage stage a stereo signal, so this
 /// is the whole of the coverage for what the modes do to the image.
-///
-/// # Why this test is `#[ignore]`d
-///
-/// It is red against the shipped engine. Seventies decimation in
-/// `src/vintage.rs:92`-`:95` holds **one** sample for both channels and sources
-/// it from `(l + r) * 0.5`, then reconstructs each channel as `hold + (channel
-/// - hold) * 0.3`. That is a mid/side matrix with the side scaled to 0.3, not a
-/// sample-rate reduction: a hard-panned source comes back with the image
-/// collapsed to a third and more than half its level appearing in the channel
-/// it was never in. The other two modes are per-channel and measure clean, so
-/// the fix is a per-channel decimator with its own counter and hold, which
-/// leaves the mono measurements above untouched.
-///
-/// Un-ignore this when Seventies decimates per channel.
 #[test]
-#[ignore = "pins the Seventies mono-summing decimation hold (src/vintage.rs:92-95), which collapses a hard-panned source's stereo image to 0.3 and leaks it into the opposite channel. Red until the vintage per-channel decimation lane lands."]
 fn character_modes_leave_the_stereo_image_where_they_found_it() {
     for sample_rate in SAMPLE_RATES {
         let modern = render_panned(sample_rate, 0.0);
