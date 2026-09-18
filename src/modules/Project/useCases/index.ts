@@ -31,8 +31,14 @@ export {
     productionBriefActionBatchAdmission,
 } from './doesProductionBriefAllowActionBatch';
 export { getProjectScopedBriefLock } from './getProjectScopedBriefLock';
+export { repairProjectData } from './repairProjectData';
+export { unlockProjectScopedBrief } from './unlockProjectScopedBrief';
 export { acceptCreativeIntent } from './acceptCreativeIntent';
 export { querySemanticProject } from './semanticProjectQueries';
+export { queryAgentDiscovery } from './queryAgentDiscovery';
+export { parseSemanticProjectQueryInput } from './parseSemanticProjectQueryInput';
+export { parseAgentDiscoveryInput } from './parseAgentDiscoveryInput';
+export { agentCapabilityDiscoveryPort } from './agentCapabilityDiscoveryPort';
 export { getProjectProtocolContracts } from './getProjectProtocolContracts';
 export { getAgentProjectModelContract } from './getAgentProjectModelContract';
 export { getDurableProjectOwnerId } from './getDurableProjectOwnerId';
@@ -51,3 +57,5 @@ export { loadRecentProject } from './recentProjects/loadRecentProject';
 export { collectDurableOwnedAudioBufferIds } from './projectPersistence/durableOwnership/collectDurableOwnedAudioBufferIds';
 
 export { isNativeProjectRuntimeAvailable } from './isNativeProjectRuntimeAvailable'; // export-runtime check (ADR 0011 W4)
+
+export { agentAssetFileBoundary } from './agentAssetFileBoundary';

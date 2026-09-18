@@ -113,8 +113,13 @@ function createDevice(overrides: Partial<Device> & { id: string }): Device {
 }
 
 function project(overrides: Partial<LiveGraphTopologyInput>): readonly AudioGraphCommand[] {
+    const stripTracks = overrides.stripTracks ?? [];
     return projectLiveGraphTopology({
-        stripTracks: [],
+        stripTracks,
+        // The default keeps every existing case's pad-ordinal reading
+        // unchanged: only a fixture that deliberately drops a sibling from
+        // the live strip list needs to pass a real `projectTracks` of its own.
+        projectTracks: stripTracks,
         soloGatedTrackIds: new Set(),
         vcaMultiplierByTrackId: new Map(),
         attachedInstanceIds: new Set(),
@@ -500,6 +505,24 @@ describe('projectLiveGraphTopology', () => {
 
         const creation = stripCreation(commands, 'audio-1');
         expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(false);
+    });
+
+    // Toaster pad bindings (#4180): the native graph has no multi-output
+    // device and no child strip, so a Toaster with pads bound to child tracks
+    // is unrepresentable on either strip, however native its own chain looks.
+    it('keeps a Toaster and its pad-bound child both off contributing audio', () => {
+        const commands = project({
+            stripTracks: [
+                createTrack({ id: 'toaster-1', devices: [createDevice({ id: 'dev-1', type: 'toaster' })] }),
+                createTrack({ id: 'pad-1', parentId: 'toaster-1' }),
+            ],
+            programme: programmeFor(['toaster-1', 'pad-1']),
+        });
+
+        const toasterCreation = stripCreation(commands, 'toaster-1');
+        const padCreation = stripCreation(commands, 'pad-1');
+        expect(toasterCreation?.kind === 'create-track-strip' && toasterCreation.contributesAudio).toBe(false);
+        expect(padCreation?.kind === 'create-track-strip' && padCreation.contributesAudio).toBe(false);
     });
 
     it('builds a playing strip whose external plugin the engine holds as contributing audio', () => {

@@ -7,6 +7,7 @@ vi.mock('#/utils/desktopBridge', () => ({
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 import { getState } from '../getState';
 import { resetMidiState } from '../lifecycle/resetMidiState';
+import { WEB_MIDI_IDENTITY_SCHEME, selectedInputIdStorageKey } from '../selectedInputIdStorageKeys';
 import { setState } from '../setState';
 import { activeNotes, channelToNote, midiLearn } from '../state';
 import { subscribe } from '../subscribe';
@@ -18,27 +19,30 @@ describe('webMidi state accessors', () => {
         channelToNote.clear();
         midiLearn.active = false;
         midiLearn.callback = null;
-        setState({
-            isSupported: false,
-            inputs: [],
-            selectedInputId: null,
-        });
+        setState(
+            {
+                isSupported: false,
+                inputs: [],
+                selectedInputId: null,
+            },
+            { persistSelection: false }
+        );
     });
 
     it('should persist selected input changes and notify subscribers', () => {
         const subscriber = vi.fn();
         const unsubscribe = subscribe(subscriber);
 
-        setState({ selectedInputId: 'input-1' });
+        setState({ selectedInputId: 'input-1' }, { persistSelection: true, identityScheme: WEB_MIDI_IDENTITY_SCHEME });
 
         expect(getState().selectedInputId).toBe('input-1');
-        expect(window.localStorage.getItem('sourdaw:midi:selectedInputId')).toBe('input-1');
+        expect(window.localStorage.getItem(selectedInputIdStorageKey(WEB_MIDI_IDENTITY_SCHEME))).toBe('input-1');
         expect(subscriber).toHaveBeenCalledTimes(1);
 
         unsubscribe();
-        setState({ selectedInputId: null });
+        setState({ selectedInputId: null }, { persistSelection: true, identityScheme: WEB_MIDI_IDENTITY_SCHEME });
 
-        expect(window.localStorage.getItem('sourdaw:midi:selectedInputId')).toBeNull();
+        expect(window.localStorage.getItem(selectedInputIdStorageKey(WEB_MIDI_IDENTITY_SCHEME))).toBeNull();
         expect(subscriber).toHaveBeenCalledTimes(1);
     });
 

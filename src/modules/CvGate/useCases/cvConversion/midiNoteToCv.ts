@@ -1,4 +1,9 @@
+import { midiNoteToFrequency, SEMITONES_PER_OCTAVE } from '#/utils/pitch';
+
 import { cvGateStore } from '../../stores/cvGate';
+
+/** The 1V/octave law's zero-volt anchor: C0, MIDI note 24, sits at 0V. */
+const CV_ONE_VOLT_PER_OCTAVE_C0_MIDI = 24;
 
 /**
  * Convert a MIDI note number to CV voltage.
@@ -11,7 +16,7 @@ export function midiNoteToCv(note: number): number {
         return 0;
     }
     if (state.voltageStandard === '1v-per-octave') {
-        return (note - 24) / 12;
+        return (note - CV_ONE_VOLT_PER_OCTAVE_C0_MIDI) / SEMITONES_PER_OCTAVE;
     }
-    return 440 * 2 ** ((note - 69) / 12);
+    return midiNoteToFrequency(note);
 }

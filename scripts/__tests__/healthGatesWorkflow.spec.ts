@@ -17,6 +17,8 @@ import {
     assertHostedWasmWorkflow,
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
+    CONDITIONAL_STEP_ALLOWLIST,
+    type ConditionalStepPin,
     HEALTH_GATE_WORKFLOW_FILES,
     JOB_LEVEL_PERMISSION_FREE_FILES,
     parseHealthGateWorkflows,
@@ -213,7 +215,8 @@ const VERCEL_LINK_STEP = 'Link the Vercel CLI to the production project';
 // and scoring, which ship in the web bundle as the committed
 // `public/wasm/*` packages. The native macOS and Windows legs validate the
 // desktop shell instead, which this deployment does not ship, so their
-// failures must not freeze it.
+// failures must not freeze it. The collaboration-server leg (#3516) stays
+// out for the same reason: the bundle ships nothing from `server/`.
 const DEPLOY_WEB_NEEDS = [
     'static',
     'lint',
@@ -227,8 +230,9 @@ const DEPLOY_WEB_NEEDS = [
     'secrets',
 ] as const;
 // Every leg a scheduled run performs, in the workflow's own order. The deploy
-// deliberately does not wait for the native legs (DEPLOY_WEB_NEEDS), but the
-// reporter observes the whole train: a native failure must still file the issue.
+// deliberately does not wait for the native legs or the collaboration server
+// (DEPLOY_WEB_NEEDS), but the reporter observes the whole train: a native or
+// server failure must still file the issue.
 const NIGHTLY_REPORT_NEEDS = [
     'static',
     'lint',
@@ -236,6 +240,7 @@ const NIGHTLY_REPORT_NEEDS = [
     'unit',
     'build',
     'rust',
+    'collab-server',
     'native-macos',
     'native-windows',
     'desktop-measure',
@@ -300,72 +305,56 @@ const BUILD_CONDITION = "needs.decide.outputs.web == 'true'";
 const RUST_CONDITION = "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'";
 const NATIVE_MACOS_CONDITION = "needs.decide.outputs.rust == 'true'";
 const NATIVE_WINDOWS_CONDITION = "needs.decide.outputs.rust == 'true'";
+// The nightly split its combined Rust job along the deploy seam (#3516): the
+// crate leg keeps the `rust` scope alone because the crates it tests ship in
+// the web bundle, and the collaboration-server leg answers to the `server`
+// scope alone because the bundle ships nothing from `server/`. Each gate is
+// its own script, so the legs can no longer fail for each other's reasons.
+const NIGHTLY_RUST_JOB = 'rust';
+const NIGHTLY_RUST_CONDITION = "needs.decide.outputs.rust == 'true'";
+const NIGHTLY_RUST_GATE_STEP = 'Rust workspace health gates';
+const NIGHTLY_RUST_GATE_COMMAND = 'sh scripts/health-gates-rust.sh';
+const COLLAB_SERVER_JOB = 'collab-server';
+const COLLAB_SERVER_JOB_NAME = 'Collaboration server';
+const COLLAB_SERVER_CONDITION = "needs.decide.outputs.server == 'true'";
+const COLLAB_SERVER_GATE_STEP = 'Collaboration server health gates';
+const COLLAB_SERVER_GATE_COMMAND = 'sh scripts/health-gates-server.sh';
 // The failed shard is already fatal, so these reporters are the one reason a
 // step may carry a condition at all; `!cancelled()` replaces the implicit
 // `success()` that would skip the annotation over the very failure it names.
-const SHARD_FAILURE_REPORT_CONDITION = "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}";
 const E2E_BLOB_UPLOAD_CONDITION = '${{ !cancelled() }}';
-const DEPLOY_MISSING_CREDENTIAL_REPORT_CONDITION = "env.DEPLOY_CREDENTIAL_PRESENT != 'true'";
-const DEPLOY_SKIP_REPORT_CONDITION = `${DEPLOY_CREDENTIAL_CONDITION} && steps.production.outputs.deploy != 'true'`;
-// Every step condition in the registered workflows, keyed by file, job, and step
-// name. A step condition is legitimate only when it is one of these exact,
-// individually pinned exceptions — the shard-failure reporters, the blob
-// uploads that must outlive their shard, and the deploy legs already pinned
-// beside the job that owns them. An `if` anywhere else retires a proof by
-// flipping the condition while every other pin stays green.
-type ConditionalStepPin = Readonly<{ workflow: string; job: string; step: string; condition: string }>;
-const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
-    ...['Install pinned generation toolchain', 'Build and qualify complete artifact', 'Upload qualified artifact'].map(
-        (step) => ({
-            workflow: 'wasm-artifacts.yml',
-            job: 'build-artifacts',
-            step,
-            condition: "steps.plan.outputs.selected == 'true'",
-        })
-    ),
-    {
-        workflow: 'validation.yml',
-        job: 'unit',
-        step: 'Report shard failure',
-        condition: SHARD_FAILURE_REPORT_CONDITION,
-    },
-    {
-        workflow: 'heavy-gates.yml',
-        job: 'e2e',
-        step: 'Report shard failure',
-        condition: SHARD_FAILURE_REPORT_CONDITION,
-    },
-    { workflow: 'heavy-gates.yml', job: 'e2e', step: 'Upload blob report', condition: E2E_BLOB_UPLOAD_CONDITION },
-    { workflow: 'nightly.yml', job: 'unit', step: 'Report shard failure', condition: SHARD_FAILURE_REPORT_CONDITION },
-    // The measurement record is the diagnostic for a failed latency run, so it
-    // uploads even when the measurement itself failed.
-    { workflow: 'nightly.yml', job: 'desktop-measure', step: 'Upload the measurement record', condition: 'always()' },
-    { workflow: 'nightly.yml', job: 'e2e', step: 'Report shard failure', condition: SHARD_FAILURE_REPORT_CONDITION },
-    { workflow: 'nightly.yml', job: 'e2e', step: 'Upload blob report', condition: E2E_BLOB_UPLOAD_CONDITION },
-    {
-        workflow: 'nightly.yml',
-        job: DEPLOY_WEB_JOB,
-        step: DEPLOY_WEB_CREDENTIAL_REPORT_STEP,
-        condition: DEPLOY_MISSING_CREDENTIAL_REPORT_CONDITION,
-    },
-    ...DEPLOY_CREDENTIAL_GATED_STEPS.map((step) => ({
-        workflow: 'nightly.yml',
-        job: DEPLOY_WEB_JOB,
-        step,
-        condition: DEPLOY_CREDENTIAL_CONDITION,
-    })),
-    {
-        workflow: 'nightly.yml',
-        job: DEPLOY_WEB_JOB,
-        step: DEPLOY_WEB_SKIP_REPORT_STEP,
-        condition: DEPLOY_SKIP_REPORT_CONDITION,
-    },
-    ...DEPLOY_REVISION_GATED_STEPS.map((step) => ({
-        workflow: 'nightly.yml',
-        job: DEPLOY_WEB_JOB,
-        step,
-        condition: DEPLOY_CHANGED_REVISION_CONDITION,
-    })),
+// The decide job's changed-paths filter lists a pull request's files through
+// the GitHub REST API on its shallow checkout, and that API intermittently
+// answers 500 (#3592). The first attempt may fail softly so the retry step can
+// re-run the identical filter; `Resolve scope` coalesces the retry's verdicts
+// first and refuses an empty one, so a persistent API failure fails the job
+// instead of reading as an all-false scope that silently skips every lane.
+const PATHS_FILTER_ACTION = 'dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d';
+const PATHS_FILTER_FIRST_ATTEMPT_STEP = 'Filter changed paths';
+const PATHS_FILTER_RETRY_STEP = 'Retry changed-paths filter after a transient API failure';
+const PATHS_FILTER_RETRY_CONDITION = "steps.filter.outcome == 'failure'";
+// The split's two gate scripts must stay claimed by the decide scopes. The
+// rust filter's claim of the server script dates from the combined gate; the
+// split added the rust script beside it. A gate script no scope claims is
+// invisible to the classifier — `unclassified` subtracts `scripts/**` — so a
+// pull request touching only that script resolves rust=false and the changed
+// crate gate first meets a real toolchain on the nightly, after merge.
+const SERVER_GATE_SCRIPT = 'scripts/health-gates-server.sh';
+const RUST_GATE_SCRIPT = 'scripts/health-gates-rust.sh';
+const PATHS_FILTER_VERDICT_ENV: ReadonlyArray<readonly [string, string]> = [
+    ['RUST', 'rust'],
+    ['SERVER', 'server'],
+    ['E2E', 'e2e'],
+    ['WEB', 'web'],
+    ['UNCLASSIFIED', 'unclassified'],
+];
+// The one continue-on-error the lane admits. The first filter attempt defers
+// to the retry that re-runs it, and `Resolve scope` fails the job when neither
+// attempt produced verdicts, so this softening defers to a louder failure
+// rather than swallowing one.
+type SoftenedStepPin = Readonly<{ workflow: string; job: string; step: string }>;
+const CONTINUE_ON_ERROR_STEP_PINS: readonly SoftenedStepPin[] = [
+    { workflow: 'validation.yml', job: 'decide', step: PATHS_FILTER_FIRST_ATTEMPT_STEP },
 ];
 // A softened shard step reports a failing suite as a passing required check.
 const SUITE_SHARD_STEP = 'Run shard';
@@ -531,14 +520,35 @@ function assertScopeContract(candidate: UnknownRecord): string {
     return stringAt(scope, 'run');
 }
 
-function unclassifiedPatterns(candidate: UnknownRecord): string[] {
+function scopeFilterPatterns(candidate: UnknownRecord, scope: string): string[] {
     const filterStep = stepNamed(jobAt(candidate, 'decide'), 'Filter changed paths');
     const options = recordAt(filterStep, 'with');
     if (options['predicate-quantifier'] !== 'some-with-excludes') {
         throw new Error('path filters must subtract negated patterns instead of matching on any one of them');
     }
     const filters = asRecord(parseDocument(stringAt(options, 'filters')).toJS(), 'path filters');
-    return arrayAt(filters, 'unclassified').map(String);
+    return arrayAt(filters, scope).map(String);
+}
+
+function unclassifiedPatterns(candidate: UnknownRecord): string[] {
+    return scopeFilterPatterns(candidate, 'unclassified');
+}
+
+// A gate script no decide scope claims is invisible to the classifier, so a
+// pull request whose diff touches only the Rust gate resolves rust=false, the
+// PR-side rust job skips, and the changed crate gate is first exercised by
+// the nightly after merge. Both claims are exact literal paths, so the match
+// needs no glob semantics to prove. The retry step duplicates the first
+// attempt's filters verbatim (pinned in assertDecideFilterRetryContract), so
+// one claim here covers both filter steps.
+function assertGateScriptScopeClaims(candidate: UnknownRecord): void {
+    const rustPatterns = scopeFilterPatterns(candidate, 'rust');
+    if (!rustPatterns.includes(RUST_GATE_SCRIPT) || !rustPatterns.includes(SERVER_GATE_SCRIPT)) {
+        throw new Error('the rust scope must claim the rust and collaboration server gate scripts');
+    }
+    if (!scopeFilterPatterns(candidate, 'server').includes(SERVER_GATE_SCRIPT)) {
+        throw new Error('the server scope must claim the collaboration server gate script');
+    }
 }
 
 function assertUnclassifiedFallback(candidate: UnknownRecord): void {
@@ -557,6 +567,49 @@ function assertUnclassifiedFallback(candidate: UnknownRecord): void {
     }
 }
 
+// The decide filter runs twice by design: a transient changed-files API
+// failure must not fail the job, yet a persistent one must. The first attempt
+// may fail softly only because the retry re-runs the identical filter, and
+// `Resolve scope` coalesces the retry's verdicts first and refuses one neither
+// attempt produced — drop any of those legs and an API outage either blocks
+// Gate again or reads as an all-false scope that silently skips every lane.
+function assertDecideFilterRetryContract(candidate: UnknownRecord): void {
+    const decide = jobAt(candidate, 'decide');
+    const firstAttempt = stepNamed(decide, PATHS_FILTER_FIRST_ATTEMPT_STEP);
+    if (firstAttempt.id !== 'filter') {
+        throw new Error('the first paths-filter attempt must retain the filter step id its retry keys on');
+    }
+    if (firstAttempt['continue-on-error'] !== true) {
+        throw new Error(
+            'the first paths-filter attempt must continue on error so its retry can absorb a transient API failure'
+        );
+    }
+    if (firstAttempt.uses !== PATHS_FILTER_ACTION) {
+        throw new Error('the first paths-filter attempt must stay on its pinned action revision');
+    }
+    const retry = stepNamed(decide, PATHS_FILTER_RETRY_STEP);
+    if (retry.id !== 'filter-retry') {
+        throw new Error(
+            'the retry paths-filter attempt must retain the filter-retry step id the scope coalescing reads'
+        );
+    }
+    if (retry.if !== PATHS_FILTER_RETRY_CONDITION) {
+        throw new Error('the retry must run exactly when the first paths-filter attempt failed');
+    }
+    if (retry.uses !== PATHS_FILTER_ACTION) {
+        throw new Error('the retry must pin the same paths-filter action revision as the first attempt');
+    }
+    if (JSON.stringify(retry.with) !== JSON.stringify(firstAttempt.with)) {
+        throw new Error("the retry must duplicate the first attempt's filter options verbatim");
+    }
+    const scopeEnv = recordAt(stepNamed(decide, 'Resolve scope'), 'env');
+    for (const [name, output] of PATHS_FILTER_VERDICT_ENV) {
+        if (scopeEnv[name] !== `\${{ steps.filter-retry.outputs.${output} || steps.filter.outputs.${output} }}`) {
+            throw new Error(`the ${name} verdict must coalesce the retry attempt before the first attempt`);
+        }
+    }
+}
+
 function assertProseSkippingJobs(candidate: UnknownRecord): void {
     for (const jobName of ['lint', 'boundaries']) {
         if (jobAt(candidate, jobName).if !== CODE_CONDITION) {
@@ -572,6 +625,14 @@ function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     const smoke = jobAt(candidate, 'smoke');
     if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
         throw new Error('the offline smoke job must run on every pull-request run that touches the browser surface');
+    }
+    const installStep = stepNamed(smoke, 'Install Playwright browsers');
+    const installRun = stringAt(installStep, 'run');
+    if (!installRun.includes('pnpm exec playwright install --with-deps chromium')) {
+        throw new Error('the offline smoke job must install Playwright chromium with system dependencies');
+    }
+    if (!installRun.includes('for attempt in 1 2 3')) {
+        throw new Error('the offline smoke job must retry browser and dependency installation against mirror outages');
     }
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
@@ -963,8 +1024,13 @@ function stepLabel(file: string, jobId: string, step: UnknownRecord): string {
 // proved, and one on any step reports that step green whatever it ran. The
 // position-enumerated pins above each cover one named job or step; the sweep
 // covers every job in every file, because a softened leg reports a failing
-// proof as a passing summary wherever it lands.
+// proof as a passing summary wherever it lands. The single pinned exception is
+// the first paths-filter attempt, whose softening only hands the question to
+// its retry and the Resolve scope verdict guard.
 function assertNoContinueOnError(set: WorkflowSet): void {
+    const pins = new Map(
+        CONTINUE_ON_ERROR_STEP_PINS.map((entry) => [`${entry.workflow}${entry.job}${entry.step}`, entry] as const)
+    );
     for (const [file, candidate] of workflowFiles(set)) {
         for (const [jobId, jobValue] of Object.entries(recordAt(candidate, 'jobs'))) {
             const job = asRecord(jobValue, `${file} job ${jobId}`);
@@ -972,8 +1038,13 @@ function assertNoContinueOnError(set: WorkflowSet): void {
                 throw new Error(`${file} job ${jobId} must not continue on error`);
             }
             for (const step of jobSteps(file, jobId, job)) {
-                if (step['continue-on-error'] !== undefined) {
-                    throw new Error(`${stepLabel(file, jobId, step)} must not continue on error`);
+                if (step['continue-on-error'] === undefined) {
+                    continue;
+                }
+                const label = stepLabel(file, jobId, step);
+                const pin = pins.get(`${file}${jobId}${typeof step.name === 'string' ? step.name : ''}`);
+                if (pin === undefined || step['continue-on-error'] !== true) {
+                    throw new Error(`${label} must not continue on error`);
                 }
             }
         }
@@ -986,7 +1057,7 @@ function assertNoContinueOnError(set: WorkflowSet): void {
 // entry that matches no live step is a condition nobody pins any more, so the
 // sweep refuses that too rather than letting the list rot beside the file.
 function assertUnconditionalSteps(set: WorkflowSet): void {
-    const pinned = new Map(
+    const pinned = new Map<string, ConditionalStepPin>(
         CONDITIONAL_STEP_ALLOWLIST.map((entry) => [`${entry.workflow}${entry.job}${entry.step}`, entry] as const)
     );
     const seen = new Set<string>();
@@ -1260,6 +1331,31 @@ function assertNightlyReportCoverage(set: WorkflowSet): void {
     }
     if (nightlyReport.if !== "${{ failure() && github.event_name == 'schedule' }}") {
         throw new Error('the nightly reporter must file only for a failed scheduled run');
+    }
+}
+
+// The nightly's split of the combined Rust job (#3516): each leg answers to
+// exactly one scope and runs exactly its own gate script. The seam matters
+// because the deploy waits on the crate leg and not the server leg — a job
+// that straddles it, or a gate command that silently recombines the two, puts
+// the old cross-coupled failure back behind green-looking pins.
+function assertNightlyRustServerSplit(candidate: UnknownRecord): void {
+    const rust = jobAt(candidate, NIGHTLY_RUST_JOB);
+    if (rust.needs !== 'decide' || rust.if !== NIGHTLY_RUST_CONDITION) {
+        throw new Error('the nightly Rust workspace leg must answer to the Rust scope alone');
+    }
+    if (stringAt(stepNamed(rust, NIGHTLY_RUST_GATE_STEP), 'run') !== NIGHTLY_RUST_GATE_COMMAND) {
+        throw new Error('the nightly Rust workspace leg must run the split Rust gate script');
+    }
+    const collabServer = jobAt(candidate, COLLAB_SERVER_JOB);
+    if (collabServer.name !== COLLAB_SERVER_JOB_NAME) {
+        throw new Error('the collaboration server leg must retain its stable name');
+    }
+    if (collabServer.needs !== 'decide' || collabServer.if !== COLLAB_SERVER_CONDITION) {
+        throw new Error('the collaboration server leg must answer to the server scope alone');
+    }
+    if (stringAt(stepNamed(collabServer, COLLAB_SERVER_GATE_STEP), 'run') !== COLLAB_SERVER_GATE_COMMAND) {
+        throw new Error('the collaboration server leg must run the server gate script');
     }
 }
 
@@ -1961,6 +2057,7 @@ describe('health gates workflow contract', () => {
         const scopeScript = assertScopeContract(validationWorkflow);
         expect(() => assertUnclassifiedFallback(validationWorkflow)).not.toThrow();
         expect(() => assertProseSkippingJobs(validationWorkflow)).not.toThrow();
+        expect(() => assertGateScriptScopeClaims(validationWorkflow)).not.toThrow();
 
         expect(runScopeScript(scopeScript, 'pull_request', { UNCLASSIFIED: 'true' })).toEqual({
             heavy: 'false',
@@ -2004,6 +2101,88 @@ describe('health gates workflow contract', () => {
         const alwaysLinting = asRecord(structuredClone(validationWorkflow), 'unconditional lint validationWorkflow');
         delete jobAt(alwaysLinting, 'lint').if;
         expect(() => assertProseSkippingJobs(alwaysLinting)).toThrow('lint must skip a head that carries only prose');
+
+        // Mutation-kill: the split's rust gate script dropping out of the rust
+        // scope re-opens the unclaimed-script hole — a pull request touching
+        // only that script resolves rust=false, because `unclassified`
+        // subtracts `scripts/**`, and skips every cargo leg.
+        const unclaimedRustGate = asRecord(structuredClone(validationWorkflow), 'unclaimed rust gate script');
+        const unclaimedFilterStep = stepNamed(jobAt(unclaimedRustGate, 'decide'), PATHS_FILTER_FIRST_ATTEMPT_STEP);
+        recordAt(unclaimedFilterStep, 'with').filters = stringAt(
+            recordAt(unclaimedFilterStep, 'with'),
+            'filters'
+        ).replace(`  - '${RUST_GATE_SCRIPT}'\n`, '');
+        expect(() => assertGateScriptScopeClaims(unclaimedRustGate)).toThrow(
+            'the rust scope must claim the rust and collaboration server gate scripts'
+        );
+    });
+
+    it('retries a transient changed-paths API failure and refuses to resolve an empty verdict', () => {
+        expect(() => assertDecideFilterRetryContract(validationWorkflow)).not.toThrow();
+
+        // A real verdict resolves the scope whatever produced it; an empty
+        // verdict — both attempts failed or never ran — must fail the script
+        // rather than read as false and skip every lane under a green job.
+        const scopeScript = assertScopeContract(validationWorkflow);
+        expect(runScopeScript(scopeScript, 'pull_request')).toEqual({
+            heavy: 'false',
+            rust: 'false',
+            server: 'false',
+            e2e: 'false',
+            web: 'false',
+            code: 'false',
+        });
+        for (const [name] of PATHS_FILTER_VERDICT_ENV) {
+            expect(() => runScopeScript(scopeScript, 'pull_request', { [name]: '' })).toThrow('No scope verdict');
+        }
+
+        // Mutation-kill: a first attempt that fails the job on a transient 500
+        // blocks Gate again, and a retry carrying its own softening would
+        // report green whatever it ran.
+        const hardenedFirstAttempt = asRecord(structuredClone(validationWorkflow), 'hardened first filter attempt');
+        delete stepNamed(jobAt(hardenedFirstAttempt, 'decide'), PATHS_FILTER_FIRST_ATTEMPT_STEP)['continue-on-error'];
+        expect(() => assertDecideFilterRetryContract(hardenedFirstAttempt)).toThrow(
+            'the first paths-filter attempt must continue on error so its retry can absorb a transient API failure'
+        );
+        const softenedRetry = cloneWorkflows('softened retry filter attempt');
+        stepNamed(jobAt(softenedRetry.validation, 'decide'), PATHS_FILTER_RETRY_STEP)['continue-on-error'] = true;
+        expect(() => assertNoContinueOnError(softenedRetry)).toThrow(
+            `validation.yml job decide step ${PATHS_FILTER_RETRY_STEP} must not continue on error`
+        );
+
+        // Mutation-kill: a retry gated on anything but the first attempt's
+        // failure either never runs or runs on every outcome.
+        const widenedRetry = asRecord(structuredClone(validationWorkflow), 'widened retry condition');
+        stepNamed(jobAt(widenedRetry, 'decide'), PATHS_FILTER_RETRY_STEP).if = '${{ !cancelled() }}';
+        expect(() => assertDecideFilterRetryContract(widenedRetry)).toThrow(
+            'the retry must run exactly when the first paths-filter attempt failed'
+        );
+
+        // Mutation-kill: a retry from a different action revision is an
+        // unpinned action in the required lane.
+        const driftingRetry = asRecord(structuredClone(validationWorkflow), 'drifting retry action');
+        stepNamed(jobAt(driftingRetry, 'decide'), PATHS_FILTER_RETRY_STEP).uses = 'dorny/paths-filter@main';
+        expect(() => assertDecideFilterRetryContract(driftingRetry)).toThrow(
+            'the retry must pin the same paths-filter action revision as the first attempt'
+        );
+
+        // Mutation-kill: a retry that filters differently resolves the scope
+        // from rules no pin reads.
+        const divergingRetry = asRecord(structuredClone(validationWorkflow), 'diverging retry filters');
+        recordAt(stepNamed(jobAt(divergingRetry, 'decide'), PATHS_FILTER_RETRY_STEP), 'with')['predicate-quantifier'] =
+            'some';
+        expect(() => assertDecideFilterRetryContract(divergingRetry)).toThrow(
+            "the retry must duplicate the first attempt's filter options verbatim"
+        );
+
+        // Mutation-kill: reading the first attempt alone reverts to failing
+        // the job on the transient API failure this retry exists to absorb.
+        const firstAttemptOnlyEnv = asRecord(structuredClone(validationWorkflow), 'first-attempt-only verdict env');
+        recordAt(stepNamed(jobAt(firstAttemptOnlyEnv, 'decide'), 'Resolve scope'), 'env').RUST =
+            '${{ steps.filter.outputs.rust }}';
+        expect(() => assertDecideFilterRetryContract(firstAttemptOnlyEnv)).toThrow(
+            'the RUST verdict must coalesce the retry attempt before the first attempt'
+        );
     });
 
     it('gives every pull request an offline smoke set and a diff secret scan', () => {
@@ -2020,6 +2199,23 @@ describe('health gates workflow contract', () => {
         jobAt(eventGatedSmoke, 'smoke').if = EVENT_GATED_SMOKE_CONDITION;
         expect(() => assertOfflineSmokeJob(eventGatedSmoke)).toThrow(
             'the offline smoke job must run on every pull-request run that touches the browser surface'
+        );
+
+        const unretriedInstall = asRecord(structuredClone(validationWorkflow), 'unretried install validationWorkflow');
+        stepNamed(jobAt(unretriedInstall, 'smoke'), 'Install Playwright browsers').run =
+            'pnpm exec playwright install --with-deps chromium';
+        expect(() => assertOfflineSmokeJob(unretriedInstall)).toThrow(
+            'the offline smoke job must retry browser and dependency installation against mirror outages'
+        );
+
+        const missingDepsInstall = asRecord(
+            structuredClone(validationWorkflow),
+            'missing deps install validationWorkflow'
+        );
+        stepNamed(jobAt(missingDepsInstall, 'smoke'), 'Install Playwright browsers').run =
+            'for attempt in 1 2 3; do pnpm exec playwright install chromium; done';
+        expect(() => assertOfflineSmokeJob(missingDepsInstall)).toThrow(
+            'the offline smoke job must install Playwright chromium with system dependencies'
         );
 
         const eventGatedDiffScan = asRecord(
@@ -2255,6 +2451,14 @@ describe('health gates workflow contract', () => {
         removeStepNamed(jobAt(orphanedPin.validation, 'unit'), 'Report shard failure');
         expect(() => assertUnconditionalSteps(orphanedPin)).toThrow(
             'validation.yml job unit step Report shard failure must carry its pinned condition'
+        );
+
+        // Mutation-kill: the retry's condition drifting from its pin decides
+        // when the filter re-runs while every other pin stays green.
+        const widenedRetryCondition = cloneWorkflows('widened retry filter condition');
+        stepNamed(jobAt(widenedRetryCondition.validation, 'decide'), PATHS_FILTER_RETRY_STEP).if = 'false';
+        expect(() => assertUnconditionalSteps(widenedRetryCondition)).toThrow(
+            `validation.yml job decide step ${PATHS_FILTER_RETRY_STEP} must retain its pinned condition`
         );
 
         // Mutation-kill: widening the build condition runs the production
@@ -2648,6 +2852,71 @@ describe('health gates workflow contract', () => {
         jobAt(tokenBearingScanner, 'secrets').env = { GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}' };
         expect(() => assertCredentiallessScanner(tokenBearingScanner)).toThrow(
             'secret scan job must not reference GitHub tokens or repository secrets'
+        );
+    });
+
+    it('splits the nightly server gate from the crates the web deploy waits on', () => {
+        expect(() => assertNightlyRustServerSplit(nightly)).not.toThrow();
+
+        // The pre-split combined condition is the regression itself: it runs
+        // the crate leg on a server-only change and reads the deploy-relevant
+        // scope as covering the server. Each split leg answers to one scope.
+        const combinedScopes = asRecord(structuredClone(nightly), 'combined-scope nightly rust');
+        jobAt(combinedScopes, NIGHTLY_RUST_JOB).if = RUST_CONDITION;
+        expect(() => assertNightlyRustServerSplit(combinedScopes)).toThrow(
+            'the nightly Rust workspace leg must answer to the Rust scope alone'
+        );
+
+        // A server leg gated on nothing runs nowhere and proves nothing.
+        const ungatedServerLeg = cloneWorkflows('ungated collaboration server leg');
+        delete jobAt(ungatedServerLeg.nightly, COLLAB_SERVER_JOB).if;
+        expect(() => assertNightlyRustServerSplit(ungatedServerLeg.nightly)).toThrow(
+            'the collaboration server leg must answer to the server scope alone'
+        );
+
+        const renamedServerLeg = cloneWorkflows('renamed collaboration server leg');
+        jobAt(renamedServerLeg.nightly, COLLAB_SERVER_JOB).name = 'Collaboration relay';
+        expect(() => assertNightlyRustServerSplit(renamedServerLeg.nightly)).toThrow(
+            'the collaboration server leg must retain its stable name'
+        );
+
+        // A gate command that recombines both concerns puts the coupled
+        // failure back: the server leg would run the Rust workspace tests,
+        // and either concern could fail the other's leg again.
+        const recombinedServerGate = cloneWorkflows('recombined collaboration server gate');
+        stepNamed(jobAt(recombinedServerGate.nightly, COLLAB_SERVER_JOB), COLLAB_SERVER_GATE_STEP).run =
+            'pnpm health:server:full';
+        expect(() => assertNightlyRustServerSplit(recombinedServerGate.nightly)).toThrow(
+            'the collaboration server leg must run the server gate script'
+        );
+
+        const recombinedRustGate = cloneWorkflows('recombined nightly rust gate');
+        stepNamed(jobAt(recombinedRustGate.nightly, NIGHTLY_RUST_JOB), NIGHTLY_RUST_GATE_STEP).run =
+            'pnpm health:server:full';
+        expect(() => assertNightlyRustServerSplit(recombinedRustGate.nightly)).toThrow(
+            'the nightly Rust workspace leg must run the split Rust gate script'
+        );
+
+        // The freeze #3516 removes: a deploy train that waits on the server
+        // leg holds production behind a relay failure the bundle never ships.
+        // This is the server-side twin of the native-legs probe below.
+        const collabServerReintroducedTrain = asRecord(
+            structuredClone(nightly),
+            'collab-server-reintroduced deploy train'
+        );
+        arrayAt(jobAt(collabServerReintroducedTrain, DEPLOY_WEB_JOB), 'needs').push(COLLAB_SERVER_JOB);
+        expect(() => assertDailyDeployTrain(collabServerReintroducedTrain)).toThrow(
+            'the daily deploy train must depend on exactly the scheduled validation legs'
+        );
+
+        // Not freezing the deploy must not mean failing invisibly: the
+        // reporter observes every leg a scheduled run performs, server leg
+        // included.
+        const serverBlindReport = cloneWorkflows('server-blind nightly report');
+        const reportNeeds = arrayAt(jobAt(serverBlindReport.nightly, 'nightly-report'), 'needs');
+        reportNeeds.splice(reportNeeds.indexOf(COLLAB_SERVER_JOB), 1);
+        expect(() => assertJobGraph(serverBlindReport)).toThrow(
+            'the nightly reporter must depend on every leg a scheduled run performs'
         );
     });
 

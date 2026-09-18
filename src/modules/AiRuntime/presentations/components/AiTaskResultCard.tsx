@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react';
 
-import { AudioWaveform, Loader2, Music4, Play, Plus, RefreshCw, X } from 'lucide-react';
+import { AudioWaveform, Crosshair, Loader2, Music4, Play, RefreshCw, Square, X } from 'lucide-react';
 
 import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { Row } from '#/components/layout';
@@ -10,6 +10,8 @@ type AiTaskType = 'midi-generation' | 'stem-separation' | 'denoise';
 
 type AiTaskStatus = 'idle' | 'processing' | 'success' | 'error';
 
+// Local view mirror of the generation task: presentation components read the
+// store through this shape rather than importing the business store's types.
 type AiTaskResultView = {
     id: string;
     type: AiTaskType;
@@ -21,9 +23,19 @@ type AiTaskResultView = {
     durationMs?: number;
 };
 
+// The panel supplies these only for a task whose payload carries a committed
+// clip it can act on; absent actions must mean absent buttons, never a dead
+// enabled control.
+export type CommittedClipActions = {
+    isPreviewing: boolean;
+    togglePreview: () => void;
+    select: () => void;
+};
+
 type AiTaskResultCardProps = {
     task: AiTaskResultView;
     onRemove: (taskId: string) => void;
+    committedClipActions?: CommittedClipActions;
 };
 
 const getTaskIcon = (type: AiTaskResultView['type']): ReactElement => {
@@ -36,7 +48,7 @@ const getTaskIcon = (type: AiTaskResultView['type']): ReactElement => {
     return <AudioWaveform className="size-3 text-[var(--color-accent-lavender)]" />;
 };
 
-export const AiTaskResultCard = ({ task, onRemove }: AiTaskResultCardProps): ReactElement => (
+export const AiTaskResultCard = ({ task, onRemove, committedClipActions }: AiTaskResultCardProps): ReactElement => (
     <div className="group rounded-md border border-border/40 bg-surface-raised p-2 text-xs transition-colors hover:border-[var(--color-accent-lavender)]/40">
         <DawUtilityListRow
             className="px-0 py-0"
@@ -72,26 +84,39 @@ export const AiTaskResultCard = ({ task, onRemove }: AiTaskResultCardProps): Rea
                     <span className="text-[9px] text-muted-foreground/70">
                         {task.durationMs ? `${(task.durationMs / 1000).toFixed(1)}s` : 'Done'}
                     </span>
-                    <Row gap={1}>
-                        <Button
-                            variant="secondary"
-                            size="icon-xs"
-                            className="h-5 w-5 bg-surface-base"
-                            title="Preview"
-                            aria-label="Preview task result"
-                        >
-                            <Play className="size-3 text-foreground" />
-                        </Button>
-                        <Button
-                            variant="secondary"
-                            size="icon-xs"
-                            className="h-5 w-5 bg-surface-base"
-                            title="Add to arrangement"
-                            aria-label="Add task result to arrangement"
-                        >
-                            <Plus className="size-3 text-foreground" />
-                        </Button>
-                    </Row>
+                    {committedClipActions ? (
+                        <Row gap={1}>
+                            <Button
+                                variant="secondary"
+                                size="icon-xs"
+                                className="h-5 w-5 bg-surface-base"
+                                title={committedClipActions.isPreviewing ? 'Stop preview' : 'Preview'}
+                                aria-label={
+                                    committedClipActions.isPreviewing ? 'Stop clip preview' : 'Preview task result'
+                                }
+                                onClick={committedClipActions.togglePreview}
+                            >
+                                {committedClipActions.isPreviewing ? (
+                                    <Square className="size-3 text-foreground" />
+                                ) : (
+                                    <Play className="size-3 text-foreground" />
+                                )}
+                            </Button>
+                            {/* Generation already committed and selected the clip, so
+                                this re-focuses the existing material instead of promising
+                                a second apply step the flow does not have. */}
+                            <Button
+                                variant="secondary"
+                                size="icon-xs"
+                                className="h-5 w-5 bg-surface-base"
+                                title="Select clip"
+                                aria-label="Select generated clip"
+                                onClick={committedClipActions.select}
+                            >
+                                <Crosshair className="size-3 text-foreground" />
+                            </Button>
+                        </Row>
+                    ) : null}
                 </Row>
             ) : null}
         </div>

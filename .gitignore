@@ -27,6 +27,9 @@ target/
 # Review bundles produced by `pnpm review:prepare`
 .agents/review-bundles/
 
+# Native dependent-lane descriptors; kept in the protected primary checkout
+.agents/lane-stacks/
+
 # Strand receipts produced by `pnpm lane:strand`; they outlive the worktrees they record
 .agents/lane-strands/
 
@@ -56,3 +59,6 @@ test-results/
 # Plugin-scan leaf helper build artifact (produced by scripts/buildNativeAddon.ts)
 /crates/sourdaw-native/sourdaw-plugin-scan-helper
 /crates/sourdaw-native/sourdaw-plugin-scan-helper.exe
+
+# Gate run output written by `pnpm evidence:gate`; the manifest they answer to is tracked
+/evidence/agent-campaign/records/

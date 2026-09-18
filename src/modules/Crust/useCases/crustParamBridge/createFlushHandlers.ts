@@ -14,6 +14,11 @@ export function createFlushHandlers(deps: BridgeDeps): CreateFlushHandlersOutput
 
         deps.updateDeviceParam(target.trackId, target.deviceId, entry.key, entry.value);
         deps.persistDeviceParam(target.deviceId, entry.key, entry.value);
+        // Persisted after its style so the record's insertion order matches
+        // the engine's own resolution order.
+        if (entry.derivedAlgorithm !== undefined) {
+            deps.persistDeviceParam(target.deviceId, 'algorithm', entry.derivedAlgorithm);
+        }
     }
 
     function pushParamImmediately(deviceId: string, key: string, value: number): void {

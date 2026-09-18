@@ -1,12 +1,10 @@
+import { escapeRegExp } from './escapeRegExp';
+
 function normalizeRestrictionText(value: string): string {
     return value
         .toLocaleLowerCase()
         .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
         .trim();
-}
-
-function escapeRegExp(value: string): string {
-    return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
 export function hasReferenceOutsideMatchedIntent(text: string, intentPhrase: string, reference: string): boolean {

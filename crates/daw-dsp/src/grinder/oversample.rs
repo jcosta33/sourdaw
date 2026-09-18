@@ -34,6 +34,10 @@ pub struct StageOversampler2x {
 }
 
 impl StageOversampler2x {
+    /// Centroid group delay of the 2x Kaiser half-band oversampler in base-rate samples.
+    /// Measured and pinned in `primitives::oversample::group_delay_tests`.
+    pub const GROUP_DELAY_SAMPLES: f32 = 6.5;
+
     pub fn new() -> Self {
         Self {
             halfband: Oversampler2x::new(),

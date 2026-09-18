@@ -4,8 +4,21 @@
  * Held apart from `startPlayback` because a play is not the only thing that
  * starts a session: `rearmNativeSessionAfterEngineRetire` starts one mid-play,
  * from the live playhead, after a lost engine was retired (#3960). Both need
- * the same position projection, the same freshly read transport maps, and the
- * same fire-and-forget handling of a decline.
+ * the same beat-to-seconds conversion, the same freshly read transport maps,
+ * and the same handling of a decline.
+ *
+ * The two callers differ in exactly one argument, `transport`. `startPlayback`
+ * has held the Web Audio start for this promise, so it passes `held` with the
+ * reader that answers `null` for as long as the hold stands and names the
+ * instant it ended if the hold's cap gave up first. The re-arm cannot hold —
+ * its transport has been sounding since a play it did not begin — so it passes
+ * `rolling` with the anchor it already has. Either way the roll lands where Web
+ * Audio has reached rather than where the playhead was read.
+ *
+ * The returned promise settles when the start settles, either way: a decline
+ * and a failure are outcomes, not rejections, so a caller that waits for the
+ * engine waits the same length of time whatever the answer. The re-arm ignores
+ * it; `startPlayback` holds the Web Audio start on it.
  */
 
 import { logger } from '#/infra/logger/appLogger';
@@ -15,25 +28,27 @@ import { tempoMapStore } from '../../stores/tempoMapStore';
 import { secondsBetweenBeats } from '../secondsBetweenBeats';
 import { projectEngineTransportMaps } from '../tempoMap/projectEngineTransportMaps';
 
-export function startNativeSessionAtBeat(startBeat: number, tempo: number): void {
+/**
+ * What Web Audio is doing while the session starts, derived from the use case
+ * that takes it rather than imported: AudioEngine keeps its models private, and
+ * the callable contract is the public statement of what a caller has to decide.
+ */
+type NativeSessionTransport = Parameters<typeof startNativeLiveGraphSession>[0]['transport'];
+
+export function startNativeSessionAtBeat(
+    startBeat: number,
+    tempo: number,
+    transport: NativeSessionTransport
+): Promise<void> {
     // D3.c.4a (#3066): the native engine has no start command — the first
     // graph batch boots it — so play is where it starts, carrying this
-    // session's topology and, since #3068, its programme. Fired rather than
-    // awaited because nothing about the Web Audio transport waits on it: the
-    // session sounds only the strips the carrier law hands it and gates those
-    // out of Web Audio itself (#3564), so Web Audio starts every strip here and
-    // gives the carried ones up when the session says so. A decline (a browser
+    // session's topology and, since #3068, its programme. A decline (a browser
     // build, an addon that cannot answer, a topology the native registry will
     // not hold) leaves playback exactly where it already was.
-    Promise.resolve(
+    return Promise.resolve(
         startNativeLiveGraphSession({
             positionSeconds: secondsBetweenBeats(tempoMapStore.value?.changes ?? [], 0, startBeat, tempo),
-            // Taken with the position above, on the clock the Web Audio
-            // scheduler integrates: the session's own start costs several
-            // awaited round trips, and this anchor is what lets it roll the
-            // engine at the position Web Audio has reached by then rather than
-            // at this one (#3577).
-            anchoredAtContextSeconds: getAudioContext().currentTime,
+            transport,
             // Read here, at the moment of play, so the engine follows the map
             // the timeline holds now rather than the one it held when the
             // session object was made.

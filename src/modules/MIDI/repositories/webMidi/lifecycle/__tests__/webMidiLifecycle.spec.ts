@@ -25,7 +25,7 @@ const requestMidiAccessMock = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
 const setActiveInputMock = vi.hoisted(() => vi.fn<(input: TestMidiInput | null) => void>());
 const setMidiAccessMock = vi.hoisted(() => vi.fn<(access: MIDIAccess) => void>());
 const setStateMock = vi.hoisted(() =>
-    vi.fn<(next: Record<string, unknown>, options?: { persistSelection?: boolean }) => void>()
+    vi.fn<(next: Record<string, unknown>, options?: { persistSelection?: boolean; identityScheme?: string }) => void>()
 );
 const readPersistedInputIdMock = vi.hoisted(() => vi.fn<() => string | null>(() => null));
 const setNativeModeMock = vi.hoisted(() => vi.fn<(enabled: boolean) => void>());
@@ -38,6 +38,7 @@ vi.stubGlobal('navigator', {
 import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
 import { type WebMidiInputMessage } from '../../../../models/WebMidiTypes';
+import { WEB_MIDI_IDENTITY_SCHEME } from '../../selectedInputIdStorageKeys';
 import { webMidiRuntime } from '../../state';
 import { attachInput } from '../helpers';
 import { initWebMidi } from '../initWebMidi';
@@ -72,7 +73,7 @@ vi.mock('../../setMidiAccess', () => ({
 vi.mock('../../setState', () => ({
     // Forward the options argument only when the caller supplied one, so the
     // single-argument assertions below stay readable.
-    setState: (next: Record<string, unknown>, options?: { persistSelection?: boolean }) => {
+    setState: (next: Record<string, unknown>, options?: { persistSelection?: boolean; identityScheme?: string }) => {
         if (options === undefined) {
             setStateMock(next);
             return;
@@ -83,6 +84,10 @@ vi.mock('../../setState', () => ({
 
 vi.mock('../../readPersistedInputId', () => ({
     readPersistedInputId: () => readPersistedInputIdMock(),
+}));
+
+vi.mock('../../persistInputId', () => ({
+    persistInputId: vi.fn(),
 }));
 
 vi.mock('../../setNativeMode', () => ({
@@ -219,7 +224,7 @@ describe('initWebMidi', () => {
         // Force failure of browser MIDI
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
-        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, name: 'Native MIDI' }]);
+        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, id: 'native-1', name: 'Native MIDI' }]);
 
         const result = await initWebMidi({ onMidiMessage });
 
@@ -380,8 +385,12 @@ describe('initWebMidi', () => {
 
         expect(attachInput).toHaveBeenCalledWith({ input: preferred, onMidiMessage });
         // No `persistSelection: false` — restoring the saved device is a
-        // legitimate write of the preference back to itself.
-        expect(setStateMock).toHaveBeenCalledWith(expect.objectContaining({ selectedInputId: 'preferred-input' }));
+        // legitimate write of the preference back to itself, into the Web MIDI
+        // scheme's namespaced key (#4138).
+        expect(setStateMock).toHaveBeenCalledWith(expect.objectContaining({ selectedInputId: 'preferred-input' }), {
+            persistSelection: true,
+            identityScheme: WEB_MIDI_IDENTITY_SCHEME,
+        });
     });
 
     it('should keep the selected input attached when it still exists on state change', async () => {
@@ -433,7 +442,7 @@ describe('initWebMidi', () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         vi.stubGlobal('navigator', {/* no requestMIDIAccess */});
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
-        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, name: 'Native MIDI' }]);
+        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, id: 'native-1', name: 'Native MIDI' }]);
 
         const result = await initWebMidi({ onMidiMessage });
 
@@ -485,14 +494,19 @@ describe('initWebMidi', () => {
     });
 
     it('does not overwrite the saved preference on the native path either', async () => {
-        // Native ports are indices, so a device list that shifted by one port
-        // rebinds the saved preference to a different instrument entirely.
+        // The saved device is merely unplugged: init falls back to whatever
+        // enumerates first but must not adopt the stand-in as the preference.
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
-        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, name: 'Built-in' }]);
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: '3', enumerationError: null });
-        readPersistedInputIdMock.mockReturnValue('3');
+        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, id: 'built-in-1', name: 'Built-in' }]);
+        getStateMock.mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: 'Launchkey 49',
+            enumerationError: null,
+        });
+        readPersistedInputIdMock.mockReturnValue('Launchkey 49');
 
         await initWebMidi({ onMidiMessage });
 
@@ -504,15 +518,16 @@ describe('initWebMidi', () => {
     });
 
     it('re-opens the saved native device after the enumeration order changes', async () => {
-        // Replugs, hub power cycles and reboots reorder midir's port list. A
-        // preference keyed on the position resolves to whichever instrument
-        // now holds it; keyed on the port name it follows the device.
+        // A preference keyed on the enumeration position resolves to whichever
+        // instrument now holds the slot; keyed on the port it follows the
+        // device. A legacy name id resolves through the name fallback onto the
+        // port's stable id.
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
         vi.mocked(desktopInvoke).mockResolvedValue([
-            { index: 0, name: 'Built-in' },
-            { index: 1, name: 'Launchkey' },
+            { index: 0, id: '100', name: 'Built-in' },
+            { index: 1, id: '101', name: 'Launchkey' },
         ]);
         getStateMock.mockReturnValue({
             isSupported: true,
@@ -525,19 +540,20 @@ describe('initWebMidi', () => {
         await initWebMidi({ onMidiMessage });
 
         expect(selectMidiInputNative).toHaveBeenCalledWith({ portIndex: 1, portName: 'Launchkey', onMidiMessage });
-        expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'Launchkey' }, { persistSelection: false });
+        expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: '101' }, { persistSelection: false });
     });
 
-    it('treats a persisted enumeration index as absent instead of grabbing that port', async () => {
+    it('settles a persisted enumeration index onto the fallback port instead of grabbing that port', async () => {
         // Ids persisted before identity moved off the index are bare numbers.
         // Resolving one against the current list would hand the user a device
-        // they never chose; it has to degrade to no saved selection.
+        // they never chose; it resolves to nothing, opens the fallback, and is
+        // settled onto the fallback's id in exactly one write.
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
         vi.mocked(desktopInvoke).mockResolvedValue([
-            { index: 0, name: 'Built-in' },
-            { index: 1, name: 'Launchkey' },
+            { index: 0, id: '100', name: 'Built-in' },
+            { index: 1, id: '101', name: 'Launchkey' },
         ]);
         getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: '1', enumerationError: null });
         readPersistedInputIdMock.mockReturnValue('1');
@@ -559,7 +575,7 @@ describe('initWebMidi', () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
-        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, name: 'Built-in' }]);
+        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, id: 'built-in-1', name: 'Built-in' }]);
         vi.mocked(selectMidiInputNative).mockRejectedValueOnce(new Error('device busy'));
 
         const result = await initWebMidi({ onMidiMessage });
@@ -567,7 +583,7 @@ describe('initWebMidi', () => {
         expect(result).toBe(true);
         expect(setStateMock).not.toHaveBeenCalledWith({ isSupported: false });
         expect(setStateMock).toHaveBeenCalledWith(
-            expect.objectContaining({ isSupported: true, inputs: [expect.objectContaining({ id: 'Built-in' })] })
+            expect.objectContaining({ isSupported: true, inputs: [expect.objectContaining({ id: 'built-in-1' })] })
         );
     });
 
@@ -576,8 +592,8 @@ describe('initWebMidi', () => {
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
         vi.mocked(desktopInvoke).mockResolvedValue([
-            { index: 0, name: 'MPK Mini' },
-            { index: 1, name: 'MPK Mini' },
+            { index: 0, id: '817', name: 'MPK Mini' },
+            { index: 1, id: '254', name: 'MPK Mini' },
         ]);
 
         await initWebMidi({ onMidiMessage });
@@ -585,8 +601,8 @@ describe('initWebMidi', () => {
         expect(setStateMock).toHaveBeenCalledWith(
             expect.objectContaining({
                 inputs: [
-                    { id: 'MPK Mini #0', name: 'MPK Mini', manufacturer: 'System' },
-                    { id: 'MPK Mini #1', name: 'MPK Mini', manufacturer: 'System' },
+                    { id: '817', name: 'MPK Mini', manufacturer: 'System' },
+                    { id: '254', name: 'MPK Mini', manufacturer: 'System' },
                 ],
                 isSupported: true,
                 enumerationError: null,
@@ -622,14 +638,14 @@ describe('initWebMidi', () => {
         );
         expect(getStateMock()).toMatchObject({ isSupported: true, enumerationError: expect.any(String) });
 
-        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, name: 'Native MIDI' }]);
+        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, id: 'native-1', name: 'Native MIDI' }]);
 
         const secondResult = await initWebMidi({ onMidiMessage });
 
         expect(secondResult).toBe(true);
         expect(setStateMock).toHaveBeenCalledWith(
             expect.objectContaining({
-                inputs: [expect.objectContaining({ id: 'Native MIDI', name: 'Native MIDI' })],
+                inputs: [expect.objectContaining({ id: 'native-1', name: 'Native MIDI' })],
                 isSupported: true,
                 enumerationError: null,
             })
@@ -658,7 +674,7 @@ describe('initWebMidi', () => {
         });
         vi.mocked(desktopInvoke)
             .mockImplementationOnce(() => firstInvoke)
-            .mockResolvedValueOnce([{ index: 0, name: 'Native MIDI' }]);
+            .mockResolvedValueOnce([{ index: 0, id: 'native-1', name: 'Native MIDI' }]);
 
         const firstInit = initWebMidi({ onMidiMessage });
         const secondResult = await initWebMidi({ onMidiMessage });
@@ -666,7 +682,7 @@ describe('initWebMidi', () => {
         expect(secondResult).toBe(true);
         expect(getStateMock()).toMatchObject({
             enumerationError: null,
-            inputs: [expect.objectContaining({ id: 'Native MIDI', name: 'Native MIDI' })],
+            inputs: [expect.objectContaining({ id: 'native-1', name: 'Native MIDI' })],
         });
 
         rejectFirst(new Error('native port closed'));
@@ -676,7 +692,7 @@ describe('initWebMidi', () => {
         expect(getStateMock()).toMatchObject({
             isSupported: true,
             enumerationError: null,
-            inputs: [expect.objectContaining({ id: 'Native MIDI', name: 'Native MIDI' })],
+            inputs: [expect.objectContaining({ id: 'native-1', name: 'Native MIDI' })],
         });
         expect(setStateMock).not.toHaveBeenCalledWith({ isSupported: false });
         expect(setStateMock).not.toHaveBeenCalledWith(
@@ -689,8 +705,8 @@ describe('initWebMidi', () => {
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
         vi.mocked(desktopInvoke).mockResolvedValue([
-            { index: 0, name: 'Built-in' },
-            { index: 1, name: 'Launchkey' },
+            { index: 0, id: '100', name: 'Built-in' },
+            { index: 1, id: '101', name: 'Launchkey' },
         ]);
 
         let currentState = {
@@ -728,12 +744,12 @@ describe('initWebMidi', () => {
         const secondResult = await initWebMidi({ onMidiMessage });
 
         expect(secondResult).toBe(true);
-        expect(getStateMock()).toMatchObject({ selectedInputId: 'Launchkey' });
+        expect(getStateMock()).toMatchObject({ selectedInputId: '101' });
 
         resolveFirstOpen();
         await firstInit;
 
-        expect(getStateMock()).toMatchObject({ selectedInputId: 'Launchkey' });
-        expect(setStateMock).not.toHaveBeenCalledWith({ selectedInputId: 'Built-in' }, { persistSelection: false });
+        expect(getStateMock()).toMatchObject({ selectedInputId: '101' });
+        expect(setStateMock).not.toHaveBeenCalledWith({ selectedInputId: 'built-in-1' }, { persistSelection: false });
     });
 });

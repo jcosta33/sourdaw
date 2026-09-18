@@ -5,6 +5,8 @@
  * derived metadata, and user tags — never duplicate audio files.
  */
 
+import { NOTE_NAMES } from '#/utils/noteNames';
+
 // ── File provider abstraction ────────────────────────────────────────────────
 
 /**
@@ -110,7 +112,7 @@ export function toBpm(value: number): Bpm | undefined {
 }
 
 /** The twelve pitch classes; the only valid roots for a musical key. */
-export const PITCH_CLASSES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
+export const PITCH_CLASSES = NOTE_NAMES;
 export type Pitch = (typeof PITCH_CLASSES)[number];
 
 /** A key is either major or minor. */
@@ -209,24 +211,10 @@ export type FolderNode = {
 
 // ── Audio file extensions ────────────────────────────────────────────────────
 
-export const AUDIO_EXTENSIONS = new Set([
-    'wav',
-    'wave',
-    'mp3',
-    'ogg',
-    'flac',
-    'aiff',
-    'aif',
-    'aac',
-    'm4a',
-    'webm',
-    'opus',
-]);
-
-export function isAudioFile(filename: string): boolean {
-    const ext = filename.split('.').pop()?.toLowerCase() ?? '';
-    return AUDIO_EXTENSIONS.has(ext);
-}
+// The extension law lives in `#/utils/audioFileExtensions` so that every module
+// shares one definition; re-exported here because it belongs to this model's
+// vocabulary.
+export { AUDIO_EXTENSIONS, isAudioFile } from '#/utils/audioFileExtensions';
 
 /**
  * Extensions that `AUDIO_EXTENSIONS` accepts for indexing but that the browser's

@@ -8,7 +8,7 @@ Playback lifecycle and control (play, stop, seek, record, overdub), playhead pos
     - **Playback & Transport Controls**: `setPlayback`, `stopPlayback`, `togglePlayback`, `seekPlayhead`, `panicAllNotes`, `toggleRecording`, `toggleOverdub`, `setLoopRegion`, `toggleLoop`, `disableLooping`, `toggleMetronome`, `setMetronomeVolume`, `setCountInBars`, `toggleCountIn`, `setPreRollBars`, `togglePreRoll`, `setPunchIn`, `setPunchOut`, `togglePunchEnabled`, `createPunchRegionPatch`.
     - **Tempo & Time Signature Mapping**: `setTempo`, `setTimeSignature`, `addTempoChange`, `removeTempoChange`, `updateTempoChange`, `replaceTempoMap`, `resolveTempoAtBeat`, `shiftTimelineMapsAfterBeat`, `deleteTimelineMapsTimeRange`, `prepareTimelineMapStateRestore`, `prepareTimelineMapTimeOperation`, `detectProjectTempo`, `adjustTempoPoint`, `addTimeSignatureChange`, `removeTimeSignatureChange`, `replaceTimeSignatureMap`, `getTimeSignatureAtBeat`.
     - **Projections & Master Level**: `createMusicalPositionProjector`, `createSamplePositionProjector`, `projectPpqEndpoints`, `secondsBetweenBeats`, `setMasterGain`, `replaceMasterGain`, `ensureTrackStrips`, `getSchedulerTimingDiagnostics`, `reconcileVcaGroupRuntimeGain`, `reconcileVcaRuntimeGain`, `setStopPlaybackCallback`, `restoreTransportSnapshot`, `restoreTimelineMapSnapshot`, `getTransportHandlers`, `getTransportState`, `getTempoMapState`, `resolveTempoFieldState`, `updateTransportState`, `defaultTransportState`.
-- `stores`: `transportStore` (`TransportState`, `MIN_TEMPO`, `MAX_TEMPO`), `tempoMapStore` (`TempoMapStoreState`, `MIN_TEMPO_MAP_TEMPO`), `timeSignatureMapStore` (`TimeSignatureMapStoreState`), `playheadPositionRef`.
+- `stores`: `transportStore` (`TransportState`, `MIN_TEMPO`, `MAX_TEMPO`), `tempoMapStore` (`TempoMapStoreState`), `timeSignatureMapStore` (`TimeSignatureMapStoreState`), `playheadPositionRef`.
 - Handlers: `getTransportHandlers`.
 
 ## Key Subsystems
@@ -20,7 +20,7 @@ Playback lifecycle and control (play, stop, seek, record, overdub), playhead pos
 ## Invariants & Traps
 
 - High-frequency playhead updates during live playback MUST read from `playheadPositionRef` — NEVER push per-frame playhead positions into `transportStore` or React component state.
-- Tempo values must strictly stay within `MIN_TEMPO` (20 BPM) and `MAX_TEMPO` (999 BPM).
+- Tempo values must stay within the range their own validator enforces: the transport's base tempo within `MIN_TEMPO` (20 BPM) and `MAX_TEMPO` (300 BPM) owned by `stores/transportStore`, and a tempo-map change within `MIN_TEMPO_MAP_TEMPO` (20 BPM) and `MAX_TEMPO_MAP_TEMPO` (999 BPM) owned by `models/TempoMap`. The two ranges deliberately differ.
 - All timeline edits that insert or delete time ranges must invoke `shiftTimelineMapsAfterBeat` / `deleteTimelineMapsTimeRange` to keep tempo and time signature markers synchronized with track content.
 
 ## Verification

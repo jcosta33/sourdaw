@@ -2,7 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { desktopSaveDialog, isDesktopRuntime } from '#/utils/desktopBridge';
 import { downloadBlob } from '#/utils/downloadFile';
 
-import { type ProjectData } from '../../models/ProjectData';
+import { PROJECT_FILE_EXTENSION, type ProjectData } from '../../models/ProjectData';
 import { saveProjectToFile } from '../nativeProjectFiles/saveProjectToFile';
 
 type WindowWithFilePicker = Window & {
@@ -59,7 +59,7 @@ export async function downloadProjectFile({
                 types: [
                     {
                         description: 'Sourdaw Project',
-                        accept: { 'application/json': ['.sourdaw'] },
+                        accept: { 'application/json': [PROJECT_FILE_EXTENSION] },
                     },
                 ],
             });

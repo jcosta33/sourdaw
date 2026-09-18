@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { automergeRepository } from '../../../repositories/automergeRepository';
@@ -82,6 +83,13 @@ describe('createDeleteDrumPreviewBranchesHandler', () => {
         vi.mocked(compactProject).mockReset().mockResolvedValue(undefined);
         automergeRepository.reset();
         automergeRepository.createProject('project');
+        // The branch list this handler rewrites is committed durably under a
+        // Web Lock, and jsdom ships no Web Locks API.
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
     });
 
     it('advertises guarded compensation and validates the exact live preview branches', () => {

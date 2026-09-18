@@ -17,6 +17,7 @@ use poly::PolyStringTracker;
 use preprocess::{normalize, Bandpass, DcBlocker, RmsTracker};
 use tone::ToneGenerator;
 use tuning::TuningSystem;
+use tuning::{A4_MIDI_NOTE, SEMITONES_PER_OCTAVE};
 use wasm_bindgen::prelude::*;
 use yin::YinDetector;
 
@@ -588,7 +589,7 @@ impl ScoringInstance {
         // offsets table exactly as it was.
         let a4_hz = match tuning.base_freq {
             Some(base_freq) => {
-                let a4 = base_freq * (2.0_f32).powf(69.0 / 12.0);
+                let a4 = base_freq * (2.0_f32).powf(A4_MIDI_NOTE / SEMITONES_PER_OCTAVE);
                 if !(400.0..=490.0).contains(&a4) {
                     return false;
                 }
@@ -1307,6 +1308,38 @@ mod no_alloc_tests {
             for _ in 0..64 {
                 for i in 0..128 {
                     let s = (TAU * 82.41 * n as f32 / 96000.0).sin() * 0.8;
+                    left[i] = s;
+                    right[i] = s;
+                    n += 1;
+                }
+                engine.process(&mut left, &mut right);
+            }
+        });
+    }
+
+    #[test]
+    fn process_does_not_allocate_in_steady_state_bass_96khz() {
+        let mut engine = ScoringEngine::new(96000.0);
+        engine.set_param("instrument", 1.0); // bass 4-string
+        engine.set_param("poly", 1.0);
+
+        let mut left = [0.0_f32; 128];
+        let mut right = [0.0_f32; 128];
+        let mut n = 0usize;
+        for _ in 0..1500 {
+            for i in 0..128 {
+                let s = (TAU * 41.20 * n as f32 / 96000.0).sin() * 0.8;
+                left[i] = s;
+                right[i] = s;
+                n += 1;
+            }
+            engine.process(&mut left, &mut right);
+        }
+
+        assert_no_alloc(|| {
+            for _ in 0..64 {
+                for i in 0..128 {
+                    let s = (TAU * 41.20 * n as f32 / 96000.0).sin() * 0.8;
                     left[i] = s;
                     right[i] = s;
                     n += 1;

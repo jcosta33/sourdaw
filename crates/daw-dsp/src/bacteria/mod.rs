@@ -67,6 +67,17 @@ impl BacteriaInstance {
         self.engine.set_param(name, value);
     }
 
+    /// Drop every stage's in-flight audio and restart the modulation clocks.
+    ///
+    /// For the engine-level events that must leave the device silent whatever
+    /// it was doing — the engine being re-initialized, or a program change
+    /// handing the bands to a different patch. A transport stop deliberately
+    /// does not belong here: effect tails are supposed to survive it, and the
+    /// worklet therefore never sends this on stop.
+    pub fn reset(&mut self) {
+        self.engine.reset();
+    }
+
     /// Process a block. Input must already be written to input buffers.
     /// Returns pointer to output left buffer.
     pub fn process(&mut self, block_size: u32) -> *const f32 {
@@ -123,10 +134,22 @@ impl BacteriaInstance {
     /// Source IDs: 0=LFO1, 1=LFO2, 2=envelope follower, 3=Lorenz X, 4=Lorenz Z,
     /// 5=step sequencer, 6-13=macros 0-7.
     ///
-    /// Target param IDs: 0=global mix, 1-6=band 0-5 gain (linear offset).
+    /// Target param IDs: 0=global mix, 1-6=band 0-5 gain (linear offset), and
+    /// `16 + band*16 + slot` for one band's module parameters — slot 0 = drive,
+    /// slot 1 = filter cutoff, in each knob's own units (additive offsets).
+    /// Anything at or past `16 + 6*16` names nothing and is rejected.
     pub fn add_mod_assignment(&mut self, source_id: u8, target_param: u16, amount: f32) {
         self.engine
             .add_mod_assignment(source_id, target_param, amount);
+    }
+
+    /// Drop every modulation assignment; macro mappings are untouched.
+    ///
+    /// Removal, undo, and a patch reload arrive from the UI as one replacement
+    /// of the whole table, spelled clear-then-re-add against the validated
+    /// [`Self::add_mod_assignment`] path. Safe to call with the table empty.
+    pub fn clear_mod_assignments(&mut self) {
+        self.engine.clear_mod_assignments();
     }
 
     /// Add a macro mapping: macro `macro_index` (0-7) → `target_param`, remapped

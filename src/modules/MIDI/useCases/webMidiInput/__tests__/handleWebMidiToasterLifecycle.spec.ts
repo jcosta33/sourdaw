@@ -15,6 +15,7 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     audioEngine: {
         context: {
@@ -29,6 +30,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: async () => true,
     sendNativeLiveMidiNote: async () => true,
 }));
 

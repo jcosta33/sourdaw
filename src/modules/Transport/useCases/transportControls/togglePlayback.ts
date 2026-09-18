@@ -12,6 +12,6 @@ export function togglePlayback(): void {
     if (state.isPlaying) {
         pausePlayback();
     } else {
-        startPlayback();
+        void startPlayback();
     }
 }

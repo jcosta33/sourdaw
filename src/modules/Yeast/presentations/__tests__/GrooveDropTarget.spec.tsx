@@ -1,3 +1,4 @@
+import { change, init } from '@automerge/automerge';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -78,13 +79,17 @@ function createDataTransfer(clipId: string): Pick<DataTransfer, 'getData'> {
 }
 
 describe('GrooveDropTarget', () => {
+    let document = init<Record<string, unknown>>();
+
     beforeEach(() => {
-        const document: Record<string, unknown> = {};
+        document = init<Record<string, unknown>>();
         configureAutomergeStoragePort({
             getDoc: () => document,
             getSemanticMessage: () => undefined,
             hasDoc: () => true,
-            mutateDoc: (input) => input.changeFn(document),
+            mutateDoc: ({ changeFn }) => {
+                document = change(document, (draft) => changeFn(draft));
+            },
             waitForSnapshotTransaction: () => Promise.resolve(),
         });
         clearHandlerRegistry();
@@ -162,10 +167,12 @@ describe('GrooveDropTarget', () => {
     it('locks proposal replacement while the displayed proposal is being saved', async () => {
         let resolveTransaction: (() => void) | undefined;
         configureAutomergeStoragePort({
-            getDoc: () => ({}),
+            getDoc: () => document,
             getSemanticMessage: () => undefined,
             hasDoc: () => true,
-            mutateDoc: (input) => input.changeFn({}),
+            mutateDoc: ({ changeFn }) => {
+                document = change(document, (draft) => changeFn(draft));
+            },
             waitForSnapshotTransaction: () =>
                 new Promise<void>((resolve) => {
                     resolveTransaction = resolve;
@@ -252,6 +259,7 @@ describe('GrooveDropTarget', () => {
             slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
             provenance: { type: 'user', sourceId: 'occupied-name' },
         });
+        flushAutomergeStorageWrites();
         render(<GrooveDropTarget />);
 
         fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {

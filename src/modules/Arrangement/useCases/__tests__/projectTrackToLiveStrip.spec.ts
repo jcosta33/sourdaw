@@ -7,9 +7,6 @@ import { createTrack } from '../createTrack';
 import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
 import { applySoloLogic } from '../toggleTrackState/applySoloLogic';
 
-/** The rate the live engine renders at, which is what a plugin must run at. */
-const ENGINE_SAMPLE_RATE = 96_000;
-
 const mocks = vi.hoisted(() => ({
     getRuntimeGraphRevision: vi.fn(() => 0),
     initializeTrackStripFromSnapshot: vi.fn<typeof initializeTrackStripFromSnapshot>(() => ({
@@ -28,16 +25,12 @@ const mocks = vi.hoisted(() => ({
     updateDeviceParam: vi.fn(),
     updateDeviceBypass: vi.fn(),
     activateExternalPlugin: vi.fn(),
-    getLiveEngineSampleRate: vi.fn<() => number | undefined>(() => ENGINE_SAMPLE_RATE),
-    warn: vi.fn(),
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
     resolveToasterPadBinding: vi.fn(),
     reportLatency: vi.fn(),
     soloMode: 'sip',
 }));
-
-vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: mocks.warn } }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
     activateExternalPlugin: mocks.activateExternalPlugin,
@@ -56,7 +49,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: mocks.updateDeviceParam,
     updateDeviceBypass: mocks.updateDeviceBypass,
     resolveToasterPadBinding: mocks.resolveToasterPadBinding,
-    getLiveEngineSampleRate: mocks.getLiveEngineSampleRate,
     reportLatency: mocks.reportLatency,
     createRuntimeGraphTopologyFingerprint: vi.fn(),
 }));
@@ -93,44 +85,17 @@ const initializationFailureResults = [
 describe('projectTrackToLiveStrip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        // `clearAllMocks` clears calls, not implementations, so a test that
-        // takes the engine away has to hand it back here.
-        mocks.getLiveEngineSampleRate.mockReturnValue(ENGINE_SAMPLE_RATE);
+        mocks.initializeTrackStripFromSnapshot.mockReturnValue({
+            acceptance: 'accepted' as const,
+            application: 'applied' as const,
+            correlation: { appRevision: 0, projectRevision: 'project-revision-1' },
+            runtimeRevision: 1,
+        });
         mocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
         mocks.soloMode = 'sip';
         mocks.resolveToasterPadBinding.mockReturnValue(undefined);
         trackStore.set({ tracks: [], selectedTrackId: null });
         applySoloLogic({ resetSavedGains: true, applyActions: false });
-    });
-
-    it('leaves an external plugin dormant, and says so, while the engine renders no audio', () => {
-        const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
-        track.outputId = 'master';
-        track.devices = [
-            {
-                id: 'device-1',
-                name: 'Native effect',
-                type: 'external-plugin',
-                bypassed: false,
-                parameterValues: {},
-                externalPluginId: 'persisted-native-plugin',
-                externalInstanceId: 'persisted-native-instance',
-            },
-        ];
-        trackStore.set({
-            tracks: [track, createTrack({ id: 'master', name: 'Master', kind: 'master' })],
-            selectedTrackId: null,
-        });
-        mocks.getLiveEngineSampleRate.mockReturnValue(undefined);
-
-        projectTrackToLiveStrip({ trackId: track.id, activateDormantExternalPlugins: true });
-
-        // The engine is on its silent fallback shim. Activating against the
-        // rate that shim reports detunes the instance for as long as it lives
-        // and scales its reported latency by the same wrong number. Staying
-        // dormant is reversible: the next rebuild has a real rate.
-        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
-        expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('persisted-native-instance'));
     });
 
     it('projects the current owned track in device-chain order and wires sidechains last', () => {
@@ -201,10 +166,6 @@ describe('projectTrackToLiveStrip', () => {
                 pluginId: 'persisted-native-plugin',
                 instanceId: 'persisted-native-instance',
                 stateChunk: 'c2F2ZWQ=',
-                // The plugin is fed audio this engine renders, so it is
-                // activated on the engine's clock rather than the output
-                // device's.
-                engineSampleRate: ENGINE_SAMPLE_RATE,
             })
         );
 
@@ -328,6 +289,33 @@ describe('projectTrackToLiveStrip', () => {
 
         expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
         expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+    });
+
+    it('replays a crust record style before algorithm so the exact pick lands last', () => {
+        // Wrong-ordered records already exist: `persistDeviceParam` appends, so
+        // a crust written before the style/algorithm contract carries
+        // `algorithm` first. Both names write the engine's single algorithm
+        // slot — record-order replay ran the eight-way pick first and let the
+        // three-way style pick overwrite it (issue #4135).
+        const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
+        track.devices = [
+            {
+                id: 'crust-1',
+                name: 'Crust',
+                type: 'crust',
+                bypassed: false,
+                parameterValues: { algorithm: 6, style: 2, gain: 3 },
+            },
+        ];
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+
+        projectTrackToLiveStrip({ trackId: track.id });
+
+        expect(mocks.updateDeviceParam.mock.calls).toEqual([
+            ['audio-1', 'crust-1', 'style', 2],
+            ['audio-1', 'crust-1', 'algorithm', 6],
+            ['audio-1', 'crust-1', 'gain', 3],
+        ]);
     });
 
     it('keeps MIDI-only Yeast out of the audio graph and predecessor order', () => {
@@ -469,5 +457,26 @@ describe('projectTrackToLiveStrip', () => {
         projectTrackToLiveStrip({ trackId: 'audio-1' });
 
         expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('replays crust device parameters with style before algorithm', () => {
+        const track = createTrack({ id: 'audio-1', name: 'Audio 1', kind: 'audio' });
+        track.devices = [
+            {
+                id: 'crust-1',
+                name: 'Crust',
+                type: 'crust',
+                bypassed: false,
+                parameterValues: { algorithm: 6, style: 2 },
+            },
+        ];
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+
+        projectTrackToLiveStrip({ trackId: track.id });
+
+        expect(mocks.updateDeviceParam.mock.calls).toEqual([
+            ['audio-1', 'crust-1', 'style', 2],
+            ['audio-1', 'crust-1', 'algorithm', 6],
+        ]);
     });
 });

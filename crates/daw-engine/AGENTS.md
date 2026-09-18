@@ -98,6 +98,17 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   that pass, never the dry line. Either way, bypass never triggers a recompensation. Auditioning one
   plugin must not move every other route in the project — the common professional convention, and
   the reason the dry line is built with the latency rather than with the device.
+- **A body that declares its own figure declares its own bypass with it**: a built-in the engine
+  reads a latency off — rather than one a host publishes a figure for — declares 0 while it is
+  bypassed and its reported figure otherwise, so its bypass does move its figure and does re-aim the
+  pass. The convention above still holds for everything whose figure the engine cannot re-read,
+  which is every hosted plugin. What forces the exception is that such a body has a second carrier:
+  the same device runs in Web Audio, where a bypass is a true bypass and the renderer's own reading
+  drops a bypassed device, so a native declaration under bypass would flam every web strip beside it
+  by the whole figure. The cost is one bounded re-aim of the native mix per A/B, which is the re-aim
+  the web schedule already takes for the same bypass. Such a body carries no dry line at all,
+  because the bypassed pass is already the identity for it: the pass a line is read on is the pass
+  the body declares 0 on, so the bullet below stays true rather than gaining an exception.
 - **Every line is written on every block it renders**: a route line and a dry line alike take
   exactly one pass per block — read-and-write while they hold, write-only otherwise. A route line
   holding nothing is fed rather than skipped, and a dry line is fed on every block the chain visits
@@ -139,7 +150,9 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   the other; the control thread cannot see whether the device already runs a line, so it ships one
   whenever the figure is non-zero and the callback returns whichever is spare.
 - **What dirties compensation**: a change to declared latency, to the device chains, or to the shape
-  of the routing graph. Gain, pan, mute, solo, bypass and transport do not.
+  of the routing graph. Gain, pan, mute, solo, bypass and transport do not. A bypass of a body that
+  declares its own figure dirties it through that figure, not through the bypass: the bypass moves
+  what the device declares, and it is the moved declaration that re-aims the pass.
 
 ## Verification
 

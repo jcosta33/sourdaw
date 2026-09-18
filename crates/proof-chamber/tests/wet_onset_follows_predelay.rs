@@ -25,11 +25,11 @@
 //!
 //! #1560 established that this crate's guards only ever select the plate, so
 //! both assertions here sweep every algorithm the `algorithm` wire value
-//! actually selects. That is not decoration: the FDN pair reaches the same
-//! Pre-Delay control through a completely separate inline implementation
-//! (`fdn.rs`, `pd_read`), which reads *before* advancing its write position and
-//! is correct — the sweep is what records that the two implementations agree,
-//! and what would catch the next one that does not.
+//! actually selects. That is not decoration: the FDN pair and Spring each reach
+//! the same Pre-Delay control through their own inline implementation
+//! (`fdn.rs`'s `pd_read`, `spring.rs`), reading *before* advancing the write
+//! position and correct — the sweep is what records that the implementations
+//! agree, and what would catch the next one that does not.
 
 use proof_chamber::ProofChamberInstance;
 
@@ -144,16 +144,12 @@ const CROSS_RATE_TOLERANCE_MS: f32 = 0.1;
 /// Pre-Delay bound applied to it would be asserting something else entirely.
 /// `reverse_engine_character.rs` owns that engine's onset.
 ///
-/// **Spring's twelve rows here are floor-only and inert, and cannot fail.**
-/// The bound is one-sided — it asks whether an engine is *late*, which is the
-/// #1547 shape — and Spring starts at sample 0 for every Pre-Delay from 0 to
-/// 100 ms and every Size, because it never reads the control at all. Those rows
-/// would stay green if its Pre-Delay wiring were deleted outright. They are
-/// kept because a future Spring that acquires a pre-delay and wires it to the
-/// wrong end of a buffer would red here, and removing the rows would remove
-/// that. What they are not is evidence that Spring's Pre-Delay works.
-/// `spring_onset_tracks_the_predelay_it_was_given` below is that claim, and it
-/// is `#[ignore]`d because it does not.
+/// **Spring's twelve rows are live, and bound the same thing the other nine
+/// do.** The bound is one-sided — it asks whether an engine is *late*, which is
+/// the #1547 shape — so it reds on a Spring whose Pre-Delay is wired to the
+/// wrong end of its buffer, and stays green on one that ignores the control
+/// altogether. `spring_onset_tracks_the_predelay_it_was_given` below is the
+/// two-sided claim that closes that half.
 const PROMPT: [(f32, &str); 4] = [
     (0.0, "Plate"),
     (1.0, "FDN-8"),
@@ -409,23 +405,7 @@ fn onset_lands_at_the_same_time_on_the_clock_at_every_rate() {
     }
 }
 
-/// Spring's Pre-Delay is not wired, and this is the row that says so.
-///
-/// The sweep above cannot make this claim: it bounds lateness only, and Spring
-/// is never late. So the claim is stated separately and two-sided — the onset
-/// has to *track* the control — and it is `#[ignore]`d rather than deleted,
-/// because a test that names the defect and is skipped is a smaller lie than a
-/// green row that appears to cover an engine it cannot see.
-///
-/// Measured today: onset 0 at Pre-Delay 0, 5, 25 and 100 ms, at every Size.
-/// The three tank engines all move to `predelay + 222` at the default Size.
-/// Delete the attribute when Spring reads the control; this test is then the
-/// proof that it does.
 #[test]
-#[ignore = "Spring ignores predelay entirely. Found while fixing #1547 and NOT \
-            filed as an issue — this attribute and the CONTINUOUS doc are the \
-            only record it has. Un-ignore it if you wire Spring's predelay; \
-            open an issue if you do not."]
 fn spring_onset_tracks_the_predelay_it_was_given() {
     const SPRING: f32 = 3.0;
     for sample_rate in SAMPLE_RATES {

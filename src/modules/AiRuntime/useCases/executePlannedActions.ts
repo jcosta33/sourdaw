@@ -47,6 +47,8 @@ type ExecutedAction = {
 
 type VerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
 
+type SettledBatchResult = Awaited<ReturnType<typeof executeVersionedCommandBatchEnvelope>>;
+
 type ExecutePlannedActionsResult =
     | {
           status: 'committed';
@@ -71,6 +73,18 @@ type ExecutePlannedActionsResult =
 
 function failureReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+// The pre-execution gate attaches its own divergence classification to the
+// conflicted result it produced; only an incompatible one (mayReapply false)
+// is the project-changed event, while every unclassified conflict stays a
+// plain failure.
+function isIncompatibleDivergenceConflict(batchResult: SettledBatchResult): boolean {
+    return (
+        batchResult.status === 'conflicted' &&
+        'divergence' in batchResult &&
+        batchResult.divergence?.mayReapply === false
+    );
 }
 
 export async function executePlannedActions(input: ExecutePlannedActionsInput): Promise<ExecutePlannedActionsResult> {
@@ -173,6 +187,16 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
             batchResult.status === 'rejected' &&
             batchResult.reason === bindingRejection.reason
         ) {
+            return { status: 'invalidated', reason: new AiProposalInvalidatedError().message };
+        }
+        // An incompatible divergence gate is the same project-changed event chat
+        // settles as invalidated at confirmation admission; immediate surfaces
+        // have no persisted proposal to re-request, so they carry that same
+        // sentence instead of reporting an execution failure.
+        if (isIncompatibleDivergenceConflict(batchResult)) {
+            logger.warn(
+                `Immediate command batch settled as invalidated by an incompatible project divergence: ${batchResult.reason}`
+            );
             return { status: 'invalidated', reason: new AiProposalInvalidatedError().message };
         }
         return { status: 'failed', reason: batchResult.reason };

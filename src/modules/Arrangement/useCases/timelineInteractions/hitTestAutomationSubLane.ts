@@ -1,10 +1,12 @@
 import { automationStore } from '#/modules/Automation/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
-import { AUTOMATION_SUB_LANE_HEIGHT } from '../../automationConstants';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
+
+/** Height in pixels of each inline automation sub-lane below a track. */
+const AUTOMATION_SUB_LANE_HEIGHT = 40;
 
 export type AutomationSubLaneHit = {
     laneId: string;

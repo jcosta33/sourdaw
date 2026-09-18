@@ -7,8 +7,10 @@
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { INIT_SAB_MESSAGE_TYPE } from '#/infra/audioWorklet/workletPortMessages';
 import { logger } from '#/infra/logger/appLogger';
 
+import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { TOASTER_AUTOMATION_PARAM_IDS } from '../models/ToasterAutomationParams';
 import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
@@ -135,8 +137,8 @@ export async function createToasterNode(
         node = new AudioWorkletNode(ctx, 'toaster-processor', {
             numberOfInputs: 0,
             numberOfOutputs: 1 + TOASTER_PAD_COUNT,
-            outputChannelCount: Array.from({ length: 1 + TOASTER_PAD_COUNT }, () => 2),
-            channelCount: 2,
+            outputChannelCount: Array.from({ length: 1 + TOASTER_PAD_COUNT }, () => STEREO_CHANNEL_COUNT),
+            channelCount: STEREO_CHANNEL_COUNT,
             channelCountMode: 'explicit',
             processorOptions: { wasmModule: wasmLease.module },
         });
@@ -159,7 +161,7 @@ export async function createToasterNode(
     let slot: TelemetrySlot | null =
         typeof SharedArrayBuffer === 'undefined' ? null : telemetryAllocator.allocateSlot();
     if (slot) {
-        node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
+        node.port.postMessage({ type: INIT_SAB_MESSAGE_TYPE, sab: slot.sab, byteOffset: slot.byteOffset });
     }
     const lifecycleReader = slot ? createTelemetryReader({ slot, project: projectToasterLifecycle }) : null;
     let lastLifecycle: AudioProcessorLifecycleState | null = null;

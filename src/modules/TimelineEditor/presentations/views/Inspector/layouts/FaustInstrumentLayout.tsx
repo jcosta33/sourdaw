@@ -84,23 +84,63 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
 
     // Detect visualizations from device type (stable) with parameter fallback
     const pv = device.parameterValues;
+
+    // 1. Envelope (generic ADSR requires declared attack, decay, sustain, release)
+    const attackParam = parameters.find((p) => p.id === 'attack' || p.id === 'Attack');
+    const decayParam = parameters.find((p) => p.id === 'decay' || p.id === 'Decay');
+    const sustainParam = parameters.find((p) => p.id === 'sustain' || p.id === 'Sustain');
+    const releaseParam = parameters.find((p) => p.id === 'release' || p.id === 'Release');
+    const hasEnvelope = Boolean(attackParam && decayParam && sustainParam && releaseParam);
+
+    // 2. Filter (requires declared filter cutoff parameter; do NOT match MIDI freq / frequency)
+    const cutoffParam = parameters.find(
+        (p) => p.id === 'cutoff' || p.id === 'filterCutoff' || p.id === 'filter_cutoff'
+    );
+    const resonanceParam = parameters.find(
+        (p) => p.id === 'resonance' || p.id === 'filterResonance' || p.id === 'filter_resonance' || p.id === 'q'
+    );
+    const hasFilter = Boolean(cutoffParam);
+
+    // 3. Compressor (requires declared threshold and ratio; supports 1176 and other compressors)
+    const thresholdParam = parameters.find(
+        (p) => p.id === 'threshold' || p.id === 'comp-threshold' || p.id === 'Threshold'
+    );
+    const ratioParam = parameters.find((p) => p.id === 'ratio' || p.id === 'comp-ratio' || p.id === 'Ratio');
+    const kneeParam = parameters.find((p) => p.id === 'knee' || p.id === 'comp-knee' || p.id === 'Knee');
+    const makeupParam = parameters.find((p) => p.id === 'makeup' || p.id === 'comp-makeup' || p.id === 'Makeup');
+    const hasCompressor = Boolean(thresholdParam && ratioParam);
+
+    // 4. Oscillator
     const dt = (device.type ?? '').toLowerCase();
-
-    // Primary detection: device type / ID patterns (stable, no guessing)
-    const isCompressor = dt.includes('compressor') || dt.includes('1176');
-    const isEq = dt.includes('eq') || dt.includes('parametric');
     const isSynth = dt.includes('synth') || dt.includes('instrument');
-
-    // Visualization flags derived from device type
-    const hasCompressor = isCompressor;
-    const hasFilter =
-        isEq ||
-        parameters.some((param) => param.id === 'cutoff' || param.id === 'frequency' || param.id.includes('freq'));
-    const hasEnvelope =
-        isSynth ||
-        parameters.some((param) => param.id === 'attack' && parameters.some((query) => query.id === 'sustain'));
     const hasOscillator =
         isSynth && parameters.some((param) => param.id === 'waveform' || param.id === 'wave' || param.id === 'morph');
+
+    const handleFilterChange = (id: string, value: number): void => {
+        if ((id === 'filterCutoff' || id === 'cutoff') && cutoffParam) {
+            change(cutoffParam.id, value);
+        } else if ((id === 'filterResonance' || id === 'resonance') && resonanceParam) {
+            change(resonanceParam.id, value);
+        }
+    };
+
+    const handleEnvelopeChange = (stage: string, value: number): void => {
+        if (stage === 'attack' && attackParam) {
+            change(attackParam.id, value);
+        } else if (stage === 'decay' && decayParam) {
+            change(decayParam.id, value);
+        } else if (stage === 'sustain' && sustainParam) {
+            change(sustainParam.id, value);
+        } else if (stage === 'release' && releaseParam) {
+            change(releaseParam.id, value);
+        }
+    };
+
+    const handleCompressorChange = (id: string, value: number): void => {
+        if ((id === 'comp-threshold' || id === 'threshold') && thresholdParam) {
+            change(thresholdParam.id, value);
+        }
+    };
 
     if (parameters.length === 0) {
         return (
@@ -120,13 +160,13 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                     <SectionHeader title="Envelope" />
                     <Row align="stretch" justify="center" className="mb-2">
                         <ADSREnvelope
-                            attack={pv.attack ?? pv.Attack ?? 0.01}
-                            decay={pv.decay ?? pv.Decay ?? 0.2}
-                            sustain={pv.sustain ?? pv.Sustain ?? 0.7}
-                            release={pv.release ?? pv.Release ?? 0.3}
+                            attack={attackParam ? (pv[attackParam.id] ?? attackParam.defaultValue ?? 0.01) : 0.01}
+                            decay={decayParam ? (pv[decayParam.id] ?? decayParam.defaultValue ?? 0.2) : 0.2}
+                            sustain={sustainParam ? (pv[sustainParam.id] ?? sustainParam.defaultValue ?? 0.7) : 0.7}
+                            release={releaseParam ? (pv[releaseParam.id] ?? releaseParam.defaultValue ?? 0.3) : 0.3}
                             width={200}
                             height={70}
-                            onParamChange={change}
+                            onParamChange={handleEnvelopeChange}
                         />
                     </Row>
                 </div>
@@ -136,12 +176,12 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                     <SectionHeader title="Filter" />
                     <Row align="stretch" justify="center" className="mb-2">
                         <FilterResponse
-                            cutoff={pv.cutoff ?? pv.Cutoff ?? pv.frequency ?? 5000}
-                            resonance={pv.resonance ?? pv.Resonance ?? pv.q ?? 1}
+                            cutoff={cutoffParam ? (pv[cutoffParam.id] ?? cutoffParam.defaultValue ?? 5000) : 5000}
+                            resonance={resonanceParam ? (pv[resonanceParam.id] ?? resonanceParam.defaultValue ?? 1) : 1}
                             filterType={0}
                             width={200}
                             height={60}
-                            onParamChange={change}
+                            onParamChange={handleFilterChange}
                         />
                     </Row>
                 </div>
@@ -151,13 +191,15 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                     <SectionHeader title="Compression" />
                     <Row align="stretch" justify="center" className="mb-2">
                         <CompressorCurve
-                            threshold={pv.threshold ?? pv.Threshold ?? -20}
-                            ratio={pv.ratio ?? pv.Ratio ?? 4}
-                            knee={pv.knee ?? pv.Knee ?? 6}
-                            makeup={pv.makeup ?? pv.Makeup ?? 0}
+                            threshold={
+                                thresholdParam ? (pv[thresholdParam.id] ?? thresholdParam.defaultValue ?? -20) : -20
+                            }
+                            ratio={ratioParam ? (pv[ratioParam.id] ?? ratioParam.defaultValue ?? 4) : 4}
+                            knee={kneeParam ? (pv[kneeParam.id] ?? kneeParam.defaultValue ?? 6) : 6}
+                            makeup={makeupParam ? (pv[makeupParam.id] ?? makeupParam.defaultValue ?? 0) : 0}
                             width={200}
                             height={120}
-                            onParamChange={change}
+                            onParamChange={handleCompressorChange}
                         />
                     </Row>
                 </div>

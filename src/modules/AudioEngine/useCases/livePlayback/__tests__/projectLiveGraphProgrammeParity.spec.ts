@@ -276,6 +276,18 @@ function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
         async mapGraphBatch(input) {
             return host.mapGraphBatch(input.prior, input.batch, input.sampleRate, input.session ?? null);
         },
+        async beginLevainBank() {
+            throw new Error('a parity leg stages no levain bank (begin_levain_bank)');
+        },
+        async registerLevainSample() {
+            throw new Error('a parity leg stages no levain bank (register_levain_sample)');
+        },
+        async commitLevainBank() {
+            throw new Error('a parity leg stages no levain bank (commit_levain_bank)');
+        },
+        async releaseLevainBank() {
+            throw new Error('a parity leg stages no levain bank (release_levain_bank)');
+        },
         async applyGraphCommands() {
             throw new Error('a parity leg never touches the live engine (apply_graph_commands)');
         },
@@ -605,6 +617,7 @@ function projectLiveTopologyBatch(extraTracks: readonly Track[] = []): readonly 
     const stripTracks = fixtureTracks('live', extraTracks);
     return projectLiveGraphTopology({
         stripTracks,
+        projectTracks: stripTracks,
         soloGatedTrackIds: new Set(),
         vcaMultiplierByTrackId: new Map(),
         // The parity fixtures carry no externally hosted plugin, so no engine

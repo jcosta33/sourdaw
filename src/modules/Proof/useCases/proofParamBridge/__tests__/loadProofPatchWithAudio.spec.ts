@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { getTrackStoreState, persistDevicePatch } from '#/modules/Arrangement/useCases';
+import { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
 
 import { DEFAULT_PATCH, type ProofPatch } from '../../../models/ProofPatch';
 import { getProofPatchParameterValues } from '../../../services/getProofPatchParameterValues';
@@ -21,21 +22,28 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
 
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    updateDeviceParam: vi.fn(),
+    updateDevicePatch: vi.fn(),
+}));
+
 type MockedProofBridge = {
     [K in keyof ProofAudioBridge]: Mock<ProofAudioBridge[K]>;
 };
 
 function makeBridge(): MockedProofBridge {
     return {
-        setParam: vi.fn<ProofAudioBridge['setParam']>(),
         reorderModules: vi.fn<ProofAudioBridge['reorderModules']>(),
         resetIntegrated: vi.fn<ProofAudioBridge['resetIntegrated']>(),
     };
 }
 
-function paramCalls(bridge: ReturnType<typeof makeBridge>): Map<string, number> {
+// Every live Proof write reaches the DSP through `updateDeviceParam`, so the
+// engine side of a patch load is read off that door rather than off the worklet
+// bridge, which a natively carried device never registers.
+function paramCalls(): Map<string, number> {
     const map = new Map<string, number>();
-    for (const [name, value] of bridge.setParam.mock.calls) {
+    for (const [, , name, value] of vi.mocked(updateDeviceParam).mock.calls) {
         map.set(name, value);
     }
     return map;
@@ -105,6 +113,75 @@ const SPARSE_AGGREGATES: Array<[name: string, key: FixedAggregateKey, index: num
     ['exciter bands', 'excBands', 1],
 ];
 
+// The exact name set `syncFullPatch` must reach through the device door on
+// the default patch's own band counts (8 EQ bands, 4 dynamics bands, 4
+// exciter bands, a fixed 4-wide imager). Spelled as literal names rather than
+// derived from `DEFAULT_PATCH` or the sync helpers under test, so a helper
+// that silently drops a send (as `lim_lookahead` did) cannot also shrink the
+// set it is checked against.
+const FULL_SYNC_SCALAR_NAMES = [
+    'ab_bypass',
+    'input_gain',
+    'output_gain',
+    'eq_bypass',
+    'dyn_bypass',
+    'img_bypass',
+    'exc_bypass',
+    'lim_bypass',
+    'lim_ceiling',
+    'lim_release',
+    'lim_lookahead',
+    'dither_mode',
+    'dither_bits',
+];
+
+const FULL_SYNC_EQ_BAND_NAMES = [0, 1, 2, 3, 4, 5, 6, 7].flatMap((i) => [
+    `eq_band${i}_freq`,
+    `eq_band${i}_gain`,
+    `eq_band${i}_q`,
+    `eq_band${i}_type`,
+    `eq_band${i}_channel`,
+    `eq_band${i}_enabled`,
+]);
+
+const FULL_SYNC_DYN_XOVER_NAMES = ['dyn_xover0', 'dyn_xover1', 'dyn_xover2'];
+
+const FULL_SYNC_DYN_BAND_NAMES = [0, 1, 2, 3].flatMap((i) => [
+    `dyn_band${i}_threshold`,
+    `dyn_band${i}_ratio`,
+    `dyn_band${i}_attack`,
+    `dyn_band${i}_release`,
+    `dyn_band${i}_knee`,
+    `dyn_band${i}_makeup`,
+    `dyn_band${i}_auto_makeup`,
+    `dyn_band${i}_bypass`,
+]);
+
+const FULL_SYNC_IMAGER_NAMES = [
+    'img_width0',
+    'img_width1',
+    'img_width2',
+    'img_width3',
+    'img_auto_mono_bass',
+    'img_mono_bass_freq',
+];
+
+const FULL_SYNC_EXC_BAND_NAMES = [0, 1, 2, 3].flatMap((i) => [
+    `exc_band${i}_type`,
+    `exc_band${i}_drive`,
+    `exc_band${i}_blend`,
+    `exc_band${i}_enabled`,
+]);
+
+const FULL_SYNC_PARAM_NAMES = new Set([
+    ...FULL_SYNC_SCALAR_NAMES,
+    ...FULL_SYNC_EQ_BAND_NAMES,
+    ...FULL_SYNC_DYN_XOVER_NAMES,
+    ...FULL_SYNC_DYN_BAND_NAMES,
+    ...FULL_SYNC_IMAGER_NAMES,
+    ...FULL_SYNC_EXC_BAND_NAMES,
+]);
+
 describe('loadProofPatchWithAudio', () => {
     beforeEach(() => {
         bridges.clear();
@@ -135,7 +212,7 @@ describe('loadProofPatchWithAudio', () => {
         expect(getProofState(DEVICE_ID).patch.limCeiling).toBe(-1.5);
 
         // The engine receives the scalar params and the chain reorder.
-        const calls = paramCalls(bridge);
+        const calls = paramCalls();
         expect(calls.get('lim_ceiling')).toBe(-1.5);
         expect(calls.get('input_gain')).toBe(DEFAULT_PATCH.inputGain);
         expect(bridge.reorderModules).toHaveBeenCalledWith(DEFAULT_PATCH.chainOrder);
@@ -158,6 +235,30 @@ describe('loadProofPatchWithAudio', () => {
         expect(Object.keys(vi.mocked(persistDevicePatch).mock.calls[0]?.[1] ?? {})).toHaveLength(124);
     });
 
+    // The full sync's contract is the exact name set it reaches the device
+    // door with, not merely that a handful of representative names arrived.
+    // A dropped send (deleting the `lim_lookahead` line, say) shrinks the set
+    // this compares against without touching any of the individual-name
+    // assertions elsewhere in this file.
+    it('sends exactly the full-sync parameter name set and one chain-order patch', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+
+        syncFullPatch(DEVICE_ID);
+
+        const sentNames = new Set(vi.mocked(updateDeviceParam).mock.calls.map(([, , name]) => name));
+        expect(sentNames).toEqual(FULL_SYNC_PARAM_NAMES);
+
+        expect(updateDevicePatch).toHaveBeenCalledTimes(1);
+        expect(updateDevicePatch).toHaveBeenCalledWith('track-1', DEVICE_ID, {
+            chain_order_0: DEFAULT_PATCH.chainOrder[0],
+            chain_order_1: DEFAULT_PATCH.chainOrder[1],
+            chain_order_2: DEFAULT_PATCH.chainOrder[2],
+            chain_order_3: DEFAULT_PATCH.chainOrder[3],
+            chain_order_4: DEFAULT_PATCH.chainOrder[4],
+        });
+    });
+
     it('rejects an invalid full patch before any write', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);
@@ -166,7 +267,7 @@ describe('loadProofPatchWithAudio', () => {
 
         expect(getProofState(DEVICE_ID).patch).toEqual(DEFAULT_PATCH);
         expect(persistDevicePatch).not.toHaveBeenCalled();
-        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(updateDeviceParam).not.toHaveBeenCalled();
         expect(bridge.reorderModules).not.toHaveBeenCalled();
     });
 
@@ -180,7 +281,7 @@ describe('loadProofPatchWithAudio', () => {
 
         expect(getProofState(DEVICE_ID).patch).toEqual(DEFAULT_PATCH);
         expect(persistDevicePatch).not.toHaveBeenCalled();
-        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(updateDeviceParam).not.toHaveBeenCalled();
         expect(bridge.reorderModules).not.toHaveBeenCalled();
     });
 
@@ -210,7 +311,7 @@ describe('loadProofPatchWithAudio', () => {
         expect(patch.ditherBits).toBe(24);
         expect(patch.targetLufs).toBe(DEFAULT_PATCH.targetLufs);
 
-        const calls = paramCalls(bridge);
+        const calls = paramCalls();
         expect(calls.get('input_gain')).toBe(3.5);
         expect(calls.get('eq_bypass')).toBe(1);
         expect(calls.get('exc_bypass')).toBe(0);
@@ -296,7 +397,7 @@ describe('loadProofPatchWithAudio', () => {
         expect(patch.excBands[3]).toMatchObject({ type: 2, drive: 0.7, blend: 0.6, enabled: true });
         expect(patch.chainOrder[0]).toBe(4);
 
-        const calls = paramCalls(bridge);
+        const calls = paramCalls();
         expect(calls.get('eq_band1_freq')).toBe(1200);
         expect(calls.get('dyn_xover0')).toBe(180);
         expect(calls.get('dyn_band2_threshold')).toBe(-10);
@@ -362,7 +463,7 @@ describe('loadProofPatchWithAudio', () => {
         syncFullPatch(DEVICE_ID);
 
         expect(getProofState(DEVICE_ID).patch.ditherMode).toBe(expectedMode);
-        expect(paramCalls(bridge).get('dither_mode')).toBe(restoredValue);
+        expect(paramCalls().get('dither_mode')).toBe(restoredValue);
     });
 
     it('rehydrates an atomically persisted target and loudness value', () => {
@@ -396,7 +497,7 @@ describe('loadProofPatchWithAudio', () => {
         syncFullPatch(DEVICE_ID);
 
         expect(getProofState(DEVICE_ID).patch.dynCrossoverFreqs).toEqual(DEFAULT_PATCH.dynCrossoverFreqs);
-        expect(paramCalls(bridge).get('dyn_xover0')).toBe(DEFAULT_PATCH.dynCrossoverFreqs[0]);
+        expect(paramCalls().get('dyn_xover0')).toBe(DEFAULT_PATCH.dynCrossoverFreqs[0]);
     });
 
     it('rejects a restored target and loudness pair that contradicts the target contract', () => {
@@ -451,7 +552,7 @@ describe('loadProofPatchWithAudio', () => {
         expect(patch.limCeiling).toBe(-4.5);
         expect(getProofState(DEVICE_ID).abBypass).toBe(true);
 
-        const calls = paramCalls(bridge);
+        const calls = paramCalls();
         expect(calls.get('ab_bypass')).toBe(1);
         expect(calls.get('input_gain')).toBe(2.25);
         expect(calls.get('lim_ceiling')).toBe(-4.5);
@@ -475,7 +576,7 @@ describe('loadProofPatchWithAudio', () => {
         expect(patch.inputGain).toBe(3);
         expect(patch.eqBands[1]?.freq).toBe(1_200);
         expect(patch.limCeiling).toBe(-4.5);
-        const calls = paramCalls(bridge);
+        const calls = paramCalls();
         expect(calls.get('input_gain')).toBe(3);
         expect(calls.get('eq_band1_freq')).toBe(1_200);
         expect(calls.get('lim_ceiling')).toBe(-4.5);
@@ -490,7 +591,7 @@ describe('loadProofPatchWithAudio', () => {
 
         syncFullPatch(DEVICE_ID);
 
-        expect(paramCalls(bridge).get('ab_bypass')).toBe(1);
+        expect(paramCalls().get('ab_bypass')).toBe(1);
     });
 
     it('forwards ab_bypass as 0 when compare is inactive', () => {
@@ -500,7 +601,7 @@ describe('loadProofPatchWithAudio', () => {
 
         syncFullPatch(DEVICE_ID);
 
-        expect(paramCalls(bridge).get('ab_bypass')).toBe(0);
+        expect(paramCalls().get('ab_bypass')).toBe(0);
     });
 
     it('is a no-op on the engine when no bridge is registered, but still loads the store', () => {
@@ -520,7 +621,7 @@ describe('loadProofPatchWithAudio', () => {
 
             expect(getProofState(DEVICE_ID).patch.limCeiling).toBe(DEFAULT_PATCH.limCeiling);
             expect(persistDevicePatch).not.toHaveBeenCalled();
-            expect(bridge.setParam).not.toHaveBeenCalled();
+            expect(updateDeviceParam).not.toHaveBeenCalled();
             expect(bridge.reorderModules).not.toHaveBeenCalled();
         }
     );
@@ -533,7 +634,7 @@ describe('loadProofPatchWithAudio', () => {
         syncFullPatch(DEVICE_ID);
 
         expect(getTrackStoreState).not.toHaveBeenCalled();
-        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(updateDeviceParam).not.toHaveBeenCalled();
         expect(bridge.reorderModules).not.toHaveBeenCalled();
     });
 });

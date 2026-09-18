@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
         transportStoreValue,
         updateDeviceParam: vi.fn<typeof import('#/modules/AudioEngine/useCases').updateDeviceParam>(),
         recordAutomationValue: vi.fn<typeof import('#/modules/Automation/useCases').recordAutomationValue>(),
+        captureGestureBeat: vi.fn(),
     };
 });
 
@@ -49,6 +50,9 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
             return mocks.transportStoreValue;
         },
     },
+    // The recording beat comes from the moving playback clock, never from the
+    // transport store's discrete `playheadPosition` (#3799).
+    captureGestureBeat: mocks.captureGestureBeat,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
@@ -71,6 +75,7 @@ describe('setDeviceParameter', () => {
         macroStore.set({ macros: [], recording: true, currentRecording: [] });
         setActionHistoryMetadataPort(actionHistoryMetadataPort);
         mocks.transportStoreValue = { isPlaying: false };
+        mocks.captureGestureBeat.mockReturnValue(0);
         trackStore.set(defaultTrackState);
     });
 
@@ -153,16 +158,34 @@ describe('setDeviceParameter', () => {
         expect(result.devices[1]).toMatchObject({ id: 'target', parameterValues: { gain: 0.9 } });
     });
 
-    it('records automation if playing and recording mode', () => {
+    it('records the parameter at the moving playhead, not the store beat playback started at', () => {
+        const track = makeTrack('t1');
+        track.automationMode = 'write';
+        setTrackState([track]);
+        // Playback started at 8; the transport has since rolled to 11.25 while
+        // the store kept the start beat — the gesture must land at 11.25 (#3799).
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 8 };
+        mocks.captureGestureBeat.mockReturnValue(11.25);
+
+        const didWrite = setDeviceParameter('d1', 'cutoff', 1000);
+
+        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'd1:cutoff', 1000, 11.25);
+        expect(didWrite).toBe(true);
+    });
+
+    it('writes engine and project but records nothing when the edit suppresses the recording policy', () => {
         const track = makeTrack('t1');
         track.automationMode = 'write';
         setTrackState([track]);
         mocks.transportStoreValue = { isPlaying: true, playheadPosition: 8 };
 
-        const didWrite = setDeviceParameter('d1', 'cutoff', 1000);
+        const didWrite = setDeviceParameter('d1', 'cutoff', 1000, { automationRecordingPolicy: 'suppressed' });
 
-        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'd1:cutoff', 1000, 8);
         expect(didWrite).toBe(true);
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'cutoff', 1000);
+        const updater = mocks.updateTrack.mock.calls[0]![1];
+        expect(updater(track).devices[0]).toMatchObject({ id: 'd1', parameterValues: { cutoff: 1000 } });
+        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
     });
 
     it('bails if value is not finite', () => {
@@ -267,6 +290,7 @@ describe('setDeviceParameter', () => {
 
     it('records the value that actually landed, not the one that was asked for', () => {
         mocks.transportStoreValue = { isPlaying: true, playheadPosition: 4 };
+        mocks.captureGestureBeat.mockReturnValue(5.5);
         const track = makeDescribedTrack('t1');
         track.automationMode = 'write';
         setTrackState([track]);
@@ -275,7 +299,7 @@ describe('setDeviceParameter', () => {
 
         // Recording the requested value would write a curve the engine can
         // never reproduce, and the lane would drift from the device on replay.
-        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'd1:mix', 1, 4);
+        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'd1:mix', 1, 5.5);
     });
 
     it('leaves a parameter with no declared range untouched', () => {

@@ -644,16 +644,25 @@ class AutomergeRepository {
         return bundle;
     }
 
+    isMutationBlockedBySnapshotTransaction(id: DocId, snapshotTransaction?: object): boolean {
+        const transaction = this.activeTransaction;
+        return Boolean(
+            transaction &&
+            snapshotTransaction !== transaction.handle &&
+            (transaction.dirtied.has(id) || transaction.reserved.has(id))
+        );
+    }
+
     /** Capture one exact pre-mutation content/membership entry for an owned write. */
     private captureBeforeMutation(id: DocId, snapshotTransaction?: object): void {
         const txn = this.activeTransaction;
         if (!txn) {
             return;
         }
+        if (this.isMutationBlockedBySnapshotTransaction(id, snapshotTransaction)) {
+            throw createSnapshotTransactionOverlapError(id);
+        }
         if (snapshotTransaction !== txn.handle) {
-            if (txn.dirtied.has(id) || txn.reserved.has(id)) {
-                throw createSnapshotTransactionOverlapError(id);
-            }
             return;
         }
         txn.dirtied.add(id);

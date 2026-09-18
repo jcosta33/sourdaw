@@ -13,6 +13,7 @@ import {
     deliverPullRequestWithRequiredCi as deliverPullRequestWithRequiredCiAndTracker,
     expectedAbsentDeliveryReceiptAuthority,
     gateRequiredCheckNames,
+    gateRequiredSkipAliases,
     parseCliArgs,
     readGateRequiredCheckNames,
     runDeliverCli,
@@ -28,9 +29,11 @@ import {
     type ShellRunner,
     type StackedPullRequest,
     type TrackerCompletionPort,
+    run,
 } from '../deliverPullRequest';
 import {
     AUTHOR_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
     GITHUB_HTTPS_REMOTE,
     REQUIRED_BASE_BRANCH,
     REVIEWER_BOT_NODE_ID,
@@ -47,21 +50,34 @@ const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
  * tests pass the real files, and a snippet that calls a workflow nobody carried reads back as
  * unreadable, exactly as a missing file at the pinned commit would.
  */
+async function gateWorkflowSummary(
+    workflowSource: string,
+    calledSources: Record<string, string> = {}
+): Promise<string> {
+    return JSON.stringify(
+        await summarizeGateWorkflow(workflowSource, (usesPath) => {
+            const source = calledSources[usesPath];
+            if (source === undefined) {
+                throw new Error(`no called-workflow fixture for ${usesPath}`);
+            }
+            return source;
+        })
+    );
+}
+
 async function gatingNamesFor(
     workflowSource: string,
     calledSources: Record<string, string> = {}
 ): Promise<ReadonlySet<string>> {
-    return gateRequiredCheckNames(
-        JSON.stringify(
-            await summarizeGateWorkflow(workflowSource, (usesPath) => {
-                const source = calledSources[usesPath];
-                if (source === undefined) {
-                    throw new Error(`no called-workflow fixture for ${usesPath}`);
-                }
-                return source;
-            })
-        )
-    );
+    return gateRequiredCheckNames(await gateWorkflowSummary(workflowSource, calledSources));
+}
+
+/** The raw template names a scope-skipped matrix run reports under, for every resolved gating name. */
+async function gatingSkipAliasesFor(
+    workflowSource: string,
+    calledSources: Record<string, string> = {}
+): Promise<ReadonlyMap<string, string>> {
+    return gateRequiredSkipAliases(await gateWorkflowSummary(workflowSource, calledSources));
 }
 
 async function refusalFor(workflowSource: string, calledSources: Record<string, string> = {}): Promise<string> {
@@ -71,6 +87,23 @@ async function refusalFor(workflowSource: string, calledSources: Record<string, 
         return String(error);
     }
     return 'no refusal';
+}
+
+/**
+ * The read's own refusal, as the port would raise it: cases that pin a delivery refusing because the
+ * workflow read refuses pass this error through `gateRequiredCheckNames` rather than restating the
+ * message, so the two layers cannot drift apart.
+ */
+async function refusalErrorFor(workflowSource: string, calledSources: Record<string, string> = {}): Promise<Error> {
+    try {
+        await gatingNamesFor(workflowSource, calledSources);
+    } catch (error) {
+        if (error instanceof Error) {
+            return error;
+        }
+        throw error;
+    }
+    throw new Error('no refusal');
 }
 
 /**
@@ -205,7 +238,7 @@ Change.
 Run.
 ### 🖼️ Screenshots
 None.
-### 📌 Related tickets & additional notes
+### 📌 Related issues & additional notes
 ${relationship}`;
 }
 
@@ -257,7 +290,13 @@ function mergePolicyPort(settings: string | Error, markRemoteMutationAttempt: ()
             },
             run: () => undefined,
         },
-        { markRemoteMutationAttempt }
+        {
+            markRemoteMutationAttempt,
+            mergeCapture: (command, args) => {
+                captures.push({ command, args });
+                return JSON.stringify({ merged: true, message: 'merged' });
+            },
+        }
     );
     return { captures, port };
 }
@@ -330,6 +369,16 @@ function reviewStateResponse(
     });
 }
 
+function acceptanceReview() {
+    return {
+        id: 'orchestrator-acceptance',
+        state: 'APPROVED',
+        submittedAt: '2026-09-09T00:00:00Z',
+        author: { id: ORCHESTRATOR_USER_NODE_ID, login: 'jcosta33', __typename: 'User' },
+        commit: { oid: 'head' },
+    };
+}
+
 function stackedDeliveryPort(finalSettings: MergeSettings) {
     const captures: Array<{ command: string; args: string[] }> = [];
     let child = pullRequest({ ...stacked(), baseRefOid: 'base' });
@@ -392,6 +441,7 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                                             },
                                             commit: { oid: 'head' },
                                         },
+                                        acceptanceReview(),
                                     ],
                                     pageInfo: { hasPreviousPage: false, startCursor: null },
                                 },
@@ -519,7 +569,9 @@ function shellPullRequest(snapshot: PullRequestSnapshot): Omit<PullRequestSnapsh
     };
 }
 
-function shellMergedByGraphql(mergedBy: { __typename: 'Bot'; id: string } | { __typename: 'User' } | null): string {
+function shellMergedByGraphql(
+    mergedBy: { __typename: 'Bot'; id: string } | { __typename: 'User'; id?: string } | null
+): string {
     return JSON.stringify({
         data: {
             repository: {
@@ -586,6 +638,22 @@ function supersededRunCheckRuns(): HeadCheckRun[] {
         }),
         checkRun({ name: 'Validation / Lint', startedAt: REVIEW_RUN_START }),
         checkRun({ startedAt: REVIEW_RUN_START }),
+    ];
+}
+
+/**
+ * A live head reports a check run under every gating name — every job a run executes reports,
+ * whatever it concluded — while the fixtures below abbreviate the rollup to the names their case
+ * decides on. This completes a fixture with a success under every gating name it does not already
+ * report, the shape a real head carries; without it, the refusal owed to a required name that never
+ * reported would fire before the behaviour a case pins.
+ */
+function withGatedCoverage(checkRuns: HeadCheckRun[]): HeadCheckRun[] {
+    return [
+        ...checkRuns,
+        ...[...gatingCheckNames]
+            .filter((name) => !checkRuns.some((run) => run.name === name))
+            .map((name) => checkRun({ name })),
     ];
 }
 
@@ -695,6 +763,7 @@ type FakeInput = {
     persistedReceiptAuthority?: PersistedDeliveryReceiptAuthority;
     deliveryReceiptProof?: DeliveryReceiptProof;
     mergedPrimaryAfterMerge?: Partial<PullRequestSnapshot>;
+    syncAuthorshipNotes?: DeliveryPort['syncAuthorshipNotes'];
 };
 
 type DeliveryReceiptComment = {
@@ -927,7 +996,11 @@ function fakePort(input: FakeInput = {}) {
             return (
                 reviewStateAfterReceipt ??
                 reviewStates.shift() ??
-                input.review ?? { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }
+                input.review ?? {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerStateOnHead: 'APPROVED',
+                    unresolvedThreads: 0,
+                }
             );
         },
         dependents: (baseBranch) => {
@@ -970,7 +1043,7 @@ function fakePort(input: FakeInput = {}) {
                 state: 'MERGED',
                 mergedByActorNodeId:
                     input.mergedByActorNodeIdAfterMerge === undefined
-                        ? AUTHOR_BOT_NODE_ID
+                        ? ORCHESTRATOR_USER_NODE_ID
                         : input.mergedByActorNodeIdAfterMerge,
                 ...input.mergedPrimaryAfterMerge,
             };
@@ -1049,6 +1122,7 @@ function fakePort(input: FakeInput = {}) {
             persistedReceiptAuthority = undefined;
         },
         log: (message) => calls.push(message),
+        ...(input.syncAuthorshipNotes !== undefined ? { syncAuthorshipNotes: input.syncAuthorshipNotes } : {}),
     };
     const tracker: TrackerCompletionPort = {
         complete: (issueNumber: number) => {
@@ -1169,7 +1243,7 @@ function shellMergeRejection(status: '409' | '422'): DeliveryMergeRejectedError 
     };
 
     try {
-        shellPort('jcosta33/sourdaw', shell).merge(42, 'head', false);
+        shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).merge(42, 'head', false);
     } catch (error) {
         if (error instanceof DeliveryMergeRejectedError) {
             return error;
@@ -1251,10 +1325,10 @@ describe('pull-request delivery', () => {
         }
     });
 
-    it('queries bot review author IDs through a Bot fragment', () => {
-        const source = readFileSync(join(import.meta.dirname, '../deliverPullRequest.ts'), 'utf8');
+    it('queries review actor IDs through typed Bot and User fragments', () => {
+        const source = readFileSync(join(import.meta.dirname, '../pullRequestReviewState.ts'), 'utf8');
         expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
-        expect(source.match(/author\{login __typename \.\.\. on Bot\{id\}\}/g)).toHaveLength(1);
+        expect(source.match(/author\{login __typename \.\.\. on Bot\{id\} \.\.\. on User\{id\}\}/g)).toHaveLength(1);
     });
 
     it('completes the canonical Closes issue only after merge and dependent retargeting', () => {
@@ -1268,6 +1342,48 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('complete:2372');
         expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('merge:42:head'));
         expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('retarget:43:main'));
+    });
+
+    it('invokes syncAuthorshipNotes with merge commit and branch refs when mergeCommit is present on merged snapshot', () => {
+        const syncCalls: Array<{
+            mergeCommitSha: string;
+            headSha: string;
+            baseSha: string;
+            headRef: string;
+            baseRef: string;
+        }> = [];
+        const { port, tracker } = fakePort({
+            mergedPrimaryAfterMerge: {
+                mergeCommit: { oid: 'merge-commit-sha-777' },
+            },
+            syncAuthorshipNotes: (args) => {
+                syncCalls.push(args);
+            },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(syncCalls).toEqual([
+            {
+                mergeCommitSha: 'merge-commit-sha-777',
+                headSha: 'head',
+                baseSha: 'base',
+                headRef: 'feat/gate',
+                baseRef: 'main',
+            },
+        ]);
+    });
+
+    it('succeeds delivery normally when syncAuthorshipNotes is not defined on the port', () => {
+        const { port, calls, tracker } = fakePort({
+            mergedPrimaryAfterMerge: {
+                mergeCommit: { oid: 'merge-commit-sha-777' },
+            },
+        });
+        expect(port.syncAuthorshipNotes).toBeUndefined();
+
+        expect(() => deliverPullRequest(42, port, tracker)).not.toThrow();
+        expect(calls).toContain('merge:42:head');
     });
 
     it('retargets late dependents opened against the delivered branch immediately before squash merge', () => {
@@ -1445,24 +1561,87 @@ describe('pull-request delivery', () => {
             dependentSets: [[]],
         });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /fresh merge was not performed by the orchestrator user/
+        );
         expect(receipts.map((receipt) => receipt.body)).toEqual([
             visibleDeliveryReceiptBody(42, 'head', bodyY, 2373, 'successful'),
         ]);
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /not merged by the author App or orchestrator user/
+        );
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
         expect(calls).not.toContain('merge:42:head');
     });
 
-    it('recovers a stable final author-App merge without re-reviewing or merging again', () => {
+    it.each([false, true])(
+        'refuses an author-bot merge during initial UNKNOWN refresh, recoveryWork=%s',
+        (recoveryWork) => {
+            const body = relationshipBody(recoveryWork ? 'Closes #2372' : 'None.');
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({ body, mergeable: 'UNKNOWN' }),
+                    pullRequest({ body, state: 'MERGED', mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+                ],
+                dependentSets: recoveryWork ? [[stacked()], [stacked()]] : [[], []],
+            });
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+                'fresh merge was not performed by the orchestrator user'
+            );
+            expect(calls).toEqual(['fetch']);
+        }
+    );
+
+    it.each([
+        { initialState: 'OPEN', merger: ORCHESTRATOR_USER_NODE_ID, recoveryWork: false },
+        { initialState: 'OPEN', merger: ORCHESTRATOR_USER_NODE_ID, recoveryWork: true },
+        { initialState: 'MERGED', merger: AUTHOR_BOT_NODE_ID, recoveryWork: false },
+        { initialState: 'MERGED', merger: AUTHOR_BOT_NODE_ID, recoveryWork: true },
+    ])(
+        'accepts $merger from initial $initialState, recoveryWork=$recoveryWork',
+        ({ initialState, merger, recoveryWork }) => {
+            const body = relationshipBody(recoveryWork ? 'Closes #2372' : 'None.');
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({
+                        body,
+                        state: initialState,
+                        mergeable: 'UNKNOWN',
+                        mergedByActorNodeId: initialState === 'MERGED' ? merger : null,
+                    }),
+                    pullRequest({ body, state: 'MERGED', mergedByActorNodeId: merger }),
+                ],
+                dependentSets: recoveryWork ? [[stacked()], [stacked()]] : [[], []],
+            });
+            deliverPullRequest(42, port, tracker);
+            expect(calls.some((call) => call.startsWith('merge:'))).toBe(false);
+            if (recoveryWork) {
+                expect(calls).toContain('retarget:43:main');
+                expect(calls).toContain('complete:2372');
+                expect(calls.some((call) => call.startsWith('receipt-authority:write:terminal:'))).toBe(true);
+            } else {
+                expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+                expect(
+                    calls.some(
+                        (call) =>
+                            call.startsWith('retarget:') ||
+                            call.startsWith('complete:') ||
+                            call.startsWith('receipt-authority:write:')
+                    )
+                ).toBe(false);
+            }
+        }
+    );
+
+    it('recovers a stable final orchestrator-user merge without re-reviewing or merging again', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const { port, calls, tracker } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID }),
             ],
             dependentSets: [[child], [child]],
         });
@@ -1560,7 +1739,7 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('merge-title:feat(delivery): retitled in UI (#42)');
     });
 
-    it('fails closed when an UNKNOWN initial refresh becomes a merged author-App head with no persisted receipt authority', () => {
+    it('fails closed when an UNKNOWN initial refresh becomes a merged orchestrator-user head with no persisted receipt authority', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const seededReceipt: DeliveryReceiptComment = {
@@ -1579,7 +1758,7 @@ describe('pull-request delivery', () => {
                     state: 'MERGED',
                     mergeable: 'UNKNOWN',
                     body: closes,
-                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
                 }),
             ],
             dependentSets: [[child]],
@@ -1599,7 +1778,7 @@ describe('pull-request delivery', () => {
         expect(receipts.map((receipt) => receipt.body)).toEqual([deliveryReceiptBody(42, 'head', closes, 2372)]);
     });
 
-    it('recovers a final UNKNOWN refresh that becomes a merged author-App head without re-reviewing', () => {
+    it('recovers a final UNKNOWN refresh that becomes a merged orchestrator-user head without re-reviewing', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const { port, calls, tracker } = fakePort({
@@ -1610,7 +1789,7 @@ describe('pull-request delivery', () => {
                     state: 'MERGED',
                     mergeable: 'UNKNOWN',
                     body: closes,
-                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
                 }),
             ],
             dependentSets: [[child], [child]],
@@ -1626,6 +1805,33 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('PR #42 became merged during delivery; repaired 1 dependent(s)');
     });
 
+    it.each([AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID])(
+        'refuses a raced bot merge %s before recovery effects',
+        (actor) => {
+            const closes = relationshipBody('Closes #2372');
+            const child = stacked();
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({ body: closes }),
+                    pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: actor }),
+                ],
+                dependentSets: [[child], [child]],
+            });
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+                'fresh merge was not performed by the orchestrator user'
+            );
+            expect(
+                calls.some(
+                    (call) =>
+                        call.startsWith('retarget:') ||
+                        call.startsWith('complete:') ||
+                        call.startsWith('receipt-authority:write:terminal:') ||
+                        call.startsWith('receipt-authority:write:merge-authorized:')
+                )
+            ).toBe(false);
+        }
+    );
+
     it('fails closed when the final refresh is already merged on a different closing target than the armed receipt', () => {
         const closesX = relationshipBody('Closes #2372');
         const closesY = relationshipBody('Closes #2373');
@@ -1635,7 +1841,7 @@ describe('pull-request delivery', () => {
                 pullRequest({
                     state: 'MERGED',
                     body: closesY,
-                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
                 }),
             ],
             dependentSets: [[]],
@@ -1657,7 +1863,7 @@ describe('pull-request delivery', () => {
                 pullRequest({
                     state: 'MERGED',
                     body: closes,
-                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
                 }),
             ],
             dependentSets: [[]],
@@ -1687,7 +1893,9 @@ describe('pull-request delivery', () => {
             primary: [pullRequest({ state: 'MERGED', mergedByActorNodeId: actorNodeId })],
         });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /not merged by the author App or orchestrator user/
+        );
         expect(calls).not.toContain('receipts:42');
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
     });
@@ -1713,8 +1921,12 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ state: 'MERGED', body: bodyX }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyX }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
             ],
             dependentSets: [[], []],
             receipts: [
@@ -1778,8 +1990,12 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ state: 'MERGED', body: bodyX }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyX }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
             ],
             dependentSets: [[], []],
             receipts: [
@@ -1835,8 +2051,12 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
             ],
             dependentSets: [[], []],
             receipts: [
@@ -1919,9 +2139,17 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ state: 'MERGED', body: bodyX }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyX }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
             ],
             dependentSets: [[], [], []],
             receipts: [
@@ -2416,8 +2644,12 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ state: 'MERGED', body: bodyX }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyX }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
             ],
             dependentSets: [[], []],
             receipts: [
@@ -2475,8 +2707,8 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ state: 'MERGED', body: bodyY }),
-                pullRequest({ state: 'MERGED', body: bodyY }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyY }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyY }),
             ],
             dependentSets: [[], []],
         });
@@ -2498,8 +2730,8 @@ describe('pull-request delivery', () => {
         const { port, calls, tracker } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID }),
             ],
             dependentSets: [[child], [child], []],
         });
@@ -2551,11 +2783,11 @@ describe('pull-request delivery', () => {
             const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
                 primary: [
                     pullRequest({ body: closes }),
-                    pullRequest({ state: 'MERGED', body: closes }),
+                    pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
                     pullRequest({
                         state: 'MERGED',
                         body: closes,
-                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
                         ...mergedPrimaryAfterRecovery,
                     }),
                 ],
@@ -2638,8 +2870,8 @@ describe('pull-request delivery', () => {
         const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
             ],
             dependentSets: [[], []],
         });
@@ -2680,8 +2912,8 @@ describe('pull-request delivery', () => {
         const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
             primary: [
                 pullRequest({ body: closesY }),
-                pullRequest({ state: 'MERGED', body: closesX }),
-                pullRequest({ state: 'MERGED', body: closesX }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closesX }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closesX }),
             ],
             dependentSets: [[]],
             persistedReceiptAuthority: {
@@ -2741,8 +2973,8 @@ describe('pull-request delivery', () => {
         const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
             ],
             dependentSets: [[child], [child], []],
         });
@@ -3655,9 +3887,9 @@ describe('pull-request delivery', () => {
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
                 pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
                     state: 'MERGED',
                     body: closes,
-                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                 }),
             ],
             dependentSets: [[], []],
@@ -4743,11 +4975,11 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ state: 'CLOSED', body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
                 pullRequest({
                     state: 'MERGED',
                     body: closes,
-                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
                 }),
             ],
             dependentSets: [[], [], []],
@@ -5260,8 +5492,12 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
             ],
             dependentSets: [[child], [child], []],
         });
@@ -5303,16 +5539,32 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
             ],
             reviewStates: [
-                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
-                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
-                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
-                { latestReviewerStateOnHead: 'CHANGES_REQUESTED', unresolvedThreads: 0 },
+                {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerStateOnHead: 'APPROVED',
+                    unresolvedThreads: 0,
+                },
+                {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerStateOnHead: 'APPROVED',
+                    unresolvedThreads: 0,
+                },
+                {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerStateOnHead: 'APPROVED',
+                    unresolvedThreads: 0,
+                },
+                {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerStateOnHead: 'CHANGES_REQUESTED',
+                    unresolvedThreads: 0,
+                },
             ],
             dependentSets: [[], [], [], []],
         });
@@ -5345,8 +5597,12 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({
+                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    state: 'MERGED',
+                    body: relationshipBody('None.'),
+                }),
             ],
             dependentSets: [[], []],
             receipts: [
@@ -6008,13 +6264,30 @@ describe('pull-request delivery', () => {
         expect(calls).toEqual(expect.arrayContaining(['merge:42:head', 'retarget:43:main']));
     });
 
-    it('refuses tracker completion when the post-merge snapshot names a foreign merger', () => {
-        const { port, calls, tracker } = fakePort({ mergedByActorNodeIdAfterMerge: REVIEWER_BOT_NODE_ID });
+    it.each([AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID])(
+        'refuses tracker completion when a fresh merge names bot %s',
+        (actor) => {
+            const { port, calls, tracker } = fakePort({ mergedByActorNodeIdAfterMerge: actor });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+                /fresh merge was not performed by the orchestrator user/
+            );
 
-        expect(calls).toContain('merge:42:head');
-        expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
+            expect(calls).toContain('merge:42:head');
+            expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
+        }
+    );
+
+    it.each([false, true])('requires acceptance at both validation points, later=%s', (later) => {
+        const approved = {
+            latestReviewerStateOnHead: 'APPROVED',
+            orchestratorAcceptedAfterReviewer: true,
+            unresolvedThreads: 0,
+        };
+        const absent = { ...approved, orchestratorAcceptedAfterReviewer: false };
+        const { port, calls, tracker } = fakePort({ reviewStates: later ? [approved, absent] : [absent] });
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow('requires orchestrator acceptance');
+        expect(calls.some((call) => call.startsWith('merge:') || call.startsWith('complete:'))).toBe(false);
     });
 
     it('rejects head drift during delivery', () => {
@@ -6178,14 +6451,22 @@ describe('pull-request delivery', () => {
     });
 
     it('rejects unresolved review before merge', () => {
-        const { port, calls } = fakePort({ review: { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 1 } });
+        const { port, calls } = fakePort({
+            review: {
+                orchestratorAcceptedAfterReviewer: true,
+                latestReviewerStateOnHead: 'APPROVED',
+                unresolvedThreads: 1,
+            },
+        });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/unresolved review/);
         expect(calls).not.toContain('merge:42:head');
     });
 
     it('rejects missing reviewer approval on the current head', () => {
-        const { port, calls } = fakePort({ review: { latestReviewerStateOnHead: null, unresolvedThreads: 0 } });
+        const { port, calls } = fakePort({
+            review: { orchestratorAcceptedAfterReviewer: true, latestReviewerStateOnHead: null, unresolvedThreads: 0 },
+        });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/not approved by the required reviewer actor/);
         expect(calls).not.toContain('merge:42:head');
@@ -6194,8 +6475,12 @@ describe('pull-request delivery', () => {
     it('rejects reviewer approval drift between the first and second pre-merge checks', () => {
         const { port, calls } = fakePort({
             reviewStates: [
-                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
-                { latestReviewerStateOnHead: null, unresolvedThreads: 0 },
+                {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerStateOnHead: 'APPROVED',
+                    unresolvedThreads: 0,
+                },
+                { orchestratorAcceptedAfterReviewer: true, latestReviewerStateOnHead: null, unresolvedThreads: 0 },
             ],
         });
 
@@ -6205,7 +6490,11 @@ describe('pull-request delivery', () => {
 
     it('rejects a review thread opened during receipt I/O at the post-receipt review check', () => {
         const { port, calls } = fakePort({
-            reviewStateOnReceiptRead: { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 1 },
+            reviewStateOnReceiptRead: {
+                orchestratorAcceptedAfterReviewer: true,
+                latestReviewerStateOnHead: 'APPROVED',
+                unresolvedThreads: 1,
+            },
         });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/unresolved review thread/);
@@ -6223,7 +6512,9 @@ describe('pull-request delivery', () => {
     });
 
     it.each(['COMMENTED', 'CHANGES_REQUESTED'])('rejects reviewer state %s', (state) => {
-        const { port, calls } = fakePort({ review: { latestReviewerStateOnHead: state, unresolvedThreads: 0 } });
+        const { port, calls } = fakePort({
+            review: { orchestratorAcceptedAfterReviewer: true, latestReviewerStateOnHead: state, unresolvedThreads: 0 },
+        });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/not approved/);
         expect(calls).not.toContain('merge:42:head');
@@ -6916,7 +7207,7 @@ describe('pull-request delivery', () => {
         const unstable = { mergeStateStatus: 'UNSTABLE' };
         const { port, calls } = fakePort({
             primary: [pullRequest(unstable), pullRequest(unstable)],
-            headCheckRuns: supersededRunCheckRuns(),
+            headCheckRuns: withGatedCoverage(supersededRunCheckRuns()),
         });
 
         deliverPullRequestWithRequiredCi(42, port);
@@ -6965,7 +7256,7 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             primary: [pullRequest(unstable), pullRequest(unstable)],
             headCheckRuns: [
-                ...supersededRunCheckRuns(),
+                ...withGatedCoverage(supersededRunCheckRuns()),
                 checkRun({ name: 'Validation / Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
                 checkRun({ name: 'Validation / Unit suite 2/4', startedAt: REVIEW_RUN_START }),
             ],
@@ -7160,11 +7451,11 @@ describe('pull-request delivery', () => {
         expect(gatingCheckNames.has('Validation / Lint')).toBe(true);
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
-            headCheckRuns: [
+            headCheckRuns: withGatedCoverage([
                 checkRun({ name: 'Validation / Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
                 checkRun({ name: 'Validation / Lint', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
                 checkRun(),
-            ],
+            ]),
         });
 
         deliverPullRequestWithRequiredCi(42, port);
@@ -7304,7 +7595,7 @@ describe('pull-request delivery', () => {
         );
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
-            headCheckRuns: [
+            headCheckRuns: withGatedCoverage([
                 checkRun({ name: 'Validation / Unit suite 3/4', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
                 checkRun({
                     name: 'Validation / Unit suite ${{ matrix.shard }}/4',
@@ -7312,7 +7603,7 @@ describe('pull-request delivery', () => {
                     startedAt: REVIEW_RUN_START,
                 }),
                 checkRun(),
-            ],
+            ]),
         });
 
         deliverPullRequestWithRequiredCi(42, port);
@@ -7362,7 +7653,7 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             primary: [pullRequest(unstable), pullRequest(unstable)],
             headCheckRuns: [
-                ...supersededRunCheckRuns(),
+                ...withGatedCoverage(supersededRunCheckRuns()),
                 checkRun({ name: 'Nightly failure report', conclusion: 'CANCELLED' }),
                 checkRun({ name: 'Nightly failure report', conclusion: 'SKIPPED' }),
             ],
@@ -7386,7 +7677,7 @@ describe('pull-request delivery', () => {
         const tolerated = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: checkRuns,
-            gateRequiredCheckNames: new Set(['Gate', 'Lint']),
+            gateRequiredCheckNames: new Set(['Gate', 'Validation / Lint']),
         });
 
         deliverPullRequestWithRequiredCi(42, tolerated.port);
@@ -7396,7 +7687,7 @@ describe('pull-request delivery', () => {
         const refused = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: checkRuns,
-            gateRequiredCheckNames: new Set(['Gate', 'Lint', 'Secret scan']),
+            gateRequiredCheckNames: new Set(['Gate', 'Validation / Lint', 'Secret scan']),
         });
 
         let thrown: unknown;
@@ -7522,21 +7813,140 @@ describe('pull-request delivery', () => {
     });
 
     /**
-     * Absence is tolerated, and this pins that rather than endorsing it: the rule keys on a name
-     * cancelled with no success beside it, so a required shard that never reported at all leaves
-     * the head with no verdict for that shard and merges anyway.
+     * A required name with no check on the head at all carries no verdict in either direction: the
+     * shard was never scheduled, or the name this reader derived matches nothing GitHub reported.
+     * This used to merge, which is exactly the coverage gap the absence refusal exists to close.
      */
-    it('merges a head from which a required matrix shard name is absent altogether', async () => {
-        const unstable = { mergeStateStatus: 'UNSTABLE' };
+    it('refuses a head from which a required matrix shard name is absent altogether', async () => {
         const { port, calls } = fakePort({
-            primary: [pullRequest(unstable), pullRequest(unstable)],
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [...passingUnitShards([1, 2, 3]), checkRun()],
             gateRequiredCheckNames: await gatingNamesFor(unitMatrixWorkflow),
+            gateRequiredSkipAliases: await gatingSkipAliasesFor(unitMatrixWorkflow),
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and required check Unit suite 4/4 never reported on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * A scope-skipped matrix job reports one check run under the raw template name and none under
+     * the shard names, so the template run is the report for every shard it stands for. Absence
+     * reads it through the alias — the same map `skippedAfter` consults — and the head merges on
+     * the workflow's own scope decision instead of refusing on names that were decided, not absent.
+     */
+    it('merges a head whose matrix leg was scope-skipped, its template name standing for every shard', async () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({
+                    name: 'Unit suite ${{ matrix.shard }}/4',
+                    conclusion: 'SKIPPED',
+                    startedAt: REVIEW_RUN_START,
+                }),
+                checkRun(),
+            ],
+            gateRequiredCheckNames: await gatingNamesFor(unitMatrixWorkflow),
+            gateRequiredSkipAliases: await gatingSkipAliasesFor(unitMatrixWorkflow),
         });
 
         deliverPullRequestWithRequiredCi(42, port);
 
         expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * The absence refusal keys on the name alone, so a required name that never reported refuses
+     * whatever the rest of the rollup looks like — even a head where nothing was cancelled and the
+     * gate itself succeeded.
+     */
+    const singleLegWorkflow = [
+        'name: Health gates',
+        'jobs:',
+        '  scan:',
+        '    name: Dependency scan',
+        '  gate:',
+        '    name: Gate',
+        '    needs: scan',
+    ].join('\n');
+
+    it('refuses an UNSTABLE head whose required leg name never reported beside an otherwise green rollup', async () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [checkRun()],
+            gateRequiredCheckNames: await gatingNamesFor(singleLegWorkflow),
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and required check Dependency scan never reported on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * Two gated jobs rendering one check name collapse into a single rollup name, where one job's
+     * success would answer for the other job's cancellation and neither verdict can be told apart.
+     * The read refuses the workflow itself — naming both jobs — so no head under it can merge on
+     * that name's evidence.
+     */
+    const collidingJobsWorkflow = [
+        'name: Health gates',
+        'jobs:',
+        '  build:',
+        '    name: Shared check',
+        '  scan:',
+        '    name: Shared check',
+        '  gate:',
+        '    name: Gate',
+        '    needs: [build, scan]',
+    ].join('\n');
+
+    it('refuses two gated jobs that render one check name, naming both jobs', async () => {
+        expect(await refusalFor(collidingJobsWorkflow)).toBe(
+            `Error: the build and scan jobs in ${WORKFLOW_PATH} both report the check name ` +
+                'Shared check, which GitHub reports as one check name this gate cannot tell apart'
+        );
+    });
+
+    it('refuses a head whose one colliding check name carries a success and a cancellation from two gated jobs', async () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Shared check', conclusion: 'SUCCESS', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Shared check', conclusion: 'CANCELLED', startedAt: REVIEW_RUN_START }),
+                checkRun(),
+            ],
+            gateRequiredCheckNames: await refusalErrorFor(collidingJobsWorkflow),
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            `Error: the build and scan jobs in ${WORKFLOW_PATH} both report the check name ` +
+                'Shared check, which GitHub reports as one check name this gate cannot tell apart'
+        );
+        expect(calls).not.toContain('merge:42:head');
     });
 
     /**
@@ -7548,7 +7958,7 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             primary: [pullRequest(unstable), pullRequest(unstable)],
             headCheckRuns: [
-                ...supersededRunCheckRuns(),
+                ...withGatedCoverage(supersededRunCheckRuns()),
                 checkRun({ name: 'Windows device layer', conclusion: 'SKIPPED' }),
                 checkRun({ name: 'Windows device layer', conclusion: 'SKIPPED' }),
             ],
@@ -7590,7 +8000,7 @@ describe('pull-request delivery', () => {
         const unstable = { mergeStateStatus: 'UNSTABLE' };
         const { port, calls } = fakePort({
             primary: [pullRequest(unstable), pullRequest(unstable)],
-            headCheckRuns: supersededRunCheckRuns(),
+            headCheckRuns: withGatedCoverage(supersededRunCheckRuns()),
         });
 
         deliverPullRequestWithRequiredCi(42, port);
@@ -7635,7 +8045,11 @@ describe('pull-request delivery', () => {
         const child = stacked();
         const sibling = stacked({ number: 44, headRefName: 'feat/sibling', headRefOid: 'sibling-head' });
         const { port, calls } = fakePort({
-            primary: [pullRequest(), pullRequest(), pullRequest({ state: 'MERGED' })],
+            primary: [
+                pullRequest(),
+                pullRequest(),
+                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED' }),
+            ],
             dependentSets: [[child, sibling], [child, sibling], [sibling]],
             failRetargetOnce: 44,
         });
@@ -8947,7 +9361,10 @@ describe('delivery shell boundary', () => {
         expect(rollupCaptures(captures)).toHaveLength(1);
     });
 
-    it('queries and normalizes the immutable merged-by actor node ID', () => {
+    it.each([
+        { __typename: 'Bot' as const, id: AUTHOR_BOT_NODE_ID },
+        { __typename: 'User' as const, id: ORCHESTRATOR_USER_NODE_ID },
+    ])('normalizes the typed historical merger $id', (actor) => {
         const captures: Array<{ command: string; args: string[] }> = [];
         const port = shellPort('jcosta33/sourdaw', {
             capture: (command, args) => {
@@ -8964,7 +9381,7 @@ describe('delivery shell boundary', () => {
                             'api',
                             'graphql',
                             '-f',
-                            'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id}}}}}',
+                            'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id} ... on User{id}}}}}',
                             '-f',
                             'owner=jcosta33',
                             '-f',
@@ -8972,7 +9389,7 @@ describe('delivery shell boundary', () => {
                             '-F',
                             'number=42',
                         ].join('\u0000')
-                        ? shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID })
+                        ? shellMergedByGraphql(actor)
                         : shellMergedByGraphql({ __typename: 'Bot', id: REVIEWER_BOT_NODE_ID });
                 }
                 throw new Error(`unexpected capture: ${command} ${joined}`);
@@ -8980,13 +9397,13 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         });
 
-        expect(port.pullRequest(42).mergedByActorNodeId).toBe(AUTHOR_BOT_NODE_ID);
+        expect(port.pullRequest(42).mergedByActorNodeId).toBe(actor.id);
         expect(captures[0]?.args.join(' ')).toContain('mergedBy');
         expect(captures[1]?.args).toEqual([
             'api',
             'graphql',
             '-f',
-            'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id}}}}}',
+            'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id} ... on User{id}}}}}',
             '-f',
             'owner=jcosta33',
             '-f',
@@ -9520,7 +9937,7 @@ describe('delivery shell boundary', () => {
             merger: 'foreign',
             shellSnapshot: pullRequest({ state: 'MERGED', mergedByActorNodeId: REVIEWER_BOT_NODE_ID }),
             graphQlMergedBy: { __typename: 'Bot' as const, id: REVIEWER_BOT_NODE_ID },
-            expectedError: /not merged by the author App/,
+            expectedError: /merger cannot be verified/,
         },
         {
             merger: 'null',
@@ -10131,6 +10548,7 @@ describe('delivery shell boundary', () => {
                                             },
                                             commit: { oid: 'head' },
                                         },
+                                        acceptanceReview(),
                                     ],
                                     hasPreviousPage: false,
                                     startCursor: null,
@@ -11058,6 +11476,7 @@ describe('delivery shell boundary', () => {
                                                 },
                                                 commit: { oid: 'head' },
                                             },
+                                            acceptanceReview(),
                                         ],
                                         pageInfo: { hasPreviousPage: false, startCursor: null },
                                     },
@@ -11100,9 +11519,13 @@ describe('delivery shell boundary', () => {
             },
             run: (command, args) => runs.push({ command, args }),
         };
-        const port = shellPort('jcosta33/sourdaw', shell);
+        const port = shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture });
 
-        expect(port.reviewState(42, 'head')).toEqual({ latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 });
+        expect(port.reviewState(42, 'head')).toEqual({
+            orchestratorAcceptedAfterReviewer: true,
+            latestReviewerStateOnHead: 'APPROVED',
+            unresolvedThreads: 0,
+        });
         expect(port.dependents('feat/gate')).toEqual([stacked()]);
         expect(port.repositoryDeletesMergedBranches()).toBe(false);
         port.merge(42, 'head', false, 'feat(delivery): committed subject');
@@ -11203,7 +11626,7 @@ describe('delivery shell boundary', () => {
             },
             run: () => undefined,
         };
-        const port = shellPort('jcosta33/sourdaw', shell);
+        const port = shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture });
 
         try {
             port.merge(42, 'head', false);
@@ -11232,7 +11655,7 @@ describe('delivery shell boundary', () => {
             },
             run: () => undefined,
         };
-        const port = shellPort('jcosta33/sourdaw', shell);
+        const port = shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture });
 
         try {
             port.merge(42, 'head', false);
@@ -11320,6 +11743,7 @@ describe('delivery shell boundary', () => {
                 '--prune',
                 GITHUB_HTTPS_REMOTE,
                 '+refs/heads/*:refs/remotes/origin/*',
+                '+refs/notes/ai:refs/notes/ai',
             ]);
             expect(args.join('\0')).not.toContain('ghs_minted');
             expect(args).not.toContain('--force');
@@ -11329,7 +11753,190 @@ describe('delivery shell boundary', () => {
         }
     });
 
-    it('reads every review page before choosing the latest reviewer state on the expected head', () => {
+    it('fetches origin heads and authorship notes when unauthenticated', () => {
+        const runs: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: () => '',
+            run: (command, args) => runs.push({ command, args }),
+        });
+        port.fetch();
+        expect(runs).toEqual([
+            {
+                command: 'git',
+                args: [
+                    'fetch',
+                    '--prune',
+                    'origin',
+                    '+refs/heads/*:refs/remotes/origin/*',
+                    '+refs/notes/ai:refs/notes/ai',
+                ],
+            },
+        ]);
+    });
+
+    it('syncs authorship notes unauthenticated by merging and pushing refs/notes/ai', () => {
+        const runs: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: () => '',
+            run: (command, args) => runs.push({ command, args }),
+        });
+
+        port.syncAuthorshipNotes?.({
+            mergeCommitSha: 'merge-sha-123',
+            headSha: 'head-sha-456',
+            baseSha: 'base-sha-789',
+            headRef: 'feat/test',
+            baseRef: 'main',
+        });
+
+        expect(runs).toEqual([
+            {
+                command: 'git',
+                args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', '+main'],
+            },
+            {
+                command: 'git-ai',
+                args: [
+                    'ci',
+                    'local',
+                    'merge',
+                    '--merge-commit-sha',
+                    'merge-sha-123',
+                    '--base-ref',
+                    'main',
+                    '--base-sha',
+                    'base-sha-789',
+                    '--head-ref',
+                    'feat/test',
+                    '--head-sha',
+                    'head-sha-456',
+                    '--skip-fetch',
+                    '--skip-push',
+                ],
+            },
+            {
+                command: 'git',
+                args: ['push', 'origin', 'refs/notes/ai:refs/notes/ai'],
+            },
+        ]);
+    });
+
+    it('syncs authorship notes through the trusted git-ai path the launcher froze', () => {
+        const runs: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: () => '',
+            run: (command, args) => runs.push({ command, args }),
+        });
+        const previous = process.env.SOURDAW_TRUSTED_GIT_AI_PATH;
+        process.env.SOURDAW_TRUSTED_GIT_AI_PATH = '/trusted/bin/git-ai';
+        try {
+            port.syncAuthorshipNotes?.({
+                mergeCommitSha: 'merge-sha-123',
+                headSha: 'head-sha-456',
+                baseSha: 'base-sha-789',
+                headRef: 'feat/test',
+                baseRef: 'main',
+            });
+        } finally {
+            if (previous === undefined) {
+                delete process.env.SOURDAW_TRUSTED_GIT_AI_PATH;
+            } else {
+                process.env.SOURDAW_TRUSTED_GIT_AI_PATH = previous;
+            }
+        }
+
+        expect(runs[0]).toEqual({
+            command: 'git',
+            args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', '+main'],
+        });
+        expect(runs[1]?.command).toBe('/trusted/bin/git-ai');
+        expect(runs[1]?.args).toContain('--merge-commit-sha');
+    });
+
+    it('syncs authorship notes authenticated using credential helper', () => {
+        const helperDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-helper-'));
+        const runs: Array<{ command: string; args: string[] }> = [];
+        try {
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => '',
+                    run: (command, args) => runs.push({ command, args }),
+                },
+                { gitToken: 'ghs_notes_token', helperDir }
+            );
+
+            port.syncAuthorshipNotes?.({
+                mergeCommitSha: 'merge-sha-123',
+                headSha: 'head-sha-456',
+                baseSha: 'base-sha-789',
+                headRef: 'feat/test',
+                baseRef: 'main',
+            });
+
+            expect(runs).toHaveLength(3);
+            expect(runs[0]).toEqual({
+                command: 'git',
+                args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', '+main'],
+            });
+            expect(runs[1]).toEqual({
+                command: 'git-ai',
+                args: [
+                    'ci',
+                    'local',
+                    'merge',
+                    '--merge-commit-sha',
+                    'merge-sha-123',
+                    '--base-ref',
+                    'main',
+                    '--base-sha',
+                    'base-sha-789',
+                    '--head-ref',
+                    'feat/test',
+                    '--head-sha',
+                    'head-sha-456',
+                    '--skip-fetch',
+                    '--skip-push',
+                ],
+            });
+            expect(runs[2]?.command).toBe('git');
+            const pushArgs = runs[2]?.args ?? [];
+            expect(pushArgs.slice(4)).toEqual(['push', GITHUB_HTTPS_REMOTE, 'refs/notes/ai:refs/notes/ai']);
+            expect(pushArgs.join('\0')).not.toContain('ghs_notes_token');
+        } finally {
+            rmSync(helperDir, { recursive: true, force: true });
+        }
+    });
+
+    it('swallows errors and logs a warning when authorship note sync throws, without failing delivery', () => {
+        const warnings: string[] = [];
+        const originalWarn = console.warn;
+        console.warn = (msg: string) => warnings.push(msg);
+        try {
+            const port = shellPort('jcosta33/sourdaw', {
+                capture: () => '',
+                run: () => {
+                    throw new Error('git-ai command failed');
+                },
+            });
+
+            expect(() =>
+                port.syncAuthorshipNotes?.({
+                    mergeCommitSha: 'merge-sha-123',
+                    headSha: 'head-sha-456',
+                    baseSha: 'base-sha-789',
+                    headRef: 'feat/test',
+                    baseRef: 'main',
+                })
+            ).not.toThrow();
+
+            expect(warnings).toEqual(['warning: git-ai authorship sync skipped: git-ai command failed']);
+        } finally {
+            console.warn = originalWarn;
+        }
+    });
+
+    it('reads every review page and refuses a later wrong-head reviewer approval', () => {
         const captures: string[][] = [];
         const latestUnrelatedReviews = Array.from({ length: 100 }, (_, index) => ({
             id: `review-unrelated-${index}`,
@@ -11382,8 +11989,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
-            latestReviewerStateOnHead: 'APPROVED',
+        expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            orchestratorAcceptedAfterReviewer: false,
+            latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });
         expect(captures).toHaveLength(4);
@@ -11456,7 +12064,10 @@ describe('delivery shell boundary', () => {
                 run: () => undefined,
             };
 
-            expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+            expect(
+                shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+            ).toEqual({
+                orchestratorAcceptedAfterReviewer: false,
                 latestReviewerStateOnHead: 'CHANGES_REQUESTED',
                 unresolvedThreads: 0,
             });
@@ -11513,7 +12124,8 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+        expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            orchestratorAcceptedAfterReviewer: false,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
         });
@@ -11560,7 +12172,8 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+        expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            orchestratorAcceptedAfterReviewer: false,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
         });
@@ -11611,9 +12224,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove complete review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove complete review state for PR #42/);
         expect(captures).toHaveLength(1);
     });
 
@@ -11651,9 +12264,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove stable review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove stable review state for PR #42/);
         expect(captures).toHaveLength(2);
     });
 
@@ -11677,9 +12290,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove complete review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove complete review state for PR #42/);
         expect(captures).toHaveLength(2);
     });
 
@@ -11707,9 +12320,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove complete review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove complete review state for PR #42/);
         expect(captures).toHaveLength(2);
     });
 
@@ -11737,9 +12350,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove complete review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove complete review state for PR #42/);
         expect(captures).toHaveLength(2);
         expect(captures[1]).toContain('threadsAfter=later-threads');
     });
@@ -11766,9 +12379,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove complete review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove complete review state for PR #42/);
         expect(captures).toHaveLength(1_000);
     });
 
@@ -11805,7 +12418,8 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+        expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            orchestratorAcceptedAfterReviewer: false,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });
@@ -11830,9 +12444,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove complete review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove complete review state for PR #42/);
         expect(captures).toHaveLength(1);
     });
 
@@ -11857,9 +12471,9 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
 
-        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
-            /cannot prove complete review state for PR #42/
-        );
+        expect(() =>
+            shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+        ).toThrow(/cannot prove complete review state for PR #42/);
         expect(captures).toHaveLength(2);
         expect(captures[1]).toContain(
             connection === 'review' ? 'reviewsBefore=same-review-cursor' : 'threadsAfter=same-thread-cursor'
@@ -11905,7 +12519,8 @@ describe('delivery shell boundary', () => {
             },
             run: () => undefined,
         };
-        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+        expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            orchestratorAcceptedAfterReviewer: false,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 0,
         });
@@ -11950,7 +12565,8 @@ describe('delivery shell boundary', () => {
             },
             run: () => undefined,
         };
-        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+        expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
+            orchestratorAcceptedAfterReviewer: false,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });
@@ -12025,6 +12641,14 @@ describe('delivery shell boundary', () => {
 
         expect(() => port.requiredStatusCheckContexts()).toThrow(
             'branch ruleset for jcosta33/sourdaw carries a required_status_checks rule with no parameters array'
+        );
+    });
+});
+
+describe('trusted child run', () => {
+    it("carries a failing child's stderr in the thrown error so skips name their cause", () => {
+        expect(() => run(process.execPath, ['-e', "console.error('trusted-child-boom'); process.exit(1)"])).toThrow(
+            /trusted-child-boom/
         );
     });
 });

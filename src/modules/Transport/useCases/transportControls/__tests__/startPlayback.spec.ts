@@ -1,13 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { resumeEngine, startNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
+import {
+    nativeLiveGraphSessionOffered,
+    resumeEngine,
+    startNativeLiveGraphSession,
+} from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { defaultTransportState } from '../../../models/TransportState';
+import { defaultTransportState, type TransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { ensureTrackStrips } from '../../ensureTrackStrips';
+// Real, not mocked: `generation` is the identity the hold compares, so bumping
+// the live holder is the only way to test the relation it actually reads.
+import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 import { startPlayback } from '../startPlayback';
 
@@ -16,6 +23,14 @@ const { timeSignatureMapStore } = vi.hoisted(
         timeSignatureMapStore: { value: { changes: [] } },
     })
 );
+/**
+ * What the audio context's clock reads. The hold writes this reading into the
+ * held transport when it gives up on a slow session, so a case about the cap
+ * has to be able to tell that reading apart from zero.
+ */
+const { audioClock } = vi.hoisted((): { audioClock: { currentTime: number } } => ({
+    audioClock: { currentTime: 0 },
+}));
 vi.mock('../../../stores/timeSignatureMapStore', () => ({ timeSignatureMapStore }));
 vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
@@ -25,11 +40,15 @@ vi.mock('../../../repositories/transport/updateTransportState', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resumeEngine: vi.fn(),
+    nativeLiveGraphSessionOffered: vi.fn(),
     startNativeLiveGraphSession: vi.fn(),
     // The rate the native session is told to place its programme on, and the
-    // clock reading its start position is anchored against. A live context is
-    // not needed for either.
-    getAudioContext: (): { sampleRate: number; currentTime: number } => ({ sampleRate: 48_000, currentTime: 7.25 }),
+    // clock the hold dates its release by. A live context is not needed for
+    // either.
+    getAudioContext: (): { sampleRate: number; currentTime: number } => ({
+        sampleRate: 48_000,
+        currentTime: audioClock.currentTime,
+    }),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
@@ -58,6 +77,10 @@ describe('startPlayback', () => {
             outcome: 'declined',
             reason: 'no desktop bridge (browser runtime)',
         });
+        vi.mocked(nativeLiveGraphSessionOffered).mockReset();
+        // A browser build is the default runtime here, so the cases that say
+        // nothing about the native engine take the unheld path they always had.
+        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(false);
         vi.mocked(notifyUser).mockClear();
         vi.mocked(startPlayheadScheduler).mockClear();
         vi.mocked(ensureTrackStrips).mockClear();
@@ -194,6 +217,7 @@ describe('startPlayback', () => {
         // 4/4 at 120 BPM, so the 2-bar pre-roll opens at beat 4 — two seconds in.
         // Sending the raw playhead would start the native engine four seconds
         // ahead of the Web Audio transport it is meant to shadow.
+        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -204,15 +228,23 @@ describe('startPlayback', () => {
 
         startPlayback();
 
-        // The context clock is read with that position, not later: the session
-        // carries the pair forward so its own start-up wait can be projected
-        // onto the roll rather than left as an offset behind Web Audio.
-        expect(startNativeLiveGraphSession).toHaveBeenCalledWith(
-            expect.objectContaining({ positionSeconds: 2, anchoredAtContextSeconds: 7.25 })
+        const request = vi.mocked(startNativeLiveGraphSession).mock.calls[0]?.[0];
+        // The beat play opens on is the whole of the position, and the start is
+        // held: the scheduler waits for this session, so nothing sounds in
+        // between and the engine owes the material there. #4020 rolled this
+        // start at wherever Web Audio would have reached, and that locate
+        // seeked past every note-on stamped in between with nothing else to
+        // sound them.
+        expect(request).toEqual(
+            expect.objectContaining({
+                positionSeconds: 2,
+                transport: { kind: 'held', webAudioRollingSince: expect.any(Function) },
+            })
         );
     });
 
     it('gives the native session the arrangement maps the engine has to follow', () => {
+        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -233,25 +265,6 @@ describe('startPlayback', () => {
                 }),
             })
         );
-    });
-
-    it('starts playback whatever the native engine answers, because it is not the audible path', async () => {
-        vi.mocked(getTransportState).mockReturnValue({
-            ...defaultTransportState,
-            isPlaying: false,
-            playheadPosition: 0,
-            preRollEnabled: false,
-        });
-        vi.mocked(startNativeLiveGraphSession).mockRejectedValue(new Error('addon crashed'));
-
-        startPlayback();
-
-        expect(startPlayheadScheduler).toHaveBeenCalled();
-        // An unhandled rejection here would fail the run, which is the point:
-        // the native session is fired, never awaited, and never fatal.
-        await vi.waitFor(() => {
-            expect(startNativeLiveGraphSession).toHaveBeenCalled();
-        });
     });
 
     it('should not start when transport state is missing', () => {
@@ -283,5 +296,215 @@ describe('startPlayback', () => {
         expect(startPlayheadScheduler).not.toHaveBeenCalled();
         expect(startNativeLiveGraphSession).not.toHaveBeenCalled();
         expect(update).not.toHaveBeenCalled();
+    });
+
+    /**
+     * On a desktop build the play gesture starts two carriers of one
+     * arrangement, and they have to open at the same beat: the session's MIDI
+     * arm queues its note pass from the beat play opens on, and the engine
+     * delivers only the notes at or after the block it begins rendering. So
+     * Web Audio waits for the engine's answer rather than the engine skipping
+     * forward to Web Audio.
+     */
+    describe('holding the Web Audio start for the native session', () => {
+        // `startPlayback` commits `isPlaying: true` before the hold opens and
+        // the hold reads the flag back at the end of the wait, so the store has
+        // to carry the write rather than answer one fixed snapshot.
+        let transportState: TransportState = defaultTransportState;
+        /** One macrotask drains the whole chain: session → then → catch → race → await. */
+        const drainHold = (): Promise<void> =>
+            new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        /**
+         * What the session's own roll would read out of the held transport it
+         * was started with: `null` for as long as the hold stands, and the
+         * context instant Web Audio opened at once the hold has given up.
+         */
+        const webAudioRollingSince = (): number | null | undefined => {
+            const transport = vi.mocked(startNativeLiveGraphSession).mock.calls[0]?.[0].transport;
+            if (transport?.kind !== 'held') {
+                return undefined;
+            }
+            return transport.webAudioRollingSince();
+        };
+
+        beforeEach(() => {
+            audioClock.currentTime = 0;
+            transportState = {
+                ...defaultTransportState,
+                isPlaying: false,
+                playheadPosition: 0,
+                preRollEnabled: false,
+            };
+            vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
+            vi.mocked(getTransportState).mockImplementation(() => transportState);
+            vi.mocked(updateTransportState).mockImplementation((patch) => {
+                transportState = { ...transportState, ...patch };
+            });
+        });
+
+        it('does not start the scheduler until the native session has answered', async () => {
+            audioClock.currentTime = 3.25;
+            let rollingSinceAtRoll: number | null | undefined = 0;
+            vi.mocked(startNativeLiveGraphSession).mockImplementation(async () => {
+                // Where the real session reads the hold: once, at the end of its
+                // own round trips, immediately before it rolls.
+                await Promise.resolve();
+                rollingSinceAtRoll = webAudioRollingSince();
+                return { outcome: 'started', runtimeRevision: 1, reports: [] };
+            });
+
+            startPlayback();
+
+            expect(startPlayheadScheduler).not.toHaveBeenCalled();
+            await drainHold();
+            expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+            // The hold stood for the whole start, so the roll happened where
+            // play asked and had nothing to catch up to. A release written
+            // before the wait would read 3.25 here and seek the engine past
+            // material Web Audio never sounded.
+            expect(rollingSinceAtRoll).toBeNull();
+        });
+
+        it('starts the scheduler once when the native session fails, so a dead addon cannot silence play', async () => {
+            vi.mocked(startNativeLiveGraphSession).mockRejectedValue(new Error('addon crashed'));
+
+            startPlayback();
+
+            await drainHold();
+            expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+        });
+
+        it('leaves the transport alone when the play it was holding for has already ended', async () => {
+            audioClock.currentTime = 3.25;
+            let answer = (): void => {};
+            vi.mocked(startNativeLiveGraphSession).mockReturnValue(
+                new Promise((resolve) => {
+                    answer = (): void => {
+                        resolve({ outcome: 'started', runtimeRevision: 1, reports: [] });
+                    };
+                })
+            );
+
+            startPlayback();
+            // What a stop, pause, seek-while-playing or dispose does inside the
+            // hold: each bumps the scheduler generation. `isPlaying` would not
+            // catch this — it is shared by every play, so a stop and a second
+            // play inside the hold leave it true and this continuation would
+            // re-snap the new play's scheduler.
+            schedulerSession.generation += 1;
+            answer();
+
+            await drainHold();
+            expect(startPlayheadScheduler).not.toHaveBeenCalled();
+            // And the session is still owed a roll at the beat play asked for.
+            // A release written before the guard would answer 3.25 here, and
+            // the engine would seek there for a transport that never opened.
+            expect(webAudioRollingSince()).toBeNull();
+        });
+
+        it('leaves a transport paused inside the hold alone, before the pause has bumped the generation', async () => {
+            audioClock.currentTime = 3.25;
+            let answer = (): void => {};
+            vi.mocked(startNativeLiveGraphSession).mockReturnValue(
+                new Promise((resolve) => {
+                    answer = (): void => {
+                        resolve({ outcome: 'started', runtimeRevision: 1, reports: [] });
+                    };
+                })
+            );
+
+            void startPlayback();
+            // What `pausePlayback` does inside the hold while recording: it
+            // commits `isPlaying: false` straight away and only bumps the
+            // generation behind its recording flush, so the wait can end
+            // carrying the generation it opened on. Starting the scheduler here
+            // would roll a paused transport.
+            transportState = { ...transportState, isPlaying: false };
+            answer();
+
+            await drainHold();
+            expect(startPlayheadScheduler).not.toHaveBeenCalled();
+            // Same duty under the pause: nothing was released, so the session
+            // still rolls where play asked rather than projecting past material
+            // a paused Web Audio never sounded.
+            expect(webAudioRollingSince()).toBeNull();
+        });
+
+        it('gives up on the native session after the hold cap rather than never starting', async () => {
+            vi.useFakeTimers();
+            audioClock.currentTime = 3.25;
+            let answer = (): void => {};
+            vi.mocked(startNativeLiveGraphSession).mockReturnValue(
+                new Promise((resolve) => {
+                    answer = (): void => {
+                        resolve({ outcome: 'started', runtimeRevision: 1, reports: [] });
+                    };
+                })
+            );
+
+            try {
+                void startPlayback();
+
+                // The cap is what releases the wait here — the session never
+                // answers — so the hold has to still be holding one millisecond
+                // short of it.
+                await vi.advanceTimersByTimeAsync(249);
+                expect(startPlayheadScheduler).not.toHaveBeenCalled();
+                // And the session, asked now, would still roll where play asked.
+                expect(webAudioRollingSince()).toBeNull();
+
+                await vi.advanceTimersByTimeAsync(1);
+                expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+                // Web Audio is rolling from 3.25 now, so the session — still
+                // starting, since it has not answered — has to project its roll
+                // from there. Left unsaid, the engine would roll at the parked
+                // position a cap behind a transport nobody stopped.
+                expect(webAudioRollingSince()).toBe(3.25);
+
+                // The session answering after the cap has nothing left to start:
+                // the transport is already rolling on the fallback.
+                answer();
+                await vi.advanceTimersByTimeAsync(250);
+                expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it('retires the scheduler session a pause left ticking the moment Play is pressed', async () => {
+            let answer = (): void => {};
+            vi.mocked(startNativeLiveGraphSession).mockReturnValue(
+                new Promise((resolve) => {
+                    answer = (): void => {
+                        resolve({ outcome: 'started', runtimeRevision: 1, reports: [] });
+                    };
+                })
+            );
+            // A pause whose teardown is still queued behind its recording flush
+            // leaves this session's worker posting ticks, and the flush's
+            // continuation stands down once Play flips `isPlaying` back. Only
+            // the generation retires those ticks, and it has to happen before
+            // the hold, not after it.
+            const pausedGeneration = schedulerSession.generation;
+
+            void startPlayback();
+
+            expect(schedulerSession.generation).toBeGreaterThan(pausedGeneration);
+
+            answer();
+            await drainHold();
+            expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+        });
+
+        it('starts the scheduler synchronously on a browser build, which is offered no session to wait for', () => {
+            vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(false);
+
+            startPlayback();
+
+            expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+            expect(startNativeLiveGraphSession).not.toHaveBeenCalled();
+        });
     });
 });

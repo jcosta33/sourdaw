@@ -7,15 +7,26 @@ import {
 
 /**
  * A self-imposed ceiling on the neural library's IndexedDB footprint. Each
- * imported entry carries the full 1–50 MB NAM JSON source text, so a few large
- * captures can blow whatever the origin is actually granted, mid-write, and
+ * imported entry carries the full NAM JSON source text, so unbounded growth
+ * would eventually blow what the origin is actually granted, mid-write, and
  * corrupt the whole `entries` record. Refuse up front with a distinct quota
  * error rather than letting the transaction fail opaquely.
  *
- * The figure was originally Safari's ungranted per-origin cap. Chromium grants
- * far more, so this is now a conservative budget rather than an engine limit.
+ * The figure is sized by the constraints that actually bind, in descending
+ * order:
+ *
+ * 1. Chromium (browser and Electron — the only targets) has no per-origin
+ *    IndexedDB cap; its quota is disk-based (a majority-share of free disk),
+ *    so storage grants gigabytes and is not the binding constraint.
+ * 2. The whole library persists as one IndexedDB record and is re-read into
+ *    the JS heap as UTF-16 strings at session start, so the budget also caps
+ *    session-start memory and the single-record write time on the main thread.
+ * 3. Product judgment: standard NAM captures are sub-megabyte on disk (tens to
+ *    a few hundred KB of JSON weights), so 256 MB holds several hundred
+ *    captures — beyond a working rig's collection — while still refusing
+ *    runaway imports.
  */
-const NEURAL_LIBRARY_BYTE_BUDGET = 45 * 1024 * 1024;
+export const NEURAL_LIBRARY_BYTE_BUDGET = 256 * 1024 * 1024;
 
 function measure_source_bytes(entries: readonly GrinderImportedNeuralModel[]): number {
     let total = 0;

@@ -158,4 +158,85 @@ describe('reconcileScannedRoot', () => {
         expect(mocks.removeSamples).toHaveBeenNthCalledWith(2, ['s1']);
         expect(mocks.addSamples).toHaveBeenCalledWith([fresh]);
     });
+
+    it('preserves favorite flag and user tags when replacing a sample whose mtime changed', () => {
+        const stored = createSample({
+            id: 's1',
+            libraryRootId: 'root-1',
+            favorite: true,
+            tags: ['kick', 'favorite-drums'],
+            sync: { exists: true, status: 'indexed', mtimeMs: 100 },
+        });
+        const fresh = createSample({
+            id: 's1',
+            libraryRootId: 'root-1',
+            favorite: false,
+            tags: [],
+            sync: { exists: true, status: 'discovered', mtimeMs: 200 },
+        });
+        seedSamples([stored]);
+
+        reconcileScannedRoot('root-1', new Map([['s1', fresh]]), true);
+
+        expect(mocks.removeSamples).toHaveBeenCalledWith(['s1']);
+        expect(mocks.addSamples).toHaveBeenCalledWith([
+            expect.objectContaining({
+                id: 's1',
+                favorite: true,
+                tags: ['kick', 'favorite-drums'],
+                sync: expect.objectContaining({ mtimeMs: 200 }),
+            }),
+        ]);
+    });
+
+    it('preserves favorite: false when replacing an unfavorited sample whose mtime changed', () => {
+        const stored = createSample({
+            id: 's1',
+            libraryRootId: 'root-1',
+            favorite: false,
+            tags: ['snare'],
+            sync: { exists: true, status: 'indexed', mtimeMs: 100 },
+        });
+        const fresh = createSample({
+            id: 's1',
+            libraryRootId: 'root-1',
+            favorite: false,
+            tags: [],
+            sync: { exists: true, status: 'discovered', mtimeMs: 200 },
+        });
+        seedSamples([stored]);
+
+        reconcileScannedRoot('root-1', new Map([['s1', fresh]]), true);
+
+        expect(mocks.removeSamples).toHaveBeenCalledWith(['s1']);
+        expect(mocks.addSamples).toHaveBeenCalledWith([
+            expect.objectContaining({
+                id: 's1',
+                favorite: false,
+                tags: ['snare'],
+                sync: expect.objectContaining({ mtimeMs: 200 }),
+            }),
+        ]);
+    });
+
+    it('retains favorite when mtime is unchanged', () => {
+        const stored = createSample({
+            id: 's1',
+            libraryRootId: 'root-1',
+            favorite: true,
+            sync: { exists: true, status: 'indexed', mtimeMs: 100 },
+        });
+        const fresh = createSample({
+            id: 's1',
+            libraryRootId: 'root-1',
+            favorite: false,
+            sync: { exists: true, status: 'discovered', mtimeMs: 100 },
+        });
+        seedSamples([stored]);
+
+        reconcileScannedRoot('root-1', new Map([['s1', fresh]]), true);
+
+        expect(mocks.removeSamples).not.toHaveBeenCalled();
+        expect(mocks.addSamples).not.toHaveBeenCalled();
+    });
 });

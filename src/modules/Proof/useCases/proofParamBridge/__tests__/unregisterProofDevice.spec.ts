@@ -10,9 +10,13 @@ import { bridges, type ProofAudioBridge } from '../helpers';
 import { registerProofDevice } from '../registerProofDevice';
 import { unregisterProofDevice } from '../unregisterProofDevice';
 
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    updateDeviceParam: vi.fn(),
+    updateDevicePatch: vi.fn(),
+}));
+
 function makeBridge(): ProofAudioBridge {
     return {
-        setParam: vi.fn(),
         reorderModules: vi.fn(),
         resetIntegrated: vi.fn(),
     };

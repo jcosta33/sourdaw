@@ -10,6 +10,8 @@ type MidiGenerationSourceGuard = {
         startBeat: number;
         endBeat: number;
         type: string;
+        /** Material-coordinate origin of the visible window; placement math needs it. */
+        midiOffsetBeats?: number;
     };
     trackId: string;
     notes: MidiNote[];
@@ -47,6 +49,7 @@ export function createMidiGenerationSourceGuard(clipId: string): MidiGenerationS
         startBeat: clip.startBeat,
         endBeat: clip.endBeat,
         type: clip.type,
+        midiOffsetBeats: clip.midiOffsetBeats,
     };
     const noteSnapshot = getNotesForClip(clipId).map((note) => ({ ...note }));
 

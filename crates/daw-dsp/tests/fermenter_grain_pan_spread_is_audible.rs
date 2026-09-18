@@ -76,7 +76,13 @@ const ENGINES_WITH_THEIR_OWN_BRANCH: [f32; 3] = [3.0, 5.0, 6.0];
 /// Engines with no branch of their own above the unison test, so they render
 /// the `UnisonOsc` bank — which is genuinely stereo — as soon as the voice count
 /// rises. They are mono only at one voice.
-const ENGINES_THAT_FALL_THROUGH_TO_UNISON: [f32; 3] = [0.0, 1.0, 2.0];
+///
+/// FM (2) is deliberately absent since #3713: the bank owns WavetableOsc
+/// voices, so a retained unison count must not capture the FM render — FM
+/// falls through to its own mono branch at every voice count now, and the
+/// assertions that used to pin the old fall-through live in
+/// `Voice::render`'s own test module.
+const ENGINES_THAT_FALL_THROUGH_TO_UNISON: [f32; 2] = [0.0, 1.0];
 /// One voice, and a bank. The second is not decoration: under the old
 /// `has_unison` gate, an engine with its own branch *and* a raised voice count
 /// took the balance path, and with the quantize warp engaged that panned a
@@ -516,8 +522,9 @@ fn every_mono_engine_stays_centred() {
         }
     }
 
-    // These three have no branch above the unison test, so above one voice they
-    // *are* the unison bank and are legitimately stereo — see the test below.
+    // These engines have no branch above the unison test, so above one voice
+    // they *are* the unison bank and are legitimately stereo — see the test
+    // below. FM's one-voice centred state is covered directly further down.
     for engine in ENGINES_THAT_FALL_THROUGH_TO_UNISON {
         for (warp_mode, warp_amount) in [NO_WARP, QUANTIZE] {
             assert_centred(Probe {
@@ -530,6 +537,20 @@ fn every_mono_engine_stays_centred() {
                 cloud: DEFAULT_CLOUD,
             });
         }
+    }
+
+    // FM renders its own mono branch at every voice count since #3713 — a
+    // retained unison count must not reach the bank, centred or otherwise.
+    for (warp_mode, warp_amount) in [NO_WARP, QUANTIZE] {
+        assert_centred(Probe {
+            engine: 2.0,
+            spread: 1.0,
+            unison_voices: 7.0,
+            unison_detune: UNISON_DETUNE_CENTS,
+            warp_mode,
+            warp_amount,
+            cloud: DEFAULT_CLOUD,
+        });
     }
 }
 

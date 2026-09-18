@@ -459,9 +459,33 @@ describe('mix prompt workflow', () => {
         expect(providerRequest).toContain('track-drum-bus');
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(confirmation?.actions).toEqual([
-            { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 0.7, expectedGain: 1 } },
-            { type: 'setTrackPan', payload: { trackId: 'track-guitar-left', pan: -20, expectedPan: 0 } },
-            { type: 'setTrackPan', payload: { trackId: 'track-guitar-right', pan: 20, expectedPan: 0 } },
+            {
+                type: 'setTrackGain',
+                payload: {
+                    trackId: 'track-lead-vocal',
+                    gain: 0.7,
+                    expectedGain: 1,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            },
+            {
+                type: 'setTrackPan',
+                payload: {
+                    trackId: 'track-guitar-left',
+                    pan: -20,
+                    expectedPan: 0,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            },
+            {
+                type: 'setTrackPan',
+                payload: {
+                    trackId: 'track-guitar-right',
+                    pan: 20,
+                    expectedPan: 0,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            },
             { type: 'muteTrack', payload: { trackId: 'track-room-mic', muted: true, expectedMuted: false } },
         ]);
         expect(confirmation).toMatchObject({
@@ -543,9 +567,33 @@ describe('mix prompt workflow', () => {
         expect(providerRequest).toContain('track-drum-bus');
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(confirmation?.actions).toEqual([
-            { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 0.7, expectedGain: 1 } },
-            { type: 'setTrackPan', payload: { trackId: 'track-guitar-left', pan: -20, expectedPan: 0 } },
-            { type: 'setTrackPan', payload: { trackId: 'track-guitar-right', pan: 20, expectedPan: 0 } },
+            {
+                type: 'setTrackGain',
+                payload: {
+                    trackId: 'track-lead-vocal',
+                    gain: 0.7,
+                    expectedGain: 1,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            },
+            {
+                type: 'setTrackPan',
+                payload: {
+                    trackId: 'track-guitar-left',
+                    pan: -20,
+                    expectedPan: 0,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            },
+            {
+                type: 'setTrackPan',
+                payload: {
+                    trackId: 'track-guitar-right',
+                    pan: 20,
+                    expectedPan: 0,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            },
             { type: 'muteTrack', payload: { trackId: 'track-room-mic', muted: true, expectedMuted: false } },
         ]);
 

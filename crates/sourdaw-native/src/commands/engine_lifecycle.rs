@@ -889,7 +889,7 @@ mod tests {
         let mut registered_capture_consumers = 0;
         while let Ok(command) = replacement_commands.pop() {
             match command {
-                GraphCommand::AddPlugin(..) => added_plugins += 1,
+                GraphCommand::AddHostedPlugin(..) => added_plugins += 1,
                 GraphCommand::RegisterCaptureConsumer(_) => registered_capture_consumers += 1,
                 _ => {}
             }

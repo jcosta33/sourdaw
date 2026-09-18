@@ -305,7 +305,7 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
     };
 
     const handlePromote = (take: Take): void => {
-        selectTake(trackId, take.id);
+        void selectTake(trackId, take.id);
     };
 
     return (

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
+use symphonia::core::codecs::audio::well_known::CODEC_ID_FLAC;
 use symphonia::core::codecs::audio::AudioDecoderOptions;
 use symphonia::core::codecs::CodecParameters;
 use symphonia::core::errors::Error as SymphoniaError;
@@ -131,7 +132,6 @@ fn decode_from_stream<A: PacketAccumulator>(
     let hint = Hint::new();
     let format_opts = FormatOptions::default();
     let metadata_opts = MetadataOptions::default();
-    let decoder_opts = AudioDecoderOptions::default();
 
     let mut format_reader = symphonia::default::get_probe()
         .probe(&hint, mss, format_opts, metadata_opts)
@@ -159,8 +159,27 @@ fn decode_from_stream<A: PacketAccumulator>(
     // nothing — would otherwise smear the stream across the wrong lanes with
     // nothing reported. The layout count comes from each decoded packet
     // instead.
+    //
+    // That per-packet spec is also the boundary of an upstream symphonia
+    // defect: a frame that renders fewer channels than its buffer declares — a
+    // FLAC frame whose header under-declares against STREAMINFO, or an AAC
+    // packet synthesizing fewer channel pairs than the declared configuration —
+    // still reports the full declared spec while its surplus planes carry the
+    // previous packet's samples, so malformed FLAC-in-container or crafted
+    // ADTS AAC input yields stale lanes on decode success. No released
+    // symphonia (0.5.4–0.6.1, including `main`) rejects this; the channel-count
+    // inequality check exists only on the diverged `master` branch (PR #419,
+    // unreleased). FLAC is caught after the fact by end-of-stream MD5
+    // verification (enabled below — the validator hashes every declared plane,
+    // so stale planes poison the hash); AAC has no equivalent check.
     channel_count(audio_params)?;
     let track_id = track.id;
+
+    // Verify is enabled for FLAC alone: `verify_ok` is only ever decided by
+    // the FLAC decoder's end-of-stream MD5 check, and every other decoder's
+    // finalize reports nothing.
+    let is_flac = audio_params.codec == CODEC_ID_FLAC;
+    let decoder_opts = AudioDecoderOptions::default().verify(is_flac);
 
     let mut decoder = symphonia::default::get_codecs()
         .make_audio_decoder(audio_params, &decoder_opts)
@@ -190,6 +209,20 @@ fn decode_from_stream<A: PacketAccumulator>(
             }
         });
         append_decoded_packet(decoded, &mut accumulator, &mut diagnostics)?;
+    }
+
+    // MD5 verification reports only at end of stream: by the time it fails,
+    // every plane — stale ones included — has already been accumulated lane by
+    // lane, and nothing marks which frames lied. The decode is rejected
+    // outright rather than deliver audio that is not a faithful decode,
+    // matching the other stream-contradicts-itself failures above.
+    let finalization = decoder.finalize();
+    if is_flac && finalization.verify_ok == Some(false) {
+        return Err(
+            "FLAC stream failed MD5 verification: the decoded audio does not match the \
+             checksum declared in the file"
+                .to_string(),
+        );
     }
 
     Ok(DecodedStream {
@@ -406,7 +439,12 @@ mod tests {
     use super::*;
     use std::io::{Error as IoError, ErrorKind};
     use symphonia::core::audio::Channels;
-    use symphonia::core::codecs::audio::AudioCodecParameters;
+    use symphonia::core::checksum::{Crc16Ansi, Crc8Ccitt, Md5};
+    use symphonia::core::codecs::audio::well_known::CODEC_ID_FLAC;
+    use symphonia::core::codecs::audio::{AudioCodecParameters, AudioDecoder, VerificationCheck};
+    use symphonia::core::io::Monitor;
+    use symphonia::core::packet::Packet;
+    use symphonia::core::units::{Duration, Timestamp};
 
     /// A complete single-channel 16-bit PCM WAV carrying `samples`.
     ///
@@ -438,7 +476,10 @@ mod tests {
         pcm_wav(sample_rate, &[0])
     }
 
-    /// Big-endian bit writer, for the one fixture whose payload is a bitstream.
+    /// Big-endian bit writer, for the fixtures whose payloads are bitstreams.
+    ///
+    /// Values are u64 because FLAC's STREAMINFO carries a 36-bit field, wider
+    /// than any single primitive integer write.
     #[derive(Default)]
     struct BitWriter {
         bytes: Vec<u8>,
@@ -446,7 +487,7 @@ mod tests {
     }
 
     impl BitWriter {
-        fn write(&mut self, value: u32, bits: u32) {
+        fn write(&mut self, value: u64, bits: u32) {
             for index in (0..bits).rev() {
                 if self.free_bits == 0 {
                     self.bytes.push(0);
@@ -473,7 +514,7 @@ mod tests {
         writer.write(0, 2); // No sample shift.
         writer.write(1, 1); // Uncompressed.
         for sample in samples {
-            writer.write(*sample as u16 as u32, 16);
+            writer.write(u64::from(*sample as u16), 16);
         }
         writer.bytes
     }
@@ -821,6 +862,469 @@ mod tests {
             assert_eq!(audio.samples, expected);
             assert_eq!(audio.duration_seconds, 8.0 / 48_000.0);
         }
+    }
+
+    // Symphonia's FLAC stale-plane defect (issue #2010): a FLAC frame whose
+    // header declares fewer channels than STREAMINFO decodes Ok while the
+    // surplus planes keep the previous packet's samples. No released symphonia
+    // rejects the frame, so these fixtures craft one by hand and pin both the
+    // defect (at the decoder API, as upstream evidence) and this module's
+    // end-of-stream MD5 verification against it.
+
+    const FLAC_SAMPLE_RATE: u32 = 48_000;
+    // FLAC's spec floor for STREAMINFO block sizes is 16, and both block-size
+    // fields encode (size - 1); 16 is the smallest stream symphonia validates.
+    const FLAC_BLOCK_SIZE: u32 = 16;
+    const FLAC_CHANNELS: u32 = 2;
+    const FLAC_BITS_PER_SAMPLE_16: u32 = 16;
+    const FLAC_BITS_PER_SAMPLE_32: u32 = 32;
+
+    // One distinct constant per frame per channel: a stale surplus plane is
+    // recognizable by carrying the *previous* frame's constant. These are for
+    // the 32-bit decoder-level repro, whose stale plane is exact (see below),
+    // and each has <= 24 significant bits so the f32 expectation is exact.
+    const FRAME_A_LEFT_32: i32 = 0x3000_0000;
+    const FRAME_A_RIGHT_32: i32 = -0x3000_0000;
+    const FRAME_B_LEFT_32: i32 = 0x5000_0000;
+    const FRAME_B_RIGHT_32: i32 = -0x5000_0000;
+
+    // A wrong-but-non-zero MD5: an all-zero STREAMINFO MD5 means "unverified"
+    // and symphonia skips the check entirely, so detection needs a real digest.
+    const WRONG_MD5: [u8; 16] = [0xAA; 16];
+
+    /// The samples whose MD5 an *honest* two-frame stereo stream hashes to:
+    /// every channel interleaved per frame, little-endian 16-bit, exactly what
+    /// symphonia's FLAC validator hashes.
+    fn honest_stereo_stream_16bit() -> Vec<i16> {
+        let mut samples = Vec::new();
+        for _ in 0..FLAC_BLOCK_SIZE {
+            samples.push(1_000i16);
+            samples.push(-1_000i16);
+        }
+        for _ in 0..FLAC_BLOCK_SIZE {
+            samples.push(2_000i16);
+            samples.push(-2_000i16);
+        }
+        samples
+    }
+
+    /// The 32-bit counterpart of `honest_stereo_stream_16bit`, for the
+    /// decoder-level repro.
+    fn honest_stereo_stream_32bit() -> Vec<i32> {
+        let mut samples = Vec::new();
+        for _ in 0..FLAC_BLOCK_SIZE {
+            samples.push(FRAME_A_LEFT_32);
+            samples.push(FRAME_A_RIGHT_32);
+        }
+        for _ in 0..FLAC_BLOCK_SIZE {
+            samples.push(FRAME_B_LEFT_32);
+            samples.push(FRAME_B_RIGHT_32);
+        }
+        samples
+    }
+
+    /// The f32 lanes symphonia's decoder hands back for 16-bit samples: the
+    /// decoder shifts them to 32 bits, then scales by 2^-31.
+    fn f32_samples_16bit(samples: &[i16]) -> Vec<f32> {
+        samples
+            .iter()
+            .map(|sample| f32::from(*sample) / 32_768.0)
+            .collect()
+    }
+
+    /// Symphonia converts 32-bit-in-i32 samples through f64 scaled by 2^-31
+    /// (symphonia-core conv.rs); mirroring it keeps the expectation exact.
+    fn f32_samples_32bit(samples: &[i32]) -> Vec<f32> {
+        samples
+            .iter()
+            .map(|s| (f64::from(*s) / 2_147_483_648.0) as f32)
+            .collect()
+    }
+
+    /// `pattern` repeated `times` times — what one CONSTANT subframe contributes.
+    fn repeated(pattern: &[f32], times: u32) -> Vec<f32> {
+        pattern.repeat(times as usize)
+    }
+
+    /// MD5 over interleaved little-endian samples, as FLAC records in STREAMINFO.
+    fn flac_md5_16bit(samples: &[i16]) -> [u8; 16] {
+        let mut bytes = Vec::new();
+        for sample in samples {
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        let mut md5 = Md5::default();
+        md5.process_buf_bytes(&bytes);
+        md5.md5()
+    }
+
+    /// The 32-bit counterpart of `flac_md5_16bit`.
+    fn flac_md5_32bit(samples: &[i32]) -> [u8; 16] {
+        let mut bytes = Vec::new();
+        for sample in samples {
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        let mut md5 = Md5::default();
+        md5.process_buf_bytes(&bytes);
+        md5.md5()
+    }
+
+    /// A FLAC STREAMINFO body: two channels at 48 kHz of `bits_per_sample`
+    /// width, `total_frames` samples in block-size 16 blocks, carrying `md5`
+    /// (all-zero = unverified).
+    fn flac_stream_info(total_frames: u32, bits_per_sample: u32, md5: [u8; 16]) -> Vec<u8> {
+        let mut writer = BitWriter::default();
+        writer.write(u64::from(FLAC_BLOCK_SIZE), 16); // Minimum block size.
+        writer.write(u64::from(FLAC_BLOCK_SIZE), 16); // Maximum block size.
+        writer.write(0, 24); // Minimum frame size: unknown.
+        writer.write(0, 24); // Maximum frame size: unknown.
+        writer.write(u64::from(FLAC_SAMPLE_RATE), 20);
+        writer.write(u64::from(FLAC_CHANNELS - 1), 3);
+        writer.write(u64::from(bits_per_sample - 1), 5); // Bits per sample, minus one.
+        writer.write(u64::from(total_frames), 36);
+        let mut info = writer.bytes;
+        // The sample-rate/channel/bps/total fields pack to exactly 8 bytes, so
+        // the MD5 lands on a byte boundary.
+        info.extend_from_slice(&md5);
+        info
+    }
+
+    /// One FLAC frame with an `Independant(channels)` assignment and one
+    /// CONSTANT subframe per declared channel, each holding one constant for
+    /// the whole block.
+    ///
+    /// The header CRC-8 is verified unconditionally by symphonia and the frame
+    /// CRC-16 by its demuxer's packet parser, so both are computed with
+    /// symphonia's own checksum primitives — the fixture must be a
+    /// self-consistent file whose only lie is the channel count.
+    fn flac_frame(
+        channels: u32,
+        frame_number: u32,
+        bits_per_sample: u32,
+        constants: &[i32],
+    ) -> Vec<u8> {
+        assert_eq!(
+            usize::try_from(channels).as_ref(),
+            Ok(&constants.len()),
+            "one CONSTANT subframe per declared channel"
+        );
+
+        let mut writer = BitWriter::default();
+        writer.write(0b1111_1111_1111_10, 14); // Frame sync.
+        writer.write(0, 1); // Reserved.
+        writer.write(0, 1); // Fixed block size: the header codes a frame number.
+        writer.write(0b0110, 4); // Block size: an 8-bit (size - 1) field follows.
+        writer.write(0b0000, 4); // Sample rate: from STREAMINFO.
+        writer.write(u64::from(channels - 1), 4); // Channel assignment: N independent channels.
+        writer.write(0b0000, 3); // Sample size: from STREAMINFO.
+        writer.write(0, 1); // Reserved.
+        writer.write(u64::from(frame_number), 8); // UTF-8 coded frame number (< 128).
+        writer.write(u64::from(FLAC_BLOCK_SIZE - 1), 8); // Block size, minus one.
+
+        let mut crc8 = Crc8Ccitt::new(0);
+        crc8.process_buf_bytes(&writer.bytes);
+        writer.write(u64::from(crc8.crc()), 8);
+
+        for constant in constants {
+            writer.write(0, 1); // Subframe padding bit.
+            writer.write(0b000000, 6); // CONSTANT subframe type.
+            writer.write(0, 1); // No wasted bits.
+                                // Two's-complement constant: the low `bits_per_sample` bits.
+            writer.write(u64::from(*constant as u32), bits_per_sample);
+        }
+
+        let mut crc16 = Crc16Ansi::new(0);
+        crc16.process_buf_bytes(&writer.bytes);
+        let frame_crc16 = crc16.crc();
+        writer.write(u64::from(frame_crc16 >> 8), 8);
+        writer.write(u64::from(frame_crc16 & 0xFF), 8);
+
+        writer.bytes
+    }
+
+    /// A complete native FLAC file: `fLaC` magic, a final STREAMINFO metadata
+    /// block, then `frames` verbatim.
+    fn flac_file(
+        total_frames: u32,
+        bits_per_sample: u32,
+        md5: [u8; 16],
+        frames: &[Vec<u8>],
+    ) -> Vec<u8> {
+        let stream_info = flac_stream_info(total_frames, bits_per_sample, md5);
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"fLaC");
+        bytes.push(0x80); // Last metadata block, of type STREAMINFO.
+        bytes.extend_from_slice(&[
+            (stream_info.len() >> 16) as u8,
+            (stream_info.len() >> 8) as u8,
+            stream_info.len() as u8,
+        ]);
+        bytes.extend_from_slice(&stream_info);
+        for frame in frames {
+            bytes.extend_from_slice(frame);
+        }
+        bytes
+    }
+
+    /// A FLAC decoder constructed exactly as `decode_from_stream` constructs
+    /// it, fed crafted STREAMINFO instead of a demuxer's.
+    fn flac_decoder(
+        total_frames: u32,
+        bits_per_sample: u32,
+        md5: [u8; 16],
+        verify: bool,
+    ) -> Box<dyn AudioDecoder> {
+        let mut params = AudioCodecParameters::new();
+        params.codec = CODEC_ID_FLAC;
+        let extra = flac_stream_info(total_frames, bits_per_sample, md5);
+        params.extra_data = Some(extra.into_boxed_slice());
+        params.verification_check = Some(VerificationCheck::Md5(md5));
+
+        symphonia::default::get_codecs()
+            .make_audio_decoder(&params, &AudioDecoderOptions::default().verify(verify))
+            .expect("the FLAC decoder must construct from the crafted STREAMINFO")
+    }
+
+    /// Decode one crafted frame, returning the spec's channel count and the
+    /// interleaved f32 the buffer copies out — the same two observables
+    /// `decode_from_stream` consumes per packet.
+    fn decode_flac_frame(decoder: &mut dyn AudioDecoder, frame: &[u8]) -> (u32, Vec<f32>) {
+        let packet = Packet::new(0, Timestamp::ZERO, Duration::default(), frame.to_vec());
+        let decoded = decoder
+            .decode(&packet)
+            .expect("the crafted frame must decode");
+        let channels = decoded.spec().channels().count() as u32;
+        let mut interleaved = Vec::new();
+        decoded.copy_to_vec_interleaved(&mut interleaved);
+        (channels, interleaved)
+    }
+
+    /// The stale-plane defect, demonstrated at the decoder API with the same
+    /// construction `decode_from_stream` uses: the second frame declares one
+    /// channel against a two-channel buffer. Nothing rejects it, and the
+    /// surplus plane still carries the first frame's right channel — so
+    /// `copy_to_vec_interleaved` hands the caller previous-packet samples as
+    /// brand-new audio, on decode success, with the spec still reporting the
+    /// full two channels.
+    ///
+    /// The stream is 32-bit because the decoder re-runs its per-packet
+    /// `sample << (32 - bps)` shift over untouched planes: at 16 bits that
+    /// re-shift zeroes stale content by the next packet (still fabricated data
+    /// — silence the stream never encoded — but no longer recognizable as the
+    /// previous packet), while at 32 bits the shift is a no-op and the stale
+    /// samples survive verbatim.
+    #[test]
+    fn an_under_declared_flac_frame_reuses_the_previous_packets_plane_on_decode_success() {
+        let mut decoder = flac_decoder(
+            2 * FLAC_BLOCK_SIZE,
+            FLAC_BITS_PER_SAMPLE_32,
+            flac_md5_32bit(&honest_stereo_stream_32bit()),
+            false,
+        );
+
+        let (first_channels, first) = decode_flac_frame(
+            &mut *decoder,
+            &flac_frame(
+                FLAC_CHANNELS,
+                0,
+                FLAC_BITS_PER_SAMPLE_32,
+                &[FRAME_A_LEFT_32, FRAME_A_RIGHT_32],
+            ),
+        );
+        assert_eq!(first_channels, FLAC_CHANNELS);
+        assert_eq!(
+            first,
+            repeated(
+                &f32_samples_32bit(&[FRAME_A_LEFT_32, FRAME_A_RIGHT_32]),
+                FLAC_BLOCK_SIZE
+            )
+        );
+
+        let (second_channels, second) = decode_flac_frame(
+            &mut *decoder,
+            &flac_frame(1, 1, FLAC_BITS_PER_SAMPLE_32, &[FRAME_B_LEFT_32]),
+        );
+
+        assert_eq!(
+            second_channels, FLAC_CHANNELS,
+            "the buffer's spec still claims every declared channel"
+        );
+        assert_eq!(
+            second,
+            repeated(
+                &f32_samples_32bit(&[FRAME_B_LEFT_32, FRAME_A_RIGHT_32]),
+                FLAC_BLOCK_SIZE,
+            ),
+            "the surplus plane decodes Ok while carrying the previous packet's right channel"
+        );
+
+        let first_right: Vec<f32> = first.chunks_exact(2).map(|frame| frame[1]).collect();
+        let second_right: Vec<f32> = second.chunks_exact(2).map(|frame| frame[1]).collect();
+        assert_eq!(
+            second_right, first_right,
+            "the right lane of the second packet equals the right lane of the first"
+        );
+    }
+
+    /// End-of-stream MD5 verification is the only check that catches the stale
+    /// plane: the validator hashes every *declared* plane, so the stale right
+    /// channel poisons the hash. Detection is at finalize — both packets
+    /// already decoded Ok, and the stale audio was already handed out.
+    #[test]
+    fn flac_md5_verification_reports_the_stale_plane_at_finalize() {
+        let mut decoder = flac_decoder(
+            2 * FLAC_BLOCK_SIZE,
+            FLAC_BITS_PER_SAMPLE_32,
+            flac_md5_32bit(&honest_stereo_stream_32bit()),
+            true,
+        );
+
+        decode_flac_frame(
+            &mut *decoder,
+            &flac_frame(
+                FLAC_CHANNELS,
+                0,
+                FLAC_BITS_PER_SAMPLE_32,
+                &[FRAME_A_LEFT_32, FRAME_A_RIGHT_32],
+            ),
+        );
+        let (_, second) = decode_flac_frame(
+            &mut *decoder,
+            &flac_frame(1, 1, FLAC_BITS_PER_SAMPLE_32, &[FRAME_B_LEFT_32]),
+        );
+
+        assert_eq!(
+            second,
+            repeated(
+                &f32_samples_32bit(&[FRAME_B_LEFT_32, FRAME_A_RIGHT_32]),
+                FLAC_BLOCK_SIZE,
+            ),
+            "verification changes nothing per packet: the stale plane is still handed out"
+        );
+
+        assert_eq!(
+            decoder.finalize().verify_ok,
+            Some(false),
+            "the poisoned hash must surface at finalize"
+        );
+    }
+
+    /// The discriminating control for the fixture machinery itself: an honest
+    /// stream — both frames stereo, MD5 computed over the true samples — must
+    /// verify Ok, so the `Some(false)` above is caused by the stale plane and
+    /// not by the crafted container.
+    #[test]
+    fn an_honest_flac_stream_passes_md5_verification() {
+        let mut decoder = flac_decoder(
+            2 * FLAC_BLOCK_SIZE,
+            FLAC_BITS_PER_SAMPLE_32,
+            flac_md5_32bit(&honest_stereo_stream_32bit()),
+            true,
+        );
+
+        decode_flac_frame(
+            &mut *decoder,
+            &flac_frame(
+                FLAC_CHANNELS,
+                0,
+                FLAC_BITS_PER_SAMPLE_32,
+                &[FRAME_A_LEFT_32, FRAME_A_RIGHT_32],
+            ),
+        );
+        decode_flac_frame(
+            &mut *decoder,
+            &flac_frame(
+                FLAC_CHANNELS,
+                1,
+                FLAC_BITS_PER_SAMPLE_32,
+                &[FRAME_B_LEFT_32, FRAME_B_RIGHT_32],
+            ),
+        );
+
+        assert_eq!(decoder.finalize().verify_ok, Some(true));
+    }
+
+    /// The mitigation's contract: a FLAC stream whose decoded audio misses the
+    /// MD5 declared in its own STREAMINFO is not a faithful decode and is
+    /// rejected outright — the accumulated lanes may already contain stale
+    /// planes, and no honest subset can be identified to salvage.
+    #[test]
+    fn a_flac_stream_that_fails_md5_verification_is_rejected() {
+        let frames = [
+            flac_frame(FLAC_CHANNELS, 0, FLAC_BITS_PER_SAMPLE_16, &[1_000, -1_000]),
+            flac_frame(FLAC_CHANNELS, 1, FLAC_BITS_PER_SAMPLE_16, &[2_000, -2_000]),
+        ];
+
+        let error = decode_audio_file_bytes(flac_file(
+            2 * FLAC_BLOCK_SIZE,
+            FLAC_BITS_PER_SAMPLE_16,
+            WRONG_MD5,
+            &frames,
+        ))
+        .expect_err("a stream that fails its declared MD5 must be rejected");
+
+        assert_eq!(
+            error,
+            "FLAC stream failed MD5 verification: the decoded audio does not match the \
+             checksum declared in the file"
+        );
+    }
+
+    /// Verification must not break the honest path: a well-formed two-channel
+    /// FLAC whose MD5 matches decodes with its real lanes, unpoisoned.
+    #[test]
+    fn an_honest_flac_stream_decodes_end_to_end_under_verification() {
+        let frames = [
+            flac_frame(FLAC_CHANNELS, 0, FLAC_BITS_PER_SAMPLE_16, &[1_000, -1_000]),
+            flac_frame(FLAC_CHANNELS, 1, FLAC_BITS_PER_SAMPLE_16, &[2_000, -2_000]),
+        ];
+
+        let audio = decode_audio_file_bytes(flac_file(
+            2 * FLAC_BLOCK_SIZE,
+            FLAC_BITS_PER_SAMPLE_16,
+            flac_md5_16bit(&honest_stereo_stream_16bit()),
+            &frames,
+        ))
+        .expect("an honest FLAC stream must decode under verification");
+
+        let left_lane: Vec<f32> = repeated(&f32_samples_16bit(&[1_000]), FLAC_BLOCK_SIZE)
+            .into_iter()
+            .chain(repeated(&f32_samples_16bit(&[2_000]), FLAC_BLOCK_SIZE))
+            .collect();
+        let right_lane: Vec<f32> = repeated(&f32_samples_16bit(&[-1_000]), FLAC_BLOCK_SIZE)
+            .into_iter()
+            .chain(repeated(&f32_samples_16bit(&[-2_000]), FLAC_BLOCK_SIZE))
+            .collect();
+
+        assert_eq!(audio.channels, FLAC_CHANNELS);
+        assert_eq!(audio.samples, vec![left_lane, right_lane]);
+        assert_eq!(
+            audio.duration_seconds,
+            f64::from(2 * FLAC_BLOCK_SIZE) / 48_000.0
+        );
+        assert_eq!(audio.decode_warning_count, 0);
+    }
+
+    /// An all-zero STREAMINFO MD5 means "unverified stream" — symphonia skips
+    /// the check entirely rather than failing it — so md5-less FLAC files must
+    /// keep decoding.
+    #[test]
+    fn a_flac_stream_without_a_declared_md5_skips_verification() {
+        let frames = [
+            flac_frame(FLAC_CHANNELS, 0, FLAC_BITS_PER_SAMPLE_16, &[1_000, -1_000]),
+            flac_frame(FLAC_CHANNELS, 1, FLAC_BITS_PER_SAMPLE_16, &[2_000, -2_000]),
+        ];
+
+        let audio = decode_audio_file_bytes(flac_file(
+            2 * FLAC_BLOCK_SIZE,
+            FLAC_BITS_PER_SAMPLE_16,
+            [0; 16],
+            &frames,
+        ))
+        .expect("a FLAC stream with no declared MD5 must still decode");
+
+        assert_eq!(audio.channels, FLAC_CHANNELS);
+        assert_eq!(audio.decode_warning_count, 0);
     }
 
     /// A decode's peak footprint is the PCM it produces. Building the

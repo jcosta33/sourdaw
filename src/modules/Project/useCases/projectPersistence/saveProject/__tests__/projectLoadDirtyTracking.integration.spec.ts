@@ -19,6 +19,7 @@
  * user sees an unsaved-changes marker on a freshly opened project.
  */
 
+import { change, init } from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -29,7 +30,8 @@ const {
     mockClearUndoHistory,
     mockCompactProject,
     mockProjectActionHistoryToStore,
-    mockResetCrdtProjectAuthority,
+    mockResetCrdtProject,
+    mockFinalizeReset,
     mockStartCrdtAutoSave,
     mockUnloadLoadedExternalPlugins,
     mockEnsureTrackStrips,
@@ -45,7 +47,11 @@ const {
     mockClearUndoHistory: vi.fn(),
     mockCompactProject: vi.fn(() => Promise.resolve()),
     mockProjectActionHistoryToStore: vi.fn(),
-    mockResetCrdtProjectAuthority: vi.fn(),
+    mockResetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
+        onAuthorityReplaced?.();
+        return Promise.resolve({ status: 'replaced', finalize: mockFinalizeReset });
+    }),
+    mockFinalizeReset: vi.fn(() => Promise.resolve('finalized')),
     mockStartCrdtAutoSave: vi.fn(() => () => {}),
     mockUnloadLoadedExternalPlugins: vi.fn(() => Promise.resolve()),
     mockEnsureTrackStrips: vi.fn(),
@@ -56,8 +62,14 @@ const {
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    forgetProjectLatchedPedals: vi.fn(),
+    stopTrackInputMonitoring: vi.fn(),
+
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    projectsToDifferentNativeBank: vi.fn(() => false),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     discardDecodedAudioFile: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
@@ -85,7 +97,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDeviceChainTailSeconds: vi.fn(),
     getEngineState: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
-    getLiveEngineSampleRate: vi.fn(),
     getRuntimeGraphRevision: vi.fn(),
     getTrackStrip: vi.fn(),
     initializeTrackStripFromSnapshot: vi.fn(),
@@ -114,6 +125,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
@@ -138,14 +150,15 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     hasCrdtDoc: vi.fn(),
     mutateCrdtDoc: vi.fn(),
     persistCrdtProject: vi.fn(),
-    preserveBranchStateForSession: vi.fn(),
+    beginBranchSession: vi.fn(),
     projectActionHistoryToStore: mockProjectActionHistoryToStore,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
-    replaceBranchState: vi.fn(),
+    projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
     replaceCrdtDocInLineage: vi.fn(),
-    resetCrdtProjectAuthority: mockResetCrdtProjectAuthority,
-    restoreBranchStateAfterSession: vi.fn(),
+    resetCrdtProject: mockResetCrdtProject,
+    endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
     setupProjectionBridge: vi.fn(),
@@ -154,15 +167,17 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     waitForCrdtDocumentTransition: vi.fn(),
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
+    isFaustInstrumentModule: vi.fn(() => false),
+    registerFaustDSP: vi.fn(),
     unloadPlugin: mockUnloadLoadedExternalPlugins,
     activateExternalPlugin: vi.fn(),
     clearExternalPluginRestoreFailure: vi.fn(),
     findSupportedPlugin: vi.fn(),
     hasUnresolvedExternalPluginRestoreFailure: vi.fn(() => false),
     restorePluginState: vi.fn(),
-    registerFaustDSP: vi.fn(),
 }));
 vi.mock('#/modules/Transport/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
     defaultTransportState: { masterGain: 75, isPlaying: false },
     ensureTrackStrips: mockEnsureTrackStrips,
     stopPlayback: mockStopPlayback,
@@ -172,17 +187,56 @@ vi.mock('#/modules/Transport/useCases', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mockNotifyUser }));
 vi.mock('../../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: mockSetAutoSaveHandle }));
 vi.mock('../../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: mockStopActiveAutoSave }));
+vi.mock('../../helpers/resetModuleStoresToDefault', async () => {
+    const { defaultTrackState, trackStore } = await import('#/modules/Arrangement/stores');
+    return {
+        resetModuleStoresToDefault: () => trackStore.set(structuredClone(defaultTrackState)),
+    };
+});
+vi.mock('../../helpers/runProjectLoadTransaction', async () => {
+    const actual = await vi.importActual<typeof import('../../helpers/runProjectLoadTransaction')>(
+        '../../helpers/runProjectLoadTransaction'
+    );
+    return {
+        projectLoadEpoch: actual.projectLoadEpoch,
+        runProjectLoadTransaction: () => ({
+            prepare: () => Promise.resolve(true),
+            activate: () => true,
+            canActivate: () => true,
+            isCurrent: () => true,
+            signal: new AbortController().signal,
+        }),
+    };
+});
 
+import { createEventBus } from '#/infra/events/createEventBus';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { setArrangementEventBus } from '#/modules/Arrangement/useCases';
 
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { replaceProjectData } from '../../helpers/replaceProjectData';
+import { newProject } from '../../newProject';
 import { initProjectDirtyTracking } from '../initProjectDirtyTracking';
 
+import type {
+    TrackAddedPayload,
+    TrackRemovedPayload,
+    TrackSelectionChangedPayload,
+} from '#/modules/Arrangement/events';
 import type { HydratableProjectData } from '../../helpers/isHydratableProjectData';
 
 const LOADED_TRACK_ID = 'track-from-disk';
 const LOADED_TRACK_NAME = 'Vocals (from disk)';
+
+type ArrangementEvents = {
+    'track.added': TrackAddedPayload;
+    'track.removed': TrackRemovedPayload;
+    'track.selectionChanged': TrackSelectionChangedPayload;
+};
 
 function loadedProjectData(): HydratableProjectData {
     return {
@@ -219,11 +273,38 @@ function alwaysCurrentTransaction() {
     } as unknown as Parameters<typeof replaceProjectData>[0]['transaction'];
 }
 
+async function withRealAutomergeStoragePort<TResult>(
+    operation: (readMutationCount: () => number) => Promise<TResult>
+): Promise<TResult> {
+    configureAutomergeStoragePort(null);
+    flushAutomergeStorageWrites();
+    let doc = init<Record<string, unknown>>();
+    let mutations = 0;
+    configureAutomergeStoragePort({
+        getDoc: () => doc,
+        hasDoc: () => true,
+        getSemanticMessage: () => undefined,
+        mutateDoc: ({ changeFn }) => {
+            doc = change(doc, (draft) => changeFn(draft));
+            mutations += 1;
+        },
+    });
+
+    try {
+        return await operation(() => mutations);
+    } finally {
+        configureAutomergeStoragePort(null);
+        flushAutomergeStorageWrites();
+    }
+}
+
 describe('project load dirty tracking (audit M-011)', () => {
     let stopDirtyTracking: () => void = () => {};
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockCompactProject.mockImplementation(async () => flushAutomergeStorageWrites());
+        setArrangementEventBus(createEventBus<ArrangementEvents>());
         stopDirtyTracking();
         trackStore.set(structuredClone(defaultTrackState));
         projectStore.set({
@@ -273,4 +354,46 @@ describe('project load dirty tracking (audit M-011)', () => {
 
         expect(projectStore.value?.dirty).toBe(true);
     });
+
+    it.each([
+        { label: 'initial compaction persists', compactionRejects: false, identityPersistencePending: false },
+        { label: 'initial compaction rejects', compactionRejects: true, identityPersistencePending: true },
+    ])(
+        'drains fresh-project track initialization before publishing clean metadata when $label',
+        async ({ compactionRejects, identityPersistencePending }) => {
+            mockCompactProject.mockImplementationOnce(async () => {
+                flushAutomergeStorageWrites();
+                if (compactionRejects) {
+                    throw new Error('initial compaction failed');
+                }
+            });
+            if (compactionRejects) {
+                // Nothing of the fresh project reached storage, so its reset
+                // cannot finalize and the minted identity stays non-durable.
+                mockFinalizeReset.mockResolvedValueOnce('authority-mismatch');
+            }
+
+            await withRealAutomergeStoragePort(async (readMutationCount) => {
+                await expect(newProject('Fresh Project')).resolves.toBe(true);
+
+                expect(readMutationCount()).toBeGreaterThan(0);
+                expect(trackStore.value?.tracks.some((track) => track.kind === 'master')).toBe(true);
+                expect(projectStore.value).toMatchObject({
+                    dirty: false,
+                    identityPersistencePending,
+                    loading: false,
+                });
+
+                const current = trackStore.value ?? defaultTrackState;
+                trackStore.set({
+                    ...current,
+                    tracks: current.tracks.map((track) =>
+                        track.kind === 'master' ? { ...track, name: 'Master (renamed by user)' } : track
+                    ),
+                });
+
+                expect(projectStore.value?.dirty).toBe(true);
+            });
+        }
+    );
 });

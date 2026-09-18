@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Grand Boule worker control-plane: init handshake, stop, and the dispatch()
 // switch (noteOn/noteOff/param mapping/sustain/unaCorda/sostenuto/noteOnMidi2/
-// temperament/loadAttackClip/allNotesOff). The existing grandBouleEngineWorker
+// temperament/allNotesOff). The existing grandBouleEngineWorker
 // spec proves the SPSC ring release/acquire; this covers the message state machine.
 //
 // The worker wires self.onmessage on import and uses MessageChannel + Atomics, so
@@ -22,15 +22,21 @@ let processShouldThrow = false;
 let lifecycleState = 3;
 
 class GrandBouleInstanceMock {
-    note_on(note: number, velocity: number): void {
-        calls.push({ method: 'note_on', args: [note, velocity] });
-    }
-    note_on_with_channel(note: number, velocity: number, _channel: number): void {
+    push_note_on(note: number, velocity: number, _channel: number, offset: number): boolean {
         lifecycleState = 0;
-        calls.push({ method: 'note_on', args: [note, velocity] });
+        calls.push({ method: 'push_note_on', args: [note, velocity, offset] });
+        return true;
     }
-    note_off(note: number): void {
-        calls.push({ method: 'note_off', args: [note] });
+    push_note_off(note: number, offset: number): boolean {
+        calls.push({ method: 'push_note_off', args: [note, offset] });
+        return true;
+    }
+    push_note_off_on_channel(note: number, channel: number, offset: number): boolean {
+        calls.push({ method: 'push_note_off_on_channel', args: [note, channel, offset] });
+        return true;
+    }
+    push_note_expression(): boolean {
+        return true;
     }
     set_param(name: string, value: number): void {
         calls.push({ method: 'set_param', args: [name, value] });
@@ -49,9 +55,6 @@ class GrandBouleInstanceMock {
     }
     set_temperament(index: number): void {
         calls.push({ method: 'set_temperament', args: [index] });
-    }
-    load_attack_clip(key: number, samples: Float32Array): void {
-        calls.push({ method: 'load_attack_clip', args: [key, samples] });
     }
     all_notes_off(): void {
         lifecycleState = 3;
@@ -261,9 +264,10 @@ describe('Grand Boule engine worker control plane', () => {
         send({ type: 'noteOff', midiNote: 60, releaseVelocity: 0.5 });
         send({ type: 'allNotesOff' });
 
-        expect(method('note_on')!.args).toEqual([60, 90]);
+        // No frame on either message, so both are the "voice now" case: offset 0.
+        expect(method('push_note_on')!.args).toEqual([60, 90, 0]);
         expect(queuedYields).toHaveLength(1);
-        expect(method('note_off')!.args).toEqual([60]);
+        expect(method('push_note_off')!.args).toEqual([60, 0]);
         expect(calls.some((c) => c.method === 'all_notes_off')).toBe(true);
         const controls = new Int32Array(SAB, 0, 7);
         expect(Atomics.load(controls, 4)).toBe(3);
@@ -310,18 +314,5 @@ describe('Grand Boule engine worker control plane', () => {
 
         expect(method('note_on_midi2')!.args).toEqual([72, 32000, 1 << 24]);
         expect(method('set_temperament')!.args).toEqual([2]);
-    });
-
-    it('loads an attack clip for a key', async () => {
-        await loadWorker();
-        send({ type: 'init', initId: 7, wasmModule: MINIMAL_WASM_MODULE, sab: SAB, sampleRate: 48000 });
-        calls.length = 0;
-
-        const samples = new Float32Array([0.1, 0.2, 0.3]);
-        send({ type: 'loadAttackClip', key: 48, samples });
-
-        const call = method('load_attack_clip')!;
-        expect(call.args[0]).toBe(48);
-        expect(call.args[1]).toBe(samples);
     });
 });

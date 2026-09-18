@@ -4,14 +4,10 @@ import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptur
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 
 /**
- * Load a plugin instance by plugin ID and instance ID, at the sample rate of
- * the engine that will feed it audio.
+ * Load a plugin instance by plugin ID and instance ID. The native engine
+ * activates it at its own negotiated rate; this call supplies none.
  */
-export function loadPlugin(
-    pluginId: string,
-    instanceId: string,
-    sampleRate: number
-): ReturnType<typeof loadPluginRepo> {
+export function loadPlugin(pluginId: string, instanceId: string): ReturnType<typeof loadPluginRepo> {
     externalPluginStateCaptureAuthority.invalidate(instanceId);
-    return serializePluginLifecycle(instanceId, () => loadPluginRepo(pluginId, instanceId, sampleRate));
+    return serializePluginLifecycle(instanceId, () => loadPluginRepo(pluginId, instanceId));
 }

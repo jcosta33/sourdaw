@@ -6,6 +6,7 @@
 //! decay, and gain. Nonlinear damping: decay increases (rings longer) at
 //! lower amplitudes for a more natural feel.
 
+use crate::params::{DECAY, DRIVE, TONE, TUNE};
 use crate::primitives::flush_denormal;
 use std::f32::consts::TAU;
 
@@ -284,7 +285,7 @@ impl ModalEngine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "decay" => {
+            DECAY => {
                 // Normalize 0-1 to a global decay multiplier (0.2x to 3.0x)
                 // that scales all mode decay times
                 let v = value.clamp(0.0, 1.0);
@@ -294,15 +295,15 @@ impl ModalEngine {
                     self.modes[i].decay = base_decay * multiplier;
                 }
             }
-            "tune" => {
+            TUNE => {
                 // Shift all mode frequencies by semitone ratio
                 self.tune_ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0);
             }
-            "tone" => {
+            TONE => {
                 // Map 0-1 to brightness (higher modes gain)
                 self.brightness = value.clamp(0.0, 1.0) * 2.0;
             }
-            "drive" => {
+            DRIVE => {
                 // 0-10 drive: map to damping reduction (less damping = more ring)
                 let v = value.clamp(0.0, 10.0);
                 self.damping = 1.0 - (v / 10.0);

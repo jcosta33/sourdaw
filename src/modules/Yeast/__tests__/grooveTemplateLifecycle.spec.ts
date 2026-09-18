@@ -1,3 +1,4 @@
+import { change, init } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -21,13 +22,17 @@ import { getYeastGrooveAssignment, YEAST_GROOVE_OWNER_ID } from '../useCases/get
 import { renameYeastGrooveTemplate } from '../useCases/renameYeastGrooveTemplate';
 
 describe('Yeast groove template lifecycle', () => {
+    let document = init<Record<string, unknown>>();
+
     beforeEach(() => {
-        const document: Record<string, unknown> = {};
+        document = init<Record<string, unknown>>();
         configureAutomergeStoragePort({
             getDoc: () => document,
             getSemanticMessage: () => undefined,
             hasDoc: () => true,
-            mutateDoc: (input) => input.changeFn(document),
+            mutateDoc: ({ changeFn }) => {
+                document = change(document, (draft) => changeFn(draft));
+            },
             waitForSnapshotTransaction: () => Promise.resolve(),
         });
         clearHandlerRegistry();

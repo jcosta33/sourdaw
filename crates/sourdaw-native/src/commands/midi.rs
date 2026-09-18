@@ -2,6 +2,7 @@ use crate::events::{EventSink, EventSinkExt};
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use rusb::{Context, DeviceHandle, UsbContext};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -9,6 +10,14 @@ use std::time::Duration;
 #[derive(Debug, Clone, Serialize)]
 pub struct MidiDeviceInfo {
     pub index: usize,
+    /// The identity a saved selection is keyed on. midir's own port id where
+    /// the backend supplies a replug-stable one — the CoreMIDI unique id on
+    /// macOS, the device-interface path on Windows — and the name/ordinal
+    /// fallback of [`assign_port_ids`] where it does not (no id at all, the
+    /// CoreMIDI degenerate "0", or ALSA's session-scoped `client:port`).
+    /// `index` is the handle `open_midi_input` takes and is only valid for
+    /// this enumeration.
+    pub id: String,
     pub name: String,
 }
 
@@ -56,6 +65,34 @@ impl Default for MidiState {
     fn default() -> Self {
         Self {
             connection: Mutex::new(None),
+        }
+    }
+}
+
+impl MidiState {
+    /// Close the open input connection, answering whether there was one.
+    ///
+    /// This is the exit cascade's MIDI step: a poisoned lock is still read
+    /// (the slot's content survives a panic elsewhere) because exit is the
+    /// last chance the device handle has to be released at all, and refusing
+    /// to read it would turn one panic elsewhere into a device held until the
+    /// process dies.
+    pub fn close_open_input(&self) -> bool {
+        let mut connection = crate::state::locked_or_poisoned(&self.connection);
+        connection.take().is_some_and(|connection| {
+            connection.close();
+            true
+        })
+    }
+}
+
+#[cfg(test)]
+impl MidiState {
+    /// Adopt an already-open connection, for tests that need a `MidiState`
+    /// holding one without a physical device to open.
+    pub(crate) fn with_connection_for_test(connection: MidiInputConnection<()>) -> Self {
+        Self {
+            connection: Mutex::new(Some(connection)),
         }
     }
 }
@@ -380,22 +417,104 @@ pub async fn close_push_transport(push_state: &PushState) -> Result<(), String> 
     run_push_transport_task(move || close_push_transport_blocking(connection)).await?
 }
 
+/// The id midir reports for a port that carries no identity. CoreMIDI maps an
+/// endpoint without a system-assigned unique id to `unwrap_or(0)`, so several
+/// such endpoints all read "0"; an empty string means the backend had nothing
+/// at all. Neither distinguishes ports, so both fall back to names.
+const DEGENERATE_PORT_ID: &str = "0";
+
+/// Whether a backend id names only this session's connection, not the device.
+///
+/// midir's ALSA backend formats a port id as `{client}:{port}`, and ALSA
+/// client numbers are handed out as clients connect: the same physical device
+/// reads differently after every replug or reboot, so such an id is exactly as
+/// unstable as the enumeration index this identity replaced. Persisting one
+/// would leave the saved selection dead on every session after the first —
+/// the never-settles behavior this surface exists to fix (#2016). CoreMIDI ids
+/// are pure digits and WinMM ids are device-interface paths, so neither can
+/// collide with the digits-colon-digits shape and the rule cannot demote a
+/// stable id.
+fn is_session_scoped_backend_id(raw_id: &str) -> bool {
+    let Some((client, port)) = raw_id.split_once(':') else {
+        return false;
+    };
+    let is_all_digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    is_all_digits(client) && is_all_digits(port)
+}
+
+/// Whether midir's own port id can serve as the persisted-selection identity.
+fn is_usable_port_id(raw_id: &str) -> bool {
+    !raw_id.is_empty() && raw_id != DEGENERATE_PORT_ID && !is_session_scoped_backend_id(raw_id)
+}
+
+/// The persisted-selection id for every port of one enumeration, in order.
+///
+/// A port whose midir id is usable keeps it. Per backend: macOS CoreMIDI
+/// assigns endpoints system-unique ids that survive replugs, and Windows WinMM
+/// ids are the device-interface path, equally stable — so the user's saved
+/// selection follows the device. A port without a usable id falls back to the
+/// name scheme this identity used before ids crossed the wire (#2016): no id
+/// at all, CoreMIDI's degenerate "0", or an ALSA `client:port`, whose client
+/// number is reassigned on every replug. The fallback keeps a unique name as
+/// the id, and qualifies only ports that share a name — `name #ordinal`, by
+/// their ordinal among the same-named fallback ports so an unrelated device
+/// joining or leaving cannot renumber them.
+///
+/// Pure so the fallback rule is testable without any device attached.
+pub(super) fn assign_port_ids(ports: &[(String, String)]) -> Vec<String> {
+    let mut fallback_totals: HashMap<&str, usize> = HashMap::new();
+    for (raw_id, name) in ports {
+        if !is_usable_port_id(raw_id) {
+            *fallback_totals.entry(name.as_str()).or_default() += 1;
+        }
+    }
+
+    let mut fallback_ordinals: HashMap<&str, usize> = HashMap::new();
+    ports
+        .iter()
+        .map(|(raw_id, name)| {
+            if is_usable_port_id(raw_id) {
+                return raw_id.clone();
+            }
+            let name = name.as_str();
+            let ordinal = fallback_ordinals.entry(name).or_default();
+            let this = *ordinal;
+            *ordinal += 1;
+            match fallback_totals.get(name) {
+                Some(1) | None => name.to_owned(),
+                Some(_) => format!("{name} #{this}"),
+            }
+        })
+        .collect()
+}
+
 /// List all available MIDI input ports.
+///
+/// Enumeration never opens a device: `MidiInput::new` plus `ports()` reads the
+/// system's port table only.
 pub fn list_midi_inputs() -> Result<Vec<MidiDeviceInfo>, String> {
     let midi_in = MidiInput::new("sourdaw-enumerate")
         .map_err(|e| format!("Failed to create MIDI input: {e}"))?;
 
     let ports = midi_in.ports();
-    let mut devices = Vec::with_capacity(ports.len());
+    let named: Vec<(String, String)> = ports
+        .iter()
+        .enumerate()
+        .map(|(i, port)| {
+            let name = midi_in
+                .port_name(port)
+                .unwrap_or_else(|_| format!("Port {i}"));
+            (port.id(), name)
+        })
+        .collect();
+    let ids = assign_port_ids(&named);
 
-    for (i, port) in ports.iter().enumerate() {
-        let name = midi_in
-            .port_name(port)
-            .unwrap_or_else(|_| format!("Port {i}"));
-        devices.push(MidiDeviceInfo { index: i, name });
-    }
-
-    Ok(devices)
+    Ok(named
+        .into_iter()
+        .zip(ids)
+        .enumerate()
+        .map(|(index, ((_, name), id))| MidiDeviceInfo { index, id, name })
+        .collect())
 }
 
 /// Open a MIDI input port by index. Incoming MIDI messages are forwarded
@@ -529,5 +648,137 @@ mod tests {
         let worker =
             crate::block_on_test(run_push_transport_task(|| std::thread::current().id())).unwrap();
         assert_ne!(worker, caller);
+    }
+
+    fn port(raw_id: &str, name: &str) -> (String, String) {
+        (raw_id.to_owned(), name.to_owned())
+    }
+
+    #[test]
+    fn a_usable_backend_id_is_the_identity_even_when_names_collide() {
+        // Two units of one controller are distinct device instances on Windows
+        // and macOS: their midir ids differ, so nothing may qualify them.
+        let ports = vec![port("254", "MPK Mini"), port("817", "MPK Mini")];
+
+        assert_eq!(assign_port_ids(&ports), vec!["254", "817"]);
+    }
+
+    #[test]
+    fn a_lone_nameless_backend_id_falls_back_to_the_bare_name() {
+        let ports = vec![
+            port("254", "Launchkey"),
+            port(DEGENERATE_PORT_ID, "MPK Mini"),
+        ];
+
+        assert_eq!(assign_port_ids(&ports), vec!["254", "MPK Mini"]);
+    }
+
+    #[test]
+    fn degenerate_ids_on_same_named_ports_are_qualified_by_ordinal() {
+        // CoreMIDI's unwrap_or(0) collapses every endpoint without a unique id
+        // to the same "0", so two such units differ by nothing but their name
+        // — and only those are qualified, by ordinal among themselves.
+        let ports = vec![
+            port(DEGENERATE_PORT_ID, "MPK Mini"),
+            port(DEGENERATE_PORT_ID, "Built-in"),
+            port(DEGENERATE_PORT_ID, "MPK Mini"),
+        ];
+
+        assert_eq!(
+            assign_port_ids(&ports),
+            vec!["MPK Mini #0", "Built-in", "MPK Mini #1"]
+        );
+    }
+
+    #[test]
+    fn fallback_ordinals_do_not_renumber_when_an_unrelated_port_leaves() {
+        let before = vec![
+            port(DEGENERATE_PORT_ID, "MPK Mini"),
+            port(DEGENERATE_PORT_ID, "Built-in"),
+            port(DEGENERATE_PORT_ID, "MPK Mini"),
+        ];
+        let after = vec![
+            port(DEGENERATE_PORT_ID, "MPK Mini"),
+            port(DEGENERATE_PORT_ID, "MPK Mini"),
+        ];
+
+        assert_eq!(
+            assign_port_ids(&after),
+            assign_port_ids(&before)
+                .into_iter()
+                .filter(|id| id != "Built-in")
+                .collect::<Vec<_>>(),
+            "an unrelated port leaving must not shift the survivors' ordinals"
+        );
+    }
+
+    #[test]
+    fn an_empty_backend_id_is_as_unusable_as_the_degenerate_one() {
+        let ports = vec![port("", "Solo Controller")];
+
+        assert_eq!(assign_port_ids(&ports), vec!["Solo Controller"]);
+    }
+
+    #[test]
+    fn an_alsa_session_id_falls_back_to_the_name_scheme() {
+        // ALSA's `client:port` is reassigned on every replug, so persisting it
+        // would leave the saved selection dead on the next session.
+        let ports = vec![port("128:0", "MPK Mini"), port("254", "Launchkey")];
+
+        assert_eq!(assign_port_ids(&ports), vec!["MPK Mini", "254"]);
+    }
+
+    #[test]
+    fn same_named_alsa_ports_are_qualified_by_ordinal() {
+        let ports = vec![port("128:0", "MPK Mini"), port("130:0", "MPK Mini")];
+
+        assert_eq!(assign_port_ids(&ports), vec!["MPK Mini #0", "MPK Mini #1"]);
+    }
+
+    #[test]
+    fn the_session_scoped_rule_cannot_demote_a_stable_backend_id() {
+        // CoreMIDI ids are pure digits and WinMM ids are device-interface
+        // paths; neither can match the digits-colon-digits ALSA shape, so a
+        // stable id always survives the usability gate.
+        let winmm_path = r"\\?\USB#VID_0763&PID_0159#MIDI";
+        let ports = vec![port("128:0", "MPK Mini"), port(winmm_path, "Launchkey")];
+
+        assert_eq!(assign_port_ids(&ports), vec!["MPK Mini", winmm_path]);
+    }
+
+    /// A virtual port is the only device-free way to prove end-to-end that one
+    /// port's id survives a second enumeration through a second `MidiInput`
+    /// instance — the exact question a saved selection asks on the next
+    /// launch. The stand-in for a hardware *source* is a virtual *output*
+    /// port: an input's own virtual port is a destination endpoint and never
+    /// lists in an input enumeration. Unix-only: `create_virtual` has no
+    /// Windows implementation.
+    #[cfg(unix)]
+    #[test]
+    fn a_virtual_port_keeps_its_id_across_enumerations_and_instances() {
+        use midir::os::unix::VirtualOutput;
+
+        let midi_out = MidiOutput::new("sourdaw-id-stability-server").expect("test MidiOutput");
+        let _virtual_source = midi_out
+            .create_virtual("sourdaw-virtual-id-test")
+            .expect("virtual source port");
+
+        let enumerate = || list_midi_inputs().expect("enumeration must succeed");
+        let find = |devices: &[MidiDeviceInfo]| {
+            devices
+                .iter()
+                .find(|device| device.name == "sourdaw-virtual-id-test")
+                .expect("the virtual port must be visible to a fresh enumeration")
+                .id
+                .clone()
+        };
+
+        let first = find(&enumerate());
+        let second = find(&enumerate());
+
+        assert_eq!(
+            first, second,
+            "the same physical port must not change identity between enumerations"
+        );
     }
 }

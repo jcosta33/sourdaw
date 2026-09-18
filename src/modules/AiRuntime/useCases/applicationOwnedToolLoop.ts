@@ -5,8 +5,14 @@ import {
     MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH,
 } from '#/modules/Command/useCases';
 import { getAgentDeviceFactoryManifest } from '#/modules/PluginHost/useCases';
-import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
+import {
+    parseAgentDiscoveryInput,
+    parseSemanticProjectQueryInput,
+    queryAgentDiscovery,
+    querySemanticProject,
+} from '#/modules/Project/useCases';
 
+import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabilityOperations';
 import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
@@ -24,15 +30,15 @@ import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
-    ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
     getAgentToolCatalogSchemas,
+    PROJECT_DISCOVERY_TOOL_NAME,
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
-    RENDER_REQUEST_TOOL_NAME,
 } from './agentToolCatalog';
+import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
 
 const DEFAULT_LIMITS = {
@@ -43,19 +49,23 @@ const DEFAULT_LIMITS = {
     maxReceiptBytesPerTurn: 32_768,
     maxTotalReceiptBytes: 65_536,
 } as const;
+/** One extra turn so query, search, discovery, interpretation and proposal all fit in one run. */
+const CREATIVE_TURN_ALLOWANCE = 1;
 const MAX_CALL_ID_LENGTH = 256;
 const MAX_FILTER_STRING_LENGTH = 256;
-const MAX_CURSOR_LENGTH = 256;
-const MAX_REVISION_LENGTH = 65_536;
 const CATALOG_CURSOR_PATTERN = new RegExp(AGENT_CATALOG_CURSOR_PATTERN, 'u');
 
 type QueryInput = Parameters<typeof querySemanticProject>[0];
-type QueryFilters = NonNullable<QueryInput['filters']>;
+type DiscoveryInput = Parameters<typeof queryAgentDiscovery>[0];
+type DiscoveryVerdict = Exclude<ReturnType<typeof queryAgentDiscovery>, { status: 'receipt' }>;
+type ParsedDiscovery = { status: 'valid'; input: DiscoveryInput } | { status: 'invalid'; reason: string };
 type ApplicationToolPlanningOutcome =
     | { status: 'complete'; toolCalls: ToolCallResult[]; proposal?: AgentPlanProposal | null }
     | { status: 'rejected'; reason: string };
 
 export type { ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+
+export type ApplicationOwnedToolLoopInterpretationOutcome = 'none' | 'admitted' | 'clarified';
 
 export type ApplicationOwnedToolLoopOutcome =
     | {
@@ -68,6 +78,8 @@ export type ApplicationOwnedToolLoopOutcome =
           proposal: AgentPlanProposal | null;
           receipts: ApplicationToolReceipt[];
           turns: number;
+          /** Whether this run's control phase admitted an interpretation, asked to clarify, or never ran. */
+          interpretation: ApplicationOwnedToolLoopInterpretationOutcome;
       }
     | {
           status: 'rejected';
@@ -92,6 +104,11 @@ export class ApplicationOwnedToolLoopRequestError extends Error {
 
 type ToolLoopLimits = Partial<Record<keyof typeof DEFAULT_LIMITS, number>>;
 
+export type ApplicationOwnedToolLoopInterpretationAdmission =
+    | { status: 'admitted'; receipt: { data: unknown; summary: string } }
+    | { status: 'clarify'; reason: string }
+    | { status: 'rejected'; reason: string };
+
 type RunApplicationOwnedToolLoopInput = {
     loopId: string;
     requestTurn: (input: {
@@ -106,6 +123,14 @@ type RunApplicationOwnedToolLoopInput = {
     terminalToolNames: ReadonlySet<string>;
     signal?: AbortSignal;
     limits?: ToolLoopLimits;
+    /**
+     * The application-owned control phase. The loop learns only whether a call was admitted; the
+     * record it mints stays in the caller's closure, so no provider-visible turn can restate it.
+     */
+    interpretation?: {
+        toolName: string;
+        admit: (call: ToolCallResult) => ApplicationOwnedToolLoopInterpretationAdmission;
+    };
 };
 
 type ParsedQuery = { status: 'valid'; input: QueryInput } | { status: 'invalid'; reason: string };
@@ -118,179 +143,49 @@ function byteLength(value: string): number {
     return new TextEncoder().encode(value).byteLength;
 }
 
-function isQueryType(value: unknown): value is QueryInput['type'] {
-    return (
-        typeof value === 'string' &&
-        getProjectProtocolContracts().query.operations.some((operation) => operation.name === value)
-    );
-}
+/** The loop's own words for the part of an input the owner's parser refused. */
+const STRICT_CONTRACT_PART: Readonly<Record<'arguments' | 'filters' | 'page' | 'revision', string>> = {
+    arguments: 'arguments do not match',
+    filters: 'filters do not match',
+    page: 'page does not match',
+    revision: 'revision does not match',
+};
 
-function parseStringFilter(filters: QueryFilters, key: string, value: unknown): boolean {
-    if (typeof value !== 'string' || value.length > MAX_FILTER_STRING_LENGTH) {
-        return false;
-    }
-    switch (key) {
-        case 'stableId':
-            filters.stableId = value;
-            return true;
-        case 'exactName':
-            filters.exactName = value;
-            return true;
-        case 'fuzzyName':
-            filters.fuzzyName = value;
-            return true;
-        case 'kind':
-            filters.kind = value;
-            return true;
-        case 'tag':
-            filters.tag = value;
-            return true;
-        case 'role':
-            filters.role = value;
-            return true;
-        case 'parentId':
-            filters.parentId = value;
-            return true;
-        case 'sectionId':
-            filters.sectionId = value;
-            return true;
-        case 'deviceType':
-            filters.deviceType = value;
-            return true;
-        case 'deviceCategory':
-            filters.deviceCategory = value;
-            return true;
-        case 'routeFromId':
-            filters.routeFromId = value;
-            return true;
-        case 'routeToId':
-            filters.routeToId = value;
-            return true;
-        case 'assetType':
-            filters.assetType = value;
-            return true;
-        default:
-            return false;
-    }
-}
-
-function parseBooleanFilter(filters: QueryFilters, key: string, value: unknown): boolean {
-    if (typeof value !== 'boolean') {
-        return false;
-    }
-    switch (key) {
-        case 'selected':
-            filters.selected = value;
-            return true;
-        case 'locked':
-            filters.locked = value;
-            return true;
-        case 'muted':
-            filters.muted = value;
-            return true;
-        case 'soloed':
-            filters.soloed = value;
-            return true;
-        case 'hasAutomation':
-            filters.hasAutomation = value;
-            return true;
-        default:
-            return false;
-    }
-}
-
-function parseNumberFilter(filters: QueryFilters, key: string, value: unknown): boolean {
-    if (
-        typeof value !== 'number' ||
-        !Number.isFinite(value) ||
-        (key === 'minInferredConfidence' && (value < 0 || value > 1))
-    ) {
-        return false;
-    }
-    switch (key) {
-        case 'startBeat':
-            filters.startBeat = value;
-            return true;
-        case 'endBeat':
-            filters.endBeat = value;
-            return true;
-        case 'minInferredConfidence':
-            filters.minInferredConfidence = value;
-            return true;
-        default:
-            return false;
-    }
-}
-
-function parseFilters(value: unknown): { status: 'valid'; filters: QueryFilters } | { status: 'invalid' } {
-    if (!isRecord(value)) {
-        return { status: 'invalid' };
-    }
-    const filters: QueryFilters = {};
-    for (const [key, filterValue] of Object.entries(value)) {
-        if (
-            parseStringFilter(filters, key, filterValue) ||
-            parseBooleanFilter(filters, key, filterValue) ||
-            parseNumberFilter(filters, key, filterValue)
-        ) {
-            continue;
-        }
-        if (key === 'contentType' && (filterValue === 'audio' || filterValue === 'midi')) {
-            filters.contentType = filterValue;
-            continue;
-        }
-        return { status: 'invalid' };
-    }
-    return { status: 'valid', filters };
-}
-
+/**
+ * The strict argument contract for one query call.
+ *
+ * The contract belongs to the owner that answers the call, so this reads the
+ * owner's published parser rather than keeping a second copy of the key set and
+ * the bounds. Only the wording of a refusal is the loop's own, because a
+ * receipt names the tool the provider called.
+ */
 function parseProjectQueryArguments(argumentsValue: Record<string, unknown>): ParsedQuery {
-    const allowedKeys = new Set(['type', 'filters', 'page', 'sinceRevision']);
-    if (Object.keys(argumentsValue).some((key) => !allowedKeys.has(key)) || !isQueryType(argumentsValue.type)) {
-        return { status: 'invalid', reason: 'project.query arguments do not match the strict query contract' };
+    const parsed = parseSemanticProjectQueryInput(argumentsValue);
+    if (parsed.status === 'invalid') {
+        return {
+            status: 'invalid',
+            reason: `project.query ${STRICT_CONTRACT_PART[parsed.reason]} the strict query contract`,
+        };
     }
-    const input: QueryInput = { type: argumentsValue.type };
-    if (argumentsValue.filters !== undefined) {
-        const parsedFilters = parseFilters(argumentsValue.filters);
-        if (parsedFilters.status === 'invalid') {
-            return { status: 'invalid', reason: 'project.query filters do not match the strict query contract' };
-        }
-        input.filters = parsedFilters.filters;
+    return { status: 'valid', input: parsed.input };
+}
+
+/**
+ * The strict argument contract for one discovery call.
+ *
+ * A domain outside the published set stays a well-formed request: the owner
+ * answers it as an unsupported domain, which is a different fact from arguments
+ * the contract cannot read at all.
+ */
+function parseProjectDiscoveryArguments(argumentsValue: Record<string, unknown>): ParsedDiscovery {
+    const parsed = parseAgentDiscoveryInput(argumentsValue);
+    if (parsed.status === 'invalid') {
+        return {
+            status: 'invalid',
+            reason: `project.discover ${STRICT_CONTRACT_PART[parsed.reason]} the strict discovery contract`,
+        };
     }
-    if (argumentsValue.page !== undefined) {
-        if (
-            !isRecord(argumentsValue.page) ||
-            Object.keys(argumentsValue.page).some((key) => key !== 'limit' && key !== 'cursor')
-        ) {
-            return { status: 'invalid', reason: 'project.query page does not match the strict query contract' };
-        }
-        const limit = argumentsValue.page.limit;
-        const cursor = argumentsValue.page.cursor;
-        if (
-            (limit !== undefined &&
-                (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 50)) ||
-            (cursor !== undefined && (typeof cursor !== 'string' || cursor.length > MAX_CURSOR_LENGTH))
-        ) {
-            return { status: 'invalid', reason: 'project.query page does not match the strict query contract' };
-        }
-        input.page = {};
-        if (typeof limit === 'number') {
-            input.page.limit = limit;
-        }
-        if (typeof cursor === 'string') {
-            input.page.cursor = cursor;
-        }
-    }
-    if (argumentsValue.sinceRevision !== undefined) {
-        if (
-            typeof argumentsValue.sinceRevision !== 'string' ||
-            argumentsValue.sinceRevision.length > MAX_REVISION_LENGTH
-        ) {
-            return { status: 'invalid', reason: 'project.query revision does not match the strict query contract' };
-        }
-        input.sinceRevision = argumentsValue.sinceRevision;
-    }
-    return { status: 'valid', input };
+    return { status: 'valid', input: parsed.input };
 }
 
 function failureReceipt(input: {
@@ -366,6 +261,77 @@ function executeProjectQuery(call: ToolCallResult, callId: string, turn: number)
     return executeSemanticProjectQuery(parsed.input, PROJECT_QUERY_TOOL_NAME, callId, turn);
 }
 
+/**
+ * An owner's `unavailable` or `unsupported` verdict as a receipt.
+ *
+ * The verdict is the owner's answer rather than a failure of the call, so it is
+ * carried verbatim and marked unretryable: repeating the same call cannot turn
+ * a domain nobody publishes, or a catalog nothing has indexed, into a page.
+ */
+function discoveryVerdictReceipt(verdict: DiscoveryVerdict, callId: string, turn: number): ApplicationToolReceipt {
+    const safeMessage = `${PROJECT_DISCOVERY_TOOL_NAME} ${verdict.domain}: ${verdict.status} (${verdict.reason})`;
+    return {
+        schema: 'sourdaw.application-tool-receipt',
+        schemaVersion: 1,
+        callId,
+        toolName: PROJECT_DISCOVERY_TOOL_NAME,
+        turn,
+        status: 'failure',
+        revision: null,
+        data: { status: verdict.status, domain: verdict.domain, reason: verdict.reason },
+        summary: safeMessage,
+        warnings: [],
+        error: {
+            code: verdict.status === 'unavailable' ? 'unavailable-tool' : 'invalid-tool-arguments',
+            safeMessage,
+            retryable: false,
+        },
+    };
+}
+
+function executeProjectDiscovery(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+    const parsed = parseProjectDiscoveryArguments(call.arguments);
+    if (parsed.status === 'invalid') {
+        return failureReceipt({
+            callId,
+            toolName: PROJECT_DISCOVERY_TOOL_NAME,
+            turn,
+            code: 'invalid-tool-arguments',
+            safeMessage: parsed.reason,
+            retryable: true,
+        });
+    }
+    try {
+        const result = queryAgentDiscovery(parsed.input);
+        if (result.status !== 'receipt') {
+            return discoveryVerdictReceipt(result, callId, turn);
+        }
+        const receipt = result.receipt;
+        return {
+            schema: 'sourdaw.application-tool-receipt',
+            schemaVersion: 1,
+            callId,
+            toolName: PROJECT_DISCOVERY_TOOL_NAME,
+            turn,
+            status: 'success',
+            revision: receipt.revisionToken,
+            data: receipt,
+            summary: `${receipt.domain}: ${String(receipt.items.length)} of ${String(receipt.page.total)} item(s)`,
+            warnings: [...receipt.warnings],
+            error: null,
+        };
+    } catch {
+        return failureReceipt({
+            callId,
+            toolName: PROJECT_DISCOVERY_TOOL_NAME,
+            turn,
+            code: 'tool-execution-failed',
+            safeMessage: 'Project discovery failed inside the application authority.',
+            retryable: true,
+        });
+    }
+}
+
 function executeProjectResolve(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
     if (
         Object.keys(call.arguments).length !== 1 ||
@@ -416,6 +382,7 @@ function executeCapabilities(call: ToolCallResult, callId: string, turn: number)
             retryable: true,
         });
     }
+    const operations = [...APPLICATION_OWNED_CAPABILITY_OPERATIONS, ...DEFERRED_AGENT_CAPABILITIES];
     return {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
@@ -427,16 +394,13 @@ function executeCapabilities(call: ToolCallResult, callId: string, turn: number)
         data: {
             schema: 'sourdaw.agent-capabilities',
             schemaVersion: 1,
-            operations: [
-                { name: 'command.batch.preview', callable: false, owner: 'Command', availability: 'available' },
-                { name: 'command.batch.commit', callable: false, owner: 'Command', availability: 'available' },
-                { name: 'command.approval', callable: false, owner: 'Command', availability: 'available' },
-                { name: RENDER_REQUEST_TOOL_NAME, callable: true, owner: 'AiRuntime', availability: 'proposal-only' },
-                { name: ANALYSIS_REQUEST_TOOL_NAME, callable: true, owner: 'AiRuntime', availability: 'proposal-only' },
-            ],
+            operations,
         },
-        summary: '5 application-owned capability contract(s)',
-        warnings: ['Command preview, approval, and commit remain application-managed lifecycle steps.'],
+        summary: `${String(operations.length)} application-owned capability contract(s)`,
+        warnings: [
+            'Command preview, approval, and commit remain application-managed lifecycle steps.',
+            'Deferred capabilities are reported for planning only; calling one is refused before any application work.',
+        ],
         error: null,
     };
 }
@@ -746,6 +710,8 @@ function executeSafeRead(call: ToolCallResult, callId: string, turn: number): Ap
     switch (call.name) {
         case PROJECT_QUERY_TOOL_NAME:
             return executeProjectQuery(call, callId, turn);
+        case PROJECT_DISCOVERY_TOOL_NAME:
+            return executeProjectDiscovery(call, callId, turn);
         case PROJECT_RESOLVE_TOOL_NAME:
             return executeProjectResolve(call, callId, turn);
         case AGENT_CAPABILITIES_TOOL_NAME:
@@ -976,8 +942,36 @@ export async function runApplicationOwnedToolLoop(
     let totalCalls = 0;
     let totalReceiptBytes = 0;
     let receiptContext: string | null = null;
+    let interpretation: ApplicationOwnedToolLoopInterpretationOutcome = 'none';
 
-    for (let turn = 1; turn <= limits.maxTurns; turn += 1) {
+    /**
+     * The turn ceiling for the run as it currently stands. Offering the tool buys nothing: only a run
+     * that actually admitted an interpretation spends the extra turn, so a provider that leaves the
+     * tool uncalled gets exactly the turns every other run gets.
+     */
+    const maxTurns = (): number =>
+        interpretation === 'admitted' ? limits.maxTurns + CREATIVE_TURN_ALLOWANCE : limits.maxTurns;
+
+    /**
+     * Admits one turn's receipts against the context budget. Every receipt the loop produces spends
+     * the same allowance, so the control phase cannot buy context a read tool would have been refused.
+     */
+    const admitTurnReceipts = (
+        turnReceipts: readonly ApplicationToolReceipt[],
+        turn: number
+    ): { reason: string; receipts: ApplicationToolReceipt[] } | null => {
+        const overBudget = 'Application tool receipts exceeded the bounded context budget.';
+        const turnBytes = byteLength(serializeReceiptContext(turnReceipts, turn));
+        if (turnBytes > limits.maxReceiptBytesPerTurn || totalReceiptBytes + turnBytes > limits.maxTotalReceiptBytes) {
+            return { reason: overBudget, receipts: [...receipts, ...turnReceipts] };
+        }
+        receipts.push(...turnReceipts);
+        totalReceiptBytes += turnBytes;
+        receiptContext = serializeReceiptContext(receipts, turn);
+        return byteLength(receiptContext) > limits.maxTotalReceiptBytes ? { reason: overBudget, receipts } : null;
+    };
+
+    for (let turn = 1; turn <= maxTurns(); turn += 1) {
         if (input.signal?.aborted) {
             return {
                 status: 'rejected',
@@ -992,7 +986,7 @@ export async function runApplicationOwnedToolLoop(
                 turn,
                 receiptContext,
                 remaining: {
-                    turns: limits.maxTurns - turn + 1,
+                    turns: maxTurns() - turn + 1,
                     calls: limits.maxTotalCalls - totalCalls,
                     receiptBytes: limits.maxTotalReceiptBytes - totalReceiptBytes,
                 },
@@ -1039,8 +1033,80 @@ export async function runApplicationOwnedToolLoop(
             identifiedCalls.push({ call, callId });
         }
 
+        const interpretationCalls = identifiedCalls.filter(
+            ({ call }) => input.interpretation !== undefined && call.name === input.interpretation.toolName
+        );
+        if (interpretationCalls.length > 0) {
+            // The interpretation decides what the rest of the run is allowed to mean, so it cannot
+            // ride alongside calls whose meaning it would have settled.
+            if (identifiedCalls.length !== 1) {
+                return {
+                    status: 'rejected',
+                    reason: 'Provider mixed the creative interpretation with other tool calls in one turn.',
+                    receipts,
+                    turns: turn,
+                };
+            }
+            if (interpretation === 'admitted') {
+                return {
+                    status: 'rejected',
+                    reason: 'Provider repeated the creative interpretation.',
+                    receipts,
+                    turns: turn,
+                };
+            }
+            const { call, callId } = interpretationCalls[0]!;
+            const admission = input.interpretation!.admit(call);
+            if (admission.status === 'rejected') {
+                return { status: 'rejected', reason: admission.reason, receipts, turns: turn };
+            }
+            if (admission.status === 'clarify') {
+                return {
+                    status: 'complete',
+                    toolCalls: [],
+                    decline: {
+                        kind: 'clarify',
+                        reason: admission.reason,
+                        questions: [admission.reason],
+                    },
+                    searchedIntents: [...searchedIntents],
+                    proposal: null,
+                    receipts,
+                    turns: turn,
+                    interpretation: 'clarified',
+                };
+            }
+            const overBudget = admitTurnReceipts(
+                [
+                    boundReceipt(
+                        {
+                            schema: 'sourdaw.application-tool-receipt',
+                            schemaVersion: 1,
+                            callId,
+                            toolName: call.name,
+                            turn,
+                            status: 'success',
+                            revision: null,
+                            data: admission.receipt.data,
+                            summary: admission.receipt.summary,
+                            warnings: [],
+                            error: null,
+                        },
+                        limits.maxReceiptBytesPerCall
+                    ),
+                ],
+                turn
+            );
+            if (overBudget !== null) {
+                return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
+            }
+            interpretation = 'admitted';
+            continue;
+        }
+
         const safeReadToolNames = new Set([
             PROJECT_QUERY_TOOL_NAME,
+            PROJECT_DISCOVERY_TOOL_NAME,
             PROJECT_RESOLVE_TOOL_NAME,
             AGENT_CAPABILITIES_TOOL_NAME,
             AGENT_DEVICE_MANIFEST_TOOL_NAME,
@@ -1086,9 +1152,10 @@ export async function runApplicationOwnedToolLoop(
                 proposal: outcome.proposal ?? extractAgentPlanProposal(outcome.toolCalls),
                 receipts,
                 turns: turn,
+                interpretation,
             };
         }
-        if (turn === limits.maxTurns) {
+        if (turn === maxTurns()) {
             return {
                 status: 'rejected',
                 reason: 'Provider exhausted the bounded application tool-loop turns.',
@@ -1104,26 +1171,9 @@ export async function runApplicationOwnedToolLoop(
         );
         recordDisclosedCommandSchemas(safeReadCalls, turnReceipts, disclosedCommandSchemas);
         recordSearchedIntents(safeReadCalls, turnReceipts, searchedIntents);
-        const serializedTurn = serializeReceiptContext(turnReceipts, turn);
-        const turnBytes = byteLength(serializedTurn);
-        if (turnBytes > limits.maxReceiptBytesPerTurn || totalReceiptBytes + turnBytes > limits.maxTotalReceiptBytes) {
-            return {
-                status: 'rejected',
-                reason: 'Application tool receipts exceeded the bounded context budget.',
-                receipts: [...receipts, ...turnReceipts],
-                turns: turn,
-            };
-        }
-        receipts.push(...turnReceipts);
-        totalReceiptBytes += turnBytes;
-        receiptContext = serializeReceiptContext(receipts, turn);
-        if (byteLength(receiptContext) > limits.maxTotalReceiptBytes) {
-            return {
-                status: 'rejected',
-                reason: 'Application tool receipts exceeded the bounded context budget.',
-                receipts,
-                turns: turn,
-            };
+        const overBudget = admitTurnReceipts(turnReceipts, turn);
+        if (overBudget !== null) {
+            return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
         }
     }
 
@@ -1131,6 +1181,6 @@ export async function runApplicationOwnedToolLoop(
         status: 'rejected',
         reason: 'Provider exhausted the bounded application tool-loop turns.',
         receipts,
-        turns: limits.maxTurns,
+        turns: maxTurns(),
     };
 }

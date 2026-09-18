@@ -1,16 +1,25 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
-import { readSecondsAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { kneadStore, type KneadClipState } from '../stores/kneadStore';
 
 /**
- * `startSeconds` is the clip's start beat integrated through the tempo map.
+ * `startSeconds` is the anchor the engine's Knead worklet subtracts from the
+ * transport's song time to land on *source* time — seconds into the clip's
+ * audio, where the blob windows live.
  *
- * The engine's Knead worklet selects a pitch blob by clip time in seconds, and
- * blob times are seconds into the clip's audio. Beats convert to seconds only
- * through the tempo map, which lives here rather than on the audio thread, so
- * the anchor is integrated once per push and shipped alongside the beats.
+ * Two clocks meet there and both are integrated here, on the main thread,
+ * because the audio thread has neither of them. The clip's start beat goes
+ * through the tempo map. The audio offset does not: it is converted at the
+ * flat tempo governing the start beat, the same law the audio projector
+ * applies (`projectOfflineAudioClipPlaybacks`) — the material was rendered at
+ * one tempo, so a change inside the offset span moves the clip on the
+ * timeline, never the point it seeks to inside the file. With both halves in
+ * place, `songTime − startSeconds` at any playhead is the source position the
+ * audio scheduler is reading, and the blob the worklet picks is the blob the
+ * listener hears — even after a slip or a left-edge trim moved the clip's
+ * entry into its own material (issue #3717).
  */
 type EngineKneadState = KneadClipState & { startBeat: number; endBeat: number; startSeconds: number };
 
@@ -35,11 +44,18 @@ function pushKneadStateToEngine(): void {
             for (const clip of track.clips) {
                 const clipState = state.clips[clip.id];
                 if (clipState) {
+                    const clipTempo = readTempoAtBeat({ beat: clip.startBeat });
+                    const clipSecondsPerBeat = Number.isFinite(clipTempo) && clipTempo > 0 ? 60 / clipTempo : 0;
+                    // A negative offset (left edge dragged past the file's
+                    // start) opens a silent pre-roll: the anchor moves the
+                    // other way, and the negative lookup window matches no
+                    // blob — exactly the span in which nothing sounds.
+                    const audioOffsetSeconds = (clip.audioOffsetBeats ?? 0) * clipSecondsPerBeat;
                     trackClipsState[clip.id] = {
                         ...clipState,
                         startBeat: clip.startBeat,
                         endBeat: clip.endBeat,
-                        startSeconds: readSecondsAtBeat({ beat: clip.startBeat }),
+                        startSeconds: readSecondsAtBeat({ beat: clip.startBeat }) - audioOffsetSeconds,
                     };
                 }
             }

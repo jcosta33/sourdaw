@@ -4,8 +4,9 @@
 #
 # Only a user, a team, or an account email may own a path, and the owner must hold write access.
 # `jcosta33-reviewer[bot]` is a GitHub App and therefore cannot be listed here. The reviewer bot's
-# approval is enforced instead by `pnpm deliver`, which refuses to merge a pull request the bot has
-# not APPROVED on the current head. That gate is the binding one; this file only routes the request.
+# approval is enforced by `pnpm deliver`, which requires current-head approval from both the exact
+# reviewer Bot and the jcosta33 User, with user acceptance after bot approval. This file routes the
+# owner request; final orchestrator acceptance uses `pnpm review:accept` on behalf of jcosta33.
 #
 # Do not reintroduce a per-module owner map. `jcosta33/sourdaw` is a personal repository, so the
 # `@sourdaw/team-*` organisation teams a previous revision of this file addressed cannot exist, and

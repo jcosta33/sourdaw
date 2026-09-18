@@ -10,8 +10,13 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 // here is what project truth holds after undo, so the engine seam is stubbed
 // rather than exercised.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
+
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    projectsToDifferentNativeBank: vi.fn(() => false),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
@@ -35,7 +40,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDeviceChainTailSeconds: vi.fn(),
     getEngineState: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
-    getLiveEngineSampleRate: vi.fn(),
     getMasterAnalyser: vi.fn(() => null),
     getRuntimeGraphRevision: vi.fn(),
     getTrackAnalyser: vi.fn(() => null),
@@ -66,6 +70,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 

@@ -498,6 +498,10 @@ const WHISPER_MODEL_FILE: &str = "ggml-base.en.bin";
 const WHISPER_MODEL_SHA256: &str =
     "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002";
 const WHISPER_MODEL_SIZE_BYTES: u64 = 147_964_211;
+/// The sample rate whisper.cpp expects its input at: every recording is
+/// resampled to this before decoding, and skipping the resample when the
+/// capture already runs at it is only correct against this one number.
+const SPEECH_MODEL_SAMPLE_RATE_HZ: f64 = 16_000.0;
 const WHISPER_MODEL: verified_cached_model::VerifiedCachedModel =
     verified_cached_model::VerifiedCachedModel {
         filename: WHISPER_MODEL_FILE,
@@ -610,8 +614,8 @@ pub async fn start_dictation(
                     Zeroizing::new(std::mem::take(&mut *raw_audio))
                 };
 
-                // Resample to 16kHz
-                let audio_16k = if sample_rate != 16000 {
+                // Resample to the model's 16 kHz
+                let audio_16k = if sample_rate != SPEECH_MODEL_SAMPLE_RATE_HZ as u32 {
                     match resample_to_16k(&mono_audio, sample_rate) {
                         Ok(resampled) => Zeroizing::new(resampled),
                         Err(e) => {
@@ -967,7 +971,7 @@ fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, String> {
         window: WindowFunction::BlackmanHarris2,
     };
 
-    let ratio = 16_000f64 / f64::from(src_rate);
+    let ratio = SPEECH_MODEL_SAMPLE_RATE_HZ / f64::from(src_rate);
 
     let mut resampler = SensitiveResampler(
         Async::<f64>::new_sinc(ratio, 2.0, &params, 1024, 1, FixedAsync::Input)

@@ -321,6 +321,43 @@ describe('createWebAudioOfflineBackend', () => {
     });
 
     /**
+     * Accepted and ignored, on the live note's own terms and for one reason
+     * more: an offline render has no player, so there is no foot on a pedal
+     * either, and a controller carries no timeline position to place it by.
+     */
+    it('accepts a live controller without applying it and without failing the batch', async () => {
+        const { backend } = backendUnderTest();
+
+        const result = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'create-track-strip',
+                    trackId: 't1',
+                    name: 'Fixture',
+                    state: REST,
+                    devices: [{ id: 'd', name: 'd', type: 'builtin-gain', bypassed: false, parameterValues: {} }],
+                    honorMuted: true,
+                    contributesAudio: true,
+                },
+                {
+                    kind: 'send-midi-control',
+                    target: { trackId: 't1', deviceId: 'd' },
+                    controller: 64,
+                    value: 127,
+                    channel: 0,
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+            reports: [{ kind: 'track', id: 't1', deviceIds: ['d'] }],
+        });
+    });
+
+    /**
      * Accepted and ignored, on the same terms as scheduled MIDI. An immediate
      * patch load addresses a native built-in, which only a natively carried
      * strip holds, so refusing it would take down the strips a batch carrying

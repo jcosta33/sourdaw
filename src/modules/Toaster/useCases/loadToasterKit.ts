@@ -6,6 +6,7 @@ import { loadKit } from '../stores/toasterStore';
 import { getToasterControls } from './getToasterControls';
 import { projectToasterKitToEngineMessages } from './projectToasterKitToEngineMessages';
 import { cancelPendingToasterPadParams } from './toasterParamBridge/cancelPendingToasterPadParams';
+import { writeToasterParamsNatively } from './writeToasterParamsNatively';
 
 export function loadToasterKitPreset(deviceId: string, kit: ToasterKit): void {
     const target = resolveEligibleDeviceWriteTarget(deviceId);
@@ -32,11 +33,18 @@ export function loadToasterKitPreset(deviceId: string, kit: ToasterKit): void {
 
     // The same projection the device-load subscriber and the offline render use.
     // This used to be a third hand-maintained copy of it.
-    for (const message of projectToasterKitToEngineMessages({ kit })) {
+    const messages = projectToasterKitToEngineMessages({ kit });
+    for (const message of messages) {
         if (message.type === 'param') {
             controls.setParam(message.name, message.value);
             continue;
         }
         controls.setPadParam(message.pad, message.name, message.value);
     }
+
+    // A preset replaces the whole kit, so the native session needs the whole
+    // record — one batch, because `sendNativeDeviceParameters` refuses to split
+    // one gesture across two and a Toaster holding half of each preset is
+    // audibly neither.
+    writeToasterParamsNatively({ trackId: target.trackId, deviceId, messages });
 }

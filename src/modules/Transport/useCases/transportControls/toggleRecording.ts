@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
-import { getTrackStoreState, updateClip, startRecording } from '#/modules/Arrangement/useCases';
+import { getTrackEligibility } from '#/modules/Arrangement/stores';
+import { getTrackStoreState, updateClip, startRecording, removeClip } from '#/modules/Arrangement/useCases';
 import {
     resumeEngine,
     getAudioContext,
@@ -11,20 +12,42 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { getTempoAtBeat } from '../../models/TempoMap';
+import { getTempoAtBeat, samplesToBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
+import { DEFAULT_TEMPO_BPM } from '../../stores/transportStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 
 import { recordingLifecycle } from './recordingLifecycle';
 import { startPlayback } from './startPlayback';
 import { stopActiveRecording } from './stopActiveRecording';
 
-async function beginActualRecording(startToken: number, anchorBeat?: number): Promise<boolean> {
+/**
+ * The two instants that bound the wait for the roll, on the clock the capture
+ * runs on. Instants rather than a duration because the finaliser can run before
+ * the roll answers — Record pressed again inside the hold stops the take from
+ * within it — and a duration written after the roll would still read zero there.
+ * Both stay null while nothing has been asked to roll.
+ */
+type TransportHold = { requestedAtContextSeconds: number | null; rolledAtContextSeconds: number | null };
+
+/** A take stopped before the roll answered is placed against the clock at its stop, so the whole wait so far counts. */
+function heldTransportSeconds(hold: TransportHold, nowContextSeconds: number): number {
+    if (hold.requestedAtContextSeconds === null) {
+        return 0;
+    }
+    return Math.max((hold.rolledAtContextSeconds ?? nowContextSeconds) - hold.requestedAtContextSeconds, 0);
+}
+
+async function beginActualRecording(
+    startToken: number,
+    anchorBeat: number | undefined,
+    transportHold: TransportHold
+): Promise<boolean> {
     const ctx = getAudioContext();
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
     const armedTracks = getTrackStoreState()?.tracks.filter((time) => time.armed) ?? [];
@@ -37,6 +60,17 @@ async function beginActualRecording(startToken: number, anchorBeat?: number): Pr
 
         return startAudioRecording(track.id, (result) => {
             if (result.kind === 'failed') {
+                // A capture that dies mid-take (ring overrun, worker crash, a
+                // WAV that never decoded) must not strand an empty provisional
+                // clip on the arrangement or stay silent about it (#4265).
+                notifyUser(
+                    'Recording failed — the partial take was discarded. Check your audio input and try again.',
+                    'error'
+                );
+                const failedClip = clips.find((context) => context.trackId === track.id);
+                if (failedClip) {
+                    removeClip(failedClip.id);
+                }
                 return;
             }
             const { buffer } = result;
@@ -46,11 +80,25 @@ async function beginActualRecording(startToken: number, anchorBeat?: number): Pr
                 cacheAudioBuffer({ buffer, bufferId });
 
                 const transport = getTransportState();
-                const bpm = transport?.tempo ?? 120;
-                const offsetBeats = totalLatencySec * (bpm / 60);
-                const newStartBeat = Math.max(0, recClip.startBeat - offsetBeats);
-                const durationBeats = buffer.duration * (bpm / 60);
-                const exactEndBeat = newStartBeat + durationBeats;
+                const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
+                const tempoChanges = tempoMapStore.value?.changes ?? [];
+                // The capture is open before the transport is asked to roll, and
+                // on a desktop build the roll waits for the native session, so
+                // the buffer's first sample predates the beat the clip is
+                // anchored on by that wait. It is subtracted like hardware
+                // latency. The wait and the take both sit on the timeline the
+                // active tempo map shapes, so both convert through the map's own
+                // integration — the base tempo only falls back where no change
+                // governs. `samplesToBeat` inverts exactly that integration; a
+                // rate of one sample per second makes its coordinate seconds.
+                const offsetSeconds = totalLatencySec + heldTransportSeconds(transportHold, ctx.currentTime);
+                const anchorSeconds = secondsBetweenBeats(tempoChanges, 0, recClip.startBeat, defaultTempo);
+                const newStartBeat = Math.max(
+                    0,
+                    samplesToBeat(tempoChanges, anchorSeconds - offsetSeconds, defaultTempo, 1)
+                );
+                const startSeconds = secondsBetweenBeats(tempoChanges, 0, newStartBeat, defaultTempo);
+                const exactEndBeat = samplesToBeat(tempoChanges, startSeconds + buffer.duration, defaultTempo, 1);
 
                 void Promise.resolve().then(() => {
                     updateClip(recClip.id, (context) => ({
@@ -96,10 +144,16 @@ async function beginActualRecording(startToken: number, anchorBeat?: number): Pr
 
 function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
     const startToken = recordingLifecycle.beginPendingRecordingStart();
-    void beginActualRecording(startToken, anchorBeat).then((started) => {
+    const transportHold: TransportHold = { requestedAtContextSeconds: null, rolledAtContextSeconds: null };
+    void beginActualRecording(startToken, anchorBeat, transportHold).then(async (started) => {
         const current = getTransportState();
         if (started && current && !current.isPlaying) {
-            startPlayback();
+            const ctx = getAudioContext();
+            // The instant the transport is asked to roll, read on the clock the
+            // capture runs on: the take opened here is placed against it.
+            transportHold.requestedAtContextSeconds = ctx.currentTime;
+            await startPlayback();
+            transportHold.rolledAtContextSeconds = ctx.currentTime;
         }
         return null;
     });
@@ -130,6 +184,14 @@ const COUNT_IN_BOUNDARY_TOLERANCE_SEC = 0.05;
  * Cancellation keeps its existing semantics: `stopActiveRecording` clears the
  * pending timer, and the identity guard drops a wake that a cancel or a newer
  * arm somehow left behind.
+ *
+ * On a desktop build the take opens on the counted downbeat here, and only then
+ * does the roll wait for the native session to answer (75–88 ms measured), so
+ * the arrangement begins that much behind the click the musician counted to.
+ * The take is still placed consistently with the arrangement, which is why this
+ * is accepted rather than blocking; the counted downbeat and the arrangement's
+ * downbeat can only meet once the session is pre-armed during the count-in, and
+ * #4088 tracks that.
  */
 function armCountInRecordingStart(countInEndTimeSec: number, countInDurationSec: number, boundaryBeat: number): void {
     let wakeTimerId: ReturnType<typeof setTimeout> | null = null;
@@ -184,8 +246,25 @@ export function toggleRecording(): void {
         // scheduler refuses to punch on it, so diverting would leave Record
         // with no path to a recording at all.
         if (!state.isPlaying) {
-            startPlayback();
+            void startPlayback();
         }
+        return;
+    }
+
+    // Record needs a take target. `startRecording` opens take clips on armed,
+    // recording-eligible tracks; with none armed it creates nothing, yet the
+    // transport below would present an engaged recording and roll playback
+    // under its name — a record button that captures nothing and says so only
+    // in its tooltip. Refuse with the arm guidance instead (#3679). The same
+    // admission governs the count-in branch below: counting in for a take
+    // that cannot exist is the same defect one count earlier. The punch arm
+    // above stays open — it engages no recording, and the scheduler owns the
+    // window it arms.
+    const hasArmedTakeTarget =
+        getTrackStoreState()?.tracks.some((track) => track.armed && getTrackEligibility(track.kind).acceptsRecording) ??
+        false;
+    if (!hasArmedTakeTarget) {
+        notifyUser('No track is armed for recording. Arm a track, then press Record.', 'warning');
         return;
     }
 

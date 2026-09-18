@@ -1,3 +1,5 @@
+import { clampMidiData7 } from '#/utils/midiData';
+
 import { type MidiNote } from '../models/MidiNote';
 
 type TransposeMidiNotesInput = {
@@ -14,7 +16,7 @@ export function transposeMidiNotes({ notes, semitones, noteIds }: TransposeMidiN
         }
         return {
             ...note,
-            pitch: Math.max(0, Math.min(127, note.pitch + semitones)),
+            pitch: clampMidiData7(note.pitch + semitones),
         };
     });
 }

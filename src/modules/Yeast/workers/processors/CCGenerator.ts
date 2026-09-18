@@ -11,11 +11,25 @@ import {
     samplesPerBeat,
 } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
+import { LCG_MAX, nextLcg } from '../lcgRandom';
 import { EMIT_FALLBACK_BLOCK_SPAN_SAMPLES, resolveBlockEndSamples, resolveBlockStartSamples } from '../MidiProcessor';
 
 type LfoShape = 'sine' | 'triangle' | 'square' | 'sawUp' | 'sawDown' | 'sampleHold';
 
-function evalShape(shape: LfoShape, phase: number, rngState: { v: number }): number {
+/**
+ * Sample & hold state. The LCG integer state threads through `nextLcg` and is
+ * never overwritten with the normalized output — folding the normalized value
+ * back in as the next state collapsed the sequence geometrically toward zero.
+ */
+type SampleHoldState = {
+    lcgState: number;
+    /** Normalized 0..1 value held between cycle crossings. */
+    held: number;
+    /** Normalized phase of the previous evaluation; null until the first draw. */
+    lastPhase: number | null;
+};
+
+function evalShape(shape: LfoShape, phase: number, sampleHold: SampleHoldState): number {
     const param = phase % 1.0;
     switch (shape) {
         case 'sine':
@@ -29,11 +43,18 @@ function evalShape(shape: LfoShape, phase: number, rngState: { v: number }): num
         case 'sawDown':
             return 1 - param;
         case 'sampleHold': {
-            // Only change on phase wrap
-            if (param < 0.01) {
-                rngState.v = ((rngState.v * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+            // Draw exactly once per cycle crossing: when the phase wrapped
+            // forward since the previous evaluation, or jumped backward
+            // (reset(), note retrigger) — plus the initial draw before any
+            // phase has been observed. A phase-width threshold (param < 0.01)
+            // instead redraws on every emit interval inside that window,
+            // bursting several controller changes at each slow cycle's start.
+            if (sampleHold.lastPhase === null || param < sampleHold.lastPhase) {
+                sampleHold.lcgState = nextLcg(sampleHold.lcgState);
+                sampleHold.held = sampleHold.lcgState / LCG_MAX;
             }
-            return rngState.v;
+            sampleHold.lastPhase = param;
+            return sampleHold.held;
         }
         default:
             // Audio-thread no-op fallback. setParam clamps `shape` to a valid
@@ -60,7 +81,7 @@ export class CCGenerator extends BaseMidiProcessor {
     private retriggerOnNote = false;
     private lastEmittedValue = -1;
     private changeThreshold = 2; // only emit when value changes by this much
-    private rng = { v: 0.5 };
+    private sampleHold: SampleHoldState = { lcgState: 0xdead, held: 0, lastPhase: null };
     private accumPhase = 0;
 
     constructor(id?: string) {
@@ -110,7 +131,7 @@ export class CCGenerator extends BaseMidiProcessor {
             // compounds every block rather than averaging out.
             this.accumPhase += phasePerSample * Math.min(emitInterval, blockSamples - offset);
             const currentPhase = (this.accumPhase + this.phase) % 1.0;
-            const normalized = evalShape(this.shape, currentPhase, this.rng);
+            const normalized = evalShape(this.shape, currentPhase, this.sampleHold);
             const ccValue = Math.round(low + normalized * (high - low));
 
             if (Math.abs(ccValue - this.lastEmittedValue) >= this.changeThreshold) {
@@ -126,6 +147,9 @@ export class CCGenerator extends BaseMidiProcessor {
     reset(): void {
         this.accumPhase = 0;
         this.lastEmittedValue = -1;
+        // The next evaluation starts a fresh cycle: force the initial-draw
+        // rule rather than comparing against a stale pre-reset phase.
+        this.sampleHold.lastPhase = null;
     }
 
     protected resetParams(): void {

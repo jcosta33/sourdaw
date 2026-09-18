@@ -77,19 +77,42 @@ type MarkerlessRecoveryBytes = Float32Array & {
 export type StoredRecoveryValue = StoredRecoveryRecord | MarkerlessRecoveryBytes;
 
 export type StoredCheckpointRetention = {
-    schemaVersion: 1;
+    schemaVersion: 2;
     checkpointId: string;
     projectOwnerId: string;
-    bufferIds: string[];
     ownershipToken: string;
+    versionKeys: string[];
 };
 
-export type StoredValue = StoredAudioBuffer | StoredBufferMeta | StoredRecoveryValue | StoredCheckpointRetention;
+export type StoredCheckpointAudioVersion = {
+    sampleRate: number;
+    numberOfChannels: number;
+    channelData: Float32Array[];
+    sizeInBytes: number;
+};
+
+export type StoredCheckpointAudioVersionMeta = {
+    schemaVersion: 1;
+    versionKey: string;
+    bufferId: string;
+    persistenceRevision: string;
+    sizeInBytes: number;
+};
+
+export type StoredValue =
+    | StoredAudioBuffer
+    | StoredBufferMeta
+    | StoredRecoveryValue
+    | StoredCheckpointRetention
+    | StoredCheckpointAudioVersion
+    | StoredCheckpointAudioVersionMeta;
 
 export const BUFFER_STORE = 'buffers';
 export const META_STORE = 'bufferMeta';
 export const RECOVERY_STORE = 'preparedBufferRecovery';
 export const CHECKPOINT_RETENTION_STORE = 'checkpointRetentions';
+export const CHECKPOINT_AUDIO_VERSION_STORE = 'checkpointAudioVersions';
+export const CHECKPOINT_AUDIO_VERSION_META_STORE = 'checkpointAudioVersionMeta';
 const RECOVERY_MIGRATION_MARKER_KEY = 0;
 
 /** Structured-clone payload size of one value, in bytes.
@@ -174,6 +197,10 @@ export type FakeAudioIndexedDbControls = {
     committedRecovery: Map<IDBValidKey, StoredRecoveryValue>;
     /** Committed durable checkpoint ownership rows. */
     committedCheckpointRetentions: Map<IDBValidKey, StoredCheckpointRetention>;
+    /** Committed immutable checkpoint PCM rows. */
+    committedCheckpointAudioVersions: Map<IDBValidKey, StoredCheckpointAudioVersion>;
+    /** Committed immutable checkpoint PCM metadata rows. */
+    committedCheckpointAudioVersionMeta: Map<IDBValidKey, StoredCheckpointAudioVersionMeta>;
     /** Object stores that exist on the database right now. */
     storeNames: () => string[];
     /** Abort every subsequent readwrite transaction, after its requests succeed. */
@@ -514,8 +541,9 @@ type FakeOpenRequest = {
     error: DOMException | null;
     onsuccess: (() => void) | null;
     onerror: (() => void) | null;
-    onupgradeneeded: (() => void) | null;
+    onupgradeneeded: ((event: IDBVersionChangeEvent) => void) | null;
     onblocked: (() => void) | null;
+    transaction: FakeTransaction | null;
     requestedVersion: number;
     versionChangeDispatched: boolean;
     blockedFired: boolean;
@@ -538,10 +566,10 @@ export type InstallFakeAudioIndexedDbInput = {
      *   no `error`. The silence is the point: a double that fired `blocked` and
      *   then `success` anyway could not show the hang, because the promise
      *   would settle either way.
-     * - `'then-yields'` fires `blocked` and then `success` a task later, as a
-     *   browser does when the blocking context finally closes. This is the only
-     *   way to reach the branch that has to close a connection nobody is
-     *   waiting for any more.
+     * - `'then-yields'` fires `blocked` and then resumes the queued open
+     *   lifecycle, as a browser does when the blocking context finally closes.
+     *   This is the only way to reach the branch that has to close a connection
+     *   nobody is waiting for any more.
      */
     blockOpens?: 'forever' | 'then-yields';
 };
@@ -551,6 +579,8 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     const committedMeta = new Map<IDBValidKey, StoredBufferMeta>();
     const committedRecovery = new Map<IDBValidKey, StoredRecoveryValue>();
     const committedCheckpointRetentions = new Map<IDBValidKey, StoredCheckpointRetention>();
+    const committedCheckpointAudioVersions = new Map<IDBValidKey, StoredCheckpointAudioVersion>();
+    const committedCheckpointAudioVersionMeta = new Map<IDBValidKey, StoredCheckpointAudioVersionMeta>();
     const existingStores = new Set<string>(input.existingStores ?? [BUFFER_STORE]);
     if (existingStores.has(RECOVERY_STORE) && !input.pendingLegacyRecoveryMigration) {
         committedRecovery.set(RECOVERY_MIGRATION_MARKER_KEY, {
@@ -565,9 +595,13 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     tables.set(META_STORE, committedMeta);
     tables.set(RECOVERY_STORE, committedRecovery);
     tables.set(CHECKPOINT_RETENTION_STORE, committedCheckpointRetentions);
+    tables.set(CHECKPOINT_AUDIO_VERSION_STORE, committedCheckpointAudioVersions);
+    tables.set(CHECKPOINT_AUDIO_VERSION_META_STORE, committedCheckpointAudioVersionMeta);
 
     let databaseVersion = 1;
-    if (existingStores.has(CHECKPOINT_RETENTION_STORE)) {
+    if (existingStores.has(CHECKPOINT_AUDIO_VERSION_STORE) && existingStores.has(CHECKPOINT_AUDIO_VERSION_META_STORE)) {
+        databaseVersion = 5;
+    } else if (existingStores.has(CHECKPOINT_RETENTION_STORE)) {
         databaseVersion = 4;
     } else if (existingStores.has(RECOVERY_STORE)) {
         databaseVersion = 3;
@@ -672,15 +706,53 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
 
     function performUpgrade(request: FakeOpenRequest): void {
         const previousStores = new Set(existingStores);
-        try {
-            request.onupgradeneeded?.();
-            databaseVersion = request.requestedVersion;
-            finishOpen(request);
-        } catch (error) {
+        const oldVersion = databaseVersion;
+        const scope = [...tables.keys()];
+        const doomed =
+            abortWrites || abortNextWrite || (abortWritesToStore !== null && scope.includes(abortWritesToStore));
+        if (abortNextWrite) {
+            abortNextWrite = false;
+        }
+        const restoreStores = () => {
             existingStores.clear();
             for (const storeName of previousStores) {
                 existingStores.add(storeName);
             }
+        };
+        const transaction = new FakeTransaction(
+            tables,
+            scope,
+            doomed,
+            meters,
+            undefined,
+            undefined,
+            (storeName) => failingRequestStore === storeName
+        );
+        request.transaction = transaction;
+        transaction.oncomplete = () => {
+            request.transaction = null;
+            databaseVersion = request.requestedVersion;
+            finishOpen(request);
+        };
+        transaction.onabort = () => {
+            request.transaction = null;
+            restoreStores();
+            failOpen(
+                request,
+                transaction.error instanceof DOMException
+                    ? transaction.error
+                    : new DOMException('The version upgrade was aborted.', 'AbortError')
+            );
+        };
+        try {
+            request.onupgradeneeded?.({
+                oldVersion,
+                newVersion: request.requestedVersion,
+            } as IDBVersionChangeEvent);
+            transaction.start();
+        } catch (error) {
+            request.transaction = null;
+            restoreStores();
             failOpen(
                 request,
                 error instanceof DOMException
@@ -834,6 +906,7 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
                 onerror: null as (() => void) | null,
                 onupgradeneeded: null as (() => void) | null,
                 onblocked: null as (() => void) | null,
+                transaction: null,
                 requestedVersion: version,
                 versionChangeDispatched: false,
                 blockedFired: false,
@@ -844,14 +917,8 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
                     if (input.blockOpens === 'forever') {
                         return;
                     }
-                    setTimeout(() => {
-                        if (request.requestedVersion > databaseVersion) {
-                            request.onupgradeneeded?.();
-                            databaseVersion = request.requestedVersion;
-                        }
-                        request.result.markEstablished();
-                        request.onsuccess?.();
-                    }, 0);
+                    pendingOpenRequests.push(request);
+                    scheduleOpenProcessing();
                 }, 0);
                 return request;
             }
@@ -866,6 +933,8 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
         committedMeta,
         committedRecovery,
         committedCheckpointRetentions,
+        committedCheckpointAudioVersions,
+        committedCheckpointAudioVersionMeta,
         storeNames: () => [...existingStores],
         abortWrites: () => {
             abortWrites = true;

@@ -1,3 +1,6 @@
+import { logger } from '#/infra/logger/appLogger';
+import { buildSemanticProjectDiff, describeCommandBatchRecovery } from '#/modules/Command/useCases';
+
 import { updateChatMessage } from '../../stores/chatStore';
 import { proposePendingActionConfirmation } from '../../stores/pendingActionConfirmationStore';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
@@ -29,10 +32,21 @@ type PersistPromptActionConfirmationInput = {
     projectRevision: string;
     parsedCommandBatch: ParsedCommandBatch;
     content: string;
+    supersedes?: string | null;
 };
 
-export function persistPromptActionConfirmation(input: PersistPromptActionConfirmationInput): void {
+export function persistPromptActionConfirmation(input: PersistPromptActionConfirmationInput): string | null {
     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
+    // A batch whose handlers cannot describe themselves still deserves a semantic view, so
+    // the diff degrades to `irreversible` recoveries rather than losing the whole projection.
+    const described = describeCommandBatchRecovery(input.parsedCommandBatch.envelope);
+    if (described.status === 'rejected') {
+        logger.warn(`Command batch recovery could not be described: ${described.reason}`);
+    }
+    const semanticDiff = buildSemanticProjectDiff({
+        envelope: input.parsedCommandBatch.envelope,
+        recoveryByCommandId: described.status === 'described' ? described.recoveryByCommandId : {},
+    });
     const confirmation = proposePendingActionConfirmation({
         id: confirmationId,
         runId: input.runId,
@@ -43,6 +57,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
         commandEnvelopes: input.commandEnvelopes,
         commandBatch: input.commandBatch,
         agentApproval: input.agentApproval,
+        semanticDiff,
         affectedIds: input.affectedIds,
         protectedUnchanged: input.protectedUnchanged,
         risk: {
@@ -53,6 +68,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
         groupId: input.group.groupId,
         groupLabel: input.group.groupLabel,
         projectRevision: input.projectRevision,
+        supersedes: input.supersedes ?? null,
         resourceLease: createStemImportConfirmationResourceLease(
             input.actions,
             `stem-promotion:${confirmationId}`,
@@ -88,7 +104,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             content:
                 'This proposal was not retained because pending prepared resources reached their safe limit. Resolve or cancel an earlier proposal, then try again.',
         });
-        return;
+        return null;
     }
 
     updateChatMessage(input.assistantMessageId, {
@@ -102,4 +118,5 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
         phase: 'waiting-for-approval',
         revision: input.projectRevision,
     });
+    return confirmationId;
 }

@@ -25,6 +25,7 @@ const mockAppliers = vi.hoisted(() => {
         distortion: mk(),
         bitcrusher: mk(),
         deesser: mk(),
+        lufsMeter: mk(),
         chorus: mk(),
         phaser: mk(),
         flanger: mk(),
@@ -50,6 +51,7 @@ vi.mock('../devices/toneShaping/applyFilterParams', () => ({ applyFilterParams: 
 vi.mock('../devices/toneShaping/applyDistortionParams', () => ({ applyDistortionParams: mockAppliers.distortion }));
 vi.mock('../devices/toneShaping/applyBitcrusherParams', () => ({ applyBitcrusherParams: mockAppliers.bitcrusher }));
 vi.mock('../devices/toneShaping/applyDeEsserParams', () => ({ applyDeEsserParams: mockAppliers.deesser }));
+vi.mock('../devices/toneShaping/applyLufsMeterParams', () => ({ applyLufsMeterParams: mockAppliers.lufsMeter }));
 vi.mock('../devices/modulation/applyChorusParams', () => ({ applyChorusParams: mockAppliers.chorus }));
 vi.mock('../devices/modulation/applyPhaserParams', () => ({ applyPhaserParams: mockAppliers.phaser }));
 vi.mock('../devices/modulation/applyFlangerParams', () => ({ applyFlangerParams: mockAppliers.flanger }));
@@ -72,6 +74,7 @@ const DEVICE_TYPE_TO_MOCK: Record<string, (typeof mockAppliers)[keyof typeof moc
     'builtin-distortion': mockAppliers.distortion,
     'builtin-bitcrusher': mockAppliers.bitcrusher,
     'builtin-deesser': mockAppliers.deesser,
+    'builtin-lufs-meter': mockAppliers.lufsMeter,
     'builtin-chorus': mockAppliers.chorus,
     'builtin-phaser': mockAppliers.phaser,
     'builtin-flanger': mockAppliers.flanger,
@@ -113,15 +116,11 @@ describe('applyParams dispatch', () => {
         }
     });
 
-    it('is a silent no-op for builtin-lufs-meter (intentionally omitted pass-through)', () => {
+    it('routes builtin-lufs-meter to its applier so lufs-window reaches the reader', () => {
         const dn = { id: 'node-stub' };
 
-        // The LUFS meter is a pass-through analyser — it has no audio params to
-        // apply, so it is deliberately absent from the dispatch table.
-        expect(() => applyParams(dn as never, 'builtin-lufs-meter', { x: 1 })).not.toThrow();
+        applyParams(dn as never, 'builtin-lufs-meter', { 'lufs-window': 1 });
 
-        for (const mockFn of Object.values(DEVICE_TYPE_TO_MOCK)) {
-            expect(mockFn).not.toHaveBeenCalled();
-        }
+        expect(mockAppliers.lufsMeter).toHaveBeenCalledWith(dn, { 'lufs-window': 1 });
     });
 });

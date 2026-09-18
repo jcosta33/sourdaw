@@ -28,15 +28,38 @@
  */
 
 /**
+ * Exposed commands this shell branches on by name instead of routing
+ * generically, named once here because more than one file compares against
+ * each: `scan_plugins` has a separate process for its backend (`appIpc.ts`),
+ * `apply_graph_commands` is the native engine's lazy bootstrap and the
+ * power-save start signal, and `retire_native_engine` is the shell-visible
+ * moment its audio stream is gone (`main.ts`); `pluginCommandAdmission.ts`
+ * closes all three at quit. Each is a member of `EXPOSED_COMMANDS` below, and
+ * the renderer-side argument table restates the same names with
+ * `src/utils/sourdawCommandArguments.ts` as its owner (no import route crosses
+ * the shell boundary; `__tests__/commands.spec.ts` pins both sides against the
+ * Rust source).
+ */
+export const APPLY_GRAPH_COMMANDS = 'apply_graph_commands';
+export const RETIRE_NATIVE_ENGINE = 'retire_native_engine';
+export const SCAN_PLUGINS = 'scan_plugins';
+
+/**
  * Commands the renderer may invoke.
  *
  * Sorted, because the order carries no meaning and a sorted list makes an
  * addition a one-line diff at the right place rather than an append anywhere.
  */
 export const EXPOSED_COMMANDS = [
+    'agent_asset_cleanup',
+    'agent_asset_finalize_export',
+    'agent_asset_import',
+    'agent_asset_register_handle',
+    'agent_asset_stage_export',
     'analyze_pitch',
-    'apply_graph_commands',
+    APPLY_GRAPH_COMMANDS,
     'arm_recording',
+    'begin_levain_bank',
     'cancel_provider_gateway_request',
     'close_midi_input',
     'close_plugin_gui',
@@ -48,6 +71,7 @@ export const EXPOSED_COMMANDS = [
     'collab_load_bundle',
     'collab_merge_bundle',
     'collab_save_bundle',
+    'commit_levain_bank',
     'commit_pitch_edit',
     'create_crumbs',
     'crumbs_all_sound_off',
@@ -60,6 +84,7 @@ export const EXPOSED_COMMANDS = [
     'engine_rt_diagnostics',
     'engine_transport_position',
     'engine_transport_set_maps',
+    'get_crumbs_dropped_sample_writes',
     'get_crumbs_position',
     'get_default_plugin_paths',
     'get_plugin_parameters',
@@ -79,10 +104,12 @@ export const EXPOSED_COMMANDS = [
     'parse_scl',
     'provider_gateway_request',
     'read_file_bytes',
+    'register_levain_sample',
     'register_timeline_sample',
+    'release_levain_bank',
     'render_graph_offline',
-    'retire_native_engine',
-    'scan_plugins',
+    RETIRE_NATIVE_ENGINE,
+    SCAN_PLUGINS,
     'send_push_midi',
     'set_crumbs_mode',
     'set_crumbs_param',
@@ -137,6 +164,16 @@ export const EXPOSED_COMMANDS = [
  * native engine. It is the one exposed command that can *start* an audio
  * stream, which is why `pluginCommandAdmission` closes it with the plugin
  * runtime surface at quit.
+ *
+ * The Levain bank commands (`begin_levain_bank`, `register_levain_sample`,
+ * `commit_levain_bank`, `release_levain_bank`) join them for the same reason
+ * and through the same file: a native Levain device has no body until the bank
+ * it names is staged on the native side, so the renderer that already decodes a
+ * bank for its worklet stages the same material through
+ * `nativeGraphTransport.ts`, and releases it there when its own lease on the
+ * instrument ends. They carry decoded PCM, a zone layout and a bank key and
+ * nothing else — no path, no handle, and no reach outside the sampler's own
+ * store.
  *
  * `grant_path` is denied for the reason it exists (jcosta33/sourdaw#3313). It
  * is the only way to widen what the native file commands will touch, so a

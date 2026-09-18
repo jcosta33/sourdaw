@@ -6,6 +6,7 @@ import {
     levelTextColor,
     severityIcon,
     BAND_LABELS,
+    EvidenceStatus,
     FrequencyBar,
     OverallLevel,
     FrequencyBalance,
@@ -74,6 +75,43 @@ describe('FrequencyBar — computed text', () => {
     it('renders formatted dB value', () => {
         render(<FrequencyBar label="Sub" range="20–60 Hz" db={-12.5} />);
         expect(screen.getByText('-12.5 dB')).toBeInTheDocument();
+    });
+
+    it('renders an unmeasured band as unavailable instead of a number', () => {
+        render(<FrequencyBar label="Sub" range="20–60 Hz" db={null} />);
+        expect(screen.queryByText(/dB/u)).not.toBeInTheDocument();
+        expect(screen.getByText('—')).toBeInTheDocument();
+    });
+});
+
+describe('EvidenceStatus — insufficient banner', () => {
+    it('renders nothing for measured evidence', () => {
+        const { container } = render(
+            <EvidenceStatus status={{ availability: 'measured', provenance: 'live-analyser-snapshot' }} />
+        );
+        expect(container).toBeEmptyDOMElement();
+    });
+
+    it('explains a no-signal measurement', () => {
+        render(
+            <EvidenceStatus
+                status={{ availability: 'insufficient', reason: 'no-signal', provenance: 'live-analyser-snapshot' }}
+            />
+        );
+        expect(screen.getByRole('status')).toHaveTextContent(/No signal was measured/u);
+    });
+
+    it('explains a suspended engine', () => {
+        render(
+            <EvidenceStatus
+                status={{
+                    availability: 'insufficient',
+                    reason: 'audio-context-suspended',
+                    provenance: 'live-analyser-snapshot',
+                }}
+            />
+        );
+        expect(screen.getByRole('status')).toHaveTextContent(/audio engine is not running/u);
     });
 });
 

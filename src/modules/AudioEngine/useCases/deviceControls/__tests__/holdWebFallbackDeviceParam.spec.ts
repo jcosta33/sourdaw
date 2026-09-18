@@ -92,11 +92,14 @@ describe('holdWebFallbackDeviceParam', () => {
     });
 
     // A type the engine builds no body for is never carried, so its curve
-    // belongs on the ordinary door rather than on this one.
+    // belongs on the ordinary door rather than on this one. Crumbs is the
+    // bodiless stand-in: `BuiltinEffectType::from_name`
+    // (`crates/daw-engine/src/scheduler.rs`) names no `builtin-crumbs` arm, so
+    // the mapper has no native body to carry it with.
     it('writes nothing for a built-in the engine builds no native body for', () => {
-        projectHolding(createDevice({ id: 'd1', type: 'crust' }));
+        projectHolding(createDevice({ id: 'd1', type: 'builtin-crumbs' }));
 
-        holdWebFallbackDeviceParam('t1', 'd1', 'drive', 0.75);
+        holdWebFallbackDeviceParam('t1', 'd1', 'inputGain', 0.75);
 
         expect(audioEngine.updateDeviceParam).not.toHaveBeenCalled();
         expect(sendNativeDeviceParameters).not.toHaveBeenCalled();

@@ -5,18 +5,22 @@ import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromIdb';
-import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthorityModel';
+import {
+    EMPTY_PERSISTENCE_AUTHORITY,
+    PERSISTENCE_AUTHORITY_KEY,
+} from '../../repositories/crdtPersistence/persistenceAuthorityModel';
 import { saveAllToIdb } from '../../repositories/crdtPersistence/saveAllToIdb';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
+import { beginPersistenceReplacement } from '../beginPersistenceReplacement';
 import { compactProject } from '../compactProject';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
-import { createCrdtProject } from '../createCrdtProject';
 import { persistCrdtProject } from '../persistCrdtProject';
-import { runCrdtPersistenceOperation } from '../runCrdtPersistenceOperation';
+import { runCrdtPersistenceLoad } from '../runCrdtPersistenceLoad';
 
 type VersionedQueueState = {
     version: number;
     persistenceGeneration: number;
+    replacementCount: number;
     pendingChunks: unknown;
     pendingFullSnapshot: unknown;
     persistedBaseDocIds: Set<unknown>;
@@ -31,6 +35,7 @@ function isVersionedQueueState(value: unknown): value is VersionedQueueState {
     if (
         !('version' in value) ||
         !('persistenceGeneration' in value) ||
+        !('replacementCount' in value) ||
         !('pendingChunks' in value) ||
         !('pendingFullSnapshot' in value) ||
         !('persistedBaseDocIds' in value)
@@ -40,6 +45,7 @@ function isVersionedQueueState(value: unknown): value is VersionedQueueState {
     return (
         typeof value.version === 'number' &&
         typeof value.persistenceGeneration === 'number' &&
+        typeof value.replacementCount === 'number' &&
         Array.isArray(value.pendingChunks) &&
         value.persistedBaseDocIds instanceof Set
     );
@@ -165,15 +171,36 @@ async function settleOperationCapturingWrites({
     throw new Error('Persistence operation did not settle after four aborted writes');
 }
 
+/**
+ * The queue state an ordinary editing session sits in: a project loaded, its
+ * durable authority adopted, and the root already a base record incrementals
+ * can extend. A queue with a replacement still pending writes a full bundle
+ * instead.
+ *
+ * The authority is the empty one because this fixture's store starts empty, so
+ * the first save's compare-and-swap claims exactly the revision that is there.
+ */
+async function loadRootOnlyProject(): Promise<void> {
+    await runCrdtPersistenceLoad(() =>
+        Promise.resolve({
+            loaded: true,
+            snapshot: {
+                authority: EMPTY_PERSISTENCE_AUTHORITY,
+                bundle: new Map([['root', new Uint8Array([1])]]),
+            },
+        })
+    );
+}
+
 describe('persistCrdtProject', () => {
     let persistence: TransactionalPersistence;
 
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.clearAllMocks();
         persistence = new TransactionalPersistence();
         mocks.openDatabase.mockResolvedValue(persistence.database);
         automergeRepository.reset();
-        void runCrdtPersistenceOperation('reset');
+        await loadRootOnlyProject();
         crdtProjectCompactionState.incrementalSaveCount = 0;
     });
 
@@ -527,7 +554,7 @@ describe('persistCrdtProject', () => {
         const oldPersist = persistCrdtProject();
         const oldIncremental = await persistence.waitForTransaction('readwrite', 2);
 
-        await runCrdtPersistenceOperation('reset');
+        beginPersistenceReplacement({ epoch: crypto.randomUUID(), old: null });
         expect(oldIncremental.isAbortRequested()).toBe(true);
         automergeRepository.createProject('new-project');
         const newProjectCompaction = compactProject();
@@ -565,11 +592,13 @@ describe('persistCrdtProject', () => {
         failedTransaction.abort();
         await expect(failedPersist).rejects.toThrow('IDB transaction aborted');
 
-        const newProject = createCrdtProject('new-project');
+        beginPersistenceReplacement({ epoch: crypto.randomUUID(), old: null });
+        automergeRepository.createProject('new-project');
+        const newProjectCompaction = compactProject();
         const newProjectSave = await persistence.waitForTransaction('readwrite', 3);
         expect(newProjectSave.writes.some((write) => write.kind === 'add')).toBe(false);
         newProjectSave.complete();
-        await newProject;
+        await newProjectCompaction;
         expect(getPersistedDocumentKeys(persistence)).toEqual(['root']);
 
         automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
@@ -620,7 +649,7 @@ describe('persistCrdtProject', () => {
             staleLoad = loadWithDeferredEmptySnapshot({ shouldCommit: () => loadIsCurrent });
             loadIsCurrent = false;
 
-            await runCrdtPersistenceOperation('reset');
+            beginPersistenceReplacement({ epoch: crypto.randomUUID(), old: null });
             automergeRepository.createProject('replacement');
             const replacementCompaction = compactProject();
             const replacementSave = await persistence.waitForTransaction('readwrite', 1);
@@ -967,9 +996,10 @@ describe('persistCrdtProject', () => {
         try {
             await importPersistenceAfterQueueVersionMismatch();
             const queueAfterMigration = await import('../runCrdtPersistenceOperation');
+            const replacementAfterMigration = await import('../beginPersistenceReplacement');
             await mergeStarted;
 
-            await queueAfterMigration.runCrdtPersistenceOperation('reset');
+            replacementAfterMigration.beginPersistenceReplacement({ epoch: crypto.randomUUID(), old: null });
             automergeRepository.createProject('replacement');
             automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
                 doc.replacementProject = true;
@@ -1409,6 +1439,7 @@ describe('persistCrdtProject', () => {
             state.pendingChunks = { stale: true };
             state.pendingFullSnapshot = { stale: true };
             const previousGeneration = state.persistenceGeneration;
+            const previousReplacementCount = state.replacementCount;
             state.version = 0;
 
             vi.resetModules();
@@ -1418,8 +1449,11 @@ describe('persistCrdtProject', () => {
             recoverySave.complete();
             await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-            expect(state.version).toBe(5);
+            expect(state.version).toBe(7);
             expect(state.persistenceGeneration).toBe(previousGeneration + 1);
+            // A reload replaces no project, so a transition spanning it still
+            // recognises the project it started on.
+            expect(state.replacementCount).toBe(previousReplacementCount);
             expect(state.pendingChunks).toEqual([]);
             expect(state.pendingFullSnapshot).toBeNull();
             expect(state.persistedBaseDocIds).toEqual(new Set());

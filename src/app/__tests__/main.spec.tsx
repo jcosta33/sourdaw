@@ -109,6 +109,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     midiClipSplitStateMatches: vi.fn(),
     migrateAbsoluteMidiNotes: vi.fn(),
     panicLiveNotes: vi.fn(),
+    prepareMidiClipFanOutState: vi.fn(),
     prepareMidiClipGlueState: vi.fn(),
     prepareMidiClipSplit: vi.fn(),
     projectClipMidiEvents: vi.fn(),
@@ -137,6 +138,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    isAppActionConflictError: vi.fn(() => false),
     setCommandEventBus: mocks.setCommandEventBus,
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     clearUndoHistory: vi.fn(),

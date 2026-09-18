@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { add_midi_track, launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -35,6 +35,10 @@ test.describe('Recording Workflow', () => {
 
     test('Record arm toggle works', async ({ page }) => {
         const record = page.getByTestId('transport-record');
+        // A fresh project starts with zero tracks; add one before arming (#4299).
+        await add_midi_track(page);
+        // Arm the first track so Record has an eligible target (#3679).
+        await page.locator('[data-testid^="track-arm-"]').first().click({ timeout: 15_000 });
         const pressed_before = await record.getAttribute('aria-pressed');
         await record.click();
         await page.waitForTimeout(300);

@@ -40,6 +40,7 @@ export { cancelFreezeTrack } from './freezeBounce/cancelFreezeTrack';
 export { unfreezeTrack } from './freezeBounce/unfreezeTrack';
 export { cleanupUnusedFreezeFiles } from './freezeBounce/cleanupUnusedFreezeFiles';
 export { setOfflineRenderDependencies } from './freezeBounce/offlineRenderDependencies';
+export { admitAgentRenderReceipt } from './freezeBounce/admitAgentRenderReceipt';
 export { setTrackInput } from './setTrackInput';
 export { exportMidiClip } from './exportMidiClip';
 export { importMidiFile } from './importMidiFile';
@@ -59,6 +60,8 @@ export { duplicateClip } from './clip/duplicateClip';
 export { duplicateClipToNextBar } from './clip/duplicateClipToNextBar';
 export { acceptGhostClip } from './clip/acceptGhostClip';
 export { dismissGhostClip } from './clip/dismissGhostClip';
+export { setClipAudioAssetStager } from './clip/setClipAudioAssetStager';
+export { stageClipAudioAsset } from './clip/stageClipAudioAsset';
 export { updateClip } from './updateClip';
 export { replaceClipAudioBuffer } from './replaceClipAudioBuffer';
 export { relinkClipAudioSource } from './relinkClipAudioSource';
@@ -157,6 +160,7 @@ export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParamet
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 
 export { deleteTime } from './timeOperations/deleteTime';
+export { getLastClipEndBeat } from './getLastClipEndBeat';
 export { duplicateTimeRange } from './timeOperations/duplicateTimeRange';
 export { insertTime } from './timeOperations/insertTime';
 export { executeUndoableDuplicateTimeRange } from './timeOperations/executeUndoableDuplicateTimeRange';

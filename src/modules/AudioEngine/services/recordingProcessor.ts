@@ -17,10 +17,12 @@
 
 import {
     beginRecordingRingWrite,
+    clearRecordingSampleZeroContextFrame,
     completeRecordingRingWrite,
     RECORDING_RING_CONTROL_BYTES,
     RECORDING_RING_CONTROL_INTS,
     storeRecordingSampleCount,
+    storeRecordingSampleZeroContextFrame,
 } from '../models/RecordingRingProtocol';
 
 type RecordingMsg = { type: 'init'; sab: SharedArrayBuffer } | { type: 'start' } | { type: 'stop' };
@@ -36,12 +38,21 @@ type RecordingMsg = { type: 'init'; sab: SharedArrayBuffer } | { type: 'start' }
  *
  * Hot-path safe: no allocation, no blocking; reused by `process`.
  */
-export function writeRingRelease(ring: Float32Array, control: Int32Array, head: number, input: Float32Array): number {
+export function writeRingRelease(
+    ring: Float32Array,
+    control: Int32Array,
+    head: number,
+    input: Float32Array,
+    sampleZeroContextFrame: number
+): number {
     const ringSize = ring.length;
     const nextHead = head + input.length;
     // An odd sequence invalidates any concurrent consumer copy before the
     // producer can overwrite a ring slot.
     beginRecordingRingWrite(control);
+    if (head === 0) {
+        storeRecordingSampleZeroContextFrame(control, sampleZeroContextFrame);
+    }
     for (let index = 0; index < input.length; index++) {
         ring[(head + index) % ringSize] = input[index] ?? 0;
     }
@@ -70,6 +81,7 @@ class RecordingWorkletProcessor extends AudioWorkletProcessor {
                     this._publishedSampleCount = 0;
                     Atomics.store(this._control, 0, 0);
                     storeRecordingSampleCount(this._control, 0);
+                    clearRecordingSampleZeroContextFrame(this._control);
                     break;
                 }
                 case 'start':
@@ -96,7 +108,13 @@ class RecordingWorkletProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        this._publishedSampleCount = writeRingRelease(this._ring, this._control, this._publishedSampleCount, input);
+        this._publishedSampleCount = writeRingRelease(
+            this._ring,
+            this._control,
+            this._publishedSampleCount,
+            input,
+            currentFrame
+        );
         return true;
     }
 }

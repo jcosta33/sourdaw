@@ -23,8 +23,10 @@ vi.mock('#/utils/HMR/createHmrPersistentState', () => ({
 
 type PersistenceContext = {
     queue: {
+        runCrdtPersistenceBarrier: typeof import('../runCrdtPersistenceBarrier').runCrdtPersistenceBarrier;
         runCrdtPersistenceOperation: typeof import('../runCrdtPersistenceOperation').runCrdtPersistenceOperation;
         runCrdtPersistenceLoad: typeof import('../runCrdtPersistenceLoad').runCrdtPersistenceLoad;
+        beginPersistenceReplacement: typeof import('../beginPersistenceReplacement').beginPersistenceReplacement;
     };
     repository: typeof import('../../repositories/automergeRepository');
     snapshot: typeof import('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb');
@@ -39,16 +41,20 @@ type ConflictAttempt = {
 
 async function importContext(): Promise<PersistenceContext> {
     vi.resetModules();
-    const [operationQueue, loadQueue, repository, snapshot] = await Promise.all([
+    const [barrierQueue, operationQueue, loadQueue, replacementQueue, repository, snapshot] = await Promise.all([
+        import('../runCrdtPersistenceBarrier'),
         import('../runCrdtPersistenceOperation'),
         import('../runCrdtPersistenceLoad'),
+        import('../beginPersistenceReplacement'),
         import('../../repositories/automergeRepository'),
         import('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb'),
     ]);
     return {
         queue: {
+            runCrdtPersistenceBarrier: barrierQueue.runCrdtPersistenceBarrier,
             runCrdtPersistenceOperation: operationQueue.runCrdtPersistenceOperation,
             runCrdtPersistenceLoad: loadQueue.runCrdtPersistenceLoad,
+            beginPersistenceReplacement: replacementQueue.beginPersistenceReplacement,
         },
         repository,
         snapshot,
@@ -211,6 +217,112 @@ describe('CRDT persistence across independent queue contexts', () => {
                 }
             }
         );
+    });
+
+    it('reports a committed exact-head failure after conflict merge persistence', async () => {
+        const { first, second } = await createSharedContexts({ persistence });
+
+        first.repository.automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.remoteConflictField = true;
+        });
+        const remotePersist = first.queue.runCrdtPersistenceOperation('compact');
+        const remoteTransaction = await persistence.waitForTransaction('readwrite', 2);
+        remoteTransaction.complete();
+        await remotePersist;
+
+        second.repository.automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.localConflictField = true;
+        });
+        const expectedRootHeads = (second.repository.automergeRepository.getHeads('root') ?? []).map(String).toSorted();
+        const barrier = second.queue.runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
+            await persistCurrentProject(expectedRootHeads);
+        });
+
+        const conflictTransaction = await persistence.waitForTransaction('readwrite', 3);
+        expect(conflictTransaction.writes).toEqual([]);
+        conflictTransaction.complete();
+        const committedTransaction = await persistence.waitForTransaction('readwrite', 4);
+        expect(committedTransaction.writes.some((write) => write.kind === 'add')).toBe(true);
+        committedTransaction.complete();
+
+        await expect(barrier).resolves.toMatchObject({
+            status: 'failed',
+            durable: {
+                write: 'committed',
+                authority: { revision: 3 },
+            },
+            error: expect.objectContaining({
+                message: '[CrdtPersistence] Root revision changed before exact collaboration persistence completed',
+            }),
+        });
+
+        const durableSnapshot = await second.snapshot.loadPersistenceSnapshotFromIdb();
+        if (!durableSnapshot?.bundle) {
+            throw new Error('Expected a durable bundle after the conflict retry');
+        }
+        const reload = await importContext();
+        await reload.repository.automergeRepository.loadAll({
+            bundle: durableSnapshot.bundle,
+            shouldCommit: () => true,
+        });
+        expect(reload.repository.automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+            remoteConflictField: true,
+            localConflictField: true,
+        });
+    });
+
+    it('distinguishes committed supersession, empty-write noop, and a declined barrier', async () => {
+        const context = await importContext();
+        context.repository.automergeRepository.createProject('project');
+        const initialPersist = context.queue.runCrdtPersistenceOperation('compact');
+        const initialTransaction = await persistence.waitForTransaction('readwrite', 1);
+        initialTransaction.complete();
+        await initialPersist;
+
+        context.repository.automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.committedBeforeReset = true;
+        });
+
+        const superseded = context.queue.runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
+            await persistCurrentProject();
+        });
+        const transaction = await persistence.waitForTransaction('readwrite', 2);
+        expect(transaction.writes.some((write) => write.key.startsWith('root:incremental:'))).toBe(true);
+        transaction.complete();
+        // An ordinary project load supersedes the in-flight generation without
+        // pending a replacement: the live documents already are the durable
+        // project, so this load only re-adopts its authority.
+        const supersedingLoad = context.queue.runCrdtPersistenceLoad(async () => ({
+            loaded: true,
+            snapshot: await context.snapshot.loadPersistenceSnapshotFromIdb(),
+        }));
+
+        await expect(superseded).resolves.toMatchObject({
+            status: 'superseded',
+            durable: { write: 'committed', authority: { revision: 2 } },
+        });
+        await expect(supersedingLoad).resolves.toBe(true);
+        const snapshot = await context.snapshot.loadPersistenceSnapshotFromIdb();
+        if (!snapshot?.bundle) {
+            throw new Error('Expected the synchronously committed root after the superseding load');
+        }
+        const reload = await importContext();
+        await reload.repository.automergeRepository.loadAll({ bundle: snapshot.bundle, shouldCommit: () => true });
+        expect(reload.repository.automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+            committedBeforeReset: true,
+        });
+
+        const noop = await context.queue.runCrdtPersistenceBarrier(async ({ persistCurrentProject }) => {
+            await persistCurrentProject();
+        });
+        expect(noop).toMatchObject({ status: 'settled', mode: 'ordinary', durable: { write: 'noop' } });
+
+        const declined = await context.queue.runCrdtPersistenceBarrier(async () => undefined);
+        expect(declined).toEqual({
+            status: 'skipped',
+            reason: 'operation-declined',
+            durable: { write: 'none' },
+        });
     });
 
     it('merges a fresh tab incremental before a stale tab full replacement and reloads both edits', async () => {

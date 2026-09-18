@@ -249,12 +249,26 @@ describe('midiImportWorker', () => {
             // SMF spec: ticksPerBeat is a 14-bit value in the header division
             // word; 480 ppq is a common DAW default. No tempo meta -> 120 BPM.
             dispatchParse(toBuffer([...mThd(0, 1, 480), ...mTrk([])]));
-            expect(lastPosted()).toEqual({ type: 'parsed', tracks: [], ticksPerBeat: 480, tempo: 120 });
+            expect(lastPosted()).toEqual({
+                type: 'parsed',
+                tracks: [],
+                ticksPerBeat: 480,
+                tempo: 120,
+                declaredTrackCount: 1,
+                truncated: false,
+            });
         });
 
         it('parses a format-1 file with zero tracks', () => {
             dispatchParse(toBuffer(mThd(1, 0, 96)));
-            expect(lastPosted()).toEqual({ type: 'parsed', tracks: [], ticksPerBeat: 96, tempo: 120 });
+            expect(lastPosted()).toEqual({
+                type: 'parsed',
+                tracks: [],
+                ticksPerBeat: 96,
+                tempo: 120,
+                declaredTrackCount: 0,
+                truncated: false,
+            });
         });
 
         it('rejects SMPTE-encoded timing instead of reading the division as PPQN', () => {
@@ -706,6 +720,11 @@ describe('midiImportWorker', () => {
             dispatchParse(toBuffer([...mThd(0, 2, 480), ...junk, ...track]));
             expect(parsedTracks()).toHaveLength(1);
             expect(firstNote().pitch).toBe(60);
+            // Fewer tracks arrived than the header declared, but nothing was
+            // lost: the junk chunk was skipped whole, so this is not truncation.
+            const message = lastPosted();
+            expect(message.declaredTrackCount).toBe(2);
+            expect(message.truncated).toBe(false);
         });
     });
 
@@ -767,6 +786,10 @@ describe('midiImportWorker', () => {
             const message = lastPosted();
             expect(message.type).toBe('parsed');
             expect(parsedTracks()).toHaveLength(2);
+            // The header declared three tracks and only two arrived: the parse
+            // must say so, or the importer presents a partial file as complete.
+            expect(message.declaredTrackCount).toBe(3);
+            expect(message.truncated).toBe(true);
         });
 
         it('reports a file truncated before its first track instead of parsing zero tracks', () => {
@@ -790,7 +813,10 @@ describe('midiImportWorker', () => {
             const desynced = mTrkRaw([0xff, 0xff, 0xff, 0xff, 0x7f, 0x90, 60, 100, ...endOfTrack(0)]);
             dispatchParse(toBuffer([...mThd(1, 2, 480), ...intact, ...desynced]));
 
+            const message = lastPosted();
             expect(parsedTracks()).toHaveLength(1);
+            expect(message.declaredTrackCount).toBe(2);
+            expect(message.truncated).toBe(true);
         });
 
         it('refuses a variable-length quantity longer than the four bytes SMF allows', () => {

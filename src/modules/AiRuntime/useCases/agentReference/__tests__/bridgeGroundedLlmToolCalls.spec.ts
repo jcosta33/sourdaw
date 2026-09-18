@@ -295,7 +295,9 @@ describe('automateTrackGainRange capability grounding', () => {
                     },
                 },
             ],
-            'Make the second chorus hit harder without changing any lead-vocal state, the tempo map, or the master chain.',
+            // A paraphrase, not the demo sentence: grounding authority is the
+            // typed call plus app-derived scope, never the wording (#2002).
+            'Lift the rhythm section in the second chorus a touch — vocals, tempo map, and the master chain must stay untouched.',
             exactContext,
             [],
             [{ sectionId: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 }]
@@ -2579,6 +2581,47 @@ describe('bridgeGroundedLlmToolCalls', () => {
                     endBeat: 4,
                     name: 'Melody',
                     /** Derived from the projected MIDI track, which exists only in the plan. */
+                    type: 'midi',
+                },
+            },
+        ]);
+    });
+
+    it('grounds a created track the request names beyond its existing near-name siblings', () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-guitar-1', name: 'Guitar 1' }),
+                createTrack({ id: 'track-guitar-2', name: 'Guitar 2' }),
+                master,
+            ],
+        };
+
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Guitar 3', kind: 'midi', binding: 'guitar3' } },
+                { name: 'addClip', arguments: { trackId: '$guitar3', startBeat: 0, endBeat: 4, name: 'Verse' } },
+            ],
+            'add a midi track named Guitar 3 and add a midi clip named Verse on the Guitar 3 track from beat 0 to beat 4',
+            context
+        );
+
+        const trackIdentity = (result.batchLocalActionIdentities ?? []).find(
+            (identity) => identity.actionType === 'addTrack'
+        );
+        if (trackIdentity?.actionType !== 'addTrack') {
+            throw new Error('Expected one minted track identity');
+        }
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([
+            { type: 'addTrack', payload: { name: 'Guitar 3', kind: 'midi', select: false } },
+            {
+                type: 'addClip',
+                payload: {
+                    trackId: trackIdentity.trackId,
+                    startBeat: 0,
+                    endBeat: 4,
+                    name: 'Verse',
                     type: 'midi',
                 },
             },

@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { clampFaderGain } from '#/utils/audioLevelLaw';
+import { clampFaderGain, toStereoPan } from '#/utils/audioLevelLaw';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
 
 import { SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS } from '../models/BuiltinDeviceRuntime';
@@ -304,11 +304,7 @@ export class TrackNode {
     }
 
     public setPan(pan: number): void {
-        this.strip.panNode.pan.setTargetAtTime(
-            Math.max(-1, Math.min(1, pan / 50)),
-            this.deps.context.currentTime,
-            0.01
-        );
+        this.strip.panNode.pan.setTargetAtTime(toStereoPan(pan), this.deps.context.currentTime, 0.01);
     }
 
     /**
@@ -330,7 +326,7 @@ export class TrackNode {
     /** RT-5 companion to {@link scheduleGainAutomation} for the panner. `pan` is
      *  the canonical −50..50 range `setPan` accepts; it is scaled to −1..1. */
     public schedulePanAutomation(pan: number, time: number): void {
-        this.rampAutomationParam(this.strip.panNode.pan, Math.max(-1, Math.min(1, pan / 50)), time);
+        this.rampAutomationParam(this.strip.panNode.pan, toStereoPan(pan), time);
     }
 
     /** PDC-aligned automation for one existing pre- or post-fader send. */
@@ -1157,6 +1153,7 @@ export class TrackNode {
                     nodes: factoryNode.nodes,
                     inputNode: factoryNode.inputNode,
                     outputNode: factoryNode.outputNode,
+                    lufsMeter: factoryNode.lufsMeter,
                     dispose: factoryNode.dispose,
                 };
                 dn.controller = {

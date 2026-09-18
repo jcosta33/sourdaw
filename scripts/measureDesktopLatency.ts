@@ -81,6 +81,13 @@
  *                     Node's own default exit 1, which this contract reserves
  *                     for the one designed FAILED verdict above.
  *
+ * The harness pins the app's viewport to 1440×900 — `electron/main.ts`'s own
+ * default window size — right after connecting, so the status bar keeps the
+ * expanded layout that carries the master-level ("Out") readout in the
+ * footer instead of collapsing it behind the compact layout's "More" popover
+ * (`StatusBar.tsx`, `desktopLatencyConnect.ts`). A run that still lands in
+ * the compact layout reports NOT MEASURED naming the width it saw.
+ *
  * Usage: `pnpm desktop:measure [--app <path>] [--seconds <n>] [--json <path>]`.
  * A number without its machine is not a measurement, so the record carries the
  * operator checkout's git sha, the measured artefact's own payload hash —

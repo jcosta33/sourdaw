@@ -7,6 +7,7 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 // per test — without the reset, every test after the first would keep talking to
 // the first test's double through the memoized connection.
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+let garbageCollectCachedAudioBuffersBySize: typeof import('../../useCases/garbageCollectCachedAudioBuffersBySize').garbageCollectCachedAudioBuffersBySize;
 let setDurableAudioBufferOwnershipProvider: typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
 let lockManager: ReturnType<typeof createControlledLockManager>;
 
@@ -18,6 +19,8 @@ beforeEach(async () => {
         import('../audioBufferCache'),
         import('../durableAudioBufferOwnership'),
     ]);
+    ({ garbageCollectCachedAudioBuffersBySize } =
+        await import('../../useCases/garbageCollectCachedAudioBuffersBySize'));
     setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
 });
 
@@ -101,6 +104,8 @@ function installFakeIndexedDb(): FakeBacking {
         [0, { kind: 'prepared-audio-recovery-migration', schemaVersion: 1 }],
     ]);
     const retentionBacking = new Map<IDBValidKey, unknown>();
+    const checkpointVersionBacking = new Map<IDBValidKey, unknown>();
+    const checkpointVersionMetaBacking = new Map<IDBValidKey, unknown>();
     backing.meta = metaBacking;
     function makeStore<Key, Value>(table: Map<Key, Value>) {
         return {
@@ -130,6 +135,12 @@ function installFakeIndexedDb(): FakeBacking {
         }
         if (name === 'checkpointRetentions') {
             return retentionStore;
+        }
+        if (name === 'checkpointAudioVersions') {
+            return makeStore(checkpointVersionBacking);
+        }
+        if (name === 'checkpointAudioVersionMeta') {
+            return makeStore(checkpointVersionMetaBacking);
         }
         throw new Error(`Unexpected IndexedDB object store: ${name}`);
     }
@@ -597,7 +608,7 @@ describe('audioBufferCache lifecycle', () => {
             });
             backing.meta.set('newest', { lastAccessed: 30, sizeInBytes: 100 });
 
-            const deleted = await audioBufferCache.garbageCollectBySize(150);
+            const deleted = await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 150 });
 
             expect(deleted).toBe(2);
             expect(backing.has('oldest')).toBe(false);
@@ -615,7 +626,7 @@ describe('audioBufferCache lifecycle', () => {
                 sizeInBytes: 100,
             });
 
-            const deleted = await audioBufferCache.garbageCollectBySize(1_000);
+            const deleted = await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 1_000 });
 
             expect(deleted).toBe(0);
             expect(backing.has('only')).toBe(true);

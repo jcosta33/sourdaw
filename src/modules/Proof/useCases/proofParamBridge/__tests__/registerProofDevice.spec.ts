@@ -9,9 +9,13 @@ import { updateProofMeters, type ProofMeterData } from '../../../stores/proofSto
 import { bridges, type ProofAudioBridge } from '../helpers';
 import { registerProofDevice } from '../registerProofDevice';
 
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    updateDeviceParam: vi.fn(),
+    updateDevicePatch: vi.fn(),
+}));
+
 function makeBridge(): ProofAudioBridge {
     return {
-        setParam: vi.fn(),
         reorderModules: vi.fn(),
         resetIntegrated: vi.fn(),
     };

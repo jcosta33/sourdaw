@@ -22,10 +22,17 @@ export function createControlledLockManager(): ControlledLockManager {
             return;
         }
         activeNames.add(name);
-        void Promise.resolve(pending.callback(null)).finally(() => {
+        // A granted request gets a lock, a refused `ifAvailable` request gets
+        // `null` — the platform's only signal of which happened, and the one a
+        // liveness probe reads to tell "nobody holds this" from "I waited".
+        void Promise.resolve(pending.callback({ name, mode: 'exclusive' })).finally(() => {
             activeNames.delete(name);
             drain(name);
         });
+    };
+
+    const isGrantableNow = (name: string): boolean => {
+        return !activeNames.has(name) && (queues.get(name)?.length ?? 0) === 0;
     };
 
     class ControlledExclusiveLockManager implements Pick<LockManager, 'request'> {
@@ -49,6 +56,12 @@ export function createControlledLockManager(): ControlledLockManager {
                 return Promise.reject(new Error('Controlled lock manager supports exclusive locks only'));
             }
             requestedNames.push(name);
+            if (options.ifAvailable === true && !isGrantableNow(name)) {
+                // Not queued, deliberately: `ifAvailable` either takes the lock
+                // now or reports that it could not, and a caller that ends up
+                // waiting has learned nothing about the holder.
+                return Promise.resolve(callback(null));
+            }
             return new Promise<Awaited<TResult>>((resolve, reject) => {
                 const queue = queues.get(name) ?? [];
                 queues.set(name, queue);

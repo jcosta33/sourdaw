@@ -136,10 +136,6 @@ export function assertGrandBouleMeasurementAdmission() {
     appendFileSync(process.env.CALLS_PATH, 'grand-boule\\n');
     if (process.env.FAIL_GATE === 'grand-boule') throw new Error('Grand Boule refusal');
 }
-export function assertWholeEngineQuantumCapability() {
-    appendFileSync(process.env.CALLS_PATH, 'whole-engine\\n');
-    if (process.env.FAIL_GATE === 'whole-engine') throw new Error('whole-engine refusal');
-}
 `
     );
     return { directory, callsPath };
@@ -256,17 +252,15 @@ describe('hosted quantum measurement workflow contract', () => {
         }
     });
 
-    it('executes both measurement gates and propagates either refusal', () => {
-        for (const failingGate of ['', 'grand-boule', 'whole-engine']) {
+    it('executes the Grand Boule measurement admission gate and propagates its refusal', () => {
+        for (const failingGate of ['', 'grand-boule']) {
             const fixture = createAdmissionFixture();
             const result = runStep(workflow, 'Verify measurement admission', fixture.directory, {
                 CALLS_PATH: fixture.callsPath,
                 FAIL_GATE: failingGate,
             });
             expect(result.status).toBe(failingGate === '' ? 0 : 1);
-            expect(readFileSync(fixture.callsPath, 'utf8')).toBe(
-                failingGate === 'grand-boule' ? 'grand-boule\n' : 'grand-boule\nwhole-engine\n'
-            );
+            expect(readFileSync(fixture.callsPath, 'utf8')).toBe('grand-boule\n');
         }
 
         const earlyExit = structuredClone(workflow);
@@ -275,13 +269,13 @@ describe('hosted quantum measurement workflow contract', () => {
             'const root = process.cwd();',
             'process.exit(0);\nconst root = process.cwd();'
         );
-        expect(() => assertHostedQuantumMeasurementWorkflow(earlyExit)).toThrow('acceptance gates');
+        expect(() => assertHostedQuantumMeasurementWorkflow(earlyExit)).toThrow('measurement admission gate');
 
         const skippedGate = structuredClone(workflow);
         namedStep(skippedGate, 'Verify measurement admission').run = String(
             namedStep(skippedGate, 'Verify measurement admission').run
-        ).replace('assertWholeEngineQuantumCapability(root);', '');
-        expect(() => assertHostedQuantumMeasurementWorkflow(skippedGate)).toThrow('acceptance gates');
+        ).replace('assertGrandBouleMeasurementAdmission(root);', '');
+        expect(() => assertHostedQuantumMeasurementWorkflow(skippedGate)).toThrow('measurement admission gate');
     });
 
     it('assembles only fresh regular members with exact hashes and a bounded receipt', () => {

@@ -38,12 +38,14 @@ export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | nul
         return null;
     }
 
-    const handleSetActive = (takeId: string) => {
+    const handleSetActive = async (takeId: string) => {
         const take = lane.takes.find((time) => time.id === takeId);
         if (!take) {
             return;
         }
-        selectTake(trackId, takeId);
+        // Keep the region write ordered after the selection write, as when both
+        // were synchronous. A refused selection must not move the comp region.
+        await selectTake(trackId, takeId);
         setCompRegion(trackId, {
             takeId,
             startBeat: take.startBeat,
@@ -89,7 +91,7 @@ export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | nul
                                 variant="secondary"
                                 size="xs"
                                 className="w-full"
-                                onClick={() => handleSetActive(take.id)}
+                                onClick={() => void handleSetActive(take.id)}
                                 aria-label={`Set ${take.name} as active take`}
                             >
                                 Set Active

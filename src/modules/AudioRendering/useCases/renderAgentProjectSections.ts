@@ -1,5 +1,13 @@
 import { cancelExport, renderOffline } from '#/modules/AudioEngine/useCases';
 import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
+import {
+    cloneAgentWorkOwnerIdentity,
+    getAudioBufferContentAddress,
+    type AgentRenderFailureKind,
+    type AgentRenderProvenance,
+    type AgentRenderReceipt,
+    type AgentWorkOwnerIdentity,
+} from '#/utils/agentRenderReceipt';
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { type AgentSectionRenderArtifact } from '../models/AgentSectionRenderArtifact';
@@ -21,6 +29,8 @@ type RenderAgentProjectSectionsInput = {
     signal?: AbortSignal;
     validateArtifactAttachment?: () => string | null;
     onRenderAttempt?: (job: RenderProjectSectionJobSnapshot) => void;
+    owner?: AgentWorkOwnerIdentity | null;
+    onReceipt?: (receipt: AgentRenderReceipt) => void;
     replaceMismatchedRevisionArtifacts?: boolean;
 };
 
@@ -28,6 +38,65 @@ function createCancellationError(): Error {
     const error = new Error('Agent section rendering was cancelled');
     error.name = 'AbortError';
     return error;
+}
+
+function isCancellationError(error: unknown): boolean {
+    return error instanceof Error && error.name === 'AbortError';
+}
+
+/** Every receipt carries its own copy, so a caller mutating its identity cannot rewrite recorded evidence. */
+function ownerCopy(input: RenderAgentProjectSectionsInput): AgentWorkOwnerIdentity | null {
+    return cloneAgentWorkOwnerIdentity(input.owner ?? null);
+}
+
+function provenanceFor(job: RenderProjectSectionJobSnapshot, sourceRevision: string): AgentRenderProvenance {
+    return {
+        jobId: job.jobId,
+        sectionId: job.sectionId,
+        sectionName: job.sectionName,
+        startBeat: job.startBeat,
+        endBeat: job.endBeat,
+        sampleRate: job.sampleRate,
+        tailSeconds: job.tailSeconds,
+        sourceRevision,
+    };
+}
+
+type JobReceiptEmitters = {
+    emitStarted: () => void;
+    emitRendered: (artifact: AgentSectionRenderArtifact) => void;
+    emitFailure: (failureKind: AgentRenderFailureKind) => void;
+    emitCancelled: () => void;
+    /** True once a receipt named this job's outcome, so a surrounding catch cannot relabel it. */
+    hasSettled: () => boolean;
+};
+
+function createJobReceiptEmitters(
+    input: RenderAgentProjectSectionsInput,
+    provenance: AgentRenderProvenance
+): JobReceiptEmitters {
+    let settled = false;
+    const emitSettlement = (receipt: AgentRenderReceipt): void => {
+        settled = true;
+        input.onReceipt?.(receipt);
+    };
+    return {
+        emitStarted: () => input.onReceipt?.({ phase: 'started', owner: ownerCopy(input), provenance }),
+        emitRendered: (artifact) =>
+            emitSettlement({
+                phase: 'rendered',
+                owner: ownerCopy(input),
+                provenance,
+                contentAddress: artifact.contentAddress,
+                frameCount: artifact.frameCount,
+                channelCount: artifact.channelCount,
+                renderedAt: artifact.renderedAt,
+            }),
+        emitFailure: (failureKind) =>
+            emitSettlement({ phase: 'failed', owner: ownerCopy(input), provenance, failureKind }),
+        emitCancelled: () => emitSettlement({ phase: 'cancelled', owner: ownerCopy(input), provenance }),
+        hasSettled: () => settled,
+    };
 }
 
 function jobGeometryMatches(job: RenderProjectSectionJobSnapshot, artifact: AgentSectionRenderArtifact): boolean {
@@ -54,11 +123,8 @@ function failureReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function assertArtifactAttachmentAllowed(input: RenderAgentProjectSectionsInput): void {
-    const reason = input.validateArtifactAttachment?.();
-    if (reason) {
-        throw new Error(reason);
-    }
+function artifactAttachmentRefusal(input: RenderAgentProjectSectionsInput): string | null {
+    return input.validateArtifactAttachment?.() ?? null;
 }
 
 function retainArtifactsForIncoming(
@@ -95,7 +161,7 @@ function retainArtifactsForIncoming(
     return [...retained, incoming];
 }
 
-export async function renderAgentProjectSections(input: RenderAgentProjectSectionsInput): Promise<void> {
+async function runAgentProjectSectionRenders(input: RenderAgentProjectSectionsInput): Promise<void> {
     if (input.signal?.aborted) {
         throw createCancellationError();
     }
@@ -120,7 +186,9 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
     const failures: string[] = [];
     let retentionCapacityFailure = false;
     for (const job of input.jobs) {
+        const receipts = createJobReceiptEmitters(input, provenanceFor(job, input.sourceRevision));
         if (input.signal?.aborted) {
+            receipts.emitCancelled();
             throw createCancellationError();
         }
         const existing = existingByJobId.get(job.jobId);
@@ -132,6 +200,7 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
                 continue;
             }
             if (!input.replaceMismatchedRevisionArtifacts) {
+                receipts.emitFailure('revision-mismatch');
                 failures.push(`${job.jobId}: artifact is bound to a different project revision`);
                 continue;
             }
@@ -145,16 +214,22 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
                 throw new Error('Project changed during rendering; the artifact was not attached');
             }
         } catch (error) {
+            receipts.emitFailure('revision-mismatch');
             failures.push(`${job.jobId}: ${failureReason(error)}`);
             continue;
         }
-        assertArtifactAttachmentAllowed(input);
+        const preRenderRefusal = artifactAttachmentRefusal(input);
+        if (preRenderRefusal) {
+            receipts.emitFailure('attachment-refused');
+            throw new Error(preRenderRefusal);
+        }
         try {
             const cancelActiveRender = () => cancelExport();
             input.signal?.addEventListener('abort', cancelActiveRender, { once: true });
             let buffer: AudioBuffer;
             try {
                 input.onRenderAttempt?.(job);
+                receipts.emitStarted();
                 buffer = await renderOffline({
                     durationBeats: job.endBeat - job.startBeat,
                     startBeat: job.startBeat,
@@ -165,14 +240,24 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             } finally {
                 input.signal?.removeEventListener('abort', cancelActiveRender);
             }
+            // Addressed before the attachment guards below so no await separates the last guard
+            // from the store write it protects.
+            const contentAddress = await getAudioBufferContentAddress(buffer);
             if (input.signal?.aborted) {
+                receipts.emitCancelled();
                 throw createCancellationError();
             }
             if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.sourceRevision)) {
+                receipts.emitFailure('revision-mismatch');
                 throw new Error('Project changed during rendering; the artifact was not attached');
             }
-            assertArtifactAttachmentAllowed(input);
+            const attachmentRefusal = artifactAttachmentRefusal(input);
+            if (attachmentRefusal) {
+                receipts.emitFailure('attachment-refused');
+                throw new Error(attachmentRefusal);
+            }
             if (buffer.sampleRate !== job.sampleRate || buffer.length <= 0 || buffer.numberOfChannels <= 0) {
+                receipts.emitFailure('invalid-buffer');
                 throw new Error('Offline renderer returned an invalid section artifact');
             }
             const artifact: AgentSectionRenderArtifact = {
@@ -191,6 +276,7 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
                 frameCount: buffer.length,
                 channelCount: buffer.numberOfChannels,
                 byteSize: buffer.length * buffer.numberOfChannels * PCM_SAMPLE_BYTE_SIZE,
+                contentAddress,
                 warnings: [...warnings],
                 buffer,
             };
@@ -202,12 +288,19 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             agentSectionRenderArtifactStore.set({ artifacts: retainedArtifacts });
             scheduleAgentSectionRenderArtifactExpiry();
             existingByJobId.set(job.jobId, artifact);
+            receipts.emitRendered(artifact);
             if (warnings.length > 0) {
                 failures.push(`${job.jobId}: ${warnings.join('; ')}`);
             }
         } catch (error) {
             if (input.signal?.aborted) {
+                if (!receipts.hasSettled()) {
+                    receipts.emitCancelled();
+                }
                 throw createCancellationError();
+            }
+            if (!receipts.hasSettled()) {
+                receipts.emitFailure('render-error');
             }
             retentionCapacityFailure ||= error instanceof SectionRenderRetentionCapacityError;
             failures.push(`${job.jobId}: ${failureReason(error)}`);
@@ -233,6 +326,23 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             failureKind,
             reason,
             remediation: failureKind === 'render-incomplete' ? 'reconcile' : 'manual-repair',
+        });
+    }
+}
+
+export async function renderAgentProjectSections(input: RenderAgentProjectSectionsInput): Promise<void> {
+    let outcome: 'completed' | 'failed' | 'cancelled' = 'completed';
+    try {
+        await runAgentProjectSectionRenders(input);
+    } catch (error) {
+        outcome = isCancellationError(error) ? 'cancelled' : 'failed';
+        throw error;
+    } finally {
+        input.onReceipt?.({
+            phase: 'batch-settled',
+            owner: ownerCopy(input),
+            outcome,
+            jobIds: input.jobs.map((job) => job.jobId),
         });
     }
 }

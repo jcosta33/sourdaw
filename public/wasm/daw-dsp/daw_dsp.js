@@ -31,13 +31,26 @@ export class BacteriaInstance {
      * Source IDs: 0=LFO1, 1=LFO2, 2=envelope follower, 3=Lorenz X, 4=Lorenz Z,
      * 5=step sequencer, 6-13=macros 0-7.
      *
-     * Target param IDs: 0=global mix, 1-6=band 0-5 gain (linear offset).
+     * Target param IDs: 0=global mix, 1-6=band 0-5 gain (linear offset), and
+     * `16 + band*16 + slot` for one band's module parameters — slot 0 = drive,
+     * slot 1 = filter cutoff, in each knob's own units (additive offsets).
+     * Anything at or past `16 + 6*16` names nothing and is rejected.
      * @param {number} source_id
      * @param {number} target_param
      * @param {number} amount
      */
     add_mod_assignment(source_id, target_param, amount) {
         wasm.bacteriainstance_add_mod_assignment(this.__wbg_ptr, source_id, target_param, amount);
+    }
+    /**
+     * Drop every modulation assignment; macro mappings are untouched.
+     *
+     * Removal, undo, and a patch reload arrive from the UI as one replacement
+     * of the whole table, spelled clear-then-re-add against the validated
+     * [`Self::add_mod_assignment`] path. Safe to call with the table empty.
+     */
+    clear_mod_assignments() {
+        wasm.bacteriainstance_clear_mod_assignments(this.__wbg_ptr);
     }
     /**
      * Get per-band levels packed as: [band0_db, band1_db, ... band5_db].
@@ -125,6 +138,18 @@ export class BacteriaInstance {
         return ret >>> 0;
     }
     /**
+     * Drop every stage's in-flight audio and restart the modulation clocks.
+     *
+     * For the engine-level events that must leave the device silent whatever
+     * it was doing — the engine being re-initialized, or a program change
+     * handing the bands to a different patch. A transport stop deliberately
+     * does not belong here: effect tails are supposed to survive it, and the
+     * worklet therefore never sends this on stop.
+     */
+    reset() {
+        wasm.bacteriainstance_reset(this.__wbg_ptr);
+    }
+    /**
      * Set a parameter by name.
      * @param {string} name
      * @param {number} value
@@ -209,6 +234,16 @@ export class CrumbsInstance {
         wasm.crumbsinstance_all_sound_off(this.__wbg_ptr);
     }
     /**
+     * Sample writes the pool refused because the instance's fixed sample
+     * budget (`MAX_POOL_SAMPLES`) was exhausted. Non-zero means new samples
+     * stopped landing silently; the host logs a warning when this moves.
+     * @returns {number}
+     */
+    dropped_sample_writes() {
+        const ret = wasm.crumbsinstance_dropped_sample_writes(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * Non-finite output samples scrubbed to silence since construction.
      * Non-zero means a poisoned block was caught at the wasm boundary.
      * @returns {number}
@@ -271,7 +306,7 @@ export class CrumbsInstance {
         wasm.crumbsinstance_set_active_sample(this.__wbg_ptr, sample_id);
     }
     /**
-     * Set the operating mode by name (`quick`, `drum`, `slice`, `warp`,
+     * Set the operating mode by name (`quick`, `drum`, `slice`,
      * `record`).
      * @param {string} mode
      */
@@ -830,7 +865,11 @@ export class GrandBouleInstance {
         return ret >>> 0;
     }
     /**
-     * Panic: silence every voice immediately.
+     * Panic: silence every voice immediately, and drop what has not sounded.
+     *
+     * The queued list is cleared with the voices: a panic asks for silence,
+     * and an event still waiting for its offset would strike a note after the
+     * user pressed the button.
      */
     all_notes_off() {
         wasm.grandbouleinstance_all_notes_off(this.__wbg_ptr);
@@ -855,21 +894,15 @@ export class GrandBouleInstance {
     }
     /**
      * Current DSP-owned render lifecycle for the worker host.
+     *
+     * A queued event means the host must render whatever the engine's own
+     * state says: the note has not sounded yet, and a sleeping instrument
+     * would never reach the block that sounds it.
      * @returns {number}
      */
     lifecycle_state() {
         const ret = wasm.grandbouleinstance_lifecycle_state(this.__wbg_ptr);
         return ret >>> 0;
-    }
-    /**
-     * Load an attack-sample clip into the hybrid sampled-attack set.
-     * @param {number} key
-     * @param {Float32Array} samples
-     */
-    load_attack_clip(key, samples) {
-        const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        wasm.grandbouleinstance_load_attack_clip(this.__wbg_ptr, key, ptr0, len0);
     }
     /**
      * @param {number} sample_rate
@@ -914,8 +947,15 @@ export class GrandBouleInstance {
         wasm.grandbouleinstance_note_off_on_channel(this.__wbg_ptr, midi_note, channel);
     }
     /**
-     * Trigger a note. `midi_note` covers the full MIDI range; out-of-piano
-     * notes are silently ignored.
+     * Trigger a note at the head of the next block. `midi_note` covers the
+     * full MIDI range; out-of-piano notes are silently ignored.
+     *
+     * The immediate tier of this instance's note API. It takes effect the
+     * moment it is called, so the next `process` renders every frame with the
+     * note already struck — which is what a key a player is pressing now
+     * wants, having no frame of its own to sound on. A note that *does* carry
+     * a frame belongs on the offset-queued tier ([`Self::push_note_on`] and
+     * its siblings), which sounds it on that frame inside the block.
      * @param {number} midi_note
      * @param {number} velocity
      */
@@ -943,12 +983,86 @@ export class GrandBouleInstance {
     /**
      * Render a block of audio and return a pointer to the left channel.
      * The caller reads both channels from WASM memory.
+     *
+     * Consumes every event queued since the last call, splitting the render at
+     * each event's sample offset, and empties the list. A block with nothing
+     * queued renders in one unsplit pass.
      * @param {number} block_size
      * @returns {number}
      */
     process(block_size) {
         const ret = wasm.grandbouleinstance_process(this.__wbg_ptr, block_size);
         return ret >>> 0;
+    }
+    /**
+     * Queue MPE per-note expression at `offset` samples into the next block.
+     *
+     * Queued rather than immediate for an ordering reason, not a timing one:
+     * a host orders a `noteExpression` behind the `noteOn` it bends at the
+     * same frame, and a note-on deferred to its offset while the expression
+     * stayed immediate would bend a voice that does not exist yet. The engine
+     * sounds `bend_semitones` only, as [`Self::note_expression`] states.
+     * @param {number} midi_note
+     * @param {number} channel
+     * @param {number} bend_semitones
+     * @param {number} pressure
+     * @param {number} slide
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_expression(midi_note, channel, bend_semitones, pressure, slide, offset) {
+        const ret = wasm.grandbouleinstance_push_note_expression(this.__wbg_ptr, midi_note, channel, bend_semitones, pressure, slide, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a note-off releasing every voice at `midi_note`, at `offset`
+     * samples into the next rendered block. Ordering and refusal as
+     * [`Self::push_note_on`].
+     * @param {number} midi_note
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_off(midi_note, offset) {
+        const ret = wasm.grandbouleinstance_push_note_off(this.__wbg_ptr, midi_note, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a note-off narrowed to one MPE member channel (audit MD-2), at
+     * `offset` samples into the next rendered block.
+     * @param {number} midi_note
+     * @param {number} channel
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_off_on_channel(midi_note, channel, offset) {
+        const ret = wasm.grandbouleinstance_push_note_off_on_channel(this.__wbg_ptr, midi_note, channel, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a note-on at `offset` samples into the next rendered block.
+     *
+     * The offset-queued tier of this instance's note API: the block's render
+     * splits at `offset` and the note is struck there, so a scheduled note
+     * sounds on the frame it was written for instead of on the block boundary.
+     * An `offset` at or past the block's own length sounds from the first
+     * frame of the block after it.
+     *
+     * Returns `false` when the block's event list is full, so the caller can
+     * hold the event back for the next block instead of losing it. Events are
+     * applied **in the order they were pushed** and are never sorted, so a
+     * note-off and a re-trigger of one pitch on the same sample keep the
+     * sequence the caller intended; an out-of-order offset is applied at the
+     * render cursor rather than retroactively, and the caller owns the
+     * ordering.
+     * @param {number} midi_note
+     * @param {number} velocity
+     * @param {number} channel
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_on(midi_note, velocity, channel, offset) {
+        const ret = wasm.grandbouleinstance_push_note_on(this.__wbg_ptr, midi_note, velocity, channel, offset);
+        return ret !== 0;
     }
     /**
      * Set a global parameter (`master_gain`, `soundboard_send`,
@@ -1319,6 +1433,25 @@ export class LevainInstance {
     active_voices() {
         const ret = wasm.levaininstance_active_voices(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * Register one articulation switch with the engine's articulation map.
+     *
+     * - `kind` 0: keyswitch on note `a` (`momentary` reverts on release).
+     * - `kind` 1: velocity split across `[a, b]`.
+     * - `kind` 2: CC split across `[a, b]` of the switch CC.
+     *
+     * Note-on and CC routing already consult the map; this is the binding
+     * that lets a bank configure it. Keyswitches are baseline
+     * orchestral-sampler behaviour.
+     * @param {number} kind
+     * @param {number} a
+     * @param {number} b
+     * @param {number} articulation_id
+     * @param {boolean} momentary
+     */
+    add_articulation_switch(kind, a, b, articulation_id, momentary) {
+        wasm.levaininstance_add_articulation_switch(this.__wbg_ptr, kind, a, b, articulation_id, momentary);
     }
     /**
      * Register a recorded true-legato transition sample (audit F7). Bank
@@ -1945,16 +2078,18 @@ export function analyze_pitch_wasm(samples, sample_rate) {
  * @param {number} sample_rate
  * @param {string} segments_json
  * @param {string} contour_json
+ * @param {number} retune_speed_ms
+ * @param {boolean} formant_preserve
  * @returns {Float32Array}
  */
-export function commit_pitch_edit_wasm(samples, sample_rate, segments_json, contour_json) {
+export function commit_pitch_edit_wasm(samples, sample_rate, segments_json, contour_json, retune_speed_ms, formant_preserve) {
     const ptr0 = passArrayF32ToWasm0(samples, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(segments_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
     const ptr2 = passStringToWasm0(contour_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.commit_pitch_edit_wasm(ptr0, len0, sample_rate, ptr1, len1, ptr2, len2);
+    const ret = wasm.commit_pitch_edit_wasm(ptr0, len0, sample_rate, ptr1, len1, ptr2, len2, retune_speed_ms, formant_preserve);
     var v4 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v4;

@@ -1,0 +1,22 @@
+{
+    "$schema": "../../node_modules/oxlint/configuration_schema.json",
+    "plugins": [],
+    "jsPlugins": ["./plugin.mjs"],
+    "categories": {
+        "correctness": "off",
+        "suspicious": "off",
+        "pedantic": "off",
+        "perf": "off",
+        "style": "off",
+        "restriction": "off",
+        "nursery": "off"
+    },
+    "rules": {
+        "sourdaw-craft/no-conditional-empty-spread": "error",
+        "sourdaw-craft/no-useless-clone-spread": "error",
+        "sourdaw-craft/no-spread-clone-array-method": "error",
+        "sourdaw-craft/no-json-parse-stringify": "error",
+        "sourdaw-craft/no-long-array-chain": "error",
+        "sourdaw-craft/no-control-flow-ternary": "error"
+    }
+}

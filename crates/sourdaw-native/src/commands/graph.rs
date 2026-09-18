@@ -146,14 +146,15 @@
 //!   bus refuses with a reason naming the gap (`bus-send-unsupported`).
 
 use crate::commands::crumbs::{self, CrumbsState};
+use crate::commands::levain::LevainBankStore;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
 use daw_engine::midi::note_store::{MidiNoteStore, TimedMidiNote, MIDI_NOTE_STORE_CAPACITY};
 use daw_engine::midi_fx::{probability_percent_to_cutoff, PROBABILITY_CUTOFF_RANGE};
 use daw_engine::offline::OfflineRenderer;
-use daw_engine::plugin_slot::MidiNoteEvent;
+use daw_engine::plugin_slot::{MidiControlEvent, MidiNoteEvent};
 use daw_engine::scheduler::{
-    layer_routing_first, BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore,
-    TIMELINE_CHAIN_SLOT_BUDGET,
+    precedence_first, BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore,
+    ScoringReading, ScoringTelemetry, TIMELINE_CHAIN_SLOT_BUDGET,
 };
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, BuiltinParamName, ChainEntry, ClipFade,
@@ -166,7 +167,7 @@ use daw_engine::timeline::{
 use daw_engine::GraphBatchError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 /// Headroom the fader allows above unity, in decibels — the mirror of
@@ -298,6 +299,12 @@ const NOTES_PER_CHANNEL: u8 = 128;
 /// The hardest a MIDI note can be struck.
 const MAX_MIDI_VELOCITY: u8 = 127;
 
+/// The highest controller number a 7-bit control-change message can name.
+const MAX_MIDI_CONTROLLER: u8 = 127;
+
+/// The highest position a 7-bit controller can report.
+const MAX_MIDI_CONTROLLER_VALUE: u8 = 127;
+
 // ── Wire payloads (hand-maintained mirror of AudioGraphBackend.ts) ─────────
 
 #[derive(Debug, Deserialize)]
@@ -409,11 +416,35 @@ pub enum GraphCommandPayload {
         track_id: String,
         device_id: String,
         /// Keyed by the built-in's own native parameter names — for a
-        /// fermenter, the instrument's snake_case vocabulary rather than the
-        /// camelCase descriptor ids a project panel authors. A key with no
-        /// native address refuses the whole batch, naming the device and the
-        /// key, exactly as a stamped write does.
+        /// fermenter, the instrument's snake_case vocabulary, spelled exactly
+        /// as its own `set_param` takes it, rather than the camelCase
+        /// descriptor ids a project panel authors and the renderer's own
+        /// tables translate. A key shaped unlike any built-in's vocabulary
+        /// refuses the whole batch, naming the device and the key, exactly as
+        /// a stamped write does; a well-shaped key the instrument does not
+        /// have is answered by the instrument doing nothing.
         values: HashMap<String, f64>,
+    },
+    /// Set a built-in's bypass on the engine's own chain, at the next audio
+    /// callback.
+    ///
+    /// The immediate counterpart of the `bypassed` field a device's topology
+    /// carries: the engine otherwise learns a mid-roll toggle only at the next
+    /// strip rebuild, which is the next Play. The chain skips a bypassed body
+    /// and runs its dry line in place of it
+    /// ([`GraphCommand::SetBypass`]), so this is what takes a carried device
+    /// out of — and back into — the audible path while rolling.
+    ///
+    /// A native built-in only. An externally hosted plugin's bypass is owned
+    /// by the plugin host's own control path (`set_plugin_bypass`), whose
+    /// sends are totally ordered per instance; a second live writer here would
+    /// race that order, so one aimed at a borrowed instance is refused by
+    /// device.
+    #[serde(rename_all = "camelCase")]
+    SetDeviceBypass {
+        track_id: String,
+        device_id: String,
+        bypassed: bool,
     },
     /// Write timeline-addressed notes into the note store a device holds.
     ///
@@ -472,6 +503,33 @@ pub enum GraphCommandPayload {
         velocity: u8,
         channel: i16,
         is_note_on: bool,
+    },
+    /// Apply one live controller message now at a device that sinks notes.
+    ///
+    /// The pedal wire. A MIDI clip carries no controller lanes, so a controller
+    /// is always live: it reaches the device at the head of the first block the
+    /// engine renders after this batch is applied, whether or not the transport
+    /// is playing, because a pedal under the player's foot names no timeline
+    /// position either.
+    ///
+    /// Nothing is queued and no budget is charged. A controller is a state
+    /// write on the instance rather than a frame-stamped event, so it neither
+    /// waits in the parameter queues a budget bounds nor occupies the
+    /// block-local MIDI buffer a note does — it simply applies, ahead of the
+    /// notes the same block renders.
+    ///
+    /// No transport edge moves a pedal. A stop or a locate silences the voices
+    /// a pedal is holding, so a release message that never arrives cannot keep
+    /// an instrument ringing across it, but the pedal itself stays down. A loop
+    /// wrap leaves the foot where it is too, exactly as it leaves the key they
+    /// are holding down. Only Reset All Controllers (CC121) lifts the pedals.
+    #[serde(rename_all = "camelCase")]
+    SendMidiControl {
+        track_id: String,
+        device_id: String,
+        controller: u8,
+        value: u8,
+        channel: i16,
     },
     /// Drop a device's scheduled notes in the half-open seconds window
     /// `fromTime..toTime`; an absent or null `toTime` means the end of the
@@ -568,6 +626,12 @@ pub struct DevicePayload {
     pub external_plugin_id: Option<String>,
     #[serde(default)]
     pub external_instance_id: Option<String>,
+    /// The Levain sample bank this device sounds, as `commands::levain` keys
+    /// it. Absent for every other device type, and absent on a Levain whose
+    /// producer registered no bank — which refuses the device rather than
+    /// splicing a bankless, and therefore mute, sampler onto the strip.
+    #[serde(default)]
+    pub sample_bank_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -669,6 +733,13 @@ pub struct MidiNotePayload {
     pub event_id_hash: Option<u32>,
     #[serde(default)]
     pub absolute_occurrence_index: Option<u64>,
+    /// The instrument's per-note articulation, as the DSP engine numbers it.
+    ///
+    /// Absent means the note sounds on whatever articulation the device already
+    /// stands on, which is the answer every note gave before the wire carried
+    /// one. Only an instrument with a per-note articulation surface reads it.
+    #[serde(default)]
+    pub articulation_id: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -771,6 +842,42 @@ pub struct GraphApplyResultPayload {
     /// id at all, and there is no later event.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attached_plugins: Option<Vec<AttachedPluginPayload>>,
+    /// The Crumbs instances the engine holds that this batch named: the ones
+    /// this call's own attach pass took over
+    /// ([`crate::commands::crumbs::attach_dormant_crumbs`]) and the ones its
+    /// mapping found already attached, deduplicated.
+    ///
+    /// Unlike `attachedPlugins`, this is a fact about the *call*, not about the
+    /// batch, and the presence rule follows the attach pass rather than the
+    /// outcome: present on every payload a call produces after that pass has
+    /// run — applied, `rejected` or `needs-reconcile` — and empty when the pass
+    /// took nothing and the mapping named nothing. Absent when the call
+    /// answered before the pass could run (the admission refusals) and on a
+    /// mapping, which has no engine to attach to.
+    ///
+    /// Two reasons it reads that way. The attach precedes `map_batch` for the
+    /// same-batch binding, so an instance is already engine-owned and out of
+    /// the dormant set by the time a mapping or push refusal is decided: a
+    /// `rejected` payload silent about it would strand the caller forever —
+    /// `create_crumbs` already answered `attached: false`, no later batch
+    /// attaches an instance that is no longer dormant, and there is no event.
+    /// And a caller that empties its mirror without releasing the engine — the
+    /// graph repair does exactly that
+    /// (`src/modules/Transport/useCases/repairRuntimeGraphFromProject.ts`) —
+    /// has no attach left to hear about: every slot is already `Attached`, so
+    /// only what the rebuild *found* can refill the mirror.
+    ///
+    /// Reported separately from `attachedPlugins` because the two name
+    /// different populations — a hosted plugin's instance id and a Crumbs
+    /// device's own id — and a caller acts on them differently.
+    ///
+    /// The caller needs it because nothing else says which instances the
+    /// engine is holding: `create_crumbs` answered `attached: false` for one
+    /// loaded before the engine ran, a repair empties the mirror without
+    /// releasing the engine, and no event follows either. A caller mirrors it
+    /// on every variant that carries it, refusal included.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attached_crumbs: Option<Vec<AttachedCrumbsPayload>>,
 }
 
 /// One instance an engine start took over, as the caller reads it.
@@ -786,6 +893,65 @@ pub struct AttachedPluginPayload {
     pub instance_id: String,
 }
 
+/// The Crumbs instances the engine holds, and the ones a mapping named.
+///
+/// Device id → engine plugin id, which is the whole lookup a splice needs: the
+/// instance id *is* the device id. It records every hit because the result
+/// payload owes the caller more than the instances this call's own attach pass
+/// took — a repair rebuilds the strips over instances that were attached long
+/// before the call began, and its `retractEveryCrumbsEngineAttachment` empties
+/// the caller's mirror on the way (`repairRuntimeGraphFromProject.ts`). Nothing
+/// re-attaches those: the repair does not release the engine, so the slots stay
+/// `Attached` and no attach pass will ever mention them again. Reporting what
+/// the batch *found* is what refills the mirror.
+///
+/// A hit is recorded even when the strip then omits the device: a non-carried
+/// strip still names the instance, and the caller's mirror is about what the
+/// engine holds, not about what this topology splices.
+#[derive(Default)]
+struct AttachedCrumbs {
+    instances: HashMap<String, usize>,
+    found: BTreeSet<String>,
+}
+
+impl AttachedCrumbs {
+    fn new(instances: HashMap<String, usize>) -> Self {
+        Self {
+            instances,
+            found: BTreeSet::new(),
+        }
+    }
+
+    /// The engine plugin id this device's instance holds, recorded as named.
+    fn find(&mut self, device_id: &str) -> Option<usize> {
+        let plugin_id = *self.instances.get(device_id)?;
+        self.found.insert(device_id.to_string());
+        Some(plugin_id)
+    }
+
+    /// Every instance this call can honestly say the engine holds and this
+    /// batch named: what the mapping found already attached, unioned with what
+    /// the caller's own attach pass took, deduplicated and in a stable order.
+    fn named_with(&self, attached_by_this_call: &[String]) -> Vec<String> {
+        let mut named = self.found.clone();
+        named.extend(attached_by_this_call.iter().cloned());
+        named.into_iter().collect()
+    }
+}
+
+/// One Crumbs instance the engine holds that a batch named, as the caller
+/// reads it.
+///
+/// The instance id is the whole payload, and it is the device id too: the
+/// panel creates a Crumbs runtime under the id of the device it belongs to, so
+/// the caller needs nothing else to know which device the engine is holding —
+/// whether this batch attached it or found it attached.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachedCrumbsPayload {
+    pub instance_id: String,
+}
+
 impl GraphApplyResultPayload {
     fn rejected(reason: String) -> Self {
         Self {
@@ -798,7 +964,26 @@ impl GraphApplyResultPayload {
             admitted_batch: None,
             reports: None,
             attached_plugins: None,
+            attached_crumbs: None,
         }
+    }
+
+    /// Record the crumbs instances this call found the engine holding, on
+    /// whatever answer the call went on to give
+    /// ([`AttachedCrumbs::named_with`]).
+    ///
+    /// Every exit past the attach pass calls it, which is what makes the empty
+    /// vector meaningful: `[]` says the call looked and named nothing, and an
+    /// absent field says it never reached the pass. One writer, so the two
+    /// cannot drift apart.
+    fn reporting_attached_crumbs(mut self, instance_ids: Vec<String>) -> Self {
+        self.attached_crumbs = Some(
+            instance_ids
+                .into_iter()
+                .map(|instance_id| AttachedCrumbsPayload { instance_id })
+                .collect(),
+        );
+        self
     }
 
     fn applied(
@@ -818,6 +1003,7 @@ impl GraphApplyResultPayload {
             admitted_batch: Some(admitted_batch),
             reports: Some(reports),
             attached_plugins: Some(attached_plugins),
+            attached_crumbs: None,
         }
     }
 
@@ -838,6 +1024,7 @@ impl GraphApplyResultPayload {
             admitted_batch: None,
             reports: Some(reports),
             attached_plugins: None,
+            attached_crumbs: None,
         }
     }
 
@@ -857,6 +1044,7 @@ impl GraphApplyResultPayload {
             admitted_batch: None,
             reports: Some(reports),
             attached_plugins: None,
+            attached_crumbs: None,
         }
     }
 }
@@ -891,32 +1079,78 @@ struct StripEntry {
     output: StripOutput,
 }
 
+/// Where a chain device's effect came from.
+///
+/// Written at registration from what [`map_device`] actually built, and it is
+/// the only such fact the entry keeps: ownership, note-store presence,
+/// parameter vocabulary and bypass authority all follow from it, so none can
+/// drift out of step with the others or with the body the engine holds.
+///
+/// The two borrowed origins are deliberately separate even though almost every
+/// law reads them alike through [`Self::builtin`]. They part on exactly one
+/// question — who writes the device's bypass — and a single "not a built-in"
+/// flag could not answer it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DeviceOrigin {
+    /// An effect this registry allocated and the engine built, for a type it
+    /// has a body for.
+    Builtin(BuiltinEffectType),
+    /// A plugin instance the plugin host loaded, which the chain borrows under
+    /// the instance's own engine plugin id.
+    Hosted,
+    /// A Crumbs sampler runtime `commands::crumbs` created, which the chain
+    /// borrows the same way.
+    Crumbs,
+}
+
+impl DeviceOrigin {
+    /// The built-in body this device is, or `None` for an instance the chain
+    /// borrows.
+    ///
+    /// Every law that read `builtin: None` before the sampler had an origin of
+    /// its own still reads exactly this, so adding the origin moved no device
+    /// between populations.
+    fn builtin(self) -> Option<BuiltinEffectType> {
+        match self {
+            Self::Builtin(builtin) => Some(builtin),
+            Self::Hosted | Self::Crumbs => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct DeviceEntry {
     native_effect_id: usize,
     strip_id: String,
-    /// The built-in body this device is, or `None` when its effect is a hosted
-    /// plugin instance the engine already owned rather than one this registry
-    /// allocated.
+    origin: DeviceOrigin,
+    /// The reading handle of the scoring body this device is, and `None` for
+    /// every other device.
     ///
-    /// Written at registration from what [`map_device`] actually built, and it
-    /// is the only such fact the entry keeps: ownership, note-store presence
-    /// and parameter vocabulary all follow from it, so none of the three can
-    /// drift out of step with the others or with the body the engine holds.
-    builtin: Option<BuiltinEffectType>,
+    /// A tuner's detection is a value the audio thread computes and the panel
+    /// displays, so it travels as atomics the body writes and the control
+    /// thread reads, rather than as a message the callback would have to send.
+    /// The handle is cloned off the core at registration, because the command
+    /// that registers the body moves it onto the ring and that is the last
+    /// moment this thread holds it.
+    scoring_telemetry: Option<Arc<ScoringTelemetry>>,
 }
 
 impl DeviceEntry {
-    /// Whether the effect id is a hosted plugin instance the engine already
-    /// owns.
+    fn builtin(&self) -> Option<BuiltinEffectType> {
+        self.origin.builtin()
+    }
+
+    /// Whether the effect id is an instance the engine already owns — a hosted
+    /// plugin or a Crumbs sampler — rather than one this registry allocated.
     ///
     /// It decides how the device leaves a chain: an effect this registry built
-    /// is retired with its removal, while an engine-owned one is only released,
-    /// because its lifetime belongs to the load that registered it and
-    /// `unload_plugin` is what frees it. Retiring one here would take a live
-    /// plugin's effect out from under the panel still driving it.
+    /// is retired with its removal, while a borrowed one is only released,
+    /// because its lifetime belongs to the load or create that registered it
+    /// and `unload_plugin` or `destroy_crumbs` is what frees it. Retiring one
+    /// here would take a live instance's effect out from under the panel still
+    /// driving it.
     fn engine_owned(&self) -> bool {
-        self.builtin.is_none()
+        self.builtin().is_none()
     }
 
     /// Whether this device holds a note store, and so can be scheduled at.
@@ -924,11 +1158,13 @@ impl DeviceEntry {
     /// Store presence is decided at registration, by the command that built
     /// the device, so this reads what was registered rather than guessing from
     /// what the device might do with what lands in it. Every engine-owned
-    /// device is registered through `EngineHandle::add_hosted_plugin`, which
-    /// attaches a store unconditionally; a built-in is registered with one
-    /// exactly when its type sounds notes.
+    /// device is registered by an `AddHostedPlugin`, which attaches a store
+    /// unconditionally — whether that registration came from
+    /// `EngineHandle::add_hosted_plugin` for a hosted plugin or from
+    /// `commands::crumbs::register_crumbs_slot` for a sampler; a built-in is
+    /// registered with one exactly when its type sounds notes.
     fn note_sink(&self) -> bool {
-        match self.builtin {
+        match self.builtin() {
             None => true,
             Some(builtin) => builtin.sounds_notes(),
         }
@@ -1043,6 +1279,26 @@ impl GraphRegistry {
             .iter()
             .filter(|(_, entry)| entry.kind == StripKind::Track)
             .map(|(strip_id, entry)| (entry.native_id, strip_id.as_str()))
+            .collect()
+    }
+
+    /// What every scoring body this registry holds last detected, keyed by the
+    /// device id the app knows it by.
+    ///
+    /// Keyed for every such device the registry knows, on whatever strip and
+    /// carried or not — the same law the meters take: the renderer decides
+    /// which readings it may trust from its own carried set, and a map that
+    /// dropped the uncarried ones would leave a missing entry meaning either
+    /// "no such device" or "not yours to read".
+    pub(crate) fn scoring_readings(&self) -> BTreeMap<String, ScoringReading> {
+        self.devices
+            .iter()
+            .filter_map(|(device_id, entry)| {
+                entry
+                    .scoring_telemetry
+                    .as_ref()
+                    .map(|telemetry| (device_id.clone(), telemetry.snapshot()))
+            })
             .collect()
     }
 
@@ -1607,17 +1863,17 @@ fn hosted_parameter_id(parameter_id: &str) -> Result<u32, String> {
 ///
 /// That third one reads [`DeviceEntry::note_sink`], because *store presence is
 /// decided at registration* rather than by what the device does with what
-/// lands in it. Every engine-owned device is registered through
-/// `EngineHandle::add_hosted_plugin`, which attaches a note store
-/// unconditionally — a hosted reverb or a CLAP note effect gets one
-/// exactly as an instrument does. The drain reaches every hosted slot, and
+/// lands in it. Every engine-owned device is registered by an
+/// `AddHostedPlugin`, which attaches a note store unconditionally — a hosted
+/// reverb or a CLAP note effect gets one exactly as an instrument does, and so
+/// does a Crumbs slot, which `commands::crumbs::register_crumbs_slot`
+/// registers the same way. The drain reaches every hosted slot, and
 /// the wrapper decides from there: CLAP hands every plugin the events, so a
 /// reverb ignores them and a note effect reads them while its note output
 /// has no route in this host; VST3 withholds them from a plugin with no
 /// event input bus (`stage_midi`). Neither is a refusal the mapping makes.
 /// A built-in is an `AddDetachedEffect`, which carries a store exactly when
-/// the type sounds notes, and the crumbs capture slot is not in
-/// `registry.devices` at all.
+/// the type sounds notes.
 ///
 /// So ownership no longer stands in for store presence: a built-in instrument
 /// holds one while a built-in effect does not, and the registered type is what
@@ -1674,14 +1930,24 @@ fn scheduled_probability_cutoff(probability: Option<f64>) -> Result<u64, String>
 /// which is the same reason a stored note and a live one both come through
 /// here.
 fn check_note_address(note: u8, channel: i16, command: &str) -> Result<(), String> {
-    if !(0..i16::from(MIDI_CHANNELS)).contains(&channel) {
-        return Err(format!(
-            "{command}: channel {channel} has no address in the note store"
-        ));
-    }
+    check_channel_address(channel, command)?;
     if note >= NOTES_PER_CHANNEL {
         return Err(format!(
             "{command}: note {note} has no address in the note store"
+        ));
+    }
+    Ok(())
+}
+
+/// The channel half of [`check_note_address`], on its own.
+///
+/// A controller carries a channel and no note, so it needs this half and not
+/// the other. Factored rather than restated so one wire cannot start admitting
+/// a channel the other refuses.
+fn check_channel_address(channel: i16, command: &str) -> Result<(), String> {
+    if !(0..i16::from(MIDI_CHANNELS)).contains(&channel) {
+        return Err(format!(
+            "{command}: channel {channel} has no address in the note store"
         ));
     }
     Ok(())
@@ -1709,6 +1975,7 @@ fn map_midi_note(
             clip_id_hash: note.clip_id_hash.unwrap_or(0),
             event_id_hash: note.event_id_hash.unwrap_or(0),
             absolute_occurrence_index: note.absolute_occurrence_index.unwrap_or(0),
+            articulation_id: note.articulation_id,
         },
     })
 }
@@ -1783,7 +2050,10 @@ fn push_automation(
 ///
 /// A device whose `externalInstanceId` the engine *does* own never reaches here:
 /// [`map_device`] splices it by that instance's effect id, and a lookup miss
-/// there carries its own reason naming the instance.
+/// there carries its own reason naming the instance. A Crumbs device never
+/// reaches here either, for the same shape of reason: the sampler is an
+/// engine-owned instance the mapper splices rather than a body it builds, so
+/// [`map_device`] answers it ahead of this.
 fn no_native_body(device: &DevicePayload) -> Option<String> {
     if device.external_instance_id.is_some() || device.external_plugin_id.is_some() {
         return Some(format!(
@@ -1831,10 +2101,23 @@ fn builtin_named_parameter(key: &str, device_id: &str) -> Result<BuiltinParamNam
     BuiltinParamName::parse(key).ok_or_else(|| {
         format!(
             "device '{device_id}' carries parameter '{key}', which is not an instrument \
-             parameter name: a name is 1 to {BUILTIN_PARAM_NAME_CAPACITY} bytes of lowercase \
-             ASCII letters, digits and underscores"
+             parameter name: a name is 1 to {BUILTIN_PARAM_NAME_CAPACITY} bytes of ASCII \
+             letters, digits and underscores"
         )
     })
+}
+
+/// The keys of one wire record, in name order.
+///
+/// A record off the wire is a `HashMap`, and name order is the one order
+/// both patch routes share, so one record maps onto one write sequence
+/// whichever order the map draws its keys in. The body's own precedence law
+/// (`BuiltinEffectType::patch_precedence`) is what leads what it names, over
+/// whichever order this returns.
+fn name_ordered_keys(values: &HashMap<String, f64>) -> Vec<&str> {
+    let mut keys: Vec<&str> = values.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    keys
 }
 
 /// One device's whole `parameterValues` record, each key resolved through
@@ -1843,17 +2126,26 @@ fn builtin_named_parameter(key: &str, device_id: &str) -> Result<BuiltinParamNam
 /// A body's patch is either written into the instance control-side or sent as
 /// addressed commands, so what a key resolves to differs; the record is read
 /// and the values are checked the same way either side, and one collector is
-/// what keeps that one fact.
+/// what keeps that one fact. Keys are read in name order
+/// ([`name_ordered_keys`]) rather than the `HashMap`'s own draw: gluten's
+/// `vca_character` and `vca_type` both write the VCA's own `vca_k2`
+/// (`vca.rs:159-169`), and neither is named by
+/// `BuiltinEffectType::patch_precedence`, so this route has no law to bring
+/// one ahead of the other. Name order is also the descriptor's order for
+/// that pair (`GlutenDescriptor.ts` lists `vcaCharacter` before `vcaType`),
+/// so reading keys this way makes `vca_type`'s preset win here exactly as it
+/// does on the web host, which applies a device's record in descriptor
+/// order.
 fn resolved_param_writes<T>(
     device: &DevicePayload,
     resolve: impl Fn(&str) -> Result<T, String>,
 ) -> Result<Vec<(T, f32)>, String> {
-    device
-        .parameter_values
-        .iter()
-        .map(|(key, value)| {
+    name_ordered_keys(&device.parameter_values)
+        .into_iter()
+        .map(|key| {
             let param = resolve(key)?;
-            Ok((param, finite(*value, "device parameter value")? as f32))
+            let value = device.parameter_values[key];
+            Ok((param, finite(value, "device parameter value")? as f32))
         })
         .collect()
 }
@@ -1863,7 +2155,19 @@ fn resolved_param_writes<T>(
 ///
 /// Which vocabulary applies is decided by the body, not by the name the key
 /// was written under: knead answers a closed set of names the engine owns, and
-/// the fermenter answers its own.
+/// the fermenter answers its own. Sounding notes is not what decides it —
+/// gluten and crust are inserts and still answer their own names, and so is
+/// grinder, spelled in its own camelCase rather than the others' snake_case,
+/// and so is bacteria, which spells camelCase too and prefixes most of it with
+/// the band a name aims at (`band0_filterCutoff`), and so is proof, whose
+/// snake_case names carry the stage they route to as a prefix (`lim_ceiling`)
+/// and spell the module order as five indexed keys, and so is dutch-oven,
+/// whose snake_case names are a union across the engines an `algorithm` write
+/// selects between, and so is levain, which folds a mic position's index into
+/// its snake_case names (`mic_0_volume`) and leaves the engine to parse it back
+/// out — because the vocabulary belongs to the DSP the body hosts
+/// rather than to the kind of device it is, the case it spells its names in,
+/// or the addressing it folds into them.
 fn builtin_parameter(
     builtin: BuiltinEffectType,
     key: &str,
@@ -1873,7 +2177,17 @@ fn builtin_parameter(
         BuiltinEffectType::Knead => DeviceParam::from_name(key).ok_or_else(|| {
             format!("device '{device_id}' carries parameter '{key}', which knead does not map")
         }),
-        BuiltinEffectType::Fermenter | BuiltinEffectType::GrandBoule => {
+        BuiltinEffectType::Fermenter
+        | BuiltinEffectType::GrandBoule
+        | BuiltinEffectType::Gluten
+        | BuiltinEffectType::Crust
+        | BuiltinEffectType::Grinder
+        | BuiltinEffectType::Bacteria
+        | BuiltinEffectType::Proof
+        | BuiltinEffectType::DutchOven
+        | BuiltinEffectType::Toaster
+        | BuiltinEffectType::Levain
+        | BuiltinEffectType::Scoring => {
             builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
     }
@@ -1896,21 +2210,19 @@ fn addressed_parameter_name(param: &DeviceParam) -> &str {
 /// ordered as the body has to apply them.
 ///
 /// The record arrives unordered — a `HashMap` off the wire — and two things
-/// have to hold of what leaves here. A fermenter's layer-routing entry selects
-/// the layer every write behind it lands on, so it is emitted first; that law
-/// belongs to `FermenterBody::load_patch`, and this reuses the engine's own
-/// [`layer_routing_first`] rather than restating it. Everything else follows in
-/// name order, so one record maps onto one command sequence whichever order the
-/// map happens to draw.
+/// have to hold of what leaves here. The body's own precedence law
+/// (`BuiltinEffectType::patch_precedence`) — a fermenter's layer-routing
+/// entry, or a gluten's macro keys — is brought to the front, in the law's
+/// own order; that law belongs to the body's `load_patch`, and this reuses
+/// the engine's own [`precedence_first`] rather than restating it. Everything
+/// else follows in name order, so one record maps onto one command sequence
+/// whichever order the map happens to draw.
 fn immediate_device_parameters(
     builtin: BuiltinEffectType,
     values: &HashMap<String, f64>,
     device_id: &str,
 ) -> Result<Vec<(DeviceParam, f32)>, String> {
-    let mut keys: Vec<&str> = values.keys().map(String::as_str).collect();
-    keys.sort_unstable();
-
-    let resolved = keys
+    let resolved = name_ordered_keys(values)
         .into_iter()
         .map(|key| {
             let param = builtin_parameter(builtin, key, device_id)
@@ -1920,7 +2232,12 @@ fn immediate_device_parameters(
         })
         .collect::<Result<Vec<_>, String>>()?;
 
-    Ok(layer_routing_first(&resolved, addressed_parameter_name).collect())
+    Ok(precedence_first(
+        &resolved,
+        addressed_parameter_name,
+        builtin.patch_precedence(),
+    )
+    .collect())
 }
 
 /// One instance the engine already owns, as a device may bind to it: the
@@ -1934,6 +2251,15 @@ struct EngineOwnedDevice {
     engine_plugin_id: usize,
     chain_kind: DeviceKind,
 }
+
+/// The project's device type for the Crumbs sampler.
+///
+/// Mirrors `src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptor.ts`'s
+/// `id`, which is the value the renderer writes into every Crumbs device it
+/// creates. Not a `BuiltinEffectType` arm: the engine builds no Crumbs body,
+/// because `commands::crumbs` already owns one instance per device and the
+/// mapper borrows it.
+const CRUMBS_DEVICE_TYPE: &str = "builtin-crumbs";
 
 /// What one device maps onto natively, and who owns the effect it names.
 ///
@@ -1964,11 +2290,16 @@ struct EngineOwnedDevice {
 /// (`PluginRegistryEntry::chain_kind`), and a built-in carries the kind its
 /// body is — an instrument is a `Generator`, whose output the chain sums in,
 /// and everything else an `Effect` that processes the signal in place.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+///
+/// `scoring_telemetry` is a tuner body's reading handle, carried out to the
+/// registry entry because the core it was cloned from is moved onto the
+/// command ring in this same function. Every other device carries `None`.
+#[derive(Clone, Debug)]
 struct MappedDevice {
     effect_id: usize,
-    builtin: Option<BuiltinEffectType>,
+    origin: DeviceOrigin,
     chain_kind: DeviceKind,
+    scoring_telemetry: Option<Arc<ScoringTelemetry>>,
 }
 
 fn map_device(
@@ -1977,6 +2308,8 @@ fn map_device(
     contributes_audio: bool,
     sample_rate: f32,
     engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
+    attached_crumbs: &mut AttachedCrumbs,
+    levain_banks: &mut LevainBankStore,
     ops: &mut Vec<GraphCommand>,
 ) -> Result<Option<MappedDevice>, String> {
     if registry.devices.contains_key(&device.id) {
@@ -2009,8 +2342,74 @@ fn map_device(
         }
         return Ok(Some(MappedDevice {
             effect_id,
-            builtin: None,
+            origin: DeviceOrigin::Hosted,
             chain_kind,
+            scoring_telemetry: None,
+        }));
+    }
+
+    // Crumbs is spliced, never built. `commands::crumbs` owns one engine
+    // instance per device — created by the panel under the device's own id and
+    // registered detached — so the chain borrows that instance exactly as it
+    // borrows a hosted plugin, under the same engine-owned ownership: it is
+    // released from a chain rather than retired, its parameters travel on
+    // `set_crumbs_param` rather than through the engine's built-in vocabulary,
+    // and its note store came with `AddHostedPlugin`.
+    //
+    // A device carrying external ids is not this one whichever type it names:
+    // those belong to the plugin host, and the arm above has already answered
+    // an `externalInstanceId`.
+    if device.device_type == CRUMBS_DEVICE_TYPE
+        && device.external_instance_id.is_none()
+        && device.external_plugin_id.is_none()
+    {
+        let Some(plugin_id) = attached_crumbs.find(&device.id) else {
+            let reason = format!(
+                "device '{}' is a Crumbs sampler whose native instance is not attached to the \
+                 engine",
+                device.id
+            );
+            if contributes_audio {
+                return Err(reason);
+            }
+            // The same degradation law every unbindable device takes: a strip
+            // built only to keep the routing graph faithful contributes
+            // silence, so the device is omitted and its absence is what the
+            // strip report says.
+            return Ok(None);
+        };
+        if !contributes_audio {
+            // Found, recorded as found, and left off the chain. A strip the
+            // renderer kept on Web Audio lists its devices all the same, and
+            // splicing the sampler here would sound it in both engines at once
+            // — the pad IPC is unconditional and the web twin is ungated for a
+            // strip the native side does not carry. The same omission the miss
+            // above takes, for the same reason: a strip built only to keep the
+            // routing graph faithful contributes silence, so its absence from
+            // the report is what the caller reads.
+            return Ok(None);
+        }
+        charge_chain_slot(registry, &device.id)?;
+        // Written both ways, unlike a built-in body's. The instance outlives
+        // every strip that carries it — the engine slot is the same slot it
+        // was, still holding the flag the last splice set — whereas a built-in
+        // is constructed fresh by the batch that splices it, where an omitted
+        // write honestly means "not bypassed". Rebuilt un-bypassed over a slot
+        // the engine still holds bypassed, a splice that wrote nothing would
+        // leave the sampler silent with its panel showing it live, and nothing
+        // else would correct it: the bypass send is a chain-level write, so a
+        // toggle performed while the strip is not carried never reaches the
+        // engine at all.
+        ops.push(GraphCommand::SetBypass(plugin_id, device.bypassed));
+        return Ok(Some(MappedDevice {
+            effect_id: plugin_id,
+            origin: DeviceOrigin::Crumbs,
+            // A sampler sounds material of its own, so the chain sums it in at
+            // the device's place rather than running it over the signal: the
+            // strip hands it zeroed generator scratch and sums the result
+            // (`run_device_chain`, `crates/daw-engine/src/timeline.rs:2954-2982`).
+            chain_kind: DeviceKind::Generator,
+            scoring_telemetry: None,
         }));
     }
 
@@ -2036,11 +2435,34 @@ fn map_device(
     // body at all, because to a strip a device that cannot be built and one
     // that cannot be written are the same missing device.
     //
-    // Which side of the ring a patch is applied on is a property of the body.
-    // A built-in instrument's patch is dozens of the instrument's own
-    // parameters per strip and the command ring is finite, so it is written
-    // into the instance on this thread; knead's handful travel as commands
-    // behind the registration.
+    // Which side of the ring a patch is applied on is a property of the body,
+    // not of whether it sounds notes. A built-in instrument's patch is dozens
+    // of the instrument's own parameters per strip, a gluten's is some
+    // forty-five and a crust's some thirty — a grinder's own vocabulary is
+    // wider still, its neural convolution weights dynamically named, and a
+    // bacteria's is its globals plus six bands' worth of band-prefixed names —
+    // and the command ring is finite, so all of them are written into the
+    // instance on this thread; knead's handful travel as commands behind the
+    // registration.
+    //
+    // For bacteria the thread is not only a budget: two of its names allocate
+    // when they land (`BACTERIA_CONTROL_THREAD_ONLY`,
+    // `crates/daw-engine/src/scheduler.rs`), and `BacteriaBody::load_patch`
+    // here is the only door that applies them — its audio-thread `set_param`
+    // drops them.
+    //
+    // For proof the record carries something no `SetParam` behind it could
+    // stand in for either: the five `chain_order_{n}` keys spelling the module
+    // order. `ProofChain` has no `set_param` arm for them at all —
+    // `ProofBody::set_param` is what turns them into the chain's own `reorder`
+    // — so a saved order reaches the device through this patch or not at all.
+    //
+    // A dutch-oven's record is the engine selection, the vintage stage, six
+    // decay-rate EQ bands and some twenty of the selected engine's own
+    // parameters, and it carries one name a panel never shows —
+    // `fdn_damping_version`, merged into `parameterValues` at creation from the
+    // descriptor's `internalParameterValues` — which decides which damping
+    // curve every saved FDN patch opens on.
     let resolved = match builtin {
         BuiltinEffectType::Fermenter => {
             resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
@@ -2062,6 +2484,123 @@ fn map_device(
                 },
             )
         }
+        BuiltinEffectType::Gluten => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::gluten_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::Crust => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::crust_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::Grinder => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::grinder_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::Bacteria => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::bacteria_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::Proof => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::proof_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::DutchOven => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::dutch_oven_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::Toaster => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::toaster_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        BuiltinEffectType::Scoring => {
+            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
+                |patch| {
+                    (
+                        PluginCore::scoring_with_patch(sample_rate, &patch),
+                        Vec::new(),
+                    )
+                },
+            )
+        }
+        // The one type whose body is not built from its parameters alone. A
+        // sampler sounds the bank loaded into its instance and nothing else,
+        // and loading one is a sequence of allocations the audio thread may
+        // not perform, so the instance is loaded here, on the mapping thread,
+        // from the bank the renderer staged through `commands::levain`.
+        //
+        // A device that names no bank, or names one this process does not hold
+        // committed, is refused rather than built: a body with no bank renders
+        // digital silence (`PluginCore::builtin`,
+        // `crates/daw-engine/src/scheduler.rs`), so splicing one in would put a
+        // mute device on the strip and leave the player looking for the fault
+        // in their own project. The refusal travels the same door every other
+        // unbuildable device takes — audible strips carry the reason back and
+        // silent ones drop the device ([`refuse_or_degrade`]) — so a muted or
+        // unrouted Levain whose bank never arrived still loads its project.
+        BuiltinEffectType::Levain => match device.sample_bank_key.as_deref() {
+            None => Err(format!(
+                "device '{}' of type levain names no sample bank",
+                device.id
+            )),
+            Some(key) if !levain_banks.is_committed(key) => Err(format!(
+                "device '{}' names levain bank '{key}', which is not registered",
+                device.id
+            )),
+            Some(key) => {
+                resolved_param_writes(device, |name| builtin_named_parameter(name, &device.id))
+                    .and_then(|patch| {
+                        Ok((
+                            PluginCore::levain_with_patch(
+                                levain_banks.build_instance(key, sample_rate)?,
+                                &patch,
+                            ),
+                            Vec::new(),
+                        ))
+                    })
+            }
+        },
         BuiltinEffectType::Knead => {
             resolved_param_writes(device, |key| builtin_parameter(builtin, key, &device.id))
                 .map(|writes| (PluginCore::builtin(builtin, sample_rate), writes))
@@ -2082,11 +2621,42 @@ fn map_device(
     // A built-in that sounds notes is registered holding its note store, built
     // here because the audio thread may not build one — without it the device
     // exists but nothing could ever be scheduled at it.
+    let declared_latency = core.declared_latency_frames();
+    // A tuner's reading handle, cloned off the core while this thread still
+    // holds it: the registration below moves the body onto the ring, and
+    // nothing control-side can reach into it afterwards.
+    let scoring_telemetry = core.scoring_telemetry();
     ops.push(GraphCommand::AddDetachedEffect(
         effect_id,
         core,
         builtin.sounds_notes().then(MidiNoteStore::new),
     ));
+    // A body that reports its own group delay declares it here, so the graph
+    // holds every route meeting this strip back by that figure from the
+    // device's first block rather than from whatever the browser's own
+    // measurement later reports. It follows the registration because the graph
+    // refuses a latency for an id its effect table does not yet hold, and the
+    // ring applies commands in the order they are pushed.
+    //
+    // No dry line goes with it. A dry line is read on the bypassed pass alone
+    // (`run_dry_delay`, `crates/daw-engine/src/scheduler.rs`), and that is the
+    // pass on which this body declares 0: the pass hands the block on
+    // untouched, which is exactly the identity a line aimed at 0 would be. So
+    // there is no pass on which a line here could hold anything, and shipping
+    // one would only feed a ring the mix never reads.
+    //
+    // The figure follows the record's bypass, and the declaration still
+    // precedes the `SetBypass` below: the graph refuses a latency for an id it
+    // does not hold, so registration, declaration, bypass is the only order
+    // that lands all three. The figure sent is already the bypassed one, so
+    // the bypass that follows finds the graph aimed where it wants it.
+    if let Some(reported_latency) = declared_latency {
+        ops.push(GraphCommand::SetEffectLatency {
+            effect_id,
+            latency_frames: if device.bypassed { 0 } else { reported_latency },
+            dry_delay: None,
+        });
+    }
     for (param, value) in param_writes {
         ops.push(GraphCommand::SetParam(effect_id, param, value));
     }
@@ -2095,8 +2665,9 @@ fn map_device(
     }
     Ok(Some(MappedDevice {
         effect_id,
-        builtin: Some(builtin),
+        origin: DeviceOrigin::Builtin(builtin),
         chain_kind: builtin_chain_kind(builtin),
+        scoring_telemetry,
     }))
 }
 
@@ -2279,12 +2850,21 @@ pub(crate) fn strip_reports(
 /// those render with no live engine, so no instance exists for a device to
 /// bind to and an external device on a sounding strip refuses there exactly
 /// as it did before binding existed.
+///
+/// `attached_crumbs` is the Crumbs instances the engine holds, and it comes
+/// back carrying the ones this batch named ([`AttachedCrumbs`]). Kept apart
+/// from `engine_owned_devices` rather than merged into it: the two are
+/// different id spaces — a hosted plugin's instance id against a Crumbs
+/// device's own id — and a miss in each carries its own reason. It is empty for
+/// every offline path, for the same reason the hosted lookup is.
 fn map_batch(
     batch: &GraphBatchPayload,
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     sample_rate: f32,
     engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
+    attached_crumbs: &mut AttachedCrumbs,
+    levain_banks: &mut LevainBankStore,
 ) -> Result<MappedBatch, String> {
     if batch.schema_version != 1 {
         return Err(format!(
@@ -2318,6 +2898,8 @@ fn map_batch(
             samples,
             sample_rate,
             engine_owned_devices,
+            &mut *attached_crumbs,
+            levain_banks,
             &mut budgets,
             &mut ops,
             &mut touched,
@@ -2382,6 +2964,8 @@ fn map_command(
     samples: &TimelineSamplePool,
     sample_rate: f32,
     engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
+    attached_crumbs: &mut AttachedCrumbs,
+    levain_banks: &mut LevainBankStore,
     budgets: &mut QueueBudgets,
     ops: &mut Vec<GraphCommand>,
     touched: &mut Vec<String>,
@@ -2444,6 +3028,8 @@ fn map_command(
                     *contributes_audio,
                     sample_rate,
                     engine_owned_devices,
+                    &mut *attached_crumbs,
+                    levain_banks,
                     ops,
                 )?
                 else {
@@ -2463,7 +3049,8 @@ fn map_command(
                     DeviceEntry {
                         native_effect_id: mapped.effect_id,
                         strip_id: track_id.clone(),
-                        builtin: mapped.builtin,
+                        origin: mapped.origin,
+                        scoring_telemetry: mapped.scoring_telemetry,
                     },
                 );
                 built_device_ids.push(device.id.clone());
@@ -2550,6 +3137,8 @@ fn map_command(
                     *contributes_audio,
                     sample_rate,
                     engine_owned_devices,
+                    &mut *attached_crumbs,
+                    levain_banks,
                     ops,
                 )?
                 else {
@@ -2569,7 +3158,8 @@ fn map_command(
                     DeviceEntry {
                         native_effect_id: mapped.effect_id,
                         strip_id: bus_id.clone(),
-                        builtin: mapped.builtin,
+                        origin: mapped.origin,
+                        scoring_telemetry: mapped.scoring_telemetry,
                     },
                 );
                 built_device_ids.push(device.id.clone());
@@ -2742,6 +3332,8 @@ fn map_command(
                 strip.contributes_audio,
                 sample_rate,
                 engine_owned_devices,
+                &mut *attached_crumbs,
+                levain_banks,
                 ops,
             )?
             else {
@@ -2762,7 +3354,8 @@ fn map_command(
                 DeviceEntry {
                     native_effect_id: mapped.effect_id,
                     strip_id: track_id.clone(),
-                    builtin: mapped.builtin,
+                    origin: mapped.origin,
+                    scoring_telemetry: mapped.scoring_telemetry,
                 },
             );
             registry
@@ -2846,7 +3439,7 @@ fn map_command(
             // by the name it was written under: a built-in's parameters are the
             // vocabulary its own body answers to, and a hosted plugin's are the
             // plugin's own numeric ids, which only the plugin can resolve.
-            let param = match device.builtin {
+            let param = match device.builtin() {
                 None => DeviceParamTarget::Hosted {
                     id: hosted_parameter_id(parameter_id)?,
                 },
@@ -2889,7 +3482,7 @@ fn map_command(
                     "set-device-parameters: device '{device_id}' is not on strip '{track_id}'"
                 ));
             }
-            let Some(builtin) = device.builtin else {
+            let Some(builtin) = device.builtin() else {
                 return Err(format!(
                     "set-device-parameters: device '{device_id}' is an externally hosted plugin, \
                      whose parameters take the plugin host's own control path"
@@ -2915,6 +3508,42 @@ fn map_command(
             for (param, value) in immediate_device_parameters(builtin, values, device_id)? {
                 ops.push(GraphCommand::SetParam(effect_id, param, value));
             }
+            Ok(())
+        }
+
+        GraphCommandPayload::SetDeviceBypass {
+            track_id,
+            device_id,
+            bypassed,
+        } => {
+            let device = registry
+                .devices
+                .get(device_id)
+                .ok_or_else(|| format!("set-device-bypass: unknown device '{device_id}'"))?;
+            if device.strip_id != *track_id {
+                return Err(format!(
+                    "set-device-bypass: device '{device_id}' is not on strip '{track_id}'"
+                ));
+            }
+            // The chain-level bypass belongs to the graph for every device
+            // whose bypass no other writer owns: the built-ins this registry
+            // built, and the Crumbs samplers it splices — `set_crumbs_param`
+            // carries a sampler's parameters and nothing else, so the chain is
+            // the only writer of its bypass. A hosted plugin's own bypass state
+            // is written by the plugin host's ordered control path, and a
+            // second live writer here would race that order.
+            if device.origin == DeviceOrigin::Hosted {
+                return Err(format!(
+                    "set-device-bypass: device '{device_id}' is an externally hosted plugin, \
+                     whose bypass takes the plugin host's own control path"
+                ));
+            }
+            // No budget charge, unlike the stamped write above: a bypass lands
+            // on the next drain and waits in no queue, so there is no pending
+            // window for the ledger to hold open. Its only capacity is the
+            // command ring, which `EngineHandle::send_graph_batch_with_headroom`
+            // sizes to the batch it is handed, this arm's one op included.
+            ops.push(GraphCommand::SetBypass(device.native_effect_id, *bypassed));
             Ok(())
         }
 
@@ -2991,6 +3620,42 @@ fn map_command(
                     clip_id_hash: 0,
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
+                    articulation_id: None,
+                },
+            ));
+            Ok(())
+        }
+
+        GraphCommandPayload::SendMidiControl {
+            track_id,
+            device_id,
+            controller,
+            value,
+            channel,
+        } => {
+            let plugin_id =
+                midi_device_plugin_id(registry, track_id, device_id, "send-midi-control")?;
+            if *controller > MAX_MIDI_CONTROLLER {
+                return Err(format!(
+                    "send-midi-control: controller {controller} is outside 0..={MAX_MIDI_CONTROLLER}"
+                ));
+            }
+            if *value > MAX_MIDI_CONTROLLER_VALUE {
+                return Err(format!(
+                    "send-midi-control: value {value} is outside 0..={MAX_MIDI_CONTROLLER_VALUE}"
+                ));
+            }
+            check_channel_address(*channel, "send-midi-control")?;
+            // No budget charge, for the reason `send-midi-note` states and one
+            // more: a controller waits in no queue at all. The engine applies
+            // it to the instance on the drain rather than pushing it into the
+            // block-local MIDI buffer, so it has no capacity to overflow.
+            ops.push(GraphCommand::SendMidiControl(
+                plugin_id,
+                MidiControlEvent {
+                    controller: *controller,
+                    value: *value,
+                    channel: *channel,
                 },
             ));
             Ok(())
@@ -3384,13 +4049,17 @@ fn map_schedule_clip(
 /// Frames per channel in a raw PCM payload, refusing shapes no schedule could
 /// honour.
 ///
+/// Shared with `commands::levain`, which takes bank material in exactly this
+/// shape: the two populations of decoded PCM differ in what plays them, not in
+/// what a well-formed payload is.
+///
 /// Ragged bytes are not frames. Zero frames refuse because the contract
 /// (`AudioGraphClipSource`) forbids playing silence for a real source — a
 /// 0-frame sample registered here would render a later `schedule-clip` as
 /// exactly that. And a payload above the offline render ceiling refuses
 /// because registration copies the material, so the ceiling on allocation is
 /// the same one the renderer holds, applied per channel.
-fn pcm_frame_count(pcm_len: usize, channels: usize) -> Result<usize, String> {
+pub(crate) fn pcm_frame_count(pcm_len: usize, channels: usize) -> Result<usize, String> {
     let bytes_per_frame = 4 * channels;
     if pcm_len % bytes_per_frame != 0 {
         return Err(format!(
@@ -3648,21 +4317,29 @@ pub async fn apply_graph_commands(
     // the order every path holding both takes them in — and both released
     // before this batch claims the engine below. A crumbs refusal is that
     // instance's to carry, never this batch's: it stays dormant for the next
-    // one. The registry guard already held above is passed straight through
+    // one. What this pass *did* take is reported by every answer below,
+    // refusals included — the attach is a fact about this call, and an
+    // instance it moved out of the dormant set is named by no later batch.
+    // The registry guard already held above is passed straight through
     // (#3807): the attach's own fence must be numbered on this same registry,
     // ahead of `working`'s clone below, so the batch fence that follows
     // inherits the count in the order the two fences take on the ring — the
     // registration first, then the batch it precedes.
-    match crumbs::attach_dormant_crumbs(crumbs, &mut registry_guard, &state.engine) {
-        Ok(refusals) => {
-            for (instance_id, reason) in refusals {
-                eprintln!(
+    let attached_crumbs_this_batch =
+        match crumbs::attach_dormant_crumbs(crumbs, &mut registry_guard, &state.engine) {
+            Ok(report) => {
+                for (instance_id, reason) in report.refusals {
+                    eprintln!(
                     "[Crumbs] instance '{instance_id}' could not attach to the engine: {reason}"
                 );
+                }
+                report.attached
             }
-        }
-        Err(error) => eprintln!("[Crumbs] dormant instances could not be attached: {error}"),
-    }
+            Err(error) => {
+                eprintln!("[Crumbs] dormant instances could not be attached: {error}");
+                Vec::new()
+            }
+        };
 
     // Read outside the engine lock, in the load path's order, and spent as both
     // the batch's reservation and the attach's limit.
@@ -3695,6 +4372,14 @@ pub async fn apply_graph_commands(
         })
         .collect();
 
+    // The Crumbs instances a device may be spliced onto, read here for the
+    // same reason. Unlike hosted plugins, the attach that can add to this
+    // lookup has already run above — so an instance this very batch took over
+    // binds in this batch rather than waiting for the next one. A panel opened
+    // before the first play therefore becomes audible on the batch that starts
+    // the engine, with no silent block in between.
+    let mut attached_crumbs = AttachedCrumbs::new(crumbs::attached_crumbs_instances(crumbs));
+
     let mut engine_guard = state
         .engine
         .lock()
@@ -3702,9 +4387,13 @@ pub async fn apply_graph_commands(
     // The engine is installed above and only the quit cascade releases one, so
     // an empty slot here means the process is shutting down under this batch.
     let Some(engine) = engine_guard.as_mut() else {
-        return result_json(&GraphApplyResultPayload::rejected(
-            "engine-not-running: the engine was released while this batch was admitted".to_string(),
-        ));
+        return result_json(
+            &GraphApplyResultPayload::rejected(
+                "engine-not-running: the engine was released while this batch was admitted"
+                    .to_string(),
+            )
+            .reporting_attached_crumbs(attached_crumbs.named_with(&attached_crumbs_this_batch)),
+        );
     };
 
     // Admission opens by subtracting what the engine has proven landed since
@@ -3713,10 +4402,17 @@ pub async fn apply_graph_commands(
     let progress = engine.graph_progress_snapshot();
     registry_guard.release_landed(progress);
 
+    // Lock order, here and in `map_graph_batch` and `render_graph_offline`:
+    // timeline samples first, then levain banks. All three sites take both, and
+    // a site that took them the other way round would deadlock against these.
     let samples = state
         .timeline_samples
         .lock()
         .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
+    let mut levain_banks = state
+        .levain_banks
+        .lock()
+        .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
 
     let correlation = batch.correlation.clone();
     let mut working = registry_guard.clone();
@@ -3726,9 +4422,19 @@ pub async fn apply_graph_commands(
         &samples,
         engine.sample_rate(),
         &engine_owned_devices,
+        &mut attached_crumbs,
+        &mut levain_banks,
     ) {
         Ok(mapped) => mapped,
-        Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
+        // Past the attach, so the refusal carries what the attach took: the
+        // instance is engine-owned from here on whatever this batch answers.
+        Err(reason) => {
+            return result_json(
+                &GraphApplyResultPayload::rejected(reason).reporting_attached_crumbs(
+                    attached_crumbs.named_with(&attached_crumbs_this_batch),
+                ),
+            )
+        }
     };
 
     // Whole-batch admission and visibility: `send_graph_batch` provisions a
@@ -3747,8 +4453,14 @@ pub async fn apply_graph_commands(
     match engine.send_graph_batch_with_headroom(mapped.ops, dormant_plugin_count) {
         Ok(()) => {}
         Err(GraphBatchError::Refused(reason)) => {
-            // Nothing was pushed: a refusal here is a clean rejection.
-            return result_json(&GraphApplyResultPayload::rejected(reason));
+            // Nothing of *this batch* was pushed: a refusal here is a clean
+            // rejection. The attach's own registration went onto the ring
+            // ahead of it, so the report still belongs to this answer.
+            return result_json(
+                &GraphApplyResultPayload::rejected(reason).reporting_attached_crumbs(
+                    attached_crumbs.named_with(&attached_crumbs_this_batch),
+                ),
+            );
         }
         Err(GraphBatchError::Partial {
             pushed,
@@ -3764,15 +4476,18 @@ pub async fn apply_graph_commands(
             // commands that will never all arrive, so the engine drains
             // nothing further from this ring. A state that broken must never
             // report itself as whole.
-            return result_json(&GraphApplyResultPayload::needs_reconcile(
-                format!(
-                    "the engine refused command {pushed} of {total} after {pushed} were \
-                     already queued: {error}"
-                ),
-                correlation,
-                registry_guard.runtime_revision,
-                mapped.reports,
-            ));
+            return result_json(
+                &GraphApplyResultPayload::needs_reconcile(
+                    format!(
+                        "the engine refused command {pushed} of {total} after {pushed} were \
+                         already queued: {error}"
+                    ),
+                    correlation,
+                    registry_guard.runtime_revision,
+                    mapped.reports,
+                )
+                .reporting_attached_crumbs(attached_crumbs.named_with(&attached_crumbs_this_batch)),
+            );
         }
     }
 
@@ -3809,7 +4524,6 @@ pub async fn apply_graph_commands(
             instance_id: attached.instance_id,
         })
         .collect();
-
     working.runtime_revision = registry_guard.runtime_revision + 1;
     let revision = working.runtime_revision;
     // `map_batch` advanced this count for the fence just published, so it is
@@ -3817,13 +4531,20 @@ pub async fn apply_graph_commands(
     // — the same number the ledger stamped every write in it with.
     let admitted_batch = working.batches_sent;
     *registry_guard = working;
-    result_json(&GraphApplyResultPayload::applied(
-        correlation,
-        revision,
-        admitted_batch,
-        mapped.reports,
-        attached_plugins,
-    ))
+    result_json(
+        &GraphApplyResultPayload::applied(
+            correlation,
+            revision,
+            admitted_batch,
+            mapped.reports,
+            attached_plugins,
+        )
+        // From the attach that ran ahead of the mapping, unlike the plugins
+        // above: the crumbs attach has to precede `map_batch` for the
+        // same-batch binding, so it is reported by whichever answer this call
+        // reaches, this one included.
+        .reporting_attached_crumbs(attached_crumbs.named_with(&attached_crumbs_this_batch)),
+    )
 }
 
 /// The wire's fault marker for a `prior` that no longer replays: the stable
@@ -3937,6 +4658,7 @@ fn replay_prior_commands(
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     sample_rate: f32,
+    levain_banks: &mut LevainBankStore,
 ) -> Result<(), String> {
     while !commands.is_empty() {
         let rest = if commands.len() > MAX_BATCH_COMMANDS {
@@ -3950,8 +4672,16 @@ fn replay_prior_commands(
             replace_topology: false,
             commands,
         };
-        map_batch(&replay, registry, samples, sample_rate, &HashMap::new())
-            .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
+        map_batch(
+            &replay,
+            registry,
+            samples,
+            sample_rate,
+            &HashMap::new(),
+            &mut AttachedCrumbs::default(),
+            levain_banks,
+        )
+        .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
         commands = rest;
     }
     Ok(())
@@ -4044,17 +4774,31 @@ pub async fn map_graph_batch(
         None => None,
     };
 
+    // Lock order, here and in `apply_graph_commands` and
+    // `render_graph_offline`: timeline samples first, then levain banks. All
+    // three sites take both, and a site that took them the other way round
+    // would deadlock against these.
     let samples = state
         .timeline_samples
         .lock()
         .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
+    let mut levain_banks = state
+        .levain_banks
+        .lock()
+        .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
 
     let mut registry = match resumed {
         Some(registry) => registry,
         None => {
             let mut registry = GraphRegistry::default();
             if !prior_commands.is_empty() {
-                replay_prior_commands(prior_commands, &mut registry, &samples, sample_rate as f32)?;
+                replay_prior_commands(
+                    prior_commands,
+                    &mut registry,
+                    &samples,
+                    sample_rate as f32,
+                    &mut levain_banks,
+                )?;
             }
             registry
         }
@@ -4076,7 +4820,10 @@ pub async fn map_graph_batch(
         &samples,
         sample_rate as f32,
         &HashMap::new(),
+        &mut AttachedCrumbs::default(),
+        &mut levain_banks,
     );
+    drop(levain_banks);
     drop(samples);
 
     if let Some(key) = &session_key {
@@ -4110,18 +4857,28 @@ pub async fn map_graph_batch(
 /// Map one self-contained batch for an offline render: fresh registry, no
 /// live engine.
 ///
-/// The caller holds the sample-pool lock only across this call — mapping
-/// clones the material each clip plays into its command, so the render itself
-/// runs without the lock.
+/// The caller holds the sample-pool and bank-store locks only across this call
+/// — mapping clones the material each clip plays into its command and builds
+/// each sampler's instance here, so the render itself runs without either lock.
 fn map_offline_batch(
     batch: &GraphBatchPayload,
     samples: &TimelineSamplePool,
+    levain_banks: &mut LevainBankStore,
     sample_rate: f32,
 ) -> Result<Vec<GraphCommand>, String> {
     let mut registry = GraphRegistry::default();
     // An offline render has no engine and therefore no hosted plugin instances:
     // an external device on a sounding strip refuses here, as it always has.
-    Ok(map_batch(batch, &mut registry, samples, sample_rate, &HashMap::new())?.ops)
+    Ok(map_batch(
+        batch,
+        &mut registry,
+        samples,
+        sample_rate,
+        &HashMap::new(),
+        &mut AttachedCrumbs::default(),
+        levain_banks,
+    )?
+    .ops)
 }
 
 /// Drive one mapped batch through the offline scheduler, refusing a render
@@ -4168,10 +4925,11 @@ fn render_offline_ops(
 fn render_offline_batch(
     batch: &GraphBatchPayload,
     samples: &TimelineSamplePool,
+    levain_banks: &mut LevainBankStore,
     frames: usize,
     sample_rate: f32,
 ) -> Result<Vec<f32>, String> {
-    let ops = map_offline_batch(batch, samples, sample_rate)?;
+    let ops = map_offline_batch(batch, samples, levain_banks, sample_rate)?;
     let (left, right) = render_offline_ops(ops, frames, sample_rate)?;
     let mut interleaved = Vec::with_capacity(frames * 2);
     for index in 0..frames {
@@ -4208,15 +4966,24 @@ pub async fn render_graph_offline(
         ));
     }
 
-    // The pool lock spans only the mapping: every source the batch plays is
-    // cloned into its clip command there, so the render — the long part —
-    // runs with the pool free for concurrent registrations.
+    // Both locks span only the mapping: every source the batch plays is cloned
+    // into its clip command there and every sampler's instance is built there,
+    // so the render — the long part — runs with both free for concurrent
+    // registrations.
+    //
+    // Lock order, here and in `apply_graph_commands` and `map_graph_batch`:
+    // timeline samples first, then levain banks. All three sites take both, and
+    // a site that took them the other way round would deadlock against these.
     let ops = {
         let samples = state
             .timeline_samples
             .lock()
             .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
-        map_offline_batch(&batch, &samples, sample_rate as f32)?
+        let mut levain_banks = state
+            .levain_banks
+            .lock()
+            .map_err(|error| format!("Failed to lock levain banks: {error}"))?;
+        map_offline_batch(&batch, &samples, &mut levain_banks, sample_rate as f32)?
     };
     let (left, right) = render_offline_ops(ops, frames, sample_rate as f32)?;
 
@@ -4237,16 +5004,59 @@ mod tests {
     use crate::commands::plugins::serialize_against_exclusive_gate_holds;
     use serde_json::json;
 
-    /// Map a batch against an engine holding no hosted plugin instances — the
-    /// state every case below is about unless it says otherwise. A case about
-    /// binding calls [`map_batch`] itself with the lookup it wants.
+    /// Map a batch against an engine holding no hosted plugin instances and a
+    /// process holding no Levain bank — the state every case below is about
+    /// unless it says otherwise. A case about binding calls
+    /// [`map_bound_batch`] with the lookup it wants; a case about a Levain
+    /// bank calls [`map_batch`] itself with the store it wants.
     fn map_unbound_batch(
         batch: &GraphBatchPayload,
         registry: &mut GraphRegistry,
         samples: &TimelineSamplePool,
         sample_rate: f32,
     ) -> Result<MappedBatch, String> {
-        map_batch(batch, registry, samples, sample_rate, &HashMap::new())
+        map_bound_batch(batch, registry, samples, sample_rate, &HashMap::new())
+    }
+
+    /// Map a batch against a given hosted-plugin lookup, and a process holding
+    /// no Levain bank.
+    fn map_bound_batch(
+        batch: &GraphBatchPayload,
+        registry: &mut GraphRegistry,
+        samples: &TimelineSamplePool,
+        sample_rate: f32,
+        engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
+    ) -> Result<MappedBatch, String> {
+        map_batch(
+            batch,
+            registry,
+            samples,
+            sample_rate,
+            engine_owned_devices,
+            &mut AttachedCrumbs::default(),
+            &mut LevainBankStore::default(),
+        )
+    }
+
+    /// Map a batch against a given Crumbs lookup — device id → the engine
+    /// plugin id `commands::crumbs` registered for that device's instance —
+    /// and against an engine holding no hosted plugin.
+    fn map_crumbs_batch(
+        batch: &GraphBatchPayload,
+        registry: &mut GraphRegistry,
+        samples: &TimelineSamplePool,
+        sample_rate: f32,
+        attached_crumbs: &HashMap<String, usize>,
+    ) -> Result<MappedBatch, String> {
+        map_batch(
+            batch,
+            registry,
+            samples,
+            sample_rate,
+            &HashMap::new(),
+            &mut AttachedCrumbs::new(attached_crumbs.clone()),
+            &mut LevainBankStore::default(),
+        )
     }
 
     fn sample_pool() -> TimelineSamplePool {
@@ -5107,7 +5917,7 @@ mod tests {
 
         let alien_device = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
-              "devices": [ { "id": "d1", "type": "dutch-oven", "bypassed": false, "parameterValues": {} } ],
+              "devices": [ { "id": "d1", "type": "builtin-eq", "bypassed": false, "parameterValues": {} } ],
               "honorMuted": true, "contributesAudio": true }
         ]));
         let refusal = map_unbound_batch(
@@ -5125,7 +5935,7 @@ mod tests {
         let batch = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
               "devices": [
-                  { "id": "d1", "type": "dutch-oven", "bypassed": false, "parameterValues": {} },
+                  { "id": "d1", "type": "builtin-eq", "bypassed": false, "parameterValues": {} },
                   { "id": "d2", "type": "knead", "bypassed": false, "parameterValues": {} }
               ],
               "honorMuted": true, "contributesAudio": false }
@@ -5169,7 +5979,7 @@ mod tests {
         let degraded = map_unbound_batch(
             &batch(json!([
                 { "kind": "insert-device", "trackId": "t1", "index": 0,
-                  "device": { "id": "d-alien", "type": "dutch-oven", "bypassed": false,
+                  "device": { "id": "d-alien", "type": "builtin-eq", "bypassed": false,
                               "parameterValues": {} } }
             ])),
             &mut registry,
@@ -5313,7 +6123,7 @@ mod tests {
     #[test]
     fn releasing_an_engine_plugin_unlinks_its_chain_entry_from_its_strip() {
         let mut registry = GraphRegistry::default();
-        map_batch(
+        map_bound_batch(
             &batch(json!([
                 { "kind": "create-track-strip", "trackId": "lead", "name": "Lead",
                   "state": strip_state(0.8),
@@ -5521,7 +6331,8 @@ mod tests {
                 DeviceEntry {
                     native_effect_id: FIRST_GRAPH_EFFECT_ID + index,
                     strip_id: "t1".to_string(),
-                    builtin: Some(BuiltinEffectType::Knead),
+                    origin: DeviceOrigin::Builtin(BuiltinEffectType::Knead),
+                    scoring_telemetry: None,
                 },
             );
         }
@@ -5546,10 +6357,22 @@ mod tests {
     fn an_offline_render_is_deterministic_and_a_clip_through_a_fader_is_audible() {
         let samples = sample_pool();
 
-        let first = render_offline_batch(&clip_and_gain_batch(), &samples, 4_800, 48_000.0)
-            .expect("the render should succeed");
-        let second = render_offline_batch(&clip_and_gain_batch(), &samples, 4_800, 48_000.0)
-            .expect("the render should succeed");
+        let first = render_offline_batch(
+            &clip_and_gain_batch(),
+            &samples,
+            &mut LevainBankStore::default(),
+            4_800,
+            48_000.0,
+        )
+        .expect("the render should succeed");
+        let second = render_offline_batch(
+            &clip_and_gain_batch(),
+            &samples,
+            &mut LevainBankStore::default(),
+            4_800,
+            48_000.0,
+        )
+        .expect("the render should succeed");
 
         assert_eq!(first, second, "same batch, same frames, same bits");
         assert!(first.iter().any(|sample| *sample != 0.0));
@@ -5571,14 +6394,26 @@ mod tests {
             { "kind": "set-track-output", "trackId": "missing", "target": { "kind": "master" } }
         ]));
 
-        let refusal = render_offline_batch(&refused, &samples, 4_800, 48_000.0)
-            .expect_err("the whole batch must refuse before any application");
+        let refusal = render_offline_batch(
+            &refused,
+            &samples,
+            &mut LevainBankStore::default(),
+            4_800,
+            48_000.0,
+        )
+        .expect_err("the whole batch must refuse before any application");
         assert!(refusal.contains("commands[2]"));
 
         // And the refusal really did precede application: a fresh render of
         // an empty batch over the same pool is silence, bit for bit.
-        let silence = render_offline_batch(&batch(json!([])), &samples, 4_800, 48_000.0)
-            .expect("an empty batch renders");
+        let silence = render_offline_batch(
+            &batch(json!([])),
+            &samples,
+            &mut LevainBankStore::default(),
+            4_800,
+            48_000.0,
+        )
+        .expect("an empty batch renders");
         assert!(silence.iter().all(|sample| *sample == 0.0));
     }
 
@@ -6409,7 +7244,7 @@ mod tests {
 
         let mut crumbs_slots = 0;
         while let Ok(command) = command_rx.pop() {
-            if let GraphCommand::AddPlugin(_, plugin, Some(_)) = command {
+            if let GraphCommand::AddHostedPlugin(_, plugin, _) = command {
                 if plugin.as_any().downcast_ref::<CrumbsPluginSlot>().is_some() {
                     crumbs_slots += 1;
                 }
@@ -6477,16 +7312,14 @@ mod tests {
     /// tests sharing one id contend for the same gate however separate their
     /// `AppState`s are.
     fn park_dormant_plugin(state: &AppState, instance_id: &str) {
+        let wrapper = daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+            "Dormant Fixture",
+            vec![],
+            false,
+        );
         state.plugins.lock().expect("plugins lock").insert(
             instance_id.to_string(),
-            crate::state::PluginInstanceData::dormant_fixture(
-                daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
-                    "Dormant Fixture",
-                    vec![],
-                    false,
-                )
-                .into(),
-            ),
+            crate::state::PluginInstanceData::dormant_fixture(wrapper.into()),
         );
     }
 
@@ -7597,26 +8430,62 @@ mod tests {
             r#"{"acceptance":"rejected","application":"not-applied","reason":"engine-not-running: no device"}"#
         );
 
-        let applied = serde_json::to_string(&GraphApplyResultPayload::applied(
-            None,
-            3,
-            5,
-            vec![StripReportPayload {
-                kind: "track",
-                id: "t1".to_string(),
-                device_ids: vec!["d1".to_string()],
-            }],
-            vec![AttachedPluginPayload {
-                instance_id: "i1".to_string(),
-            }],
-        ))
+        // `attachedCrumbs` follows the attach pass rather than the outcome,
+        // so a refusal past the pass carries it and a refusal before the pass
+        // (the one above) does not. Empty says the pass ran and took nothing.
+        let refused_past_the_attach = serde_json::to_string(
+            &GraphApplyResultPayload::rejected(
+                "previously applied commands no longer map".to_string(),
+            )
+            .reporting_attached_crumbs(vec!["d-crumbs".to_string()]),
+        )
+        .expect("a refusal past the attach serializes");
+        assert_eq!(
+            refused_past_the_attach,
+            concat!(
+                r#"{"acceptance":"rejected","application":"not-applied","#,
+                r#""reason":"previously applied commands no longer map","#,
+                r#""attachedCrumbs":[{"instanceId":"d-crumbs"}]}"#
+            )
+        );
+
+        let took_nothing = serde_json::to_string(
+            &GraphApplyResultPayload::rejected("engine-not-running: no device".to_string())
+                .reporting_attached_crumbs(Vec::new()),
+        )
+        .expect("an empty report serializes");
+        assert_eq!(
+            took_nothing,
+            concat!(
+                r#"{"acceptance":"rejected","application":"not-applied","#,
+                r#""reason":"engine-not-running: no device","attachedCrumbs":[]}"#
+            )
+        );
+
+        let applied = serde_json::to_string(
+            &GraphApplyResultPayload::applied(
+                None,
+                3,
+                5,
+                vec![StripReportPayload {
+                    kind: "track",
+                    id: "t1".to_string(),
+                    device_ids: vec!["d1".to_string()],
+                }],
+                vec![AttachedPluginPayload {
+                    instance_id: "i1".to_string(),
+                }],
+            )
+            .reporting_attached_crumbs(vec!["d-crumbs".to_string()]),
+        )
         .expect("applied serializes");
         assert_eq!(
             applied,
             concat!(
                 r#"{"acceptance":"accepted","application":"applied","runtimeRevision":3,"#,
                 r#""admittedBatch":5,"reports":[{"kind":"track","id":"t1","deviceIds":["d1"]}],"#,
-                r#""attachedPlugins":[{"instanceId":"i1"}]}"#
+                r#""attachedPlugins":[{"instanceId":"i1"}],"#,
+                r#""attachedCrumbs":[{"instanceId":"d-crumbs"}]}"#
             )
         );
 
@@ -7660,6 +8529,26 @@ mod tests {
                 r#""runtimeRevision":7,"reports":[{"kind":"track","id":"t1","deviceIds":[]}]}"#
             )
         );
+
+        let stalled_past_the_attach = serde_json::to_string(
+            &GraphApplyResultPayload::needs_reconcile(
+                "the engine refused command 2 of 3".to_string(),
+                None,
+                7,
+                Vec::new(),
+            )
+            .reporting_attached_crumbs(vec!["d-crumbs".to_string()]),
+        )
+        .expect("needs-reconcile past the attach serializes");
+        assert_eq!(
+            stalled_past_the_attach,
+            concat!(
+                r#"{"acceptance":"accepted","application":"needs-reconcile","#,
+                r#""reason":"the engine refused command 2 of 3","#,
+                r#""compensation":"not-attempted","runtimeRevision":7,"reports":[],"#,
+                r#""attachedCrumbs":[{"instanceId":"d-crumbs"}]}"#
+            )
+        );
     }
 
     #[test]
@@ -7685,7 +8574,8 @@ mod tests {
             DeviceEntry {
                 native_effect_id: 1,
                 strip_id: track_id.clone(),
-                builtin: Some(BuiltinEffectType::Knead),
+                origin: DeviceOrigin::Builtin(BuiltinEffectType::Knead),
+                scoring_telemetry: None,
             },
         );
 
@@ -7779,7 +8669,8 @@ mod tests {
             DeviceEntry {
                 native_effect_id: 1,
                 strip_id: track_id.clone(),
-                builtin: Some(BuiltinEffectType::Fermenter),
+                origin: DeviceOrigin::Builtin(BuiltinEffectType::Fermenter),
+                scoring_telemetry: None,
             },
         );
         let samples = TimelineSamplePool::default();
@@ -7827,7 +8718,7 @@ mod tests {
         );
 
         let refusal = map_unbound_batch(
-            &write_batch("Cutoff"),
+            &write_batch("cut-off"),
             &mut registry.clone(),
             &samples,
             48_000.0,
@@ -7840,15 +8731,18 @@ mod tests {
     }
 
     /// A `write-device-parameter` aimed at a grand boule carries the piano's
-    /// own parameter name, and the camelCase spelling of that same parameter
-    /// refuses.
+    /// own parameter name, and a key shaped unlike one of those names refuses
+    /// under the same reason every unaddressable parameter refuses under.
     ///
-    /// The camelCase spelling is the one a panel and an automation lane author,
-    /// so it is the spelling that reaches this route when the renderer's
-    /// translation is missing or wrong. The instrument answers a name it does
-    /// not know by doing nothing at all, so admitting it would be a write the
-    /// producer believes landed and the mix never heard; the refusal names the
-    /// key it read.
+    /// Shape admits the ASCII identifier vocabulary a built-in might spell its
+    /// parameters in, camelCase included, so a camelCase spelling of a
+    /// snake_case name is no longer refused by shape: it parses, addresses a
+    /// name the piano does not have, and the piano answers by doing nothing at
+    /// all, exactly as it does under the web worklet — the renderer's own
+    /// descriptor tables are what keep a panel or an automation lane's
+    /// camelCase id translated to the name the piano actually has. Only a key
+    /// no built-in's vocabulary could ever spell, a hyphen here, is refused by
+    /// shape.
     #[test]
     fn write_device_parameter_at_a_grand_boule_carries_the_instruments_own_name() {
         let track_id = "t1".to_string();
@@ -7872,7 +8766,8 @@ mod tests {
             DeviceEntry {
                 native_effect_id: 1,
                 strip_id: track_id.clone(),
-                builtin: Some(BuiltinEffectType::GrandBoule),
+                origin: DeviceOrigin::Builtin(BuiltinEffectType::GrandBoule),
+                scoring_telemetry: None,
             },
         );
         let samples = TimelineSamplePool::default();
@@ -7921,14 +8816,14 @@ mod tests {
         );
 
         let refusal = map_unbound_batch(
-            &write_batch("masterGain"),
+            &write_batch("master-gain"),
             &mut registry.clone(),
             &samples,
             48_000.0,
         )
-        .expect_err("the camelCase spelling is not one of the instrument's names");
+        .expect_err("a hyphen is not a character of any built-in's vocabulary");
         assert!(
-            refusal.contains("masterGain") && refusal.contains("has no native address"),
+            refusal.contains("master-gain") && refusal.contains("has no native address"),
             "the refusal must name the key it read, got: {refusal}"
         );
     }
@@ -7963,7 +8858,8 @@ mod tests {
             DeviceEntry {
                 native_effect_id: IMMEDIATE_PARAM_EFFECT_ID,
                 strip_id: track_id.to_string(),
-                builtin: Some(builtin),
+                origin: DeviceOrigin::Builtin(builtin),
+                scoring_telemetry: None,
             },
         );
         registry
@@ -8022,6 +8918,45 @@ mod tests {
     }
 
     fn fermenter_write(key: &str, value: f32) -> (usize, DeviceParam, f32) {
+        let name = BuiltinParamName::parse(key).expect("the fixture keys are well-shaped names");
+        (
+            IMMEDIATE_PARAM_EFFECT_ID,
+            DeviceParam::BuiltinNamed(name),
+            value,
+        )
+    }
+
+    /// Mirrors [`fermenter_write`] for the gluten fixtures below — the wrapper
+    /// is the same for any built-in that answers to [`BuiltinParamName`], but
+    /// naming it after the fermenter in a gluten test would misname what it
+    /// asserts.
+    fn gluten_write(key: &str, value: f32) -> (usize, DeviceParam, f32) {
+        let name = BuiltinParamName::parse(key).expect("the fixture keys are well-shaped names");
+        (
+            IMMEDIATE_PARAM_EFFECT_ID,
+            DeviceParam::BuiltinNamed(name),
+            value,
+        )
+    }
+
+    /// Mirrors [`gluten_write`] for the crust fixtures below, for the reason
+    /// given there: the wrapper is the same for any built-in that answers to
+    /// [`BuiltinParamName`], and a crust spec asserting through a wrapper
+    /// named after another device would misname what it asserts.
+    fn crust_write(key: &str, value: f32) -> (usize, DeviceParam, f32) {
+        let name = BuiltinParamName::parse(key).expect("the fixture keys are well-shaped names");
+        (
+            IMMEDIATE_PARAM_EFFECT_ID,
+            DeviceParam::BuiltinNamed(name),
+            value,
+        )
+    }
+
+    /// Mirrors [`crust_write`] for the grinder fixtures below, for the reason
+    /// given there: the wrapper is the same for any built-in that answers to
+    /// [`BuiltinParamName`], and a grinder spec asserting through a wrapper
+    /// named after another device would misname what it asserts.
+    fn grinder_write(key: &str, value: f32) -> (usize, DeviceParam, f32) {
         let name = BuiltinParamName::parse(key).expect("the fixture keys are well-shaped names");
         (
             IMMEDIATE_PARAM_EFFECT_ID,
@@ -8134,6 +9069,141 @@ mod tests {
         }
     }
 
+    /// A gluten batch routes `topology`, `style` and `amount` first, in that
+    /// order, whatever order the wire record draws — the same law
+    /// [`set_device_parameters_routes_a_fermenter_batch_through_active_layer_first`]
+    /// proves for the fermenter's own routing key, applied to gluten's three
+    /// macros instead of one.
+    #[test]
+    fn set_device_parameters_routes_a_gluten_batch_macros_first() {
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would pass
+        /// a share of its runs.
+        const DRAWS: usize = 16;
+
+        let record = json!({
+            "threshold": -18.0,
+            "amount": 50.0,
+            "style": 0.0,
+            "topology": 0.0,
+            "ratio": 4.0
+        });
+        let expected = vec![
+            gluten_write("topology", 0.0),
+            gluten_write("style", 0.0),
+            gluten_write("amount", 50.0),
+            gluten_write("ratio", 4.0),
+            gluten_write("threshold", -18.0),
+        ];
+
+        for draw in 0..DRAWS {
+            let mut registry =
+                registry_with_builtin_device("t1", "d-glu", BuiltinEffectType::Gluten);
+            let mapped = map_immediate(
+                &set_device_parameters_batch("t1", "d-glu", record.clone()),
+                &mut registry,
+            )
+            .expect("a gluten answers to its own names");
+
+            assert_eq!(
+                immediate_writes(&mapped.ops),
+                expected,
+                "draw {draw}: the macros must lead in descriptor order, and the rest must \
+                 follow in name order"
+            );
+        }
+    }
+
+    /// A crust batch routes `style` first, whatever order the wire record
+    /// draws — the same law
+    /// [`set_device_parameters_routes_a_fermenter_batch_through_active_layer_first`]
+    /// proves for the fermenter's own routing key, applied to the one name
+    /// that aliases another of crust's.
+    ///
+    /// `style` and `algorithm` both write the limiter's single algorithm
+    /// slot, so `style` leading is what leaves `algorithm` — the exact pick —
+    /// to land last of the two.
+    #[test]
+    fn set_device_parameters_routes_a_crust_batch_style_first() {
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would pass
+        /// a share of its runs.
+        const DRAWS: usize = 16;
+
+        let record = json!({
+            "algorithm": 5.0,
+            "style": 2.0,
+            "ceiling": -6.0,
+            "gain": 12.0
+        });
+        let expected = vec![
+            crust_write("style", 2.0),
+            crust_write("algorithm", 5.0),
+            crust_write("ceiling", -6.0),
+            crust_write("gain", 12.0),
+        ];
+
+        for draw in 0..DRAWS {
+            let mut registry =
+                registry_with_builtin_device("t1", "d-cru", BuiltinEffectType::Crust);
+            let mapped = map_immediate(
+                &set_device_parameters_batch("t1", "d-cru", record.clone()),
+                &mut registry,
+            )
+            .expect("a crust answers to its own names");
+
+            assert_eq!(
+                immediate_writes(&mapped.ops),
+                expected,
+                "draw {draw}: `style` must lead, and the rest must follow in name order"
+            );
+        }
+    }
+
+    /// A grinder batch routes `neuralEnabled` first, whatever order the wire
+    /// record draws — the same law
+    /// [`set_device_parameters_routes_a_crust_batch_style_first`] proves for
+    /// crust's aliasing pair, applied to grinder's: `neuralEnabled` and
+    /// `engineMode` both write the amp's single engine-mode slot, so
+    /// `neuralEnabled` leading is what leaves `engineMode` — the exact pick —
+    /// to land last of the two.
+    #[test]
+    fn set_device_parameters_routes_a_grinder_batch_neural_enabled_first() {
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would pass
+        /// a share of its runs.
+        const DRAWS: usize = 16;
+
+        let record = json!({
+            "engineMode": 1.0,
+            "neuralEnabled": 0.0,
+            "gain": 8.0,
+            "cabEnabled": 1.0
+        });
+        let expected = vec![
+            grinder_write("neuralEnabled", 0.0),
+            grinder_write("cabEnabled", 1.0),
+            grinder_write("engineMode", 1.0),
+            grinder_write("gain", 8.0),
+        ];
+
+        for draw in 0..DRAWS {
+            let mut registry =
+                registry_with_builtin_device("t1", "d-gri", BuiltinEffectType::Grinder);
+            let mapped = map_immediate(
+                &set_device_parameters_batch("t1", "d-gri", record.clone()),
+                &mut registry,
+            )
+            .expect("a grinder answers to its own names");
+
+            assert_eq!(
+                immediate_writes(&mapped.ops),
+                expected,
+                "draw {draw}: `neuralEnabled` must lead, and the rest must follow in name order"
+            );
+        }
+    }
+
     /// An externally hosted plugin's parameters are the plugin's own, resolved
     /// by the plugin over the plugin host's control path. Mapping one through a
     /// built-in vocabulary would address a parameter that vocabulary cannot
@@ -8155,13 +9225,22 @@ mod tests {
     }
 
     /// A key with no native address refuses the whole batch, naming the device
-    /// and the key: a project panel authors a fermenter's camelCase descriptor
-    /// ids, and a mapper that skipped what it could not resolve would report a
-    /// patch applied while the values the producer sent went nowhere.
+    /// and the key: a mapper that skipped what it could not resolve would
+    /// report a patch applied while the values the producer sent went
+    /// nowhere.
+    ///
+    /// The two devices refuse for different reasons. Knead answers a closed
+    /// set of names the engine owns, and a camelCase descriptor id is not one
+    /// of them — that refusal holds whichever case the key is spelled in.
+    /// A fermenter answers its own names by shape alone, camelCase included,
+    /// so a camelCase descriptor id like `filterCutoff` now parses and is the
+    /// instrument silently doing nothing rather than a refusal here; only a
+    /// key no built-in's vocabulary could ever spell, a hyphen, still refuses
+    /// a fermenter by shape.
     #[test]
     fn set_device_parameters_naming_no_parameter_of_the_device_refuses_naming_device_and_key() {
         let unmappable = [
-            (BuiltinEffectType::Fermenter, "filterCutoff"),
+            (BuiltinEffectType::Fermenter, "filter-cutoff"),
             (BuiltinEffectType::Knead, "shiftSemitones"),
         ];
 
@@ -8343,6 +9422,106 @@ mod tests {
         );
     }
 
+    // ── Device bypass ──────────────────────────────────────────────────────
+
+    /// One `set-device-bypass` batch, deserialized from the wire spelling.
+    fn set_device_bypass_batch(
+        track_id: &str,
+        device_id: &str,
+        bypassed: bool,
+    ) -> GraphBatchPayload {
+        batch(json!([
+            { "kind": "set-device-bypass", "trackId": track_id, "deviceId": device_id,
+              "bypassed": bypassed }
+        ]))
+    }
+
+    /// Every bypass write a mapping emitted, in order.
+    fn bypass_writes(ops: &[GraphCommand]) -> Vec<(usize, bool)> {
+        ops.iter()
+            .filter_map(|op| match op {
+                GraphCommand::SetBypass(effect_id, bypassed) => Some((*effect_id, *bypassed)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A mid-roll bypass crosses as one chain-level write at this device,
+    /// applied on the next callback drain — the op the scheduler already
+    /// answers, aimed at the chain slot the device is spliced into, in both
+    /// directions.
+    #[test]
+    fn set_device_bypass_at_a_builtin_emits_one_set_bypass_for_the_device() {
+        for (bypassed, direction) in [(true, "into bypass"), (false, "out of it")] {
+            let mut registry =
+                registry_with_builtin_device("t1", "d-knead", BuiltinEffectType::Knead);
+
+            let mapped = map_immediate(
+                &set_device_bypass_batch("t1", "d-knead", bypassed),
+                &mut registry,
+            )
+            .expect("a built-in the registry holds takes a bypass write");
+
+            assert_eq!(
+                bypass_writes(&mapped.ops),
+                vec![(IMMEDIATE_PARAM_EFFECT_ID, bypassed)],
+                "the toggle must reach the engine as one chain-level write {direction}"
+            );
+            assert_eq!(
+                mapped.ops.len(),
+                1,
+                "a bypass is one op: no parameter write travels with it"
+            );
+        }
+    }
+
+    /// A hosted plugin's own bypass state is written by the plugin host's
+    /// ordered control path; a second live writer on the graph ring would race
+    /// that order, so the command is refused by device.
+    #[test]
+    fn set_device_bypass_at_a_hosted_plugin_is_refused() {
+        let mut registry = registry_with_hosted_device("t1", "d-plugin");
+
+        let refusal = map_immediate(
+            &set_device_bypass_batch("t1", "d-plugin", true),
+            &mut registry,
+        )
+        .expect_err("a hosted plugin takes its bypass on the plugin host's path");
+
+        assert!(
+            refusal.contains("d-plugin") && refusal.contains("plugin host"),
+            "the refusal must name the device and the path its bypass takes, got: {refusal}"
+        );
+    }
+
+    /// The same two address refusals every device-addressed command makes: a
+    /// device the registry does not hold, and one held on a different strip
+    /// than the batch claims.
+    #[test]
+    fn set_device_bypass_at_a_device_on_another_strip_is_refused() {
+        let mut registry = registry_with_builtin_device("t1", "d-knead", BuiltinEffectType::Knead);
+
+        let unknown = map_immediate(
+            &set_device_bypass_batch("t1", "d-missing", true),
+            &mut registry.clone(),
+        )
+        .expect_err("a device the registry does not hold must refuse the batch");
+        assert!(
+            unknown.contains("unknown device 'd-missing'"),
+            "the refusal must name the device it could not resolve, got: {unknown}"
+        );
+
+        let wrong_strip = map_immediate(
+            &set_device_bypass_batch("t2", "d-knead", true),
+            &mut registry,
+        )
+        .expect_err("a device held on another strip must refuse the batch");
+        assert!(
+            wrong_strip.contains("is not on strip 't2'"),
+            "the refusal must name the strip the batch claimed, got: {wrong_strip}"
+        );
+    }
+
     // ── Scheduled MIDI ─────────────────────────────────────────────────────
 
     /// The engine plugin id the hosted device below is registered under.
@@ -8369,7 +9548,8 @@ mod tests {
             DeviceEntry {
                 native_effect_id: MIDI_DEVICE_EFFECT_ID,
                 strip_id: track_id.to_string(),
-                builtin: None,
+                origin: DeviceOrigin::Hosted,
+                scoring_telemetry: None,
             },
         );
         registry
@@ -8454,6 +9634,50 @@ mod tests {
                 "the command's project seed is stamped on every note it maps"
             );
         }
+    }
+
+    /// A stated articulation reaches the note the store holds, and a note that
+    /// states none carries none.
+    ///
+    /// Both halves are claims. A mapper that dropped the field would leave
+    /// every articulated clip note sounding on whatever articulation its
+    /// instrument happened to stand on; one that filled an absence with a
+    /// default would pin every other note to articulation 0, which is a sound
+    /// of its own rather than the absence the wire means.
+    #[test]
+    fn schedule_midi_carries_a_stated_articulation_and_nothing_for_an_unstated_one() {
+        /// `pizzicato` in the project's own articulation table.
+        const ARTICULATION: u16 = 10;
+
+        let mut registry = registry_with_hosted_device("t1", "d1");
+        let samples = TimelineSamplePool::default();
+        let batch = schedule_midi_batch(
+            "t1",
+            "d1",
+            json!([
+                {
+                    "time": 0.0, "note": 60, "velocity": 100, "channel": 0, "isNoteOn": true,
+                    "articulationId": ARTICULATION,
+                },
+                note_at(0.25, 62, 0),
+            ]),
+        );
+
+        let mapped = map_unbound_batch(&batch, &mut registry, &samples, 48_000.0)
+            .expect("a schedule-midi on a registered hosted device maps");
+        let GraphCommand::ScheduleMidiNotes { notes, .. } = &mapped.ops[0] else {
+            panic!("schedule-midi must map onto ScheduleMidiNotes");
+        };
+
+        assert_eq!(
+            notes[0].event.articulation_id,
+            Some(ARTICULATION),
+            "the stated articulation must reach the stored note"
+        );
+        assert_eq!(
+            notes[1].event.articulation_id, None,
+            "a note stating no articulation must carry none, not a default"
+        );
     }
 
     /// The web carrier's twin is `matches the fixed cross-runtime tuple corpus`
@@ -8907,6 +10131,168 @@ mod tests {
         }
     }
 
+    /// One `send-midi-control` batch, spelled the way a producer spells one.
+    fn send_midi_control_batch(
+        track_id: &str,
+        device_id: &str,
+        controller: u8,
+        value: u8,
+        channel: i16,
+    ) -> GraphBatchPayload {
+        midi_batch(json!([{
+            "kind": "send-midi-control",
+            "trackId": track_id,
+            "deviceId": device_id,
+            "controller": controller,
+            "value": value,
+            "channel": channel,
+        }]))
+    }
+
+    /// The one op a `send-midi-control` batch maps to, or a panic naming what
+    /// it mapped to instead.
+    fn only_control_op(ops: &[GraphCommand]) -> (usize, MidiControlEvent) {
+        assert_eq!(ops.len(), 1, "a live controller is one op and nothing else");
+        match &ops[0] {
+            GraphCommand::SendMidiControl(plugin_id, event) => (*plugin_id, *event),
+            _ => panic!("a live controller must map onto SendMidiControl"),
+        }
+    }
+
+    /// A pedal reaches the engine as an immediate controller op at the device's
+    /// own plugin id, carrying the raw 7-bit value the wire wrote: the
+    /// instrument's own body divides a damper position by full scale, so a
+    /// mapping that normalized here would arrive at a fraction of a fraction.
+    #[test]
+    fn send_midi_control_at_a_hosted_instrument_emits_one_immediate_control_op() {
+        let mut registry = registry_with_hosted_device("t1", "d1");
+        let batch = send_midi_control_batch("t1", "d1", 64, 96, 5);
+
+        let mapped = map_unbound_batch(
+            &batch,
+            &mut registry,
+            &TimelineSamplePool::default(),
+            48_000.0,
+        )
+        .expect("a live controller at a registered hosted device maps");
+
+        let (plugin_id, event) = only_control_op(&mapped.ops);
+        assert_eq!(plugin_id, MIDI_DEVICE_EFFECT_ID);
+        assert_eq!(event.controller, 64);
+        assert_eq!(event.value, 96);
+        assert_eq!(event.channel, 5);
+    }
+
+    /// A controller past MIDI's own range is refused control-side, naming the
+    /// command, the field and the value.
+    ///
+    /// The top of every range maps first, for the reason
+    /// [`send_midi_note_past_the_midi_range_is_refused_naming_field_and_value`]
+    /// states: a check written `>=` its own maximum would refuse a damper
+    /// pressed to the floor on the last channel, and no refusal taken from past
+    /// the range could tell that apart from a correct bound.
+    #[test]
+    fn send_midi_control_past_the_midi_range_is_refused_naming_field_and_value() {
+        let mut registry = registry_with_hosted_device("t1", "d1");
+        let mapped = map_unbound_batch(
+            &send_midi_control_batch("t1", "d1", 127, 127, 15),
+            &mut registry,
+            &TimelineSamplePool::default(),
+            48_000.0,
+        )
+        .expect("the top of MIDI's own range is inside it");
+
+        let (_, event) = only_control_op(&mapped.ops);
+        assert_eq!(
+            event.controller, 127,
+            "controller 127 is a controller, not an overflow"
+        );
+        assert_eq!(event.value, 127, "value 127 is full scale, not past it");
+        assert_eq!(
+            event.channel, 15,
+            "channel 15 is the sixteenth, not past it"
+        );
+
+        for (controller, value, channel, expected) in [
+            (
+                128,
+                100,
+                0,
+                "send-midi-control: controller 128 is outside 0..=127",
+            ),
+            (
+                64,
+                128,
+                0,
+                "send-midi-control: value 128 is outside 0..=127",
+            ),
+            (
+                64,
+                100,
+                16,
+                "send-midi-control: channel 16 has no address in the note store",
+            ),
+            (
+                64,
+                100,
+                -1,
+                "send-midi-control: channel -1 has no address in the note store",
+            ),
+        ] {
+            let mut registry = registry_with_hosted_device("t1", "d1");
+            let batch = send_midi_control_batch("t1", "d1", controller, value, channel);
+
+            let refusal = map_unbound_batch(
+                &batch,
+                &mut registry,
+                &TimelineSamplePool::default(),
+                48_000.0,
+            )
+            .expect_err("a controller past MIDI's range is refused");
+
+            assert!(
+                refusal.contains(expected),
+                "refusal must name the command, the field and the value: {refusal}"
+            );
+        }
+    }
+
+    /// A controller aimed at a device the registry cannot voice notes through
+    /// is refused exactly where a live note aimed at one is: both resolve their
+    /// device through `midi_device_plugin_id`, so a controller must never reach
+    /// an instrument a note could not.
+    ///
+    /// Both refusals it can draw, because they sit on different lines of that
+    /// resolution: a device the registry has never heard of, and one it holds
+    /// with no note store.
+    #[test]
+    fn send_midi_control_at_an_unknown_device_is_refused() {
+        for (device_id, expected) in [
+            ("d-nobody", "send-midi-control: unknown device 'd-nobody'"),
+            (
+                "d-knead",
+                "send-midi-control: device 'd-knead' holds no note store",
+            ),
+        ] {
+            let mut registry =
+                registry_with_builtin_device("t1", "d-knead", BuiltinEffectType::Knead);
+            let batch = send_midi_control_batch("t1", device_id, 64, 127, 0);
+
+            let refusal = map_unbound_batch(
+                &batch,
+                &mut registry,
+                &TimelineSamplePool::default(),
+                48_000.0,
+            )
+            .expect_err("a controller at a device that voices no notes is refused");
+
+            assert!(
+                refusal.contains(expected),
+                "refusal must name the command and the device: {refusal}"
+            );
+        }
+    }
+
     #[test]
     fn clear_midi_maps_a_half_open_window_and_an_open_end() {
         let samples = TimelineSamplePool::default();
@@ -9148,7 +10534,7 @@ mod tests {
         ]);
         let mut registry = GraphRegistry::default();
 
-        let first = map_batch(
+        let first = map_bound_batch(
             &replacing_batch(live_topology_commands()),
             &mut registry,
             &samples,
@@ -9173,7 +10559,7 @@ mod tests {
                 if entry.effect_id == 1_008)
         ));
 
-        let second = map_batch(
+        let second = map_bound_batch(
             &replacing_batch(live_topology_commands()),
             &mut registry,
             &samples,
@@ -9386,7 +10772,7 @@ mod tests {
     /// clip it shares a strip with is what the splice replaces.
     #[test]
     fn an_engine_owned_instrument_inserts_as_a_generator() {
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &batch(hosted_plugin_strip(true, false)),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -9407,7 +10793,7 @@ mod tests {
     /// dropped kind.
     #[test]
     fn an_engine_owned_effect_inserts_as_an_effect() {
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &batch(hosted_plugin_strip(true, false)),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -9426,7 +10812,7 @@ mod tests {
     /// category the moment it lands on a bus instead of a track.
     #[test]
     fn an_engine_owned_instrument_on_a_bus_inserts_as_a_generator() {
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &batch(hosted_plugin_bus_strip(true)),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -9456,7 +10842,7 @@ mod tests {
         )
         .expect("an empty strip should map");
 
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &batch(json!([
                 { "kind": "insert-device", "trackId": "t1", "index": 0,
                   "device": { "id": "d-plugin", "name": "Pro-Q", "type": "plugin",
@@ -9515,7 +10901,7 @@ mod tests {
     #[test]
     fn a_hosted_plugin_the_engine_holds_is_spliced_onto_a_sounding_strip_by_its_own_id() {
         let mut registry = GraphRegistry::default();
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &batch(hosted_plugin_strip(true, false)),
             &mut registry,
             &sample_pool(),
@@ -9565,7 +10951,7 @@ mod tests {
             "contributesAudio": true
         }]);
 
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &batch(strip),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -9584,7 +10970,7 @@ mod tests {
     /// the instance.
     #[test]
     fn a_bypassed_engine_owned_device_carries_its_bypass_to_the_engine() {
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &batch(hosted_plugin_strip(true, true)),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -9608,7 +10994,7 @@ mod tests {
     #[test]
     fn removing_an_engine_owned_device_releases_the_effect_instead_of_retiring_it() {
         let mut registry = GraphRegistry::default();
-        map_batch(
+        map_bound_batch(
             &batch(hosted_plugin_strip(true, false)),
             &mut registry,
             &sample_pool(),
@@ -9617,7 +11003,7 @@ mod tests {
         )
         .expect("the strip binds");
 
-        let removed = map_batch(
+        let removed = map_bound_batch(
             &batch(json!([
                 { "kind": "remove-device", "trackId": "lead", "deviceId": "d-plugin" }
             ])),
@@ -9660,7 +11046,7 @@ mod tests {
     fn a_replacing_batch_releases_engine_owned_devices_and_retires_the_rest() {
         let lookup = attached("inst-1", 1_007);
         let mut registry = GraphRegistry::default();
-        map_batch(
+        map_bound_batch(
             &batch(json!([{
                 "kind": "create-track-strip",
                 "trackId": "lead",
@@ -9683,7 +11069,7 @@ mod tests {
         )
         .expect("the strip binds");
 
-        let replaced = map_batch(
+        let replaced = map_bound_batch(
             &replacing_batch(json!([])),
             &mut registry,
             &sample_pool(),
@@ -9708,6 +11094,699 @@ mod tests {
         );
     }
 
+    // ── A Crumbs device splices its engine-owned instance ────────────────
+
+    /// The engine plugin id the fixture's Crumbs instance was registered
+    /// under. It is deliberately outside the graph's own allocation: the
+    /// splice borrows the engine's id, so the registry must never mint one
+    /// beside it.
+    const CRUMBS_PLUGIN_ID: usize = 41;
+
+    /// One strip carrying one Crumbs device, parameterised on the two things
+    /// the splice turns on and on the parameter names the panel writes.
+    ///
+    /// The device carries no external ids at all — a Crumbs runtime is created
+    /// by `crumbs_create`, not loaded by the plugin host — which is exactly
+    /// what parts this arm from the hosted-plugin one.
+    fn crumbs_strip(contributes_audio: bool, bypassed: bool, parameter_values: Value) -> Value {
+        json!([{
+            "kind": "create-track-strip",
+            "trackId": "pads",
+            "name": "Pads",
+            "state": strip_state(0.8),
+            "devices": [
+                { "id": "d-crumbs", "name": "Crumbs", "type": "builtin-crumbs",
+                  "bypassed": bypassed, "parameterValues": parameter_values }
+            ],
+            "honorMuted": true,
+            "contributesAudio": contributes_audio
+        }])
+    }
+
+    /// The lookup `apply_graph_commands` reads out of `CrumbsState`: the
+    /// device's own id against the engine plugin id its instance holds. The
+    /// instance id *is* the device id, so there is no second name to map.
+    fn attached_crumbs_lookup() -> HashMap<String, usize> {
+        HashMap::from([("d-crumbs".to_string(), CRUMBS_PLUGIN_ID)])
+    }
+
+    /// The splice itself. The device takes the instance's own engine plugin id
+    /// — nothing is registered and nothing is allocated — and it joins the
+    /// chain as a generator, because a sampler feeds its strip rather than
+    /// processing it.
+    ///
+    /// Before this, `register_crumbs_slot` homed the instance on the master
+    /// insert chain, so the pads sounded outside the track's fader, pan, mute,
+    /// inserts and sends.
+    #[test]
+    fn a_crumbs_device_splices_the_attached_instance_as_a_strip_generator() {
+        let mut registry = GraphRegistry::default();
+        let mapped = map_crumbs_batch(
+            &batch(crumbs_strip(true, false, json!({}))),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("an attached Crumbs instance splices onto a sounding strip");
+
+        assert_eq!(mapped.reports[0].device_ids, vec!["d-crumbs".to_string()]);
+        assert_eq!(inserted_effect_ids(&mapped.ops), vec![CRUMBS_PLUGIN_ID]);
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Generator],
+            "spliced as an effect the sampler would process the strip instead of feeding it"
+        );
+        assert!(
+            !mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddPlugin(..)
+                    | GraphCommand::AddHostedPlugin(..)
+                    | GraphCommand::AddDetachedEffect(..)
+            )),
+            "the instance is borrowed, never registered a second time"
+        );
+        let entry = registry
+            .devices
+            .get("d-crumbs")
+            .expect("the splice registers the device");
+        assert_eq!(entry.origin, DeviceOrigin::Crumbs);
+        assert!(
+            entry.builtin().is_none(),
+            "the entry has to read engine-owned, or the release, stamped-write and \
+             parameter-vocabulary laws all fall to the built-in side"
+        );
+        // The registry never allocated for it, so the next built device still
+        // takes the first graph effect id.
+        assert_eq!(registry.next_effect_id, FIRST_GRAPH_EFFECT_ID);
+    }
+
+    /// A Crumbs device whose instance the engine does not hold takes the
+    /// degradation law every unbound device takes: a strip the mix is short of
+    /// refuses the batch whole, a silent one drops the device and reports the
+    /// gap.
+    ///
+    /// The reason names the device and says what is missing, because a caller
+    /// that reads "no native realisation" would go looking for a body the
+    /// engine does have.
+    #[test]
+    fn a_crumbs_device_with_no_attached_instance_refuses_a_contributing_strip_and_degrades_a_silent_one(
+    ) {
+        const UNATTACHED: &str = "device 'd-crumbs' is a Crumbs sampler whose native instance is \
+                                  not attached to the engine";
+
+        let refusal = map_crumbs_batch(
+            &batch(crumbs_strip(true, false, json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &HashMap::new(),
+        )
+        .expect_err("a sounding strip is short of the sampler, so the batch refuses whole");
+        assert!(
+            refusal.contains(UNATTACHED),
+            "the refusal must name the device and what is missing, got: {refusal}"
+        );
+
+        let mut registry = GraphRegistry::default();
+        let degraded = map_crumbs_batch(
+            &batch(crumbs_strip(false, false, json!({}))),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &HashMap::new(),
+        )
+        .expect("a silent strip degrades the sampler rather than refusing the batch");
+        assert_eq!(
+            degraded.reports[0].device_ids,
+            Vec::<String>::new(),
+            "the report is an observation: the degraded device is visibly absent"
+        );
+        assert!(inserted_effect_ids(&degraded.ops).is_empty());
+        assert!(!registry.devices.contains_key("d-crumbs"));
+    }
+
+    /// And a strip the mix does not carry omits the sampler even when the
+    /// engine does hold its instance.
+    ///
+    /// `contributesAudio: false` is the renderer saying this strip stays on Web
+    /// Audio — it holds something the native side cannot build, and the strip is
+    /// mapped only to keep the routing graph faithful. Spliced here, one pad hit
+    /// would sound in both engines at once: the pad IPC is unconditional, the
+    /// web twin is ungated for a strip the native side does not carry, and
+    /// nothing past the mapper reads a strip's contributes flag. The instance
+    /// keeps running detached, draining its rings, and the strip's report says
+    /// the device is absent — the same omission the unattached miss takes.
+    #[test]
+    fn a_crumbs_device_on_a_strip_the_mix_does_not_carry_is_omitted_rather_than_spliced() {
+        let mut registry = GraphRegistry::default();
+        let mapped = map_crumbs_batch(
+            &batch(crumbs_strip(false, false, json!({}))),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("a silent strip maps; it just carries no sampler");
+
+        assert_eq!(
+            mapped.reports[0].device_ids,
+            Vec::<String>::new(),
+            "the report is an observation: the omitted device is visibly absent"
+        );
+        assert!(
+            inserted_effect_ids(&mapped.ops).is_empty(),
+            "nothing may splice the instance into a chain the mix never renders"
+        );
+        assert!(
+            bypass_writes(&mapped.ops).is_empty(),
+            "and no write may address it at that id either"
+        );
+        assert!(
+            !registry.devices.contains_key("d-crumbs"),
+            "an omitted device charges no chain slot"
+        );
+    }
+
+    /// A spliced Crumbs device is a MIDI sink, because the registration that
+    /// homed it carried a note store unconditionally — so both MIDI commands
+    /// address the instance's own plugin id rather than refusing for want of a
+    /// store.
+    #[test]
+    fn a_spliced_crumbs_device_takes_schedule_midi_and_a_live_note() {
+        let mut registry = GraphRegistry::default();
+        map_crumbs_batch(
+            &batch(crumbs_strip(true, false, json!({}))),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("the strip splices the sampler");
+
+        let scheduled = map_crumbs_batch(
+            &schedule_midi_batch("pads", "d-crumbs", json!([note_at(0.25, 60, 1)])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("a spliced sampler holds a note store, so scheduling at it maps");
+        let GraphCommand::ScheduleMidiNotes { plugin_id, notes } = &scheduled.ops[0] else {
+            panic!("schedule-midi must map onto ScheduleMidiNotes");
+        };
+        assert_eq!(*plugin_id, CRUMBS_PLUGIN_ID);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].event.note, 60);
+
+        let live = map_crumbs_batch(
+            &send_midi_note_batch("pads", "d-crumbs", 60, 100, 0, true),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("a live note at a spliced sampler maps");
+        let (plugin_id, event) = only_note_op(&live.ops);
+        assert_eq!(plugin_id, CRUMBS_PLUGIN_ID);
+        assert_eq!(event.note, 60);
+        assert!(event.is_note_on);
+    }
+
+    /// Crumbs parameter names are the sampler's own vocabulary and travel over
+    /// `set_crumbs_param`, so a batch naming one must map rather than refuse —
+    /// holding them against `DeviceParam::from_name` would decline every batch
+    /// a Crumbs panel writes into.
+    #[test]
+    fn a_spliced_crumbs_parameter_write_is_not_a_refusal() {
+        let mapped = map_crumbs_batch(
+            &batch(crumbs_strip(
+                true,
+                false,
+                json!({ "grainSize": 0.2, "spray": 0.75, "pitch": -12.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("a Crumbs parameter name must not be held against the built-in vocabulary");
+        assert!(
+            !mapped
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::SetParam(CRUMBS_PLUGIN_ID, ..))),
+            "the graph carries the sampler's place in the chain and its bypass, never its \
+             parameters: those travel over set_crumbs_param"
+        );
+    }
+
+    /// Bypass is the one graph-owned thing on a spliced sampler, because the
+    /// chain is what skips the instance.
+    #[test]
+    fn a_bypassed_crumbs_device_carries_its_bypass_to_the_engine() {
+        let mapped = map_crumbs_batch(
+            &batch(crumbs_strip(true, true, json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("a bypassed Crumbs device splices like any other");
+        assert!(
+            mapped
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::SetBypass(CRUMBS_PLUGIN_ID, true))),
+            "the bypass must reach the effect the chain runs"
+        );
+    }
+
+    /// And the splice writes the flag even when it is off, because the
+    /// instance is not rebuilt with the strip.
+    ///
+    /// A built-in body is constructed by the batch that splices it, so an
+    /// omitted `SetBypass` truthfully says "not bypassed". The sampler's slot
+    /// is long-lived: it survives every teardown and rebuild still holding
+    /// whatever the last splice set. Silence here would leave a rebuilt strip
+    /// mute with its panel showing the device live, and no later write would
+    /// correct it — a bypass is a chain-level write, so a toggle performed
+    /// while the strip is not carried never reaches the engine.
+    #[test]
+    fn a_crumbs_splice_writes_its_bypass_in_both_directions() {
+        let mut registry = GraphRegistry::default();
+        let bypassed = map_crumbs_batch(
+            &batch(crumbs_strip(true, true, json!({}))),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("a bypassed Crumbs device splices like any other");
+        assert_eq!(
+            bypass_writes(&bypassed.ops),
+            vec![(CRUMBS_PLUGIN_ID, true)],
+            "the splice carries the bypass the device was built with"
+        );
+
+        // Re-spliced un-bypassed onto the strip it was taken off: the device
+        // record is new, the engine slot is the one it always was.
+        let respliced = map_crumbs_batch(
+            &batch(json!([
+                { "kind": "remove-device", "trackId": "pads", "deviceId": "d-crumbs" },
+                { "kind": "insert-device", "trackId": "pads", "index": 0,
+                  "device": { "id": "d-crumbs", "name": "Crumbs", "type": "builtin-crumbs",
+                              "bypassed": false, "parameterValues": {} } }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("the device is spliced back onto the strip");
+        assert_eq!(
+            bypass_writes(&respliced.ops),
+            vec![(CRUMBS_PLUGIN_ID, false)],
+            "the splice must clear the bypass the engine slot is still holding"
+        );
+
+        // And the same for the whole-graph rebuild a repair performs: the
+        // mapper's registry starts empty, the engine's slot does not.
+        let rebuilt = map_crumbs_batch(
+            &batch(crumbs_strip(true, false, json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("a repair rebuilds the strip from the project");
+        assert_eq!(
+            bypass_writes(&rebuilt.ops),
+            vec![(CRUMBS_PLUGIN_ID, false)],
+            "a rebuilt strip must not inherit a bypass no device record carries"
+        );
+    }
+
+    /// A mid-roll bypass reaches a spliced sampler, in both directions.
+    ///
+    /// The chain is the only writer of a Crumbs device's bypass:
+    /// `set_crumbs_param` carries the sampler's parameters and nothing else, so
+    /// there is no ordered control path for this write to race — the reason
+    /// a hosted plugin is refused here does not hold for the sampler. Refused,
+    /// the panel's bypass button would go dead the moment the device was on a
+    /// strip.
+    #[test]
+    fn a_spliced_crumbs_device_takes_a_live_bypass() {
+        for (bypassed, direction) in [(true, "into bypass"), (false, "out of it")] {
+            let mut registry = GraphRegistry::default();
+            map_crumbs_batch(
+                &batch(crumbs_strip(true, false, json!({}))),
+                &mut registry,
+                &sample_pool(),
+                48_000.0,
+                &attached_crumbs_lookup(),
+            )
+            .expect("the strip splices the sampler");
+
+            let mapped = map_crumbs_batch(
+                &set_device_bypass_batch("pads", "d-crumbs", bypassed),
+                &mut registry,
+                &sample_pool(),
+                48_000.0,
+                &attached_crumbs_lookup(),
+            )
+            .expect("a spliced sampler takes a bypass write");
+
+            assert_eq!(
+                bypass_writes(&mapped.ops),
+                vec![(CRUMBS_PLUGIN_ID, bypassed)],
+                "the toggle must reach the engine as one chain-level write {direction}, at the \
+                 instance's own plugin id"
+            );
+            assert_eq!(
+                mapped.ops.len(),
+                1,
+                "a bypass is one op: no parameter write travels with it"
+            );
+        }
+    }
+
+    /// Taking the device off the strip releases the instance and retires
+    /// nothing: the runtime belongs to the `crumbs_create` that made it, and a
+    /// panel, a sample and an armed take are all still holding it. Retiring it
+    /// here would free the sampler out from under all three.
+    #[test]
+    fn removing_a_spliced_crumbs_device_releases_it_without_retiring_the_instance() {
+        let mut registry = GraphRegistry::default();
+        map_crumbs_batch(
+            &batch(crumbs_strip(true, false, json!({}))),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("the strip splices the sampler");
+
+        let removed = map_crumbs_batch(
+            &batch(json!([
+                { "kind": "remove-device", "trackId": "pads", "deviceId": "d-crumbs" }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect("the removal maps");
+
+        assert_eq!(
+            removed
+                .ops
+                .iter()
+                .filter(|op| matches!(
+                    op,
+                    GraphCommand::RemoveTrackDevice {
+                        effect_id: CRUMBS_PLUGIN_ID,
+                        ..
+                    }
+                ))
+                .count(),
+            1,
+            "the device leaves its chain by being released"
+        );
+        assert!(
+            !removed
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::RemoveTrackDeviceRetired { .. })),
+            "retiring the effect would free a live Crumbs runtime"
+        );
+        assert!(
+            !removed
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::RemovePlugin(..))),
+            "only destroy_crumbs removes the instance from the engine"
+        );
+        assert_eq!(removed.reports[0].device_ids, Vec::<String>::new());
+    }
+
+    /// An instance this very batch took over binds in this very batch.
+    ///
+    /// The attach runs ahead of the lookup `map_batch` is handed, so the
+    /// sampler a musician created before the engine started is audible on the
+    /// first batch that starts it — rather than silent for one batch and then
+    /// spliced by the next. The applied payload names the instance, which is
+    /// what corrects the `attached: false` its create reported.
+    #[test]
+    fn a_dormant_crumbs_instance_binds_in_the_batch_that_attaches_it() {
+        use crate::host::native_bridge::CrumbsPluginSlot;
+
+        let state = AppState::default();
+        let crumbs = CrumbsState::default();
+        block_on_test(crumbs::create_crumbs(
+            "d-crumbs".to_string(),
+            &crumbs,
+            &state,
+        ))
+        .expect("a create before the engine runs holds a dormant instance");
+
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(256);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": crumbs_strip(true, false, json!({})) }),
+            &state,
+            &crumbs,
+        ))
+        .expect("the batch resolves to a result");
+
+        assert_eq!(
+            result["application"], "applied",
+            "the sounding strip would have refused had the sampler still been unattached"
+        );
+        assert_eq!(
+            result["attachedCrumbs"],
+            json!([{ "instanceId": "d-crumbs" }]),
+            "the batch reports the instance it took over"
+        );
+
+        let mut attached_plugin_id = None;
+        let mut spliced = Vec::new();
+        while let Ok(command) = command_rx.pop() {
+            match command {
+                GraphCommand::AddHostedPlugin(id, plugin, _) => {
+                    if plugin.as_any().downcast_ref::<CrumbsPluginSlot>().is_some() {
+                        attached_plugin_id = Some(id);
+                    }
+                }
+                GraphCommand::InsertTrackDevice { entry, .. } => spliced.push(entry),
+                _ => {}
+            }
+        }
+
+        let attached_plugin_id = attached_plugin_id.expect("the batch attached the dormant slot");
+        assert_eq!(spliced.len(), 1, "the strip holds exactly the one device");
+        assert_eq!(
+            spliced[0].effect_id, attached_plugin_id,
+            "the splice borrows the very id the attach registered in this same batch"
+        );
+        assert_eq!(spliced[0].kind, DeviceKind::Generator);
+    }
+
+    /// And a call that refuses its batch after the attach still reports it.
+    ///
+    /// The attach has to precede `map_batch` for the binding above, so by the
+    /// time a mapping refusal is decided the instance is engine-owned and out
+    /// of the dormant set: no later batch will ever name it, `create_crumbs`
+    /// already answered `attached: false`, and no event follows. Silence here
+    /// would leave the caller refusing its own Crumbs strip for the engine's
+    /// whole life.
+    #[test]
+    fn a_batch_refused_after_a_dormant_crumbs_attach_still_reports_the_attach() {
+        let state = AppState::default();
+        let crumbs = CrumbsState::default();
+        block_on_test(crumbs::create_crumbs(
+            "d-crumbs".to_string(),
+            &crumbs,
+            &state,
+        ))
+        .expect("a create before the engine runs holds a dormant instance");
+
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(256);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        // Refused by the mapping, which runs after the attach: the batch names
+        // a track no strip ever created.
+        let rejected = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [
+                { "kind": "set-track-output", "trackId": "missing",
+                  "target": { "kind": "master" } }
+            ] }),
+            &state,
+            &crumbs,
+        ))
+        .expect("a refusal resolves to a result");
+
+        assert_eq!(rejected["acceptance"], "rejected");
+        assert_eq!(
+            rejected["attachedCrumbs"],
+            json!([{ "instanceId": "d-crumbs" }]),
+            "the refusal names the instance it attached on the way: {rejected:?}"
+        );
+        assert!(
+            !crumbs::attached_crumbs_instances(&crumbs).is_empty(),
+            "and the instance really is attached, so no later batch would report it"
+        );
+    }
+
+    /// And every batch names the instances it finds the engine already
+    /// holding, not just the ones its own pass attached.
+    ///
+    /// A graph repair rebuilds the topology without releasing the engine, and
+    /// empties its own mirror on the way
+    /// (`src/modules/Transport/useCases/repairRuntimeGraphFromProject.ts`). No
+    /// attach can correct that: every slot is already `Attached`, so the pass
+    /// finds nothing to take. Reporting only the pass would leave the mirror
+    /// empty for the rest of the session, with every Crumbs strip falling back
+    /// to Web Audio on every later play.
+    #[test]
+    fn a_batch_that_splices_an_instance_it_finds_attached_reports_it_again() {
+        let state = AppState::default();
+        let crumbs = CrumbsState::default();
+        block_on_test(crumbs::create_crumbs(
+            "d-crumbs".to_string(),
+            &crumbs,
+            &state,
+        ))
+        .expect("a create before the engine runs holds a dormant instance");
+
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(256);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let attaching = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": crumbs_strip(true, false, json!({})) }),
+            &state,
+            &crumbs,
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(attaching["application"], "applied");
+        assert_eq!(
+            attaching["attachedCrumbs"],
+            json!([{ "instanceId": "d-crumbs" }]),
+            "the batch that attached it names it"
+        );
+
+        // The rebuild a repair performs: the whole topology replaced, over an
+        // engine that was never released and an instance that is still
+        // `Attached`.
+        let rebuilding = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "replaceTopology": true,
+                    "commands": crumbs_strip(true, false, json!({})) }),
+            &state,
+            &crumbs,
+        ))
+        .expect("the rebuild resolves to a result");
+
+        assert_eq!(rebuilding["application"], "applied");
+        assert_eq!(
+            rebuilding["attachedCrumbs"],
+            json!([{ "instanceId": "d-crumbs" }]),
+            "the rebuild attached nothing, so only what it found can refill the mirror: \
+             {rebuilding:?}"
+        );
+    }
+
+    /// And a strip the mix does not carry still names the instance the engine
+    /// holds.
+    ///
+    /// This is the pair of rules the repair refill actually runs on, because
+    /// every strip in a rebuild that follows a repair can be non-contributing:
+    /// the device is left off the chain (nothing may sound it twice) *and* the
+    /// instance is named all the same (nothing else will refill the caller's
+    /// mirror). Recording the hit only for a device that reaches the chain, or
+    /// omitting the strip before the lookup runs, would leave the report empty
+    /// exactly when it is the only thing that can answer.
+    #[test]
+    fn a_strip_the_mix_does_not_carry_still_names_the_instance_the_engine_holds() {
+        use crate::host::native_bridge::CrumbsPluginSlot;
+
+        let state = AppState::default();
+        let crumbs = CrumbsState::default();
+        block_on_test(crumbs::create_crumbs(
+            "d-crumbs".to_string(),
+            &crumbs,
+            &state,
+        ))
+        .expect("a create before the engine runs holds a dormant instance");
+
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(256);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let attaching = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": crumbs_strip(true, false, json!({})) }),
+            &state,
+            &crumbs,
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(attaching["application"], "applied");
+
+        let mut attached_plugin_id = None;
+        while let Ok(command) = command_rx.pop() {
+            if let GraphCommand::AddHostedPlugin(id, plugin, _) = command {
+                if plugin.as_any().downcast_ref::<CrumbsPluginSlot>().is_some() {
+                    attached_plugin_id = Some(id);
+                }
+            }
+        }
+        let attached_plugin_id = attached_plugin_id.expect("the first batch attached the instance");
+
+        // The rebuild, with the strip left on Web Audio: the instance is
+        // `Attached` and no pass can attach it again.
+        let rebuilt = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "replaceTopology": true,
+                    "commands": crumbs_strip(false, false, json!({})) }),
+            &state,
+            &crumbs,
+        ))
+        .expect("the rebuild resolves to a result");
+
+        assert_eq!(rebuilt["application"], "applied");
+        assert_eq!(
+            rebuilt["reports"][0]["deviceIds"],
+            json!([]),
+            "a strip the mix does not carry reports the sampler as absent: {rebuilt:?}"
+        );
+        assert_eq!(
+            rebuilt["attachedCrumbs"],
+            json!([{ "instanceId": "d-crumbs" }]),
+            "and names it all the same, because nothing else refills the mirror: {rebuilt:?}"
+        );
+
+        let mut spliced = Vec::new();
+        let mut bypasses = Vec::new();
+        while let Ok(command) = command_rx.pop() {
+            match command {
+                GraphCommand::InsertTrackDevice { entry, .. } => spliced.push(entry.effect_id),
+                GraphCommand::SetBypass(effect_id, bypassed) => {
+                    bypasses.push((effect_id, bypassed))
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            !spliced.contains(&attached_plugin_id),
+            "the omitted device must reach no chain: {spliced:?}"
+        );
+        assert!(
+            !bypasses.iter().any(|(id, _)| *id == attached_plugin_id),
+            "and no write may address it at that id either: {bypasses:?}"
+        );
+    }
+
     /// An offline render has no engine, so it has no instances: the binding
     /// path cannot open there, and an external device on a sounding strip
     /// refuses exactly as it did before binding existed.
@@ -9716,6 +11795,7 @@ mod tests {
         let Err(refusal) = map_offline_batch(
             &batch(hosted_plugin_strip(true, false)),
             &sample_pool(),
+            &mut LevainBankStore::default(),
             48_000.0,
         ) else {
             panic!("an offline render holds no plugin instance to bind");
@@ -9729,7 +11809,7 @@ mod tests {
     /// A strip carrying one bound hosted plugin, ready to be written at.
     fn registry_holding_a_bound_hosted_plugin() -> GraphRegistry {
         let mut registry = GraphRegistry::default();
-        map_batch(
+        map_bound_batch(
             &batch(hosted_plugin_strip(true, false)),
             &mut registry,
             &sample_pool(),
@@ -9772,7 +11852,7 @@ mod tests {
     fn a_hosted_parameter_write_maps_to_a_hosted_stamp() {
         let mut registry = registry_holding_a_bound_hosted_plugin();
 
-        let mapped = map_batch(
+        let mapped = map_bound_batch(
             &hosted_parameter_write("42"),
             &mut registry,
             &sample_pool(),
@@ -9802,7 +11882,7 @@ mod tests {
         for parameter_id in ["shift_semitones", "4294967296"] {
             let mut registry = registry_holding_a_bound_hosted_plugin();
 
-            let refusal = map_batch(
+            let refusal = map_bound_batch(
                 &hosted_parameter_write(parameter_id),
                 &mut registry,
                 &sample_pool(),
@@ -10117,7 +12197,7 @@ mod tests {
     #[test]
     fn an_unbuildable_device_type_refuses_a_contributing_strip_naming_the_device_and_type() {
         let refusal = map_unbound_batch(
-            &batch(strip_with_device("d-toaster", "toaster", json!({}))),
+            &batch(strip_with_device("d-unbuildable", "builtin-eq", json!({}))),
             &mut GraphRegistry::default(),
             &sample_pool(),
             48_000.0,
@@ -10125,8 +12205,292 @@ mod tests {
         .expect_err("a type with no native body must refuse a contributing strip");
 
         assert!(
-            refusal.contains("d-toaster") && refusal.contains("toaster"),
+            refusal.contains("d-unbuildable") && refusal.contains("builtin-eq"),
             "the refusal must name the device and the type it read, got: {refusal}"
+        );
+    }
+
+    /// A Levain naming no bank at all refuses a contributing strip, and the
+    /// refusal names the device.
+    ///
+    /// The engine has a Levain body (`PluginCore::Levain`), so this is not the
+    /// unrecognised-type refusal above: the type resolves, and what stops the
+    /// splice is that a sampler needs a bank and this device names none. A body
+    /// built without one would render silence, so the mapper refuses rather
+    /// than splicing a mute device onto a strip the mix needs.
+    ///
+    /// The reason has to name the device, or a project with several samplers
+    /// reads as one unlocatable refusal.
+    #[test]
+    fn a_levain_device_without_a_bank_key_is_refused_naming_the_device() {
+        let refusal = map_unbound_batch(
+            &batch(strip_with_device("d-levain", "levain", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a sampler naming no bank must refuse a contributing strip");
+
+        assert!(
+            refusal.contains("d-levain") && refusal.contains("sample bank"),
+            "the refusal must name the device and the bank it is missing, got: {refusal}"
+        );
+    }
+
+    /// A Levain naming a bank this process does not hold refuses, and the
+    /// refusal names the bank.
+    ///
+    /// The key is what the renderer staged its material under, so naming it
+    /// back is the whole of what makes an unregistered bank diagnosable: the
+    /// alternative is a project that refuses without saying which of its
+    /// instruments never arrived.
+    #[test]
+    fn a_levain_device_naming_an_unknown_bank_is_refused_naming_the_bank() {
+        let refusal = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip", "trackId": "t1", "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [{
+                    "id": "d-levain", "type": "levain", "bypassed": false,
+                    "parameterValues": {}, "sampleBankKey": "strings@1"
+                }],
+                "honorMuted": true, "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a sampler naming a bank nothing registered must refuse");
+
+        assert!(
+            refusal.contains("d-levain") && refusal.contains("strings@1"),
+            "the refusal must name the device and the bank it could not find, got: {refusal}"
+        );
+    }
+
+    /// A Levain naming a committed bank builds, and the strip reports it.
+    ///
+    /// The end of the seam this slice opens: the bank crosses through the three
+    /// command bodies, the mapper resolves the device's `sampleBankKey` against
+    /// the store they filled, and the device appears in the realized chain. A
+    /// build that refused anywhere along that path would leave the device out
+    /// of the report under the degradation law, so the report is what the
+    /// claim rests on.
+    #[test]
+    fn a_levain_device_naming_a_committed_bank_builds_its_strip() {
+        const BANK: &str = "strings@1";
+        let state = AppState::default();
+        block_on_test(crate::commands::levain::begin_levain_bank(
+            BANK.to_string(),
+            "strings".to_string(),
+            &state,
+        ))
+        .expect("the bank opens");
+        block_on_test(crate::commands::levain::register_levain_sample(
+            BANK.to_string(),
+            "a3.wav".to_string(),
+            48_000.0,
+            1,
+            vec![0u8; 4 * 4_800],
+            &state,
+        ))
+        .expect("the bank takes its sample");
+        block_on_test(crate::commands::levain::commit_levain_bank(
+            BANK.to_string(),
+            json!({
+                "zones": [{
+                    "sampleId": "a3.wav", "articulationId": 0, "rootNote": 69,
+                    "loKey": 0, "hiKey": 127, "loVel": 0, "hiVel": 127,
+                    "rrPos": 0, "rrLen": 1, "micId": 0, "isRelease": false,
+                    "loopMode": "none", "loopStart": 0, "loopEnd": 0, "loopCrossfade": 0,
+                    "gainDb": 0.0, "attack": 0.0, "decay": 0.0, "sustain": 1.0, "release": 0.05
+                }],
+                "legatoTransitions": [],
+                "numArticulations": 1,
+                "numMics": 1
+            }),
+            &state,
+        ))
+        .expect("the bank commits");
+
+        let mut banks = state.levain_banks.lock().expect("the bank lock opens");
+        let mapped = map_batch(
+            &batch(json!([{
+                "kind": "create-track-strip", "trackId": "t1", "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [{
+                    "id": "d-levain", "type": "levain", "bypassed": false,
+                    "parameterValues": { "master_gain": 0.5 },
+                    "sampleBankKey": BANK
+                }],
+                "honorMuted": true, "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &HashMap::new(),
+            &mut AttachedCrumbs::default(),
+            &mut banks,
+        )
+        .expect("a sampler naming a committed bank must build");
+
+        assert_eq!(
+            mapped.reports[0].device_ids,
+            vec!["d-levain".to_string()],
+            "the sampler must be in the realized chain, not degraded out of it"
+        );
+    }
+
+    /// Interleaved f32 LE bytes of a mono 440 Hz tone, so a bank built from it
+    /// is audible rather than a committed run of zeros.
+    fn levain_tone_pcm(frames: usize, rate: f32) -> Vec<u8> {
+        (0..frames)
+            .flat_map(|frame| {
+                let phase = std::f32::consts::TAU * 440.0 * (frame as f32) / rate;
+                ((phase.sin() * 0.5).to_le_bytes()).to_vec()
+            })
+            .collect()
+    }
+
+    /// A state holding one committed single-zone Levain bank under `bank_key`,
+    /// staged through the three command bodies exactly as the renderer stages
+    /// one.
+    fn state_holding_a_committed_levain_bank(bank_key: &str, rate: f32) -> AppState {
+        let state = AppState::default();
+        block_on_test(crate::commands::levain::begin_levain_bank(
+            bank_key.to_string(),
+            "strings".to_string(),
+            &state,
+        ))
+        .expect("the bank opens");
+        block_on_test(crate::commands::levain::register_levain_sample(
+            bank_key.to_string(),
+            "a3.wav".to_string(),
+            f64::from(rate),
+            1,
+            levain_tone_pcm(4_800, rate),
+            &state,
+        ))
+        .expect("the bank takes its sample");
+        block_on_test(crate::commands::levain::commit_levain_bank(
+            bank_key.to_string(),
+            json!({
+                "zones": [{
+                    "sampleId": "a3.wav", "articulationId": 0, "rootNote": 69,
+                    "loKey": 0, "hiKey": 127, "loVel": 0, "hiVel": 127,
+                    "rrPos": 0, "rrLen": 1, "micId": 0, "isRelease": false,
+                    "loopMode": "none", "loopStart": 0, "loopEnd": 0, "loopCrossfade": 0,
+                    "gainDb": 0.0, "attack": 0.0, "decay": 0.0, "sustain": 1.0, "release": 0.05
+                }],
+                "legatoTransitions": [],
+                "numArticulations": 1,
+                "numMics": 1
+            }),
+            &state,
+        ))
+        .expect("the bank commits");
+        state
+    }
+
+    /// An offline render maps a Levain against the bank store this process
+    /// holds, not an empty one.
+    ///
+    /// The offline seam and the mapping seam run in the same process over the
+    /// same state, so a bank the renderer staged and committed is one both must
+    /// see. While the offline seam substituted an empty store, the mapping
+    /// probe reported a device naming that bank as built and the render of the
+    /// identical batch refused it as unregistered: same process, same batch,
+    /// two answers, and an export that dropped the instrument the probe had
+    /// just admitted.
+    #[test]
+    fn an_offline_levain_render_maps_against_the_process_bank_store() {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        const FRAMES: usize = 1_440;
+        const BANK: &str = "strings@1";
+
+        let state = state_holding_a_committed_levain_bank(BANK, SAMPLE_RATE);
+        let sounding = midi_batch(json!([
+            {
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-levain", "type": "levain", "bypassed": false,
+                               "parameterValues": {}, "sampleBankKey": BANK } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            },
+            {
+                "kind": "schedule-midi",
+                "trackId": "t1",
+                "deviceId": "d-levain",
+                "probabilitySeed": MIDI_PROBABILITY_SEED,
+                "notes": [ note_at(0.0, 69, 0) ],
+            }
+        ]));
+
+        // `GraphCommand` carries no `Debug`, so the refusal is taken by
+        // pattern rather than `expect_err`.
+        let Err(refusal) = map_offline_batch(
+            &sounding,
+            &sample_pool(),
+            &mut LevainBankStore::default(),
+            SAMPLE_RATE,
+        ) else {
+            panic!("a store holding no bank must refuse the device");
+        };
+        assert!(
+            refusal.contains("d-levain") && refusal.contains(BANK),
+            "the refusal must name the device and the bank it could not find, got: {refusal}"
+        );
+
+        let mut banks = state.levain_banks.lock().expect("the bank lock opens");
+        assert!(
+            map_offline_batch(&sounding, &sample_pool(), &mut banks, SAMPLE_RATE).is_ok(),
+            "the committed bank this process holds must build the device"
+        );
+
+        let rendered =
+            render_offline_batch(&sounding, &sample_pool(), &mut banks, FRAMES, SAMPLE_RATE)
+                .expect("the batch renders offline against the process store");
+        assert!(
+            rendered.iter().any(|sample| sample.abs() > 0.001),
+            "the render against the committed bank is silent, so the sampler sounded nothing"
+        );
+    }
+
+    /// A Levain on a silent strip drops out of the chain instead of refusing
+    /// the batch.
+    ///
+    /// The degradation law is what keeps a project loadable while its hosting
+    /// is unfinished: a strip nothing listens to is not short of anything when
+    /// a device goes missing from it, so the batch builds and the strip reports
+    /// the chain it really realized. Without this a single saved Levain on a
+    /// muted track would refuse the whole graph batch.
+    #[test]
+    fn a_levain_on_a_silent_strip_degrades_out_of_the_realized_chain() {
+        let mapped = map_unbound_batch(
+            &batch(json!([
+                { "kind": "create-track-strip", "trackId": "t1", "name": "T",
+                  "state": strip_state(1.0),
+                  "devices": [
+                      { "id": "d-levain", "type": "levain", "bypassed": false,
+                        "parameterValues": {} },
+                      { "id": "d-knead", "type": "knead", "bypassed": false,
+                        "parameterValues": {} }
+                  ],
+                  "honorMuted": true, "contributesAudio": false }
+            ])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a silent strip carrying a bankless sampler must still build");
+
+        assert_eq!(
+            mapped.reports[0].device_ids,
+            vec!["d-knead".to_string()],
+            "the sampler must be visibly absent from the realized chain, not silently spliced in"
         );
     }
 
@@ -10160,6 +12524,7 @@ mod tests {
                 }
             ])),
             &sample_pool(),
+            &mut LevainBankStore::default(),
             FRAMES,
             SAMPLE_RATE,
         )
@@ -10233,6 +12598,7 @@ mod tests {
                 }
             ])),
             &sample_pool(),
+            &mut LevainBankStore::default(),
             FRAMES,
             SAMPLE_RATE,
         )
@@ -10326,10 +12692,12 @@ mod tests {
     ///
     /// The two vocabularies refuse on different grounds — the fermenter's by
     /// shape, knead's against the closed set the engine names — and both are
-    /// reachable from what a project really ships: a fermenter carries its
-    /// camelCase descriptor ids from the moment it is created. A refusal here
-    /// would take down a whole live session over a strip that contributes no
-    /// audio at all.
+    /// reachable from what a project really ships: a corrupt or truncated key
+    /// carries a character no built-in's vocabulary spells, and a camelCase
+    /// descriptor id can still land verbatim on the one built-in that answers
+    /// a closed vocabulary of its own snake_case names. A refusal here would
+    /// take down a whole live session over a strip that contributes no audio
+    /// at all.
     #[test]
     fn an_unmappable_parameter_on_a_non_contributing_strip_omits_the_device_like_a_missing_body() {
         let silent_strip = |devices: Value| {
@@ -10355,7 +12723,7 @@ mod tests {
 
         for unmappable in [
             json!({ "id": "d-ferm", "type": "fermenter", "bypassed": false,
-                    "parameterValues": { "filterCutoff": 0.5 } }),
+                    "parameterValues": { "filter-cutoff": 0.5 } }),
             json!({ "id": "d-knead", "type": "knead", "bypassed": false,
                     "parameterValues": { "shiftSemitones": 3.0 } }),
         ] {
@@ -10386,14 +12754,14 @@ mod tests {
     /// so a key that was never one of its names would otherwise be a write the
     /// producer believes landed and the mix never heard. Shape is the whole of
     /// the refusal the engine can make without keeping a copy of a table
-    /// `daw-dsp` is free to extend: `Cutoff` is the display spelling of a
-    /// parameter the instrument spells in lowercase, and a key past the wire's
+    /// `daw-dsp` is free to extend: `cut-off` carries a hyphen, which is not a
+    /// character of any built-in's vocabulary, and a key past the wire's
     /// buffer would be truncated into a different word.
     #[test]
     fn a_fermenter_parameter_key_shaped_unlike_a_name_refuses_naming_the_device_and_key() {
         let too_long = "a".repeat(BUILTIN_PARAM_NAME_CAPACITY + 1);
 
-        for key in ["Cutoff", too_long.as_str()] {
+        for key in ["cut-off", too_long.as_str()] {
             let refusal = map_unbound_batch(
                 &batch(strip_with_device(
                     "d-ferm",
@@ -10509,6 +12877,7 @@ mod tests {
                 }
             ])),
             &sample_pool(),
+            &mut LevainBankStore::default(),
             FRAMES,
             SAMPLE_RATE,
         )
@@ -10526,6 +12895,1655 @@ mod tests {
                 .iter()
                 .any(|sample| *sample != 0.0),
             "the note never sounded in the offline render"
+        );
+    }
+
+    /// A gluten device is registered as an insert: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// Both halves follow from `BuiltinEffectType::sounds_notes`, which is the
+    /// one registry either decision reads. A store on a compressor would be a
+    /// sink nothing can ever schedule at, and a `Generator` splice would sum
+    /// the compressor's output into the strip beside the signal it was meant
+    /// to replace.
+    #[test]
+    fn a_gluten_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-glu", "gluten", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a gluten device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Gluten(_), None)
+            )),
+            "the gluten is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// A scoring device is registered as an insert too: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// A tuner listens and hands the block on unchanged, so `sounds_notes` is
+    /// false for it and both decisions follow from that one registry. A store
+    /// would be a sink nothing could ever schedule at, and a `Generator`
+    /// splice would sum the analyser's pass-through into the strip alongside
+    /// the very signal it passed through — the tuner would double the
+    /// programme it was inserted to listen to.
+    #[test]
+    fn a_scoring_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-tuner", "native-scoring", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a scoring device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Scoring(_), None)
+            )),
+            "the tuner is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// The registry keeps a reading handle for every scoring device it maps,
+    /// and for no other device.
+    ///
+    /// This is the seam the transport poll reads. Without an entry the panel
+    /// has nowhere to read a detection from at all, and an entry for a body
+    /// that publishes nothing would report a tuner on a strip that carries
+    /// none. A freshly mapped device reads inactive because its body has not
+    /// rendered a block yet: what the map carries is what the audio thread
+    /// last published, never a value the mapper supplied for it.
+    #[test]
+    fn the_registry_holds_a_reading_handle_for_each_scoring_device_and_no_other() {
+        let mut registry = GraphRegistry::default();
+        map_unbound_batch(
+            &batch(strip_with_device("d-tuner", "native-scoring", json!({}))),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a scoring device has a native body");
+
+        let readings = registry.scoring_readings();
+        let reading = readings
+            .get("d-tuner")
+            .expect("the mapped scoring device must hold a reading handle");
+        assert!(
+            !reading.active,
+            "a body that has not rendered a block reported a detection"
+        );
+
+        let mut gluten_only = GraphRegistry::default();
+        map_unbound_batch(
+            &batch(strip_with_device("d-glu", "gluten", json!({}))),
+            &mut gluten_only,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a gluten device has a native body");
+
+        assert!(
+            gluten_only.scoring_readings().is_empty(),
+            "a strip carrying no tuner published readings: {:?}",
+            gluten_only.scoring_readings()
+        );
+    }
+
+    /// A contributing strip carrying one built-in device over `material`,
+    /// rendered offline, built with `parameter_values` as its patch.
+    ///
+    /// The mapper's own oracle for a patch: what the patch did to the instance
+    /// is audible here, or the patch never reached it. The material is the
+    /// caller's because what makes a patch audible differs by body — a
+    /// compressor separates two thresholds on a sustained level, while a
+    /// limiter's envelope only shows where the level moves.
+    fn render_builtin_clip(
+        device_type: &str,
+        device_id: &str,
+        parameter_values: Value,
+        material: Vec<f32>,
+    ) -> Vec<f32> {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        const FRAMES: usize = 4_800;
+
+        let mut samples = TimelineSamplePool::default();
+        samples.insert(
+            "source-a".to_string(),
+            TimelineSample {
+                left: material.clone().into(),
+                right: material.into(),
+                sample_rate: SAMPLE_RATE,
+            },
+        );
+
+        render_offline_batch(
+            &batch(json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Bus",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": device_id, "type": device_type, "bypassed": false,
+                                   "parameterValues": parameter_values } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                {
+                    "kind": "schedule-clip",
+                    "playback": {
+                        "trackId": "t1",
+                        "source": { "sourceId": "source-a" },
+                        "startTime": 0,
+                        "sourceOffsetSeconds": 0,
+                        "durationSeconds": 0.1,
+                        "playbackRate": 1,
+                        "gain": 1,
+                        "fade": { "microFadeSeconds": 0 }
+                    }
+                }
+            ])),
+            &samples,
+            &mut LevainBankStore::default(),
+            FRAMES,
+            SAMPLE_RATE,
+        )
+        .expect("a built-in body renders offline")
+    }
+
+    /// [`render_builtin_clip`] for a gluten, over material hot enough to sit
+    /// above any threshold the patch names — a compressor handed a signal
+    /// under its threshold renders its input whatever it is set to.
+    fn render_gluten_clip(parameter_values: Value) -> Vec<f32> {
+        render_builtin_clip("gluten", "d-glu", parameter_values, vec![0.9; 48_000])
+    }
+
+    /// The loudest sample in the second half of a render.
+    ///
+    /// A compressor's or limiter's gain reduction is not instantaneous — it
+    /// opens at the clip's own level and settles over its attack (and, for a
+    /// compressor, its release) — so the loudest sample of a whole render is
+    /// the onset, which every patch shares. The window after the envelope has
+    /// settled is where two thresholds, or two ceilings, are two different
+    /// levels.
+    fn settled_peak(rendered: &[f32]) -> f32 {
+        rendered[rendered.len() / 2..]
+            .iter()
+            .fold(0.0_f32, |peak, sample| peak.max(sample.abs()))
+    }
+
+    /// A gluten's patch is written into the instance on the mapping thread and
+    /// no `SetParam` command carries any of it.
+    ///
+    /// The same law the instruments are held to above, and for the same
+    /// reason: a patch is some forty-five of the compressor's own parameters
+    /// per strip and the command ring is finite. The render is what says the
+    /// patch was applied rather than merely not sent — a lower threshold at a
+    /// higher ratio is more gain reduction, so a patch that reached nothing
+    /// settles at the level an unpatched compressor settles at.
+    #[test]
+    fn a_gluten_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-glu",
+                "gluten",
+                json!({ "threshold": -40.0, "ratio": 8.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("one of the compressor's own names is a gluten parameter address");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the gluten's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+
+        let unpatched = settled_peak(&render_gluten_clip(json!({})));
+        let patched = settled_peak(&render_gluten_clip(
+            json!({ "threshold": -40.0, "ratio": 8.0 }),
+        ));
+
+        assert!(
+            unpatched > 0.0,
+            "the unpatched render settles at silence, so the comparison below proves nothing"
+        );
+        assert!(
+            patched < unpatched,
+            "the patch never reached the instance the mapper built: it settles at {patched} \
+             where an unpatched compressor settles at {unpatched}"
+        );
+    }
+
+    /// A gluten's `amount` macro lands before the names it rewrites, even
+    /// though the record it travels in crosses as a `HashMap` with no order
+    /// of its own.
+    ///
+    /// `amount` writes `threshold` and `ratio` on every topology, so a
+    /// record naming all three settles wherever the explicit `threshold` and
+    /// `ratio` land it, not wherever `amount`'s own macro computation would —
+    /// which is what proves the record reached
+    /// [`BuiltinEffectType::patch_precedence`]'s route rather than being
+    /// applied in whatever order the map drew it in. The decisive probe for
+    /// the ordering law itself is the scheduler's own parity spec
+    /// (`a_hosted_gluten_renders_the_worklet_samples_for_the_same_material`);
+    /// this only proves the control-side route reaches it.
+    #[test]
+    fn a_gluten_macro_lands_before_the_names_it_rewrites() {
+        const TOLERANCE: f32 = 1e-6;
+
+        let with_explicit_override = settled_peak(&render_gluten_clip(
+            json!({ "amount": 100.0, "threshold": -18.0, "ratio": 4.0 }),
+        ));
+        let explicit_alone = settled_peak(&render_gluten_clip(
+            json!({ "threshold": -18.0, "ratio": 4.0 }),
+        ));
+        let macro_alone = settled_peak(&render_gluten_clip(json!({ "amount": 100.0 })));
+
+        assert!(
+            (with_explicit_override - explicit_alone).abs() <= TOLERANCE,
+            "the explicit threshold/ratio did not win over the macro: {with_explicit_override} \
+             vs {explicit_alone}"
+        );
+        assert!(
+            (with_explicit_override - macro_alone).abs() > TOLERANCE,
+            "the macro alone settles at the same level as the explicit override, so this spec \
+             cannot tell the two orders apart"
+        );
+    }
+
+    /// A gluten patch builds one compressor whatever order the record draws,
+    /// even for a pair `BuiltinEffectType::patch_precedence` names nothing
+    /// about.
+    ///
+    /// `vca_character` and `vca_type` both write the VCA's own `vca_k2`
+    /// (`vca.rs:159-169`), and neither is one of `GLUTEN_MACRO_KEYS`'s three
+    /// names, so the precedence law has no say in which of the two lands
+    /// last. `resolved_param_writes` reads the record in name order
+    /// regardless, which is why every draw below renders the same samples,
+    /// and why the render matches `vca_type`'s preset rather than
+    /// `vca_character`'s own value: `vca_character` sorts before
+    /// `vca_type`, so the type preset is the one applied last, exactly as
+    /// `GlutenDescriptor.ts` orders the pair and the web host applies it.
+    #[test]
+    fn a_gluten_patch_builds_one_compressor_whatever_order_the_record_draws() {
+        const TOLERANCE: f32 = 1e-6;
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would
+        /// pass a share of its runs.
+        const DRAWS: usize = 16;
+
+        let record = json!({
+            "vca_character": 0.02,
+            "vca_type": 0.0,
+            "threshold": -30.0,
+            "ratio": 8.0
+        });
+
+        let first = settled_peak(&render_gluten_clip(record.clone()));
+        for draw in 0..DRAWS {
+            let peak = settled_peak(&render_gluten_clip(record.clone()));
+            assert_eq!(
+                peak, first,
+                "draw {draw}: the same record rendered a different peak"
+            );
+        }
+
+        let type_alone = settled_peak(&render_gluten_clip(
+            json!({ "vca_type": 0.0, "threshold": -30.0, "ratio": 8.0 }),
+        ));
+        let character_alone = settled_peak(&render_gluten_clip(
+            json!({ "vca_character": 0.02, "threshold": -30.0, "ratio": 8.0 }),
+        ));
+
+        assert!(
+            (first - type_alone).abs() <= TOLERANCE,
+            "the type preset did not win over the character value: {first} vs {type_alone}"
+        );
+        assert!(
+            (first - character_alone).abs() > TOLERANCE,
+            "the character value alone settles at the same level as the type preset, so this \
+             spec cannot tell the two orders apart: {first} vs {character_alone}"
+        );
+    }
+
+    /// An ill-shaped key refuses a contributing strip — the fixture's
+    /// `contributesAudio` is `true` — naming the device and the key.
+    ///
+    /// Shape refuses only characters no built-in spells; a camelCase
+    /// descriptor id reaching a snake_case engine is now that engine's silent
+    /// no-op, as the carrier's doc always said and as the web worklet does,
+    /// and the renderer's per-body tables plus `descriptorEngineParamWeld.spec.ts`
+    /// are what keep the translation right.
+    #[test]
+    fn an_ill_shaped_gluten_key_is_refused_by_shape() {
+        let refusal = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-glu",
+                "gluten",
+                json!({ "auto-makeup": 1 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a key shaped unlike one of the compressor's names must refuse");
+
+        assert!(
+            refusal.contains("auto-makeup") && refusal.contains("d-glu"),
+            "the refusal must name the key and the device, got: {refusal}"
+        );
+    }
+
+    /// A crust device is registered as an insert: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// Both halves follow from `BuiltinEffectType::sounds_notes`, which is the
+    /// one registry either decision reads. A store on a limiter would be a
+    /// sink nothing can ever schedule at, and a `Generator` splice would sum
+    /// the limiter's output into the strip beside the signal it was meant to
+    /// replace.
+    #[test]
+    fn a_crust_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-cru", "crust", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a crust device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Crust(_), None)
+            )),
+            "the crust is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// [`render_builtin_clip`] for a crust over sustained material 12 dB of
+    /// input gain puts far above any ceiling the patches below name — a
+    /// limiter handed a signal under its ceiling renders its input whatever it
+    /// is set to.
+    fn render_crust_clip(parameter_values: Value) -> Vec<f32> {
+        render_builtin_clip("crust", "d-cru", parameter_values, vec![0.9; 48_000])
+    }
+
+    /// Material that is far over the ceiling for the first half of the clip
+    /// and far under it for the second.
+    ///
+    /// A limiter on a sustained level settles at its ceiling whatever its
+    /// envelope, so two algorithms render the same samples there. The step is
+    /// what makes the envelope observable: the gain has to travel back to
+    /// unity across the quiet half, and how long that takes is the algorithm.
+    fn crust_step_material() -> Vec<f32> {
+        (0..48_000)
+            .map(|frame| if frame < 2_400 { 0.9 } else { 0.05 })
+            .collect()
+    }
+
+    /// The largest absolute difference between two renders of the same length.
+    fn max_abs_difference(left: &[f32], right: &[f32]) -> f32 {
+        assert_eq!(left.len(), right.len(), "two renders of different lengths");
+        left.iter()
+            .zip(right)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max)
+    }
+
+    /// A crust's patch is written into the instance on the mapping thread and
+    /// no `SetParam` command carries any of it.
+    ///
+    /// The same law the instruments are held to above, and for the same
+    /// reason: a patch is some thirty of the limiter's own parameters per
+    /// strip and the command ring is finite. The render is what says the patch
+    /// was applied rather than merely not sent — the ceiling is the level
+    /// everything settles at, so two ceilings over the same material are two
+    /// settled levels, and a patch that reached nothing would give one.
+    #[test]
+    fn a_crust_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-cru",
+                "crust",
+                json!({ "gain": 12.0, "ceiling": -18.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("one of the limiter's own names is a crust parameter address");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the crust's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+
+        let high_ceiling =
+            settled_peak(&render_crust_clip(json!({ "gain": 12.0, "ceiling": -0.3 })));
+        let low_ceiling = settled_peak(&render_crust_clip(
+            json!({ "gain": 12.0, "ceiling": -18.0 }),
+        ));
+
+        assert!(
+            high_ceiling > 0.0,
+            "the higher-ceiling render settles at silence, so the comparison below proves nothing"
+        );
+        assert!(
+            low_ceiling < high_ceiling,
+            "the ceiling in the patch never reached the instance the mapper built: it settles \
+             at {low_ceiling} where the higher ceiling settles at {high_ceiling}"
+        );
+    }
+
+    /// A crust patch builds one limiter whatever order the record draws, for
+    /// the pair the precedence law exists to order.
+    ///
+    /// `style` and `algorithm` both write the limiter's one algorithm slot —
+    /// `style` through `Algorithm::from_style_index` and `algorithm` through
+    /// `Algorithm::from_index` (`crates/daw-dsp/src/crust/params.rs`) — so a
+    /// record carrying both settles on whichever landed last.
+    /// `BuiltinEffectType::patch_precedence` puts `style` first, so the render
+    /// is `algorithm`'s: style 2 is `Wall` and algorithm 5 is `Bus`, and the
+    /// two release over 12 ms and 260 ms respectively, which is what the
+    /// quiet half of [`crust_step_material`] is long enough to show.
+    ///
+    /// The oracle is the whole render rather than a settled peak: both
+    /// algorithms hold the same ceiling over the hot half, and it is the
+    /// journey back to unity over the quiet half that separates them.
+    #[test]
+    fn a_crust_patch_builds_one_limiter_whatever_order_the_record_draws() {
+        const TOLERANCE: f32 = 1e-6;
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would
+        /// pass a share of its runs.
+        const DRAWS: usize = 16;
+
+        fn render(parameter_values: Value) -> Vec<f32> {
+            render_builtin_clip("crust", "d-cru", parameter_values, crust_step_material())
+        }
+
+        let record = json!({
+            "gain": 12.0,
+            "ceiling": -6.0,
+            "style": 2.0,
+            "algorithm": 5.0
+        });
+
+        let first = render(record.clone());
+        for draw in 0..DRAWS {
+            assert_eq!(
+                max_abs_difference(&render(record.clone()), &first),
+                0.0,
+                "draw {draw}: the same record rendered different samples"
+            );
+        }
+
+        let algorithm_alone = render(json!({ "gain": 12.0, "ceiling": -6.0, "algorithm": 5.0 }));
+        let style_alone = render(json!({ "gain": 12.0, "ceiling": -6.0, "style": 2.0 }));
+
+        assert!(
+            max_abs_difference(&first, &algorithm_alone) <= TOLERANCE,
+            "the exact algorithm did not win over the style that aliases it (largest \
+             difference {})",
+            max_abs_difference(&first, &algorithm_alone)
+        );
+        assert!(
+            max_abs_difference(&first, &style_alone) > TOLERANCE,
+            "the style alone renders the same samples as the algorithm, so this spec cannot \
+             tell the two orders apart"
+        );
+    }
+
+    /// A grinder device is registered as an insert: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// The same law [`a_crust_device_registers_as_an_effect_without_a_note_store`]
+    /// proves for the limiter, applied to the amp: `BuiltinEffectType::sounds_notes`
+    /// is the one registry either decision reads, and a guitar amp sounds
+    /// nothing of its own.
+    #[test]
+    fn a_grinder_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-gri", "grinder", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a grinder device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Grinder(_), None)
+            )),
+            "the grinder is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// [`render_builtin_clip`] for a grinder over a sustained input — an amp
+    /// waveshapes and filters whatever level it is handed, so a constant
+    /// input is enough to separate two patches by more than measurement
+    /// noise, the same fixture shape the gluten and crust clips above use.
+    fn render_grinder_clip(parameter_values: Value) -> Vec<f32> {
+        render_builtin_clip("grinder", "d-gri", parameter_values, vec![0.9; 48_000])
+    }
+
+    /// A grinder's patch is written into the instance on the mapping thread
+    /// and no `SetParam` command carries any of it.
+    ///
+    /// The same law the instruments and crust are held to above, and for the
+    /// same reason: the command ring is finite. The render is what says the
+    /// patch was applied rather than merely not sent — an amp on a step is
+    /// not a limiter, so the oracle is the largest sample-by-sample
+    /// difference between two whole renders rather than a settled peak: a
+    /// waveshaper's output tracks its input on every sample, it does not
+    /// converge to a level.
+    #[test]
+    fn a_grinder_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        const TOLERANCE: f32 = 1e-6;
+
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-gri",
+                "grinder",
+                json!({ "gain": 8.0, "cabEnabled": 0.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("one of the amp's own names is a grinder parameter address");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the grinder's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+
+        let low_gain = render_grinder_clip(json!({ "gain": 0.0, "cabEnabled": 0.0 }));
+        let high_gain = render_grinder_clip(json!({ "gain": 24.0, "cabEnabled": 0.0 }));
+
+        assert!(
+            high_gain.iter().any(|&sample| sample.abs() > 0.0),
+            "the high-gain render is silence, so the comparison below proves nothing"
+        );
+        assert!(
+            max_abs_difference(&low_gain, &high_gain) > TOLERANCE,
+            "the gain in the patch never reached the instance the mapper built (largest \
+             difference {})",
+            max_abs_difference(&low_gain, &high_gain)
+        );
+    }
+
+    /// A grinder patch builds one amp whatever order the record draws, for
+    /// the pair the precedence law exists to order.
+    ///
+    /// `neuralEnabled` and `engineMode` both write the amp's single
+    /// engine-mode slot — `neuralEnabled` through a boolean Circuit/Hybrid
+    /// choice and `engineMode` through `EngineMode::from_index`
+    /// (`crates/daw-dsp/src/grinder/neural.rs`) — so a record carrying both
+    /// settles on whichever landed last. `BuiltinEffectType::patch_precedence`
+    /// puts `neuralEnabled` first, so the render is `engineMode`'s: index 1
+    /// is Capture, which replaces the circuit preamp and tone stack outright,
+    /// and is audible against Circuit on any material — no neural model is
+    /// loaded, so Capture's own output is silence, the starkest difference
+    /// the two modes can render.
+    #[test]
+    fn a_grinder_patch_builds_one_amp_whatever_order_the_record_draws() {
+        const TOLERANCE: f32 = 1e-6;
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would
+        /// pass a share of its runs.
+        const DRAWS: usize = 16;
+
+        fn render(parameter_values: Value) -> Vec<f32> {
+            render_grinder_clip(parameter_values)
+        }
+
+        let record = json!({
+            "neuralEnabled": 0.0,
+            "engineMode": 1.0,
+            "cabEnabled": 0.0
+        });
+
+        let first = render(record.clone());
+        for draw in 0..DRAWS {
+            assert_eq!(
+                max_abs_difference(&render(record.clone()), &first),
+                0.0,
+                "draw {draw}: the same record rendered different samples"
+            );
+        }
+
+        let engine_mode_alone = render(json!({ "engineMode": 1.0, "cabEnabled": 0.0 }));
+        let neural_enabled_alone = render(json!({ "neuralEnabled": 0.0, "cabEnabled": 0.0 }));
+
+        assert!(
+            max_abs_difference(&first, &engine_mode_alone) <= TOLERANCE,
+            "the exact engine mode did not win over the simplification that aliases it \
+             (largest difference {})",
+            max_abs_difference(&first, &engine_mode_alone)
+        );
+        assert!(
+            max_abs_difference(&first, &neural_enabled_alone) > TOLERANCE,
+            "neuralEnabled alone renders the same samples as engineMode, so this spec cannot \
+             tell the two orders apart"
+        );
+    }
+
+    /// A camelCase key is a grinder's own spelling, not a foreign case a
+    /// shape check must translate — it is admitted exactly like any
+    /// well-shaped name, whether the engine has it as a fixed automatable
+    /// slot (`inputGain`) or as one of the dynamically named neural
+    /// convolution weights (`neuralCustomConvWeight3_2`,
+    /// `crates/daw-dsp/src/grinder/neural.rs`).
+    #[test]
+    fn a_camel_case_grinder_key_is_admitted_by_shape() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-gri",
+                "grinder",
+                json!({ "inputGain": 3.0, "neuralCustomConvWeight3_2": 0.1 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("grinder's own vocabulary is spelled in camelCase");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "a grinder patch is applied control-side, not over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+    }
+
+    /// A bacteria device is registered as an insert: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// The same law [`a_crust_device_registers_as_an_effect_without_a_note_store`]
+    /// proves for the limiter, applied to the multi-effect:
+    /// `BuiltinEffectType::sounds_notes` is the one registry either decision
+    /// reads, and a creative multi-effect sounds nothing of its own.
+    #[test]
+    fn a_bacteria_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-bac", "bacteria", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bacteria device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Bacteria(_), None)
+            )),
+            "the bacteria is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// [`render_builtin_clip`] for a bacteria over a 2 kHz tone.
+    ///
+    /// A tone rather than the sustained step the amp and the limiter are fed:
+    /// the patch below separates two low-pass corners, and a corner is
+    /// inaudible on a step — a low-pass passes DC whatever its cutoff is, so
+    /// both renders would come out identical and the spec would report a patch
+    /// that never landed as one that did. 2 kHz sits well above the 200 Hz
+    /// corner and well below the 18 kHz one, so one render is rolled off and
+    /// the other is not.
+    fn render_bacteria_clip(parameter_values: Value) -> Vec<f32> {
+        const RATE: f32 = 48_000.0;
+        let material: Vec<f32> = (0..48_000)
+            .map(|frame| {
+                let t = frame as f32 / RATE;
+                0.5 * (2.0 * std::f32::consts::PI * 2_000.0 * t).sin()
+            })
+            .collect();
+
+        render_builtin_clip("bacteria", "d-bac", parameter_values, material)
+    }
+
+    /// A bacteria's patch is written into the instance on the mapping thread
+    /// and no `SetParam` command carries any of it.
+    ///
+    /// The same law the instruments, crust and grinder are held to above, and
+    /// for the same reason: the command ring is finite, and a multi-effect's
+    /// record is its globals plus six bands' worth of band-prefixed names. It
+    /// carries one more reason of its own — two of the engine's names allocate
+    /// when they land, and this thread is the only one allowed to run them
+    /// (`BACTERIA_CONTROL_THREAD_ONLY`, `crates/daw-engine/src/scheduler.rs`).
+    ///
+    /// The render is what says the patch was applied rather than merely not
+    /// sent, and the oracle is the largest sample-by-sample difference between
+    /// two whole renders: a filter's output tracks its input on every sample,
+    /// it does not converge to a level.
+    #[test]
+    fn a_bacteria_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        const TOLERANCE: f32 = 1e-6;
+
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-bac",
+                "bacteria",
+                json!({ "band0_filterEnabled": 1.0, "band0_filterCutoff": 200.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("one of the multi-effect's own names is a bacteria parameter address");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the bacteria's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+
+        let low_corner = render_bacteria_clip(
+            json!({ "band0_filterEnabled": 1.0, "band0_filterCutoff": 200.0 }),
+        );
+        let high_corner = render_bacteria_clip(
+            json!({ "band0_filterEnabled": 1.0, "band0_filterCutoff": 18000.0 }),
+        );
+
+        assert!(
+            high_corner.iter().any(|&sample| sample.abs() > 0.0),
+            "the open-corner render is silence, so the comparison below proves nothing"
+        );
+        assert!(
+            max_abs_difference(&low_corner, &high_corner) > TOLERANCE,
+            "the filter corner in the patch never reached the instance the mapper built \
+             (largest difference {})",
+            max_abs_difference(&low_corner, &high_corner)
+        );
+    }
+
+    /// Every latency a batch declares, as `(position, effect id, figure, line
+    /// present)`.
+    fn latency_declarations(ops: &[GraphCommand]) -> Vec<(usize, usize, usize, bool)> {
+        ops.iter()
+            .enumerate()
+            .filter_map(|(position, op)| match op {
+                GraphCommand::SetEffectLatency {
+                    effect_id,
+                    latency_frames,
+                    dry_delay,
+                } => Some((position, *effect_id, *latency_frames, dry_delay.is_some())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Where a batch registers its bacteria body, and under which id.
+    fn bacteria_registration(ops: &[GraphCommand]) -> (usize, usize) {
+        ops.iter()
+            .enumerate()
+            .find_map(|(position, op)| match op {
+                GraphCommand::AddDetachedEffect(effect_id, PluginCore::Bacteria(_), _) => {
+                    Some((position, *effect_id))
+                }
+                _ => None,
+            })
+            .expect("the batch registers a bacteria body")
+    }
+
+    /// A bacteria declares the figure its engine reports, against the id the
+    /// registration just gave the graph.
+    ///
+    /// The declaration has to follow the registration: the graph refuses a
+    /// latency for an id its effect table does not hold, and the ring applies
+    /// commands in the order they are pushed. The spectral stage is what makes
+    /// the figure worth reading — a whole 2048-sample overlap-add window
+    /// (`crates/daw-dsp/src/bacteria/stft.rs`) over the engine's own
+    /// unoversampled default.
+    ///
+    /// The declaration carries no dry line, and that is read here rather than
+    /// left to the engine: a line is read on the bypassed pass alone, where
+    /// this body declares 0 and the pass hands the block on untouched, so a
+    /// line shipped from the mapper would be fed on every block the body ran
+    /// and read on none of them.
+    #[test]
+    fn a_bacteria_record_declares_the_latency_its_engine_reports() {
+        const SPECTRAL_WINDOW: usize = 2_048;
+
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-bac",
+                "bacteria",
+                json!({ "band0_spectralEnabled": 1.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bacteria device has a native body");
+
+        let (registration, effect_id) = bacteria_registration(&mapped.ops);
+        let declarations = latency_declarations(&mapped.ops);
+
+        assert_eq!(
+            declarations.len(),
+            1,
+            "a bacteria's figure is declared once per registration: {declarations:?}"
+        );
+        let (position, declared_id, latency_frames, line_present) = declarations[0];
+        assert_eq!(
+            declared_id, effect_id,
+            "the declaration names an id the batch never registered"
+        );
+        assert!(
+            position > registration,
+            "the latency is declared at {position}, ahead of the registration at {registration}, \
+             so the graph has no effect to hold it against"
+        );
+        assert_eq!(
+            latency_frames, SPECTRAL_WINDOW,
+            "the declared figure is not the one the record's engine reports"
+        );
+        assert!(
+            !line_present,
+            "the declaration ships a dry line no pass of this body ever reads"
+        );
+    }
+
+    /// A default record is declared too, at the figure its own engine reports
+    /// for that record, and with no line.
+    ///
+    /// The declaration is unconditional rather than shipped only for a
+    /// non-zero figure: a later write engaging a latent stage moves the figure
+    /// on the audio thread, and the graph has to have been told which id to
+    /// re-read it from. The default engine reports nothing, so the figure read
+    /// here is zero — and no line goes with it, because a line is read on the
+    /// bypassed pass alone and this body declares 0 there.
+    #[test]
+    fn a_default_bacteria_record_declares_its_default_figure_with_no_line() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-bac", "bacteria", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bacteria device has a native body");
+
+        assert_eq!(
+            latency_declarations(&mapped.ops)
+                .iter()
+                .map(|(_, _, latency_frames, line_present)| (*latency_frames, *line_present))
+                .collect::<Vec<_>>(),
+            vec![(0, false)],
+            "a default bacteria is not declared at its default figure without a line"
+        );
+    }
+
+    /// A bypassed record declares zero, and ships no line.
+    ///
+    /// A bypassed body delays nothing on either carrier, so declaring its
+    /// reported window would hold every route meeting this strip back by a
+    /// figure the strip's signal is not waiting for. Nor does a line stand in
+    /// the figure's place: the bypassed pass is already the identity for this
+    /// body, so a line would be dead weight on the audio thread rather than a
+    /// hold. The spectral stage is what makes the zero worth reading — a whole
+    /// 2048-sample window the same record declares un-bypassed.
+    #[test]
+    fn a_bypassed_bacteria_record_declares_zero_and_ships_no_line() {
+        let mapped = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-bac", "type": "bacteria", "bypassed": true,
+                               "parameterValues": { "band0_spectralEnabled": 1.0 } } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bacteria device has a native body");
+
+        let bypass_position = mapped
+            .ops
+            .iter()
+            .position(|op| matches!(op, GraphCommand::SetBypass(_, true)))
+            .expect("a bypassed record carries its bypass to the engine");
+        let declarations = latency_declarations(&mapped.ops);
+
+        assert_eq!(
+            declarations
+                .iter()
+                .map(|(_, _, latency_frames, line_present)| (*latency_frames, *line_present))
+                .collect::<Vec<_>>(),
+            vec![(0, false)],
+            "a bypassed bacteria is not declared at zero without a line"
+        );
+        assert!(
+            declarations[0].0 < bypass_position,
+            "the declaration lands at {} behind the bypass at {bypass_position}, so the graph \
+             re-aims a figure the bypass has already answered",
+            declarations[0].0
+        );
+    }
+
+    /// A proof device is registered as an insert: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// The same law [`a_crust_device_registers_as_an_effect_without_a_note_store`]
+    /// proves for the limiter, applied to the mastering suite:
+    /// `BuiltinEffectType::sounds_notes` is the one registry either decision
+    /// reads, and a mastering chain sounds nothing of its own.
+    #[test]
+    fn a_proof_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-proof", "proof", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a proof device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Proof(_), None)
+            )),
+            "the proof is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// The look-ahead the proof body the batch built reports, in frames.
+    fn mapped_proof_latency(ops: &[GraphCommand]) -> u32 {
+        ops.iter()
+            .find_map(|op| match op {
+                GraphCommand::AddDetachedEffect(_, PluginCore::Proof(body), _) => {
+                    Some(body.latency_samples())
+                }
+                _ => None,
+            })
+            .expect("the batch registers a proof body")
+    }
+
+    /// Where a batch registers its proof body, and under which id.
+    fn proof_registration(ops: &[GraphCommand]) -> (usize, usize) {
+        ops.iter()
+            .enumerate()
+            .find_map(|(position, op)| match op {
+                GraphCommand::AddDetachedEffect(effect_id, PluginCore::Proof(_), _) => {
+                    Some((position, *effect_id))
+                }
+                _ => None,
+            })
+            .expect("the batch registers a proof body")
+    }
+
+    /// A proof's patch is written into the instance on the mapping thread and
+    /// no `SetParam` command carries any of it.
+    ///
+    /// The same law the instruments, crust, grinder and bacteria are held to
+    /// above, and for the same reason: the command ring is finite, and a
+    /// mastering record is eight EQ bands, four dynamics bands, four exciter
+    /// bands, the imager, the limiter and the ditherer. It carries one more
+    /// reason of its own — the five `chain_order_{n}` keys, which
+    /// `ProofChain::set_param` has no arm for at all, so a saved module order
+    /// reaches the device through `ProofBody::load_patch` or not at all.
+    ///
+    /// The oracle is the figure the registered body itself reports.
+    /// `lim_lookahead` at 7.5 ms is 360 frames at this batch's rate, against
+    /// the limiter's own 5 ms default of 240, so a record that never reached
+    /// the instance reports the default and this fails. That the order keys
+    /// travelled in the same record is what the empty `SetParam` list says:
+    /// they were admitted by name — one key the mapper refused would have
+    /// failed the whole batch — and no command carried them.
+    #[test]
+    fn a_proof_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        const LOOKAHEAD_FRAMES: u32 = 360;
+
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-proof",
+                "proof",
+                json!({
+                    "lim_lookahead": 7.5,
+                    "lim_ceiling": -6.0,
+                    "eq_band0_enabled": 1.0,
+                    "chain_order_0": 4.0,
+                    "chain_order_1": 0.0,
+                    "chain_order_2": 1.0,
+                    "chain_order_3": 2.0,
+                    "chain_order_4": 3.0
+                }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("the mastering chain's own names are proof parameter addresses");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the proof's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+        assert_eq!(
+            mapped_proof_latency(&mapped.ops),
+            LOOKAHEAD_FRAMES,
+            "the record's look-ahead never reached the instance the mapper built"
+        );
+    }
+
+    /// A proof declares the figure its chain reports, against the id the
+    /// registration just gave the graph.
+    ///
+    /// The declaration has to follow the registration: the graph refuses a
+    /// latency for an id its effect table does not hold, and the ring applies
+    /// commands in the order they are pushed. The look-ahead is what makes the
+    /// figure worth reading — 10 ms is the widest the control admits
+    /// (`MAX_LOOKAHEAD_MS`, `crates/daw-dsp/src/proof/limiter.rs`) and 480
+    /// frames at this rate, against the 240 the limiter's own default reports.
+    ///
+    /// The declaration carries no dry line, and that is read here rather than
+    /// left to the engine: a line is read on the bypassed pass alone, where
+    /// this body declares 0 and the pass hands the block on untouched, so a
+    /// line shipped from the mapper would be fed on every block the body ran
+    /// and read on none of them.
+    #[test]
+    fn a_proof_record_declares_the_latency_its_engine_reports() {
+        const WIDEST_LOOKAHEAD: usize = 480;
+
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-proof",
+                "proof",
+                json!({ "lim_lookahead": 10.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a proof device has a native body");
+
+        let (registration, effect_id) = proof_registration(&mapped.ops);
+        let declarations = latency_declarations(&mapped.ops);
+
+        assert_eq!(
+            declarations.len(),
+            1,
+            "a proof's figure is declared once per registration: {declarations:?}"
+        );
+        let (position, declared_id, latency_frames, line_present) = declarations[0];
+        assert_eq!(
+            declared_id, effect_id,
+            "the declaration names an id the batch never registered"
+        );
+        assert!(
+            position > registration,
+            "the latency is declared at {position}, ahead of the registration at {registration}, \
+             so the graph has no effect to hold it against"
+        );
+        assert_eq!(
+            latency_frames, WIDEST_LOOKAHEAD,
+            "the declared figure is not the one the record's chain reports"
+        );
+        assert!(
+            !line_present,
+            "the declaration ships a dry line no pass of this body ever reads"
+        );
+    }
+
+    /// A bypassed record declares zero, and ships no line.
+    ///
+    /// A bypassed body delays nothing on either carrier, so declaring its
+    /// reported look-ahead would hold every route meeting this strip back by a
+    /// figure the strip's signal is not waiting for. Nor does a line stand in
+    /// the figure's place: the bypassed pass is already the identity for this
+    /// body, so a line would be dead weight on the audio thread rather than a
+    /// hold. The 10 ms look-ahead is what makes the zero worth reading — 480
+    /// frames the same record declares un-bypassed.
+    #[test]
+    fn a_bypassed_proof_record_declares_zero_and_ships_no_line() {
+        let mapped = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Master",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-proof", "type": "proof", "bypassed": true,
+                               "parameterValues": { "lim_lookahead": 10.0 } } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a proof device has a native body");
+
+        let bypass_position = mapped
+            .ops
+            .iter()
+            .position(|op| matches!(op, GraphCommand::SetBypass(_, true)))
+            .expect("a bypassed record carries its bypass to the engine");
+        let declarations = latency_declarations(&mapped.ops);
+
+        assert_eq!(
+            declarations
+                .iter()
+                .map(|(_, _, latency_frames, line_present)| (*latency_frames, *line_present))
+                .collect::<Vec<_>>(),
+            vec![(0, false)],
+            "a bypassed proof is not declared at zero without a line"
+        );
+        assert!(
+            declarations[0].0 < bypass_position,
+            "the declaration lands at {} behind the bypass at {bypass_position}, so the graph \
+             re-aims a figure the bypass has already answered",
+            declarations[0].0
+        );
+    }
+
+    /// A dutch-oven device is registered as an insert: no note store, and an
+    /// `Effect` splice.
+    ///
+    /// The same law [`a_proof_device_registers_as_an_effect_without_a_note_store`]
+    /// proves for the mastering suite, applied to the reverb:
+    /// `BuiltinEffectType::sounds_notes` is the one registry either decision
+    /// reads, and a reverb sounds the room around what it is handed rather than
+    /// material of its own.
+    #[test]
+    fn a_dutch_oven_device_registers_as_an_effect_without_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-oven", "dutch-oven", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a dutch-oven device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::DutchOven(_), None)
+            )),
+            "the dutch oven is not registered as a built-in body holding no note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Effect],
+            "an insert spliced as a generator feeds the strip instead of processing it"
+        );
+    }
+
+    /// The device type a project spells as a display name resolves to the same
+    /// body as the key.
+    ///
+    /// `builtin_device_type` case-folds before asking the registry, because the
+    /// web side spells a body as a display name as often as a key, and this
+    /// body is the one whose display name differs from its key by case alone.
+    /// Unfolded, the strip would be refused by name and take the whole batch
+    /// with it.
+    #[test]
+    fn a_display_cased_dutch_oven_device_type_still_resolves() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-oven", "Dutch-Oven", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("the mapper folds a display-cased device type onto its key");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::DutchOven(_), None)
+            )),
+            "a display-cased device type registered something other than the reverb"
+        );
+    }
+
+    /// The figure the dutch-oven body the batch built reports, in frames.
+    fn mapped_dutch_oven_latency(ops: &[GraphCommand]) -> u32 {
+        ops.iter()
+            .find_map(|op| match op {
+                GraphCommand::AddDetachedEffect(_, PluginCore::DutchOven(body), _) => {
+                    Some(body.latency_samples())
+                }
+                _ => None,
+            })
+            .expect("the batch registers a dutch-oven body")
+    }
+
+    /// Where a batch registers its dutch-oven body, and under which id.
+    fn dutch_oven_registration(ops: &[GraphCommand]) -> (usize, usize) {
+        ops.iter()
+            .enumerate()
+            .find_map(|(position, op)| match op {
+                GraphCommand::AddDetachedEffect(effect_id, PluginCore::DutchOven(_), _) => {
+                    Some((position, *effect_id))
+                }
+                _ => None,
+            })
+            .expect("the batch registers a dutch-oven body")
+    }
+
+    /// [`render_builtin_clip`] for a dutch-oven over a sustained tone — a
+    /// reverb handed a step or a constant says little about its wet path, while
+    /// a tone excites the tank for the whole clip.
+    fn render_dutch_oven_clip(parameter_values: Value) -> Vec<f32> {
+        let material: Vec<f32> = (0..48_000)
+            .map(|frame| 0.5 * (2.0 * std::f32::consts::PI * 220.0 * frame as f32 / 48_000.0).sin())
+            .collect();
+        render_builtin_clip("dutch-oven", "d-oven", parameter_values, material)
+    }
+
+    /// A dutch-oven's patch is written into the instance on the mapping thread
+    /// and no `SetParam` command carries any of it.
+    ///
+    /// The same law the instruments, crust, grinder, bacteria and proof are
+    /// held to above, and for the same reason: the command ring is finite, and
+    /// a reverb record is the engine selection, the vintage stage, six
+    /// decay-rate EQ bands and some twenty of the selected engine's own
+    /// parameters.
+    ///
+    /// The render is what says the patch was applied rather than merely not
+    /// sent. `mix` is the one control that decides how much of the tank is
+    /// heard at all, so a fully wet render and a fully dry one over the same
+    /// tone are two different signals — and a patch that reached nothing would
+    /// give one, because the instance opens at neither extreme.
+    #[test]
+    fn a_dutch_oven_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        const TOLERANCE: f32 = 1e-6;
+
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-oven",
+                "dutch-oven",
+                json!({
+                    "mix": 1.0,
+                    "decay": 0.8,
+                    "size": 0.7,
+                    "algorithm": 1.0,
+                    "fdn_damping_version": 2.0,
+                    "decay_eq_3": 2.0
+                }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("the reverb's own names are dutch-oven parameter addresses");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the dutch oven's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+
+        let wet = render_dutch_oven_clip(json!({ "mix": 1.0, "decay": 0.8, "size": 0.7 }));
+        let dry = render_dutch_oven_clip(json!({ "mix": 0.0, "decay": 0.8, "size": 0.7 }));
+
+        assert!(
+            wet.iter().any(|sample| *sample != 0.0),
+            "the wet render is silent, so the comparison below proves nothing"
+        );
+        assert!(
+            max_abs_difference(&wet, &dry) > TOLERANCE,
+            "the mix in the patch never reached the instance the mapper built (largest \
+             difference {})",
+            max_abs_difference(&wet, &dry)
+        );
+    }
+
+    /// A dutch-oven declares the figure its instance reports, against the id the
+    /// registration just gave the graph.
+    ///
+    /// Every engine an `algorithm` write selects is algorithmic and delays
+    /// nothing, so that figure is 0 today and the record cannot move it — which
+    /// is why the oracle is the body's own reading rather than a literal, and
+    /// why this is a declaration rather than a refusal to declare. `Some(0)`
+    /// leaves the graph already holding a figure the next write to the body can
+    /// move (`ActiveEffect::refresh_declared_latency`), where `None` would leave
+    /// it with none at all; the two convolution-backed engines report a
+    /// 128-frame head, so the difference is what an impulse-response transport
+    /// would need.
+    ///
+    /// The declaration has to follow the registration: the graph refuses a
+    /// latency for an id its effect table does not hold, and the ring applies
+    /// commands in the order they are pushed. It carries no dry line, because a
+    /// line is read on the bypassed pass alone, where this body declares 0 and
+    /// the pass hands the block on untouched.
+    #[test]
+    fn a_dutch_oven_record_declares_the_latency_its_engine_reports() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-oven",
+                "dutch-oven",
+                json!({ "mix": 1.0, "algorithm": 1.0 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a dutch-oven device has a native body");
+
+        let (registration, effect_id) = dutch_oven_registration(&mapped.ops);
+        let reported = mapped_dutch_oven_latency(&mapped.ops);
+        let declarations = latency_declarations(&mapped.ops);
+
+        assert_eq!(
+            declarations.len(),
+            1,
+            "a dutch oven's figure is declared once per registration: {declarations:?}"
+        );
+        let (position, declared_id, latency_frames, line_present) = declarations[0];
+        assert_eq!(
+            declared_id, effect_id,
+            "the declaration names an id the batch never registered"
+        );
+        assert!(
+            position > registration,
+            "the latency is declared at {position}, ahead of the registration at {registration}, \
+             so the graph has no effect to hold it against"
+        );
+        assert_eq!(
+            latency_frames as u32, reported,
+            "the declared figure is not the one the record's instance reports"
+        );
+        assert!(
+            !line_present,
+            "the declaration ships a dry line no pass of this body ever reads"
+        );
+    }
+
+    /// A bypassed record declares zero, and ships no line.
+    ///
+    /// The figure the mapper sends is already the bypassed one, so the bypass
+    /// that follows finds the graph aimed where it wants it. What this pins for
+    /// a reverb is the declaration's presence, its place ahead of the bypass and
+    /// its absent line rather than a figure the bypass moved: every selectable
+    /// engine reports 0, so the un-bypassed record declares 0 too. A body that
+    /// stopped declaring under bypass, or that shipped a line with the zero,
+    /// fails here; one whose engine ever reported a real delay would need the
+    /// bypass branch this mirrors from
+    /// [`a_bypassed_proof_record_declares_zero_and_ships_no_line`].
+    #[test]
+    fn a_bypassed_dutch_oven_record_declares_zero_and_ships_no_line() {
+        let mapped = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-oven", "type": "dutch-oven", "bypassed": true,
+                               "parameterValues": { "mix": 1.0 } } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a dutch-oven device has a native body");
+
+        let bypass_position = mapped
+            .ops
+            .iter()
+            .position(|op| matches!(op, GraphCommand::SetBypass(_, true)))
+            .expect("a bypassed record carries its bypass to the engine");
+        let declarations = latency_declarations(&mapped.ops);
+
+        assert_eq!(
+            declarations
+                .iter()
+                .map(|(_, _, latency_frames, line_present)| (*latency_frames, *line_present))
+                .collect::<Vec<_>>(),
+            vec![(0, false)],
+            "a bypassed dutch oven is not declared at zero without a line"
+        );
+        assert!(
+            declarations[0].0 < bypass_position,
+            "the declaration lands at {} behind the bypass at {bypass_position}, so the graph \
+             re-aims a figure the bypass has already answered",
+            declarations[0].0
+        );
+    }
+
+    /// A crust declares nothing.
+    ///
+    /// Its engine reports no latency of its own, and only a body that reports
+    /// one has anything to declare: a figure published for a device that
+    /// delays nothing would hold every other route on the strip back by it.
+    #[test]
+    fn a_crust_record_declares_no_latency() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-crust", "crust", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a crust device has a native body");
+
+        assert!(
+            latency_declarations(&mapped.ops).is_empty(),
+            "the limiter declared a latency: {:?}",
+            latency_declarations(&mapped.ops)
+        );
+    }
+
+    /// A band-prefixed key is a bacteria's own spelling, not an address the
+    /// mapper has to decode — it is admitted exactly like any well-shaped
+    /// name, and the engine strips the prefix itself
+    /// (`BacteriaEngine::apply_param`, `crates/daw-dsp/src/bacteria/engine.rs`).
+    ///
+    /// `band0_convolutionSeparation` is the longest name this vocabulary can
+    /// spell at 27 bytes, 13 under `BUILTIN_PARAM_NAME_CAPACITY`, and
+    /// `stepSeqVal_31` is the widest index of the engine's other dynamically
+    /// named family — the step sequencer's 32 steps. Both parse, so the
+    /// carrier needs no shape change to hold this body's vocabulary.
+    ///
+    /// There is no precedence-draw spec beside this one, unlike crust's and
+    /// grinder's: `BACTERIA_PATCH_PRECEDENCE` is empty because no name in the
+    /// vocabulary rewrites another the same record may carry, so there is no
+    /// draw order for a spec to tell apart.
+    #[test]
+    fn a_band_prefixed_bacteria_key_is_admitted_by_shape() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-bac",
+                "bacteria",
+                json!({ "band0_convolutionSeparation": 0.7, "stepSeqVal_31": 0.25 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("bacteria's own vocabulary prefixes a band and indexes a step");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "a bacteria patch is applied control-side, not over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+    }
+
+    /// A toaster device is registered as a built-in instrument: it carries a
+    /// note store of its own, and it splices onto the chain as a `Generator`.
+    ///
+    /// Both halves follow from `BuiltinEffectType::sounds_notes`, which is the
+    /// one registry either decision reads. A drum machine sounds its own pads
+    /// and processes nothing it is handed, so a registration with no store
+    /// leaves a kit nothing can ever be scheduled at, and an `Effect` splice
+    /// runs it over the strip's signal in place of summing its pads into the
+    /// chain.
+    #[test]
+    fn a_toaster_device_registers_as_an_instrument_with_a_note_store() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-toaster", "toaster", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a toaster device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Toaster(_), Some(_))
+            )),
+            "the toaster is not registered as a built-in body holding a note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Generator],
+            "an instrument spliced as an effect processes the strip instead of feeding it"
+        );
+    }
+
+    /// A toaster on a contributing strip, handed one hit at the top of the
+    /// render, built with `parameter_values` as its patch.
+    ///
+    /// The note is 60, which is the first pad of the machine's high bank
+    /// (`toaster_pad_for_note`, `crates/daw-engine/src/scheduler.rs`), so the
+    /// hit lands on pad 0 and what the patch did to that pad is audible here —
+    /// or the patch never reached the instance the mapper built.
+    fn render_patched_toaster(parameter_values: Value) -> Vec<f32> {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        const FRAMES: usize = 1_440;
+
+        render_offline_batch(
+            &midi_batch(json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Drums",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": "d-toaster", "type": "toaster", "bypassed": false,
+                                   "parameterValues": parameter_values } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                {
+                    "kind": "schedule-midi",
+                    "trackId": "t1",
+                    "deviceId": "d-toaster",
+                    "probabilitySeed": MIDI_PROBABILITY_SEED,
+                    "notes": [ note_at(0.0, 60, 0) ],
+                }
+            ])),
+            &sample_pool(),
+            &mut LevainBankStore::default(),
+            FRAMES,
+            SAMPLE_RATE,
+        )
+        .expect("a toaster renders offline")
+    }
+
+    /// A toaster's patch is written into the instance on the mapping thread and
+    /// no `SetParam` command carries any of it.
+    ///
+    /// The same law the other instruments are held to, and for the same reason:
+    /// a kit's patch is the machine's own globals plus some twenty parameters
+    /// for each of sixteen pads, and the command ring is finite. The render is
+    /// what says the patch was applied rather than merely not sent —
+    /// `master_gain` scales the machine's output and `pad0_tune` moves the pitch
+    /// of the struck pad, so a patch that reached nothing renders the samples an
+    /// unpatched kit does.
+    #[test]
+    fn a_toaster_patch_is_applied_control_side_and_carries_no_set_param_op() {
+        let patch = json!({ "master_gain": 0.2, "pad0_tune": 7.0 });
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-toaster", "toaster", patch.clone())),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("the machine's own names are toaster parameter addresses");
+
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the toaster's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
+        );
+        let patched = render_patched_toaster(patch);
+        assert!(
+            patched.iter().any(|sample| *sample != 0.0),
+            "the patched render is silent, so the inequality below proves nothing"
+        );
+        assert_ne!(
+            patched,
+            render_patched_toaster(json!({})),
+            "the patch never reached the instance the mapper built"
+        );
+    }
+
+    /// The device type a project spells as a display name resolves to the same
+    /// body as the key.
+    ///
+    /// `builtin_device_type` case-folds before asking the registry, because the
+    /// web side spells a body as a display name as often as a key, and this
+    /// machine's display name differs from its key by case alone. Unfolded, the
+    /// strip would be refused by name and take the whole batch with it.
+    #[test]
+    fn a_display_cased_toaster_device_type_still_resolves() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-toaster", "Toaster", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("the mapper folds a display-cased device type onto its key");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Toaster(_), Some(_))
+            )),
+            "a display-cased device type registered something other than the drum machine"
         );
     }
 }

@@ -12,6 +12,8 @@
  * embedded frame, a page reached through a navigation bug — is denied even when
  * it asks for a permission the app itself is allowed.
  */
+import { APP_HOST } from './protocol.js';
+
 import type { Session, WebContents } from 'electron';
 
 /**
@@ -181,7 +183,7 @@ export const decideWindowOpen = (url: string): WindowOpenDecision => {
         const target = new URL(url);
         if (
             target.protocol === 'app:' &&
-            target.host === 'sourdaw' &&
+            target.host === APP_HOST &&
             target.pathname === '/legal/THIRD-PARTY-NOTICES.md' &&
             target.search === '' &&
             target.hash === ''

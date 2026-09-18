@@ -22,7 +22,12 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-import { type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
+import {
+    gainEnvelopeStore,
+    type GainEnvelopePoint,
+    type Track,
+    type TrackStoreState,
+} from '#/modules/Arrangement/stores';
 import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
 import { type TransportState } from '#/modules/Transport/stores';
 
@@ -61,6 +66,10 @@ vi.mock('../resolveRenderContext', async (importOriginal) => {
  */
 const stubTransport: NativeGraphTransport = {
     registerTimelineSample: () => Promise.reject(new Error('the selection spec issues no command')),
+    beginLevainBank: () => Promise.reject(new Error('the selection spec issues no command')),
+    registerLevainSample: () => Promise.reject(new Error('the selection spec issues no command')),
+    commitLevainBank: () => Promise.reject(new Error('the selection spec issues no command')),
+    releaseLevainBank: () => Promise.reject(new Error('the selection spec issues no command')),
     renderGraphOffline: () => Promise.reject(new Error('the selection spec issues no command')),
     mapGraphBatch: () => Promise.reject(new Error('the selection spec issues no command')),
     applyGraphCommands: () => Promise.reject(new Error('the selection spec issues no command')),
@@ -135,10 +144,17 @@ function cleanProject(): { renderableTracks: Track[]; scheduledTracks: Track[] }
     return { renderableTracks: [track, bus], scheduledTracks: [track] };
 }
 
+/** Seed one clip's envelope straight into the store the gates read. */
+function seedEnvelope(clipId: string, points: GainEnvelopePoint[], enabled: boolean): void {
+    const current = gainEnvelopeStore.value?.envelopes ?? {};
+    gainEnvelopeStore.set({ envelopes: { ...current, [clipId]: { clipId, points, enabled } } });
+}
+
 describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () => {
     beforeEach(() => {
         mocks.availability = { available: false, reason: 'no desktop bridge (browser runtime)', runtime: 'browser' };
         mocks.renderContext = null;
+        gainEnvelopeStore.set({ envelopes: {} });
     });
 
     it('renders a browser export through Web Audio without calling it a degradation', async () => {
@@ -276,6 +292,27 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
     });
 
+    it('hands a clip whose envelope is disabled or flat to the native engine (#2865)', async () => {
+        // Only an envelope that changes what the clip sounds like costs the
+        // native renderer; a disabled or all-zero one is a no-op both paths
+        // agree on, and gating on it would needlessly slow every such export.
+        mocks.availability = { available: true, transport: stubTransport };
+        seedEnvelope('clip-off', [{ id: 'gep-1', beatOffset: 0, gainDb: -12 }], false);
+        seedEnvelope('clip-flat', [{ id: 'gep-1', beatOffset: 0, gainDb: 0 }], true);
+        const track = createTrack({
+            id: 'track-a',
+            name: 'Quiet A',
+            clips: [
+                createClip({ id: 'clip-off', trackId: 'track-a', audioBufferId: 'mat-a' }),
+                createClip({ id: 'clip-flat', trackId: 'track-a', audioBufferId: 'mat-a', startBeat: 2 }),
+            ],
+        });
+
+        const selection = await selectOfflineRenderEngine({ renderableTracks: [track], scheduledTracks: [track] });
+
+        expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+    });
+
     describe('content gates — a shape the native engine refuses degrades instead', () => {
         /**
          * One case per clause of `contentGateReason`. The expected text is the
@@ -331,6 +368,22 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                     return { renderableTracks: [track], scheduledTracks: [track] };
                 },
                 reason: 'track "Keys A" plays MIDI programme',
+            },
+            {
+                // #2865 — the native wire has no envelope vocabulary, so an
+                // envelope-carrying clip bounces through the renderer that
+                // draws the curve rather than printing the clip flat.
+                name: 'a clip gain envelope',
+                project: () => {
+                    seedEnvelope('clip-env', [{ id: 'gep-1', beatOffset: 0, gainDb: -12 }], true);
+                    const track = createTrack({
+                        id: 'track-a',
+                        name: 'Env A',
+                        clips: [createClip({ id: 'clip-env', trackId: 'track-a', audioBufferId: 'mat-a' })],
+                    });
+                    return { renderableTracks: [track], scheduledTracks: [track] };
+                },
+                reason: 'track "Env A" plays a clip gain envelope the native render does not apply',
             },
             {
                 name: 'a bus routed into a track',

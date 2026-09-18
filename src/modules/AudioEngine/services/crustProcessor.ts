@@ -6,7 +6,9 @@
  * slot. Effect processor — reads `inputs[0]`, writes `outputs[0]`.
  */
 
+import { CRUST_DSP_PARAM_NAMES } from '../models/CrustDspParamNames';
 import { CRUST_RUNTIME_PARAMETER_COUNT, isCrustRuntimeParameterId } from '../models/CrustRuntimeControl';
+import { SET_FALLBACK_PARAM_COMMAND } from '../models/RuntimeDeviceControl';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, CrustInstance } from '../wasm/daw_dsp.js';
 
@@ -14,41 +16,13 @@ import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 
 /**
- * camelCase parameter names from the Crust panel to the snake_case names the
- * Rust engine dispatches on. The panel's patch keys are the source of truth;
- * `crustParamBridge` encodes their values, this maps their names.
+ * Port message discriminants, restated from the app-side owner
+ * `src/infra/audioWorklet/workletPortMessages.ts` because this processor runs
+ * in the isolated worklet realm and must not import app-side code; pinned
+ * equal by `__tests__/workletPortMessageParity.spec.ts`.
  */
-const PARAM_MAP: Record<string, string> = {
-    gain: 'gain',
-    ceiling: 'ceiling',
-    style: 'style',
-    algorithm: 'algorithm',
-    lookahead: 'lookahead',
-    attack: 'attack',
-    release: 'release',
-    attackAuto: 'attack_auto',
-    releaseAuto: 'release_auto',
-    channelLinkTransient: 'channel_link_transient',
-    channelLinkRelease: 'channel_link_release',
-    truePeak: 'true_peak',
-    oversampling: 'oversampling',
-    satEnabled: 'sat_enabled',
-    satAlgorithm: 'sat_algorithm',
-    satDrive: 'sat_drive',
-    satMix: 'sat_mix',
-    deltaListen: 'delta_listen',
-    unityGain: 'unity_gain',
-    multiBand: 'multi_band',
-    crossover1: 'crossover1',
-    crossover2: 'crossover2',
-    scHpfEnabled: 'sc_hpf_enabled',
-    scHpfFreq: 'sc_hpf_freq',
-    stereoMode: 'stereo_mode',
-    dither: 'dither',
-    outputBitDepth: 'output_bit_depth',
-    bypass: 'bypass',
-    resetTruePeak: 'reset_true_peak',
-};
+export const INIT_SAB_MESSAGE_TYPE = 'init-sab';
+export const LATENCY_CHANGED_MESSAGE_TYPE = 'latency-changed';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -119,7 +93,7 @@ class CrustProcessor extends AudioWorkletProcessor {
                     this._initWasm(wasmModule);
                     wasmModule = null;
                 } else if (
-                    msg.type === 'init-sab' &&
+                    msg.type === INIT_SAB_MESSAGE_TYPE &&
                     msg.sab instanceof SharedArrayBuffer &&
                     isNonNegativeSafeInteger(msg.byteOffset)
                 ) {
@@ -181,7 +155,7 @@ class CrustProcessor extends AudioWorkletProcessor {
         if (
             !hasOnlyKeys(message, ['schemaVersion', 'command', 'target', 'value', 'correlation', 'scheduling']) ||
             message.schemaVersion !== 1 ||
-            message.command !== 'set-fallback-param' ||
+            message.command !== SET_FALLBACK_PARAM_COMMAND ||
             !isRecord(message.target) ||
             !hasOnlyKeys(message.target, ['trackId', 'deviceId', 'deviceType', 'parameterId']) ||
             !isBoundedId(message.target.trackId) ||
@@ -225,10 +199,13 @@ class CrustProcessor extends AudioWorkletProcessor {
         // The look-ahead, true-peak switch and ceiling can move the delay line,
         // so latency is re-read after every accepted control.
         const oldLatency = this._instance.get_latency_samples();
-        this._instance.set_param(PARAM_MAP[parameterId] ?? parameterId, value);
+        // `CRUST_DSP_PARAM_NAMES` is the table the native body reads too
+        // (`CrustBody::set_param`, `crates/daw-engine/src/scheduler.rs`), so a
+        // strip that moves between the two runtimes addresses one limiter.
+        this._instance.set_param(CRUST_DSP_PARAM_NAMES[parameterId] ?? parameterId, value);
         const newLatency = this._instance.get_latency_samples();
         if (newLatency !== oldLatency) {
-            this.port.postMessage({ type: 'latency-changed', latency: newLatency });
+            this.port.postMessage({ type: LATENCY_CHANGED_MESSAGE_TYPE, latency: newLatency });
         }
     }
 

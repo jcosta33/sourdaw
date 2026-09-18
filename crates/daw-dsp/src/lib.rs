@@ -7,6 +7,7 @@ pub mod grand_boule;
 pub mod grinder;
 pub mod knead;
 pub mod levain;
+pub mod params;
 pub mod primitives;
 pub mod proof;
 pub mod toaster;

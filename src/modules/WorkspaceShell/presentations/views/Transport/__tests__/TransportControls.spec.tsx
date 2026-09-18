@@ -9,7 +9,6 @@ const mocks = vi.hoisted(() => ({
     executeUserAppAction: vi.fn().mockResolvedValue(undefined),
     togglePlayback: vi.fn(),
     stopPlayback: vi.fn(),
-    toggleLoop: vi.fn(),
     toggleOverdub: vi.fn(),
     toggleMetronome: vi.fn(),
     setMetronomeVolume: vi.fn(),
@@ -25,7 +24,6 @@ vi.mock('#/modules/Command/useCases', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({
     togglePlayback: mocks.togglePlayback,
     stopPlayback: mocks.stopPlayback,
-    toggleLoop: mocks.toggleLoop,
     toggleOverdub: mocks.toggleOverdub,
     toggleMetronome: mocks.toggleMetronome,
     setMetronomeVolume: mocks.setMetronomeVolume,
@@ -144,10 +142,10 @@ describe('TransportControls', () => {
             expect(mocks.stopPlayback).toHaveBeenCalledTimes(1);
         });
 
-        it('routes loop to toggleLoop', () => {
+        it('routes loop through the undoable command', () => {
             renderWithTooltip(<TransportControls {...defaultProps} />);
             fireEvent.click(screen.getByLabelText('Loop'));
-            expect(mocks.toggleLoop).toHaveBeenCalledTimes(1);
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({ type: 'toggleLoop' });
         });
 
         it('routes metronome to toggleMetronome', () => {

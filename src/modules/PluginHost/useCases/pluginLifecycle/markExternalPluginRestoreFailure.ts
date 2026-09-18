@@ -1,3 +1,5 @@
+import { notifyExternalPluginRestoreFailuresChanged } from '../../stores/externalPluginRestoreFailureStore';
+
 import { externalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 
@@ -5,4 +7,5 @@ import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptur
 export function markExternalPluginRestoreFailure(instanceId: string): void {
     externalPluginStateCaptureAuthority.invalidate(instanceId);
     externalPluginRestoreFailures.add(instanceId);
+    notifyExternalPluginRestoreFailuresChanged();
 }

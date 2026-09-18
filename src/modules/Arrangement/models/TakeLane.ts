@@ -5,6 +5,15 @@ export type Take = {
     startBeat: number;
     endBeat: number;
     selected: boolean;
+    /**
+     * Where this take's material begins inside its source clip's recorded
+     * media, in beats from the clip's start. Loop recording writes every pass
+     * into one continuous clip, so each wrap take names its own pass's offset
+     * and comp resolution reads that pass's material instead of the first
+     * pass again. Absent means the clip's own origin — flat recordings,
+     * manual takes, and takes predating the field.
+     */
+    sourceOffsetBeats?: number;
 };
 
 export type TakeLane = {
@@ -21,8 +30,14 @@ export type CompRegion = {
     takeId: string;
 };
 
-export function createTake(clipId: string, name: string, startBeat: number, endBeat: number): Take {
-    return {
+export function createTake(
+    clipId: string,
+    name: string,
+    startBeat: number,
+    endBeat: number,
+    sourceOffsetBeats?: number
+): Take {
+    const take: Take = {
         id: `take-${crypto.randomUUID()}`,
         clipId,
         name,
@@ -30,6 +45,12 @@ export function createTake(clipId: string, name: string, startBeat: number, endB
         endBeat,
         selected: false,
     };
+    // Kept off the object when absent so the sanitized store shape stays
+    // exactly what older projects persisted.
+    if (sourceOffsetBeats !== undefined) {
+        take.sourceOffsetBeats = sourceOffsetBeats;
+    }
+    return take;
 }
 
 export function createTakeLane(trackId: string): TakeLane {

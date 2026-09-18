@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { readRustConstReferences, type RustConstReferences } from '#/infra/testing/__tests__/rustConstReferences';
 import {
     NATIVE_DSP_DEVICE_TYPES,
     resolveNativeDspDeviceType,
@@ -203,14 +204,30 @@ type NameTranslation =
 const PARAM_NAME_TRANSLATIONS: Record<NativeDspDeviceType, NameTranslation> = {
     fermenter: { kind: 'camelToSnake', source: `${SERVICES}/fermenterProcessor.ts`, functionName: 'camelToSnake' },
     // Pad-scoped writes go through `set_pad_param` and PAD_PARAM_MAP; the
-    // device-level `param` message automation uses reads KIT_PARAM_MAP.
-    toaster: { kind: 'table', source: `${SERVICES}/toasterProcessor.ts`, constName: 'KIT_PARAM_MAP' },
+    // device-level `param` message automation reads `TOASTER_KIT_PARAM_NAMES`,
+    // which the worklet now imports from `models/` rather than keeping its own
+    // copy (#3124).
+    toaster: {
+        kind: 'table',
+        source: 'src/modules/AudioEngine/models/ToasterKitParamNames.ts',
+        constName: 'TOASTER_KIT_PARAM_NAMES',
+    },
     levain: { kind: 'table', source: `${SERVICES}/levainProcessor.ts`, constName: 'PARAM_MAP' },
     'builtin-crumbs': { kind: 'identity' },
     // Grand Boule's two processors share one core, and the map lives there.
     'grand-boule': { kind: 'table', source: `${WORKLETS}/grandBouleEngineCore.ts`, constName: 'PARAM_MAP' },
-    gluten: { kind: 'table', source: `${SERVICES}/glutenProcessor.ts`, constName: 'PARAM_MAP' },
-    crust: { kind: 'table', source: `${SERVICES}/crustProcessor.ts`, constName: 'PARAM_MAP' },
+    // Gluten's two hosts share one table, and the model file is where it lives.
+    gluten: {
+        kind: 'table',
+        source: 'src/modules/AudioEngine/models/GlutenDspParamNames.ts',
+        constName: 'GLUTEN_DSP_PARAM_NAMES',
+    },
+    // Crust's two hosts share one table, and the model file is where it lives.
+    crust: {
+        kind: 'table',
+        source: 'src/modules/AudioEngine/models/CrustDspParamNames.ts',
+        constName: 'CRUST_DSP_PARAM_NAMES',
+    },
     bacteria: { kind: 'table', source: `${SERVICES}/bacteriaProcessor.ts`, constName: 'PARAM_MAP' },
     grinder: { kind: 'table', source: `${SERVICES}/grinderProcessor.ts`, constName: 'PARAM_MAP' },
     proof: { kind: 'identity' },
@@ -428,22 +445,43 @@ function readParamFunctionBodies(source: string): string[] {
 }
 
 /**
- * Every string literal in match-arm position, including `"a" | "b" => …` chains.
+ * Every wire name in match-arm position, including `"a" | "b" => …` chains.
  *
- * Whitespace is collapsed first so an arm list broken across lines reads the
- * same as one written on a single line.
+ * An arm element may be a string literal or an all-caps const the
+ * shared-constants campaign substituted for one (`MIX =>`); the const resolves
+ * through `readRustConstReferences`, and one that names no literal `&str` is
+ * skipped rather than guessed at. Whitespace is collapsed first so an arm list
+ * broken across lines reads the same as one written on a single line.
  */
-function readMatchArmNames(body: string): string[] {
+function readMatchArmNames(body: string, references: RustConstReferences): string[] {
     const flattened = body.replaceAll(/\s+/g, ' ');
-    const arm = /"([\w-]+)"(?=(?: \| "[\w-]+")* =>)/g;
-    return [...flattened.matchAll(arm)].map((match) => match[1]!);
+    // One arm element: a string literal, or an all-caps const. All-caps only,
+    // so a `_ =>` wildcard, an enum variant (`None =>`), and a local binding
+    // can never pose as a wire name.
+    const element = String.raw`(?:"([\w-]+)"|([A-Z][A-Z0-9_]*))`;
+    const arm = new RegExp(String.raw`${element}(?=(?: \| (?:"[\w-]+"|[A-Z][A-Z0-9_]*))* =>)`, 'g');
+    const names: string[] = [];
+    for (const match of flattened.matchAll(arm)) {
+        const literal = match[1];
+        if (literal !== undefined) {
+            names.push(literal);
+            continue;
+        }
+        const identifier = match[2];
+        const resolved = identifier === undefined ? null : references.wireName(identifier);
+        if (resolved !== null) {
+            names.push(resolved);
+        }
+    }
+    return names;
 }
 
 function readArmsFromFiles(files: readonly string[]): ReadonlySet<string> {
     const names = new Set<string>();
     for (const file of files) {
+        const references = readRustConstReferences(file);
         for (const body of readParamFunctionBodies(stripComments(readFileSync(file, 'utf8')))) {
-            for (const name of readMatchArmNames(body)) {
+            for (const name of readMatchArmNames(body, references)) {
                 names.add(name);
             }
         }
@@ -485,13 +523,16 @@ function resolveEngineFiles(deviceType: NativeDspDeviceType): {
 /**
  * Wire value → engine id, read out of the selector's dispatch.
  *
- * The digit on the left of the arrow is what distinguishes the dispatch from
- * every other `match` over the same enum: `process` and `get_latency` bind a
- * variant on the *left* of `=>`, this one names one on the right. The digit is
- * the whole of it — the pattern used to require a payload parenthesis too, and
- * the variants a wire value selects no longer carry one, because the engines
- * moved out of the enum so that selecting one stops allocating on the render
- * thread.
+ * The wire value on the left of the arrow is what distinguishes the dispatch
+ * from every other `match` over the same enum: `process` and `get_latency`
+ * bind a variant on the *left* of `=>`, this one names one on the right. The
+ * value arrives as a digit or — since the shared-constants campaign named the
+ * wire ids — as the const holding one (`ALGORITHM_FDN8 =>`), resolved through
+ * `readRustConstReferences`; a const that names no literal number is skipped
+ * rather than guessed at. The pattern used to require a payload parenthesis
+ * too, and the variants a wire value selects no longer carry one, because the
+ * engines moved out of the enum so that selecting one stops allocating on the
+ * render thread.
  */
 function readSelectorWireValues(deviceType: NativeDspDeviceType): ReadonlyMap<number, string> {
     const config = ENGINE_SOURCES[deviceType];
@@ -499,7 +540,8 @@ function readSelectorWireValues(deviceType: NativeDspDeviceType): ReadonlyMap<nu
         return new Map();
     }
     const source = readSource(config.selector.source).replaceAll(/\s+/g, ' ');
-    const dispatch = new RegExp(String.raw`(\d+) => ${config.selector.enumName}::(\w+)\b`, 'g');
+    const dispatch = new RegExp(String.raw`(\d+|[A-Z][A-Z0-9_]*) => ${config.selector.enumName}::(\w+)\b`, 'g');
+    const references = readRustConstReferences(absolute(config.selector.source));
     const byVariant = new Map<string, string>();
     for (const alternative of config.alternatives) {
         for (const variant of alternative.variants) {
@@ -510,8 +552,12 @@ function readSelectorWireValues(deviceType: NativeDspDeviceType): ReadonlyMap<nu
     const wire = new Map<number, string>();
     for (const match of source.matchAll(dispatch)) {
         const engineId = byVariant.get(match[2]!);
-        if (engineId !== undefined) {
-            wire.set(Number(match[1]!), engineId);
+        if (engineId === undefined) {
+            continue;
+        }
+        const value = /^\d+$/.test(match[1]!) ? Number(match[1]!) : references.number(match[1]!);
+        if (value !== null) {
+            wire.set(value, engineId);
         }
     }
     return wire;

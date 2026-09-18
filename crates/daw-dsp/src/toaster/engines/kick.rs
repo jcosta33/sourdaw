@@ -3,6 +3,7 @@
 //! Sine oscillator with exponential pitch envelope, filtered noise click,
 //! tanh drive saturation, and one-pole lowpass tone shaping.
 
+use crate::params::{DECAY, DRIVE, TONE, TUNE};
 use std::f32::consts::TAU;
 
 const DEFAULT_BASE_FREQ: f32 = 50.0;
@@ -143,11 +144,11 @@ impl KickEngine {
             "base_freq" => self.base_freq = value.clamp(30.0, 200.0),
             "pitch_amount" => self.pitch_amount = value.clamp(0.0, 1.0),
             "pitch_decay" => self.pitch_decay = value.clamp(0.01, 0.2),
-            "amp_decay" | "decay" => self.amp_decay = 0.05 + value.clamp(0.0, 1.0) * 0.75,
+            "amp_decay" | DECAY => self.amp_decay = 0.05 + value.clamp(0.0, 1.0) * 0.75,
             "click_level" => self.click_level = value.clamp(0.0, 1.0),
-            "drive" => self.drive = value.clamp(0.0, 10.0),
-            "tone" => self.tone_cutoff = value.clamp(0.01, 1.0),
-            "tune" => self.tune_ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0),
+            DRIVE => self.drive = value.clamp(0.0, 10.0),
+            TONE => self.tone_cutoff = value.clamp(0.01, 1.0),
+            TUNE => self.tune_ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0),
             _ => {}
         }
     }

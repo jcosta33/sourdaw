@@ -4,6 +4,7 @@ import { createHandler } from '#/utils/createHandler';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { clampTrackGain } from '../../useCases/setTrackGainPan/clampTrackGain';
 import { setTrackGain } from '../../useCases/setTrackGainPan/setTrackGain';
+import { sessionEntryAgreesOnAutomationRecordingPolicy } from '../automationRecordingPolicy';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 
 /**
@@ -33,15 +34,24 @@ export const handleSetTrackGain = createHandler<'setTrackGain'>({
         const currentGain = getPlannedTrackState(context, action.payload.trackId)?.gain;
         return currentGain === action.payload.expectedGain;
     },
-    prepareAbort: () => captureAutomationRecordingRollback(),
+    // A suppressed edit cannot reach the recording maps, so snapshotting and
+    // restoring them on abort would only be able to discard a pass some other
+    // writer legitimately owns.
+    prepareAbort: (action) =>
+        action.payload.automationRecordingPolicy === 'suppressed'
+            ? () => undefined
+            : captureAutomationRecordingRollback(),
     execute: (action) => {
         const currentGain = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.gain;
         if (currentGain !== action.payload.expectedGain) {
             return { status: 'conflict' };
         }
-        setTrackGain(action.payload.trackId, action.payload.gain);
+        setTrackGain(action.payload.trackId, action.payload.gain, false, {
+            automationRecordingPolicy: action.payload.automationRecordingPolicy,
+        });
         return { status: 'written' };
     },
+    validateSessionEntry: sessionEntryAgreesOnAutomationRecordingPolicy,
     isNoop: (action) => {
         const currentGain = getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.gain;
         return currentGain === action.payload.expectedGain && currentGain === writtenGain(action);
@@ -59,6 +69,9 @@ export const handleSetTrackGain = createHandler<'setTrackGain'>({
         // and conflicts. Predicting from the writer on both legs closes that
         // rather than reasoning about how narrow the window is.
         const restored = clampTrackGain(previousGain);
+        // Both replay legs inherit the forward policy: undoing or redoing a
+        // static edit is still not a fader ride.
+        const automationRecordingPolicy = alpha.payload.automationRecordingPolicy;
         return {
             label: 'Set track gain',
             inverseAction: {
@@ -67,6 +80,7 @@ export const handleSetTrackGain = createHandler<'setTrackGain'>({
                     trackId: alpha.payload.trackId,
                     gain: restored,
                     expectedGain: written,
+                    ...(automationRecordingPolicy === undefined ? {} : { automationRecordingPolicy }),
                 },
             },
             redoAction: {
@@ -75,6 +89,7 @@ export const handleSetTrackGain = createHandler<'setTrackGain'>({
                     trackId: alpha.payload.trackId,
                     gain: written,
                     expectedGain: restored,
+                    ...(automationRecordingPolicy === undefined ? {} : { automationRecordingPolicy }),
                 },
             },
         };

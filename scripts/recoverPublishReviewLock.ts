@@ -4,9 +4,10 @@ import { join } from 'node:path';
 
 import {
     REVIEWER_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
+    authenticateOrchestrator,
     assertRequiredRepository,
     authenticateRole,
-    isReviewerBotNodeId,
     resolvePrimaryRoot,
     spawnCapture,
     type GhSession,
@@ -15,6 +16,8 @@ import { fail } from './prContract.ts';
 import { reviewBundlePath } from './prepareReview.ts';
 import {
     parseReviewDocument,
+    parseAcceptanceDocument,
+    renderReviewDocumentBody,
     reviewPublicationPayload,
     reviewPublicationPayloadDigest,
     type PublishReviewAuthentication,
@@ -71,6 +74,7 @@ type PersistedRecoveryReceipt = {
 export type RecoverPublishReviewDependencies = {
     primaryRoot: () => string;
     authenticateReviewer: (primaryRoot: string) => Promise<PublishReviewAuthentication>;
+    authenticateOrchestrator?: () => Promise<PublishReviewAuthentication>;
     repositoryName: (session: GhSession, primaryRoot: string) => string;
     inspect: (
         number: number,
@@ -108,6 +112,7 @@ function defaultRecoverPublishReviewDependencies(): RecoverPublishReviewDependen
     return {
         primaryRoot: () => resolvePrimaryRoot(),
         authenticateReviewer: (primaryRoot) => authenticateRole({ primaryRoot, role: 'reviewer' }),
+        authenticateOrchestrator,
         repositoryName: (session, primaryRoot) =>
             spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
                 env: session.env,
@@ -330,11 +335,20 @@ async function reconcileRecoveredOwner(
     attestation: AttestedRecoveryOwner,
     dependencies: RecoverPublishReviewDependencies
 ): Promise<number> {
-    const auth = await dependencies.authenticateReviewer(primaryRoot);
+    if (
+        attestation.expectedActorNodeId !== REVIEWER_BOT_NODE_ID &&
+        attestation.expectedActorNodeId !== ORCHESTRATOR_USER_NODE_ID
+    ) {
+        fail('review-publication recovery retained an unknown actor');
+    }
+    const auth =
+        attestation.expectedActorNodeId === ORCHESTRATOR_USER_NODE_ID
+            ? await (
+                  dependencies.authenticateOrchestrator ??
+                  fail('orchestrator authentication is required for acceptance recovery')
+              )()
+            : await dependencies.authenticateReviewer(primaryRoot);
     try {
-        if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
-            fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
-        }
         if (auth.minted.actorNodeId !== attestation.expectedActorNodeId) {
             fail('review-publication recovery retained reviewer actor does not match the authenticated reviewer');
         }
@@ -348,7 +362,7 @@ async function reconcileRecoveredOwner(
             auth.session,
             primaryRoot
         );
-        assertNoUnauthorizedLandedEvidence(first, document, attestation.expectedHead);
+        assertNoUnauthorizedLandedEvidence(first, document, attestation.expectedHead, attestation.expectedActorNodeId);
         assertSingleExactLandedReview(first, document, attestation.expectedHead, attestation.expectedActorNodeId);
         const adoptedOwner = adoptedRecoveryOwner(number, ownerOid, attestation, expectedDigest, dependencies);
         const adoptedOid = replacePullRequestMutationLockOwner(primaryRoot, number, ownerOid, adoptedOwner);
@@ -383,7 +397,11 @@ function readRecoveryBundleDocument(
     attestation: AttestedRecoveryOwner
 ): ReviewDocument {
     const bundle = reviewBundlePath(primaryRoot, number, attestation.expectedHead);
-    const document = parseReviewDocument(JSON.parse(readFileSync(join(bundle, 'review.json'), 'utf8')) as unknown);
+    const isAcceptance = attestation.expectedActorNodeId === ORCHESTRATOR_USER_NODE_ID;
+    const parsed = JSON.parse(
+        readFileSync(join(bundle, isAcceptance ? 'acceptance.json' : 'review.json'), 'utf8')
+    ) as unknown;
+    const document = isAcceptance ? parseAcceptanceDocument(parsed) : parseReviewDocument(parsed);
     assertReviewCommentLinesInBundleDiff(document.comments, readFileSync(join(bundle, 'diff.patch'), 'utf8'));
     if (
         attestation.legacyIncident !== undefined &&
@@ -391,7 +409,7 @@ function readRecoveryBundleDocument(
     ) {
         fail('legacy review-publication recovery bundle does not match the trusted incident receipt');
     }
-    return document;
+    return { ...document, body: renderReviewDocumentBody(document) };
 }
 
 function requireMatchingRecoveryDigest(
@@ -424,14 +442,36 @@ function requireMatchingRecoveryDigest(
     return expectedDigest;
 }
 
+/**
+ * The other sanctioned publication identity for a recovery: recovering the orchestrator's
+ * acceptance treats a landed reviewer approval as authorized, and recovering the reviewer's
+ * approval treats a landed orchestrator acceptance as authorized. The reviewer's approval and the
+ * orchestrator's acceptance are independently written prose that can be byte-identical at one
+ * head, and compact-v1 carries no evidence footer to disambiguate them — that overlap alone is
+ * expected, not evidence of an unauthorized third party.
+ */
+function sanctionedOtherPublicationActorNodeId(expectedActorNodeId: string): string {
+    if (expectedActorNodeId === ORCHESTRATOR_USER_NODE_ID) {
+        return REVIEWER_BOT_NODE_ID;
+    }
+    if (expectedActorNodeId !== REVIEWER_BOT_NODE_ID) {
+        fail(`review-publication recovery attested an unexpected actor: ${expectedActorNodeId}`);
+    }
+    return ORCHESTRATOR_USER_NODE_ID;
+}
+
 function assertNoUnauthorizedLandedEvidence(
     inspection: RecoveryInspection,
     document: ReviewDocument,
-    expectedHead: string
+    expectedHead: string,
+    expectedActorNodeId: string
 ): void {
+    const sanctionedOtherActorNodeId = sanctionedOtherPublicationActorNodeId(expectedActorNodeId);
     if (
-        (inspection.otherActorReviews ?? []).some((review) =>
-            exactPublishedReview(review, document, expectedHead, review.actorNodeId)
+        (inspection.otherActorReviews ?? []).some(
+            (review) =>
+                review.actorNodeId !== sanctionedOtherActorNodeId &&
+                exactPublishedReview(review, document, expectedHead, review.actorNodeId)
         )
     ) {
         fail('review-publication recovery found unauthorized landed review evidence');
@@ -513,7 +553,7 @@ function releaseAdoptedOwnerWithRecoveryReceipt(
         session,
         primaryRoot
     );
-    assertNoUnauthorizedLandedEvidence(second, document, attestation.expectedHead);
+    assertNoUnauthorizedLandedEvidence(second, document, attestation.expectedHead, attestation.expectedActorNodeId);
     assertReconciliationStable(first, second, document, attestation.expectedHead, attestation.expectedActorNodeId);
     const outcome = second.reviews.length === 1 ? 'landed' : 'absent';
     const absentReleaseIsAttested =

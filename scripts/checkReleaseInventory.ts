@@ -1053,7 +1053,6 @@ export function assertGrandBouleRustWasmBoundary(root: string): void {
 }
 
 export const GRAND_BOULE_RUST_SOURCE_ADMISSION = {
-    'attack_sampler.rs': 'owner-admitted project implementation',
     'coupled_strings.rs':
         'owner-admitted aftersound implementation retaining Weinreich inputs BRIDGE_COUPLING_GAIN=30 and HORIZONTAL_MIX=0.7',
     'duplex.rs': 'owner-admitted implementation using standard duplex-string acoustics',

@@ -1,5 +1,6 @@
 import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { type ClipAutomationLaneSnapshot } from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { readClipScopedAutomationLanes } from './readClipScopedAutomationLanes';
 
@@ -36,7 +37,7 @@ export function clipAutomationLaneTransitionMatchesStore(
     replacementLanes: readonly ClipAutomationLaneSnapshot[]
 ): boolean {
     const liveScopedLanes = readClipScopedAutomationLanes(affectedClipIds);
-    if (JSON.stringify(sortById(liveScopedLanes)) !== JSON.stringify(sortById(expectedLanes))) {
+    if (!valuesEqual(sortById(liveScopedLanes), sortById(expectedLanes))) {
         return false;
     }
 

@@ -155,6 +155,49 @@ fn an_octave_above_the_root_reads_the_sample_at_double_rate() {
     assert_proportional_to(&left, &every_other, "left channel one octave up");
 }
 
+/// The passband side of the beta trade, at the ratios that reach the wider
+/// tiers: 4x runs the beta-7 kernel (65 taps, transition budget 8.1) and 8x
+/// the beta-5 kernel (97 taps, budget 6.1). The `kaiser_beta` doc claims
+/// beta 7 "holds that passband" — a read landing on a whole source frame
+/// returns that frame — so its row is held to the octave test's own bound.
+/// Beta 5's passband is deliberately unclaimed there; its row still pins the
+/// wide kernel to a thousandth (measured worst departure 3.5e-4).
+///
+/// The kernel grows with the ratio, so the first output frames read through
+/// the lower mirror rather than the source directly; those are skipped, the
+/// way `tune_of_minus_twelve` compares a documented subset.
+#[test]
+fn wider_ratio_kernels_keep_whole_frame_reads_accurate() {
+    for (note, stride, radius, bound) in [(84u8, 4usize, 32usize, 1.0e-4_f32), (96, 8, 48, 1.0e-3)]
+    {
+        let pcm = fixture_pcm((stride + 1) * BLOCK);
+        let mut instance = instance_with_fixture(&pcm);
+
+        instance.note_on(note, 100);
+
+        let left = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
+
+        // Output frame i reads source frame i*stride exactly; from
+        // radius/stride on, the whole kernel is inside the sample.
+        let from = radius / stride;
+        let expected: Vec<f32> = (from..BLOCK).map(|i| pcm[i * stride]).collect();
+        let rendered = &left[from..];
+        let scale = scale_factor(rendered, &expected);
+        assert!(
+            scale > 0.05,
+            "whole-frame reads at {stride}x do not track this source (scale {scale})"
+        );
+        for (frame, (out, src)) in rendered.iter().zip(expected.iter()).enumerate() {
+            let expected = src * scale;
+            assert!(
+                (out - expected).abs() < bound,
+                "whole-frame reads at {stride}x: frame {frame} was {out}, expected \
+                 {expected} (source {src} × {scale}, bound {bound})"
+            );
+        }
+    }
+}
+
 /// The `tune` parameter shipped write-only. `set_param` stored it in
 /// `CrumbsEngine::tune_cents` and nothing ever read that field back: pitch is
 /// computed in `CrumbsVoice::trigger` from the *voice's* own `tune_cents`, and

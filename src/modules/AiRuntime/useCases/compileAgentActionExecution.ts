@@ -45,6 +45,7 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
         return {
             ...proposed,
             agentApproval,
+            allowApproval: null,
             interactionMode: mode,
             requiresConfirmation: false as const,
         };
@@ -54,6 +55,7 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
         return {
             ...proposed,
             agentApproval,
+            allowApproval: null,
             interactionMode: mode,
             requiresConfirmation: true as const,
         };
@@ -101,10 +103,15 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
         protectedTargetIds: envelope.scope.protectedTargetIds,
         runId: envelope.runId,
     });
+    // `agentApproval` keeps its confirmation-flow shape (null without a pending
+    // proposal); the compiled allow-path approval is exposed separately through
+    // `allowApproval` so only the immediate dispatch sites re-bind it with an
+    // observer-capable approval binding, replacing the compile-minted one.
     return {
         commandBatch,
         commandEnvelopes: proposed.commandEnvelopes,
         agentApproval: null,
+        allowApproval: agentApproval,
         interactionMode: mode,
         requiresConfirmation: false as const,
     };

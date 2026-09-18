@@ -675,6 +675,7 @@ describe('the live automation writer', () => {
             timeSigDenom: 4,
             masterPeak: 0,
             stripPeaks: {},
+            tunerTelemetry: {},
         });
         await flush();
 

@@ -65,14 +65,26 @@ type TestWorkspaceState = {
     soloMode: 'sip' | 'pfl';
 };
 
+type TestMidiNote = { id: string };
+
+type TestMidiState = {
+    notesByClipId: Record<string, TestMidiNote[]>;
+};
+
+type TestToasterPatternOutsideArrangement = { trackId: string; trackName: string; deviceName: string };
+
 type ExportDialogMocks = {
     audioContext: BaseAudioContext | null;
     encodeWav: ReturnType<typeof vi.fn>;
     getAudioContext: ReturnType<typeof vi.fn<() => BaseAudioContext | null>>;
     getAutoDetectedTailSeconds: ReturnType<typeof vi.fn>;
     isExportActive: ReturnType<typeof vi.fn<() => boolean>>;
+    listToasterPatternsOutsideArrangement: ReturnType<
+        typeof vi.fn<(input: unknown) => TestToasterPatternOutsideArrangement[]>
+    >;
     loggerError: ReturnType<typeof vi.fn>;
     loggerWarn: ReturnType<typeof vi.fn>;
+    midiStore: TestStore<TestMidiState>;
     notifyUser: ReturnType<typeof vi.fn>;
     renderOffline: ReturnType<typeof vi.fn>;
     restoreCachedAudioBuffersFromIdb: ReturnType<typeof vi.fn<() => Promise<number>>>;
@@ -104,6 +116,7 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
     };
     const automationStore: TestStore<TestAutomationState> = { value: { lanes: [] } };
     const workspaceStore: TestStore<TestWorkspaceState> = { value: { soloMode: 'sip' } };
+    const midiStore: TestStore<TestMidiState> = { value: { notesByClipId: {} } };
 
     return {
         audioContext: null,
@@ -111,8 +124,12 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         getAudioContext: vi.fn<() => BaseAudioContext | null>(() => null),
         getAutoDetectedTailSeconds: vi.fn(() => ({ seconds: 2, uncappedSeconds: 2, clamped: false })),
         isExportActive: vi.fn(() => false),
+        listToasterPatternsOutsideArrangement: vi.fn<(input: unknown) => TestToasterPatternOutsideArrangement[]>(
+            () => []
+        ),
         loggerError: vi.fn(),
         loggerWarn: vi.fn(),
+        midiStore,
         notifyUser: vi.fn(),
         renderOffline: vi.fn(),
         restoreCachedAudioBuffersFromIdb: vi.fn<() => Promise<number>>(),
@@ -172,6 +189,34 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     adjustmentLayerStore: { value: null },
 }));
 
+vi.mock('#/modules/MIDI/stores', () => ({
+    defaultMidiStoreState: { notesByClipId: {} },
+    midiStore: mocks.midiStore,
+    // Not exercised by this spec — stubbed only because this spec's module graph
+    // reaches these transitively (through unrelated use cases that share the
+    // barrel), same reasoning as the Arrangement/stores stubs above.
+    isValidMidiProbabilitySeed: vi.fn(),
+    chordTrackStore: { value: null },
+    grooveTemplateStore: { value: null },
+}));
+
+// Fully mocked (not spread from importOriginal): the real barrel reaches
+// toasterSubscriber → AudioEngine/useCases (already exhaustively mocked
+// above), so loading it for real here would require widening that mock too.
+vi.mock('#/modules/Toaster/useCases', () => ({
+    compileToasterTrackStackActions: vi.fn(),
+    getDefaultPadNames: vi.fn(),
+    getToasterPresetDeviceState: vi.fn(),
+    prepareOfflineToaster: vi.fn(),
+    projectToasterKitToNativePatch: vi.fn(),
+    setToasterEventBus: vi.fn(),
+    initToasterSubscribers: vi.fn(),
+    initToasterKitPersistence: vi.fn(),
+    getToasterPresets: vi.fn(),
+    setToasterGrooveAssignmentExecutor: vi.fn(),
+    listToasterPatternsOutsideArrangement: mocks.listToasterPatternsOutsideArrangement,
+}));
+
 vi.mock('#/modules/Automation/stores', () => ({
     automationStore: mocks.automationStore,
     // Not exercised by this spec — stubbed for the same reason as above.
@@ -187,8 +232,13 @@ vi.mock('#/modules/WorkspaceShell/stores', () => ({
 // AudioEngine key in this factory is an unread graph-coverage stub (`vi.fn()`
 // and `audioEngine: {}`).
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
+
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    projectsToDifferentNativeBank: vi.fn(() => false),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     discardDecodedAudioFile: vi.fn(),
     cancelExport: vi.fn(),
@@ -217,7 +267,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDeviceChainTailSeconds: vi.fn(),
     getEngineState: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
-    getLiveEngineSampleRate: vi.fn(),
     getRuntimeGraphRevision: vi.fn(),
     getTrackStrip: vi.fn(),
     initializeTrackStripFromSnapshot: vi.fn(),
@@ -245,6 +294,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 
@@ -379,6 +429,8 @@ describe('ExportDialog', () => {
         mocks.writeNativeAudioStemFile.mockResolvedValue(undefined);
         mocks.automationStore.value = { lanes: [] };
         mocks.workspaceStore.value = { soloMode: 'sip' };
+        mocks.midiStore.value = { notesByClipId: {} };
+        mocks.listToasterPatternsOutsideArrangement.mockReturnValue([]);
         setProjectClips([
             createClip({ id: 'clip-1', audioBufferId: 'buffer-1' }),
             createClip({ id: 'clip-2', audioBufferId: 'buffer-2' }),
@@ -704,5 +756,29 @@ describe('ExportDialog', () => {
         expect(screen.getByRole('button', { name: '32-bit' })).toBeInTheDocument();
         const persistedDepths = vi.mocked(saveExportSettings).mock.calls.map((call) => call[0].bitDepth);
         expect(persistedDepths).toEqual([32, 32]);
+    });
+
+    it('renders one advisory per Toaster pattern the selector reports and keeps Start enabled', () => {
+        mocks.listToasterPatternsOutsideArrangement.mockReturnValue([
+            { trackId: 'track-1', trackName: 'Drums', deviceName: 'Toaster' },
+        ]);
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        expect(
+            screen.getByText(
+                'Toaster "Toaster" on "Drums" has a sequencer pattern that is not in the arrangement. Use To timeline on the device to include it in the export.'
+            )
+        ).toBeInTheDocument();
+        // Non-blocking: the advisory never disables Start.
+        expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+    });
+
+    it('renders no advisory when the selector reports no pattern outside the arrangement', () => {
+        mocks.listToasterPatternsOutsideArrangement.mockReturnValue([]);
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        expect(screen.queryByText(/has a sequencer pattern that is not in the arrangement/i)).not.toBeInTheDocument();
     });
 });

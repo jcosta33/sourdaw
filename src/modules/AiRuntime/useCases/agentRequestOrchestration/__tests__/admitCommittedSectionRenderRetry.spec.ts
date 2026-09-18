@@ -120,6 +120,8 @@ function createFixture(): {
         ],
         status: 'failed',
         error: 'Renderer unavailable.',
+        supersedes: null,
+        supersededBy: null,
         followUpProjectRevision: COMMITTED_REVISION,
         followUpStatus: 'retryable',
         createdAt: 1,

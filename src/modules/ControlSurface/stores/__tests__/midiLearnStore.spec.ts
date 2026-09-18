@@ -1,10 +1,75 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
+} from '#/infra/store/storage/createAutomergeStorage';
 
-import { MIDI_LEARN_MAPPINGS_SCHEMA_VERSION, defaultMidiLearnState, sanitizeMidiLearnState } from '../midiLearnStore';
+import {
+    MIDI_LEARN_MAPPINGS_SCHEMA_VERSION,
+    defaultMidiLearnState,
+    midiLearnStore,
+    sanitizeMidiLearnState,
+} from '../midiLearnStore';
+
+const fakeDoc: Record<string, unknown> = {};
 
 describe('sanitizeMidiLearnState (audit A-1 / A-2)', () => {
+    beforeEach(() => {
+        configureAutomergeStoragePort(null);
+        midiLearnStore.set(defaultMidiLearnState);
+        flushAutomergeStorageWrites();
+        for (const key of Object.keys(fakeDoc)) {
+            delete fakeDoc[key];
+        }
+        configureAutomergeStoragePort({
+            getDoc: () => fakeDoc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => changeFn(fakeDoc),
+        });
+    });
+
+    afterEach(() => {
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
+    });
+
+    it('preserves the active local learning target when its mapping commit is projected', () => {
+        const learningTarget = { targetType: 'trackGain' as const, trackId: 'track-1' };
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            midiLearnStore.set({
+                ...defaultMidiLearnState,
+                isLearning: true,
+                learningTarget,
+            });
+        });
+
+        transaction.commit();
+
+        expect(midiLearnStore.value?.isLearning).toBe(true);
+        expect(midiLearnStore.value?.learningTarget).toEqual(learningTarget);
+    });
+
+    it('does not revive a learning target reset by hydration during an open commit', () => {
+        const learningTarget = { targetType: 'trackGain' as const, trackId: 'track-1' };
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            midiLearnStore.set({ ...defaultMidiLearnState, isLearning: true, learningTarget });
+        });
+        fakeDoc.midiLearn = {
+            mappingsSchemaVersion: MIDI_LEARN_MAPPINGS_SCHEMA_VERSION,
+            mappings: [],
+        };
+        midiLearnStore.hydrate();
+        expect(midiLearnStore.value?.isLearning).toBe(false);
+
+        transaction.commit();
+
+        expect(midiLearnStore.value?.isLearning).toBe(false);
+        expect(midiLearnStore.value?.learningTarget).toBeNull();
+    });
     it('resets non-object persisted state to the default (empty) table', () => {
         expect(sanitizeMidiLearnState('corrupt')).toEqual(defaultMidiLearnState);
     });

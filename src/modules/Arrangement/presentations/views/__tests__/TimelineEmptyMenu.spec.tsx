@@ -321,6 +321,7 @@ describe('TimelineEmptyMenu', () => {
         // Capture the file input the handler creates so we can drive its onchange.
         let captured: HTMLInputElement | null = null;
         const realCreate = document.createElement.bind(document);
+        // @ts-expect-error the Electron DOM augmentation adds a ("webview") overload this mock does not implement
         const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
             const el = realCreate(tag);
             if (tag === 'input') {
@@ -357,6 +358,7 @@ describe('TimelineEmptyMenu', () => {
 
         let captured: HTMLInputElement | null = null;
         const realCreate = document.createElement.bind(document);
+        // @ts-expect-error the Electron DOM augmentation adds a ("webview") overload this mock does not implement
         const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
             const el = realCreate(tag);
             if (tag === 'input') {
@@ -383,6 +385,7 @@ describe('TimelineEmptyMenu', () => {
     it('imports a MIDI file via the import handler', async () => {
         let captured: HTMLInputElement | null = null;
         const realCreate = document.createElement.bind(document);
+        // @ts-expect-error the Electron DOM augmentation adds a ("webview") overload this mock does not implement
         const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
             const el = realCreate(tag);
             if (tag === 'input') {
@@ -408,6 +411,7 @@ describe('TimelineEmptyMenu', () => {
     it('does not decode after the project changes while the audio picker is open', async () => {
         let captured: HTMLInputElement | null = null;
         const realCreate = document.createElement.bind(document);
+        // @ts-expect-error the Electron DOM augmentation adds a ("webview") overload this mock does not implement
         const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
             const element = realCreate(tag);
             if (tag === 'input') {
@@ -458,6 +462,7 @@ describe('TimelineEmptyMenu', () => {
         );
         let captured: HTMLInputElement | null = null;
         const realCreate = document.createElement.bind(document);
+        // @ts-expect-error the Electron DOM augmentation adds a ("webview") overload this mock does not implement
         const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
             const element = realCreate(tag);
             if (tag === 'input') {
@@ -496,6 +501,7 @@ describe('TimelineEmptyMenu', () => {
         });
         let captured: HTMLInputElement | null = null;
         const realCreate = document.createElement.bind(document);
+        // @ts-expect-error the Electron DOM augmentation adds a ("webview") overload this mock does not implement
         const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
             const element = realCreate(tag);
             if (tag === 'input') {
@@ -521,6 +527,7 @@ describe('TimelineEmptyMenu', () => {
     it('aborts the audio import when the file dialog is cancelled (no file)', async () => {
         let captured: HTMLInputElement | null = null;
         const realCreate = document.createElement.bind(document);
+        // @ts-expect-error the Electron DOM adds a ("webview") createElement overload this mock does not implement
         const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
             const el = realCreate(tag);
             if (tag === 'input') {
@@ -545,6 +552,7 @@ describe('TimelineEmptyMenu', () => {
     it('aborts the MIDI import when no file is selected', async () => {
         let captured: HTMLInputElement | null = null;
         const realCreate = document.createElement.bind(document);
+        // @ts-expect-error the Electron DOM adds a ("webview") createElement overload this mock does not implement
         const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
             const el = realCreate(tag);
             if (tag === 'input') {
@@ -566,6 +574,7 @@ describe('TimelineEmptyMenu', () => {
     it('does not parse MIDI after the initiating project changes while the picker is open', async () => {
         let captured: HTMLInputElement | null = null;
         const realCreate = document.createElement.bind(document);
+        // @ts-expect-error the Electron DOM adds a ("webview") createElement overload this mock does not implement
         const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
             const element = realCreate(tag);
             if (tag === 'input') {
@@ -617,6 +626,7 @@ describe('TimelineEmptyMenu', () => {
         decodeAudioFileMock.mockRejectedValue(new Error('corrupt'));
         let captured: HTMLInputElement | null = null;
         const realCreate = document.createElement.bind(document);
+        // @ts-expect-error the Electron DOM adds a ("webview") createElement overload this mock does not implement
         const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
             const el = realCreate(tag);
             if (tag === 'input') {
@@ -644,6 +654,7 @@ describe('TimelineEmptyMenu', () => {
 
         let captured: HTMLInputElement | null = null;
         const realCreate = document.createElement.bind(document);
+        // @ts-expect-error the Electron DOM adds a ("webview") createElement overload this mock does not implement
         const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
             const el = realCreate(tag);
             if (tag === 'input') {

@@ -9,6 +9,7 @@ import type { CheckpointArtifactRecord } from '../../../models/CheckpointArtifac
 
 const ownerA = 'project-a';
 const ownerB = 'project-b';
+const alwaysCurrentOptions = { shouldCommit: () => true };
 
 type Repository = Awaited<ReturnType<typeof repositories>>;
 
@@ -48,7 +49,10 @@ async function repositories() {
         import('../helpers'),
     ]);
     return {
-        commitCheckpointCatalog: commitModule.commitCheckpointCatalog,
+        commitCheckpointCatalog: (
+            input: Parameters<typeof commitModule.commitCheckpointCatalog>[0],
+            options: Parameters<typeof commitModule.commitCheckpointCatalog>[1] = alwaysCurrentOptions
+        ) => commitModule.commitCheckpointCatalog(input, options),
         readCheckpointCatalog: readCatalogModule.readCheckpointCatalog,
         readCheckpointArtifact: readArtifactModule.readCheckpointArtifact,
         ...helpers,
@@ -107,6 +111,32 @@ async function createOwner(repository: Repository, ownerProjectId = ownerA) {
         ownerProjectId,
         expectedCatalogRevision: null,
         nextState: nextState(),
+    });
+}
+
+async function revokeAfterOwnerSnapshotRead(repository: Repository, revoke: () => void): Promise<void> {
+    const database = await repository.openDatabase();
+    if (!database) {
+        throw new Error('Expected IndexedDB');
+    }
+    const artifactStore = database
+        .transaction(repository.CHECKPOINT_ARTIFACT_STORE_NAME)
+        .objectStore(repository.CHECKPOINT_ARTIFACT_STORE_NAME);
+    const indexPrototype = Object.getPrototypeOf(
+        artifactStore.index(repository.CHECKPOINT_OWNER_PROJECT_INDEX_NAME)
+    ) as IDBIndex;
+    const originalGetAllKeys = indexPrototype.getAllKeys;
+    let revoked = false;
+    vi.spyOn(indexPrototype, 'getAllKeys').mockImplementation(function (
+        this: IDBIndex,
+        ...args: Parameters<IDBIndex['getAllKeys']>
+    ) {
+        const request = originalGetAllKeys.apply(this, args);
+        if (!revoked && this.objectStore.name === repository.CHECKPOINT_ARTIFACT_STORE_NAME) {
+            revoked = true;
+            request.addEventListener('success', revoke, { once: true });
+        }
+        return request;
     });
 }
 
@@ -188,6 +218,231 @@ describe('checkpoint owner catalog persistence', () => {
         });
         await expect(repository.readCheckpointArtifact('checkpoint-a', ownerA)).resolves.toMatchObject({
             rootBytes: new Uint8Array([1, 2, 3]),
+        });
+    });
+
+    it('does not write when the owner has already revoked catalog publication', async () => {
+        const repository = await repositories();
+        const artifact = checkpoint('superseded-before-open');
+
+        await expect(
+            repository.commitCheckpointCatalog(
+                {
+                    ownerProjectId: ownerA,
+                    expectedCatalogRevision: null,
+                    nextState: nextState([branch('main', artifact.checkpointId)], 'main', artifact.checkpointId),
+                    newArtifact: artifact,
+                },
+                { shouldCommit: () => false }
+            )
+        ).resolves.toEqual({ status: 'superseded' });
+        await expect(repository.readCheckpointCatalog(ownerA)).resolves.toBeNull();
+        await expect(repository.readCheckpointArtifact(artifact.checkpointId, ownerA)).resolves.toBeNull();
+        await expect(
+            readStoredValue(repository, repository.CHECKPOINT_CATALOG_STORE_NAME, artifact.checkpointId)
+        ).resolves.toBeUndefined();
+        await expect(
+            readStoredValue(repository, repository.CHECKPOINT_OWNER_CATALOG_STORE_NAME, ownerA)
+        ).resolves.toBeUndefined();
+    });
+
+    it('propagates an entry admission error without writing', async () => {
+        const repository = await repositories();
+        const artifact = checkpoint('entry-predicate-error');
+        const failure = new Error('entry owner predicate failed');
+
+        await expect(
+            repository.commitCheckpointCatalog(
+                {
+                    ownerProjectId: ownerA,
+                    expectedCatalogRevision: null,
+                    nextState: nextState([branch('main', artifact.checkpointId)], 'main', artifact.checkpointId),
+                    newArtifact: artifact,
+                },
+                {
+                    shouldCommit: () => {
+                        throw failure;
+                    },
+                }
+            )
+        ).rejects.toBe(failure);
+        await expect(repository.readCheckpointCatalog(ownerA)).resolves.toBeNull();
+        await expect(repository.readCheckpointArtifact(artifact.checkpointId, ownerA)).resolves.toBeNull();
+    });
+
+    it('aborts artifact publication when ownership is revoked by the owner snapshot request success', async () => {
+        const repository = await repositories();
+        const initialArtifact = checkpoint('initial');
+        const initial = await repository.commitCheckpointCatalog({
+            ownerProjectId: ownerA,
+            expectedCatalogRevision: null,
+            nextState: nextState([branch('main', initialArtifact.checkpointId)], 'main', initialArtifact.checkpointId),
+            newArtifact: initialArtifact,
+        });
+        if (initial.status !== 'committed') {
+            throw new Error('Expected initial commit');
+        }
+        const beforeCatalog = await repository.readCheckpointCatalog(ownerA);
+        const beforeOwnerState = await readStoredValue(
+            repository,
+            repository.CHECKPOINT_OWNER_CATALOG_STORE_NAME,
+            ownerA
+        );
+        const artifact = checkpoint('superseded-after-snapshot');
+        let isCurrent = true;
+        await revokeAfterOwnerSnapshotRead(repository, () => {
+            isCurrent = false;
+        });
+
+        await expect(
+            repository.commitCheckpointCatalog(
+                {
+                    ownerProjectId: ownerA,
+                    expectedCatalogRevision: initial.catalogRevision,
+                    nextState: nextState([branch('main', artifact.checkpointId)], 'main', artifact.checkpointId),
+                    newArtifact: artifact,
+                },
+                { shouldCommit: () => isCurrent }
+            )
+        ).resolves.toEqual({ status: 'superseded' });
+        await expect(repository.readCheckpointCatalog(ownerA)).resolves.toEqual(beforeCatalog);
+        await expect(
+            readStoredValue(repository, repository.CHECKPOINT_OWNER_CATALOG_STORE_NAME, ownerA)
+        ).resolves.toEqual(beforeOwnerState);
+        await expect(repository.readCheckpointArtifact(artifact.checkpointId, ownerA)).resolves.toBeNull();
+        await expect(
+            readStoredValue(repository, repository.CHECKPOINT_CATALOG_STORE_NAME, artifact.checkpointId)
+        ).resolves.toBeUndefined();
+    });
+
+    it('aborts metadata-only publication when ownership is revoked by the owner snapshot request success', async () => {
+        const repository = await repositories();
+        const initialArtifact = checkpoint('initial');
+        const initial = await repository.commitCheckpointCatalog({
+            ownerProjectId: ownerA,
+            expectedCatalogRevision: null,
+            nextState: nextState([branch('main', initialArtifact.checkpointId)], 'main', initialArtifact.checkpointId),
+            newArtifact: initialArtifact,
+        });
+        if (initial.status !== 'committed') {
+            throw new Error('Expected initial commit');
+        }
+        const beforeCatalog = await repository.readCheckpointCatalog(ownerA);
+        const beforeOwnerState = await readStoredValue(
+            repository,
+            repository.CHECKPOINT_OWNER_CATALOG_STORE_NAME,
+            ownerA
+        );
+        let isCurrent = true;
+        await revokeAfterOwnerSnapshotRead(repository, () => {
+            isCurrent = false;
+        });
+
+        await expect(
+            repository.commitCheckpointCatalog(
+                {
+                    ownerProjectId: ownerA,
+                    expectedCatalogRevision: initial.catalogRevision,
+                    nextState: nextState(
+                        [branch('main', initialArtifact.checkpointId, 'Renamed main')],
+                        'main',
+                        initialArtifact.checkpointId
+                    ),
+                },
+                { shouldCommit: () => isCurrent }
+            )
+        ).resolves.toEqual({ status: 'superseded' });
+        await expect(repository.readCheckpointCatalog(ownerA)).resolves.toEqual(beforeCatalog);
+        await expect(
+            readStoredValue(repository, repository.CHECKPOINT_OWNER_CATALOG_STORE_NAME, ownerA)
+        ).resolves.toEqual(beforeOwnerState);
+        await expect(
+            readStoredValue(repository, repository.CHECKPOINT_CATALOG_STORE_NAME, initialArtifact.checkpointId)
+        ).resolves.toEqual(beforeCatalog?.checkpoints[0]);
+    });
+
+    it('settles and preserves callback errors raised after the owner snapshot read', async () => {
+        const repository = await repositories();
+        const artifact = checkpoint('predicate-error');
+        const failure = new Error('owner predicate failed');
+        let predicateCalls = 0;
+
+        await expect(
+            repository.commitCheckpointCatalog(
+                {
+                    ownerProjectId: ownerA,
+                    expectedCatalogRevision: null,
+                    nextState: nextState([branch('main', artifact.checkpointId)], 'main', artifact.checkpointId),
+                    newArtifact: artifact,
+                },
+                {
+                    shouldCommit: () => {
+                        predicateCalls += 1;
+                        if (predicateCalls === 2) {
+                            throw failure;
+                        }
+                        return true;
+                    },
+                }
+            )
+        ).rejects.toBe(failure);
+        await expect(repository.readCheckpointCatalog(ownerA)).resolves.toBeNull();
+        await expect(repository.readCheckpointArtifact(artifact.checkpointId, ownerA)).resolves.toBeNull();
+        await expect(
+            readStoredValue(repository, repository.CHECKPOINT_CATALOG_STORE_NAME, artifact.checkpointId)
+        ).resolves.toBeUndefined();
+    });
+
+    it('commits once artifact publication has begun even when the owner is later revoked', async () => {
+        const repository = await repositories();
+        const artifact = checkpoint('committed-after-artifact-write');
+        const database = await repository.openDatabase();
+        if (!database) {
+            throw new Error('Expected IndexedDB');
+        }
+        const objectStorePrototype = Object.getPrototypeOf(
+            database
+                .transaction(repository.CHECKPOINT_ARTIFACT_STORE_NAME)
+                .objectStore(repository.CHECKPOINT_ARTIFACT_STORE_NAME)
+        ) as IDBObjectStore;
+        const originalAdd = objectStorePrototype.add;
+        let isCurrent = true;
+        vi.spyOn(objectStorePrototype, 'add').mockImplementation(function (
+            this: IDBObjectStore,
+            ...args: Parameters<IDBObjectStore['add']>
+        ) {
+            const request = originalAdd.apply(this, args);
+            if (this.name === repository.CHECKPOINT_ARTIFACT_STORE_NAME) {
+                request.addEventListener(
+                    'success',
+                    () => {
+                        isCurrent = false;
+                    },
+                    { once: true }
+                );
+            }
+            return request;
+        });
+
+        await expect(
+            repository.commitCheckpointCatalog(
+                {
+                    ownerProjectId: ownerA,
+                    expectedCatalogRevision: null,
+                    nextState: nextState([branch('main', artifact.checkpointId)], 'main', artifact.checkpointId),
+                    newArtifact: artifact,
+                },
+                { shouldCommit: () => isCurrent }
+            )
+        ).resolves.toEqual({ status: 'committed', catalogRevision: expect.any(String) });
+        vi.resetModules();
+        const reopened = await repositories();
+        await expect(reopened.readCheckpointCatalog(ownerA)).resolves.toMatchObject({
+            currentCheckpointId: artifact.checkpointId,
+            checkpoints: [{ checkpointId: artifact.checkpointId }],
+        });
+        await expect(reopened.readCheckpointArtifact(artifact.checkpointId, ownerA)).resolves.toMatchObject({
+            checkpointId: artifact.checkpointId,
         });
     });
 

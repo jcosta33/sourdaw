@@ -1,9 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
-import { AiTaskResultCard } from '../AiTaskResultCard';
-
-const { onRemoveMock } = vi.hoisted(() => ({ onRemoveMock: vi.fn() }));
+import { type CommittedClipActions, AiTaskResultCard } from '../AiTaskResultCard';
 
 function task(overrides: Record<string, unknown> = {}) {
     return {
@@ -15,9 +13,18 @@ function task(overrides: Record<string, unknown> = {}) {
     } as Parameters<typeof AiTaskResultCard>[0]['task'];
 }
 
+function clipActions(overrides: Partial<CommittedClipActions> = {}): CommittedClipActions {
+    return {
+        isPreviewing: false,
+        togglePreview: vi.fn(),
+        select: vi.fn(),
+        ...overrides,
+    };
+}
+
 describe('AiTaskResultCard', () => {
     it('should render task type and remove on click', () => {
-        onRemoveMock.mockClear();
+        const onRemoveMock = vi.fn();
         render(<AiTaskResultCard task={task({ prompt: 'Make a beat' })} onRemove={onRemoveMock} />);
         expect(screen.getByText(/denoise/i)).toBeInTheDocument();
         expect(screen.getByText(/Make a beat/)).toBeInTheDocument();
@@ -64,14 +71,69 @@ describe('AiTaskResultCard — status branches', () => {
     it('shows duration in seconds when status is success and durationMs is set', () => {
         render(<AiTaskResultCard task={task({ status: 'success', durationMs: 3500 })} onRemove={vi.fn()} />);
         expect(screen.getByText('3.5s')).toBeTruthy();
-        expect(screen.getByRole('button', { name: 'Preview task result' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Add task result to arrangement' })).toBeInTheDocument();
     });
 
     it('shows Done when status is success and no durationMs', () => {
         render(<AiTaskResultCard task={task({ status: 'success', durationMs: undefined })} onRemove={vi.fn()} />);
         expect(screen.getByText('Done')).toBeTruthy();
-        expect(screen.getByRole('button', { name: 'Preview task result' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Add task result to arrangement' })).toBeInTheDocument();
+    });
+});
+
+describe('AiTaskResultCard — committed clip actions', () => {
+    it('renders no clip actions when the task carries no actionable clip', () => {
+        render(<AiTaskResultCard task={task({ status: 'success', durationMs: 900 })} onRemove={vi.fn()} />);
+        expect(screen.queryByRole('button', { name: 'Preview task result' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Stop clip preview' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Select generated clip' })).toBeNull();
+    });
+
+    it('offers no Apply affordance for already-committed material', () => {
+        render(
+            <AiTaskResultCard
+                task={task({ status: 'success', durationMs: 900 })}
+                onRemove={vi.fn()}
+                committedClipActions={clipActions()}
+            />
+        );
+        expect(screen.queryByRole('button', { name: 'Add task result to arrangement' })).toBeNull();
+        expect(screen.queryByTitle('Add to arrangement')).toBeNull();
+    });
+
+    it('toggles preview through the supplied action', () => {
+        const actions = clipActions();
+        const { rerender } = render(
+            <AiTaskResultCard
+                task={task({ status: 'success', durationMs: 900 })}
+                onRemove={vi.fn()}
+                committedClipActions={actions}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Preview task result' }));
+        expect(actions.togglePreview).toHaveBeenCalledOnce();
+
+        rerender(
+            <AiTaskResultCard
+                task={task({ status: 'success', durationMs: 900 })}
+                onRemove={vi.fn()}
+                committedClipActions={clipActions({ isPreviewing: true })}
+            />
+        );
+        expect(screen.getByRole('button', { name: 'Stop clip preview' })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Preview task result' })).toBeNull();
+    });
+
+    it('re-selects the committed clip through the supplied action', () => {
+        const actions = clipActions();
+        render(
+            <AiTaskResultCard
+                task={task({ status: 'success', durationMs: 900 })}
+                onRemove={vi.fn()}
+                committedClipActions={actions}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Select generated clip' }));
+        expect(actions.select).toHaveBeenCalledOnce();
     });
 });

@@ -12,7 +12,6 @@ import { duplicateClip } from '../../../useCases/clip/duplicateClip';
 import { removeClip } from '../../../useCases/clip/removeClip';
 import { cutSelectedClip } from '../../../useCases/clipboard/cutSelectedClip';
 import { normalizeClip } from '../../../useCases/clipEditing/normalizeClip';
-import { renameClip } from '../../../useCases/clipEditing/renameClip';
 import { reverseClip } from '../../../useCases/clipEditing/reverseClip';
 import { ClipContextMenu } from '../ClipContextMenu';
 
@@ -143,18 +142,6 @@ vi.mock('../../../useCases/clip/duplicateClip', () => ({
 
 vi.mock('../../../useCases/clipboard/cutSelectedClip', () => ({
     cutSelectedClip: vi.fn(),
-}));
-
-vi.mock('../../../useCases/clipEditing/renameClip', () => ({
-    renameClip: vi.fn(),
-}));
-
-vi.mock('../../../useCases/clipEditing/muteClip', () => ({
-    muteClip: vi.fn(),
-}));
-
-vi.mock('../../../useCases/clipEditing/lockClip', () => ({
-    lockClip: vi.fn(),
 }));
 
 vi.mock('../../../useCases/clipEditing/normalizeClip', () => ({
@@ -621,8 +608,10 @@ describe('ClipContextMenu', () => {
         const changeInput = screen.getByTestId('inline-editor').querySelector('input') as HTMLInputElement;
         fireEvent.change(changeInput, { target: { value: '  Renamed  ' } });
         fireEvent.click(screen.getByText('Submit'));
-        // renameClip fires only when the trimmed name is non-empty.
-        expect(renameClip).toHaveBeenCalledWith('clip1', 'Renamed');
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'renameClip',
+            payload: { clipId: 'clip1', name: 'Renamed' },
+        });
     });
 
     it('does not rename when the submitted name is blank', () => {
@@ -631,7 +620,7 @@ describe('ClipContextMenu', () => {
         const changeInput = screen.getByTestId('inline-editor').querySelector('input') as HTMLInputElement;
         fireEvent.change(changeInput, { target: { value: '   ' } });
         fireEvent.click(screen.getByText('Submit'));
-        expect(renameClip).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'renameClip' }));
         expect(mockOnClose).toHaveBeenCalled();
     });
 
@@ -639,7 +628,7 @@ describe('ClipContextMenu', () => {
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: 'Rename Clip' }));
         fireEvent.click(screen.getByText('Cancel'));
-        expect(renameClip).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'renameClip' }));
     });
 
     it('shows Unmute/Lock toggles and dispatches the inverse state for a muted+locked clip', async () => {
@@ -674,16 +663,38 @@ describe('ClipContextMenu', () => {
             expect(screen.getByRole('button', { name: 'Unmute Clip' })).toBeInTheDocument();
             expect(screen.getByRole('button', { name: 'Unlock Clip' })).toBeInTheDocument();
 
-            const { muteClip } = await import('../../../useCases/clipEditing/muteClip');
-            const { lockClip } = await import('../../../useCases/clipEditing/lockClip');
             fireEvent.click(screen.getByRole('button', { name: 'Unmute Clip' }));
             // isMuted true → toggles to false.
-            expect(muteClip).toHaveBeenCalledWith('clipM', false);
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'muteClip',
+                payload: { clipId: 'clipM', muted: false },
+            });
             fireEvent.click(screen.getByRole('button', { name: 'Unlock Clip' }));
-            expect(lockClip).toHaveBeenCalledWith('clipM', false);
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'lockClip',
+                payload: { clipId: 'clipM', locked: false },
+            });
         } finally {
             trackStore.set(previous);
         }
+    });
+
+    it('dispatches muteClip and lockClip through executeUserAppAction when clicking Mute Clip and Lock Clip on an unmuted and unlocked clip', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+        expect(screen.getByRole('button', { name: 'Mute Clip' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Lock Clip' })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Mute Clip' }));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'muteClip',
+            payload: { clipId: 'clip1', muted: true },
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Lock Clip' }));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'lockClip',
+            payload: { clipId: 'clip1', locked: true },
+        });
     });
 
     it('deletes only the targeted clip when a single clip is selected', () => {
@@ -793,6 +804,126 @@ describe('ClipContextMenu', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Reverse (Retrograde)' }));
 
         expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'retrogradeNotes', payload: { clipId: 'midi1' } });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches quantizeNotes with 1/16 grid through executeUserAppAction and closes the menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Quantize (1/16)' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'quantizeNotes',
+            payload: { clipId: 'midi1', gridSize: 0.25 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches quantizeNotes with 1/8 grid through executeUserAppAction and closes the menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Quantize (1/8)' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'quantizeNotes',
+            payload: { clipId: 'midi1', gridSize: 0.5 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches quantizeNoteLengths through executeUserAppAction and closes the menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Quantize Lengths (1/16)' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'quantizeNoteLengths',
+            payload: { clipId: 'midi1', gridSize: 0.25 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches fitClipToBeats for 1 bar through executeUserAppAction and closes the menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Fit to 1 Bar' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'fitClipToBeats',
+            payload: { clipId: 'clip1', targetBeats: 4 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches fitClipToBeats for 2 bars through executeUserAppAction and closes the menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Fit to 2 Bars' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'fitClipToBeats',
+            payload: { clipId: 'clip1', targetBeats: 8 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches fitClipToBeats for 4 bars through executeUserAppAction and closes the menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Fit to 4 Bars' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'fitClipToBeats',
+            payload: { clipId: 'clip1', targetBeats: 16 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches splitClip through executeUserAppAction and closes menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Split at Cursor' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'splitClip',
+            payload: { clipId: 'clip1', beat: 4 },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches duplicateClipToNextBar through executeUserAppAction and closes menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Duplicate to Next Bar' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'duplicateClipToNextBar',
+            payload: { clipId: 'clip1' },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches setClipColor through executeUserAppAction and closes menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Default color' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setClipColor',
+            payload: { clipId: 'clip1', color: expect.any(String) },
+        });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches stripSilence through executeUserAppAction and closes menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Strip Silence' }));
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'stripSilence',
+            payload: { clipId: 'clip1' },
+        });
         expect(mockOnClose).toHaveBeenCalled();
     });
 });

@@ -2,6 +2,10 @@
  * Synth-private engine owner for realtime built-in synthesizer note scheduling.
  */
 
+import { MAX_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
+import { clampMidiData7, MAX_MIDI_DATA_7BIT, PITCH_BEND_CENTER } from '#/utils/midiData';
+import { midiNoteToFrequency, SEMITONES_PER_OCTAVE, STANDARD_A4_HZ } from '#/utils/pitch';
+
 import { type BuiltinSynthMpeParams, type BuiltinSynthParams } from '../models/BuiltinSynthTypes';
 
 // Pre-generated noise buffer (§54.1 — avoid per-note AudioBuffer allocation).
@@ -50,11 +54,11 @@ export function scheduleBuiltinSynthNote({
     // out-of-range value would make velAttack negative (velocity > 190.5),
     // scheduling envelope/filter events in the past. Mirrors the clamp in
     // scheduleDrumKitNote / scheduleFaustNote.
-    const safeVelocity = Math.max(0, Math.min(127, velocity));
-    const baseFrequency = 440 * 2 ** ((pitch - 69) / 12);
+    const safeVelocity = clampMidiData7(velocity);
+    const baseFrequency = midiNoteToFrequency(pitch);
     // Velocity-sensitive attack: harder hits = faster attack (real instrument behavior)
-    const velAttack = params.attack * (1.5 - safeVelocity / 127);
-    const peakGain = (safeVelocity / 127) * params.gain * clipGain;
+    const velAttack = params.attack * (1.5 - safeVelocity / MAX_MIDI_DATA_7BIT);
+    const peakGain = (safeVelocity / MAX_MIDI_DATA_7BIT) * params.gain * clipGain;
     const sustainLevel = peakGain * params.sustain;
 
     let frequency = baseFrequency;
@@ -63,8 +67,8 @@ export function scheduleBuiltinSynthNote({
     // recorded on a controller set to ±12 played back four times too deep
     // (audit MD-8).
     if (mpe?.pitchBend !== undefined && mpe.pitchBendRangeSemitones !== undefined) {
-        const bendSemitones = (mpe.pitchBend / 8192) * mpe.pitchBendRangeSemitones;
-        frequency = baseFrequency * 2 ** (bendSemitones / 12);
+        const bendSemitones = (mpe.pitchBend / PITCH_BEND_CENTER) * mpe.pitchBendRangeSemitones;
+        frequency = baseFrequency * 2 ** (bendSemitones / SEMITONES_PER_OCTAVE);
     }
 
     // Mixer before filter
@@ -154,19 +158,23 @@ export function scheduleBuiltinSynthNote({
     // 0 sens = always full (disabled), 1 sens = full range (0 to 1).
     // When undefined (legacy callers), fall back to legacy default (0.3 + 0.7 * vel/127).
     const velSens = params.filterVelocitySensitivity;
-    const velocityScale =
-        velSens !== undefined ? 1 - velSens + velSens * (safeVelocity / 127) : 0.3 + 0.7 * (safeVelocity / 127);
+    let velocityScale: number;
+    if (velSens !== undefined) {
+        velocityScale = 1 - velSens + velSens * (safeVelocity / MAX_MIDI_DATA_7BIT);
+    } else {
+        velocityScale = 0.3 + 0.7 * (safeVelocity / MAX_MIDI_DATA_7BIT);
+    }
     // Pitch tracking: higher notes are naturally brighter (scale by sqrt of freq ratio)
-    const pitchScale = Math.sqrt(frequency / 440);
-    let filterCutoff = Math.min(params.filterCutoff * velocityScale * pitchScale, 20000);
+    const pitchScale = Math.sqrt(frequency / STANDARD_A4_HZ);
+    let filterCutoff = Math.min(params.filterCutoff * velocityScale * pitchScale, MAX_AUDIBLE_FREQ_HZ);
     if (mpe?.pressure !== undefined) {
-        filterCutoff = Math.min(20000, filterCutoff + (mpe.pressure / 127) * 2000);
+        filterCutoff = Math.min(MAX_AUDIBLE_FREQ_HZ, filterCutoff + (mpe.pressure / MAX_MIDI_DATA_7BIT) * 2000);
     }
 
     // Filter envelope: starts at cutoff+envAmount, decays to cutoff
     // This creates bright-attack-to-dark-sustain character (piano, bells, plucks)
     if (params.filterEnvAmount > 0) {
-        const filterPeak = Math.min(filterCutoff + params.filterEnvAmount, 20000);
+        const filterPeak = Math.min(filterCutoff + params.filterEnvAmount, MAX_AUDIBLE_FREQ_HZ);
         filter.frequency.setValueAtTime(filterPeak, startTime);
         const filterAttackEnd = startTime + params.attack;
         const filterDecayEnd = filterAttackEnd + params.decay;
@@ -179,7 +187,7 @@ export function scheduleBuiltinSynthNote({
 
     let filterQ = params.filterResonance;
     if (mpe?.slide !== undefined) {
-        filterQ = (mpe.slide / 127) * 20;
+        filterQ = (mpe.slide / MAX_MIDI_DATA_7BIT) * 20;
     }
     filter.Q.setValueAtTime(filterQ, startTime);
 

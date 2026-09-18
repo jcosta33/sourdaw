@@ -56,7 +56,9 @@ describe('handleSetDeviceParameter', () => {
             payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
         });
 
-        expect(mocks.setDeviceParameter).toHaveBeenCalledWith('d1', 'gain', 0.5);
+        expect(mocks.setDeviceParameter).toHaveBeenCalledWith('d1', 'gain', 0.5, {
+            automationRecordingPolicy: undefined,
+        });
         expect(mocks.setDeviceParameter).toHaveBeenCalledTimes(1);
         expect(result).toEqual({ status: 'written' });
     });
@@ -324,6 +326,151 @@ describe('handleSetDeviceParameter', () => {
         expect(rollback).toBeTypeOf('function');
         expect(() => rollback?.()).toThrow('manual repair is required: runtime unavailable');
         expect(rollbackAutomationRecording).toHaveBeenCalledOnce();
+    });
+
+    it('carries a suppressed recording policy into the write it delegates', () => {
+        mocks.setDeviceParameter.mockReturnValue(true);
+
+        handleSetDeviceParameter.execute({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5, automationRecordingPolicy: 'suppressed' },
+        });
+
+        expect(mocks.setDeviceParameter).toHaveBeenCalledWith('d1', 'gain', 0.5, {
+            automationRecordingPolicy: 'suppressed',
+        });
+    });
+
+    it('carries a suppressed recording policy into the inverse and redo it describes', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    frozen: false,
+                    devices: [{ id: 'd1', type: 'builtin-filter', parameterValues: { 'filter-cutoff': 1_000 } }],
+                },
+            ],
+        });
+
+        const desc = handleSetDeviceParameter.describe({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'filter-cutoff',
+                value: 250,
+                automationRecordingPolicy: 'suppressed',
+            },
+        });
+
+        expect(desc.inverseAction).toMatchObject({
+            type: 'setDeviceParameter',
+            payload: { automationRecordingPolicy: 'suppressed' },
+        });
+        expect(desc.redoAction).toMatchObject({
+            type: 'setDeviceParameter',
+            payload: { automationRecordingPolicy: 'suppressed' },
+        });
+    });
+
+    it('leaves the automation-recording maps alone when aborting a suppressed edit', () => {
+        // `vi.clearAllMocks` drops recorded calls but keeps implementations, so a
+        // throwing runtime writer set by an earlier case would still be in place.
+        mocks.updateDeviceParam.mockImplementation(() => undefined);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', devices: [{ id: 'd1', type: 'compressor', parameterValues: { gain: 0.8 } }] }],
+        });
+        const action: Extract<AppAction, { type: 'setDeviceParameter' }> = {
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5, automationRecordingPolicy: 'suppressed' },
+        };
+
+        handleSetDeviceParameter.prepareAbort?.(action)();
+
+        // The runtime parameter still goes back: the engine write happened.
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'gain', 0.8);
+        expect(mocks.captureAutomationRecordingRollback).not.toHaveBeenCalled();
+    });
+
+    it('still reports a failed runtime rollback for a suppressed edit', () => {
+        mocks.updateDeviceParam.mockImplementation(() => {
+            throw new Error('runtime unavailable');
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', devices: [{ id: 'd1', type: 'compressor', parameterValues: { gain: 0.8 } }] }],
+        });
+        const action: Extract<AppAction, { type: 'setDeviceParameter' }> = {
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5, automationRecordingPolicy: 'suppressed' },
+        };
+
+        const rollback = handleSetDeviceParameter.prepareAbort?.(action);
+
+        expect(() => rollback?.()).toThrow('manual repair is required: runtime unavailable');
+        expect(mocks.captureAutomationRecordingRollback).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        {
+            forward: 'suppressed' as const,
+            name: 'a suppressed forward against an unsuppressed inverse',
+            replay: undefined,
+        },
+        {
+            forward: undefined,
+            name: 'an unsuppressed forward against a suppressed inverse',
+            replay: 'suppressed' as const,
+        },
+    ])('refuses a persisted entry pairing $name', ({ forward, replay }) => {
+        const accepted = handleSetDeviceParameter.validateSessionEntry?.({
+            action: {
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'd1', paramId: 'gain', value: 0.5, automationRecordingPolicy: forward },
+            },
+            inverseAction: {
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'd1', paramId: 'gain', value: 0.8, automationRecordingPolicy: replay },
+            },
+        });
+
+        expect(accepted).toBe(false);
+    });
+
+    it.each([{ policy: 'suppressed' as const }, { policy: undefined }])(
+        'accepts a persisted entry whose forward, inverse and redo all agree on $policy',
+        ({ policy }) => {
+            const accepted = handleSetDeviceParameter.validateSessionEntry?.({
+                action: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'd1', paramId: 'gain', value: 0.5, automationRecordingPolicy: policy },
+                },
+                inverseAction: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'd1', paramId: 'gain', value: 0.8, automationRecordingPolicy: policy },
+                },
+                redoAction: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'd1', paramId: 'gain', value: 0.5, automationRecordingPolicy: policy },
+                },
+            });
+
+            expect(accepted).toBe(true);
+        }
+    );
+
+    it('refuses a persisted entry whose redo alone drops the suppressed policy', () => {
+        const accepted = handleSetDeviceParameter.validateSessionEntry?.({
+            action: {
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'd1', paramId: 'gain', value: 0.5, automationRecordingPolicy: 'suppressed' },
+            },
+            inverseAction: {
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'd1', paramId: 'gain', value: 0.8, automationRecordingPolicy: 'suppressed' },
+            },
+            redoAction: { type: 'setDeviceParameter', payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 } },
+        });
+
+        expect(accepted).toBe(false);
     });
 
     // `docs/manual/devices/07-gluten.md` prints this flag as a promise to the

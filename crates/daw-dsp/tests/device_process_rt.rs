@@ -1199,6 +1199,54 @@ fn grand_boule_process_does_not_allocate_with_notes_held() {
     );
 }
 
+/// The offset-queued note path allocates nothing either.
+///
+/// `grand_boule_process_does_not_allocate_with_notes_held` covers the unsplit
+/// render: it pushes nothing, so `process` takes the `event_count == 0` branch
+/// and the segmented path never runs inside its guard. Here every guarded block
+/// carries three notes at distinct offsets plus an expression, so the guard
+/// wraps the `push_*` writes, the per-segment preamble, the split renders and
+/// the once-per-block quiet accounting.
+#[test]
+fn grand_boule_process_with_pushed_notes_does_not_allocate() {
+    use daw_dsp::grand_boule::GrandBouleInstance;
+
+    let mut instance = GrandBouleInstance::new(SAMPLE_RATE, 0);
+    instance.set_param("cc_smoothing_ms", 25.0);
+    instance.set_param("sustain_threshold", 0.3);
+    instance.set_param("lid_position", 0.35);
+    instance.set_param("mic_position", 2.0);
+    instance.set_sustain(0.9);
+    instance.note_on(48, 0.9);
+
+    let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&warmup, "grand_boule");
+
+    // Moving right before the guard, for the reason the held-notes guard above
+    // gives: the smoother converges across the whole guarded region rather than
+    // settling first.
+    instance.set_sustain(0.35);
+
+    assert_no_alloc(|| {
+        for block in 0..GUARDED_BLOCKS {
+            let note = 55 + (block % 5) as u8;
+            instance.push_note_on(note, 0.8, 0, 17);
+            instance.push_note_expression(note, 0, 0.25, 0.0, 0.0, 17);
+            instance.push_note_on(note + 7, 0.6, 1, 64);
+            instance.push_note_off(note, 111);
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "grand_boule");
+    assert!(
+        peak(&out) > 1e-6,
+        "grand_boule produced silence after the guarded region, so the pushed \
+         notes never reached the modal model"
+    );
+}
+
 #[test]
 fn grand_boule_fir_body_tail_and_control_updates_do_not_allocate() {
     use daw_dsp::grand_boule::GrandBouleInstance;
@@ -1622,8 +1670,7 @@ fn proof_process_does_not_allocate_across_the_full_mastering_chain() {
 
     let mut instance = ProofInstance::new(SAMPLE_RATE);
     instance.set_param("eq_linear_phase", 1.0);
-    instance.set_param("limiter_ceiling", -1.0);
-    instance.set_param("limiter_threshold", -12.0);
+    instance.set_param("lim_ceiling", -1.0);
 
     unsafe {
         fill_input(
@@ -1637,6 +1684,12 @@ fn proof_process_does_not_allocate_across_the_full_mastering_chain() {
     assert_all_finite(&warmup, "proof");
 
     assert_no_alloc(|| {
+        // 7 ms rather than the 5 ms default: the limiter's setter only resizes
+        // when the requested figure differs from the one it holds, so writing
+        // the default would take the early return and leave the resize — the
+        // one arm of this control that touches a buffer — uncovered by the
+        // guard.
+        instance.set_param("lim_lookahead", 7.0);
         for block in 0..GUARDED_BLOCKS {
             unsafe {
                 fill_input(

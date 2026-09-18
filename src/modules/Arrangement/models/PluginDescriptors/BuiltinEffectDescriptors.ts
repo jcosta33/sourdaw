@@ -230,22 +230,19 @@ const BUILTIN_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: false,
         platform: 'both',
-        // The audible tail is the impulse response, which `createReverb` bakes at a
-        // fixed `sampleRate * 2` — exactly 2 s — when the node is built.
-        //
-        // It deliberately does NOT read `rev-decay`. That knob reaches no audio
-        // node: `applyReverbParams` has no `rev-decay` branch, a boundary pinned by
-        // `applyReverbParams.spec.ts` ("does not consume rev-decay") and documented
-        // at `AdjustmentBusNode.ts:44-49`. Declaring the tail from it made every
-        // export reserve or truncate on a number the user cannot hear — "Ambient
-        // Wash" (`rev-decay: 8`) bought 8 s of dead air, "Tight Room" (0.4) cut the
-        // real 2 s tail short.
-        //
-        // Deriving seconds from `rev-decay` anyway would be inventing a conversion
-        // for a dead control. If real decay support lands (Architecture-decision
-        // #1), wire the DSP first and change this declaration in the same commit.
-        // Pre-delay is genuinely honoured, so it still counts.
-        tail: { kind: 'fixed', seconds: 2, predelayMsParameterId: 'rev-predelay' },
+        // The audible tail is the impulse response, which `applyReverbParams`
+        // re-renders from the live Size/Decay/Damping shape (#3731); the decay
+        // envelope reaches its -60 dB point at the end of the rendered buffer,
+        // so exports must reserve exactly that decay span. The declaration
+        // therefore tracks `rev-decay` (default 2 s, matching the historical
+        // fixed tail) and must change in the same commit as any impulse-render
+        // change. Pre-delay is genuinely honoured, so it still counts.
+        tail: {
+            kind: 'decaySeconds',
+            parameterId: 'rev-decay',
+            defaultSeconds: 2,
+            predelayMsParameterId: 'rev-predelay',
+        },
         parameters: [
             {
                 id: 'rev-size',

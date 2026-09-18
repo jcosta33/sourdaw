@@ -16,7 +16,7 @@ Owns audio export encoding (WAV, MP3, FLAC), export normalization (LUFS / true p
 
 ## Key Subsystems
 
-- **`repositories/audioEncoders/`**: Pure JS/WASM encoder pipelines (`wavEncoder.ts`, `mp3Encoder.ts`, `flacEncoder.ts`), K-weighting filters (`createKWeightingFilters.ts`), integrated loudness and true peak measurement (`measureIntegratedLoudness.ts`, `measureTruePeak.ts`), dithering and PCM conversion (`convertFloatChannelsToPcm.ts`, `resolveNormalizationGain.ts`).
+- **`repositories/audioEncoders/`**: Pure JS/WASM encoder pipelines (`wavEncoder.ts`, `mp3Encoder.ts`, `flacEncoder.ts`), dithering and PCM conversion (`convertFloatChannelsToPcm.ts`, `resolveNormalizationGain.ts`). BS.1770 loudness and true-peak metering is imported from `src/utils/audioMetering/`.
 - **`repositories/audioExport/`**: Native filesystem bridge export writers (`writeNativeAudioMixdownFile.ts`, `writeNativeAudioStemFile.ts`, `selectNativeAudioExportFile.ts`, `selectNativeAudioExportDirectory.ts`).
 - **`presentations/views/`**: `ExportDialog.tsx` UI for configuring format, sample rate, bit depth, normalization, and stem selection.
 - **`models/`**: `AgentSectionRenderArtifact.ts`, `AgentSectionRenderRetentionPolicy.ts`.

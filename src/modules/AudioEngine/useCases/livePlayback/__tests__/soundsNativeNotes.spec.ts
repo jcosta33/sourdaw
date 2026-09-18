@@ -15,6 +15,15 @@ describe('soundsNativeNotes', () => {
         expect(soundsNativeNotes('Grand-Boule')).toBe(true);
     });
 
+    // The sampler voices notes from staged material rather than from its own
+    // record, but the store the engine registers for it is the same store: a
+    // strip whose instrument is the sampler has a native note sink, and
+    // answering false here is how its part goes silent under a native carrier.
+    it('answers true for the orchestral sampler', () => {
+        expect(soundsNativeNotes('levain')).toBe(true);
+        expect(soundsNativeNotes('Levain')).toBe(true);
+    });
+
     it('answers false for a built-in effect, and for a type with no body at all', () => {
         expect(soundsNativeNotes('knead')).toBe(false);
         expect(soundsNativeNotes('external-plugin')).toBe(false);

@@ -1,6 +1,9 @@
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     laneDirectoryName,
@@ -13,6 +16,7 @@ import {
     type OpenLanePort,
 } from '../openLane.ts';
 import { laneBranchName } from '../prContract.ts';
+import { readLaneStack, writeLaneStack } from '../stackedLanes.ts';
 
 /**
  * `lane:open` is the one delivery script that must never touch GitHub: it runs before the issue
@@ -85,39 +89,257 @@ function fakeCli(port: OpenLanePort): OpenLaneCli {
     return { verifyTrustedBlob: () => undefined, createPort: () => port };
 }
 
-function fakePort(exists = false) {
+function fakePort(exists = false, nodeModulesLinkTarget?: (lanePath: string) => string | undefined) {
     const calls: string[] = [];
     const logs: string[] = [];
     const port: OpenLanePort = {
         primaryRoot: () => '/repo',
         pathExists: () => exists,
+        assertUnusedStackNamespace: () => undefined,
         ensureWorktreeParent: (path) => calls.push(`mkdir:${path}`),
         fetchMain: () => calls.push('fetch'),
         worktreeAdd: (path, branch) => calls.push(`add:${path}:${branch}`),
+        saveAuthorModel: (branch, model) => calls.push(`model:${branch}:${model}`),
+        reserveStackBranch: (branch, head) => {
+            calls.push(`reserve:${branch}:${head}`);
+        },
+        nodeModulesLinkTarget: nodeModulesLinkTarget ?? (() => undefined),
         lock: (path) => calls.push(`lock:${path}`),
         log: (message) => logs.push(message),
     };
     return { port, calls, logs };
 }
 
+const scratchRoots: string[] = [];
+afterEach(() => {
+    for (const root of scratchRoots.splice(0)) {
+        rmSync(root, { recursive: true, force: true });
+    }
+});
+
+function creationFixture(beforeRun: (args: string[], git: (...args: string[]) => string) => void = () => undefined) {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-stack-open-')));
+    scratchRoots.push(root);
+    const gitAt = (cwd: string, args: string[]) =>
+        execFileSync('git', args, {
+            cwd,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                GIT_CONFIG_GLOBAL: '/dev/null',
+                GIT_CONFIG_NOSYSTEM: '1',
+                GIT_AUTHOR_NAME: 'Fixture',
+                GIT_AUTHOR_EMAIL: 'fixture@example.test',
+                GIT_COMMITTER_NAME: 'Fixture',
+                GIT_COMMITTER_EMAIL: 'fixture@example.test',
+            },
+        }).trim();
+    const git = (...args: string[]) => gitAt(root, args);
+    git('init', '-b', 'main');
+    writeFileSync(join(root, '.gitignore'), '.agents/\n');
+    git('add', '.');
+    git('commit', '-m', 'chore: base');
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    const parentPath = join(root, '.agents', 'worktrees', 'parent');
+    git('worktree', 'add', '-b', 'agent/parent', parentPath);
+    writeFileSync(join(parentPath, 'parent'), 'parent\n');
+    gitAt(parentPath, ['add', '.']);
+    gitAt(parentPath, ['commit', '-m', 'feat: parent']);
+    git('worktree', 'lock', '--reason', 'active:sourdaw-author', parentPath);
+    const head = gitAt(parentPath, ['rev-parse', 'HEAD']);
+    const writes: string[][] = [];
+    const port = shellPort(
+        (_command, args, options) => gitAt(options?.cwd ?? root, args),
+        (_command, args, options) => {
+            writes.push(args);
+            beforeRun(args, git);
+            if (args[0] !== 'fetch') {
+                gitAt(options?.cwd ?? root, args);
+            }
+        },
+        root
+    );
+    port.log = () => undefined;
+    return { root, git, parentPath, head, port, writes };
+}
+
+describe('real Git stack creation reservation', () => {
+    it('leaves an existing foreign branch and its metadata untouched', () => {
+        const f = creationFixture();
+        const foreign = join(f.root, '.agents', 'worktrees', 'foreign');
+        f.git('worktree', 'add', '-b', 'agent/collision', foreign, 'main');
+        f.git('worktree', 'lock', '--reason', 'active:sourdaw-author', foreign);
+        const config = readFileSync(join(f.root, '.git', 'config'));
+        const oldHead = f.git('rev-parse', 'agent/collision');
+        expect(() => openLane(undefined, 'collision', 'glm-5.3', f.port, f.parentPath)).toThrow();
+        expect(readLaneStack(f.root, 'agent/collision')).toBeUndefined();
+        expect(readFileSync(join(f.root, '.git', 'config'))).toEqual(config);
+        expect(f.git('rev-parse', 'agent/collision')).toBe(oldHead);
+    });
+
+    it.each(['descriptor', 'marker'])('refuses retained %s evidence for ordinary and stacked opens', (kind) => {
+        for (const stacked of [false, true]) {
+            const f = creationFixture();
+            if (kind === 'descriptor') {
+                writeLaneStack(f.root, {
+                    version: 1,
+                    childBranch: 'agent/retired',
+                    parentBranch: 'agent/parent',
+                    forkHead: f.head,
+                    parentHead: f.head,
+                });
+            } else {
+                f.git('config', 'branch.agent/retired.sourdaw-stack-fork', f.head);
+            }
+            const config = readFileSync(join(f.root, '.git', 'config'));
+            const previous = readLaneStack(f.root, 'agent/retired');
+            const directory = join(f.root, '.agents', 'lane-stacks');
+            const readEvidence = () => {
+                if (!existsSync(directory)) {
+                    return [];
+                }
+                return readdirSync(directory).map((file) => readFileSync(join(directory, file)));
+            };
+            const bytes = readEvidence();
+            expect(() => openLane(undefined, 'retired', 'glm-5.3', f.port, stacked ? f.parentPath : undefined)).toThrow(
+                /choose a new slug/
+            );
+            expect(f.writes).toEqual([]);
+            expect(readFileSync(join(f.root, '.git', 'config'))).toEqual(config);
+            expect(readLaneStack(f.root, 'agent/retired')).toEqual(previous);
+            expect(readEvidence()).toEqual(bytes);
+            expect(
+                spawnSync('git', ['rev-parse', '--verify', 'refs/heads/agent/retired'], { cwd: f.root }).status
+            ).not.toBe(0);
+        }
+    });
+
+    it('refuses a branch that appears at reservation without registering it', () => {
+        const f = creationFixture((args, git) => {
+            if (args[0] === 'branch' && args[1] === 'agent/race') {
+                git('branch', 'agent/race', 'main');
+            }
+        });
+        expect(() => openLane(undefined, 'race', 'glm-5.3', f.port, f.parentPath)).toThrow();
+        expect(readLaneStack(f.root, 'agent/race')).toBeUndefined();
+        expect(f.git('config', '--get', '--default', '', 'branch.agent/race.sourdaw-stack-fork')).toBe('');
+        expect(f.git('rev-parse', 'agent/race')).toBe(f.git('rev-parse', 'main'));
+    });
+
+    it('reserves then registers then creates the exact locked stack head', () => {
+        const f = creationFixture();
+        const parentMarker = f.git('config', '--get', '--default', '', 'branch.agent/parent.sourdaw-stack-fork');
+        const lane = openLane(undefined, 'child', 'glm-5.3', f.port, f.parentPath);
+        expect(f.git('config', '--get', '--default', '', 'branch.agent/child.sourdaw-stack-fork')).toBe(f.head);
+        expect(f.git('config', '--get', '--default', '', 'branch.agent/parent.sourdaw-stack-fork')).toBe(parentMarker);
+        const reserve = f.writes.findIndex((args) => args[0] === 'branch');
+        const marker = f.writes.findIndex((args) => args[0] === 'config');
+        const add = f.writes.findIndex((args) => args[0] === 'worktree' && args[1] === 'add');
+        expect(reserve).toBeGreaterThanOrEqual(0);
+        expect(reserve).toBeLessThan(marker);
+        expect(marker).toBeLessThan(add);
+        expect(f.writes[add]).toEqual(['worktree', 'add', lane, 'agent/child']);
+        expect(f.git('rev-parse', 'agent/child')).toBe(f.head);
+        expect(readLaneStack(f.root, 'agent/child')?.forkHead).toBe(f.head);
+        const created = f
+            .git('worktree', 'list', '--porcelain', '-z')
+            .split('\0\0')
+            .find((record) => record.startsWith(`worktree ${lane}\0`));
+        expect(created).toContain('branch refs/heads/agent/child');
+        expect(created).toContain('locked active:sourdaw-author');
+    });
+
+    it.each(['save', 'worktree'])('retains an explicit reserved branch after %s failure', (stage) => {
+        const f = creationFixture((args) => {
+            if (stage === 'worktree' && args[0] === 'worktree' && args[1] === 'add') {
+                throw new Error('fixture worktree failure');
+            }
+        });
+        if (stage === 'save') {
+            f.port.saveStack = () => {
+                throw new Error('fixture save failure');
+            };
+        }
+        expect(() => openLane(undefined, 'partial', 'glm-5.3', f.port, f.parentPath)).toThrow(
+            /reserved branch agent\/partial/
+        );
+        expect(f.git('rev-parse', 'agent/partial')).toBe(f.head);
+        expect(existsSync(join(f.root, '.agents', 'worktrees', 'agent--partial'))).toBe(false);
+        if (stage === 'worktree') {
+            expect(readLaneStack(f.root, 'agent/partial')?.forkHead).toBe(f.head);
+        }
+    });
+});
+
 describe('lane open', () => {
+    it('accepts an explicit absolute parent selector without treating it as a slug', () => {
+        expect(parseOpenLaneArgs(['child', '--stack-on', '/repo/.agents/worktrees/agent--parent'])).toEqual({
+            slug: 'child',
+            help: false,
+            stackOn: '/repo/.agents/worktrees/agent--parent',
+        });
+        expect(() => parseOpenLaneArgs(['child', '--stack-on', '../parent'])).toThrow(/absolute/);
+    });
+
+    it('records stack intent before creating the child at the exact parent head', () => {
+        const { port, calls } = fakePort();
+        const head = 'a'.repeat(40);
+        port.stackParent = (path, branch) => {
+            expect(path).toBe('/repo/parent');
+            return { version: 1, childBranch: branch, parentBranch: 'agent/parent', forkHead: head, parentHead: head };
+        };
+        port.saveStack = () => {
+            calls.push('descriptor');
+        };
+        port.worktreeAdd = (_path, _branch, reservedBranch) => {
+            calls.push(`reserved:${reservedBranch}`);
+        };
+        openLane(undefined, 'child', 'glm-5.3', port, '/repo/parent');
+        expect(calls).toContain(`reserve:agent/child:${head}`);
+        expect(calls).toContain('model:agent/child:glm-5.3');
+        expect(calls.indexOf('descriptor')).toBeLessThan(calls.indexOf('reserved:true'));
+        expect(calls.at(-1)).toBe('lock:/repo/.agents/worktrees/agent--child');
+    });
+
+    it('refuses parent validation or descriptor persistence failures before creating a child', () => {
+        const { port, calls } = fakePort();
+        port.stackParent = () => {
+            throw new Error('dirty parent');
+        };
+        expect(() => openLane(undefined, 'child', 'glm-5.3', port, '/repo/parent')).toThrow(/dirty parent/);
+        expect(calls.some((call) => call.startsWith('add:'))).toBe(false);
+        port.stackParent = (_path, childBranch) => ({
+            version: 1,
+            childBranch,
+            parentBranch: 'agent/parent',
+            forkHead: 'a'.repeat(40),
+            parentHead: 'a'.repeat(40),
+        });
+        port.saveStack = () => {
+            throw new Error('descriptor write failed');
+        };
+        expect(() => openLane(undefined, 'child', 'glm-5.3', port, '/repo/parent')).toThrow(/descriptor write failed/);
+        expect(calls.some((call) => call.startsWith('add:'))).toBe(false);
+    });
+
     it('creates a locked worktree from origin/main after fetch', () => {
         const { port, calls, logs } = fakePort();
 
-        const path = openLane(12, 'work', port);
+        const path = openLane(12, 'work', 'glm-5.3', port);
 
         expect(path).toBe('/repo/.agents/worktrees/agent-12-work');
         expect(calls.indexOf('fetch')).toBeLessThan(calls.findIndex((call) => call.startsWith('add:')));
         expect(calls).toContain('add:/repo/.agents/worktrees/agent-12-work:agent/12/work');
+        expect(calls).toContain('model:agent/12/work:glm-5.3');
         expect(calls).toContain('lock:/repo/.agents/worktrees/agent-12-work');
-        expect(logs.at(-1)).toBe(path);
+        expect(logs).toEqual(['authoring model: glm-5.3', path]);
         expect(calls.some((call) => call.includes('gh'))).toBe(false);
     });
 
     it('uses the provided slug instead of work', () => {
         const { port, calls } = fakePort();
 
-        openLane(12, 'beat', port);
+        openLane(12, 'beat', 'glm-5.3', port);
 
         expect(calls).toContain('add:/repo/.agents/worktrees/agent-12-beat:agent/12/beat');
     });
@@ -125,12 +347,13 @@ describe('lane open', () => {
     it('creates an issueless lane without an issue segment', () => {
         const { port, calls, logs } = fakePort();
 
-        const path = openLane(undefined, 'cleanup', port);
+        const path = openLane(undefined, 'cleanup', 'glm-5.3', port);
 
         expect(path).toBe('/repo/.agents/worktrees/agent--cleanup');
         expect(calls).toContain('add:/repo/.agents/worktrees/agent--cleanup:agent/cleanup');
+        expect(calls).toContain('model:agent/cleanup:glm-5.3');
         expect(calls).toContain('lock:/repo/.agents/worktrees/agent--cleanup');
-        expect(logs.at(-1)).toBe(path);
+        expect(logs).toEqual(['authoring model: glm-5.3', path]);
     });
 
     it('gives an issue lane and an issueless lane different directories', () => {
@@ -165,9 +388,11 @@ describe('lane open', () => {
 
         // `runCli` reports a spawn that threw as exit 1, so the recording is asserted first: it
         // names the command that got out, where the exit code only says something went wrong.
+        // Mixed-case argv is deliberate: the exact normalized echo and ledger entry catch a runCli
+        // that hands raw argv to openLane instead of the parser's normalized token.
         let code = -1;
         const spawned = spawnRecorder.record((recorded) => {
-            code = runCli(['cleanup'], fakeCli(port), '/repo');
+            code = runCli(['cleanup', '--model', 'GLM-5.3-Flash'], fakeCli(port), '/repo');
             return recorded;
         });
 
@@ -177,9 +402,10 @@ describe('lane open', () => {
             'mkdir:/repo/.agents/worktrees/agent--cleanup',
             'fetch',
             'add:/repo/.agents/worktrees/agent--cleanup:agent/cleanup',
+            'model:agent/cleanup:glm-5.3-flash',
             'lock:/repo/.agents/worktrees/agent--cleanup',
         ]);
-        expect(logs.at(-1)).toBe('/repo/.agents/worktrees/agent--cleanup');
+        expect(logs).toEqual(['authoring model: glm-5.3-flash', '/repo/.agents/worktrees/agent--cleanup']);
     });
 
     /**
@@ -198,7 +424,7 @@ describe('lane open', () => {
     it('runCli reaches only git, never gh, when driven with the real default shellCli', () => {
         let code = -1;
         const spawned = spawnRecorder.record((recorded) => {
-            code = runCli(['cleanup'], shellCli, process.cwd());
+            code = runCli(['cleanup', '--model', 'glm-5.3'], shellCli, process.cwd());
             return recorded;
         });
 
@@ -259,7 +485,7 @@ describe('lane open', () => {
     it('does not modify a primary checkout path', () => {
         const { port, calls } = fakePort();
 
-        openLane(1, 'work', port);
+        openLane(1, 'work', 'glm-5.3', port);
 
         expect(calls.some((call) => call.includes('/repo/.git') || call === 'add:/repo:')).toBe(false);
         expect(calls.every((call) => !call.startsWith('add:/repo:') || call.includes('.agents/worktrees'))).toBe(true);
@@ -272,6 +498,18 @@ describe('lane open', () => {
         [['beat'], { slug: 'beat', help: false }],
         [['lane-issue-optional'], { slug: 'lane-issue-optional', help: false }],
         [['--help'], { slug: 'work', help: true }],
+        [['cleanup', '--model', 'glm-5.3'], { slug: 'cleanup', model: 'glm-5.3', help: false }],
+        [['12', 'beat', '--model', 'GLM-5.3'], { issue: 12, slug: 'beat', model: 'glm-5.3', help: false }],
+        [['cleanup', '--model', 'GLM-5.3-Flash'], { slug: 'cleanup', model: 'glm-5.3-flash', help: false }],
+        [
+            ['--model', 'kimi-k2.5', 'beat', '--stack-on', '/repo/.agents/worktrees/agent--parent'],
+            {
+                slug: 'beat',
+                model: 'kimi-k2.5',
+                stackOn: '/repo/.agents/worktrees/agent--parent',
+                help: false,
+            },
+        ],
     ])('parses argv %j', (args, expected) => {
         expect(parseOpenLaneArgs(args)).toEqual(expected);
     });
@@ -283,14 +521,108 @@ describe('lane open', () => {
         [['beat', 'extra'], /unknown option/],
         [['12', 'beat', 'extra'], /unknown option/],
         [['--help', 'beat'], /--help/],
+        [['cleanup', '--model', 'glm 5.3'], /the lowercase public name of the model itself/],
+        [['cleanup', '--model', 'builtin:glm-5.3'], /the lowercase public name of the model itself/],
+        [['cleanup', '--model', 'glm_5.3'], /the lowercase public name of the model itself/],
+        [['cleanup', '--model', '-glm'], /the lowercase public name of the model itself/],
+        [['cleanup', '--model'], /--model requires the authoring model, e.g. glm-5.3-flash/],
+        [
+            ['cleanup', '--model', '--stack-on', '/repo/parent'],
+            /--model requires the authoring model, e.g. glm-5.3-flash/,
+        ],
+        [['cleanup', '--model', 'glm-5.3', '--model', 'kimi-k2.5'], /usage/],
     ])('rejects argv %j before creating a worktree', (args, message) => {
         const { port, calls } = fakePort();
 
         expect(() => {
             const parsed = parseOpenLaneArgs(args);
-            openLane(parsed.issue, parsed.slug, port);
+            openLane(parsed.issue, parsed.slug, 'glm-5.3', port);
         }).toThrow(message);
 
         expect(calls).toEqual([]);
+    });
+});
+
+/**
+ * `--model` is the lane's record of who authored its code: lane:publish reads it back to label the
+ * pull request, so opening without it must leave nothing behind and invalid spellings must be
+ * refused with the rule rather than silently recorded.
+ */
+describe('lane open records the authoring model', () => {
+    it('refuses an open without --model before any port work can create or reserve anything', () => {
+        const { port, calls } = fakePort();
+        const errors: string[] = [];
+        const errorSpy = vi
+            .spyOn(console, 'error')
+            .mockImplementation((...values: unknown[]) => errors.push(values.join(' ')));
+
+        try {
+            expect(runCli(['cleanup'], fakeCli(port), '/repo')).toBe(1);
+        } finally {
+            errorSpy.mockRestore();
+        }
+
+        expect(errors[0]).toMatch(/lane:open requires --model <model>/);
+        expect(errors[0]).toMatch(/the lowercase public name of the model itself/);
+        expect(calls).toEqual([]);
+    });
+
+    it('records the model for the branch in the primary checkout config', () => {
+        const { port, calls } = fakePort();
+
+        openLane(12, 'work', 'glm-5.3', port);
+
+        expect(calls).toContain('model:agent/12/work:glm-5.3');
+    });
+
+    it('records a capability variant verbatim and echoes it, keeping the path the final line', () => {
+        const { port, calls, logs } = fakePort();
+
+        const path = openLane(undefined, 'flash', 'glm-5.3-flash', port);
+
+        expect(calls).toContain('model:agent/flash:glm-5.3-flash');
+        expect(logs).toEqual(['authoring model: glm-5.3-flash', path]);
+    });
+
+    it('persists branch.<branch>.sourdaw-author-model in the primary root next to stack lineage', () => {
+        const f = creationFixture();
+
+        openLane(undefined, 'solo', 'glm-5.3', f.port);
+
+        expect(f.git('config', '--get', 'branch.agent/solo.sourdaw-author-model')).toBe('glm-5.3');
+    });
+});
+
+/**
+ * Issue #4118: a lane whose node_modules symlinks into another checkout makes every pnpm run
+ * through the link rewrite that checkout's install metadata, and the next pnpm run there aborts
+ * every trusted delivery script with ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY. lane:open
+ * refuses the configuration before locking the lane.
+ */
+describe('lane open refuses a node_modules symlinked outside the lane', () => {
+    it('refuses with the symlink, the target, and the sanctioned route, before the lock', () => {
+        const { port, calls } = fakePort(false, () => '/other-checkout/node_modules');
+
+        expect(() => openLane(12, 'work', 'glm-5.3', port)).toThrow(
+            /node_modules is a symlink to \/other-checkout\/node_modules, outside the lane[\s\S]*`pnpm install` in \/repo\/\.agents\/worktrees\/agent-12-work/
+        );
+        expect(calls).toContain('add:/repo/.agents/worktrees/agent-12-work:agent/12/work');
+        expect(calls).not.toContain('lock:/repo/.agents/worktrees/agent-12-work');
+    });
+
+    it('locks the lane when node_modules is a real directory or absent', () => {
+        const { port, calls } = fakePort(false, () => undefined);
+
+        openLane(12, 'work', 'glm-5.3', port);
+
+        expect(calls).toContain('lock:/repo/.agents/worktrees/agent-12-work');
+    });
+
+    it('locks the lane when the link resolves inside the lane root', () => {
+        const { port, calls } = fakePort(false, () => '/repo/.agents/worktrees/agent-12-work/vendor/store');
+
+        openLane(12, 'work', 'glm-5.3', port);
+
+        expect(calls).toContain('lock:/repo/.agents/worktrees/agent-12-work');
     });
 });

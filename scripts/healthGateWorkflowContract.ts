@@ -69,6 +69,26 @@ export const JOB_LEVEL_PERMISSION_FREE_FILES = [
     'wasm-artifacts.yml',
 ] as const;
 
+const SETUP_NODE = ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
+const SETUP_PNPM_NODE = ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
+const STATIC_SUITE_STEPS = [
+    'Artifact freshness',
+    'App types',
+    'Test types',
+    'Script types',
+    'End-to-end types',
+    'Desktop shell types',
+    'Format',
+    'Command argument schemas',
+    'Release inventory',
+    'Test collection scope',
+    'Barrel mock coverage',
+    'Device write boundary census',
+    'Release proof',
+    'Agent delivery scripts',
+    'Health gate infrastructure',
+] as const;
+
 // Every job in every gate workflow, pinned to its exact ordered step names —
 // or `null` for a reusable-workflow caller that must never grow steps. A
 // deleted proof step leaves its job green while the proof never runs, and an
@@ -109,56 +129,21 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         gate: ['Require every job to have succeeded or been skipped'],
     },
     'validation.yml': {
-        decide: ['Checkout', 'Filter changed paths', 'Resolve scope'],
-        static: [
+        decide: [
             'Checkout',
-            'Enable Corepack',
-            'Set up Node',
-            'Install dependencies',
-            'Artifact freshness',
-            'App types',
-            'Test types',
-            'Script types',
-            'End-to-end types',
-            'Desktop shell types',
-            'Format',
-            'Command argument schemas',
-            'Release inventory',
-            'Test collection scope',
-            'Barrel mock coverage',
-            'Device write boundary census',
-            'Release proof',
-            'Agent delivery scripts',
-            'Health gate infrastructure',
+            'Filter changed paths',
+            'Retry changed-paths filter after a transient API failure',
+            'Resolve scope',
         ],
-        lint: ['Checkout', 'Enable Corepack', 'Set up Node', 'Install dependencies', 'Lint'],
-        boundaries: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up Node',
-            'Install dependencies',
-            'Validate the dependency graph',
-        ],
-        unit: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up Node',
-            'Install dependencies',
-            'Run shard',
-            'Report shard failure',
-        ],
-        smoke: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up Node',
-            'Install dependencies',
-            'Install Playwright browsers',
-            'Run offline smoke set',
-        ],
-        build: ['Checkout', 'Enable Corepack', 'Set up Node', 'Install dependencies', 'Build'],
+        static: [...SETUP_NODE, ...STATIC_SUITE_STEPS],
+        lint: [...SETUP_NODE, 'Lint'],
+        boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
+        unit: [...SETUP_NODE, 'Run shard', 'Report shard failure'],
+        smoke: [...SETUP_NODE, 'Install Playwright browsers', 'Run offline smoke set'],
+        build: [...SETUP_NODE, 'Build'],
         rust: [
             'Checkout',
-            'Enable Corepack',
+            'Set up pnpm',
             'Set up Node',
             'Install ALSA development headers',
             'Install the pinned Rust toolchain',
@@ -183,7 +168,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Checkout',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
-            'Enable Corepack',
+            'Set up pnpm',
             'Set up Node',
             'Install dependencies',
             'Build the native addon',
@@ -203,35 +188,14 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     'heavy-gates.yml': {
         validation: null,
         e2e: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
+            ...SETUP_PNPM_NODE,
             'Install Playwright browsers',
             'Run shard',
             'Report shard failure',
             'Upload blob report',
         ],
-        'e2e-report': [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Download blob reports',
-            'Merge into one report',
-            'Upload report',
-        ],
-        'browser-ai-webgpu': [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Install Chromium',
-            'Run Browser AI WebGPU admission',
-        ],
+        'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
+        'browser-ai-webgpu': [...SETUP_PNPM_NODE, 'Install Chromium', 'Run Browser AI WebGPU admission'],
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
         secrets: [
             'Checkout trusted scanner',
@@ -243,56 +207,23 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     },
     'nightly.yml': {
         decide: ['Resolve scope'],
-        static: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Artifact freshness',
-            'App types',
-            'Test types',
-            'Script types',
-            'End-to-end types',
-            'Desktop shell types',
-            'Format',
-            'Command argument schemas',
-            'Release inventory',
-            'Test collection scope',
-            'Barrel mock coverage',
-            'Device write boundary census',
-            'Release proof',
-            'Agent delivery scripts',
-            'Health gate infrastructure',
-        ],
-        lint: ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies', 'Lint'],
-        boundaries: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Validate the dependency graph',
-        ],
-        unit: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Run shard',
-            'Report shard failure',
-        ],
-        build: ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies', 'Build'],
+        static: [...SETUP_PNPM_NODE, ...STATIC_SUITE_STEPS],
+        lint: [...SETUP_PNPM_NODE, 'Lint'],
+        boundaries: [...SETUP_PNPM_NODE, 'Validate the dependency graph'],
+        unit: [...SETUP_PNPM_NODE, 'Run shard', 'Report shard failure'],
+        build: [...SETUP_PNPM_NODE, 'Build'],
         rust: [
             'Checkout',
-            'Enable Corepack',
-            'Set up Node',
             'Install ALSA development headers',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
+            'Rust workspace health gates',
+        ],
+        'collab-server': [
+            'Checkout',
+            'Set up Node',
             'Install server dependencies',
-            'Server and Rust workspace health gates',
+            'Collaboration server health gates',
         ],
         'native-macos': [
             'Checkout',
@@ -308,25 +239,13 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Test the audio crates',
         ],
         e2e: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
+            ...SETUP_PNPM_NODE,
             'Install Playwright browsers',
             'Run shard',
             'Report shard failure',
             'Upload blob report',
         ],
-        'browser-ai-webgpu': [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Install Chromium',
-            'Run Browser AI WebGPU admission',
-        ],
+        'browser-ai-webgpu': [...SETUP_PNPM_NODE, 'Install Chromium', 'Run Browser AI WebGPU admission'],
         'desktop-measure': [
             'Checkout',
             'Enable Corepack',
@@ -340,18 +259,11 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Install the harness plugin',
             'Build the packaged desktop app',
             'Measure the packaged app',
+            'Prove the agent workspace in the packaged app',
             'Upload the measurement record',
+            'Upload the agent workspace proof record',
         ],
-        'e2e-report': [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Download blob reports',
-            'Merge into one report',
-            'Upload report',
-        ],
+        'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
         secrets: [
             'Checkout trusted scanner',
@@ -378,6 +290,78 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         'nightly-report': ['Checkout', 'Open or update the nightly failure issue'],
     },
 };
+
+// Every step condition in the registered workflows, keyed by file, job, and step
+// name. A step condition is legitimate only when it is one of these exact,
+// individually pinned exceptions — the shard-failure reporters, the blob
+// uploads that must outlive their shard, and the deploy legs already pinned
+// beside the job that owns them. An `if` anywhere else retires a proof by
+// flipping the condition while every other pin stays green.
+export type ConditionalStepPin = Readonly<{
+    workflow: string;
+    job: string;
+    step: string;
+    condition: string;
+}>;
+
+const SHARD_FAIL = "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}";
+const BLOB_UPLOAD = '${{ !cancelled() }}';
+const ALWAYS = 'always()';
+const WASM_SELECT = "steps.plan.outputs.selected == 'true'";
+const DEPLOY_CRED = "env.DEPLOY_CREDENTIAL_PRESENT == 'true'";
+const DEPLOY_RUN = `${DEPLOY_CRED} && steps.production.outputs.deploy == 'true'`;
+const DEPLOY_SKIP = `${DEPLOY_CRED} && steps.production.outputs.deploy != 'true'`;
+const DEPLOY_NO_CRED = "env.DEPLOY_CREDENTIAL_PRESENT != 'true'";
+
+const pin = (workflow: string, job: string, step: string, condition: string): ConditionalStepPin => ({
+    workflow,
+    job,
+    step,
+    condition,
+});
+
+export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
+    ...['Install pinned generation toolchain', 'Build and qualify complete artifact', 'Upload qualified artifact'].map(
+        (step) => pin('wasm-artifacts.yml', 'build-artifacts', step, WASM_SELECT)
+    ),
+    pin(
+        'validation.yml',
+        'decide',
+        'Retry changed-paths filter after a transient API failure',
+        "steps.filter.outcome == 'failure'"
+    ),
+    pin('validation.yml', 'unit', 'Report shard failure', SHARD_FAIL),
+    pin('heavy-gates.yml', 'e2e', 'Report shard failure', SHARD_FAIL),
+    pin('heavy-gates.yml', 'e2e', 'Upload blob report', BLOB_UPLOAD),
+    pin('nightly.yml', 'unit', 'Report shard failure', SHARD_FAIL),
+    pin('nightly.yml', 'desktop-measure', 'Upload the measurement record', ALWAYS),
+    pin(
+        'nightly.yml',
+        'desktop-measure',
+        'Prove the agent workspace in the packaged app',
+        "always() && steps.build-packaged-app.outcome == 'success'"
+    ),
+    pin('nightly.yml', 'desktop-measure', 'Upload the agent workspace proof record', ALWAYS),
+    pin('nightly.yml', 'e2e', 'Report shard failure', SHARD_FAIL),
+    pin('nightly.yml', 'e2e', 'Upload blob report', BLOB_UPLOAD),
+    pin('nightly.yml', 'deploy-web', 'Report the missing deployment credential', DEPLOY_NO_CRED),
+    ...[
+        'Checkout the validated revision',
+        'Enable Corepack',
+        'Set up pnpm',
+        'Set up Node',
+        'Resolve the current production revision',
+    ].map((step) => pin('nightly.yml', 'deploy-web', step, DEPLOY_CRED)),
+    pin('nightly.yml', 'deploy-web', 'Report why nothing was deployed', DEPLOY_SKIP),
+    ...[
+        'Install dependencies',
+        'Link the Vercel CLI to the production project',
+        'Build the validated revision',
+        'Deploy the prebuilt revision',
+        'Resolve the aliases of the deployment',
+        'Assert cross-origin isolation on the deployment',
+    ].map((step) => pin('nightly.yml', 'deploy-web', step, DEPLOY_RUN)),
+];
 
 export type WorkflowSnapshot = Record<string, unknown>;
 

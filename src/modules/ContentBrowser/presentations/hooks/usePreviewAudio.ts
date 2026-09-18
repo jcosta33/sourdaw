@@ -10,42 +10,72 @@ export type PreviewHandle = {
     stop: () => void;
 };
 
+function teardownSource(source: AudioScheduledSourceNode | null): void {
+    if (source) {
+        try {
+            source.stop();
+        } catch {
+            /* already stopped */
+        }
+        source.disconnect();
+    }
+}
+
+function createBufferSourceNode(
+    ctx: AudioContext,
+    buffer: AudioBuffer
+): { source: AudioBufferSourceNode; gain: GainNode } {
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+
+    const gain = ctx.createGain();
+    gain.gain.value = 0.7;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    return { source, gain };
+}
+
+function createToneOscillator(
+    ctx: AudioContext,
+    frequency: number,
+    durationSec: number
+): { osc: OscillatorNode; gain: GainNode } {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = frequency;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.4, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + durationSec);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    return { osc, gain };
+}
+
 export const usePreviewAudio = (): PreviewHandle => {
     // §186.1 — broaden the ref type so it can hold either an audio
     // buffer source or an oscillator. Previously the oscillator path
     // stashed a dummy BufferSource here, so calling stop() silently
     // did nothing and the tone played to completion.
     const sourceRef = useRef<AudioScheduledSourceNode | null>(null);
+    const activeRequestIdRef = useRef<number>(0);
     const [playingId, setPlayingId] = useState<string | null>(null);
 
     const stop = () => {
-        if (sourceRef.current) {
-            try {
-                sourceRef.current.stop();
-            } catch {
-                /* already stopped */
-            }
-            sourceRef.current.disconnect();
-            sourceRef.current = null;
-        }
+        activeRequestIdRef.current++;
+        teardownSource(sourceRef.current);
+        sourceRef.current = null;
         setPlayingId(null);
     };
 
-    const play = (id: string, buffer: AudioBuffer) => {
-        stop();
-
+    const startBufferPlayback = (id: string, buffer: AudioBuffer) => {
         const ctx = getAudioContext();
         if (ctx.state === 'suspended') {
             void ctx.resume();
         }
 
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-
-        const gain = ctx.createGain();
-        gain.gain.value = 0.7;
-        source.connect(gain);
-        gain.connect(ctx.destination);
+        const { source, gain } = createBufferSourceNode(ctx, buffer);
 
         source.onended = () => {
             source.disconnect();
@@ -61,6 +91,11 @@ export const usePreviewAudio = (): PreviewHandle => {
         source.start();
     };
 
+    const play = (id: string, buffer: AudioBuffer) => {
+        stop();
+        startBufferPlayback(id, buffer);
+    };
+
     const playTone = (id: string, frequency: number, durationSec: number) => {
         stop();
 
@@ -69,16 +104,7 @@ export const usePreviewAudio = (): PreviewHandle => {
             void ctx.resume();
         }
 
-        const osc = ctx.createOscillator();
-        osc.type = 'sine';
-        osc.frequency.value = frequency;
-
-        const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.4, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + durationSec);
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
+        const { osc, gain } = createToneOscillator(ctx, frequency, durationSec);
 
         sourceRef.current = osc;
         setPlayingId(id);
@@ -97,14 +123,25 @@ export const usePreviewAudio = (): PreviewHandle => {
     };
 
     const playFile = async (id: string, file: File): Promise<void> => {
+        stop();
+        const requestId = ++activeRequestIdRef.current;
         try {
             const ctx = getAudioContext();
             if (ctx.state === 'suspended') {
                 await ctx.resume();
             }
+            if (activeRequestIdRef.current !== requestId) {
+                return;
+            }
             const arrayBuffer = await file.arrayBuffer();
+            if (activeRequestIdRef.current !== requestId) {
+                return;
+            }
             const buffer = await ctx.decodeAudioData(arrayBuffer);
-            play(id, buffer);
+            if (activeRequestIdRef.current !== requestId) {
+                return;
+            }
+            startBufferPlayback(id, buffer);
         } catch {
             // Format not supported or decode failed — preview is best-effort
         }
@@ -117,16 +154,9 @@ export const usePreviewAudio = (): PreviewHandle => {
     // empty dependency array and not capture a stale `stop` closure.
     useEffect(() => {
         return () => {
-            const source = sourceRef.current;
-            if (source) {
-                try {
-                    source.stop();
-                } catch {
-                    /* already stopped */
-                }
-                source.disconnect();
-                sourceRef.current = null;
-            }
+            activeRequestIdRef.current++;
+            teardownSource(sourceRef.current);
+            sourceRef.current = null;
         };
     }, []);
 

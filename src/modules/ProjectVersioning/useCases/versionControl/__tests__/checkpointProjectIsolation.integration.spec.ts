@@ -7,6 +7,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -254,6 +255,9 @@ function expectRefusedRestore(
 
 describe('checkpoint project isolation', () => {
     beforeEach(() => {
+        // jsdom ships no Web Locks API, and the durable reset the project
+        // bootstrap performs sequences on it.
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         Container.clear();
         configureAutomergeStoragePort(null);
         registerCrdtStorageRuntime();
@@ -285,6 +289,7 @@ describe('checkpoint project isolation', () => {
         configureAutomergeStoragePort(null);
         Container.clear();
         vi.clearAllMocks();
+        vi.unstubAllGlobals();
     });
 
     it('refuses an A checkpoint through the registered action after creating project B', async () => {

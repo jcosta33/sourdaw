@@ -594,7 +594,8 @@ export const createPluginWindowHost = (deps: PluginWindowHostDeps): PluginWindow
     };
 
     const detachOpenEditors = async (): Promise<void> => {
-        await Promise.all([...editors.keys()].map((label) => beginDetach(label)));
+        const labels = Array.from(editors.keys());
+        await Promise.all(labels.map((label) => beginDetach(label)));
     };
 
     deps.watchDisplayChanges(() => {
@@ -1035,13 +1036,16 @@ export const registerPluginWindowHost = (
         applyPluginGuiScale: applyScale,
     } = native;
 
+    let runLoopPump: EditorRunLoopPump | undefined;
+    if (needsEditorRunLoopPump()) {
+        runLoopPump = createIntervalRunLoopPump(() => {
+            serviceRunLoops.call(native);
+        });
+    }
+
     const host = createPluginWindowHost({
         ...deps,
-        runLoopPump: needsEditorRunLoopPump()
-            ? createIntervalRunLoopPump(() => {
-                  serviceRunLoops.call(native);
-              })
-            : undefined,
+        runLoopPump,
         requestEditorSize: (instanceId, width, height) =>
             editorSizeFrom(resizeGui.call(native, instanceId, width, height)),
         applyEditorScale: (instanceId, scaleFactor) => editorSizeFrom(applyScale.call(native, instanceId, scaleFactor)),

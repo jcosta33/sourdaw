@@ -140,6 +140,27 @@ successor session, then prove the outgoing cleanup cannot close or reset the suc
 asset, timer, branch-transition, and decode callbacks and invoke or settle them after replacement; they must neither
 read successor state nor write project, runtime, or panel state, while current-owner callbacks remain effective.
 
+Teardown durability review must drive the registered create, join, and leave actions through both `executeAppAction`
+and singleton `executeAppActionBatch`. Hold and reject the underlying lifecycle promise, prove command completion
+waits for it, and prove the runtime route never opens a project storage transaction. Exercise no-op root persistence,
+changed-root persistence and handoff, and generic document persistence because each route can swallow its own error
+before a drain-only tail observes it. Include a repository commit followed by an exact-head rejection, partial session
+initialization, and a second explicit lifecycle attempt that retries the retained work after the installed owner was
+cleared. A successful promise tail, a committed write without fresh exact authority, or a configuration-object
+assertion does not establish durable teardown.
+
+Commit `51572a423a` in PR #1581 made non-throwing local-storage writes advance their cache after failure. When a durable
+session backup is consumed in stages, reject repeated removal failures until a fresh durable read proves the backup is
+gone. Write newer branch state while removal remains refused, then prove retry does not replay the stale backup and a
+later successful removal settles it. Refuse both backup and branch-state reads after initialization, then prove recovery
+keeps the earliest durable witness: a failed `trySet` notification cannot authorize deletion, while a directly observed
+successful adapter write must protect the newer branch state even if reads remain blocked.
+
+PR #4248 introduced prepared asset-handoff commit closures that could bypass the durable owner operation queue. Prepare
+the handoff first, then admit and hold a source staging operation before invoking the returned commit; the commit must not
+reach any owner repository until that already-accepted operation settles, and both results must remain recoverable from
+fresh repository instances.
+
 ### Receive-side sync progress must be real, fenced transport work
 
 Commit `78060bccd0bcc3d8f41637c7403443826f9de355` suppressed repository change notifications while applying a remote

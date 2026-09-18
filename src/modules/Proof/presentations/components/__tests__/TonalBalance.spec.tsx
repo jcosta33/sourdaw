@@ -7,20 +7,20 @@ import { useProofAnalyser } from '../../hooks/useProofAnalyser';
 import { TonalBalance } from '../TonalBalance';
 
 const engineMocks = vi.hoisted(() => ({
-    getMasterAnalyser: vi.fn<() => unknown>(() => null),
+    getDeviceOutputNode: vi.fn<() => unknown>(() => null),
     getAudioSampleRate: vi.fn(() => 48000),
     isEngineAudioAvailable: vi.fn(() => true),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    getMasterAnalyser: engineMocks.getMasterAnalyser,
+    getDeviceOutputNode: engineMocks.getDeviceOutputNode,
     getAudioSampleRate: engineMocks.getAudioSampleRate,
     isEngineAudioAvailable: engineMocks.isEngineAudioAvailable,
 }));
 
 /** The live pairing the panel builds: the hook's verdict drives the overlay. */
 const LiveTonalBalance = (): ReactElement => {
-    const { status, fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser();
+    const { status, fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser('proof-live-1');
     return (
         <TonalBalance
             status={status}
@@ -34,7 +34,7 @@ const LiveTonalBalance = (): ReactElement => {
     );
 };
 
-function makeMasterAnalyserStub(): unknown {
+function makeDeviceNodeStub(): unknown {
     return {
         context: {
             createAnalyser: () => ({
@@ -65,7 +65,7 @@ describe('TonalBalance', () => {
     // Re-seeded per test: `restoreAllMocks` strips the implementations off these
     // module mocks too, so a later test would read `undefined` availability.
     beforeEach(() => {
-        engineMocks.getMasterAnalyser.mockReturnValue(null);
+        engineMocks.getDeviceOutputNode.mockReturnValue(null);
         engineMocks.getAudioSampleRate.mockReturnValue(48000);
         engineMocks.isEngineAudioAvailable.mockReturnValue(true);
     });
@@ -275,7 +275,7 @@ describe('TonalBalance', () => {
         // The shim's analyser connects and reads back like a real one, so the
         // notice only ever appears if availability comes from the engine itself.
         engineMocks.isEngineAudioAvailable.mockReturnValue(false);
-        engineMocks.getMasterAnalyser.mockReturnValue(makeMasterAnalyserStub());
+        engineMocks.getDeviceOutputNode.mockReturnValue(makeDeviceNodeStub());
 
         render(<LiveTonalBalance />);
 
@@ -284,7 +284,7 @@ describe('TonalBalance', () => {
 
     it('never flashes the dead-tap notice on a live analyser, not even on the first render', () => {
         engineMocks.isEngineAudioAvailable.mockReturnValue(true);
-        engineMocks.getMasterAnalyser.mockReturnValue(makeMasterAnalyserStub());
+        engineMocks.getDeviceOutputNode.mockReturnValue(makeDeviceNodeStub());
         vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1);
 
         // No frame is ever delivered here: a status raised from the frame loop

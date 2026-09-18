@@ -292,6 +292,36 @@ describe('serializeAudioGraphCommandBatch', () => {
     });
 
     /**
+     * The same flattening as `set-device-parameters`, and a boolean that must
+     * travel as itself: a serializer that coerced the bypass to a presence
+     * flag would make "un-bypass" indistinguishable from "no write at all".
+     */
+    it('flattens a device bypass batch onto the graph.rs set-device-bypass spelling', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'set-device-bypass',
+                    target: { trackId: 'track-1', deviceId: 'dev-knead' },
+                    bypassed: true,
+                },
+                {
+                    kind: 'set-device-bypass',
+                    target: { trackId: 'track-1', deviceId: 'dev-knead' },
+                    bypassed: false,
+                },
+            ],
+        });
+
+        expect(wire.commands).toEqual([
+            { kind: 'set-device-bypass', trackId: 'track-1', deviceId: 'dev-knead', bypassed: true },
+            { kind: 'set-device-bypass', trackId: 'track-1', deviceId: 'dev-knead', bypassed: false },
+        ]);
+        // Flattened, not nested: the mirror has no `target` field to read.
+        expect(Object.keys(wire.commands[0] ?? {})).toEqual(['kind', 'trackId', 'deviceId', 'bypassed']);
+    });
+
+    /**
      * The same flattening for a live note, and one more thing the mapper turns
      * on: a note carries no timeline position, so every field it does carry is
      * the whole of what the engine has to place it by.
@@ -326,6 +356,42 @@ describe('serializeAudioGraphCommandBatch', () => {
         });
         // Flattened, not nested: the mirror has no `target` field to read.
         expect(Object.keys(sent)).toEqual(['kind', 'trackId', 'deviceId', 'note', 'velocity', 'channel', 'isNoteOn']);
+    });
+
+    /**
+     * The same flattening for a live controller, and the field the wire cannot
+     * get wrong: the position travels as the raw 7-bit byte, because the
+     * engine's Grand Boule body divides a damper position by full scale
+     * itself.
+     */
+    it('flattens a live controller batch onto the graph.rs send-midi-control spelling', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'send-midi-control',
+                    target: { trackId: 'track-1', deviceId: 'dev-plugin' },
+                    controller: 64,
+                    value: 96,
+                    channel: 5,
+                },
+            ],
+        });
+
+        const sent = wire.commands[0];
+        if (sent?.kind !== 'send-midi-control') {
+            throw new Error('the batch must serialize as send-midi-control');
+        }
+        expect(sent).toEqual({
+            kind: 'send-midi-control',
+            trackId: 'track-1',
+            deviceId: 'dev-plugin',
+            controller: 64,
+            value: 96,
+            channel: 5,
+        });
+        // Flattened, not nested: the mirror has no `target` field to read.
+        expect(Object.keys(sent)).toEqual(['kind', 'trackId', 'deviceId', 'controller', 'value', 'channel']);
     });
 
     /**
@@ -389,6 +455,32 @@ describe('serializeAudioGraphCommandBatch', () => {
         // `toEqual` reads an explicit `undefined` as absence; the mirror does
         // not, so the keys themselves are what say the optionals stayed off.
         expect(Object.keys(scheduled.notes[1] ?? {})).toEqual(['time', 'note', 'velocity', 'channel', 'isNoteOn']);
+    });
+
+    it('carries a stated articulation onto the wire and leaves an unstated one off', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'schedule-midi',
+                    target: { trackId: 'track-1', deviceId: 'dev-plugin' },
+                    probabilitySeed: 0xdecafbad,
+                    notes: [
+                        { time: 0.25, note: 60, velocity: 100, channel: 0, isNoteOn: true, articulationId: 10 },
+                        { time: 0.5, note: 60, velocity: 0, channel: 0, isNoteOn: false },
+                    ],
+                },
+            ],
+        });
+
+        const scheduled = wire.commands[0];
+        if (scheduled?.kind !== 'schedule-midi') {
+            throw new Error('the batch must serialize as schedule-midi');
+        }
+        expect(scheduled.notes[0]?.articulationId).toBe(10);
+        // The key itself: the mapper reads an absent articulation as the
+        // device's own current one, which a stated `undefined` is not.
+        expect(scheduled.notes[1]).not.toHaveProperty('articulationId');
     });
 
     it('carries a clear-midi window onto the wire with an open end left null', () => {
@@ -457,6 +549,102 @@ describe('serializeAudioGraphCommandBatch', () => {
                 fade: { fadeOut: {}, microFadeSeconds: 0 },
             },
         });
+    });
+
+    /**
+     * The bank key is the one device field that is neither project truth nor a
+     * parameter: `map_device` looks the staged material up under it, and
+     * `DevicePayload` reads it by this exact spelling.
+     */
+    it('carries a device bank key onto the graph.rs sampleBankKey spelling', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'insert-device',
+                    trackId: 'track-1',
+                    device: {
+                        id: 'dev-levain',
+                        name: 'Levain',
+                        type: 'levain',
+                        bypassed: false,
+                        parameterValues: { master_gain: 0.8 },
+                        sampleBankKey: 'levain:violin-1',
+                    },
+                    index: 0,
+                },
+            ],
+        });
+
+        const inserted = wire.commands[0];
+        if (inserted?.kind !== 'insert-device') {
+            throw new Error('the batch must serialize as insert-device');
+        }
+        expect(inserted.device).toEqual({
+            id: 'dev-levain',
+            name: 'Levain',
+            type: 'levain',
+            bypassed: false,
+            parameterValues: { master_gain: 0.8 },
+            sampleBankKey: 'levain:violin-1',
+        });
+    });
+
+    it('omits the bank key for a device built from its own record', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'insert-device',
+                    trackId: 'track-1',
+                    device: {
+                        id: 'dev-knead',
+                        name: 'Knead',
+                        type: 'knead',
+                        bypassed: false,
+                        parameterValues: {},
+                    },
+                    index: 0,
+                },
+            ],
+        });
+
+        const inserted = wire.commands[0];
+        if (inserted?.kind !== 'insert-device') {
+            throw new Error('the batch must serialize as insert-device');
+        }
+        // Omitted, not `undefined`: the payload stays exactly what the engine
+        // took before banks existed.
+        expect(Object.keys(inserted.device)).toEqual(['id', 'name', 'type', 'bypassed', 'parameterValues']);
+    });
+
+    /// #2865 — the native wire has no envelope vocabulary. A playback that
+    /// carries one reaching this seam means a producer defect (the native
+    /// producers gate envelope-carrying clips back onto Web Audio), and the
+    /// honest answer is a refusal the caller can read, never a silently
+    /// dropped curve that prints the clip flat.
+    it('refuses a schedule-clip carrying a gain envelope rather than dropping it', () => {
+        expect(() =>
+            serializeAudioGraphCommandBatch({
+                schemaVersion: 1,
+                commands: [
+                    {
+                        kind: 'schedule-clip',
+                        playback: {
+                            trackId: 'track-1',
+                            source: { sourceId: 'take-1' },
+                            startTime: 0,
+                            sourceOffsetSeconds: 0,
+                            durationSeconds: 0.5,
+                            playbackRate: 1,
+                            gain: 1,
+                            envelope: [{ timeSec: 0, gain: 10 ** (-12 / 20) }],
+                            fade: { microFadeSeconds: 0 },
+                        },
+                    },
+                ],
+            })
+        ).toThrow('gain envelope cannot cross the native wire');
     });
 });
 

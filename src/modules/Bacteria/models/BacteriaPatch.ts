@@ -108,18 +108,20 @@ export type BacteriaBand = {
 /**
  * A single mod-source → target-param routing.
  *
- * Deliberately UI/persistence-only metadata: it is stored in the patch and
- * rendered by ModulationDock, but is NOT a scalar engine parameter. The engine
- * bridge (`updateDeviceParam`) only carries `(paramId, value: number)` messages,
- * which cannot express a structured assignment, so `loadBacteriaPatchWithAudio`
- * intentionally excludes `modAssignments` from its engine push. (The DSP-side
- * `add_mod_assignment` entry point exists but has no frontend message path yet;
- * wiring it is a separate engine-bridge concern, not a patch-load concern.)
+ * The `targetParam` grammar is what the engine's modulation matrix can address
+ * (`bacteriaModTargetId` in the param bridge maps it to wasm ids): `mix`,
+ * `band{N}_gain`, `band{N}_drive`, `band{N}_filterCutoff`. The table reaches the
+ * engine as one wholesale replacement through the patch door
+ * (`updateDevicePatch` → the worklet's `set-mod-assignments`), because the
+ * engine bridge's scalar `(paramId, value)` messages cannot express a
+ * structured row and the engine's table has no per-entry removal. `amount` is a
+ * fraction of the target's usable range; the bridge scales it into the offset
+ * units the engine adds.
  */
 export type BacteriaModAssignment = {
     sourceId: string;
     targetParam: string;
-    amount: number; // -1 to 1
+    amount: number; // -1 to 1, as a fraction of the target's range
     bipolar: boolean;
 };
 
@@ -181,8 +183,9 @@ export type BacteriaPatch = {
     morphY: number; // 0 – 1
 
     // Modulation assignments (stored as array).
-    // Non-audio metadata — persisted and rendered, never pushed to the engine
-    // by loadBacteriaPatchWithAudio. See BacteriaModAssignment for the rationale.
+    // Structured engine routing, not a scalar param: never pushed through the
+    // scalar door — `loadBacteriaPatchWithAudio` and the dock's gestures send
+    // the whole table through the patch door instead. See BacteriaModAssignment.
     modAssignments: BacteriaModAssignment[];
 
     // Snapshots for XY morphing.

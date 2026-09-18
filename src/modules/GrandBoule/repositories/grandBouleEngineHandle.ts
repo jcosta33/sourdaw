@@ -20,6 +20,13 @@ export type GrandBouleEngineHandle = {
     noteOff: (input: { midiNote: number }) => void;
     /** Set a global parameter by name (`master_gain`, `soundboard_send`, …). */
     setParam: (input: { name: string; value: number }) => void;
+    /**
+     * Push the two engine-consumed MIDI calibration values to both bodies:
+     * the Web Audio node directly, and the native session's body when this
+     * device is carried there. Mirrors `setSustain`'s dual-carrier write for
+     * a value that is calibration state rather than a pedal gesture.
+     */
+    setCalibration: (input: { sustainThreshold: number; ccSmoothingMs: number }) => void;
     /** Continuous sustain pedal (CC64). 0 = released, 1 = fully engaged. */
     setSustain: (input: { position: number }) => void;
     /** Una corda (CC67) pedal state. */
@@ -28,8 +35,6 @@ export type GrandBouleEngineHandle = {
     setSostenuto: (input: { engaged: boolean }) => void;
     /** Set historical temperament (0=Equal, 1=Werckmeister III, 2=Kirnberger III, 3=Vallotti, 4=Young II, 5=Meantone ¼-comma). */
     setTemperament: (input: { index: number }) => void;
-    /** Load an attack-transient clip for the hybrid pathway. */
-    loadAttackClip: (input: { key: number; samples: Float32Array }) => void;
     /** Panic: silence every voice immediately. */
     allNotesOff: () => void;
     /** Whether this handle is connected to a live engine instance. */
@@ -37,9 +42,7 @@ export type GrandBouleEngineHandle = {
     /** The track's AnalyserNode for visualization (FFT, metering). */
     getAnalyserNode: () => AnalyserNode | null;
     /**
-     * The engine AudioContext sample rate (Hz). Attack clips authored at a
-     * different rate must be resampled to this before being forwarded so they
-     * play back at the correct pitch. Defaults to 44.1 kHz on the
+     * The engine AudioContext sample rate (Hz). Defaults to 44.1 kHz on the
      * disconnected handle, which never forwards anything.
      */
     sampleRate: () => number;
@@ -55,11 +58,11 @@ export function createDisconnectedGrandBouleEngineHandle(): GrandBouleEngineHand
         noteOnMidi2: () => {},
         noteOff: () => {},
         setParam: () => {},
+        setCalibration: () => {},
         setSustain: () => {},
         setUnaCorda: () => {},
         setSostenuto: () => {},
         setTemperament: () => {},
-        loadAttackClip: () => {},
         allNotesOff: () => {},
         isReady: () => false,
         getAnalyserNode: () => null,

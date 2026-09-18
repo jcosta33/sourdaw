@@ -74,7 +74,6 @@ const CREATED_AT = 1_700_000_000_000;
 const RECENT_KEY = 'sourdaw:project:1700000000000';
 const TRACK_ID = 'track-3693';
 const DEVICE_ID = 'dev-3693';
-const ENGINE_SAMPLE_RATE = 44_100;
 
 const bytesOf = (value: string): Uint8Array => new TextEncoder().encode(value);
 const ORIGINAL_CHUNK = bytesToBase64(bytesOf('original-saved-state'));
@@ -227,7 +226,6 @@ function activateInstance(instanceId: string, stateChunk: string | undefined) {
         pluginId: 'serum',
         instanceId,
         stateChunk,
-        engineSampleRate: ENGINE_SAMPLE_RATE,
     });
 }
 

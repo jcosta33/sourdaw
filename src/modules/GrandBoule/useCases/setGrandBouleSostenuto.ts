@@ -10,7 +10,11 @@ import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHan
 import { type GrandBouleState } from '../stores/grandBouleStore';
 
 type SetGrandBouleSostenutoInput = {
-    engine: GrandBouleEngineHandle;
+    /**
+     * Absent when the state was already delivered to the bodies by the pedal
+     * route (`routePedalToBodies.ts`); the store alone follows.
+     */
+    engine?: GrandBouleEngineHandle;
     engaged: boolean;
     store: Store<GrandBouleState>;
 };
@@ -24,5 +28,5 @@ export function setGrandBouleSostenuto(input: SetGrandBouleSostenutoInput): void
         ...state,
         pedals: { ...state.pedals, sostenuto: input.engaged },
     });
-    input.engine.setSostenuto({ engaged: input.engaged });
+    input.engine?.setSostenuto({ engaged: input.engaged });
 }

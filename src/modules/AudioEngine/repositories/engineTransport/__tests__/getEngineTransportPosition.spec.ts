@@ -26,6 +26,17 @@ const NATIVE_PAYLOAD = {
     timeSigDenom: 4,
     masterPeak: 0.5,
     stripPeaks: { 'strip-a': 0.25, 'strip-b': 0.75 },
+    tunerTelemetry: {
+        'd-tuner': {
+            active: true,
+            frequency: 440.5,
+            cents: -2.5,
+            confidence: 0.75,
+            noteIndex: 9,
+            octave: 4,
+            midiNote: 69,
+        },
+    },
 };
 
 describe('getEngineTransportPosition', () => {
@@ -64,6 +75,7 @@ describe('getEngineTransportPosition', () => {
         expect(position.batchesApplied).toBe(0);
         expect(position.masterPeak).toBe(0);
         expect(position.stripPeaks).toEqual({});
+        expect(position.tunerTelemetry).toEqual({});
     });
 
     it('keeps only finite-number strip peaks, on their own keys', async () => {
@@ -84,5 +96,116 @@ describe('getEngineTransportPosition', () => {
         const position = await getEngineTransportPosition();
 
         expect(position.stripPeaks).toEqual({});
+    });
+
+    // An inactive reading is a reading: a tuner that has stopped hearing a
+    // note publishes `active: false`, and the panel has to show that rather
+    // than hold the last pitch it saw. So it survives the read like any other.
+    it('keeps a well-formed tuner reading, active or not, on its own key', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            running: true,
+            playing: true,
+            tunerTelemetry: {
+                'd-heard': {
+                    active: true,
+                    frequency: 440.5,
+                    cents: -2.5,
+                    confidence: 0.75,
+                    noteIndex: 9,
+                    octave: 4,
+                    midiNote: 69,
+                },
+                'd-silent': {
+                    active: false,
+                    frequency: 0,
+                    cents: 0,
+                    confidence: 0,
+                    noteIndex: 0,
+                    octave: 0,
+                    midiNote: 0,
+                },
+            },
+        });
+
+        const position = await getEngineTransportPosition();
+
+        expect(position.tunerTelemetry).toEqual({
+            'd-heard': {
+                active: true,
+                frequency: 440.5,
+                cents: -2.5,
+                confidence: 0.75,
+                noteIndex: 9,
+                octave: 4,
+                midiNote: 69,
+            },
+            'd-silent': {
+                active: false,
+                frequency: 0,
+                cents: 0,
+                confidence: 0,
+                noteIndex: 0,
+                octave: 0,
+                midiNote: 0,
+            },
+        });
+    });
+
+    // Dropped whole rather than filled in: a reading missing a field, or
+    // carrying a non-finite or wrongly typed one, would put a number in front
+    // of the musician that no analyser computed, and the needle could not say
+    // which of its fields it made up.
+    it('drops a malformed tuner reading rather than coercing it', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            running: true,
+            playing: true,
+            tunerTelemetry: {
+                'd-ok': {
+                    active: true,
+                    frequency: 440,
+                    cents: 0,
+                    confidence: 1,
+                    noteIndex: 9,
+                    octave: 4,
+                    midiNote: 69,
+                },
+                'd-no-flag': {
+                    active: 1,
+                    frequency: 440,
+                    cents: 0,
+                    confidence: 1,
+                    noteIndex: 9,
+                    octave: 4,
+                    midiNote: 69,
+                },
+                'd-nan': {
+                    active: true,
+                    frequency: Number.NaN,
+                    cents: 0,
+                    confidence: 1,
+                    noteIndex: 9,
+                    octave: 4,
+                    midiNote: 69,
+                },
+                'd-short': { active: true, frequency: 440, cents: 0 },
+                'd-not-an-object': 440,
+            },
+        });
+
+        const position = await getEngineTransportPosition();
+
+        expect(Object.keys(position.tunerTelemetry)).toEqual(['d-ok']);
+    });
+
+    it('reports no tuner readings when the field is missing or not an object', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            running: true,
+            playing: true,
+            tunerTelemetry: 'not-an-object',
+        });
+
+        const position = await getEngineTransportPosition();
+
+        expect(position.tunerTelemetry).toEqual({});
     });
 });

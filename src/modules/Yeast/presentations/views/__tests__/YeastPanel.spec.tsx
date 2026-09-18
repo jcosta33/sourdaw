@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import { type TrackStoreState } from '#/modules/Arrangement/stores';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { type GrooveTemplateState } from '#/modules/MIDI/stores';
 
 import { decodeArpPatternParams, defaultStep, withArpPatternParams } from '../../../models/ArpPattern';
@@ -90,6 +92,16 @@ describe('YeastPanel', () => {
         runtimeMocks.applyProjection.mockResolvedValue(undefined);
         runtimeMocks.getStatus.mockReturnValue('ready');
         runtimeMocks.getError.mockReturnValue(undefined);
+        // The panel dispatches through the guarded action pipeline (#2111), so
+        // the production handlers must resolve for a control write to land.
+        clearHandlerRegistry();
+        for (const handlerMap of getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true })) {
+            registerHandlerMap(handlerMap);
+        }
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
     });
 
     it('should render the default rack when the store has no value', () => {
@@ -211,7 +223,7 @@ describe('YeastPanel', () => {
         });
     });
 
-    it('commits an integer when dragging the Octaves knob (integer-domain param)', () => {
+    it('commits an integer when dragging the Octaves knob (integer-domain param)', async () => {
         // Pre-fix, KnobCol hardcoded step={0.01} for every knob including the
         // integer-domain octave_range (1-4). The worker rounds this param
         // (Arpeggiator.ts setParam), so a fractional commit here would store a
@@ -239,8 +251,11 @@ describe('YeastPanel', () => {
         fireEvent.pointerMove(octavesSlider, { pointerId: 1, clientY: 45 });
         fireEvent.pointerUp(octavesSlider, { pointerId: 1 });
 
+        // The settled value dispatches; the write lands one await later.
+        await waitFor(() => {
+            expect(storeMock.yeastState?.processors[0]?.params?.octave_range).toBe(2);
+        });
         const committed = storeMock.yeastState?.processors[0]?.params?.octave_range;
-        expect(committed).toBe(2);
         expect(Number.isInteger(committed)).toBe(true);
     });
 
@@ -314,30 +329,35 @@ describe('YeastPanel', () => {
             ['Build', 3 as const],
             ['Route', 4 as const],
             ['Lab', 5 as const],
-        ])('moves a processor down and commits the new order on the %s deck', (_deck, uiLevel) => {
+        ])('moves a processor down and commits the new order on the %s deck', async (_deck, uiLevel) => {
             storeMock.yeastState = rackState(uiLevel);
             render(<YeastPanel />);
 
             fireEvent.click(screen.getByRole('button', { name: 'Move Arpeggiator down' }));
 
-            expect(storeMock.yeastState?.processors.map((processor) => processor.id)).toEqual([
-                'filter-1',
-                'arp-1',
-                'transpose-1',
-            ]);
+            // The guarded dispatch writes one await later than the click.
+            await waitFor(() => {
+                expect(storeMock.yeastState?.processors.map((processor) => processor.id)).toEqual([
+                    'filter-1',
+                    'arp-1',
+                    'transpose-1',
+                ]);
+            });
         });
 
-        it('moves a processor up and commits the new order', () => {
+        it('moves a processor up and commits the new order', async () => {
             storeMock.yeastState = rackState(3);
             render(<YeastPanel />);
 
             fireEvent.click(screen.getByRole('button', { name: 'Move Note Filter up' }));
 
-            expect(storeMock.yeastState?.processors.map((processor) => processor.id)).toEqual([
-                'filter-1',
-                'arp-1',
-                'transpose-1',
-            ]);
+            await waitFor(() => {
+                expect(storeMock.yeastState?.processors.map((processor) => processor.id)).toEqual([
+                    'filter-1',
+                    'arp-1',
+                    'transpose-1',
+                ]);
+            });
         });
 
         it('disables Up on the first row and Down on the last row', () => {
@@ -658,6 +678,45 @@ describe('YeastPanel', () => {
                 expect(section?.className).toContain('shrink-0');
                 expect(section?.className).toContain('yeast-window');
             }
+        });
+
+        it('keeps Level 3 Build rack scroll container from collapsing sections with [&>*]:shrink-0', () => {
+            storeMock.yeastState = {
+                processors: [{ id: 'proc-1', type: 'arpeggiator', name: 'TestProcessor', bypassed: false, params: {} }],
+                uiLevel: 3,
+            };
+            render(<YeastPanel />);
+
+            const rackButton = screen.getByRole('button', { name: 'Move TestProcessor down' });
+            const scrollContainer = rackButton.closest('.overflow-y-auto');
+            expect(scrollContainer).not.toBeNull();
+            expect(scrollContainer?.className).toContain('[&>*]:shrink-0');
+        });
+
+        it('keeps Level 4 Route rack scroll container from collapsing sections with [&>*]:shrink-0', () => {
+            storeMock.yeastState = {
+                processors: [{ id: 'proc-1', type: 'arpeggiator', name: 'TestProcessor', bypassed: false, params: {} }],
+                uiLevel: 4,
+            };
+            render(<YeastPanel />);
+
+            const rackButton = screen.getByRole('button', { name: 'Move TestProcessor down' });
+            const scrollContainer = rackButton.closest('.overflow-y-auto');
+            expect(scrollContainer).not.toBeNull();
+            expect(scrollContainer?.className).toContain('[&>*]:shrink-0');
+        });
+
+        it('keeps Level 5 Lab rack scroll container from collapsing sections with [&>*]:shrink-0', () => {
+            storeMock.yeastState = {
+                processors: [{ id: 'proc-1', type: 'arpeggiator', name: 'TestProcessor', bypassed: false, params: {} }],
+                uiLevel: 5,
+            };
+            render(<YeastPanel />);
+
+            const rackButton = screen.getByRole('button', { name: 'Move TestProcessor down' });
+            const scrollContainer = rackButton.closest('.overflow-y-auto');
+            expect(scrollContainer).not.toBeNull();
+            expect(scrollContainer?.className).toContain('[&>*]:shrink-0');
         });
     });
 });

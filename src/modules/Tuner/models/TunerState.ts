@@ -12,6 +12,21 @@
 
 export type DisplayMode = 'needle' | 'strobe' | 'poly';
 
+/**
+ * One string of the polyphonic tracker's reading, low string first (E2 first
+ * for the guitar set the panel labels). Mirrors the worklet's per-string
+ * telemetry structurally; the sink registration in the composition root is
+ * what keeps the two shapes assignable.
+ */
+export type TunerPolyStringState = {
+    active: boolean;
+    cents: number;
+    confidence: number;
+};
+
+/** Shared empty reading so the default state never mints a fresh array. */
+const EMPTY_POLY_STRINGS: readonly TunerPolyStringState[] = Object.freeze([]);
+
 export type TunerState = {
     frequency: number;
     cents: number;
@@ -23,6 +38,8 @@ export type TunerState = {
     active: boolean;
     mode: DisplayMode;
     scaleName?: string;
+    /** Per-string poly readings; empty while the poly tracker is off or bypassed. */
+    polyStrings: readonly TunerPolyStringState[];
 };
 
 export const DEFAULT_TUNER_STATE: TunerState = {
@@ -35,4 +52,5 @@ export const DEFAULT_TUNER_STATE: TunerState = {
     noteName: 'A',
     active: false,
     mode: 'needle',
+    polyStrings: EMPTY_POLY_STRINGS,
 };

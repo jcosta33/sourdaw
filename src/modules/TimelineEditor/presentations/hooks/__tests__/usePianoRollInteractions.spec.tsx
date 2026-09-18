@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
         stepRecordNoteOff: vi.fn(),
         getTransportState: vi.fn(),
         stepRecordState: { currentPitch: 62 },
+        preferencesState: null as { defaultVelocity: number } | null,
         trackState: {
             tracks: [
                 {
@@ -96,6 +97,21 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     stepRecordNoteOn: mocks.stepRecordNoteOn,
     stepRecordNoteOff: mocks.stepRecordNoteOff,
 }));
+
+vi.mock('#/modules/Preferences/stores', () => ({
+    preferencesStore: {
+        get value() {
+            return mocks.preferencesState;
+        },
+    },
+}));
+
+/**
+ * Default Velocity preference every creation spec asserts against. Deliberately
+ * not 100 — the value the note-creation paths used to hard-code — so a
+ * regression to that constant fails these specs instead of passing silently.
+ */
+const PREFERRED_DEFAULT_VELOCITY = 87;
 
 vi.mock('#/modules/Transport/useCases', () => ({
     getTransportState: mocks.getTransportState,
@@ -194,6 +210,7 @@ const renderRoll = (
 describe('usePianoRollInteractions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.preferencesState = { defaultVelocity: PREFERRED_DEFAULT_VELOCITY };
         mocks.addMidiNote.mockImplementation((_clipId, pitch, startBeat, duration, velocity) => ({
             id: mocks.nextId(),
             pitch,
@@ -275,7 +292,7 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseDown(canvas, { clientX: PITCH_RAIL_W + 80, clientY: yForPitch(70) });
             fireEvent.mouseUp(canvas, { clientX: PITCH_RAIL_W + 80, clientY: yForPitch(70) });
 
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 12, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 12, 1, PREFERRED_DEFAULT_VELOCITY);
         });
 
         it('reports the scrolled beat to the context menu', () => {
@@ -296,7 +313,7 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
             fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70) });
 
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
             expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
                 'Draw MIDI note',
                 expect.any(Function),
@@ -506,7 +523,7 @@ describe('usePianoRollInteractions', () => {
             const { canvas } = renderRoll({ paintMode: true, notes: [] });
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
 
             fireEvent.mouseMove(canvas, { clientX: 125, clientY: yForPitch(70) });
             const paintedBeats = mocks.addMidiNote.mock.calls.map((call) => call[2]);
@@ -527,7 +544,7 @@ describe('usePianoRollInteractions', () => {
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
 
-            expect(mocks.stampChord).toHaveBeenCalledWith('clip-1', 70, 1, 1, 100, 'min7');
+            expect(mocks.stampChord).toHaveBeenCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY, 'min7');
             expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set(['ch1', 'ch2', 'ch3']));
             expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
                 'Stamp min7 chord',
@@ -541,7 +558,7 @@ describe('usePianoRollInteractions', () => {
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
 
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 4, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 4, 1, PREFERRED_DEFAULT_VELOCITY);
             const advance = setStepBeat.mock.calls[0]?.[0];
             expect(advance(4)).toBe(5);
         });
@@ -572,7 +589,7 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(61) });
             fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(61) });
 
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 60, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 60, 1, 1, PREFERRED_DEFAULT_VELOCITY);
         });
     });
 
@@ -819,6 +836,153 @@ describe('usePianoRollInteractions', () => {
             expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set());
         });
 
+        // Issue #3665. The transport playhead is an arrangement beat while MIDI
+        // note starts are clip-relative, so the split beat is the playhead
+        // pushed through the inverse of the scheduling projection
+        // (`iterationStartBeat + storedBeat - midiOffsetBeats`). These specs
+        // assert the note segments the owner ends up with, not the transform
+        // call: the mock transform splits exactly like the real one, so a
+        // wrongly converted beat shows up as wrong or missing segments.
+        describe('shift+S split beat in a placed clip (issue #3665)', () => {
+            type ClipFixture = {
+                id: string;
+                type: string;
+                startBeat?: number;
+                endBeat?: number;
+                midiOffsetBeats?: number;
+                loopEnabled?: boolean;
+                loopLength?: number;
+            };
+
+            /** Replaces clip-1's arrangement placement; the default is an unplaced clip. */
+            const placeClip = (placement: Omit<ClipFixture, 'id' | 'type'> = {}): void => {
+                const [primaryTrack] = mocks.trackState.tracks;
+                if (primaryTrack) {
+                    primaryTrack.clips = [{ id: 'clip-1', type: 'midi', ...placement }];
+                }
+            };
+
+            /**
+             * A note store that the split transform mock reads and writes
+             * through, mirroring `splitNoteAtBeat`'s contract: each selected
+             * note strictly spanning the beat becomes a left half that keeps
+             * the id and a right half starting at the beat.
+             */
+            const installNoteStore = (clipId: string, notes: Note[]): { current: Note[] } => {
+                const store: { current: Note[] } = { current: structuredClone(notes) };
+                mocks.getNotesForClip.mockImplementation((queried: string) =>
+                    queried === clipId ? structuredClone(store.current) : []
+                );
+                mocks.setNotesForClip.mockImplementation((queried: string, next: Note[]) => {
+                    if (queried === clipId) {
+                        store.current = structuredClone(next);
+                    }
+                });
+                mocks.splitNoteAtBeat.mockImplementation((queried: string, ids: string[], beat: number) => {
+                    if (queried !== clipId) {
+                        return;
+                    }
+                    const selected = new Set(ids);
+                    const result: Note[] = [];
+                    for (const note of store.current) {
+                        if (
+                            !selected.has(note.id) ||
+                            beat <= note.startBeat ||
+                            beat >= note.startBeat + note.duration
+                        ) {
+                            result.push(note);
+                            continue;
+                        }
+                        result.push({ ...note, duration: beat - note.startBeat });
+                        result.push({
+                            id: `${note.id}-right`,
+                            pitch: note.pitch,
+                            startBeat: beat,
+                            duration: note.startBeat + note.duration - beat,
+                            velocity: note.velocity,
+                        });
+                    }
+                    store.current = result;
+                });
+                return store;
+            };
+
+            afterEach(() => {
+                mocks.splitNoteAtBeat.mockReset();
+                mocks.setNotesForClip.mockReset();
+                mocks.getNotesForClip.mockReset();
+                placeClip();
+            });
+
+            it('translates the playhead into a clip placed away from beat zero', () => {
+                placeClip({ startBeat: 8, endBeat: 12 });
+                const store = installNoteStore('clip-1', [makeNote('n1', 60, 1, 3)]);
+                mocks.getTransportState.mockReturnValue({ playheadPosition: 10 });
+                const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
+
+                fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
+
+                // Playhead 10 over clip [8, 12) is clip-relative beat 2, so the
+                // note spanning [1, 4) becomes [1, 2) and [2, 4).
+                expect(store.current).toEqual([
+                    { id: 'n1', pitch: 60, startBeat: 1, duration: 1, velocity: 100 },
+                    { id: 'n1-right', pitch: 60, startBeat: 2, duration: 2, velocity: 100 },
+                ]);
+                const redo = mocks.pushUndoEntry.mock.calls[0]?.[2];
+                expect(redo).toBeTypeOf('function');
+                redo?.();
+                expect(mocks.setNotesForClip).toHaveBeenLastCalledWith('clip-1', [
+                    { id: 'n1', pitch: 60, startBeat: 1, duration: 1, velocity: 100 },
+                    { id: 'n1-right', pitch: 60, startBeat: 2, duration: 2, velocity: 100 },
+                ]);
+                expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set());
+            });
+
+            it('wraps the playhead through the clip loop and restores the media offset', () => {
+                placeClip({ startBeat: 4, endBeat: 16, loopEnabled: true, loopLength: 4, midiOffsetBeats: 2 });
+                const store = installNoteStore('clip-1', [makeNote('n1', 60, 3, 3)]);
+                mocks.getTransportState.mockReturnValue({ playheadPosition: 10 });
+                const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
+
+                fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
+
+                // Forward projection: stored beat 4 - offset 2 = 2 beats into
+                // iteration 1 (iteration start 4 + one 4-beat loop = 8), so the
+                // note sounds at arrangement beat 10 and the playhead maps back
+                // to stored beat 4, where [3, 6) splits.
+                expect(store.current).toEqual([
+                    { id: 'n1', pitch: 60, startBeat: 3, duration: 1, velocity: 100 },
+                    { id: 'n1-right', pitch: 60, startBeat: 4, duration: 2, velocity: 100 },
+                ]);
+            });
+
+            it('does not split when the playhead sits before the visible clip', () => {
+                placeClip({ startBeat: 8, endBeat: 12 });
+                const store = installNoteStore('clip-1', [makeNote('n1', 60, 1, 3)]);
+                mocks.getTransportState.mockReturnValue({ playheadPosition: 5 });
+                const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
+
+                fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
+
+                expect(mocks.splitNoteAtBeat).not.toHaveBeenCalled();
+                expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+                expect(store.current).toEqual([makeNote('n1', 60, 1, 3)]);
+                expect(setSelectedNoteIds).not.toHaveBeenCalled();
+            });
+
+            it('does not split when the playhead sits at the clip end', () => {
+                placeClip({ startBeat: 8, endBeat: 12 });
+                const store = installNoteStore('clip-1', [makeNote('n1', 60, 1, 3)]);
+                mocks.getTransportState.mockReturnValue({ playheadPosition: 12 });
+                const { canvas } = renderRoll({ notes: store.current, selectedNoteIds: new Set(['n1']) });
+
+                fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
+
+                expect(mocks.splitNoteAtBeat).not.toHaveBeenCalled();
+                expect(store.current).toEqual([makeNote('n1', 60, 1, 3)]);
+            });
+        });
+
         it('step-input keys drive the step recorder', () => {
             const { canvas } = renderRoll({ stepInput: true });
 
@@ -903,7 +1067,7 @@ describe('usePianoRollInteractions', () => {
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
 
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 4, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 4, 1, PREFERRED_DEFAULT_VELOCITY);
             const createdId = mocks.addMidiNote.mock.results[0]?.value.id;
             const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
             undoFn();
@@ -924,7 +1088,7 @@ describe('usePianoRollInteractions', () => {
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
 
-            expect(mocks.stampChord).toHaveBeenCalledWith('clip-2', 70, 1, 1, 100, 'min7');
+            expect(mocks.stampChord).toHaveBeenCalledWith('clip-2', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY, 'min7');
             const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
             undoFn();
             expect(mocks.removeNotesByIds).toHaveBeenCalledWith('clip-2', ['ch1', 'ch2']);
@@ -944,7 +1108,7 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
             fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70) });
 
-            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-2', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
             const createdId = mocks.addMidiNote.mock.results[0]?.value.id;
             const undoFn = mocks.pushUndoEntry.mock.calls[0]?.[1];
             undoFn();
@@ -1021,7 +1185,7 @@ describe('usePianoRollInteractions', () => {
             const stamp = renderRoll({ ...staleFocus, notes: [] });
             fireEvent.mouseDown(stamp.canvas, { clientX: 45, clientY: yForPitch(70) });
             fireEvent.mouseUp(stamp.canvas, { clientX: 45, clientY: yForPitch(70) });
-            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
 
             // Paint dedupe must read the fallback target's list — the
             // primary's — including notes created earlier in the gesture.
@@ -1051,7 +1215,7 @@ describe('usePianoRollInteractions', () => {
 
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
 
-            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-2', 70, 100);
+            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-2', 70, PREFERRED_DEFAULT_VELOCITY);
         });
 
         it('with no focused clip, every creation gesture still targets the primary clip', () => {
@@ -1060,23 +1224,23 @@ describe('usePianoRollInteractions', () => {
             const stamp = renderRoll({ notes: [] });
             fireEvent.mouseDown(stamp.canvas, { clientX: 45, clientY: yForPitch(70) });
             fireEvent.mouseUp(stamp.canvas, { clientX: 45, clientY: yForPitch(70) });
-            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
 
             cleanup();
             const step = renderRoll({ notes: [], stepInput: true, stepBeat: 4 });
             fireEvent.mouseDown(step.canvas, { clientX: 45, clientY: yForPitch(70) });
-            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 4, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 4, 1, PREFERRED_DEFAULT_VELOCITY);
 
             cleanup();
             mocks.stampChord.mockReturnValue([{ id: 'ch1' }]);
             const chord = renderRoll({ notes: [], chordMode: true, chordType: 'min7' });
             fireEvent.mouseDown(chord.canvas, { clientX: 45, clientY: yForPitch(70) });
-            expect(mocks.stampChord).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, 100, 'min7');
+            expect(mocks.stampChord).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY, 'min7');
 
             cleanup();
             const paint = renderRoll({ notes: [], paintMode: true });
             fireEvent.mouseDown(paint.canvas, { clientX: 45, clientY: yForPitch(70) });
-            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, 100);
+            expect(mocks.addMidiNote).toHaveBeenLastCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
         });
     });
 

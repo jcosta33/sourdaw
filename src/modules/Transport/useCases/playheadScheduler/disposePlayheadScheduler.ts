@@ -1,5 +1,6 @@
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
 
+import { playheadClockRef } from '../../stores/playheadClockRef';
 import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipScheduling';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 
@@ -36,6 +37,8 @@ export function disposePlayheadScheduler(): void {
     }
     schedulerSession.lastTickTime = 0;
     schedulerSession.accumulatedPosition = 0;
+    playheadClockRef.beat = 0;
+    playheadClockRef.audioTimeSeconds = 0;
     schedulerSession.lastScheduledBeat = -1;
     schedulerSession.punchRecordingActive = false;
     schedulerSession.tickInFlight = false;

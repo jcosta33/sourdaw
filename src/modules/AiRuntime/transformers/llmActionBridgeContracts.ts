@@ -24,3 +24,9 @@ export type SectionPlanningSignature = {
     sectionId?: string;
     startBeat: number;
 };
+
+export type SidechainRouteDeviceAdmission = {
+    sourceTrackId: string;
+    targetDeviceId: string;
+    targetTrackId: string;
+};

@@ -113,7 +113,10 @@ describe('stopInputMonitoring', () => {
         stopInputMonitoring();
         await startInputMonitoring('t2');
 
-        expect(firstMockSourceNode.disconnect).toHaveBeenCalledTimes(1);
+        // The first source released its per-track edge, then the capture-wide
+        // disconnect — and the device track stopped exactly once.
+        expect(firstMockSourceNode.disconnect).toHaveBeenCalledWith(firstMockStrip.gainNode);
+        expect(firstMockSourceNode.disconnect).toHaveBeenCalledWith();
         expect(firstMockTrack.stop).toHaveBeenCalledTimes(1);
         expect(getUserMedia).toHaveBeenCalledTimes(2);
         expect(createMediaStreamSource).toHaveBeenNthCalledWith(2, secondMockStream);

@@ -20,6 +20,7 @@ import {
     dialog,
     ipcMain,
     Menu,
+    powerSaveBlocker,
     screen,
     session,
     shell,
@@ -32,7 +33,6 @@ import {
     registerScanCommand,
     registerNativeMenuChannels,
     registerWindowControlChannels,
-    SCAN_COMMAND,
 } from './appIpc.js';
 import { createApplicationMenuTemplate, type NativeMenuIntent } from './applicationMenu.js';
 import {
@@ -43,7 +43,7 @@ import {
     STREAM_CHANNEL,
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
 } from './channels.js';
-import { EXPOSED_COMMANDS } from './commands.js';
+import { APPLY_GRAPH_COMMANDS, EXPOSED_COMMANDS, RETIRE_NATIVE_ENGINE, SCAN_PLUGINS } from './commands.js';
 import { createCommandStream, createEventForwarder } from './events.js';
 import {
     bindMainWindowOwnerTeardown,
@@ -62,13 +62,17 @@ import { forwardNativeEvent } from './nativeEventRouter.js';
 import { createNativeMenuActionDispatcher } from './nativeMenuActionDispatcher.js';
 import { createNativeMenuProjectStateController } from './nativeMenuProjectState.js';
 import { createPluginCommandAdmission } from './pluginCommandAdmission.js';
+import { createEditorWindow } from './pluginEditorWindow.js';
+import { registerPluginWindowHost, type EditorWindow, type PluginWindowHost } from './pluginGui.js';
+import { createPowerSaveController } from './powerSave.js';
 import {
-    registerPluginWindowHost,
-    type EditorWindow,
-    type EditorWindowOptions,
-    type PluginWindowHost,
-} from './pluginGui.js';
-import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
+    APP_ENTRY_URL,
+    APP_ORIGIN,
+    APP_TITLE,
+    handleAppProtocol,
+    registerAppScheme,
+    resolveContentRoots,
+} from './protocol.js';
 import { createRendererCrashRecovery } from './rendererCrashRecovery.js';
 import { createRendererSessionLifecycle } from './rendererSessionLifecycle.js';
 import { completeMacCloseAfterSessionQuiesce, createRendererSessionQuiescer } from './rendererSessionQuiescer.js';
@@ -85,7 +89,7 @@ import { getWindowChromeOptions } from './windowChrome.js';
 import { createWindowCloseCoordinator } from './windowCloseCoordinator.js';
 import { askToSaveBeforeClose } from './windowCloseDialog.js';
 
-import type { WebContents } from 'electron';
+import type { BrowserWindowConstructorOptions, WebContents } from 'electron';
 
 // Logging must never crash the shell. When stdout or stderr is a closed pipe
 // — a packaged app whose parent went away — every console write raises EPIPE,
@@ -137,6 +141,13 @@ const allowedOrigins = (): readonly string[] => {
 const isAllowedNavigation = (url: string): boolean => isNavigationAllowed(allowedOrigins(), url);
 
 const isAllowedFrameUrl = trustedFrameGuard(allowedOrigins);
+
+const windowOfSender = (sender: unknown): BrowserWindow | null => {
+    if (typeof sender === 'object' && sender !== null) {
+        return BrowserWindow.fromWebContents(sender as WebContents);
+    }
+    return null;
+};
 
 let mainWindow: BrowserWindow | undefined;
 let pluginWindowHost: PluginWindowHost | undefined;
@@ -206,7 +217,7 @@ const rebuildMacApplicationMenu = (
         return;
     }
     shellComposition.installMenu(
-        createApplicationMenuTemplate({ appName: 'Sourdaw', send: nativeMenuAction, recentProjects })
+        createApplicationMenuTemplate({ appName: APP_TITLE, send: nativeMenuAction, recentProjects })
     );
 };
 
@@ -300,6 +311,13 @@ const quiesceApprovedMainWindow = async (): Promise<QuitPreparationOutcome> => {
     }
 };
 
+const legalDocumentsRoot = (): string => {
+    if (app.isPackaged) {
+        return join(process.resourcesPath, 'legal');
+    }
+    return resolve(dirname(import.meta.dirname), '..', 'public', 'legal');
+};
+
 const attachWebContentsPolicy = (window: BrowserWindow): void => {
     window.webContents.on('will-navigate', (event, url) => {
         if (!isAllowedNavigation(url)) {
@@ -314,9 +332,7 @@ const attachWebContentsPolicy = (window: BrowserWindow): void => {
     window.webContents.setWindowOpenHandler(({ url }) => {
         const decision = decideWindowOpen(url);
         if (decision.legalDocument !== undefined) {
-            const legalRoot = app.isPackaged
-                ? join(process.resourcesPath, 'legal')
-                : resolve(dirname(import.meta.dirname), '..', 'public', 'legal');
+            const legalRoot = legalDocumentsRoot();
             void shell.openPath(join(legalRoot, decision.legalDocument)).then((error) => {
                 if (error !== '') {
                     console.warn(`[shell] failed to open legal document: ${error}`);
@@ -343,15 +359,14 @@ const attachWebContentsPolicy = (window: BrowserWindow): void => {
 const createWindow = (): BrowserWindow => {
     windowCloseCoordinator.resetForWindow();
     const contentRoots = resolveContentRoots();
-    const window = new BrowserWindow({
+    const windowOptions: BrowserWindowConstructorOptions = {
         width: 1440,
         height: 900,
         minWidth: 1024,
         minHeight: 600,
-        title: 'Sourdaw',
+        title: APP_TITLE,
         backgroundColor: '#0a0a0a',
         show: false,
-        ...(process.platform === 'linux' ? { icon: join(contentRoots.distDir, 'icon-transparent.png') } : {}),
         ...getWindowChromeOptions(process.platform),
         webPreferences: {
             // Stated rather than inherited: these three are Electron's defaults
@@ -376,7 +391,11 @@ const createWindow = (): BrowserWindow => {
             // as one self-contained file.
             preload: join(import.meta.dirname, 'preload.cjs'),
         },
-    });
+    };
+    if (process.platform === 'linux') {
+        windowOptions.icon = join(contentRoots.distDir, 'icon-transparent.png');
+    }
+    const window = new BrowserWindow(windowOptions);
 
     window.once('ready-to-show', () => window.show());
     window.once('closed', () => rendererSessionQuiescer.finalize(window));
@@ -572,6 +591,12 @@ let nativeHost: NativeHost | undefined;
 let scanSupervisor: ScanSupervisor | undefined;
 const pluginCommandAdmission = createPluginCommandAdmission();
 
+/**
+ * The shell's hold on the machine's wakefulness while its audio is live
+ * (#2165). See `observePowerSaveEngineLifecycle` for how activity is derived.
+ */
+const powerSave = createPowerSaveController({ blocker: powerSaveBlocker });
+
 shellComposition = createProductionShellComposition({
     isMac: process.platform === 'darwin',
     buildMenu: (template) => Menu.buildFromTemplate(template),
@@ -583,6 +608,7 @@ shellComposition = createProductionShellComposition({
     runShutdown: (): Promise<ShutdownOutcome> =>
         runBeforeQuitCascade({
             refusePluginCommands: () => pluginCommandAdmission.refusePluginCommands(),
+            releasePowerSave: powerSave.audioActivityEnded,
             disposeScanSupervisor: () => scanSupervisor?.dispose(),
             host: nativeHost,
             timers: systemTimers,
@@ -651,29 +677,11 @@ const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor =>
 const editorWindowScaleFactor = (editor?: EditorWindow): number => {
     const daw = mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined;
     const bounds = editor?.getBounds() ?? daw?.getBounds();
-    return bounds === undefined
-        ? screen.getPrimaryDisplay().scaleFactor
-        : screen.getDisplayMatching(bounds).scaleFactor;
+    if (bounds === undefined) {
+        return screen.getPrimaryDisplay().scaleFactor;
+    }
+    return screen.getDisplayMatching(bounds).scaleFactor;
 };
-
-/**
- * A bare native window for one plugin editor: no webcontents, hidden until the
- * addon has run the GUI lifecycle and knows the plugin's preferred size, and
- * `resizable: false` until the plugin has said whether its editor accepts a
- * size the host chose — an answer that does not exist until that lifecycle has
- * run. 800×600 is only the pre-lifecycle placeholder the addon immediately
- * resizes.
- */
-const createEditorWindow = (options: EditorWindowOptions): EditorWindow =>
-    new BaseWindow({
-        width: 800,
-        height: 600,
-        title: options.title,
-        show: false,
-        resizable: false,
-        alwaysOnTop: options.alwaysOnTop,
-        ...(options.parent === undefined ? {} : { parent: options.parent }),
-    });
 
 /**
  * Build the native host and wire everything that depends on it.
@@ -719,10 +727,30 @@ const startNativeSurface = (): void => {
         isTrustedFrameUrl: isAllowedFrameUrl,
         createStream: (streamId) => createCommandStream({ streamId, target: rendererTarget, channel: STREAM_CHANNEL }),
         acceptsCommand: pluginCommandAdmission.acceptsCommand,
+        // Power-save policy (#2165), by command name only. The engine has had
+        // no dedicated start command since #1984: `apply_graph_commands` is its
+        // lazy bootstrap, and a batch it fulfilled means a running engine with a
+        // live audio stream — playback, recording, and monitored idle all enter
+        // through it. A fulfilled `retire_native_engine` is the shell-visible
+        // moment that stream is gone. One that answered `rendering` (the engine
+        // came back between a stall reading and the command) still releases:
+        // the next fulfilled batch re-acquires, and erring toward sleep on that
+        // rare recovery path is the safe direction.
+        observeSettlement: (command, settlement) => {
+            if (settlement !== 'fulfilled') {
+                return;
+            }
+            if (command === APPLY_GRAPH_COMMANDS) {
+                powerSave.audioActivityStarted();
+            }
+            if (command === RETIRE_NATIVE_ENGINE) {
+                powerSave.audioActivityEnded();
+            }
+        },
         // Every exposed command except the one whose backend is another
         // process. Its channel is registered by `registerScanCommand`, so the
         // renderer-visible surface is identical either way.
-        commands: EXPOSED_COMMANDS.filter((command) => command !== SCAN_COMMAND),
+        commands: EXPOSED_COMMANDS.filter((command) => command !== SCAN_PLUGINS),
     });
 
     registerVoiceDictation({ ipcMain, native: () => nativeHost, isTrustedFrameUrl: isAllowedFrameUrl });
@@ -785,19 +813,18 @@ if (isPrimaryApplicationInstance) {
             // The router keeps IPC events structurally untyped so it stays
             // Electron-free; an invoke event's sender is always a WebContents.
             // Anything else has no window to drive.
-            windowForSender: (sender) =>
-                typeof sender === 'object' && sender !== null && 'id' in sender
-                    ? BrowserWindow.fromWebContents(sender as WebContents)
-                    : null,
+            windowForSender: (sender) => {
+                if (typeof sender === 'object' && sender !== null && 'id' in sender) {
+                    return BrowserWindow.fromWebContents(sender as WebContents);
+                }
+                return null;
+            },
         });
         registerNativeMenuChannels({
             ipcMain,
             isTrustedFrameUrl: isAllowedFrameUrl,
             onProjectState: (state, sender) => {
-                const senderWindow =
-                    typeof sender === 'object' && sender !== null
-                        ? BrowserWindow.fromWebContents(sender as WebContents)
-                        : null;
+                const senderWindow = windowOfSender(sender);
                 if (senderWindow !== mainWindow) {
                     return;
                 }
@@ -806,19 +833,13 @@ if (isPrimaryApplicationInstance) {
             },
             onSaveResult: (result) => windowCloseCoordinator.resolveSave(result),
             onSessionQuiesced: (result, sender) => {
-                const senderWindow =
-                    typeof sender === 'object' && sender !== null
-                        ? BrowserWindow.fromWebContents(sender as WebContents)
-                        : null;
+                const senderWindow = windowOfSender(sender);
                 if (senderWindow !== null) {
                     rendererSessionQuiescer.resolve(senderWindow, result);
                 }
             },
             onSessionQuiesceStarted: (requestId, sender) => {
-                const senderWindow =
-                    typeof sender === 'object' && sender !== null
-                        ? BrowserWindow.fromWebContents(sender as WebContents)
-                        : null;
+                const senderWindow = windowOfSender(sender);
                 return senderWindow !== null && rendererSessionQuiescer.start(senderWindow, requestId);
             },
         });

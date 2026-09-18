@@ -198,7 +198,7 @@ describe('a bounded command stream', () => {
     });
 
     it('defaults to the cap the renderer already refuses past', () => {
-        expect(STREAM_QUEUE_CAPACITY).toBe(256);
+        expect(STREAM_QUEUE_CAPACITY).toBe(8192);
     });
 
     it('ignores anything emitted after it closes', () => {

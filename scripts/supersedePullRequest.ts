@@ -14,7 +14,7 @@ import {
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
-import { fail, supersessionCommentBody } from './prContract.ts';
+import { fail, PR_STATE, supersessionCommentBody } from './prContract.ts';
 
 export type IssueComment = {
     id: string;
@@ -95,7 +95,7 @@ export function supersedePullRequest(
     assertOldBinding(before, oldNumber, expectedHead);
     assertReplacement(replacement, replacementNumber, before);
     const body = supersessionCommentBody(replacementNumber);
-    if (before.state === 'CLOSED') {
+    if (before.state === PR_STATE.CLOSED) {
         assertCompletedSupersession(before, oldNumber, expectedHead, before.base, body);
         return logSupersessionSuccess(oldNumber, replacementNumber, port);
     }
@@ -177,7 +177,7 @@ function compensateSupersession(
         if (stateMayHaveMutated) {
             failures.push('pull-request closure was attempted; preserving supersession comment as durable evidence');
         }
-        if (!closeAttempted && current.state === 'CLOSED' && commentCreated && createdCommentId !== undefined) {
+        if (!closeAttempted && current.state === PR_STATE.CLOSED && commentCreated && createdCommentId !== undefined) {
             deleteCreatedNoncanonicalComment(current.comments, expectedCommentBody, createdCommentId, port, failures);
         } else if (commentAttempted && !commentCreated) {
             failures.push('ambiguous supersession comment mutation; refusing to delete an unverified comment');
@@ -239,7 +239,7 @@ function assertOldBinding(value: SupersededPullRequest, number: number, head: st
     }
 }
 function assertOpen(value: SupersededPullRequest, number: number): void {
-    if (value.state !== 'OPEN') {
+    if (value.state !== PR_STATE.OPEN) {
         fail(`PR #${number} is ${value.state.toLowerCase()}`);
     }
 }
@@ -247,7 +247,7 @@ function assertReplacement(value: SupersededPullRequest, number: number, old: Su
     if (value.number !== number || value.repository !== REQUIRED_REPOSITORY || value.repository !== old.repository) {
         fail(`replacement PR #${number} is not in the required repository`);
     }
-    if (value.state !== 'MERGED') {
+    if (value.state !== PR_STATE.MERGED) {
         fail(`replacement PR #${number} is not merged`);
     }
     if (value.base !== old.base) {
@@ -258,7 +258,7 @@ function assertStableOpen(value: SupersededPullRequest, number: number, head: st
     if (
         value.number !== number ||
         value.repository !== REQUIRED_REPOSITORY ||
-        value.state !== 'OPEN' ||
+        value.state !== PR_STATE.OPEN ||
         value.base !== base
     ) {
         fail(`PR #${number} changed after supersession comment; compensating`);
@@ -379,7 +379,7 @@ function assertFinalSupersession(
     if (value.base !== base) {
         fail('pull-request base changed after mutation; compensating');
     }
-    if (value.state !== 'CLOSED' || value.closedAt !== closeReceipt.closedAt) {
+    if (value.state !== PR_STATE.CLOSED || value.closedAt !== closeReceipt.closedAt) {
         fail(`PR #${number} was closed by another actor`);
     }
     if (!hasExpectedComment(value.comments, commentId, body)) {
@@ -399,7 +399,7 @@ function assertCompletedSupersession(
         value.repository !== REQUIRED_REPOSITORY ||
         value.head !== head ||
         value.base !== base ||
-        value.state !== 'CLOSED'
+        value.state !== PR_STATE.CLOSED
     ) {
         fail(`PR #${number} is not the expected completed supersession`);
     }
@@ -596,7 +596,7 @@ function closePullRequest(pullRequestId: string, gh: Gh): PullRequestCloseReceip
     if (
         receipt?.clientMutationId !== clientMutationId ||
         receipt.pullRequest?.id !== pullRequestId ||
-        receipt.pullRequest.state !== 'CLOSED' ||
+        receipt.pullRequest.state !== PR_STATE.CLOSED ||
         typeof receipt.pullRequest.closedAt !== 'string' ||
         receipt.pullRequest.closedAt === ''
     ) {

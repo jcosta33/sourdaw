@@ -32,3 +32,7 @@ Explicit loopback HTTP remains the development-only browser adapter admitted by 
 - OpenAI-compatible request/event normalization remains in AiRuntime repositories; Rust owns network admission rather than provider semantics.
 - Existing loopback development gateways keep their browser behavior.
 - Supporting another protocol family requires compiled adapter code, the common conformance suite, and an explicit privileged-gateway endpoint mapping.
+
+## Amendment 2026-09-10
+
+First-party OpenAI profiles compile the release-owned `builtin.openai.responses.v1` adapter, whose immutable contract carries the `openai-responses` protocol family and the fixed `/v1/responses` request path, while every other OpenAI-compatible endpoint keeps `builtin.openai-compatible.chat-completions.v1`. The privileged gateway binds an `openai` credential source to the responses adapter at the OpenAI origin, so a first-party credential cannot open a session for the chat-completions adapter. Both adapters pass the same provider protocol conformance suite, which is what keeps a second protocol family from weakening the stream bounds, redaction, and finish-reason vocabulary the first one established.

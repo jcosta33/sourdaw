@@ -310,10 +310,11 @@ const addonSignatures = (): ReadonlyMap<string, AddonSignature> => {
         }
         declared.push(current);
 
-        const named = declared
-            .map((parameter) => parameter.trim())
-            .filter((parameter) => parameter !== '' && parameter !== '&self' && parameter !== 'self')
-            .map((parameter) => parameter.slice(0, parameter.indexOf(':')).trim());
+        const trimmed = declared.map((parameter) => parameter.trim());
+        const withoutSelf = trimmed.filter(
+            (parameter) => parameter !== '' && parameter !== '&self' && parameter !== 'self'
+        );
+        const named = withoutSelf.map((parameter) => parameter.slice(0, parameter.indexOf(':')).trim());
 
         signatures.set(name, {
             // The router appends the emitter itself; it is never sent by a caller.
@@ -340,9 +341,15 @@ const addonSignatures = (): ReadonlyMap<string, AddonSignature> => {
  * change fail here instead of at a musician's first invoke.
  */
 const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
+    ['agent_asset_cleanup', ['saga_id', 'owner']],
+    ['agent_asset_finalize_export', ['saga_id', 'owner', 'authorization']],
+    ['agent_asset_import', ['handle_id', 'owner', 'declared']],
+    ['agent_asset_register_handle', ['path', 'mode', 'owner']],
+    ['agent_asset_stage_export', ['destination_handle_id', 'owner', 'expected_sha256', 'data']],
     ['analyze_pitch', ['analysis_id', 'audio_path']],
     ['apply_graph_commands', ['batch']],
     ['arm_recording', ['instance_id', 'threshold', 'target_pad', 'max_duration_secs']],
+    ['begin_levain_bank', ['bank_key', 'instrument_id']],
     ['cancel_provider_gateway_request', ['request_id']],
     ['close_midi_input', []],
     ['close_plugin_gui', ['instance_id']],
@@ -354,6 +361,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['collab_load_bundle', ['path']],
     ['collab_merge_bundle', ['path']],
     ['collab_save_bundle', ['path']],
+    ['commit_levain_bank', ['bank_key', 'layout']],
     ['commit_pitch_edit', ['request']],
     ['create_crumbs', ['instance_id']],
     ['crumbs_all_sound_off', ['instance_id']],
@@ -366,6 +374,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['engine_rt_diagnostics', []],
     ['engine_transport_position', []],
     ['engine_transport_set_maps', ['maps']],
+    ['get_crumbs_dropped_sample_writes', ['instance_id']],
     ['get_crumbs_position', ['instance_id']],
     ['get_default_plugin_paths', []],
     ['get_plugin_parameters', ['instance_id']],
@@ -375,7 +384,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['list_directory', ['path']],
     ['list_midi_inputs', []],
     ['load_cached_whisper_model', []],
-    ['load_plugin', ['plugin_id', 'instance_id', 'sample_rate']],
+    ['load_plugin', ['plugin_id', 'instance_id']],
     ['load_sample', ['instance_id', 'file_path']],
     ['map_graph_batch', ['prior', 'batch', 'sample_rate', 'session']],
     ['open_midi_input', ['port_index']],
@@ -385,7 +394,9 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['parse_scl', ['content', 'root_note', 'root_freq']],
     ['provider_gateway_request', ['request_id', 'session_id', 'operation', 'body']],
     ['read_file_bytes', ['path']],
+    ['register_levain_sample', ['bank_key', 'sample_id', 'sample_rate', 'channels', 'pcm']],
     ['register_timeline_sample', ['sample_id', 'sample_rate', 'channels', 'pcm']],
+    ['release_levain_bank', ['bank_key']],
     ['render_graph_offline', ['batch', 'frames', 'sample_rate']],
     ['retire_native_engine', []],
     ['scan_plugins', ['paths', 'retry_quarantined']],
@@ -416,7 +427,7 @@ describe('positional argument contract', () => {
         // Named explicitly because these are the two the parity risk is real
         // for: everything in them is a `String`, so nothing downstream rejects
         // a swap.
-        expect(COMMAND_ARGUMENTS.get('load_plugin')).toEqual(['plugin_id', 'instance_id', 'sample_rate']);
+        expect(COMMAND_ARGUMENTS.get('load_plugin')).toEqual(['plugin_id', 'instance_id']);
         expect(COMMAND_ARGUMENTS.get('provider_gateway_request')).toEqual([
             'request_id',
             'session_id',
@@ -438,7 +449,8 @@ describe('positional argument contract', () => {
         // The router appends `stream.emit` as the final argument, so a command
         // that grew an emitter without the renderer calling `stream()` would be
         // invoked one argument short.
-        const streaming = [...addonSignatures()]
+        const signatures = Array.from(addonSignatures());
+        const streaming = signatures
             .filter(([name, signature]) => signature.streamEmitter && isExposedCommand(name))
             .map(([name]) => name);
 

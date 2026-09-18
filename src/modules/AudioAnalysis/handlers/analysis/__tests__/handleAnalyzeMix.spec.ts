@@ -41,6 +41,7 @@ describe('handleAnalyzeMix', () => {
     it('updates store with result when state exists', async () => {
         const result: AnalyzeMixOutput = {
             timestamp: 1,
+            status: { availability: 'measured', provenance: 'live-analyser-snapshot' },
             overallLevel: { peakDb: -6, rmsDb: -12 },
             frequencyBalance: {
                 sub: 0,
@@ -68,6 +69,7 @@ describe('handleAnalyzeMix', () => {
         const controller = new AbortController();
         vi.mocked(analyzeMix).mockResolvedValue({
             timestamp: 1,
+            status: { availability: 'measured', provenance: 'live-analyser-snapshot' },
             overallLevel: { peakDb: -6, rmsDb: -12 },
             frequencyBalance: { sub: 0, bass: 0, lowMid: 0, mid: 0, highMid: 0, high: 0 },
             trackLevels: [],

@@ -1,3 +1,5 @@
+import { FNV_1A_OFFSET_BASIS, FNV_1A_PRIME } from '#/utils/canonicalDigest';
+
 import { type ScannedPluginParameter } from '../models/ScannedPlugin';
 import { defaultPluginScanState, pluginScanStore } from '../stores/pluginScanStore';
 
@@ -94,14 +96,14 @@ function boundedText(value: string, fallback: string): string {
 }
 
 function stableFingerprint(parts: readonly string[]): string {
-    let hash = 0x811c9dc5;
+    let hash = FNV_1A_OFFSET_BASIS;
     for (const part of parts) {
         for (let index = 0; index < part.length; index += 1) {
             hash ^= part.charCodeAt(index);
-            hash = Math.imul(hash, 0x01000193);
+            hash = Math.imul(hash, FNV_1A_PRIME);
         }
         hash ^= part.length;
-        hash = Math.imul(hash, 0x01000193);
+        hash = Math.imul(hash, FNV_1A_PRIME);
     }
     return (hash >>> 0).toString(16).padStart(8, '0');
 }

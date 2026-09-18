@@ -7,6 +7,30 @@ use crate::knead::yin::{yin_frame, YinConfig};
 /// Distance from the retune target, in semitones, at which the glide snaps.
 const RETUNE_SETTLE_SEMITONES: f32 = 0.001;
 
+/// One-pole step of the retune glide, `frame_ms` of output time wide.
+///
+/// The deadband is what makes the glide *terminate*: a one-pole approach
+/// is asymptotic, and without a snap the residual would hold the applied
+/// shift non-zero forever, pinning the analysis gate open on a clip that
+/// has returned to unshifted. 0.001 st is 0.1 cent — an order of magnitude
+/// under the ~1 cent that is audible on a sustained tone.
+pub(crate) fn advance_retune_glide(
+    applied_shift: &mut f32,
+    target: f32,
+    retune_speed_ms: f32,
+    frame_ms: f32,
+) {
+    if retune_speed_ms <= 0.0 {
+        *applied_shift = target;
+        return;
+    }
+    let alpha = 1.0 - (-frame_ms / retune_speed_ms).exp();
+    *applied_shift += (target - *applied_shift) * alpha;
+    if (target - *applied_shift).abs() < RETUNE_SETTLE_SEMITONES {
+        *applied_shift = target;
+    }
+}
+
 pub struct KneadEngine {
     pub yin_cfg: YinConfig,
     pub voicing_cfg: VoicingConfig,
@@ -16,6 +40,7 @@ pub struct KneadEngine {
     work_cmnd: Vec<f32>,
     pitch_marks: Vec<usize>,
     target_f0_curve: Vec<f32>,
+    grain_rate_curve: Vec<f32>,
     window_scratchpad: Vec<f32>,
     psola_l_buffer: Vec<f32>,
     psola_r_buffer: Vec<f32>,
@@ -77,7 +102,8 @@ pub struct KneadEngine {
     /// arrival that is the whole point of the control's bottom end.
     retune_speed_ms: f32,
     /// Whether the spectral envelope stays put while the fundamental moves.
-    /// Drives [`PsolaConfig::grain_rate`]; see that field for the mechanism.
+    /// Drives the frame's grain-rate curve; see `psola_process_span` for the
+    /// mechanism.
     formant_preserve: bool,
     pub always_analyze: bool, // Set to true when UI is open to see pitch
     psola_cfg: PsolaConfig,
@@ -110,6 +136,7 @@ impl KneadEngine {
             work_cmnd: vec![1.0; tau_max + 1],
             pitch_marks: Vec::with_capacity(256),
             target_f0_curve: vec![0.0; frame_size + tail_capacity],
+            grain_rate_curve: vec![1.0; frame_size + tail_capacity],
             window_scratchpad: vec![0.0; scratch_size],
             psola_l_buffer: vec![0.0; frame_size + 2 * tail_capacity],
             psola_r_buffer: vec![0.0; frame_size + 2 * tail_capacity],
@@ -247,7 +274,7 @@ impl KneadEngine {
                 // tracks moves with the glide. Preserving is `1.0` (grains
                 // copied, envelope fixed); not preserving reads each grain at
                 // the pitch ratio so the envelope rides along.
-                self.psola_cfg.grain_rate = if self.formant_preserve { 1.0 } else { ratio };
+                let grain_rate = if self.formant_preserve { 1.0 } else { ratio };
 
                 // Output margin: one target period, capped at one frame so
                 // the hold/completion bookkeeping stays inside this frame.
@@ -300,6 +327,7 @@ impl KneadEngine {
                 if shiftable && self.pitch_marks.len() >= 3 {
                     shifted = true;
                     self.target_f0_curve[..span_len].fill(target_f0);
+                    self.grain_rate_curve[..span_len].fill(grain_rate);
 
                     // Render output coordinates [0, frame_len) into the work
                     // buffer (work index = coordinate + t): grains near the
@@ -315,6 +343,7 @@ impl KneadEngine {
                         &self.span_l[..span_len],
                         &self.pitch_marks,
                         &self.target_f0_curve,
+                        &self.grain_rate_curve,
                         &self.psola_cfg,
                         &mut self.window_scratchpad,
                         &mut self.psola_l_buffer[..work_len],
@@ -327,6 +356,7 @@ impl KneadEngine {
                         &self.span_r[..span_len],
                         &self.pitch_marks,
                         &self.target_f0_curve,
+                        &self.grain_rate_curve,
                         &self.psola_cfg,
                         &mut self.window_scratchpad,
                         &mut self.psola_r_buffer[..work_len],
@@ -527,24 +557,13 @@ impl KneadEngine {
         self.applied_shift
     }
 
-    /// One-pole step of the retune glide, `frame_ms` of output time wide.
-    ///
-    /// The deadband is what makes the glide *terminate*: a one-pole approach
-    /// is asymptotic, and without a snap the residual would hold
-    /// `applied_shift` non-zero forever, pinning the analysis gate open on a
-    /// clip that has returned to unshifted. 0.001 st is 0.1 cent — an order
-    /// of magnitude under the ~1 cent that is audible on a sustained tone.
     fn advance_retune_glide(&mut self, frame_ms: f32) {
-        let target = self.shift_semitones;
-        if self.retune_speed_ms <= 0.0 {
-            self.applied_shift = target;
-            return;
-        }
-        let alpha = 1.0 - (-frame_ms / self.retune_speed_ms).exp();
-        self.applied_shift += (target - self.applied_shift) * alpha;
-        if (target - self.applied_shift).abs() < RETUNE_SETTLE_SEMITONES {
-            self.applied_shift = target;
-        }
+        advance_retune_glide(
+            &mut self.applied_shift,
+            self.shift_semitones,
+            self.retune_speed_ms,
+            frame_ms,
+        );
     }
 }
 

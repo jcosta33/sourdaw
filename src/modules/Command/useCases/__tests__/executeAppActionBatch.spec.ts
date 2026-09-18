@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type Logger } from '#/infra/logger/types';
 import {
+    AutomergeStorageWriteConflictError,
     configureAutomergeStoragePort,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
@@ -23,6 +24,7 @@ import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRe
 import { undoStore } from '../../stores/undoStore';
 import { type ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 import { commandTrackDefaultsPort } from '../commandTrackDefaultsPort';
+import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { executeAppActionBatch } from '../executeAppActionBatch';
 import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 import { undo } from '../undo';
@@ -89,6 +91,7 @@ function createHandler<Action extends AppAction>(input: {
     executionKind?: ActionHandler<Action>['executionKind'];
     isNoop?: ActionHandler<Action>['isNoop'];
     materializeCommandArguments?: ActionHandler<Action>['materializeCommandArguments'];
+    materializeCommandArgumentsAt?: ActionHandler<Action>['materializeCommandArgumentsAt'];
     validate?: ActionHandler<Action>['validate'];
     requiresAbortCompensation?: boolean;
     undoable?: boolean;
@@ -100,6 +103,7 @@ function createHandler<Action extends AppAction>(input: {
         executionKind: input.executionKind,
         isNoop: input.isNoop,
         materializeCommandArguments: input.materializeCommandArguments,
+        materializeCommandArgumentsAt: input.materializeCommandArgumentsAt,
         validate: input.validate ?? (() => true),
         requiresAbortCompensation: input.requiresAbortCompensation,
         undoable: input.undoable ?? true,
@@ -259,6 +263,174 @@ describe('executeAppActionBatch', () => {
         await expect(executeAppActionBatch([action])).resolves.toEqual({
             status: 'rejected',
             reason: 'Could not preflight setEditingTool: editing tool arguments are invalid',
+            actions: [],
+        });
+        expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('captures opted-in arguments once before waiting and materializes ordinary handlers after waiting', async () => {
+        let releaseSnapshot!: () => void;
+        const snapshotWait = new Promise<void>((resolve) => {
+            releaseSnapshot = resolve;
+        });
+        configureAutomergeStoragePort({
+            getDoc: () => ({}),
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: vi.fn(),
+            waitForSnapshotTransaction: () => snapshotWait,
+        });
+        const admissionAction: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+        const ordinaryAction: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.5 } };
+        const phases: string[] = [];
+        const executed: AppAction[] = [];
+        let phase = 'admission';
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: (action) => {
+                    executed.push(action);
+                },
+                materializeCommandArguments: (action) => {
+                    phases.push(`opted-in:${phase}`);
+                    action.payload.tool = 'marquee';
+                },
+                materializeCommandArgumentsAt: 'admission',
+            }),
+            setSnapValue: createHandler<SetSnapValueAction>({
+                execute: (action) => {
+                    executed.push(action);
+                },
+                materializeCommandArguments: (action) => {
+                    phases.push(`ordinary:${phase}`);
+                    action.payload.value = 1;
+                },
+            }),
+        });
+        const onCommitted = vi.fn<(actions: readonly AppAction[]) => void>();
+
+        const execution = executeAppActionBatch([admissionAction, ordinaryAction], { onCommitted });
+        phase = 'waiting';
+        await Promise.resolve();
+
+        expect(phases).toEqual(['opted-in:admission']);
+        releaseSnapshot();
+        phase = 'after-wait';
+        await expect(execution).resolves.toMatchObject({ status: 'committed' });
+
+        expect(phases).toEqual(['opted-in:admission', 'ordinary:after-wait']);
+        expect(executed).toEqual([
+            { type: 'setEditingTool', payload: { tool: 'marquee' } },
+            { type: 'setSnapValue', payload: { value: 1 } },
+        ]);
+        expect(admissionAction.payload.tool).toBe('select');
+        expect(ordinaryAction.payload.value).toBe(0.5);
+        expect(onCommitted.mock.calls[0]?.[0]?.[0]).toBe(admissionAction);
+        expect(onCommitted.mock.calls[0]?.[0]?.[1]).toBe(ordinaryAction);
+    });
+
+    it('rejects admission materialization failures without waiting or dispatching', async () => {
+        const waitForSnapshotTransaction = vi.fn(() => new Promise<void>(() => undefined));
+        configureAutomergeStoragePort({
+            getDoc: () => ({}),
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: vi.fn(),
+            waitForSnapshotTransaction,
+        });
+        const execute = vi.fn();
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute,
+                materializeCommandArguments: () => {
+                    throw new Error('admission capture failed');
+                },
+                materializeCommandArgumentsAt: 'admission',
+            }),
+        });
+
+        await expect(executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'select' } }])).resolves.toEqual(
+            {
+                status: 'rejected',
+                reason: 'Could not preflight setEditingTool: admission capture failed',
+                actions: [],
+            }
+        );
+        expect(waitForSnapshotTransaction).not.toHaveBeenCalled();
+        expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('gives admission materializers the full ordered raw batch before the snapshot wait', async () => {
+        const events: string[] = [];
+        const actions: SetEditingToolAction[] = [
+            { type: 'setEditingTool', payload: { tool: 'select' } },
+            { type: 'setEditingTool', payload: { tool: 'marquee' } },
+        ];
+        configureAutomergeStoragePort({
+            getDoc: () => ({}),
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: vi.fn(),
+            waitForSnapshotTransaction: () => {
+                events.push('wait');
+                return Promise.resolve();
+            },
+        });
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: () => ({ status: 'written' }),
+                materializeCommandArguments: (_action, context) => {
+                    expect(context?.actions).toBe(actions);
+                    events.push(`materialize:${String(context?.actionIndex)}`);
+                },
+                materializeCommandArgumentsAt: 'admission',
+            }),
+        });
+
+        await expect(executeAppActionBatch(actions)).resolves.toMatchObject({ status: 'committed' });
+
+        expect(events).toEqual(['materialize:0', 'materialize:1', 'wait']);
+    });
+
+    it('authenticates supplied envelopes against admission-captured arguments', async () => {
+        const execute = vi.fn();
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute,
+                materializeCommandArguments: (action) => {
+                    action.payload.tool = 'marquee';
+                },
+                materializeCommandArgumentsAt: 'admission',
+            }),
+        });
+        const requested: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+        const matching = createExecutionCommandEnvelope({
+            action: { type: 'setEditingTool', payload: { tool: 'marquee' } },
+            expectedEffect: 'Batch action',
+            options: { groupId: 'admission-envelope' },
+        }).envelope;
+
+        await expect(
+            executeAppActionBatch([requested], {
+                commandEnvelopes: [matching],
+                groupId: 'admission-envelope',
+            })
+        ).resolves.toMatchObject({ status: 'committed' });
+        expect(execute).toHaveBeenCalledOnce();
+
+        execute.mockClear();
+        const mismatching = createExecutionCommandEnvelope({
+            action: requested,
+            expectedEffect: 'Batch action',
+            options: { groupId: 'admission-envelope' },
+        }).envelope;
+        await expect(
+            executeAppActionBatch([requested], {
+                commandEnvelopes: [mismatching],
+                groupId: 'admission-envelope',
+            })
+        ).resolves.toEqual({
+            status: 'rejected',
+            reason: 'Command envelope does not match action setEditingTool',
             actions: [],
         });
         expect(execute).not.toHaveBeenCalled();
@@ -953,6 +1125,33 @@ describe('executeAppActionBatch', () => {
         expect(execute).toHaveBeenCalledOnce();
     });
 
+    it.each([
+        [
+            'synchronous',
+            () => {
+                throw new AutomergeStorageWriteConflictError('storage conflict');
+            },
+        ],
+        [
+            'awaited',
+            async () => {
+                await Promise.resolve();
+                throw new AutomergeStorageWriteConflictError('storage conflict');
+            },
+        ],
+    ] as const)('classifies a %s storage conflict as conflicted without history', async (_kind, execute) => {
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({ execute, requiresAbortCompensation: false }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+
+        expect(result).toEqual({ status: 'conflicted', reason: 'storage conflict', actions: [] });
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+    });
+
     it('reports compensation failure when an inverse action produces no write', async () => {
         const runtimeEffects = { editingTool: 'select' };
         registerHandlerMap({
@@ -1028,6 +1227,49 @@ describe('executeAppActionBatch', () => {
         expect(result).toEqual({
             status: 'failed',
             reason: 'Action conflicts with current project state: setSnapValue; runtime compensation failed: Runtime compensation did not apply for setEditingTool',
+            actions: [],
+        });
+        expect(runtimeEffects.editingTool).toBe('marquee');
+    });
+
+    it('reports failed rather than conflicted when a storage-conflict compensation does not restore runtime', async () => {
+        const runtimeEffects = { editingTool: 'select' };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: (action) => {
+                    if (action.payload.tool === 'select') {
+                        return { status: 'no-write' };
+                    }
+                    runtimeEffects.editingTool = action.payload.tool;
+                    return undefined;
+                },
+                describe: () => ({
+                    label: 'Set editing tool',
+                    inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+                }),
+            }),
+            setSnapValue: createHandler<SetSnapValueAction>({
+                execute: async (action) => {
+                    if (action.payload.value === 0.5) {
+                        await Promise.resolve();
+                        throw new AutomergeStorageWriteConflictError('storage conflict');
+                    }
+                },
+                describe: () => ({
+                    label: 'Set snap value',
+                    inverseAction: { type: 'setSnapValue', payload: { value: 1 } },
+                }),
+            }),
+        });
+
+        const result = await executeAppActionBatch([
+            { type: 'setEditingTool', payload: { tool: 'marquee' } },
+            { type: 'setSnapValue', payload: { value: 0.5 } },
+        ]);
+
+        expect(result).toEqual({
+            status: 'failed',
+            reason: 'storage conflict; runtime compensation failed: Runtime compensation did not apply for setEditingTool',
             actions: [],
         });
         expect(runtimeEffects.editingTool).toBe('marquee');

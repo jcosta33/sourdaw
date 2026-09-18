@@ -1,6 +1,6 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useRef, useState } from 'react';
 
-import { Plus, Power, Trash2, Monitor, LayoutGrid, RefreshCw } from 'lucide-react';
+import { Plus, Power, Trash2, Monitor, LayoutGrid, RefreshCw, FileUp } from 'lucide-react';
 
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -9,6 +9,7 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import {
     getPlatformPlugins,
@@ -26,9 +27,12 @@ import {
     defaultExternalPluginActivationState,
     pluginGuiStore,
     defaultPluginGuiState,
+    externalPluginRestoreFailureStore,
+    defaultExternalPluginRestoreFailureState,
 } from '#/modules/PluginHost/stores';
 import {
     closePluginGui,
+    hasUnresolvedExternalPluginRestoreFailure,
     isSupportedPluginFormat,
     openPluginGui,
     resolvePluginEditorCapability,
@@ -40,6 +44,7 @@ import { menuBtnClass } from '#/utils/UI/contextMenuStyles';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
+import { readExternalPluginStateChunk } from '../../helpers/externalPluginStateFile';
 
 type TrackDevicesSectionProps = {
     track: Track;
@@ -59,10 +64,16 @@ type PluginScanViewState = {
 
 export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSectionProps): ReactElement => {
     const [showDeviceMenu, setShowDeviceMenu] = useState(false);
+    const stateReplaceInputRef = useRef<HTMLInputElement>(null);
+    const stateReplaceDeviceIdRef = useRef<string | null>(null);
 
     const pluginScanState = useStore<PluginScanViewState>(pluginScanStore, defaultPluginScanState);
     const activationState = useStore(externalPluginActivationStore, defaultExternalPluginActivationState);
     const pluginGuiState = useStore(pluginGuiStore, defaultPluginGuiState);
+    // Subscribes for the render signal only: the bump fires whenever the
+    // failed-restore marker set changes, and the predicate below is the
+    // authority on which instances fail.
+    useStore(externalPluginRestoreFailureStore, defaultExternalPluginRestoreFailureState);
 
     // Snapshot the platform catalog once per render instead of walking it three times
     // (effects / utility / analyzer) and re-querying capabilities twice.
@@ -155,9 +166,48 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
             return error ? [[device.id, error]] : [];
         })
     );
+    // A failed restore leaves the slot holding the preserved project chunk but
+    // the plugin on its defaults, so the user needs the explicit replacement
+    // path until authoritative state exists again. Keyed on the marker, so the
+    // control disappears the moment a restore or replacement succeeds.
+    const restoreFailedExternalDeviceIds = new Set(
+        externalDeviceEditors
+            .filter(({ instanceId }) => hasUnresolvedExternalPluginRestoreFailure(instanceId))
+            .map(({ device }) => device.id)
+    );
+
+    const replaceExternalDeviceState = (deviceId: string, file: File): void => {
+        const chunkReady = readExternalPluginStateChunk(file)
+            .then((stateChunk) =>
+                executeUserAppAction({
+                    type: 'setExternalPluginState',
+                    payload: { intent: 'replacement', deviceId, stateChunk },
+                })
+            )
+            .catch((error: unknown) => {
+                logger.warn(`Could not read replacement state for device ${deviceId}: ${String(error)}`);
+            });
+        void chunkReady;
+    };
 
     return (
         <div className="overflow-visible">
+            <input
+                ref={stateReplaceInputRef}
+                type="file"
+                className="hidden"
+                aria-hidden="true"
+                tabIndex={-1}
+                onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    const deviceId = stateReplaceDeviceIdRef.current;
+                    stateReplaceDeviceIdRef.current = null;
+                    if (file && deviceId) {
+                        replaceExternalDeviceState(deviceId, file);
+                    }
+                    event.target.value = '';
+                }}
+            />
             <DawHeaderBand
                 compact
                 className="mb-2 rounded-sm"
@@ -444,6 +494,32 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                                 (openEditorDeviceIds.has(device.id)
                                                     ? 'Close plugin editor'
                                                     : 'Open plugin editor')}
+                                        </TooltipContent>
+                                    </Tooltip>
+                                ) : null}
+                                {device.type === 'external-plugin' &&
+                                device.externalInstanceId &&
+                                restoreFailedExternalDeviceIds.has(device.id) ? (
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon-xs"
+                                                className="h-6 w-6"
+                                                aria-label={`Replace saved state for ${device.name}`}
+                                                data-testid={`device-replace-state-${device.id}`}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    stateReplaceDeviceIdRef.current = device.id;
+                                                    stateReplaceInputRef.current?.click();
+                                                }}
+                                            >
+                                                <FileUp className="size-3 text-primary" />
+                                            </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">
+                                            Plugin rejected its saved state on load — load a state file from the plugin
+                                            to replace it
                                         </TooltipContent>
                                     </Tooltip>
                                 ) : null}

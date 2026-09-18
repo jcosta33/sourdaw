@@ -7,6 +7,8 @@
  */
 import { type ReactElement, useRef, useEffect, type PointerEvent } from 'react';
 
+import { MAX_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
+
 const BAND_FREQS = [100, 400, 1200, 3500, 8000, 12000];
 const BAND_LABELS = ['LF', 'LM', 'Mid', 'UM', 'HF', 'Air'];
 const MIN_MULT = 0.25;
@@ -34,7 +36,7 @@ type DecayEqOverlayProps = {
 /** Map frequency (Hz) to X position on canvas (log scale). */
 function freqToX(freq: number, width: number): number {
     const logMin = Math.log10(20);
-    const logMax = Math.log10(20000);
+    const logMax = Math.log10(MAX_AUDIBLE_FREQ_HZ);
     const logFreq = Math.log10(freq);
     return ((logFreq - logMin) / (logMax - logMin)) * width;
 }
@@ -104,7 +106,7 @@ export const DecayEqOverlay = ({
         for (let px = 0; px < width; px++) {
             // Convert pixel to frequency
             const logMin = Math.log10(20);
-            const logMax = Math.log10(20000);
+            const logMax = Math.log10(MAX_AUDIBLE_FREQ_HZ);
             const freq = 10 ** (logMin + (px / width) * (logMax - logMin));
 
             // Interpolate multiplier from nearest bands

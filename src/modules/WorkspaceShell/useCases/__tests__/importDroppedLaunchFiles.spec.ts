@@ -50,7 +50,10 @@ vi.mock('#/modules/Project/useCases', () => ({
     newProject: mocks.newProject,
 }));
 
-vi.mock('#/modules/Transport/stores', () => ({
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    // `DEFAULT_TEMPO_BPM` stays the real exported constant; only the store is
+    // swapped so `getTransportState` controls hydration per test.
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     transportStore: {
         get value() {
             return mocks.getTransportState();

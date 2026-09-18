@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     updateTrack: vi.fn(),
     startInputMonitoring: vi.fn(),
     stopInputMonitoring: vi.fn(),
+    stopTrackInputMonitoring: vi.fn(),
 }));
 
 vi.mock('../../../repositories/track/updateTrack', () => ({
@@ -17,6 +18,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     startInputMonitoring: mocks.startInputMonitoring,
     stopInputMonitoring: mocks.stopInputMonitoring,
+    stopTrackInputMonitoring: mocks.stopTrackInputMonitoring,
 }));
 
 describe('setInputMonitoring', () => {
@@ -36,14 +38,21 @@ describe('setInputMonitoring', () => {
         expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1');
     });
 
-    it('sets monitoring to OFF and stops it in engine', () => {
+    it('sets monitoring to OFF and stops that track’s listening edge only', () => {
         setInputMonitoring('t1', 'off');
-        expect(mocks.stopInputMonitoring).toHaveBeenCalledTimes(1);
+
+        expect(mocks.stopTrackInputMonitoring).toHaveBeenCalledTimes(1);
+        expect(mocks.stopTrackInputMonitoring).toHaveBeenCalledWith('t1');
+        expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
     });
 
-    it('sets monitoring to AUTO and stops it in engine', () => {
+    it('sets monitoring to AUTO and stops that track’s listening edge only', () => {
         setInputMonitoring('t1', 'auto');
-        expect(mocks.stopInputMonitoring).toHaveBeenCalledTimes(1);
+
+        expect(mocks.stopTrackInputMonitoring).toHaveBeenCalledTimes(1);
+        expect(mocks.stopTrackInputMonitoring).toHaveBeenCalledWith('t1');
+        expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
     });
 
     it.each(['on', 'auto'] as const)(
@@ -65,11 +74,11 @@ describe('setInputMonitoring', () => {
 
             expect(mocks.updateTrack).not.toHaveBeenCalled();
             expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
-            expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
+            expect(mocks.stopTrackInputMonitoring).not.toHaveBeenCalled();
         }
     );
 
-    it('normalizes dormant VCA residue only for an explicit off request without globally stopping monitoring', () => {
+    it('normalizes dormant VCA residue only for an explicit off request without stopping any listening edge', () => {
         mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca' });
 
         setInputMonitoring('vca-1', 'off');
@@ -80,7 +89,7 @@ describe('setInputMonitoring', () => {
         }
         expect(call[1]({ inputMonitoring: 'on' })).toEqual({ inputMonitoring: 'off' });
         expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
-        expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.stopTrackInputMonitoring).not.toHaveBeenCalled();
     });
 });
 vi.mock('../../../repositories/track/getTrackById', () => ({

@@ -431,6 +431,7 @@ function createGuardedActions(ratioExpectedValue = 2) {
                 expectedDeviceIds: DEVICE_IDS,
                 expectedValue: -24,
                 expectedTrackFrozen: false,
+                automationRecordingPolicy: 'suppressed' as const,
             },
         },
         {
@@ -444,6 +445,7 @@ function createGuardedActions(ratioExpectedValue = 2) {
                 expectedDeviceIds: DEVICE_IDS,
                 expectedValue: ratioExpectedValue,
                 expectedTrackFrozen: false,
+                automationRecordingPolicy: 'suppressed' as const,
             },
         },
     ];
@@ -560,6 +562,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
                     expectedDeviceIds: DEVICE_IDS,
                     expectedValue: -24,
                     expectedTrackFrozen: false,
+                    automationRecordingPolicy: 'suppressed',
                 },
             },
             {
@@ -573,6 +576,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
                     expectedDeviceIds: DEVICE_IDS,
                     expectedValue: 2,
                     expectedTrackFrozen: false,
+                    automationRecordingPolicy: 'suppressed',
                 },
             },
         ]);

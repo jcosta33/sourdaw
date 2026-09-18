@@ -6,16 +6,16 @@ import { join } from 'node:path';
 import {
     REQUIRED_REPOSITORY,
     REVIEWER_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
     assertRequiredRepository,
     authenticateRole,
-    isReviewerBotNodeId,
     parseJson,
     resolvePrimaryRoot,
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
-import { composeReviewCommentBody, fail, type ReviewCommentContent } from './prContract.ts';
-import { reviewBundlePath } from './prepareReview.ts';
+import { composeReviewCommentBody, fail, PR_STATE } from './prContract.ts';
+import { reviewBundlePath, type ReviewBundleContext } from './prepareReview.ts';
 import {
     type PullRequestRemoteMutationBoundary,
     type PullRequestReviewPublicationMutationBoundary,
@@ -27,9 +27,37 @@ import {
     readPullRequestMutationLockOwner,
     withPullRequestReviewPublicationMutationLock,
 } from './pullRequestMutationLock.ts';
+import {
+    readPullRequestReviewState,
+    assertIndependentReviewerApproval,
+    type ReviewState,
+} from './pullRequestReviewState.ts';
+import {
+    assertSameApprovalContext,
+    publicationApprovalContext,
+    readLiveApprovalContext,
+} from './reviewApprovalContext.ts';
+import { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
 import { assertReviewCommentLinesInBundleDiff } from './reviewCommentDiffPreflight.ts';
+import {
+    assertPublicationEvidence,
+    parseAcceptanceDocument,
+    parseReviewDocument,
+    type ReviewComment,
+    type ReviewDocument,
+    type ReviewEvent,
+} from './reviewDocumentParser.ts';
+import { assertReviewerModelDiversity, type AuthorshipLabel } from './reviewerModelDiversity.ts';
 
-export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES';
+export { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
+export {
+    parseAcceptanceDocument,
+    parseReviewDocument,
+    type ApprovalEvidence,
+    type ReviewComment,
+    type ReviewDocument,
+    type ReviewEvent,
+} from './reviewDocumentParser.ts';
 
 /**
  * GitHub's review-creation request and the review it hands back use two different vocabularies:
@@ -44,39 +72,20 @@ export const EXPECTED_REVIEW_STATE: Record<ReviewEvent, string> = {
     REQUEST_CHANGES: 'CHANGES_REQUESTED',
 };
 
-export type ReviewComment = {
-    path: string;
-    line: number;
-    side: 'LEFT' | 'RIGHT';
-    defect: string;
-    consequence: string;
-    done: string;
-};
-
-export type ApprovalEvidence = {
-    headSha: string;
-    claims: { observable: string; verification: string; observed: string }[];
-};
-
-export type ReviewDocument = {
-    event: ReviewEvent;
-    body: string;
-    comments: ReviewComment[];
-    evidence?: ApprovalEvidence;
-};
-
 export type PublishReviewPort = {
     primaryRoot: () => string;
-    pullRequest: (number: number) => { state: string; head: string };
+    pullRequest: (number: number) => { state: string; head: string; labels?: AuthorshipLabel[] };
     readReviewJson: (path: string) => unknown;
     readBundleDiff: (path: string) => string;
+    assertApprovalContext?: (number: number, head: string, bundle: string) => ReviewBundleContext;
+    reviewState?: (number: number, expectedHead: string) => ReviewState;
     postReview: (input: {
         number: number;
         commitId: string;
         event: ReviewEvent;
         body: string;
         comments: ReviewComment[];
-    }) => { id: number; actorNodeId: string; login: string };
+    }) => { id: number; actorNodeId: string; login: string; actorType?: string; commitId?: string };
     log: (message: string) => void;
 };
 
@@ -104,7 +113,10 @@ export type PublishReviewCoordinatorDependencies = {
     ) => number;
 };
 
-export function parsePublishReviewArgs(args: string[]): { number?: number; help: boolean } {
+export function parsePublishReviewArgs(
+    args: string[],
+    command: 'review:publish' | 'review:accept' = 'review:publish'
+): { number?: number; help: boolean } {
     if (args[0] === '--help') {
         if (args.length !== 1) {
             fail('--help takes no other arguments');
@@ -113,93 +125,9 @@ export function parsePublishReviewArgs(args: string[]): { number?: number; help:
     }
     const value = Number(args[0]);
     if (!Number.isSafeInteger(value) || value <= 0 || args.length !== 1) {
-        fail('usage: pnpm review:publish <pr-number>');
+        fail(`usage: pnpm ${command} <pr-number>`);
     }
     return { number: value, help: false };
-}
-
-export function parseReviewDocument(value: unknown): ReviewDocument {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-        fail('review.json must be an object');
-    }
-    const record = value as Record<string, unknown>;
-    if (record.event !== 'APPROVE' && record.event !== 'REQUEST_CHANGES') {
-        fail('review.json event must be APPROVE or REQUEST_CHANGES');
-    }
-    const rawComments = commentsArray(record.comments);
-    if (record.event === 'APPROVE' && rawComments.length > 0) {
-        fail('APPROVE must carry no comments; an inline comment opens a thread that blocks the merge');
-    }
-    const comments = parseCommentEntries(rawComments);
-    const body = typeof record.body === 'string' ? record.body : '';
-    if (record.event === 'REQUEST_CHANGES') {
-        if (comments.length === 0) {
-            fail('REQUEST_CHANGES requires comments');
-        }
-        if (body.trim() === '') {
-            fail('REQUEST_CHANGES requires a top-level body');
-        }
-    }
-    if (record.event === 'APPROVE' && body.trim() === '') {
-        fail('APPROVE requires a body stating what was attacked and held');
-    }
-    if ('evidence' in record && record.evidence !== undefined) {
-        if (record.event !== 'APPROVE') {
-            fail('REQUEST_CHANGES must not carry approval evidence');
-        }
-        const evidence = parseApprovalEvidence(record.evidence);
-        const appendix = `\n\nVerification for ${evidence.headSha}\n\n${evidence.claims
-            .map((claim) => `Expected: ${claim.observable}\nCheck: ${claim.verification}\nObserved: ${claim.observed}`)
-            .join('\n\n')}`;
-        return { event: record.event, body: body.endsWith(appendix) ? body : body + appendix, comments, evidence };
-    }
-    return { event: record.event, body, comments };
-}
-
-function evidenceRecord(value: unknown, label: string): Record<string, unknown> {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-        fail(`${label} must be an object`);
-    }
-    return value as Record<string, unknown>;
-}
-
-function evidenceLine(value: unknown, label: string): string {
-    if (
-        typeof value !== 'string' ||
-        value.trim() === '' ||
-        value !== value.trim() ||
-        /[\r\n\u2028\u2029]/u.test(value)
-    ) {
-        fail(`${label} must be a nonblank single-line trimmed string`);
-    }
-    return value;
-}
-
-function parseApprovalEvidence(value: unknown): ApprovalEvidence {
-    const record = evidenceRecord(value, 'review.json evidence');
-    const headSha = evidenceLine(record.headSha, 'review.json evidence.headSha');
-    if (!Array.isArray(record.claims) || record.claims.length === 0) {
-        fail('review.json evidence.claims must contain at least one claim');
-    }
-    const claims = record.claims.map((value: unknown, index: number) => {
-        const label = `review.json evidence.claims[${index}]`;
-        const claim = evidenceRecord(value, label);
-        return {
-            observable: evidenceLine(claim.observable, `${label}.observable`),
-            verification: evidenceLine(claim.verification, `${label}.verification`),
-            observed: evidenceLine(claim.observed, `${label}.observed`),
-        };
-    });
-    return { headSha, claims };
-}
-
-function assertPublicationEvidence(document: ReviewDocument, head: string): void {
-    if (document.event === 'APPROVE' && document.evidence === undefined) {
-        fail('new APPROVE publication requires evidence');
-    }
-    if (document.evidence !== undefined && document.evidence.headSha !== head) {
-        fail('approval evidence.headSha does not match the pull-request head');
-    }
 }
 
 export function reviewPublicationPayload(input: {
@@ -229,54 +157,81 @@ export type PreparedReviewPublication = {
     head: string;
     document: ReviewDocument;
     payloadDigest: string;
+    approvalContext?: ReviewBundleContext;
 };
 
-function prepareReviewPublication(number: number, port: PublishReviewPort): PreparedReviewPublication {
-    const head = port.pullRequest(number).head;
+function prepareReviewPublication(
+    number: number,
+    port: PublishReviewPort,
+    actorNodeId = REVIEWER_BOT_NODE_ID
+): PreparedReviewPublication {
+    const pullRequest = port.pullRequest(number);
+    const head = pullRequest.head;
     const bundle = reviewBundlePath(port.primaryRoot(), number, head);
+    const documentName = actorNodeId === ORCHESTRATOR_USER_NODE_ID ? 'acceptance.json' : 'review.json';
     let parsed: unknown;
     try {
-        parsed = port.readReviewJson(join(bundle, 'review.json'));
+        parsed = port.readReviewJson(join(bundle, documentName));
     } catch {
-        fail(`missing review.json at ${join(bundle, 'review.json')}`);
+        fail(`missing ${documentName} at ${join(bundle, documentName)}`);
     }
-    const document = parseReviewDocument(parsed);
+    const document =
+        actorNodeId === ORCHESTRATOR_USER_NODE_ID ? parseAcceptanceDocument(parsed) : parseReviewDocument(parsed);
     assertPublicationEvidence(document, head);
+    assertReviewerModelDiversity({
+        actorNodeId,
+        authorLabels: pullRequest.labels ?? [],
+        reviewerModel: document.reviewerModel,
+    });
+    const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
     return {
         head,
         document,
+        approvalContext,
         payloadDigest: reviewPublicationPayloadDigest(
             reviewPublicationPayload({
                 commitId: head,
                 event: document.event,
-                body: document.body,
+                body: renderReviewDocumentBody(document),
                 comments: document.comments,
             })
         ),
     };
 }
 
-export function publishPreparedReview(
+function publishPreparedReviewForActor(
+    actorNodeId: string,
     number: number,
     prepared: PreparedReviewPublication,
     port: PublishReviewPort,
     boundary?: PullRequestReviewPublicationMutationBoundary
 ): number {
     const pullRequest = port.pullRequest(number);
-    if (pullRequest.state !== 'OPEN') {
+    if (pullRequest.state !== PR_STATE.OPEN) {
         fail(`pull request is ${pullRequest.state}; refusing to post a review`);
     }
     if (pullRequest.head !== prepared.head) {
         fail('pull-request head moved; refusing to post a stale review');
     }
-    const document = parseReviewDocument(prepared.document);
+    const document =
+        actorNodeId === ORCHESTRATOR_USER_NODE_ID
+            ? parseAcceptanceDocument(prepared.document)
+            : parseReviewDocument(prepared.document);
+    if (actorNodeId === ORCHESTRATOR_USER_NODE_ID) {
+        assertAcceptancePreconditions(number, prepared.head, port);
+    }
     assertPublicationEvidence(document, pullRequest.head);
+    const context = publicationApprovalContext(number, prepared.head, document, port);
+    if (context !== undefined) {
+        assertSameApprovalContext(prepared.approvalContext, context);
+    }
+    const body = renderReviewDocumentBody(document);
     const payloadDigest = reviewPublicationPayloadDigest(
         reviewPublicationPayload({
             commitId: prepared.head,
             event: document.event,
-            body: document.body,
+            body,
             comments: document.comments,
         })
     );
@@ -286,20 +241,51 @@ export function publishPreparedReview(
     boundary?.journalReviewPublication({
         expectedHead: prepared.head,
         payloadDigest: prepared.payloadDigest,
-        reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+        reviewerActorNodeId: actorNodeId,
     });
     const posted = port.postReview({
         number,
         commitId: prepared.head,
         event: document.event,
-        body: document.body,
+        body,
         comments: document.comments,
     });
-    if (!isReviewerBotNodeId(posted.actorNodeId)) {
-        fail(`review was posted by actor ${posted.actorNodeId} (${posted.login}), not ${REVIEWER_BOT_NODE_ID}`);
+    if (posted.actorNodeId !== actorNodeId) {
+        fail(`review was posted by actor ${posted.actorNodeId} (${posted.login}), not ${actorNodeId}`);
+    }
+    if (
+        actorNodeId === ORCHESTRATOR_USER_NODE_ID &&
+        (posted.actorType !== 'User' || posted.commitId !== prepared.head)
+    ) {
+        fail('orchestrator acceptance response does not match the User actor and prepared head');
     }
     port.log(String(posted.id));
     return posted.id;
+}
+
+function assertAcceptancePreconditions(number: number, head: string, port: PublishReviewPort): void {
+    if (port.reviewState === undefined) {
+        fail('orchestrator acceptance requires a complete independent review-state reader');
+    }
+    assertIndependentReviewerApproval(number, port.reviewState(number, head));
+}
+
+export function publishPreparedReview(
+    number: number,
+    prepared: PreparedReviewPublication,
+    port: PublishReviewPort,
+    boundary?: PullRequestReviewPublicationMutationBoundary
+): number {
+    return publishPreparedReviewForActor(REVIEWER_BOT_NODE_ID, number, prepared, port, boundary);
+}
+
+export function publishPreparedAcceptance(
+    number: number,
+    prepared: PreparedReviewPublication,
+    port: PublishReviewPort,
+    boundary?: PullRequestReviewPublicationMutationBoundary
+): number {
+    return publishPreparedReviewForActor(ORCHESTRATOR_USER_NODE_ID, number, prepared, port, boundary);
 }
 
 export function publishReview(
@@ -326,17 +312,40 @@ export function shellPort(
     return {
         primaryRoot: () => primaryRoot,
         pullRequest: (number) => {
-            const pullRequest = parseJson<{ state?: unknown; headRefOid?: unknown }>(
-                gh(['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'state,headRefOid']),
+            const pullRequest = parseJson<{ state?: unknown; headRefOid?: unknown; labels?: unknown }>(
+                gh(['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'state,headRefOid,labels']),
                 'review publication pull request'
             );
             if (typeof pullRequest.state !== 'string' || typeof pullRequest.headRefOid !== 'string') {
                 fail('review publication pull request is unreadable');
             }
-            return { state: pullRequest.state, head: pullRequest.headRefOid };
+            // `gh pr view --json labels` answers [{name, description}]; the diversity check
+            // identifies the authorship label by its `Authored by ` description fence, so both
+            // fields travel together. Absent labels mean not-comparable, never fatal.
+            const labels = Array.isArray(pullRequest.labels)
+                ? pullRequest.labels.flatMap((label): AuthorshipLabel[] => {
+                      if (typeof label !== 'object' || label === null) {
+                          return [];
+                      }
+                      const name = (label as Record<string, unknown>).name;
+                      if (typeof name !== 'string') {
+                          return [];
+                      }
+                      const description = (label as Record<string, unknown>).description;
+                      const entry: AuthorshipLabel = { name };
+                      if (typeof description === 'string') {
+                          entry.description = description;
+                      }
+                      return [entry];
+                  })
+                : undefined;
+            return { state: pullRequest.state, head: pullRequest.headRefOid, labels };
         },
+        reviewState: (number, head) => readPullRequestReviewState(number, head, REQUIRED_REPOSITORY, gh),
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
         readBundleDiff: (path) => readFileSync(path, 'utf8'),
+        assertApprovalContext: (number, head, bundle) =>
+            readLiveApprovalContext(primaryRoot, number, head, bundle, session, capture),
         postReview: ({ number, commitId, event, body, comments }) => {
             const input = reviewPublicationPayload({ commitId, event, body, comments });
             markRemoteMutationAttempt();
@@ -358,7 +367,8 @@ export function shellPort(
             const response = parseJson<{
                 id: number;
                 state?: string;
-                user?: { node_id?: string; login?: string };
+                user?: { node_id?: string; login?: string; type?: string };
+                commit_id?: string;
             }>(created, 'create review');
             if (!Number.isSafeInteger(response.id) || response.id <= 0) {
                 fail('create review returned an unreadable id');
@@ -373,79 +383,14 @@ export function shellPort(
                 id: response.id,
                 actorNodeId: response.user?.node_id ?? '',
                 login: response.user?.login ?? '',
+                actorType: response.user?.type,
+                commitId: response.commit_id,
             };
         },
         log: (message) => {
             console.log(message);
         },
     };
-}
-
-function commentsArray(value: unknown): unknown[] {
-    if (value === undefined) {
-        return [];
-    }
-    if (!Array.isArray(value)) {
-        fail('review.json comments must be an array');
-    }
-    return value;
-}
-
-/**
- * The one place `defect` / `consequence` / `done` are still `unknown`: everything upstream of this
- * function reads raw JSON, and everything downstream trusts `ReviewCommentContent`. Each `typeof`
- * check below narrows a genuinely unknown value, unlike a check written against an input already
- * typed `string` — that version compiles clean but is unreachable, and an "unnecessary condition"
- * cleanup would delete it as dead code with nothing to object. Composing through
- * `composeReviewCommentBody` here, rather than after returning, keeps the byte-ceiling and format
- * failures for this comment's fields naming this comment's index too.
- */
-function parseReviewCommentContent(
-    fields: { defect: unknown; consequence: unknown; done: unknown },
-    index: number
-): ReviewCommentContent {
-    const { defect, consequence, done } = fields;
-    if (typeof defect !== 'string') {
-        fail(`review.json comments[${index}] defect is invalid`);
-    }
-    if (typeof consequence !== 'string') {
-        fail(`review.json comments[${index}] consequence is invalid`);
-    }
-    if (typeof done !== 'string') {
-        fail(`review.json comments[${index}] done is invalid`);
-    }
-    const content: ReviewCommentContent = { defect, consequence, done };
-    composeReviewCommentBody(content, `review.json comments[${index}]`);
-    return content;
-}
-
-function parseCommentEntries(entries: unknown[]): ReviewComment[] {
-    return entries.map((entry, index) => {
-        if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
-            fail(`review.json comments[${index}] must be an object`);
-        }
-        const record = entry as Record<string, unknown>;
-        if ('body' in record) {
-            fail(`review.json comments[${index}] uses body; supply defect, consequence, and done instead`);
-        }
-        const path = record.path;
-        const line = record.line;
-        const side = record.side;
-        if (typeof path !== 'string' || path === '') {
-            fail(`review.json comments[${index}] path is invalid`);
-        }
-        if (typeof line !== 'number' || !Number.isSafeInteger(line) || line <= 0) {
-            fail(`review.json comments[${index}] line is invalid`);
-        }
-        if (side !== 'LEFT' && side !== 'RIGHT') {
-            fail(`review.json comments[${index}] side must be LEFT or RIGHT`);
-        }
-        const content = parseReviewCommentContent(
-            { defect: record.defect, consequence: record.consequence, done: record.done },
-            index
-        );
-        return { path, line, side, ...content };
-    });
 }
 
 export function defaultPublishReviewCoordinatorDependencies(): PublishReviewCoordinatorDependencies {
@@ -470,16 +415,17 @@ export function defaultPublishReviewCoordinatorDependencies(): PublishReviewCoor
     };
 }
 
-export async function coordinatePublishReview(
+async function coordinateReviewPublication(
     number: number,
-    dependencies: PublishReviewCoordinatorDependencies = defaultPublishReviewCoordinatorDependencies()
+    dependencies: PublishReviewCoordinatorDependencies,
+    actorNodeId: string
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
     try {
         const auth = await dependencies.authenticateReviewer(primaryRoot);
         try {
-            if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
-                fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
+            if (auth.minted.actorNodeId !== actorNodeId) {
+                fail(`authenticated actor ${auth.minted.actorNodeId} is not ${actorNodeId}`);
             }
             assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
             const preflightPort = dependencies.reviewPort(
@@ -488,7 +434,10 @@ export async function coordinatePublishReview(
                 () => undefined,
                 () => undefined
             );
-            const prepared = prepareReviewPublication(number, preflightPort);
+            const prepared = prepareReviewPublication(number, preflightPort, actorNodeId);
+            if (actorNodeId === ORCHESTRATOR_USER_NODE_ID) {
+                assertAcceptancePreconditions(number, prepared.head, preflightPort);
+            }
             await dependencies.serializeMutation(
                 primaryRoot,
                 number,
@@ -524,6 +473,29 @@ export async function coordinatePublishReview(
         const message = error instanceof Error ? error.message : String(error);
         throw new Error(`${message}; retained exact review-publication owner: ${recovery}`, { cause: error });
     }
+}
+
+export async function coordinatePublishReview(
+    number: number,
+    dependencies: PublishReviewCoordinatorDependencies = defaultPublishReviewCoordinatorDependencies()
+): Promise<void> {
+    return coordinateReviewPublication(number, dependencies, REVIEWER_BOT_NODE_ID);
+}
+
+export type AcceptReviewCoordinatorDependencies = Omit<PublishReviewCoordinatorDependencies, 'authenticateReviewer'> & {
+    authenticateOrchestrator: () => Promise<PublishReviewAuthentication>;
+};
+
+export async function coordinateOrchestratorAcceptance(
+    number: number,
+    dependencies: AcceptReviewCoordinatorDependencies
+): Promise<void> {
+    const { authenticateOrchestrator: authenticate, ...shared } = dependencies;
+    return coordinateReviewPublication(
+        number,
+        { ...shared, authenticateReviewer: authenticate },
+        ORCHESTRATOR_USER_NODE_ID
+    );
 }
 
 function retainedReviewPublicationRecoveryCommand(primaryRoot: string, number: number): string | undefined {

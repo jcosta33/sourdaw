@@ -559,6 +559,11 @@ describe('AppShell', () => {
             expect(selected[0]?.textContent).toBe('Mixer');
         });
 
+        it('shows the Agent bottom tab', () => {
+            render(<AppShell>Content</AppShell>);
+            expect(screen.getByTestId('agent-tab-button')).toBeInTheDocument();
+        });
+
         it('wires the active tab to the tabpanel via aria-controls/aria-labelledby', () => {
             render(<AppShell>Content</AppShell>);
             const panel = screen.getByRole('tabpanel');

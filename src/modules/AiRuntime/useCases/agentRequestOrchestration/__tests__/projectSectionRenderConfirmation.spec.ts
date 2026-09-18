@@ -60,6 +60,8 @@ function createConfirmation(): PendingAppActionConfirmation {
         ],
         status: 'failed',
         error: 'Renderer unavailable.',
+        supersedes: null,
+        supersededBy: null,
         followUpProjectRevision: 'revision-source',
         followUpStatus: 'retryable',
         createdAt: 1,

@@ -4,6 +4,9 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 
 import {
     BUFFER_STORE,
+    CHECKPOINT_AUDIO_VERSION_META_STORE,
+    CHECKPOINT_AUDIO_VERSION_STORE,
+    CHECKPOINT_RETENTION_STORE,
     flushIndexedDbTasks,
     installFakeAudioIndexedDb,
     META_STORE,
@@ -20,11 +23,19 @@ import {
 } from './preparedAudioBufferTestSupport';
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+let garbageCollectCachedAudioBuffersBySize: typeof import('../../useCases/garbageCollectCachedAudioBuffersBySize').garbageCollectCachedAudioBuffersBySize;
 let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
 let setDurableAudioBufferOwnershipProvider: typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
 let withProjectAudioStorageLock: typeof import('#/infra/storage/withProjectAudioStorageLock').withProjectAudioStorageLock;
 
-const CURRENT_STORES = [BUFFER_STORE, META_STORE, RECOVERY_STORE] as const;
+const CURRENT_STORES = [
+    BUFFER_STORE,
+    META_STORE,
+    RECOVERY_STORE,
+    CHECKPOINT_RETENTION_STORE,
+    CHECKPOINT_AUDIO_VERSION_STORE,
+    CHECKPOINT_AUDIO_VERSION_META_STORE,
+] as const;
 
 function makeBuffer(values: readonly number[]): AudioBuffer {
     const buffer = createAudioBuffer({ length: values.length, sampleRate: 48_000 });
@@ -146,6 +157,8 @@ beforeEach(async () => {
         import('../durableAudioBufferOwnership'),
         import('#/infra/storage/withProjectAudioStorageLock'),
     ]);
+    ({ garbageCollectCachedAudioBuffersBySize } =
+        await import('../../useCases/garbageCollectCachedAudioBuffersBySize'));
     setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
 });
 
@@ -197,7 +210,7 @@ describe('audio buffer save durability', () => {
         const durability = audioBufferCache.ensureDurable(['inactive-arrangement-buffer', 'pending-buffer']);
         await waitForPendingWrite(controls);
 
-        const collection = audioBufferCache.garbageCollectBySize(0);
+        const collection = garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
         let collectionSettled = false;
         void collection.then(() => {
             collectionSettled = true;
@@ -228,7 +241,7 @@ describe('audio buffer save durability', () => {
         const durability = audioBufferCache.ensureDurable([recoveryId, pendingId]);
         await waitForPendingWrite(controls);
 
-        const collection = audioBufferCache.garbageCollectBySize(0);
+        const collection = garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
         let collectionSettled = false;
         void collection.then(() => {
             collectionSettled = true;
@@ -267,7 +280,10 @@ describe('audio buffer save durability', () => {
         });
         expect(controls.writeTransactionCount()).toBe(1);
 
-        const collectedAfterFailure = await settlePromiseWithWrites(audioBufferCache.garbageCollectBySize(0), controls);
+        const collectedAfterFailure = await settlePromiseWithWrites(
+            garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 }),
+            controls
+        );
         expect(collectedAfterFailure).toBe(1);
         expect(controls.committed.has('released-after-failure')).toBe(false);
 
@@ -895,7 +911,7 @@ describe('audio buffer save durability', () => {
             if (collector === 'age') {
                 await audioBufferCache.garbageCollectByAge(0);
             } else if (collector === 'size') {
-                await audioBufferCache.garbageCollectBySize(0);
+                await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
             } else {
                 await audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set(), projectId });
             }
@@ -1223,7 +1239,10 @@ describe('audio buffer save durability', () => {
             failedIds: ['prepared-in-flight-failure'],
         });
 
-        const deleted = await settlePromiseWithWrites(audioBufferCache.garbageCollectBySize(0), controls);
+        const deleted = await settlePromiseWithWrites(
+            garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 }),
+            controls
+        );
         expect(deleted).toBe(1);
         expect(controls.committed.has('released-after-prepared-failure')).toBe(false);
     });

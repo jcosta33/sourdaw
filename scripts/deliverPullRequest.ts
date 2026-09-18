@@ -3,18 +3,20 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { lstatSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
 
 import {
     AUTHOR_BOT_NODE_ID,
-    REVIEWER_BOT_NODE_ID,
+    ORCHESTRATOR_USER_NODE_ID,
+    authenticateOrchestrator,
+    isOrchestratorUserNodeId,
+    isHistoricalMergerActor,
     assertRequiredRepository,
     authenticateRole,
+    type GhSession,
     authenticateTrackerAuthor,
     gitAuthenticatedArgs,
     GITHUB_HTTPS_REMOTE,
     isAuthorBotNodeId,
-    isReviewerBotNodeId,
     REQUIRED_BASE_BRANCH,
     REQUIRED_REPOSITORY,
     resolvePrimaryRoot,
@@ -28,6 +30,8 @@ import {
     composeDeliveryReceipt,
     fail,
     parseDeliveryReceipt,
+    PR_STATE,
+    TRUSTED_GATE_WORKFLOW_ENV,
     type DeliveryReceiptPayload,
 } from './prContract.ts';
 import {
@@ -35,6 +39,11 @@ import {
     type PullRequestRemoteMutationBoundary,
     withPullRequestMutationLock,
 } from './pullRequestMutationLock.ts';
+import {
+    readPullRequestReviewState,
+    assertIndependentReviewerApproval,
+    type ReviewState,
+} from './pullRequestReviewState.ts';
 import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
 import {
     runRecoverDeliveryLockCli,
@@ -68,12 +77,10 @@ export type PullRequestSnapshot = {
     additions: number;
     deletions: number;
     mergedByActorNodeId: string | null;
+    readonly mergeCommit?: { readonly oid: string } | null;
 };
 
-export type ReviewState = {
-    latestReviewerStateOnHead: string | null;
-    unresolvedThreads: number;
-};
+export type { ReviewState } from './pullRequestReviewState.ts';
 
 export type StackedPullRequest = Pick<
     PullRequestSnapshot,
@@ -112,6 +119,13 @@ export type DeliveryPort = CheckEvidencePort & {
         expectedCurrent?: DeliveryReceiptAuthorityExpectation
     ) => void;
     clearDeliveryReceiptAuthority: (number: number, expectedCurrent?: DeliveryReceiptAuthorityExpectation) => void;
+    readonly syncAuthorshipNotes?: (input: {
+        readonly mergeCommitSha: string;
+        readonly headSha: string;
+        readonly baseSha: string;
+        readonly headRef: string;
+        readonly baseRef: string;
+    }) => void;
     log: (message: string) => void;
 };
 
@@ -310,7 +324,7 @@ function validatePullRequest(
     checks: CheckEvidencePort,
     ciAdmissionMode: CiAdmissionMode
 ): void {
-    if (pullRequest.state !== 'OPEN') {
+    if (pullRequest.state !== PR_STATE.OPEN) {
         fail(`PR #${pullRequest.number} is ${pullRequest.state.toLowerCase()}`);
     }
     if (pullRequest.isDraft) {
@@ -410,8 +424,8 @@ function isSatisfiedRequiredContext(context: string, checkRuns: HeadCheckRun[]):
  * aggregate `UNSTABLE` when cancelled check runs remain on that head beside later successes on the
  * same commit. Tolerating that state means proving the head green here instead of trusting the
  * aggregate: no check name's newest attempt failed, nothing is still running, the one required check
- * succeeded, and every cancelled name also succeeded. Every other status still refuses, because it
- * reports something other than checks.
+ * succeeded, every cancelled name also succeeded, and every name the gate needs reported at least
+ * once. Every other status still refuses, because it reports something other than checks.
  */
 function validateRequiredCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
     if (pullRequest.mergeStateStatus === 'CLEAN') {
@@ -446,19 +460,19 @@ function refreshStructuralMergeability(
 ): PullRequestSnapshot {
     let pullRequest = initial;
     observe?.(pullRequest);
-    if (pullRequest.state === 'MERGED' || pullRequest.state === 'CLOSED') {
+    if (pullRequest.state === PR_STATE.MERGED || pullRequest.state === PR_STATE.CLOSED) {
         return pullRequest;
     }
     for (
         let refreshes = 0;
-        pullRequest.state === 'OPEN' &&
+        pullRequest.state === PR_STATE.OPEN &&
         pullRequest.mergeable === 'UNKNOWN' &&
         refreshes < STRUCTURAL_MERGEABILITY_REFRESH_LIMIT;
         refreshes += 1
     ) {
         const refreshed = port.pullRequest(initial.number);
         observe?.(refreshed);
-        if (refreshed.state === 'MERGED' || refreshed.state === 'CLOSED') {
+        if (refreshed.state === PR_STATE.MERGED || refreshed.state === PR_STATE.CLOSED) {
             return refreshed;
         }
         validateStablePullRequest(initial, refreshed);
@@ -472,7 +486,7 @@ function resolveStructuralMergeability(
     port: Pick<DeliveryPort, 'pullRequest'>
 ): PullRequestSnapshot {
     const pullRequest = refreshStructuralMergeability(initial, port);
-    if (pullRequest.state === 'MERGED' || pullRequest.state === 'CLOSED') {
+    if (pullRequest.state === PR_STATE.MERGED || pullRequest.state === PR_STATE.CLOSED) {
         return pullRequest;
     }
     validateStructuralMergeability(pullRequest);
@@ -493,13 +507,15 @@ function validateSupersededChecks(pullRequest: PullRequestSnapshot, checks: Chec
     if (!checkRuns.some(isSuccessfulRequiredCheck)) {
         fail(`${state} and no ${REQUIRED_CHECK_NAME} check succeeded on ${pullRequest.headRefOid}`);
     }
-    const undecided = undecidedCancelledCheckName(
-        checkRuns,
-        checks.gateRequiredCheckNames(),
-        checks.gateRequiredSkipAliases()
-    );
+    const requiredNames = checks.gateRequiredCheckNames();
+    const skipAliases = checks.gateRequiredSkipAliases();
+    const undecided = undecidedCancelledCheckName(checkRuns, requiredNames, skipAliases);
     if (undecided !== undefined) {
         fail(`${state} and check ${undecided} was cancelled and never succeeded on ${pullRequest.headRefOid}`);
+    }
+    const absent = absentRequiredCheckName(checkRuns, requiredNames, skipAliases);
+    if (absent !== undefined) {
+        fail(`${state} and required check ${absent} never reported on ${pullRequest.headRefOid}`);
     }
 }
 
@@ -631,6 +647,31 @@ function undecidedCancelledCheckName(
     )?.name;
 }
 
+/**
+ * GitHub reports a check run for every job a run executes, and a job its scope `if` or path filter
+ * excludes still reports — as a skip. A required name with no run on this head at all is therefore
+ * no decision in either direction: the job never ran here (a matrix shard that was never scheduled),
+ * or the name this workflow reader derived matches nothing GitHub reported. Both leave the merge
+ * with no verdict for a name the gate needs, which is a coverage gap rather than a pass.
+ *
+ * A scope-skipped matrix job is the one report that carries a different name than the required ones:
+ * GitHub labels its single check run with the raw template name, so the alias — the same map
+ * `skippedAfter` consults — is what makes that run count as the report for every shard it stands
+ * for. Without it, a head whose matrix leg was skipped outright would refuse on shard names that
+ * were decided, not absent.
+ */
+function absentRequiredCheckName(
+    checks: HeadCheckRun[],
+    required: ReadonlySet<string>,
+    skipAliases: ReadonlyMap<string, string>
+): string | undefined {
+    const reported = new Set(checks.map((check) => check.name));
+    return [...required].find((name) => {
+        const alias = skipAliases.get(name);
+        return !reported.has(name) && (alias === undefined || !reported.has(alias));
+    });
+}
+
 function isSuccessfulRequiredCheck(check: HeadCheckRun): boolean {
     return check.name === REQUIRED_CHECK_NAME && check.conclusion === PASSING_CONCLUSION;
 }
@@ -638,7 +679,6 @@ function isSuccessfulRequiredCheck(check: HeadCheckRun): boolean {
 const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
 const GATE_JOB_ID = 'gate';
 const EXPRESSION_OPENER = '${{';
-const GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
 
 /** One job as the workflow declares it. Every value is unresolved, because resolving one is a rule. */
 type WorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown; strategy?: unknown };
@@ -680,8 +720,11 @@ export function gateRequiredCheckNames(serialized: string): ReadonlySet<string> 
         );
     }
     const names = new Set<string>();
+    const jobByReportedName = new Map<string, string>();
     for (const jobId of gateNeeds(gate.needs)) {
         for (const name of requiredCheckNames(jobId, jobs, called)) {
+            refuseCollidingCheckName(jobByReportedName, name, jobId);
+            jobByReportedName.set(name, jobId);
             names.add(name);
         }
     }
@@ -689,8 +732,34 @@ export function gateRequiredCheckNames(serialized: string): ReadonlySet<string> 
 }
 
 /**
+ * GitHub reports one check per name on a head, so two gated jobs rendering one name leave the two
+ * verdicts indistinguishable in the rollup: the name carries whichever attempt landed last, and one
+ * job's success answers for the other job's cancellation. The `Set` this read returns would
+ * silently keep a single entry, so the read refuses instead — naming both jobs, or the one job
+ * twice when a reusable call renders two of its inner jobs under one name.
+ */
+function refuseCollidingCheckName(jobByReportedName: ReadonlyMap<string, string>, name: string, jobId: string): void {
+    const firstJobId = jobByReportedName.get(name);
+    if (firstJobId === undefined) {
+        return;
+    }
+    if (firstJobId === jobId) {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} reports the check name ${name} more than once, ` +
+                `which GitHub reports as one check name this gate cannot tell apart`
+        );
+    }
+    fail(
+        `the ${firstJobId} and ${jobId} jobs in ${HEALTH_GATES_WORKFLOW_PATH} both report the check name ` +
+            `${name}, which GitHub reports as one check name this gate cannot tell apart`
+    );
+}
+
+/**
  * The raw template name a scope-skipped matrix run reports under, for every resolved matrix name in
- * the gating set — the alias only `skippedAfter` consults, never a required name itself.
+ * the gating set — the alias `skippedAfter` consults to prove a skip's recency and
+ * `absentRequiredCheckName` consults to read a skipped matrix run as the report for its shards;
+ * never a required name itself.
  */
 export function gateRequiredSkipAliases(serialized: string): ReadonlyMap<string, string> {
     const { jobs, called } = workflowSummary(serialized);
@@ -713,16 +782,18 @@ function workflowSummary(serialized: string): { jobs: WorkflowJobs; called: Call
     try {
         summary = JSON.parse(serialized);
     } catch (error) {
-        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} is not JSON: ${error instanceof Error ? error.message : ''}`);
+        failUnreadableWorkflow(
+            `${TRUSTED_GATE_WORKFLOW_ENV} is not JSON: ${error instanceof Error ? error.message : ''}`
+        );
     }
     if (!isRecord(summary)) {
-        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} is not a workflow summary`);
+        failUnreadableWorkflow(`${TRUSTED_GATE_WORKFLOW_ENV} is not a workflow summary`);
     }
     if (typeof summary.unreadable === 'string') {
         failUnreadableWorkflow(summary.unreadable);
     }
     if (!isRecord(summary.jobs)) {
-        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} carries no jobs mapping`);
+        failUnreadableWorkflow(`${TRUSTED_GATE_WORKFLOW_ENV} carries no jobs mapping`);
     }
     return { jobs: declaredJobs(summary.jobs, ''), called: calledWorkflows(summary.called) };
 }
@@ -753,7 +824,7 @@ function calledWorkflows(carried: unknown): CalledWorkflows {
         return called;
     }
     if (!isRecord(carried)) {
-        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} carries a called mapping that is not a mapping`);
+        failUnreadableWorkflow(`${TRUSTED_GATE_WORKFLOW_ENV} carries a called mapping that is not a mapping`);
     }
     for (const [usesPath, entry] of Object.entries(carried)) {
         if (!isRecord(entry)) {
@@ -1224,22 +1295,22 @@ function declaredCheckName(jobId: string, name: unknown, workflowPath: string): 
  * verdict — which is also what a `deliver` run outside the protected launcher looks like from here.
  */
 export function readGateRequiredCheckNames(env: NodeJS.ProcessEnv = process.env): ReadonlySet<string> {
-    const serialized = env[GATE_WORKFLOW_ENV];
+    const serialized = env[TRUSTED_GATE_WORKFLOW_ENV];
     if (serialized === undefined || serialized === '') {
         fail(
             `deliver must run through the protected primary checkout launcher, which passes ` +
-                `${GATE_WORKFLOW_ENV} from ${HEALTH_GATES_WORKFLOW_PATH} at the pinned origin/main commit`
+                `${TRUSTED_GATE_WORKFLOW_ENV} from ${HEALTH_GATES_WORKFLOW_PATH} at the pinned origin/main commit`
         );
     }
     return gateRequiredCheckNames(serialized);
 }
 
 export function readGateRequiredSkipAliases(env: NodeJS.ProcessEnv = process.env): ReadonlyMap<string, string> {
-    const serialized = env[GATE_WORKFLOW_ENV];
+    const serialized = env[TRUSTED_GATE_WORKFLOW_ENV];
     if (serialized === undefined || serialized === '') {
         fail(
             `deliver must run through the protected primary checkout launcher, which passes ` +
-                `${GATE_WORKFLOW_ENV} from ${HEALTH_GATES_WORKFLOW_PATH} at the pinned origin/main commit`
+                `${TRUSTED_GATE_WORKFLOW_ENV} from ${HEALTH_GATES_WORKFLOW_PATH} at the pinned origin/main commit`
         );
     }
     return gateRequiredSkipAliases(serialized);
@@ -1253,13 +1324,9 @@ function trackerCompletionTarget(pullRequest: PullRequestSnapshot): number | und
 }
 
 function validateReview(number: number, review: ReviewState): void {
-    if (review.latestReviewerStateOnHead !== 'APPROVED') {
-        fail(
-            `PR #${number} is not approved by the required reviewer actor ${REVIEWER_BOT_NODE_ID} on the current head`
-        );
-    }
-    if (review.unresolvedThreads > 0) {
-        fail(`PR #${number} has ${review.unresolvedThreads} unresolved review thread(s)`);
+    assertIndependentReviewerApproval(number, review);
+    if (!review.orchestratorAcceptedAfterReviewer) {
+        fail(`PR #${number} requires orchestrator acceptance after the independent reviewer on the current head`);
     }
 }
 
@@ -1324,7 +1391,7 @@ function validatePostMergeSnapshot(
     if (expected.title === undefined) {
         fail(`PR #${number} delivery receipt authority cannot be proven`);
     }
-    validateAuthorAppMerger(merged);
+    validateHistoricalMerger(merged);
     validateBaseBranch(merged);
     if (expected.title !== merged.title) {
         fail(`PR #${number} title changed during delivery`);
@@ -1934,7 +2001,10 @@ function releaseStaleFrozenDeliveryReceiptAuthorityBeforeOpenRetry(
 }
 
 function shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(pullRequest: PullRequestSnapshot): boolean {
-    return pullRequest.state === 'CLOSED' || (pullRequest.state === 'OPEN' && pullRequest.mergeable !== 'UNKNOWN');
+    return (
+        pullRequest.state === PR_STATE.CLOSED ||
+        (pullRequest.state === PR_STATE.OPEN && pullRequest.mergeable !== 'UNKNOWN')
+    );
 }
 
 function restoreDeliveryReceiptAuthorityBeforeClosedRetry(number: number, port: DeliveryPort): void {
@@ -1989,7 +2059,7 @@ function resolveFinalSnapshotWithRestorablePreparedAuthority(
                 latestDefinitiveUnmerged = pullRequest;
             }
         });
-        if (finalSnapshot.state !== 'MERGED') {
+        if (finalSnapshot.state !== PR_STATE.MERGED) {
             validateStructuralMergeability(finalSnapshot);
         }
         return finalSnapshot;
@@ -2022,28 +2092,28 @@ function tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
         port.fetch();
         const raw = port.pullRequest(number);
         latestObserved = raw;
-        if (raw.state === 'MERGED') {
+        if (raw.state === PR_STATE.MERGED) {
             return;
         }
-        if (raw.state === 'CLOSED') {
+        if (raw.state === PR_STATE.CLOSED) {
             restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
             return;
         }
-        if (raw.state !== 'OPEN') {
+        if (raw.state !== PR_STATE.OPEN) {
             return;
         }
         const current = refreshStructuralMergeability(raw, port, (pullRequest) => {
             latestObserved = pullRequest;
         });
         latestObserved = current;
-        if (current.state === 'MERGED') {
+        if (current.state === PR_STATE.MERGED) {
             return;
         }
-        if (current.state === 'OPEN' && current.mergeable === 'CONFLICTING') {
+        if (current.state === PR_STATE.OPEN && current.mergeable === 'CONFLICTING') {
             restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
             return;
         }
-        if (current.state !== 'OPEN' && current.state !== 'CLOSED') {
+        if (current.state !== PR_STATE.OPEN && current.state !== PR_STATE.CLOSED) {
             return;
         }
     } catch {
@@ -2539,7 +2609,7 @@ function ensureDeliveryReceipt(
 
 function validateDependent(current: PullRequestSnapshot, expected: StackedPullRequest): void {
     if (
-        current.state !== 'OPEN' ||
+        current.state !== PR_STATE.OPEN ||
         current.headRefOid !== expected.headRefOid ||
         current.headRefName !== expected.headRefName ||
         current.baseRefName !== expected.baseRefName
@@ -2558,7 +2628,7 @@ function validateDependentSet(before: StackedPullRequest[], after: StackedPullRe
         const current = afterByNumber.get(number);
         if (
             current === undefined ||
-            current.state !== 'OPEN' ||
+            current.state !== PR_STATE.OPEN ||
             current.headRefOid !== expected.headRefOid ||
             current.headRefName !== expected.headRefName ||
             current.baseRefName !== expected.baseRefName
@@ -2573,7 +2643,7 @@ function retargetDependents(dependents: StackedPullRequest[], baseBranch: string
         port.retarget(dependent.number, baseBranch);
         const retargeted = port.pullRequest(dependent.number);
         if (
-            retargeted.state !== 'OPEN' ||
+            retargeted.state !== PR_STATE.OPEN ||
             retargeted.headRefOid !== dependent.headRefOid ||
             retargeted.baseRefName !== baseBranch
         ) {
@@ -2623,9 +2693,19 @@ function completeIssueAfterMerge(
     }
 }
 
-function validateAuthorAppMerger(pullRequest: PullRequestSnapshot): void {
-    if (pullRequest.state !== 'MERGED' || !isAuthorBotNodeId(pullRequest.mergedByActorNodeId)) {
-        fail(`PR #${pullRequest.number} was not merged by the author App`);
+function validateFreshMerger(pullRequest: PullRequestSnapshot): void {
+    if (!isOrchestratorUserNodeId(pullRequest.mergedByActorNodeId)) {
+        fail(`PR #${pullRequest.number} fresh merge was not performed by the orchestrator user`);
+    }
+}
+
+function validateHistoricalMerger(pullRequest: PullRequestSnapshot): void {
+    if (
+        pullRequest.state !== PR_STATE.MERGED ||
+        (!isAuthorBotNodeId(pullRequest.mergedByActorNodeId) &&
+            !isOrchestratorUserNodeId(pullRequest.mergedByActorNodeId))
+    ) {
+        fail(`PR #${pullRequest.number} was not merged by the author App or orchestrator user`);
     }
 }
 
@@ -2638,16 +2718,19 @@ function deliverPullRequestWithCiAdmission(
 ): void {
     port.fetch();
     const rawInitial = port.pullRequest(number);
-    if (rawInitial.state === 'CLOSED') {
+    if (rawInitial.state === PR_STATE.CLOSED) {
         restoreDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
     }
     const initial = resolveStructuralMergeability(rawInitial, port);
-    if (initial.state === 'CLOSED') {
+    if (initial.state === PR_STATE.CLOSED) {
         restoreDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
     }
-    if (initial.state === 'MERGED') {
+    if (initial.state === PR_STATE.MERGED) {
+        if (rawInitial.state !== PR_STATE.MERGED) {
+            validateFreshMerger(initial);
+        }
         validateBaseBranch(initial);
-        validateAuthorAppMerger(initial);
+        validateHistoricalMerger(initial);
         const receiptAuthority = port.readDeliveryReceiptAuthority(number);
         let receipt: DeliveryReceiptComment;
         let receiptPayload: DeliveryReceiptPayload;
@@ -2725,7 +2808,8 @@ function deliverPullRequestWithCiAdmission(
         finalFetchArmedAuthority,
         port
     );
-    if (finalSnapshot.state === 'MERGED') {
+    if (finalSnapshot.state === PR_STATE.MERGED) {
+        validateFreshMerger(finalSnapshot);
         validatePostMergeSnapshot(preparedPostMergeValidation, finalSnapshot, number);
         const recoveredReceipt = readStableExactDeliveryReceipt(finalSnapshot, port, receipt.id);
         const recoveredPayload = assertCanonicalDeliveryReceipt(recoveredReceipt, finalSnapshot, receiptPayload);
@@ -2830,6 +2914,7 @@ function deliverPullRequestWithCiAdmission(
         throw error;
     }
     const mergedSnapshot = port.pullRequest(number);
+    validateFreshMerger(mergedSnapshot);
     validatePostMergeSnapshot(
         persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget),
         mergedSnapshot,
@@ -2850,6 +2935,15 @@ function deliverPullRequestWithCiAdmission(
         finalDependents.map((dependent) => dependent.number)
     );
     completeIssueAfterMerge(number, finalReceiptPayload.closingIssue, tracker);
+    if (mergedSnapshot.mergeCommit?.oid) {
+        port.syncAuthorshipNotes?.({
+            mergeCommitSha: mergedSnapshot.mergeCommit.oid,
+            headSha: finalSnapshot.headRefOid,
+            baseSha: finalSnapshot.baseRefOid,
+            headRef: finalSnapshot.headRefName,
+            baseRef: finalSnapshot.baseRefName,
+        });
+    }
     persistTerminalDeliveryReceiptAuthority(
         number,
         finalReceipt,
@@ -2893,17 +2987,27 @@ function capture(command: string, args: string[]): string {
     return result.stdout.trim();
 }
 
-function run(command: string, args: string[]): void {
+export function run(command: string, args: string[]): void {
     const result = spawnSync(command, args, {
         cwd: process.cwd(),
-        stdio: 'inherit',
+        // stderr is captured rather than inherited so a failing child names its own failure —
+        // the git-ai authorship sync's exit 1 was unattributable without it (#4344).
+        stdio: ['inherit', 'inherit', 'pipe'],
+        maxBuffer: 64 * 1024 * 1024,
         shell: false,
         ...(command === 'git' ? { env: trustedDeliveryGitEnv() } : {}),
     });
     if (result.error !== undefined) {
         throw result.error;
     }
+    if (result.stderr !== null && result.stderr.length > 0) {
+        console.error(result.stderr.toString().trim());
+    }
     if (result.status !== 0) {
+        const stderr = result.stderr === null ? '' : result.stderr.toString().trim();
+        if (stderr !== '') {
+            throw new Error(`${command} failed with exit ${result.status ?? 'signal'}: ${stderr}`);
+        }
         throw new Error(`${command} failed with exit ${result.status ?? 'signal'}`);
     }
 }
@@ -3195,7 +3299,7 @@ function readMergedByActorNodeId(
     shell: Pick<ShellRunner, 'capture'>
 ): string {
     const query =
-        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id}}}}}';
+        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id} ... on User{id}}}}}';
     const response = parseJson<{
         data?: {
             repository?: {
@@ -3220,7 +3324,11 @@ function readMergedByActorNodeId(
         `PR #${number} merger query`
     );
     const mergedBy = response.data?.repository?.pullRequest?.mergedBy;
-    if (mergedBy?.__typename !== 'Bot' || typeof mergedBy.id !== 'string') {
+    if (
+        typeof mergedBy?.id !== 'string' ||
+        typeof mergedBy.__typename !== 'string' ||
+        !isHistoricalMergerActor(mergedBy.id, mergedBy.__typename)
+    ) {
         fail(`PR #${number} merger cannot be verified`);
     }
     return mergedBy.id;
@@ -3337,222 +3445,6 @@ function readDeliveryReceiptProofFromGithub(
     };
 }
 
-type PullRequestReviewRecord = {
-    id: string;
-    state: string;
-    submittedAt: string | null;
-    author: { id: string | null; login: string; __typename: string } | null;
-    commitOid: string | null;
-};
-
-type ReviewThreadRecord = {
-    id: string;
-    isResolved: boolean;
-};
-
-type ReviewStatePage = {
-    pullRequestId: string;
-    headRefOid: string;
-    reviews: {
-        nodes: PullRequestReviewRecord[];
-        pageInfo: { hasPreviousPage: boolean; startCursor: string | null };
-    };
-    reviewThreads: {
-        nodes: ReviewThreadRecord[];
-        pageInfo: { hasNextPage: boolean; endCursor: string | null };
-    };
-};
-
-type CompleteReviewState = {
-    pullRequestId: string;
-    headRefOid: string;
-    reviews: PullRequestReviewRecord[];
-    reviewThreads: ReviewThreadRecord[];
-};
-
-const REVIEW_STATE_PAGE_SIZE = 100;
-const REVIEW_STATE_PAGE_LIMIT = 1_000;
-const REVIEW_STATE_QUERY = `query($owner:String!,$name:String!,$number:Int!,$reviewsBefore:String,$threadsAfter:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid reviews(last:${REVIEW_STATE_PAGE_SIZE},before:$reviewsBefore){nodes{id state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage startCursor}} reviewThreads(first:${REVIEW_STATE_PAGE_SIZE},after:$threadsAfter){nodes{id isResolved} pageInfo{hasNextPage endCursor}}}}}`;
-
-function invalidReviewState(number: number): never {
-    fail(`cannot prove complete review state for PR #${number}`);
-}
-
-function requiredReviewStateString(value: unknown, number: number): string {
-    if (typeof value !== 'string' || value.trim() === '') {
-        invalidReviewState(number);
-    }
-    return value;
-}
-
-function parseReviewAuthor(value: unknown, number: number): PullRequestReviewRecord['author'] {
-    if (value === null) {
-        return null;
-    }
-    if (!isRecord(value)) {
-        invalidReviewState(number);
-    }
-    if (value.id !== undefined && (typeof value.id !== 'string' || value.id.trim() === '')) {
-        invalidReviewState(number);
-    }
-    return {
-        id: typeof value.id === 'string' ? value.id : null,
-        login: requiredReviewStateString(value.login, number),
-        __typename: requiredReviewStateString(value.__typename, number),
-    };
-}
-
-function parseReviewRecord(value: unknown, number: number): PullRequestReviewRecord {
-    if (!isRecord(value)) {
-        invalidReviewState(number);
-    }
-    if (value.submittedAt !== null && typeof value.submittedAt !== 'string') {
-        invalidReviewState(number);
-    }
-    let commitOid: string | null = null;
-    if (value.commit !== null) {
-        if (!isRecord(value.commit)) {
-            invalidReviewState(number);
-        }
-        commitOid = requiredReviewStateString(value.commit.oid, number);
-    }
-    return {
-        id: requiredReviewStateString(value.id, number),
-        state: requiredReviewStateString(value.state, number),
-        submittedAt: value.submittedAt,
-        author: parseReviewAuthor(value.author, number),
-        commitOid,
-    };
-}
-
-function parseReviewThreadRecord(value: unknown, number: number): ReviewThreadRecord {
-    if (!isRecord(value) || typeof value.isResolved !== 'boolean') {
-        invalidReviewState(number);
-    }
-    return {
-        id: requiredReviewStateString(value.id, number),
-        isResolved: value.isResolved,
-    };
-}
-
-function parseReviewStatePage(response: string, number: number): ReviewStatePage {
-    const envelope = parseJson<unknown>(response, 'review query');
-    if (
-        !isRecord(envelope) ||
-        (Object.hasOwn(envelope, 'errors') && (!Array.isArray(envelope.errors) || envelope.errors.length > 0)) ||
-        !isRecord(envelope.data) ||
-        !isRecord(envelope.data.repository)
-    ) {
-        invalidReviewState(number);
-    }
-    const pullRequest = envelope.data.repository.pullRequest;
-    if (
-        !isRecord(pullRequest) ||
-        !isRecord(pullRequest.reviews) ||
-        !Array.isArray(pullRequest.reviews.nodes) ||
-        !isRecord(pullRequest.reviews.pageInfo) ||
-        typeof pullRequest.reviews.pageInfo.hasPreviousPage !== 'boolean' ||
-        (pullRequest.reviews.pageInfo.startCursor !== null &&
-            typeof pullRequest.reviews.pageInfo.startCursor !== 'string') ||
-        !isRecord(pullRequest.reviewThreads) ||
-        !Array.isArray(pullRequest.reviewThreads.nodes) ||
-        !isRecord(pullRequest.reviewThreads.pageInfo) ||
-        typeof pullRequest.reviewThreads.pageInfo.hasNextPage !== 'boolean' ||
-        (pullRequest.reviewThreads.pageInfo.endCursor !== null &&
-            typeof pullRequest.reviewThreads.pageInfo.endCursor !== 'string')
-    ) {
-        invalidReviewState(number);
-    }
-    return {
-        pullRequestId: requiredReviewStateString(pullRequest.id, number),
-        headRefOid: requiredReviewStateString(pullRequest.headRefOid, number),
-        reviews: {
-            nodes: pullRequest.reviews.nodes.map((node) => parseReviewRecord(node, number)),
-            pageInfo: {
-                hasPreviousPage: pullRequest.reviews.pageInfo.hasPreviousPage,
-                startCursor: pullRequest.reviews.pageInfo.startCursor,
-            },
-        },
-        reviewThreads: {
-            nodes: pullRequest.reviewThreads.nodes.map((node) => parseReviewThreadRecord(node, number)),
-            pageInfo: {
-                hasNextPage: pullRequest.reviewThreads.pageInfo.hasNextPage,
-                endCursor: pullRequest.reviewThreads.pageInfo.endCursor,
-            },
-        },
-    };
-}
-
-function nextReviewStateCursor(number: number, cursor: string | null, seen: Set<string>): string {
-    if (cursor === null || cursor.trim() === '' || seen.has(cursor)) {
-        fail(`cannot prove complete review state for PR #${number}`);
-    }
-    seen.add(cursor);
-    return cursor;
-}
-
-function assertReviewStatePageBudget(number: number, pagesRead: number): void {
-    if (pagesRead >= REVIEW_STATE_PAGE_LIMIT) {
-        fail(`cannot prove complete review state for PR #${number}`);
-    }
-}
-
-function assertReviewStatePageIdentity(
-    number: number,
-    page: ReviewStatePage,
-    pullRequestId: string,
-    expectedHead: string
-): void {
-    if (page.pullRequestId !== pullRequestId || page.headRefOid !== expectedHead) {
-        invalidReviewState(number);
-    }
-}
-
-function readCompleteReviewState(
-    number: number,
-    expectedHead: string,
-    expectedPullRequestId: string | undefined,
-    readPage: (reviewsBefore: string | null, threadsAfter: string | null) => ReviewStatePage
-): CompleteReviewState {
-    const initialPage = readPage(null, null);
-    const pullRequestId = expectedPullRequestId ?? initialPage.pullRequestId;
-    assertReviewStatePageIdentity(number, initialPage, pullRequestId, expectedHead);
-    const reviewPages = [initialPage.reviews.nodes];
-    const reviewCursors = new Set<string>();
-    let reviewPage = initialPage.reviews;
-    let reviewPagesRead = 1;
-    while (reviewPage.pageInfo.hasPreviousPage) {
-        assertReviewStatePageBudget(number, reviewPagesRead);
-        const cursor = nextReviewStateCursor(number, reviewPage.pageInfo.startCursor, reviewCursors);
-        const nextPage = readPage(cursor, null);
-        assertReviewStatePageIdentity(number, nextPage, pullRequestId, expectedHead);
-        reviewPage = nextPage.reviews;
-        reviewPages.push(reviewPage.nodes);
-        reviewPagesRead += 1;
-    }
-
-    const reviewThreads = [...initialPage.reviewThreads.nodes];
-    const threadCursors = new Set<string>();
-    let threadPage = initialPage.reviewThreads;
-    let threadPagesRead = 1;
-    while (threadPage.pageInfo.hasNextPage) {
-        assertReviewStatePageBudget(number, threadPagesRead);
-        const cursor = nextReviewStateCursor(number, threadPage.pageInfo.endCursor, threadCursors);
-        const nextPage = readPage(null, cursor);
-        assertReviewStatePageIdentity(number, nextPage, pullRequestId, expectedHead);
-        threadPage = nextPage.reviewThreads;
-        reviewThreads.push(...threadPage.nodes);
-        threadPagesRead += 1;
-    }
-
-    return {
-        pullRequestId,
-        headRefOid: expectedHead,
-        reviews: reviewPages.reverse().flat(),
-        reviewThreads,
-    };
-}
-
 type BranchRulesetRule = {
     type: string;
     parameters?: {
@@ -3598,6 +3490,7 @@ export function shellPort(
     repository: string,
     shell: ShellRunner = { capture, run },
     options: {
+        mergeCapture?: ShellRunner['capture'];
         gitToken?: string;
         helperDir?: string;
         primaryRoot?: string;
@@ -3626,6 +3519,7 @@ export function shellPort(
         'additions',
         'deletions',
         'mergedBy',
+        'mergeCommit',
     ].join(',');
     const readRollupPage = (number: number, headRefOid: string, cursor: string | null): RollupPage =>
         parseRollupPage(
@@ -3657,18 +3551,25 @@ export function shellPort(
                         '--prune',
                         GITHUB_HTTPS_REMOTE,
                         '+refs/heads/*:refs/remotes/origin/*',
+                        '+refs/notes/ai:refs/notes/ai',
                     ])
                 );
                 return;
             }
-            shell.run('git', ['fetch', '--prune', 'origin']);
+            shell.run('git', [
+                'fetch',
+                '--prune',
+                'origin',
+                '+refs/heads/*:refs/remotes/origin/*',
+                '+refs/notes/ai:refs/notes/ai',
+            ]);
         },
         pullRequest: (number) => {
             const snapshot = toPullRequestSnapshot(
                 shell.capture('gh', ['pr', 'view', String(number), '--repo', repository, '--json', pullRequestFields]),
                 number
             );
-            if (snapshot.state !== 'MERGED') {
+            if (snapshot.state !== PR_STATE.MERGED) {
                 return snapshot;
             }
             return {
@@ -3681,45 +3582,8 @@ export function shellPort(
         gateRequiredCheckNames: () => readGateRequiredCheckNames(),
         gateRequiredSkipAliases: () => readGateRequiredSkipAliases(),
         requiredStatusCheckContexts: () => readRequiredStatusCheckContexts(repository, shell),
-        reviewState: (number, expectedHead) => {
-            const readPage = (reviewsBefore: string | null, threadsAfter: string | null) =>
-                parseReviewStatePage(
-                    shell.capture('gh', [
-                        'api',
-                        'graphql',
-                        '-f',
-                        `query=${REVIEW_STATE_QUERY}`,
-                        '-f',
-                        `owner=${owner}`,
-                        '-f',
-                        `name=${name}`,
-                        '-F',
-                        `number=${number}`,
-                        ...(reviewsBefore === null ? [] : ['-f', `reviewsBefore=${reviewsBefore}`]),
-                        ...(threadsAfter === null ? [] : ['-f', `threadsAfter=${threadsAfter}`]),
-                    ]),
-                    number
-                );
-            const firstScan = readCompleteReviewState(number, expectedHead, undefined, readPage);
-            const secondScan = readCompleteReviewState(number, expectedHead, firstScan.pullRequestId, readPage);
-            if (!isDeepStrictEqual(firstScan, secondScan)) {
-                fail(`cannot prove stable review state for PR #${number}`);
-            }
-            const review = secondScan;
-            const onHead = review.reviews.filter(
-                (candidate) =>
-                    candidate.state !== 'DISMISSED' &&
-                    candidate.state !== 'PENDING' &&
-                    candidate.commitOid === expectedHead &&
-                    candidate.author?.__typename === 'Bot' &&
-                    isReviewerBotNodeId(candidate.author.id)
-            );
-            onHead.sort((left, right) => (left.submittedAt ?? '').localeCompare(right.submittedAt ?? ''));
-            return {
-                latestReviewerStateOnHead: onHead.at(-1)?.state ?? null,
-                unresolvedThreads: review.reviewThreads.filter((thread) => !thread.isResolved).length,
-            };
-        },
+        reviewState: (number, expectedHead) =>
+            readPullRequestReviewState(number, expectedHead, repository, (args) => shell.capture('gh', args)),
         dependents: (baseBranch) => {
             const pages = parseJson<
                 Array<
@@ -3754,6 +3618,7 @@ export function shellPort(
             if (hasDependents && policy.deletesMergedBranches) {
                 fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
             }
+            const mergeCapture = options.mergeCapture ?? fail('orchestrator-authenticated merge runner is required');
             options.markRemoteMutationAttempt?.();
             const mergeArgs = [
                 'api',
@@ -3768,7 +3633,7 @@ export function shellPort(
             ];
             let response: string;
             try {
-                response = shell.capture('gh', mergeArgs);
+                response = mergeCapture('gh', mergeArgs);
             } catch (error) {
                 const rejection = classifyGithubMergeRejection(number, error);
                 if (rejection !== undefined) {
@@ -3839,6 +3704,54 @@ export function shellPort(
             writeDeliveryReceiptAuthority(primaryRoot, number, authority, expectedCurrent),
         clearDeliveryReceiptAuthority: (number, expectedCurrent) =>
             clearDeliveryReceiptAuthority(primaryRoot, number, expectedCurrent),
+        syncAuthorshipNotes: ({ mergeCommitSha, headSha, baseSha, headRef, baseRef }) => {
+            try {
+                // The squash merge this sync attributes was created through the API moments
+                // earlier, so the local repository has not seen it yet; git-ai's first probe
+                // is a cat-file on it and fails with exit 128 until it is fetched (#4344). Fetch
+                // the base ref, not the bare sha: the merge just advanced it, and a ref fetch
+                // follows the strongly consistent ref update carrying the squash, where a
+                // bare-sha fetch raced GitHub's object-store propagation at merge time (#4360).
+                shell.run('git', ['fetch', '--no-tags', GITHUB_HTTPS_REMOTE, `+${baseRef}`]);
+                // The launcher-bounded child PATH carries only resolved executables; git-ai
+                // reaches it through the trusted path the launcher freezes when present.
+                shell.run(process.env.SOURDAW_TRUSTED_GIT_AI_PATH ?? 'git-ai', [
+                    'ci',
+                    'local',
+                    'merge',
+                    '--merge-commit-sha',
+                    mergeCommitSha,
+                    '--base-ref',
+                    baseRef,
+                    '--base-sha',
+                    baseSha,
+                    '--head-ref',
+                    headRef,
+                    '--head-sha',
+                    headSha,
+                    '--skip-fetch',
+                    '--skip-push',
+                ]);
+                if (options.gitToken) {
+                    const helperDir =
+                        options.helperDir ?? fail('authenticated git push requires a credential helper directory');
+                    shell.run(
+                        'git',
+                        gitAuthenticatedArgs(options.gitToken, helperDir, [
+                            'push',
+                            GITHUB_HTTPS_REMOTE,
+                            'refs/notes/ai:refs/notes/ai',
+                        ])
+                    );
+                } else {
+                    shell.run('git', ['push', 'origin', 'refs/notes/ai:refs/notes/ai']);
+                }
+            } catch (error) {
+                console.warn(
+                    `warning: git-ai authorship sync skipped: ${error instanceof Error ? error.message : String(error)}`
+                );
+            }
+        },
         log: (message) => console.log(message),
     };
 }
@@ -4406,13 +4319,15 @@ export type DeliveryCoordinatorDependencies = {
     primaryRoot: () => string;
     serializeDelivery: DeliverySerialization;
     authenticateAuthor: (primaryRoot: string) => Promise<DeliveryAuthentication>;
+    authenticateOrchestrator: () => Promise<{ minted: { actorNodeId: string }; session: GhSession }>;
     authenticateTracker: (primaryRoot: string) => Promise<DeliveryAuthentication>;
     repositoryName: (session: DeliveryAuthentication['session'], primaryRoot: string) => string;
     deliveryPort: (
         repository: string,
         authentication: DeliveryAuthentication,
         primaryRoot: string,
-        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'],
+        orchestratorSession: GhSession
     ) => DeliveryPort;
     trackerPort: (session: DeliveryAuthentication['session']) => ReconcileTrackerIssuePort;
     completeIssue: (issueNumber: number, actorNodeId: string, port: ReconcileTrackerIssuePort) => void;
@@ -4429,13 +4344,14 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
         primaryRoot: () => resolvePrimaryRoot(),
         serializeDelivery: withPullRequestMutationLock,
         authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
+        authenticateOrchestrator,
         authenticateTracker: (primaryRoot) => authenticateTrackerAuthor({ primaryRoot }),
         repositoryName: (session, primaryRoot) =>
             spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        deliveryPort: (repository, authentication, primaryRoot, markRemoteMutationAttempt) => {
+        deliveryPort: (repository, authentication, primaryRoot, markRemoteMutationAttempt, orchestratorSession) => {
             const shell: ShellRunner = {
                 capture: (command, args) =>
                     spawnCapture(command, args, {
@@ -4455,6 +4371,8 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
                     }),
             };
             return shellPort(repository, shell, {
+                mergeCapture: (command, args) =>
+                    spawnCapture(command, args, { env: orchestratorSession.env, cwd: primaryRoot }),
                 gitToken: authentication.minted.token,
                 helperDir: authentication.session.configDir,
                 primaryRoot,
@@ -4495,9 +4413,15 @@ export async function coordinateDelivery(
         async ({ markRemoteMutationAttempt, markRemoteMutationKnownAbsent }) => {
             const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
             let trackerAuth: DeliveryAuthentication | undefined;
+            let orchestratorSession: GhSession | undefined;
             try {
                 if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
                     fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+                }
+                const orchestrator = await dependencies.authenticateOrchestrator();
+                orchestratorSession = orchestrator.session;
+                if (!isOrchestratorUserNodeId(orchestrator.minted.actorNodeId)) {
+                    fail(`authenticated merge actor is not ${ORCHESTRATOR_USER_NODE_ID}`);
                 }
                 const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
                 assertRequiredRepository(repository);
@@ -4509,7 +4433,13 @@ export async function coordinateDelivery(
                 );
                 dependencies.deliver(
                     number,
-                    dependencies.deliveryPort(repository, authorAuth, primaryRoot, markRemoteMutationAttempt),
+                    dependencies.deliveryPort(
+                        repository,
+                        authorAuth,
+                        primaryRoot,
+                        markRemoteMutationAttempt,
+                        orchestratorSession
+                    ),
                     {
                         complete: (issueNumber) =>
                             dependencies.completeIssue(
@@ -4521,6 +4451,7 @@ export async function coordinateDelivery(
                     markRemoteMutationKnownAbsent
                 );
             } finally {
+                orchestratorSession?.dispose();
                 trackerAuth?.session.dispose();
                 authorAuth.session.dispose();
             }

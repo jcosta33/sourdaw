@@ -15,6 +15,7 @@ import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 import { logger } from '#/infra/logger/appLogger';
 
+import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import crumbsProcessorUrl from '../services/crumbsProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
@@ -85,8 +86,8 @@ export async function createCrumbsNode(
         node = new AudioWorkletNode(ctx, 'crumbs-processor', {
             numberOfInputs: 0,
             numberOfOutputs: 1,
-            outputChannelCount: [2],
-            channelCount: 2,
+            outputChannelCount: [STEREO_CHANNEL_COUNT],
+            channelCount: STEREO_CHANNEL_COUNT,
             channelCountMode: 'explicit',
             processorOptions: { wasmModule: wasmLease.module },
         });

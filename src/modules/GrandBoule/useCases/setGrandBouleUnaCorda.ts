@@ -11,7 +11,11 @@ import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHan
 import { type GrandBouleState } from '../stores/grandBouleStore';
 
 type SetGrandBouleUnaCordaInput = {
-    engine: GrandBouleEngineHandle;
+    /**
+     * Absent when the state was already delivered to the bodies by the pedal
+     * route (`routePedalToBodies.ts`); the store alone follows.
+     */
+    engine?: GrandBouleEngineHandle;
     engaged: boolean;
     store: Store<GrandBouleState>;
 };
@@ -25,5 +29,5 @@ export function setGrandBouleUnaCorda(input: SetGrandBouleUnaCordaInput): void {
         ...state,
         pedals: { ...state.pedals, unaCorda: input.engaged },
     });
-    input.engine.setUnaCorda({ engaged: input.engaged });
+    input.engine?.setUnaCorda({ engaged: input.engaged });
 }

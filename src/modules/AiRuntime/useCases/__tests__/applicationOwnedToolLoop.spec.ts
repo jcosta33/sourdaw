@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { querySemanticProject } from '#/modules/Project/useCases';
+import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ToolSchema } from '../../models/ToolDefinitions';
@@ -354,6 +354,7 @@ describe('application-owned tool loop', () => {
             'command.batch.propose',
             'command.history',
             'device.factory-manifest.read',
+            'project.discover',
             'project.query',
             'project.resolve',
             'render.request',
@@ -816,5 +817,409 @@ describe('application-owned tool loop', () => {
             reason: 'Application-owned tool loop was cancelled.',
         });
         expect(querySemanticProject).not.toHaveBeenCalled();
+    });
+
+    describe('bounded creative interpretation', () => {
+        const interpretationCall = (id: string) => ({
+            id,
+            name: 'selectCreativeInterpretation',
+            arguments: { catalogId: 'creative-1', modeId: 'edit', uncertainty: 'none' },
+        });
+
+        const admitted = { status: 'admitted' as const, receipt: { data: { mode: 'edit' }, summary: 'ok' } };
+
+        const mockProjectSummary = () => {
+            vi.mocked(querySemanticProject).mockReturnValue({
+                schema: 'sourdaw.semantic-project-query',
+                schemaVersion: 1,
+                projectId: 'project-1',
+                projectSchemaVersion: 1,
+                revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+                revisionToken: 'revision-2',
+                queryType: 'project-summary',
+                page: { offset: 0, limit: 20, total: 0 },
+                items: [],
+                nextCursor: null,
+                warnings: [],
+            });
+        };
+
+        const readTurn = (prefix: string) => {
+            let turn = 0;
+            return vi.fn(async () => {
+                turn += 1;
+                return {
+                    status: 'complete' as const,
+                    toolCalls: [
+                        {
+                            id: `${prefix}-${String(turn)}`,
+                            name: 'project.query',
+                            arguments: { type: 'project-summary' },
+                        },
+                    ],
+                };
+            });
+        };
+
+        it('spends no extra turn on a run that never calls the interpretation tool', async () => {
+            mockProjectSummary();
+
+            const uncalledInterpretation = await runApplicationOwnedToolLoop({
+                loopId: 'loop-creative-turns',
+                terminalToolNames: new Set(['setTempo']),
+                interpretation: { toolName: 'selectCreativeInterpretation', admit: () => admitted },
+                requestTurn: readTurn('creative-read'),
+            });
+            expect(uncalledInterpretation).toMatchObject({
+                status: 'rejected',
+                reason: 'Provider exhausted the bounded application tool-loop turns.',
+                turns: 4,
+            });
+
+            const withoutInterpretation = await runApplicationOwnedToolLoop({
+                loopId: 'loop-plain-turns',
+                terminalToolNames: new Set(['setTempo']),
+                requestTurn: readTurn('plain-read'),
+            });
+            expect(withoutInterpretation).toMatchObject({
+                status: 'rejected',
+                reason: 'Provider exhausted the bounded application tool-loop turns.',
+                turns: 4,
+            });
+        });
+
+        it('grants exactly one extra turn to a run that admitted an interpretation', async () => {
+            mockProjectSummary();
+            const reads = readTurn('admitted-read');
+
+            const withInterpretation = await runApplicationOwnedToolLoop({
+                loopId: 'loop-creative-admitted-turns',
+                terminalToolNames: new Set(['setTempo']),
+                interpretation: { toolName: 'selectCreativeInterpretation', admit: () => admitted },
+                requestTurn: vi.fn(async (input: { turn: number }) =>
+                    input.turn === 1
+                        ? { status: 'complete' as const, toolCalls: [interpretationCall('interpretation-1')] }
+                        : reads()
+                ),
+            });
+
+            expect(withInterpretation).toMatchObject({
+                status: 'rejected',
+                reason: 'Provider exhausted the bounded application tool-loop turns.',
+                turns: 5,
+            });
+        });
+
+        it('refuses an interpretation that shares its turn with any other call', async () => {
+            const admit = vi.fn(() => admitted);
+
+            const withRead = await runApplicationOwnedToolLoop({
+                loopId: 'loop-creative-mixed-read',
+                terminalToolNames: new Set(['setTempo']),
+                interpretation: { toolName: 'selectCreativeInterpretation', admit },
+                requestTurn: vi.fn(async () => ({
+                    status: 'complete' as const,
+                    toolCalls: [
+                        interpretationCall('mixed-interpretation'),
+                        { id: 'mixed-query', name: 'project.query', arguments: { type: 'project-summary' } },
+                    ],
+                })),
+            });
+            expect(withRead).toMatchObject({
+                status: 'rejected',
+                reason: 'Provider mixed the creative interpretation with other tool calls in one turn.',
+                turns: 1,
+            });
+
+            const withTerminal = await runApplicationOwnedToolLoop({
+                loopId: 'loop-creative-mixed-terminal',
+                terminalToolNames: new Set(['setTempo']),
+                interpretation: { toolName: 'selectCreativeInterpretation', admit },
+                requestTurn: vi.fn(async () => ({
+                    status: 'complete' as const,
+                    toolCalls: [
+                        interpretationCall('mixed-interpretation-2'),
+                        { id: 'mixed-tempo', name: 'setTempo', arguments: { bpm: 128 } },
+                    ],
+                })),
+            });
+            expect(withTerminal).toMatchObject({
+                status: 'rejected',
+                reason: 'Provider mixed the creative interpretation with other tool calls in one turn.',
+                turns: 1,
+            });
+
+            expect(admit).not.toHaveBeenCalled();
+            expect(querySemanticProject).not.toHaveBeenCalled();
+        });
+
+        it('returns an admitted interpretation as a receipt the next turn is grounded on', async () => {
+            const requestTurn = vi
+                .fn()
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [interpretationCall('interpretation-1')] })
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [{ id: 'tempo-1', name: 'setTempo', arguments: { bpm: 128 } }],
+                });
+
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'loop-creative-admitted',
+                terminalToolNames: new Set(['setTempo']),
+                interpretation: {
+                    toolName: 'selectCreativeInterpretation',
+                    admit: () => ({
+                        status: 'admitted',
+                        receipt: { data: { mode: 'edit' }, summary: 'Creative interpretation admitted.' },
+                    }),
+                },
+                requestTurn,
+            });
+
+            expect(result).toMatchObject({
+                status: 'complete',
+                interpretation: 'admitted',
+                turns: 2,
+                toolCalls: [{ name: 'setTempo', arguments: { bpm: 128 } }],
+            });
+            expect(result.status === 'complete' ? result.receipts : []).toMatchObject([
+                {
+                    callId: 'interpretation-1',
+                    toolName: 'selectCreativeInterpretation',
+                    status: 'success',
+                    turn: 1,
+                    data: { mode: 'edit' },
+                    summary: 'Creative interpretation admitted.',
+                },
+            ]);
+            const groundingContext = requestTurn.mock.calls[1]?.[0]?.receiptContext;
+            expect(typeof groundingContext).toBe('string');
+            expect(groundingContext).toContain('selectCreativeInterpretation');
+            expect(groundingContext).toContain('interpretation-1');
+        });
+
+        it('refuses a second interpretation after one was already admitted', async () => {
+            const requestTurn = vi
+                .fn()
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [interpretationCall('interpretation-1')] })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [interpretationCall('interpretation-2')] });
+
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'loop-creative-repeated',
+                terminalToolNames: new Set(['setTempo']),
+                interpretation: { toolName: 'selectCreativeInterpretation', admit: () => admitted },
+                requestTurn,
+            });
+
+            expect(result).toMatchObject({
+                status: 'rejected',
+                reason: 'Provider repeated the creative interpretation.',
+                turns: 2,
+            });
+        });
+
+        it('ends the run with a question when the interpretation asks to clarify', async () => {
+            const requestTurn = vi
+                .fn()
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [interpretationCall('interpretation-1')] });
+
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'loop-creative-clarify',
+                terminalToolNames: new Set(['setTempo']),
+                interpretation: {
+                    toolName: 'selectCreativeInterpretation',
+                    admit: () => ({ status: 'clarify', reason: 'Which track did you mean?' }),
+                },
+                requestTurn,
+            });
+
+            expect(result).toMatchObject({
+                status: 'complete',
+                interpretation: 'clarified',
+                toolCalls: [],
+                decline: {
+                    kind: 'clarify',
+                    reason: 'Which track did you mean?',
+                    questions: ['Which track did you mean?'],
+                },
+                turns: 1,
+            });
+            expect(requestTurn).toHaveBeenCalledTimes(1);
+        });
+
+        it('ends the run without a receipt when the interpretation is refused', async () => {
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'loop-creative-rejected',
+                terminalToolNames: new Set(['setTempo']),
+                interpretation: {
+                    toolName: 'selectCreativeInterpretation',
+                    admit: () => ({
+                        status: 'rejected',
+                        reason: 'Creative interpretation refers to a stale or unknown catalog.',
+                    }),
+                },
+                requestTurn: vi.fn(async () => ({
+                    status: 'complete' as const,
+                    toolCalls: [interpretationCall('interpretation-1')],
+                })),
+            });
+
+            expect(result).toMatchObject({
+                status: 'rejected',
+                reason: 'Creative interpretation refers to a stale or unknown catalog.',
+                receipts: [],
+                turns: 1,
+            });
+        });
+
+        it('spends the total call budget on an interpretation exactly as it does on a read', async () => {
+            mockProjectSummary();
+            const requestTurn = vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        { id: 'budget-query-1', name: 'project.query', arguments: { type: 'project-summary' } },
+                        { id: 'budget-query-2', name: 'project.query', arguments: { type: 'project-summary' } },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [interpretationCall('interpretation-1')] })
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        { id: 'budget-query-3', name: 'project.query', arguments: { type: 'project-summary' } },
+                    ],
+                });
+
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'loop-creative-total-calls',
+                terminalToolNames: new Set(['setTempo']),
+                limits: { maxTotalCalls: 3 },
+                interpretation: { toolName: 'selectCreativeInterpretation', admit: () => admitted },
+                requestTurn,
+            });
+
+            expect(result).toMatchObject({
+                status: 'rejected',
+                reason: 'Provider exceeded the total application tool-call budget.',
+                turns: 3,
+            });
+        });
+    });
+});
+
+describe('project discovery tool', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('offers the semantic query types alone and answers discovery through its own tool', () => {
+        const contracts = getProjectProtocolContracts();
+        const querySchema = APPLICATION_OWNED_TOOL_SCHEMAS.find((schema) => schema.function.name === 'project.query');
+        const discoverySchema = APPLICATION_OWNED_TOOL_SCHEMAS.find(
+            (schema) => schema.function.name === 'project.discover'
+        );
+
+        expect(querySchema?.function.parameters.properties.type).toEqual({
+            type: 'string',
+            enum: contracts.query.operations.map((operation) => operation.name),
+        });
+        expect(contracts.query.operations.some((operation) => operation.name.startsWith('discovery.'))).toBe(false);
+        expect(discoverySchema?.function.parameters.properties.domain).toEqual({
+            type: 'string',
+            enum: contracts.discovery.operations.map((operation) => operation.name),
+        });
+        expect(discoverySchema?.function.parameters.required).toEqual(['domain']);
+    });
+
+    it('answers a device discovery call from the discovery owner rather than the semantic query', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'discover-device',
+                        name: 'project.discover',
+                        arguments: { domain: 'device', page: { limit: 1 } },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-discovery',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+        const receipt = result.receipts.find((entry) => entry.callId === 'discover-device');
+
+        expect(querySemanticProject).not.toHaveBeenCalled();
+        expect(receipt).toMatchObject({ toolName: 'project.discover', status: 'success' });
+        expect(receipt?.data).toMatchObject({ schema: 'sourdaw.agent-discovery-receipt', domain: 'device' });
+        expect(receipt?.revision).toEqual(expect.any(String));
+    });
+
+    it.each([
+        {
+            label: 'a domain no owner publishes',
+            callArguments: { domain: 'ghost' },
+            verdict: { status: 'unsupported', domain: 'ghost', reason: 'unknown-domain' },
+            code: 'invalid-tool-arguments',
+        },
+        {
+            label: 'a catalog whose provider is unregistered',
+            callArguments: { domain: 'capability' },
+            verdict: { status: 'unavailable', domain: 'capability', reason: 'capability-provider-unregistered' },
+            code: 'unavailable-tool',
+        },
+    ])('reports $label as the owner verdict, unretryable', async ({ callArguments, verdict, code }) => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ id: 'discover-verdict', name: 'project.discover', arguments: callArguments }],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-discovery-verdict',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+        const receipt = result.receipts.find((entry) => entry.callId === 'discover-verdict');
+
+        expect(receipt).toMatchObject({
+            toolName: 'project.discover',
+            status: 'failure',
+            data: verdict,
+            error: { code, retryable: false },
+        });
+    });
+
+    it('rejects discovery arguments the strict contract cannot read', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'discover-invalid',
+                        name: 'project.discover',
+                        arguments: { domain: 'device', filters: { unexpected: 'value' } },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-discovery-invalid',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(result.receipts.find((entry) => entry.callId === 'discover-invalid')).toMatchObject({
+            status: 'failure',
+            error: { code: 'invalid-tool-arguments' },
+        });
     });
 });

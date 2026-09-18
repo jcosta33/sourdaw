@@ -12,6 +12,23 @@ import { RUNTIME_ACTION_TYPES } from '../models/RuntimeAction';
 
 type AgentRunSemanticEvidence = { uncertainty: AgentPlanUncertainty[] };
 
+/**
+ * Capabilities the application defers rather than grants. A proposal that names one is unavailable
+ * for the same reason an ungranted remote generation is: no run authority can supply it.
+ */
+const DEFERRED_CAPABILITY_POLICIES = [
+    {
+        id: 'audio-listening-policy',
+        capabilityIds: ['audio-listening', 'media-listening'],
+        prerequisite: 'Agent audio listening is a deferred capability and cannot be granted for this run.',
+    },
+    {
+        id: 'generated-media-policy',
+        capabilityIds: ['generated-media'],
+        prerequisite: 'Agent generated media is a deferred capability and cannot be granted for this run.',
+    },
+] as const;
+
 type PlanAgentRunInput = {
     request: string;
     revision: string;
@@ -161,6 +178,16 @@ function deriveCapabilities(input: PlanAgentRunInput): AgentRunPlan['capabilitie
             : 'Remote generation is not granted and cannot be added by the provider.',
         status: requiresRemoteGeneration && !input.grants.remoteGeneration ? 'unavailable' : 'available',
     });
+    const proposedCapabilityIds = new Set(input.providerProposal?.capabilityIds ?? []);
+    for (const policy of DEFERRED_CAPABILITY_POLICIES) {
+        const required = policy.capabilityIds.some((capabilityId) => proposedCapabilityIds.has(capabilityId));
+        capabilities.push({
+            id: policy.id,
+            source: 'data-policy',
+            prerequisite: policy.prerequisite,
+            status: required ? 'unavailable' : 'available',
+        });
+    }
     return capabilities;
 }
 

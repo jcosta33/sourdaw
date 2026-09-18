@@ -9,6 +9,13 @@ export { defaultTransportState, type TransportState };
 const DOC_PREFIX_ROOT = 'root';
 export const MIN_TEMPO = 20;
 export const MAX_TEMPO = 300;
+
+/**
+ * Tempo assumed when no transport state exists yet (a cold start, a detached
+ * projector, an import before the project loads). Every `?? tempo` default in
+ * the module reads this so all such paths assume the same fallback BPM.
+ */
+export const DEFAULT_TEMPO_BPM = 120;
 const MIN_TIME_SIGNATURE_NUMERATOR = 1;
 const MAX_TIME_SIGNATURE_NUMERATOR = 32;
 const MIN_BARS = 1;
@@ -384,6 +391,14 @@ export const transportStore = createStore<TransportState>({
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => defaultTransportState,
+        projectCommittedLocalState: ({ authorityValue, localValue }) => ({
+            ...authorityValue,
+            isPlaying: localValue.isPlaying,
+            isRecording: localValue.isRecording,
+            overdubEnabled: localValue.overdubEnabled,
+            playheadPosition: localValue.playheadPosition,
+            scheduleGrainMs: localValue.scheduleGrainMs,
+        }),
         toCrdt: ({
             tempo,
             timeSignatureNumerator,

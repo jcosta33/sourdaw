@@ -1,6 +1,6 @@
 import { persistDeviceParam, resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 
-import { bridges } from './helpers';
+import { sendProofParam } from './helpers';
 
 type SetProofParamInput = {
     deviceId: string;
@@ -26,7 +26,7 @@ export function setProofParam({ deviceId, name, value }: SetProofParamInput): vo
         return;
     }
 
-    bridges.get(deviceId)?.setParam(name, value);
+    sendProofParam(deviceId, name, value);
     if (RUNTIME_ONLY_PARAMS.has(name)) {
         return;
     }

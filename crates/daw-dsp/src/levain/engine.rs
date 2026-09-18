@@ -21,6 +21,7 @@ use super::tone::ToneTilt;
 use super::types::*;
 use super::voice::VoicePool;
 use super::zone::{SamplePool, ZoneMap, ZoneMapBuildError};
+use crate::params::{ATTACK, MASTER_GAIN, RELEASE, TONE};
 
 thread_local! {
     static SHARED_SAMPLE_BANKS: RefCell<HashMap<String, Weak<SamplePool>>> =
@@ -128,6 +129,16 @@ pub struct LevainEngine {
     /// costs no audio-thread allocation.
     pending_staggered_releases: [(u8, f32, u32); MAX_STAGGERED_RELEASES],
     pending_staggered_count: usize,
+
+    /// Mic layer the zone lookup renders from — the first enabled position
+    /// (see `refresh_mic_layer`). Kontakt-style per-mic selection: banks carry
+    /// one layer per mic position and the enabled flags choose which layer
+    /// sounds, voiced through that position's own volume/pan/delay/phase.
+    mic_layer: MicId,
+
+    /// Samples rendered since construction — the engine's clock, feeding the
+    /// auto-articulation runs detector (`AutoArticulation::record_note_on`).
+    elapsed_samples: u64,
 }
 
 impl LevainEngine {
@@ -149,7 +160,7 @@ impl LevainEngine {
             pedal_deferred: PedalDeferredRelease::new(),
             auto_divisi: AutoDivisi::new(16),
             auto_articulation: AutoArticulation::new(),
-            ensemble_timing: EnsembleTiming::new(42),
+            ensemble_timing: EnsembleTiming::new(),
             fallback: FallbackToneEngine::new(sample_rate),
             realism: RealismEngine::new(sample_rate),
             tone: ToneTilt::new(sample_rate),
@@ -162,6 +173,8 @@ impl LevainEngine {
             layer_gains: [0.0; MAX_VEL_LAYERS],
             pending_staggered_releases: [(0, 0.0, 0); MAX_STAGGERED_RELEASES],
             pending_staggered_count: 0,
+            mic_layer: 0,
+            elapsed_samples: 0,
         }
     }
 
@@ -268,6 +281,7 @@ impl LevainEngine {
         self.num_articulations = pending.num_articulations;
         self.num_mics = pending.num_mics;
         self.mic_mixer = MicMixer::new(pending.num_mics);
+        self.refresh_mic_layer();
         self.apply_instrument(&pending.instrument_id);
         self.fallback.enabled = false;
         self.expression
@@ -304,6 +318,37 @@ impl LevainEngine {
             return;
         }
         self.legato.transitions.add(transition);
+    }
+
+    /// Register one articulation switch with the articulation map — the
+    /// configuration the note-on/CC routing already consults. Bank loading
+    /// calls this per authored switch:
+    ///
+    /// - `kind` 0: keyswitch — `a` is the switch note, `b` unused,
+    ///   `momentary` reverts on release instead of latching.
+    /// - `kind` 1: velocity split — `a`/`b` are the inclusive velocity bounds.
+    /// - `kind` 2: CC split — `a`/`b` are the inclusive value bounds of the
+    ///   map's switch CC (default 32).
+    ///
+    /// Keyswitches are baseline orchestral-sampler behaviour: dedicated notes
+    /// below the playable range that change which articulation layer sounds.
+    pub fn add_articulation_switch(
+        &mut self,
+        kind: u8,
+        a: u8,
+        b: u8,
+        articulation: ArticulationId,
+        momentary: bool,
+    ) {
+        match kind {
+            0 => self
+                .articulation
+                .map
+                .add_keyswitch(a, articulation, momentary),
+            1 => self.articulation.map.add_velocity_split(a, b, articulation),
+            2 => self.articulation.map.add_cc_split(a, b, articulation),
+            _ => {}
+        }
     }
 
     /// Tell the engine which instrument id (e.g. `violin-1`, `cello`,
@@ -356,6 +401,7 @@ impl LevainEngine {
         self.num_articulations = num_articulations;
         self.num_mics = num_mics;
         self.mic_mixer = MicMixer::new(num_mics);
+        self.refresh_mic_layer();
         // Disable fallback — real samples are loaded
         self.fallback.enabled = false;
         self.expression
@@ -380,12 +426,31 @@ impl LevainEngine {
             return; // consumed as keyswitch
         }
 
-        self.note_on_with_channel_and_articulation(
-            note,
-            velocity,
-            channel,
-            self.articulation.current,
-        );
+        // Auto-articulation: every note-on feeds the runs detector; when the
+        // feature is enabled and no explicit articulation is active (no
+        // keyswitch, CC split, velocity split, or authored override chose
+        // one), the detector's suggestion decides which layer the note
+        // plays. `suggest` at note-on can only see the overlap and the
+        // recent speed — the duration half of its judgement has no note to
+        // measure yet — so it returns Legato for overlapping notes, Runs for
+        // fast passages, and Sustain otherwise. Banks that lack the
+        // suggested layer degrade through the missing-articulation fallback,
+        // so a suggestion the instrument can't play still sounds.
+        self.auto_articulation
+            .record_note_on(self.elapsed_samples as f32 / self.sample_rate);
+        let mut articulation = self.articulation.current;
+        if self.auto_articulation.enabled && !self.articulation.explicit {
+            let has_overlap = self
+                .voice_pool
+                .voices
+                .iter()
+                .any(|voice| voice.active && voice.held);
+            if let Some(suggested) = self.auto_articulation.suggest(0.0, has_overlap) {
+                articulation = suggested as ArticulationId;
+            }
+        }
+
+        self.note_on_with_channel_and_articulation(note, velocity, channel, articulation);
     }
 
     /// Note-on with an immutable per-note articulation selected by project truth.
@@ -420,7 +485,7 @@ impl LevainEngine {
         let current_dynamic = cc1_to_dynamic(cc1_normalized);
 
         // Look up zone BEFORE allocating a voice (avoid stealing a voice for nothing).
-        let mut candidates_slice = self.zone_map.lookup(art, 0, note, velocity);
+        let mut candidates_slice = self.zone_map.lookup(art, self.mic_layer, note, velocity);
 
         // A per-note articulation is a fixed id from the project's 28-name
         // table, assigned without consulting the instrument the track is
@@ -432,7 +497,7 @@ impl LevainEngine {
         // the same note plays when it carries no per-note articulation.
         if candidates_slice.is_empty() && art != self.articulation.current {
             art = self.articulation.current;
-            candidates_slice = self.zone_map.lookup(art, 0, note, velocity);
+            candidates_slice = self.zone_map.lookup(art, self.mic_layer, note, velocity);
         }
 
         if candidates_slice.is_empty() {
@@ -473,6 +538,7 @@ impl LevainEngine {
                 voice.trigger(note, channel, velocity, &zone, art, gain, &self.sample_pool);
                 voice.vibrato_phase = vibrato_phase;
                 voice.vibrato_rate_scale = vibrato_rate_scale;
+                voice.apply_note_humanization(&humanize, self.sample_rate);
                 self.attach_dynamic_layer(voice_idx, art, note, zone_id, velocity);
             }
             LegatoResult::TrueTransition {
@@ -507,6 +573,7 @@ impl LevainEngine {
                 voice.trigger(note, channel, velocity, &zone, art, gain, &self.sample_pool);
                 voice.vibrato_phase = vibrato_phase;
                 voice.vibrato_rate_scale = vibrato_rate_scale;
+                voice.apply_note_humanization(&humanize, self.sample_rate);
                 // Audit F7: play the looked-up transition sample and
                 // crossfade into the sustain zone `trigger()` just set up,
                 // instead of crossfading that zone against itself.
@@ -703,7 +770,7 @@ impl LevainEngine {
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             // ── Master ───────────────────────────────────────────────
-            "master_gain" => self.master_gain = value.clamp(0.0, 2.0),
+            MASTER_GAIN => self.master_gain = value.clamp(0.0, 2.0),
 
             // ── Humanization ─────────────────────────────────────────
             "humanize" | "humanize_amount" => self.humanizer.set_amount(value),
@@ -715,7 +782,10 @@ impl LevainEngine {
             }
 
             // ── Articulation ─────────────────────────────────────────
-            "current_articulation" => self.articulation.current = value as u16,
+            "current_articulation" => {
+                self.articulation.current = value as u16;
+                self.articulation.explicit = true;
+            }
 
             // ── Legato ───────────────────────────────────────────────
             "legato_enabled" => self.legato.enabled = value > 0.5,
@@ -766,13 +836,13 @@ impl LevainEngine {
             // patch's own voicing — the panel's macro strip defaults them there
             // and resets them there, so a patch that never touches these knobs
             // renders exactly as it did before they existed.
-            "tone" => self.tone.set_position(value),
-            "attack" => {
+            TONE => self.tone.set_position(value),
+            ATTACK => {
                 self.envelope_scaling.attack = macro_time_scale(value);
                 self.voice_pool
                     .set_envelope_scaling(self.effective_envelope_scaling());
             }
-            "release" => {
+            RELEASE => {
                 self.envelope_scaling.release = macro_time_scale(value);
                 self.voice_pool
                     .set_envelope_scaling(self.effective_envelope_scaling());
@@ -804,9 +874,28 @@ impl LevainEngine {
         match param {
             "volume" => self.mic_mixer.set_mic_volume(mic_idx, value),
             "pan" => self.mic_mixer.set_mic_pan(mic_idx, value),
-            "enabled" => self.mic_mixer.set_mic_enabled(mic_idx, value > 0.5),
+            "enabled" => {
+                self.mic_mixer.set_mic_enabled(mic_idx, value > 0.5);
+                self.refresh_mic_layer();
+            }
             _ => {}
         }
+    }
+
+    /// Re-derive the mic layer the engine renders from: the first enabled
+    /// position. Kontakt-style per-mic layers, as a selection: banks carry one
+    /// zone layer per mic position and the enabled flags choose which one
+    /// sounds, voiced through that position's own volume/pan/delay/phase.
+    /// Deliberately not a simultaneous mix of every enabled layer — the
+    /// realism and tone stages are mono processors shared by the instrument,
+    /// so rendering N layers at once needs per-layer instances of both, which
+    /// is a redesign, not a wiring. With every position at its default
+    /// (enabled), this selects mic 0 and behaviour is unchanged from the
+    /// single-mic era.
+    fn refresh_mic_layer(&mut self) {
+        self.mic_layer = (0..self.num_mics)
+            .find(|&index| self.mic_mixer.is_enabled(index))
+            .map_or(self.mic_layer, |index| index as MicId);
     }
 
     // -----------------------------------------------------------------------
@@ -820,6 +909,7 @@ impl LevainEngine {
         // Update counters.
         self.legato.advance(len);
         self.release_tracker.advance(len);
+        self.elapsed_samples = self.elapsed_samples.wrapping_add(len as u64);
 
         // Fire any staggered pedal releases whose delay has elapsed this
         // block (audit F14). Swap-remove so clearing an entry doesn't skip
@@ -915,8 +1005,9 @@ impl LevainEngine {
             // and air alike — rather than only the sample content.
             mono_sum = self.tone.tick(mono_sum);
 
-            // Mix through mic positions (single mic for now).
-            let (l, r) = self.mic_mixer.mix_mono(mono_sum);
+            // Mix through the selected mic layer's position — its own delay,
+            // phase, volume, and pan.
+            let (l, r) = self.mic_mixer.mix_layer(self.mic_layer as usize, mono_sum);
 
             left[i] = l;
             right[i] = r;
@@ -952,7 +1043,9 @@ impl LevainEngine {
             .find(|voice| voice.active && voice.note == note)
             .map_or(100, |voice| voice.velocity);
 
-        let candidates = self.zone_map.lookup(articulation, 0, note, velocity);
+        let candidates = self
+            .zone_map
+            .lookup(articulation, self.mic_layer, note, velocity);
         let release_zone_id = candidates.iter().copied().find(|&id| {
             self.zone_map
                 .get_zone(id)
@@ -1025,9 +1118,9 @@ impl LevainEngine {
                 * 127.0)
                 .round()
                 .clamp(0.0, 127.0) as u8;
-            let candidates = self
-                .zone_map
-                .lookup(articulation, 0, note, representative_velocity);
+            let candidates =
+                self.zone_map
+                    .lookup(articulation, self.mic_layer, note, representative_velocity);
             let found = candidates.iter().copied().find(|&id| {
                 id != primary_zone_id
                     && self
@@ -1633,8 +1726,14 @@ mod tests {
     #[test]
     fn a_recycled_voice_starts_from_neutral_expression() {
         // One voice only, so the second note-on is guaranteed to steal and
-        // re-trigger the very voice that carried the expression.
+        // re-trigger the very voice that carried the expression. Humanization
+        // is off on both engines: its per-note tuning/timing/start offsets
+        // are random per note by design, and the second note-on draws a
+        // different offset than the baseline's first — this test compares two
+        // notes' waveforms, so it must isolate the expression reset it is
+        // about from that deliberate variation.
         let mut engine = engine_with_sawtooth_zone_voices(1);
+        engine.set_param("humanize", 0.0);
         engine.note_on(60, 100);
         engine.note_expression(60, 0, 12.0, 1.0, 1.0);
         engine.note_off(60);
@@ -1642,6 +1741,7 @@ mod tests {
         let recycled = render(&mut engine, 24);
 
         let mut reference = engine_with_sawtooth_zone_voices(1);
+        reference.set_param("humanize", 0.0);
         reference.note_on(60, 100);
         let baseline = render(&mut reference, 24);
 
@@ -2131,6 +2231,45 @@ mod tests {
              after {} s of audio, stuck at crossfade_amount {}",
             BLOCKS as f32 * 128.0 / SAMPLE_RATE,
             slurred.crossfade_amount
+        );
+    }
+
+    /// End-to-end form of #1891: an authored attack far past the f32 ramp
+    /// limit must still hand the voice an audible level once the floored
+    /// increment completes (1/EPSILON = 65,536 blocks at 128), instead of
+    /// holding the voice inaudible for as long as the stream plays.
+    #[test]
+    fn an_absurd_authored_attack_still_becomes_audible() {
+        /// Its raw increment is 2.4e-14, nine orders of magnitude under the
+        /// ULP near 1.0, so the unfloored ramp never moves.
+        const ABSURD_ATTACK_SECS: f32 = 1_000_000_000.0;
+        /// The floored ramp completes at 1/EPSILON samples = 65,536 blocks;
+        /// a little over measures the note in full-level sustain.
+        const BLOCKS: usize = 66_000;
+        /// Peak measured over the last 1,000 blocks — 2.7 s of audio.
+        const TAIL_BLOCKS: usize = 1_000;
+
+        let mut engine = engine_with_sawtooth_envelope(
+            8,
+            AdsrParams {
+                attack: ABSURD_ATTACK_SECS,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 0.2,
+            },
+            SAMPLE_FRAMES,
+        );
+        engine.note_on(60, 100);
+        let rendered = render(&mut engine, BLOCKS);
+
+        let tail_peak = rendered[rendered.len() - TAIL_BLOCKS * 128..]
+            .iter()
+            .fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
+        assert!(
+            tail_peak > 0.05,
+            "an authored attack the f32 ramp could not express must still complete: \
+             the note peaked at {tail_peak} after {} s of audio",
+            BLOCKS as f32 * 128.0 / SAMPLE_RATE
         );
     }
 

@@ -59,4 +59,8 @@ export type StorageAdapter<TData> = {
     /** Register the store's inbound sanitizer so shared raw CRDT content can
      *  be checked for projection loss before any read model is hydrated. */
     registerInboundSanitizer?(sanitize: (value: unknown) => unknown): void;
+    /** Register the owning store's pure inbound projection guard. */
+    registerInboundProjector?(
+        project: (input: { value: TData | null; purpose: 'baseline' | 'visible' }) => TData | null
+    ): void;
 };

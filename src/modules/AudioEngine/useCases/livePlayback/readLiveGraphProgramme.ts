@@ -18,7 +18,7 @@
  * `resolveRenderContext` leaves its callers to make.
  */
 
-import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { offlinePpqEndpointProjectorState } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { audioBufferCache } from '../../stores/audioBufferCache';
@@ -51,7 +51,7 @@ export type ReadLiveGraphProgrammeInput = Readonly<{
     /** The strips this session builds, in project order. */
     stripTracks: LiveGraphProgrammeInput['stripTracks'];
     /**
-     * The external plugin instances the native engine currently owns.
+     * The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}.
      *
      * The caller's, not read here, for the same reason the topology takes it:
      * a session threads one attach state through every projection it makes, so
@@ -65,6 +65,16 @@ export type ReadLiveGraphProgrammeInput = Readonly<{
      * reason `transportMaps` is passed in rather than read here.
      */
     sampleRate: number;
+    /**
+     * The strips the native engine carries whose chains hold a device it
+     * compensates itself.
+     *
+     * Empty by default, which is what a web-carried session wants: every
+     * device counts, and a gated-shut worklet's reported figure is what aligns
+     * the strip. A native session names its own carriers here so the engine's
+     * hold is not counted a second time on this side.
+     */
+    engineHostedStripIds?: ReadonlySet<string>;
 }>;
 
 export function readLiveGraphProgramme(input: ReadLiveGraphProgrammeInput): LiveGraphProgramme {
@@ -76,11 +86,11 @@ export function readLiveGraphProgramme(input: ReadLiveGraphProgrammeInput): Live
         stripTracks: input.stripTracks,
         attachedInstanceIds: input.attachedInstanceIds,
         sampleRate: input.sampleRate,
-        defaultTempo: transportStore.value?.tempo ?? 120,
+        defaultTempo: transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM,
         changes: tempoMapStore.value?.changes ?? [],
         projectPpqEndpoints: project,
         resolveTempoAtBeat,
         readBuffer: (bufferId) => audioBufferCache.get(bufferId),
-        compensationDelaySeconds: getCompensationDelay,
+        compensationDelaySeconds: (stripId) => getCompensationDelay(stripId, undefined, input.engineHostedStripIds),
     });
 }

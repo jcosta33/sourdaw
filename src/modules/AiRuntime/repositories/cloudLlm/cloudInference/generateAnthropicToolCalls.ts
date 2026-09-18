@@ -5,6 +5,8 @@ import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type AnthropicCloudRuntime } from '../cloudSession';
 
 import { buildWireToolNameCodec } from './buildWireToolNameCodec';
+import { type HostedToolPlan } from './hostedToolPlan';
+import { readProviderRequestId } from './readProviderRequestId';
 import { requestAnthropicProvider } from './requestAnthropicProvider';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -25,7 +27,7 @@ export async function generateAnthropicToolCalls(input: {
     // exactly what was admitted, not a constant of its own, or the two can silently drift.
     maxOutputTokens: number;
     signal: AbortSignal;
-}): Promise<ToolCallResult[]> {
+}): Promise<HostedToolPlan> {
     const chunks: Uint8Array[] = [];
     let responseBytes = 0;
     const codec = buildWireToolNameCodec(input.toolSchemas);
@@ -93,7 +95,14 @@ export async function generateAnthropicToolCalls(input: {
             continue;
         }
         if (block.type !== 'tool_use' || typeof block.name !== 'string' || !isRecord(block.input)) {
-            throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-call batch');
+            // A rejected batch names the offending call so a provider-side record can
+            // be found for it; the arguments themselves stay out of the message.
+            const callId = readProviderRequestId(block.id);
+            throw new ToolPlanningRejectedError(
+                callId === null
+                    ? 'Hosted AI returned an invalid tool-call batch'
+                    : `Hosted AI returned an invalid tool-call batch for call ${callId}`
+            );
         }
         results.push({
             ...(typeof block.id === 'string' && block.id.length > 0 ? { id: block.id } : {}),
@@ -113,5 +122,5 @@ export async function generateAnthropicToolCalls(input: {
                 : 'Hosted AI returned an incomplete tool-call batch'
         );
     }
-    return results;
+    return { providerRequestId: readProviderRequestId(payload.id), calls: results };
 }

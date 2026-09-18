@@ -7,13 +7,8 @@ import { DawMeterBar } from '#/components/daw/DawMeterBar';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
-import {
-    renameTrack,
-    setTrackColor,
-    freezeTrack,
-    unfreezeTrack,
-    cancelFreezeTrack,
-} from '#/modules/Arrangement/useCases';
+import { cancelFreezeTrack } from '#/modules/Arrangement/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { cn } from '#/utils/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 
@@ -38,7 +33,10 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
 
     const commitName = (): void => {
         if (nameValue.trim() && nameValue !== track.name) {
-            renameTrack(track.id, nameValue.trim());
+            void executeUserAppAction({
+                type: 'renameTrack',
+                payload: { trackId: track.id, name: nameValue.trim() },
+            });
         }
         setEditingName(false);
     };
@@ -114,9 +112,15 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                     )}
                     onClick={() => {
                         if (track.frozen || isStale) {
-                            void unfreezeTrack(track.id);
+                            void executeUserAppAction({
+                                type: 'unfreezeTrack',
+                                payload: { trackId: track.id },
+                            });
                         } else {
-                            void freezeTrack(track.id);
+                            void executeUserAppAction({
+                                type: 'freezeTrack',
+                                payload: { trackId: track.id },
+                            });
                         }
                     }}
                     aria-pressed={track.frozen || isStale}
@@ -191,7 +195,12 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                                     outline: context === track.color ? '2px solid white' : 'none',
                                     outlineOffset: '1px',
                                 }}
-                                onClick={() => setTrackColor(track.id, context)}
+                                onClick={() => {
+                                    void executeUserAppAction({
+                                        type: 'setTrackColor',
+                                        payload: { trackId: track.id, color: context },
+                                    });
+                                }}
                                 aria-pressed={context === track.color}
                                 aria-label={`Set color ${context}`}
                             />

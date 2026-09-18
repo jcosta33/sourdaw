@@ -90,7 +90,7 @@ describe('setGrinderParamWithAudio', () => {
         expect(setGrinderParam).toHaveBeenCalledWith(deviceId, 'bright', true);
     });
 
-    it('should also push the coupled neuralEnabled to audio when engineMode changes', () => {
+    it('should also push the coupled neuralEnabled to audio when engineMode changes, emitting neuralEnabled before engineMode', () => {
         // Regression for R1: writing engineMode through the single-param path
         // updated neuralEnabled in the store but never scheduled it to the
         // device, desyncing the engine's neuralEnabled from the store.
@@ -110,11 +110,18 @@ describe('setGrinderParamWithAudio', () => {
         expect(setGrinderParam).toHaveBeenCalledWith(deviceId, 'engineMode', 'capture');
         expect(setGrinderParam).toHaveBeenCalledWith(deviceId, 'neuralEnabled', true);
         // Both the primary and the coupled key must reach the audio engine.
-        expect(deps.updateDeviceParam).toHaveBeenCalledWith(trackId, deviceId, 'engineMode', 1);
-        expect(deps.updateDeviceParam).toHaveBeenCalledWith(trackId, deviceId, 'neuralEnabled', 1);
+        // neuralEnabled must precede engineMode so exact engineMode lands last in DSP.
+        expect(deps.updateDeviceParam.mock.calls).toEqual([
+            [trackId, deviceId, 'neuralEnabled', 1],
+            [trackId, deviceId, 'engineMode', 1],
+        ]);
+        expect(deps.persistDeviceParam.mock.calls).toEqual([
+            [deviceId, 'neuralEnabled', 1],
+            [deviceId, 'engineMode', 1],
+        ]);
     });
 
-    it('should also push the coupled engineMode to audio when neuralEnabled changes', () => {
+    it('should also push the coupled engineMode to audio when neuralEnabled changes, emitting neuralEnabled before engineMode', () => {
         const deviceId = 'device-1';
         const trackId = 'track-1';
         deps.getAllTracks.mockReturnValue([
@@ -130,7 +137,14 @@ describe('setGrinderParamWithAudio', () => {
 
         expect(setGrinderParam).toHaveBeenCalledWith(deviceId, 'neuralEnabled', true);
         expect(setGrinderParam).toHaveBeenCalledWith(deviceId, 'engineMode', 'hybrid');
-        expect(deps.updateDeviceParam).toHaveBeenCalledWith(trackId, deviceId, 'neuralEnabled', 1);
-        expect(deps.updateDeviceParam).toHaveBeenCalledWith(trackId, deviceId, 'engineMode', 2);
+        // neuralEnabled must precede engineMode so exact engineMode lands last in DSP.
+        expect(deps.updateDeviceParam.mock.calls).toEqual([
+            [trackId, deviceId, 'neuralEnabled', 1],
+            [trackId, deviceId, 'engineMode', 2],
+        ]);
+        expect(deps.persistDeviceParam.mock.calls).toEqual([
+            [deviceId, 'neuralEnabled', 1],
+            [deviceId, 'engineMode', 2],
+        ]);
     });
 });

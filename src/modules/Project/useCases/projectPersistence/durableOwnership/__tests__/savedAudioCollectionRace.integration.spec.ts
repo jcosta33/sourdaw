@@ -14,6 +14,7 @@ const CREATED_AT = 1_700_000_000_000;
 const PCM = new Float32Array([0, 1, -1, 0]);
 const AUDIO_DATABASE_NAME = 'sourdaw-audio';
 const AUDIO_BUFFER_STORE_NAME = 'buffers';
+const PROJECT_AUDIO_STORAGE_LOCK_NAME = 'sourdaw:project-audio-storage';
 
 type Deferred<T> = {
     promise: Promise<T>;
@@ -296,7 +297,15 @@ describe('saved audio collection race', () => {
                 saveSettled = true;
                 return result;
             });
-            await vi.waitFor(() => expect(lockManager.requestedNames).toHaveLength(2));
+            // The lock manager is stubbed globally, so it records every lock
+            // this boot takes — durable branch state takes its own. The claim
+            // here is about the project-audio-storage lock alone: collection
+            // holds it and Save is queued behind it.
+            await vi.waitFor(() =>
+                expect(
+                    lockManager.requestedNames.filter((name) => name === PROJECT_AUDIO_STORAGE_LOCK_NAME)
+                ).toHaveLength(2)
+            );
             expect(saveSettled).toBe(false);
 
             reportStage('collection:release');

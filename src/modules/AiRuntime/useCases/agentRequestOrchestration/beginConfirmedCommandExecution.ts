@@ -4,7 +4,8 @@ import {
     projectRevisionMatchesLiveIgnoringCommandCheckpoint,
 } from '#/modules/CrdtDocument/useCases';
 
-import { type AgentRunWorkLease } from '../../models/AgentRun';
+import { describeAgentRunHardLimit } from '../../models/AgentResourceLimits';
+import { type AgentRun, type AgentRunWorkLease } from '../../models/AgentRun';
 import { updateChatMessage } from '../../stores/chatStore';
 import {
     type PendingAppActionConfirmation,
@@ -19,6 +20,7 @@ import { validateAgentRiskApproval } from '../validateAgentRiskApproval';
 import { agentRunExecutionSettlement } from './agentRunExecutionSettlement';
 import { confirmationTerminalSettlement } from './confirmationTerminalSettlement';
 import { type CommandVerifiedBatchReceipt } from './confirmedBatchOutcomeSupport';
+import { getRenderReceiptAdmissionFailure } from './getRenderReceiptAdmissionFailure';
 
 type BeginConfirmedCommandExecutionInput = {
     confirmation: PendingAppActionConfirmation;
@@ -61,7 +63,10 @@ type ApprovalPreflightFailure = {
     stale: boolean;
 };
 
-function getApprovalPreflightFailure(confirmation: PendingAppActionConfirmation): ApprovalPreflightFailure | null {
+function getApprovalPreflightFailure(
+    confirmation: PendingAppActionConfirmation,
+    run: AgentRun | null
+): ApprovalPreflightFailure | null {
     const approved = confirmation.approvalSnapshot;
     if (!approved.commandBatch) {
         return { reason: 'The confirmation has no approved command batch.', stale: false };
@@ -110,7 +115,13 @@ function getApprovalPreflightFailure(confirmation: PendingAppActionConfirmation)
         };
     }
 
-    return null;
+    // Checked before any work is reserved or claimed, so the live side of the receipt's binding is
+    // the run itself rather than a lease this flight has yet to take.
+    return getRenderReceiptAdmissionFailure({
+        runId: confirmation.runId,
+        liveRun: run ? { runId: run.runId, cancellationGeneration: run.cancellation.generation } : null,
+        actions: approved.actions,
+    });
 }
 
 function settleApprovalPreflightRejection(
@@ -134,7 +145,10 @@ export function beginConfirmedCommandExecution(
 ): BeginConfirmedCommandExecutionResult {
     const { confirmation, priorVerifiedBatchReceipt, recoveringPendingEffects } = input;
     const hasPriorVerifiedBatchReceipt = priorVerifiedBatchReceipt !== null;
-    const approvalPreflightFailure = hasPriorVerifiedBatchReceipt ? null : getApprovalPreflightFailure(confirmation);
+    const run = agentRunLifecycle.get(confirmation.runId);
+    const approvalPreflightFailure = hasPriorVerifiedBatchReceipt
+        ? null
+        : getApprovalPreflightFailure(confirmation, run);
     if (approvalPreflightFailure) {
         return settleApprovalPreflightRejection(confirmation, approvalPreflightFailure);
     }
@@ -163,7 +177,7 @@ export function beginConfirmedCommandExecution(
     }
     let trackedWorkLease: AgentRunWorkLease | null = null;
     let commandBudget: CommandBudgetReconciliation | null = null;
-    if (agentRunLifecycle.get(confirmation.runId)) {
+    if (run) {
         const attemptId = `${parsedCommandBatch.envelope.batchId}:1`;
         const budgetReservation = hasPriorVerifiedBatchReceipt
             ? null
@@ -177,7 +191,7 @@ export function beginConfirmedCommandExecution(
                 status: 'settled',
                 result: confirmationTerminalSettlement.failApprovalPreflight(
                     confirmation,
-                    `The confirmed command work exceeds the user budget for ${budgetReservation.reason}.`,
+                    describeAgentRunHardLimit(budgetReservation.reason, 'confirmed command work'),
                     'budget'
                 ),
             };

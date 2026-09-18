@@ -20,7 +20,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
-import { shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
+import { resolveMidiNoteArticulationId, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
 
 import {
     type OfflineMidiEventProjector,
@@ -153,6 +153,7 @@ function projectProgramme(
         projectMidiEvents,
         selectProbability: shouldPlayMidiEvent,
         projectChordPitch: null,
+        resolveArticulationId: null,
         span: { startSeconds: 0, endSeconds: 8 },
         ...overrides,
     });
@@ -161,6 +162,17 @@ function projectProgramme(
 /** A MIDI strip whose instrument the engine already holds. */
 function voicedTrack(clips: Track['clips']): Track {
     return createTrack({ id: 'midi-1', devices: [instrument('d1', 'i1')], clips });
+}
+
+/**
+ * A MIDI strip carrying the one built-in with a per-note articulation surface.
+ *
+ * The device type is what decides an articulation here, so the same clip note
+ * on `voicedTrack` above is the control case: it carries an articulation name
+ * the resolver answers nothing for.
+ */
+function levainTrack(clips: Track['clips']): Track {
+    return createTrack({ id: 'midi-1', devices: [createDevice({ id: 'd1', name: 'Levain', type: 'levain' })], clips });
 }
 
 describe('projectLiveMidiProgramme', () => {
@@ -183,6 +195,74 @@ describe('projectLiveMidiProgramme', () => {
                 ],
             },
         ]);
+    });
+
+    it('strikes a Levain note on the articulation it carries, and releases it carrying none', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [levainTrack([clip])],
+            resolveArticulationId: resolveMidiNoteArticulationId,
+            notesByClipId: {
+                'clip-1': [
+                    note({
+                        id: 'n1',
+                        pitch: 64,
+                        startBeat: 1,
+                        duration: 2,
+                        velocity: 90,
+                        articulation: 'pizzicato',
+                    }),
+                ],
+            },
+        });
+
+        expect(programme.targets).toEqual([
+            {
+                target: { trackId: 'midi-1', deviceId: 'd1' },
+                events: [
+                    // 10 is `pizzicato` in the project's own table, which the
+                    // resolver here is the real reader of.
+                    { time: seconds(1), note: 64, velocity: 90, channel: 0, isNoteOn: true, articulationId: 10 },
+                    { time: seconds(3), note: 64, velocity: 0, channel: 0, isNoteOn: false },
+                ],
+            },
+        ]);
+        // A release addresses the key; nothing about it selects a sound.
+        expect(programme.targets[0]?.events[1]).not.toHaveProperty('articulationId');
+    });
+
+    it('states no articulation for a Levain note naming none', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [levainTrack([clip])],
+            resolveArticulationId: resolveMidiNoteArticulationId,
+            notesByClipId: { 'clip-1': [note({ id: 'n1', pitch: 64, startBeat: 1, duration: 2 })] },
+        });
+
+        // Absence, not a default: articulation 0 is `sustain`, a sound of its
+        // own, and a note naming none sounds on whatever the device stands on.
+        expect(programme.targets[0]?.events[0]).not.toHaveProperty('articulationId');
+    });
+
+    it('states no articulation for the same note on an instrument that has none', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [voicedTrack([clip])],
+            resolveArticulationId: resolveMidiNoteArticulationId,
+            notesByClipId: {
+                'clip-1': [
+                    note({
+                        id: 'n1',
+                        pitch: 64,
+                        startBeat: 1,
+                        duration: 2,
+                        articulation: 'pizzicato',
+                    }),
+                ],
+            },
+        });
+
+        expect(programme.targets[0]?.events[0]).not.toHaveProperty('articulationId');
     });
 
     // The engine's sounding set is one bit per (channel, note), so the later
@@ -227,6 +307,76 @@ describe('projectLiveMidiProgramme', () => {
         const events = programme.targets[0]?.events ?? [];
         expect(events).toHaveLength(2);
         expect(events[0]).toEqual({ time: seconds(1), note: 48, velocity: 100, channel: 0, isNoteOn: true });
+    });
+
+    /**
+     * A pad is struck and decays on its own envelope, so a clip's release
+     * chokes a sound the web carrier lets ring (`scheduleTrackClips.ts`
+     * withholds it for the Toaster, and the live worklet posts `noteOn`
+     * alone). With no key held there is nothing for two hits on one pad to
+     * contend over either, so the overlap trim is skipped as well — both hits
+     * sound, at their own on-times, neither dropped.
+     *
+     * The fixture is the overlap case above: the second note starts two beats
+     * into the first, which a trimmed target would end one frame early, and
+     * a target that emitted releases would answer with four events.
+     */
+    it('sends a drum-machine strip strikes alone, untrimmed, for overlapping hits on one pad', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const overlappingHits = {
+            'clip-1': [
+                note({ id: 'n1', pitch: 36, startBeat: 0, duration: 4 }),
+                note({ id: 'n2', pitch: 36, startBeat: 2, duration: 4 }),
+                // A same-frame double hit on the same pad: with no key to
+                // contend over, both strikes at beat 0 must survive.
+                note({ id: 'n3', pitch: 36, startBeat: 0, duration: 4 }),
+            ],
+        };
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({ id: 'midi-1', devices: [createDevice({ id: 'd1', type: 'toaster' })], clips: [clip] }),
+            ],
+            attachedInstanceIds: new Set(),
+            notesByClipId: overlappingHits,
+        });
+
+        expect(programme.targets.map((entry) => entry.target)).toEqual([{ trackId: 'midi-1', deviceId: 'd1' }]);
+        expect(programme.targets[0]?.events).toEqual([
+            { time: seconds(0), note: 36, velocity: 100, channel: 0, isNoteOn: true },
+            { time: seconds(0), note: 36, velocity: 100, channel: 0, isNoteOn: true },
+            { time: seconds(2), note: 36, velocity: 100, channel: 0, isNoteOn: true },
+        ]);
+    });
+
+    // The same overlapping pair on a keyboard body still gets the release and
+    // the trim: it holds one key per (channel, note), so the second note-on
+    // would have nothing to release and the first note-off would lift the key
+    // the second is holding.
+    it('still trims and releases the same overlapping notes on a keyboard body', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'midi-1',
+                    devices: [createDevice({ id: 'd1', type: 'grand-boule' })],
+                    clips: [clip],
+                }),
+            ],
+            attachedInstanceIds: new Set(),
+            notesByClipId: {
+                'clip-1': [
+                    note({ id: 'n1', pitch: 36, startBeat: 0, duration: 4 }),
+                    note({ id: 'n2', pitch: 36, startBeat: 2, duration: 4 }),
+                ],
+            },
+        });
+
+        expect(programme.targets[0]?.events.map((event) => [event.time, event.isNoteOn])).toEqual([
+            [seconds(0), true],
+            [seconds(2) - FRAME, false],
+            [seconds(2), true],
+            [seconds(6), false],
+        ]);
     });
 
     // The roll is decided here rather than sent as odds, so that a chance note
@@ -299,6 +449,23 @@ describe('projectLiveMidiProgramme', () => {
         const programme = projectProgramme({
             stripTracks: [
                 createTrack({ id: 'midi-1', devices: [createDevice({ id: 'd1', type: 'fermenter' })], clips: [clip] }),
+            ],
+            attachedInstanceIds: new Set(),
+            notesByClipId: { 'clip-1': [note({ id: 'n1' })] },
+        });
+
+        expect(programme.targets.map((entry) => entry.target)).toEqual([{ trackId: 'midi-1', deviceId: 'd1' }]);
+    });
+
+    // The sampler is the instrument a natively carried orchestral strip plays
+    // through, and the engine registers its note store like any other built-in
+    // instrument's: without notes addressed to it the strip carries natively
+    // and sounds nothing at all.
+    it('addresses a MIDI strip’s notes to its orchestral sampler', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({ id: 'midi-1', devices: [createDevice({ id: 'd1', type: 'levain' })], clips: [clip] }),
             ],
             attachedInstanceIds: new Set(),
             notesByClipId: { 'clip-1': [note({ id: 'n1' })] },

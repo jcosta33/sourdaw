@@ -1,10 +1,15 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
+import { type ModelProviderRequestInput } from '../../models/ModelProviderProtocol';
+import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { configureAgentResourceLimits } from '../configureAgentResourceLimits';
 import { streamHostedModelText } from '../streamHostedModelText';
 
 const mocks = vi.hoisted(() => ({
     streamCloudChatCompletion: vi.fn(),
     getCloudProviderInfo: vi.fn(() => ({ provider: 'anthropic' as const, model: 'hosted-model' })),
+    compileRequest: vi.fn((_input: ModelProviderRequestInput) => undefined),
 }));
 
 vi.mock('../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion', () => ({
@@ -14,6 +19,23 @@ vi.mock('../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion', 
 vi.mock('../../repositories/cloudLlm/getCloudProviderInfo', () => ({
     getCloudProviderInfo: mocks.getCloudProviderInfo,
 }));
+
+vi.mock('../modelProviderProtocol', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../modelProviderProtocol')>();
+    return {
+        ...actual,
+        createModelProviderProtocol: (input: Parameters<typeof actual.createModelProviderProtocol>[0]) => {
+            const protocol = actual.createModelProviderProtocol(input);
+            return {
+                ...protocol,
+                compileRequest: (request: ModelProviderRequestInput) => {
+                    mocks.compileRequest(request);
+                    return protocol.compileRequest(request);
+                },
+            };
+        },
+    };
+});
 
 describe('streamHostedModelText', () => {
     it('returns one neutral result for hosted text, usage, and unknown events', async () => {
@@ -92,6 +114,54 @@ describe('streamHostedModelText', () => {
             outputTokens: 4,
             cachedInputTokens: 5,
             provenance: 'provider-reported',
+        });
+    });
+});
+
+describe('streamHostedModelText output ceiling', () => {
+    afterEach(() => {
+        agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
+    });
+
+    async function compileHostedRequest(): Promise<{
+        limitsMaxOutputTokens: number;
+        budgetMaxOutputTokens: number;
+        maxTotalTokens: number;
+    }> {
+        mocks.compileRequest.mockClear();
+        mocks.streamCloudChatCompletion.mockImplementation(async () => ({ status: 'complete' as const }));
+        await streamHostedModelText({
+            correlationId: `hosted-ceiling-${crypto.randomUUID()}`,
+            messages: [{ role: 'user', content: 'Analyze the mix.' }],
+            maxOutputTokens: 2_048,
+            onToken: vi.fn(),
+        });
+        const compiled = mocks.compileRequest.mock.calls[0]?.[0];
+        if (compiled === undefined) {
+            throw new Error('the hosted route compiled no provider request');
+        }
+        return {
+            limitsMaxOutputTokens: compiled.limits.maxOutputTokens,
+            budgetMaxOutputTokens: compiled.budget.maxOutputTokens,
+            maxTotalTokens: compiled.budget.maxTotalTokens,
+        };
+    }
+
+    it('lowers the caller ceiling and the total budget to a smaller configured model ceiling', async () => {
+        expect(configureAgentResourceLimits({ maxModelOutputTokens: 256 })).toMatchObject({ status: 'configured' });
+
+        await expect(compileHostedRequest()).resolves.toEqual({
+            limitsMaxOutputTokens: 256,
+            budgetMaxOutputTokens: 256,
+            maxTotalTokens: 33_024,
+        });
+    });
+
+    it('keeps the caller ceiling when the configured model ceiling is larger', async () => {
+        await expect(compileHostedRequest()).resolves.toEqual({
+            limitsMaxOutputTokens: 2_048,
+            budgetMaxOutputTokens: 2_048,
+            maxTotalTokens: 34_816,
         });
     });
 });

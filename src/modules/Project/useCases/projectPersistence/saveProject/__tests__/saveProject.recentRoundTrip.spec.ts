@@ -53,7 +53,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: mocks.persistCrdtProject,
     projectActionHistoryToStore: vi.fn(),
-    resetCrdtProjectAuthority: vi.fn(),
+    resetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
+        onAuthorityReplaced?.();
+        return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
+    }),
     startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
 vi.mock('../../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
@@ -70,7 +73,10 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    forgetProjectLatchedPedals: vi.fn(),
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     cancelPendingAudioBufferImport: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
     resetAudioGraph: vi.fn(),
@@ -85,12 +91,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getFactoryDrumKitByIndex: vi.fn(),
     ensureCachedAudioBuffersDurable: mocks.ensureCachedAudioBuffersDurable,
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppActionBatch: vi.fn(async () => ({ status: 'committed' as const, actions: [] })),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
+    pushUndoEntry: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
     isAppActionCommittedError: vi.fn(() => false),

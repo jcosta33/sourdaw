@@ -5,12 +5,10 @@ import { type PluginInstance } from './types';
 /**
  * Instantiate a native plugin instance.
  *
- * `sampleRate` is the rate of the engine whose audio this plugin will be fed —
- * the host activates it at that rate and converts its latency against it. The
- * host refuses a rate that is not a positive number rather than substituting
- * one, so the caller is told when it has none to give.
+ * The native engine activates it at its own negotiated rate and converts its
+ * latency against that — never a rate this call supplies. Sends no rate.
  */
-export async function loadPlugin(pluginId: string, instanceId: string, sampleRate: number): Promise<PluginInstance> {
+export async function loadPlugin(pluginId: string, instanceId: string): Promise<PluginInstance> {
     if (!isDesktopRuntime()) {
         return {
             instance_id: instanceId,
@@ -24,5 +22,5 @@ export async function loadPlugin(pluginId: string, instanceId: string, sampleRat
             engine_plugin_id: null,
         };
     }
-    return desktopInvoke('load_plugin', { pluginId, instanceId, sampleRate }) as Promise<PluginInstance>;
+    return desktopInvoke('load_plugin', { pluginId, instanceId }) as Promise<PluginInstance>;
 }

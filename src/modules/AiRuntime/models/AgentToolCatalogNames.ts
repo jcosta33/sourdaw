@@ -5,6 +5,7 @@
  * disagreeing.
  */
 export const PROJECT_QUERY_TOOL_NAME = 'project.query';
+export const PROJECT_DISCOVERY_TOOL_NAME = 'project.discover';
 export const PROJECT_RESOLVE_TOOL_NAME = 'project.resolve';
 export const AGENT_CAPABILITIES_TOOL_NAME = 'agent.capabilities';
 export const AGENT_CATALOG_DISCOVERY_TOOL_NAME = 'agent.catalog.discover';

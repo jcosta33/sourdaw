@@ -129,6 +129,57 @@ describe('provider adapter conformance', () => {
             },
         });
         expect(adapter.capabilities).toMatchObject({ text: true, tools: true, streaming: true });
+        expect(adapter).toMatchObject({ requestPath: '/v1/chat/completions', probePath: '/v1/models' });
+    });
+
+    it('compiles the first-party OpenAI responses adapter onto its own request path', () => {
+        const adapter = compileProviderAdapterInstallation({
+            adapterId: 'builtin.openai.responses.v1',
+            providerId: 'openai',
+            modelId: 'gpt-test',
+            protocolFamily: 'openai-responses',
+            origin: 'https://api.openai.com',
+        });
+
+        expect(adapter).toMatchObject({
+            adapterId: 'builtin.openai.responses.v1',
+            protocolFamily: 'openai-responses',
+            requestPath: '/v1/responses',
+            probePath: '/v1/models',
+            origin: 'https://api.openai.com',
+        });
+    });
+
+    it('reports parallel tool calls only for the Responses adapter', () => {
+        const chatCompletions = compileProviderAdapterInstallation(BASE_INSTALLATION);
+        const responses = compileProviderAdapterInstallation({
+            adapterId: 'builtin.openai.responses.v1',
+            providerId: 'openai',
+            modelId: 'gpt-test',
+            protocolFamily: 'openai-responses',
+            origin: 'https://api.openai.com',
+        });
+
+        expect(chatCompletions.capabilities.parallelToolCalls).toBe(false);
+        expect(responses.capabilities.parallelToolCalls).toBe(true);
+    });
+
+    it('refuses an adapter id that no compiled contract declares', () => {
+        expect(() =>
+            compileProviderAdapterInstallation({ ...BASE_INSTALLATION, adapterId: 'builtin.openai.assistants.v1' })
+        ).toThrow('Provider adapter is not compiled into this release or explicitly installed');
+    });
+
+    it('refuses a protocol family that contradicts the compiled adapter contract', () => {
+        expect(() =>
+            compileProviderAdapterInstallation({
+                adapterId: 'builtin.openai.responses.v1',
+                providerId: 'openai',
+                modelId: 'gpt-test',
+                protocolFamily: 'openai-chat-completions',
+                origin: 'https://api.openai.com',
+            })
+        ).toThrow('Provider adapter protocol family does not match its compiled contract');
     });
 
     it('opens and closes only opaque native credential sessions', async () => {
@@ -494,7 +545,9 @@ describe('provider adapter conformance', () => {
                 ],
                 maxOutputTokens: 8192,
             })
-        ).resolves.toEqual([{ id: 'call-1', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }]);
+        ).resolves.toMatchObject({
+            calls: [{ id: 'call-1', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+        });
         expect(fetchMock).not.toHaveBeenCalled();
         expect(
             desktopHarness.invoke.mock.calls
@@ -522,7 +575,7 @@ describe('provider adapter conformance', () => {
                 onToken,
                 signal: new AbortController().signal,
             })
-        ).resolves.toBe('stop');
+        ).resolves.toMatchObject({ finishReason: 'stop' });
         expect(onToken).toHaveBeenCalledWith('Privileged');
         expect(fetchMock).not.toHaveBeenCalled();
         const requests = desktopHarness.invoke.mock.calls.filter(([command]) => command === 'provider_gateway_request');

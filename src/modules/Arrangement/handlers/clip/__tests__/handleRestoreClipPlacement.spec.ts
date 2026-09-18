@@ -4,6 +4,7 @@ import { handleRestoreClipPlacement } from '../handleRestoreClipPlacement';
 
 const mocks = vi.hoisted(() => ({
     clipAutomationMoveStateMatches: vi.fn(),
+    getAutomationLanes: vi.fn(),
     getTrackStoreState: vi.fn(),
     moveClip: vi.fn<() => boolean>(),
     restoreClipAutomationMoveState: vi.fn(),
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Automation/useCases', () => ({
     clipAutomationMoveStateMatches: mocks.clipAutomationMoveStateMatches,
+    getAutomationLanes: mocks.getAutomationLanes,
     restoreClipAutomationMoveState: mocks.restoreClipAutomationMoveState,
 }));
 

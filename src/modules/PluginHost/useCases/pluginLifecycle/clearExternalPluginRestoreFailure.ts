@@ -1,3 +1,5 @@
+import { notifyExternalPluginRestoreFailuresChanged } from '../../stores/externalPluginRestoreFailureStore';
+
 import { externalPluginRestoreFailures, warnedExternalPluginRestoreFailures } from './externalPluginRestoreFailures';
 import { externalPluginStateCaptureAuthority } from './externalPluginStateCaptureAuthority';
 
@@ -12,4 +14,5 @@ export function clearExternalPluginRestoreFailure(instanceId: string): void {
     externalPluginStateCaptureAuthority.invalidate(instanceId);
     externalPluginRestoreFailures.delete(instanceId);
     warnedExternalPluginRestoreFailures.delete(instanceId);
+    notifyExternalPluginRestoreFailuresChanged();
 }

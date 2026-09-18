@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, type RenderResult } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TrackDevicesSection } from '../TrackDevicesSection';
@@ -94,14 +94,21 @@ vi.mock('#/modules/Command/useCases', () => ({
 
 const mockOpenPluginGui = vi.fn<(instanceId: string) => Promise<void>>();
 const mockClosePluginGui = vi.fn<(instanceId: string) => Promise<void>>();
+const mockHasRestoreFailure = vi.fn<(instanceId: string) => boolean>(() => false);
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
     return {
         ...actual,
         openPluginGui: (instanceId: string): Promise<void> => mockOpenPluginGui(instanceId),
         closePluginGui: (instanceId: string): Promise<void> => mockClosePluginGui(instanceId),
+        hasUnresolvedExternalPluginRestoreFailure: (instanceId: string): boolean => mockHasRestoreFailure(instanceId),
     };
 });
+
+const mockReadStateChunk = vi.fn<(file: File) => Promise<string>>();
+vi.mock('../../../helpers/externalPluginStateFile', () => ({
+    readExternalPluginStateChunk: (file: File): Promise<string> => mockReadStateChunk(file),
+}));
 
 const mockShowDevicePanelForType = vi.fn<(deviceType: string, deviceId: string) => void>();
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
@@ -110,12 +117,13 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     },
 }));
 
-const mockStores = vi.hoisted(() => ({ scan: {}, activation: {}, gui: {} }));
+const mockStores = vi.hoisted(() => ({ scan: {}, activation: {}, gui: {}, failure: {} }));
 const mockScanState = vi.fn<() => TestPluginScanViewState>(() => ({
     scannedPlugins: [],
 }));
 const mockActivationState = vi.fn<() => TestActivationState>(() => ({ byInstanceId: {} }));
 const mockGuiState = vi.fn<() => TestPluginGuiState>(() => ({ byInstanceId: {} }));
+const mockFailureState = vi.fn<() => { version: number }>(() => ({ version: 0 }));
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown): unknown => {
         if (store === mockStores.activation) {
@@ -123,6 +131,9 @@ vi.mock('#/infra/store/useStore', () => ({
         }
         if (store === mockStores.gui) {
             return mockGuiState();
+        }
+        if (store === mockStores.failure) {
+            return mockFailureState();
         }
         return mockScanState();
     },
@@ -138,6 +149,8 @@ vi.mock('#/modules/PluginHost/stores', async (importOriginal) => {
         defaultExternalPluginActivationState: { byInstanceId: {} },
         pluginGuiStore: mockStores.gui,
         defaultPluginGuiState: { byInstanceId: {} },
+        externalPluginRestoreFailureStore: mockStores.failure,
+        defaultExternalPluginRestoreFailureState: { version: 0 },
     };
 });
 
@@ -269,6 +282,9 @@ describe('TrackDevicesSection', () => {
         mockScanState.mockReturnValue({ scannedPlugins: [] });
         mockActivationState.mockReturnValue({ byInstanceId: {} });
         mockGuiState.mockReturnValue({ byInstanceId: {} });
+        mockFailureState.mockReturnValue({ version: 0 });
+        mockHasRestoreFailure.mockReturnValue(false);
+        mockReadStateChunk.mockReset();
     });
 
     it('should render without crashing', () => {
@@ -570,6 +586,93 @@ describe('TrackDevicesSection', () => {
                 externalInstanceId,
             },
         ],
+    });
+
+    const renderFailedRestoreSlot = (pluginName: string): RenderResult => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [{ id: 'path-hash', name: pluginName, format: 'clap' }],
+        });
+        mockActivationState.mockReturnValue({
+            byInstanceId: { 'failing-instance': { status: 'error', message: 'the plugin rejected its chunk' } },
+        });
+        mockHasRestoreFailure.mockImplementation((instanceId) => instanceId === 'failing-instance');
+        return render(
+            <TrackDevicesSection
+                track={externalPluginTrack('path-hash', 'failing-instance', pluginName)}
+                onSelectDevice={mockOnSelectDevice}
+            />
+        );
+    };
+
+    it('offers a state replacement control while the failed-restore marker stands', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [{ id: 'path-hash', name: 'Failing CLAP', format: 'clap' }],
+        });
+        mockActivationState.mockReturnValue({
+            byInstanceId: { 'failing-instance': { status: 'error', message: 'the plugin rejected its chunk' } },
+        });
+        mockHasRestoreFailure.mockImplementation((instanceId) => instanceId === 'failing-instance');
+        const { container } = render(
+            <TrackDevicesSection
+                track={externalPluginTrack('path-hash', 'failing-instance', 'Failing CLAP')}
+                onSelectDevice={mockOnSelectDevice}
+            />
+        );
+
+        const control = screen.getByLabelText('Replace saved state for Failing CLAP');
+        expect(control).toBeInTheDocument();
+
+        // Activating it opens the chunk file picker rather than dispatching
+        // directly: the chunk comes from a user-chosen file.
+        const input = container.querySelector('input[type="file"]');
+        expect(input).not.toBeNull();
+        const clickSpy = vi.spyOn(input as HTMLInputElement, 'click');
+        fireEvent.click(control);
+        expect(clickSpy).toHaveBeenCalledTimes(1);
+        expect(mockExecuteUserAppAction).not.toHaveBeenCalled();
+    });
+
+    it('offers no state replacement control once authoritative state exists again', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [{ id: 'path-hash', name: 'Recovered CLAP', format: 'clap' }],
+        });
+        mockActivationState.mockReturnValue({
+            byInstanceId: { 'recovered-instance': { status: 'active' } },
+        });
+        mockHasRestoreFailure.mockReturnValue(false);
+
+        render(
+            <TrackDevicesSection
+                track={externalPluginTrack('path-hash', 'recovered-instance', 'Recovered CLAP')}
+                onSelectDevice={mockOnSelectDevice}
+            />
+        );
+
+        expect(screen.queryByLabelText('Replace saved state for Recovered CLAP')).not.toBeInTheDocument();
+    });
+
+    it('dispatches the replacement chunk for the failed slot from the chosen file', async () => {
+        mockReadStateChunk.mockResolvedValue('Y2h1bms=');
+        const { container } = renderFailedRestoreSlot('Failing CLAP');
+        const input = container.querySelector('input[type="file"]');
+        expect(input).not.toBeNull();
+
+        fireEvent.click(screen.getByLabelText('Replace saved state for Failing CLAP'));
+        fireEvent.change(input as HTMLInputElement, {
+            target: { files: [new File(['chunk-bytes'], 'plugin-state.fxp')] },
+        });
+
+        await waitFor(() => {
+            expect(mockExecuteUserAppAction).toHaveBeenCalledWith({
+                type: 'setExternalPluginState',
+                payload: { intent: 'replacement', deviceId: 'external-slot', stateChunk: 'Y2h1bms=' },
+            });
+        });
+        expect(mockReadStateChunk).toHaveBeenCalledTimes(1);
+        expect(mockReadStateChunk.mock.calls[0]?.[0]).toBeInstanceOf(File);
     });
 
     it('offers no editor control while the instance is still loading', () => {

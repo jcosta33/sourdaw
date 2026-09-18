@@ -962,7 +962,12 @@ function BrowserRail({
     });
 
     return (
-        <Stack as="aside" gap={3} shrink={false} className="grinder-faceplate h-full w-[296px] overflow-y-auto p-3">
+        <Stack
+            as="aside"
+            gap={3}
+            shrink={false}
+            className="grinder-faceplate h-full w-[296px] overflow-y-auto p-3 [&>*]:shrink-0"
+        >
             <div>
                 <div className="text-dense uppercase tracking-[0.3em] text-[var(--color-accent-amber)]">Grinder</div>
                 <div className="mt-1 text-[22px] font-semibold tracking-[0.03em] text-white/92">Presets</div>

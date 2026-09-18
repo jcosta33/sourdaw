@@ -535,6 +535,46 @@ const voicePairingCases: readonly VoicePairingCase[] = [
     },
 ];
 
+type IdentitylessDecisionCase = {
+    name: string;
+    create: () => MidiProcessor;
+    configureFirst: (processor: MidiProcessor) => void;
+    configureSecond: (processor: MidiProcessor) => void;
+    inputNote: number;
+    firstOutputNote: number;
+    secondOutputNote: number | undefined;
+};
+
+const identitylessDecisionCases: readonly IdentitylessDecisionCase[] = [
+    {
+        name: 'Transposer',
+        create: () => new Transposer('identityless-transposer'),
+        configureFirst: (processor) => processor.setParam('semitones', 1),
+        configureSecond: (processor) => processor.setParam('semitones', 12),
+        inputNote: 60,
+        firstOutputNote: 61,
+        secondOutputNote: 72,
+    },
+    {
+        name: 'ScaleQuantizer',
+        create: () => new ScaleQuantizer('identityless-scale'),
+        configureFirst: (processor) => processor.setParam('remap_mode', 2),
+        configureSecond: (processor) => processor.setParam('remap_mode', 1),
+        inputNote: 61,
+        firstOutputNote: 60,
+        secondOutputNote: 62,
+    },
+    {
+        name: 'NoteFilter',
+        create: () => new NoteFilter('identityless-filter'),
+        configureFirst: () => undefined,
+        configureSecond: (processor) => processor.setParam('note_min', 61),
+        inputNote: 60,
+        firstOutputNote: 60,
+        secondOutputNote: undefined,
+    },
+];
+
 describe('MidiRack', () => {
     it('exports MidiRack', () => {
         expect(MidiRack).toBeDefined();
@@ -678,6 +718,363 @@ describe('MidiRack', () => {
                     secondOffPreview.records.filter((record) => record.phase === 'closed').map((record) => record.pitch)
                 ).toEqual(secondOffPitches);
             });
+        }
+    });
+
+    describe('identified out-of-order releases', () => {
+        it('keeps Transposer endpoint identities and pitches paired through the rack', () => {
+            const rack = new MidiRack('rack-a');
+            const processor = new Transposer('transpose-a');
+            rack.addProcessor(processor);
+            processor.setParam('semitones', 1);
+            const firstOn = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 0,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-a',
+                            kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                        },
+                    ],
+                    0,
+                    128,
+                    transport,
+                    'track-a'
+                ),
+            ];
+            processor.setParam('semitones', 12);
+            const secondOn = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 128,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-b',
+                            kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                        },
+                    ],
+                    128,
+                    256,
+                    transport,
+                    'track-a'
+                ),
+            ];
+            const releases = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 256,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-b',
+                            kind: { type: 'noteOff', channel: 0, note: 60 },
+                        },
+                        {
+                            timeSamples: 257,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-a',
+                            kind: { type: 'noteOff', channel: 0, note: 60 },
+                        },
+                    ],
+                    256,
+                    384,
+                    transport,
+                    'track-a'
+                ),
+            ];
+
+            expect(firstOn).toMatchObject([{ noteInstanceId: 'voice-a', kind: { type: 'noteOn', note: 61 } }]);
+            expect(secondOn).toMatchObject([{ noteInstanceId: 'voice-b', kind: { type: 'noteOn', note: 72 } }]);
+            expect(releases).toMatchObject([
+                { noteInstanceId: 'voice-b', kind: { type: 'noteOff', note: 72 } },
+                { noteInstanceId: 'voice-a', kind: { type: 'noteOff', note: 61 } },
+            ]);
+            expect(rack.allNotesOff(384)).toEqual([]);
+        });
+
+        it('keeps ScaleQuantizer endpoint identities and pitches paired through the rack', () => {
+            const rack = new MidiRack('rack-a');
+            const processor = new ScaleQuantizer('scale-a');
+            rack.addProcessor(processor);
+            processor.setParam('remap_mode', 2);
+            const firstOn = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 0,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-a',
+                            kind: { type: 'noteOn', channel: 0, note: 61, velocity: 100 },
+                        },
+                    ],
+                    0,
+                    128,
+                    transport,
+                    'track-a'
+                ),
+            ];
+            processor.setParam('remap_mode', 1);
+            const secondOn = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 128,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-b',
+                            kind: { type: 'noteOn', channel: 0, note: 61, velocity: 100 },
+                        },
+                    ],
+                    128,
+                    256,
+                    transport,
+                    'track-a'
+                ),
+            ];
+            const releases = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 256,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-b',
+                            kind: { type: 'noteOff', channel: 0, note: 61 },
+                        },
+                        {
+                            timeSamples: 257,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-a',
+                            kind: { type: 'noteOff', channel: 0, note: 61 },
+                        },
+                    ],
+                    256,
+                    384,
+                    transport,
+                    'track-a'
+                ),
+            ];
+
+            expect(firstOn).toMatchObject([{ noteInstanceId: 'voice-a', kind: { type: 'noteOn', note: 60 } }]);
+            expect(secondOn).toMatchObject([{ noteInstanceId: 'voice-b', kind: { type: 'noteOn', note: 62 } }]);
+            expect(releases).toMatchObject([
+                { noteInstanceId: 'voice-b', kind: { type: 'noteOff', note: 62 } },
+                { noteInstanceId: 'voice-a', kind: { type: 'noteOff', note: 60 } },
+            ]);
+            expect(rack.allNotesOff(384)).toEqual([]);
+        });
+
+        it('keeps NoteFilter endpoint identities paired through the rack', () => {
+            const rack = new MidiRack('rack-a');
+            const processor = new NoteFilter('filter-a');
+            rack.addProcessor(processor);
+            const firstOn = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 0,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-a',
+                            kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                        },
+                    ],
+                    0,
+                    128,
+                    transport,
+                    'track-a'
+                ),
+            ];
+            processor.setParam('note_min', 61);
+            const secondOn = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 128,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-b',
+                            kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                        },
+                    ],
+                    128,
+                    256,
+                    transport,
+                    'track-a'
+                ),
+            ];
+            const releases = [
+                ...rack.processBlock(
+                    [
+                        {
+                            timeSamples: 256,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-b',
+                            kind: { type: 'noteOff', channel: 0, note: 60 },
+                        },
+                        {
+                            timeSamples: 257,
+                            trackId: 'track-a',
+                            noteInstanceId: 'voice-a',
+                            kind: { type: 'noteOff', channel: 0, note: 60 },
+                        },
+                    ],
+                    256,
+                    384,
+                    transport,
+                    'track-a'
+                ),
+            ];
+
+            expect(firstOn).toMatchObject([{ noteInstanceId: 'voice-a', kind: { type: 'noteOn', note: 60 } }]);
+            expect(secondOn).toEqual([]);
+            expect(releases).toMatchObject([{ noteInstanceId: 'voice-a', kind: { type: 'noteOff', note: 60 } }]);
+            expect(rack.allNotesOff(384)).toEqual([]);
+        });
+    });
+
+    describe('identityless out-of-order releases', () => {
+        const scenarios = [
+            {
+                name: 'keeps channel decisions separate on one track',
+                first: { trackId: 'track-a', channel: 0 },
+                second: { trackId: 'track-a', channel: 1 },
+            },
+            {
+                name: 'keeps route decisions separate on one channel',
+                first: { trackId: 'track-a', channel: 0 },
+                second: { trackId: 'track-b', channel: 0 },
+            },
+        ] as const;
+
+        for (const scenario of scenarios) {
+            for (const testCase of identitylessDecisionCases) {
+                it(`${testCase.name} ${scenario.name}`, () => {
+                    const rack = new MidiRack('rack-a');
+                    const processor = testCase.create();
+                    rack.addProcessor(processor);
+                    const process = (events: MidiEvent[], blockStartSamples: number): MidiEvent[] => [
+                        ...rack.processBlock(
+                            events,
+                            blockStartSamples,
+                            blockStartSamples + 128,
+                            transport,
+                            'fallback-track',
+                            false,
+                            'rack-a',
+                            'route-a',
+                            0,
+                            true
+                        ),
+                    ];
+
+                    testCase.configureFirst(processor);
+                    const firstOn = process(
+                        [
+                            {
+                                timeSamples: 0,
+                                trackId: scenario.first.trackId,
+                                kind: {
+                                    type: 'noteOn',
+                                    channel: scenario.first.channel,
+                                    note: testCase.inputNote,
+                                    velocity: 100,
+                                },
+                            },
+                        ],
+                        0
+                    );
+                    testCase.configureSecond(processor);
+                    const secondOn = process(
+                        [
+                            {
+                                timeSamples: 128,
+                                trackId: scenario.second.trackId,
+                                kind: {
+                                    type: 'noteOn',
+                                    channel: scenario.second.channel,
+                                    note: testCase.inputNote,
+                                    velocity: 100,
+                                },
+                            },
+                        ],
+                        128
+                    );
+                    const releases = process(
+                        [
+                            {
+                                timeSamples: 256,
+                                trackId: scenario.second.trackId,
+                                kind: {
+                                    type: 'noteOff',
+                                    channel: scenario.second.channel,
+                                    note: testCase.inputNote,
+                                },
+                            },
+                            {
+                                timeSamples: 257,
+                                trackId: scenario.first.trackId,
+                                kind: {
+                                    type: 'noteOff',
+                                    channel: scenario.first.channel,
+                                    note: testCase.inputNote,
+                                },
+                            },
+                        ],
+                        256
+                    );
+
+                    expect(firstOn).toMatchObject([
+                        {
+                            trackId: scenario.first.trackId,
+                            kind: {
+                                type: 'noteOn',
+                                channel: scenario.first.channel,
+                                note: testCase.firstOutputNote,
+                            },
+                        },
+                    ]);
+                    if (testCase.secondOutputNote === undefined) {
+                        expect(secondOn).toEqual([]);
+                        expect(releases).toMatchObject([
+                            {
+                                trackId: scenario.first.trackId,
+                                kind: {
+                                    type: 'noteOff',
+                                    channel: scenario.first.channel,
+                                    note: testCase.firstOutputNote,
+                                },
+                            },
+                        ]);
+                    } else {
+                        expect(secondOn).toMatchObject([
+                            {
+                                trackId: scenario.second.trackId,
+                                kind: {
+                                    type: 'noteOn',
+                                    channel: scenario.second.channel,
+                                    note: testCase.secondOutputNote,
+                                },
+                            },
+                        ]);
+                        expect(releases).toMatchObject([
+                            {
+                                trackId: scenario.second.trackId,
+                                kind: {
+                                    type: 'noteOff',
+                                    channel: scenario.second.channel,
+                                    note: testCase.secondOutputNote,
+                                },
+                            },
+                            {
+                                trackId: scenario.first.trackId,
+                                kind: {
+                                    type: 'noteOff',
+                                    channel: scenario.first.channel,
+                                    note: testCase.firstOutputNote,
+                                },
+                            },
+                        ]);
+                    }
+                    expect(rack.allNotesOff(384)).toEqual([]);
+                });
+            }
         }
     });
 

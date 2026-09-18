@@ -37,19 +37,27 @@ const wasmMemory = new WebAssembly.Memory({ initial: 1 });
 const LEFT_PTR = 0;
 const RIGHT_PTR = BLOCK_FRAMES * Float32Array.BYTES_PER_ELEMENT;
 
-/** Engine block the worker is about to produce when a note is voiced. */
-type Voiced = { note: number; block: number };
+/** Engine block the worker is about to produce when a note is voiced, and the
+ * sample offset inside it the note was pushed at. */
+type Voiced = { note: number; block: number; offset: number };
 const voiced: Voiced[] = [];
 type FramedParam = { name: string; value: number; block: number };
 const framedParams: FramedParam[] = [];
 
 class GrandBouleInstanceMock {
-    note_on_with_channel(note: number, _velocity: number, _channel: number): void {
-        voiced.push({ note, block: Atomics.load(ringControlInts, WRITE_HEAD_IDX) / BLOCK_FRAMES });
+    push_note_on(note: number, _velocity: number, _channel: number, offset: number): boolean {
+        voiced.push({ note, block: Atomics.load(ringControlInts, WRITE_HEAD_IDX) / BLOCK_FRAMES, offset });
+        return true;
     }
-    note_off(_note: number): void {}
-    note_off_on_channel(_note: number, _channel: number): void {}
-    note_expression(): void {}
+    push_note_off(_note: number, _offset: number): boolean {
+        return true;
+    }
+    push_note_off_on_channel(_note: number, _channel: number, _offset: number): boolean {
+        return true;
+    }
+    push_note_expression(): boolean {
+        return true;
+    }
     set_param(name: string, value: number): void {
         framedParams.push({ name, value, block: Atomics.load(ringControlInts, WRITE_HEAD_IDX) / BLOCK_FRAMES });
     }
@@ -58,7 +66,6 @@ class GrandBouleInstanceMock {
     set_sostenuto(): void {}
     note_on_midi2(): void {}
     set_temperament(): void {}
-    load_attack_clip(): void {}
     all_notes_off(): void {}
     process(_frames: number): number {
         return LEFT_PTR;
@@ -185,8 +192,9 @@ describe('Grand Boule engine worker note placement', () => {
         const contextStart = 5000 * BLOCK_FRAMES;
         consumeBlock(contextStart);
 
-        // Engine frame 900 lives in engine block 7 (896..1023). Address it the
-        // only way the app can: by the context frame it will be heard at.
+        // Engine frame 900 lives in engine block 7 (896..1023), 4 samples into
+        // it. Address it the only way the app can: by the context frame it will
+        // be heard at.
         send({ type: 'noteOn', midiNote: 60, velocity: 90, sampleFrame: contextStart + 900, channel: 0 });
         expect(voiced).toEqual([]);
 
@@ -196,7 +204,7 @@ describe('Grand Boule engine worker note placement', () => {
             consumeBlock(contextStart + block * BLOCK_FRAMES);
         }
 
-        expect(voiced).toEqual([{ note: 60, block: 7 }]);
+        expect(voiced).toEqual([{ note: 60, block: 7, offset: 4 }]);
     });
 
     it('holds a live parameter until the producer block mapped to its context frame', () => {
@@ -238,7 +246,7 @@ describe('Grand Boule engine worker note placement', () => {
 
         renderTick();
 
-        expect(voiced).toEqual([{ note: 68, block: PRE_ROLL_FRAMES / BLOCK_FRAMES }]);
+        expect(voiced).toEqual([{ note: 68, block: PRE_ROLL_FRAMES / BLOCK_FRAMES, offset: 0 }]);
     });
 
     it('keeps consumer-clock note placement past the signed 32-bit frame boundary', () => {
@@ -258,7 +266,7 @@ describe('Grand Boule engine worker note placement', () => {
             consumeBlock(contextStart + block * BLOCK_FRAMES);
         }
 
-        expect(voiced).toEqual([{ note: 61, block: 7 }]);
+        expect(voiced).toEqual([{ note: 61, block: 7, offset: 4 }]);
     });
 
     it('unwraps a producer head that crosses Int32 before the buffered consumer', () => {
@@ -276,7 +284,7 @@ describe('Grand Boule engine worker note placement', () => {
 
         // The target is in the third produced block. Its modular write head has
         // wrapped negative even though the consumer is still in the prior epoch.
-        expect(voiced).toEqual([{ note: 65, block: -16_777_215 }]);
+        expect(voiced).toEqual([{ note: 65, block: -16_777_215, offset: 4 }]);
     });
 
     it('retains the last coherent consumer offset while a publication is in progress', () => {
@@ -295,7 +303,7 @@ describe('Grand Boule engine worker note placement', () => {
             consumeBlock(contextStart + block * BLOCK_FRAMES);
         }
 
-        expect(voiced).toEqual([{ note: 63, block: 7 }]);
+        expect(voiced).toEqual([{ note: 63, block: 7, offset: 4 }]);
     });
 
     it('places a frame sitting exactly on a block boundary in that block, not the one before', () => {
@@ -309,7 +317,7 @@ describe('Grand Boule engine worker note placement', () => {
 
         runEngineTo(14);
 
-        expect(voiced).toEqual([{ note: 62, block: 10 }]);
+        expect(voiced).toEqual([{ note: 62, block: 10, offset: 0 }]);
     });
 
     it('voices a note whose frame the engine has already passed instead of holding it', () => {
@@ -320,7 +328,23 @@ describe('Grand Boule engine worker note placement', () => {
 
         // Dispatched on arrival — at the head the engine is already at, not the
         // block that frame belonged to and not a block later.
-        expect(voiced).toEqual([{ note: 64, block: PRE_ROLL_FRAMES / BLOCK_FRAMES }]);
+        expect(voiced).toEqual([{ note: 64, block: PRE_ROLL_FRAMES / BLOCK_FRAMES, offset: 0 }]);
+    });
+
+    it('pushes a note arriving for the block about to render at its own offset', () => {
+        renderTick();
+        const contextStart = 5000 * BLOCK_FRAMES;
+        consumeBlock(contextStart);
+
+        // The consumer is at `contextStart`, the engine PRE_ROLL_FRAMES ahead, so
+        // the block the worker renders next covers context frames
+        // `contextStart + 768 .. +895`. A note stamped 50 samples into it arrives
+        // between renders and is delivered straight to the engine — the "voice
+        // now" path — but it is still due 50 samples in, not at the head.
+        const blockStart = contextStart + PRE_ROLL_FRAMES;
+        send({ type: 'noteOn', midiNote: 66, velocity: 90, sampleFrame: blockStart + 50, channel: 0 });
+
+        expect(voiced).toEqual([{ note: 66, block: PRE_ROLL_FRAMES / BLOCK_FRAMES, offset: 50 }]);
     });
 
     it('drops notes still waiting in the queue when the device panics', () => {

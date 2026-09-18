@@ -5,6 +5,7 @@
 //! Rimshot:  Two bridged-T oscillators at 1667 Hz and 455 Hz, ~10ms decay, with HPF for snap.
 //! Maracas:  White noise through VCA with 25–35ms decay. Broadband, no resonant filter.
 
+use crate::params::{DECAY, TUNE};
 use crate::primitives::flush_denormal_in_place;
 use crate::toaster::bridged_t::BridgedTFilter;
 use crate::toaster::dc_block::DcBlocker;
@@ -249,8 +250,8 @@ impl Perc808Engine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "decay" => self.decay = value.clamp(0.0, 1.0),
-            "tune" => self.tune = value.clamp(-24.0, 24.0),
+            DECAY => self.decay = value.clamp(0.0, 1.0),
+            TUNE => self.tune = value.clamp(-24.0, 24.0),
             _ => {}
         }
     }

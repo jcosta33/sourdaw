@@ -62,6 +62,8 @@ impl QuickMode {
             velocity,
             sample_id: self.sample_id,
             root_note: self.root_note,
+            // The engine resolves this against the sample pool; the mode only knows ids.
+            source_sample_rate: 0.0,
             choke_group: 0,
             playback_mode: self.playback_mode,
             loop_mode: self.loop_mode,

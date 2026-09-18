@@ -47,7 +47,6 @@
  *   ← { type: 'sostenuto', engaged }
  *   ← { type: 'noteOnMidi2', midiNote, velocity16bit, pitchOffsetQ24 }
  *   ← { type: 'temperament', index }
- *   ← { type: 'loadAttackClip', key, samples }
  *   ← { type: 'allNotesOff' }
  *   ← { type: 'stop' }
  */
@@ -72,6 +71,7 @@ import {
     createGrandBouleInstance,
     createGrandBouleFrameQueue,
     receiveGrandBouleMessage,
+    type GrandBouleBlockFrames,
     type GrandBouleDispatchMsg,
 } from '../worklets/grandBouleEngineCore';
 
@@ -383,11 +383,12 @@ function renderLoop(generation: number): void {
             break; // Enough headroom or ring is full.
         }
 
-        // Voice everything that belongs in the block about to be produced. This
-        // has to run inside the loop, before each `process()`: the engine has no
-        // sub-block note offset, so the block boundary is the only place a note
-        // can be placed at all.
-        frameQueue.drain(instance, blockEndContextFrame(writeHead));
+        // Hand the engine everything that belongs in the block about to be
+        // produced, each note at its own sample offset inside it. This has to
+        // run inside the loop, before each `process()`, because the offsets are
+        // measured from the block that is about to render.
+        const blockEndFrame = blockEndContextFrame(writeHead);
+        frameQueue.drain(instance, blockEndFrame - BLOCK_SIZE, blockEndFrame);
 
         // Render one block.
         const leftPtr = instance.process(BLOCK_SIZE);
@@ -448,10 +449,11 @@ type GrandBouleWorkerMsg =
  * clock stands.
  *
  * The ring's write head plus the consumer offset is this transport's answer to
- * "which context frame does the block I am about to produce end at"; the offline
- * worklet answers the same question with `currentFrame + 128`. Everything after
- * that — enqueue or voice, and the engine call itself — is one implementation
- * shared by both, so the two hosts cannot disagree about a message.
+ * "which context frames does the block I am about to produce cover"; the offline
+ * worklet answers the same question with `currentFrame` and `currentFrame + 128`.
+ * Everything after that — enqueue or deliver, the sample offset, and the engine
+ * call itself — is one implementation shared by both, so the two hosts cannot
+ * disagree about a message.
  *
  * `null` before the ring is mapped: nothing can be placed yet, so voice now.
  */
@@ -460,12 +462,13 @@ function receive(msg: GrandBouleDispatchMsg): void {
         return;
     }
 
-    let blockEndFrame: number | null = null;
+    let block: GrandBouleBlockFrames | null = null;
     if (controlInts) {
-        blockEndFrame = blockEndContextFrame(Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX));
+        const endFrame = blockEndContextFrame(Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX));
+        block = { startFrame: endFrame - BLOCK_SIZE, endFrame };
     }
 
-    receiveGrandBouleMessage({ instance, queue: frameQueue, msg, blockEndFrame });
+    receiveGrandBouleMessage({ instance, queue: frameQueue, msg, block });
 
     if (!controlInts) {
         return;
