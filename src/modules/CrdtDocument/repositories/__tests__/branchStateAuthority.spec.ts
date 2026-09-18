@@ -963,6 +963,31 @@ describe('branchStateAuthority', () => {
             releaseReset();
         });
 
+        it('answers reset-unavailable when every pass observes a superseded marker', async () => {
+            writeAbandonedReset();
+            let supersessions = 0;
+            // The durable read runs between the boot's observe and the transaction's fresh
+            // read; rewriting the marker's owner there mimics the live owner superseding its
+            // own reset faster than the boot's probe budget (#4347).
+            mocks.loadPersistenceSnapshotFromIdb.mockImplementation(async () => {
+                supersessions += 1;
+                writeStoredEnvelope({
+                    version: 1,
+                    revision: 5,
+                    current,
+                    session: null,
+                    reset: storedReset(`superseding-${supersessions}`, previous, intended),
+                });
+                return { authority: outgoingAuthority, bundle: null };
+            });
+
+            const booted = await bootBranchStateInstance();
+
+            expect(booted.outcome).toBe('reset-unavailable');
+            expect(readStoredEnvelope()?.reset?.owner).toBe(`superseding-${supersessions}`);
+            expect(booted.store.value).toEqual(current);
+        });
+
         it('rolls the reset back when the outgoing project is still the durable one', async () => {
             writeAbandonedReset();
             durableAuthority(outgoingAuthority);
