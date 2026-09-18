@@ -3,7 +3,7 @@
     "campaign": "sourdaw-agent-production-system",
     "thresholds": {
         "path": "docs/architecture/agent-release-gates.md",
-        "digest": "e64462e36d5a8044ad29fce88f66e87fadab0dd782b8861f2504a6fe6aafa69f"
+        "digest": "9bb848245225e5e0775899ab43d5b85e9fba3bc014bea137dea98b5a942ec668"
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
@@ -797,19 +797,23 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "96f218173cdded51348e8396e749a16d4720eb3395b542c5075f85b29a243ece"
+                    "digest": "719faaa8928b9d6197f690a127d69e2065b94fc83898589e39e7d7ec456526cb"
+                },
+                {
+                    "path": "evidence/agent-campaign/corpora/fixture-project.json",
+                    "digest": "0a6f07e0f30b603d4b5e54c09eebbc9b5d08bec6708fcce3c9217df2e85f48ec"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "9ca1c1bd700da9145f383212f0d14e282d613ce6cc68cb629efb5c412ca5a9b5"
+                    "digest": "a3e1042d43d0559e47daafbdfee22ba42fec02f152520e95ca820af4add1c80b"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
-                    "digest": "d27bb464c56d9b1ad9a27b4e1bc51f3f2786cddff7c81cb94aeb65f79ed101f5"
+                    "digest": "8e40d11c3bf650b9d380ad7e80bbf4dd4763614273969c23548475087b9ddc94"
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "4c14c0a61deedbac88158cdb007caf3e642cefae219b5e376880a9338d2beab3"
+                    "digest": "dbca83ceb4c76431b0d2a845caa7262e43da0e850c94e47738588bcdc5c9620f"
                 }
             ]
         },
@@ -887,7 +891,7 @@
             "fixtures": [
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
-                    "digest": "d27bb464c56d9b1ad9a27b4e1bc51f3f2786cddff7c81cb94aeb65f79ed101f5"
+                    "digest": "8e40d11c3bf650b9d380ad7e80bbf4dd4763614273969c23548475087b9ddc94"
                 },
                 {
                     "path": "src/app/__tests__/agentCampaignBaseline.spec.ts",

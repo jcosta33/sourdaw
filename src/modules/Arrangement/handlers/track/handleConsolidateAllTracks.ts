@@ -50,13 +50,20 @@ export const handleConsolidateAllTracks = createHandler<'consolidateAllTracks'>(
             return { status: 'no-write' };
         }
 
+        // Collected rather than discarded: `bounceInPlace` resolves `false` when
+        // the bounce refused (an unrenderable device on the track, see
+        // `buildDeviceChain`'s plugin refusal), and a loop where every track
+        // refused wrote nothing — reporting `written` for it would file an
+        // inert undo entry with no change behind it.
+        let wroteAnyTrack = false;
         for (const trackId of trackIds) {
             // `recordUndoEntry: false` because this command owns one atomic undo unit for
             // the whole loop. Letting each bounce file its own callback entry would stack
             // them *below* this command's entry, each holding a whole-`tracks` snapshot
             // taken part-way through the loop — so undoing past this command would put the
             // earlier bounces back rather than continue unwinding.
-            await bounceInPlace(trackId, { recordUndoEntry: false, transactionScope });
+            const wrote = await bounceInPlace(trackId, { recordUndoEntry: false, transactionScope });
+            wroteAnyTrack ||= wrote;
         }
 
         // A pure read settling the undo payload: `bounceInPlace` (via
@@ -68,7 +75,9 @@ export const handleConsolidateAllTracks = createHandler<'consolidateAllTracks'>(
             pending.postConsolidateState.push(...settled);
         }
 
-        return { status: 'written' };
+        // A partial write is still a write: some tracks bounced and their
+        // clips changed, so the undo unit has real content to restore.
+        return { status: wroteAnyTrack ? 'written' : 'no-write' };
     },
     describe: (action) => {
         const trackIds = resolveEligibleTrackIds();

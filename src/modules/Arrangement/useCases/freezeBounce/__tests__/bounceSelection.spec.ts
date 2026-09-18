@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => {
         cacheAudioBuffer: vi.fn<(input: CacheAudioBufferInput) => string>(),
         pushUndoEntry: vi.fn<PushUndoEntry>(),
         renderTrackOffline: vi.fn<RenderTrackOffline>(),
+        notifyUser: vi.fn<(message: string, level: string) => void>(),
         resolveEligibleClipWriteTarget: vi.fn((): { status: string; trackId?: string } => ({
             status: 'eligible',
             trackId: 'track-1',
@@ -61,6 +62,10 @@ vi.mock('../renderOffline', () => ({
 
 vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
 }));
 
 const midiMocks = vi.hoisted(() => {
@@ -513,6 +518,32 @@ describe('bounceSelection', () => {
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         expect(didWrite).toBe(false);
+    });
+
+    // This is the most destructive of the bake paths — it removes MIDI data
+    // outright — so a render that refuses over a device it cannot include has to
+    // reach the user before anything is written, not vanish as an unhandled
+    // rejection behind the selection command.
+    it('surfaces a refused render to the user and writes nothing', async () => {
+        const selectedClip = createAudioClip({ id: 'clip-selected', startBeat: 2, endBeat: 6 });
+        const sourceTrack = createAudioTrack({ clips: [selectedClip] });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockRejectedValue(
+            Object.assign(new Error('Track "Guitar" hosts the plugin "Analog EQ" (external-plugin)'), {
+                _tag: 'Export',
+            })
+        );
+
+        const didWrite = await bounceSelection('track-1', 2, 6);
+
+        expect(didWrite).toBe(false);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Track "Guitar" hosts the plugin "Analog EQ" (external-plugin)',
+            'error'
+        );
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.trackStore.set).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
     it('keeps both outside parts when a clip spans the entire selection', async () => {

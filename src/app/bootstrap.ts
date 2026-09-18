@@ -313,7 +313,11 @@ setClipAudioAssetStager(stageAudioBufferAsset);
 // An unload changes native strip state with no batch of its own to report it,
 // so PluginHost forwards the strips its own release touched here, the one
 // place that may cross from PluginHost's contract into AudioEngine's.
-registerReleasedStripReportSink(recordNativeChainReleases);
+// The queued write returns a promise the sink contract does not carry; ordering is
+// the queue's job, not the caller's, so the registration discards it explicitly.
+registerReleasedStripReportSink((reports) => {
+    void recordNativeChainReleases(reports);
+});
 setCommandEventBus(eventBus);
 setSetlistEventBus(eventBus);
 setVoiceToggleEventBus(eventBus);

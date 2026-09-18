@@ -1,21 +1,84 @@
 {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "corpus": "development",
+    "fixtureProject": "fixture-project.json",
+    "classes": {
+        "literal-structural": {
+            "sealed": true
+        },
+        "named-target-with-unit": {
+            "sealed": false,
+            "pendingContract": "decibel forms on setTrackGain, setSend, setMasterGain"
+        },
+        "device-insert-with-parameter": {
+            "sealed": true
+        },
+        "new-bus-send-with-level": {
+            "sealed": false,
+            "pendingContract": "decibel send level on addSend/setSend"
+        },
+        "time-scoped-level": {
+            "sealed": false,
+            "pendingContract": "automateParameterRange over a musical range in either direction"
+        },
+        "bulk-by-role": {
+            "sealed": false,
+            "pendingContract": "canonical track roles and selector predicates in transform.compile"
+        },
+        "comparative-by-measurement": {
+            "sealed": false,
+            "pendingContract": "analysis.measure on project and preview"
+        },
+        "perceptual-single-target": {
+            "sealed": false,
+            "pendingContract": "recipe.discover and recipe.expand"
+        },
+        "perceptual-multi-target": {
+            "sealed": false,
+            "pendingContract": "recipe.discover and recipe.expand"
+        },
+        "whole-project-vibe-with-constraint": {
+            "sealed": false,
+            "pendingContract": "measured vibe decomposition"
+        },
+        "refinement": {
+            "sealed": false,
+            "pendingContract": "bounded thread context to the planner"
+        },
+        "question": {
+            "sealed": false,
+            "pendingContract": "PlanningOutcome kind answer"
+        },
+        "boundary": {
+            "sealed": true
+        }
+    },
     "cases": [
         {
             "id": "AC054-DEV-EXEC-1",
+            "promptClass": "literal-structural",
             "class": "execute-exact",
             "prompt": "create a blues song with a twelve bar progression",
             "providerTurns": [
-                { "kind": "search", "intents": ["create a midi track", "add a clip", "add midi notes"] },
-                { "kind": "discover", "names": ["addTrack", "addClip", "addNotes"] },
+                {
+                    "kind": "search",
+                    "intents": ["create a midi track", "add a clip", "add midi notes"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["addTrack", "addClip", "addNotes"]
+                },
                 {
                     "kind": "propose",
                     "items": [
                         {
                             "id": "make-track",
                             "name": "addTrack",
-                            "arguments": { "name": "Blues Comp", "kind": "midi", "binding": "comp" }
+                            "arguments": {
+                                "name": "Blues Comp",
+                                "kind": "midi",
+                                "binding": "comp"
+                            }
                         },
                         {
                             "id": "make-clip",
@@ -35,9 +98,24 @@
                             "arguments": {
                                 "clipId": "$chorus",
                                 "notes": [
-                                    { "pitch": 60, "startBeat": 0, "duration": 1, "velocity": 96 },
-                                    { "pitch": 64, "startBeat": 0, "duration": 1, "velocity": 96 },
-                                    { "pitch": 67, "startBeat": 0, "duration": 1, "velocity": 96 }
+                                    {
+                                        "pitch": 60,
+                                        "startBeat": 0,
+                                        "duration": 1,
+                                        "velocity": 96
+                                    },
+                                    {
+                                        "pitch": 64,
+                                        "startBeat": 0,
+                                        "duration": 1,
+                                        "velocity": 96
+                                    },
+                                    {
+                                        "pitch": 67,
+                                        "startBeat": 0,
+                                        "duration": 1,
+                                        "velocity": 96
+                                    }
                                 ]
                             },
                             "dependsOn": ["make-clip"]
@@ -48,15 +126,43 @@
             "oracle": {
                 "kind": "proposal",
                 "actions": [
-                    { "type": "addTrack", "payload": { "name": "Blues Comp", "kind": "midi" } },
-                    { "type": "addClip", "payload": { "startBeat": 0, "endBeat": 12, "name": "Twelve Bar" } },
+                    {
+                        "type": "addTrack",
+                        "payload": {
+                            "name": "Blues Comp",
+                            "kind": "midi"
+                        }
+                    },
+                    {
+                        "type": "addClip",
+                        "payload": {
+                            "startBeat": 0,
+                            "endBeat": 12,
+                            "name": "Twelve Bar"
+                        }
+                    },
                     {
                         "type": "addNotes",
                         "payload": {
                             "notes": [
-                                { "pitch": 60, "startBeat": 0, "duration": 1, "velocity": 96 },
-                                { "pitch": 64, "startBeat": 0, "duration": 1, "velocity": 96 },
-                                { "pitch": 67, "startBeat": 0, "duration": 1, "velocity": 96 }
+                                {
+                                    "pitch": 60,
+                                    "startBeat": 0,
+                                    "duration": 1,
+                                    "velocity": 96
+                                },
+                                {
+                                    "pitch": 64,
+                                    "startBeat": 0,
+                                    "duration": 1,
+                                    "velocity": 96
+                                },
+                                {
+                                    "pitch": 67,
+                                    "startBeat": 0,
+                                    "duration": 1,
+                                    "velocity": 96
+                                }
                             ]
                         }
                     }
@@ -65,6 +171,7 @@
         },
         {
             "id": "AC054-DEV-EXEC-2",
+            "promptClass": "literal-structural",
             "class": "execute-exact",
             "prompt": "create a blues song with a twelve bar progression, set tempo to 96 bpm",
             "providerTurns": [
@@ -72,14 +179,21 @@
                     "kind": "search",
                     "intents": ["create a midi track", "add a clip", "add midi notes", "change the project tempo"]
                 },
-                { "kind": "discover", "names": ["addTrack", "addClip", "addNotes", "setTempo"] },
+                {
+                    "kind": "discover",
+                    "names": ["addTrack", "addClip", "addNotes", "setTempo"]
+                },
                 {
                     "kind": "propose",
                     "items": [
                         {
                             "id": "make-track",
                             "name": "addTrack",
-                            "arguments": { "name": "Blues Comp", "kind": "midi", "binding": "comp" }
+                            "arguments": {
+                                "name": "Blues Comp",
+                                "kind": "midi",
+                                "binding": "comp"
+                            }
                         },
                         {
                             "id": "make-clip",
@@ -99,55 +213,124 @@
                             "arguments": {
                                 "clipId": "$chorus",
                                 "notes": [
-                                    { "pitch": 60, "startBeat": 0, "duration": 1, "velocity": 96 },
-                                    { "pitch": 64, "startBeat": 0, "duration": 1, "velocity": 96 },
-                                    { "pitch": 67, "startBeat": 0, "duration": 1, "velocity": 96 }
+                                    {
+                                        "pitch": 60,
+                                        "startBeat": 0,
+                                        "duration": 1,
+                                        "velocity": 96
+                                    },
+                                    {
+                                        "pitch": 64,
+                                        "startBeat": 0,
+                                        "duration": 1,
+                                        "velocity": 96
+                                    },
+                                    {
+                                        "pitch": 67,
+                                        "startBeat": 0,
+                                        "duration": 1,
+                                        "velocity": 96
+                                    }
                                 ]
                             },
                             "dependsOn": ["make-clip"]
                         },
-                        { "id": "set-tempo", "name": "setTempo", "arguments": { "bpm": 96 } }
+                        {
+                            "id": "set-tempo",
+                            "name": "setTempo",
+                            "arguments": {
+                                "bpm": 96
+                            }
+                        }
                     ]
                 }
             ],
             "oracle": {
                 "kind": "proposal",
                 "actions": [
-                    { "type": "addTrack", "payload": { "name": "Blues Comp", "kind": "midi" } },
-                    { "type": "addClip", "payload": { "startBeat": 0, "endBeat": 12, "name": "Twelve Bar" } },
+                    {
+                        "type": "addTrack",
+                        "payload": {
+                            "name": "Blues Comp",
+                            "kind": "midi"
+                        }
+                    },
+                    {
+                        "type": "addClip",
+                        "payload": {
+                            "startBeat": 0,
+                            "endBeat": 12,
+                            "name": "Twelve Bar"
+                        }
+                    },
                     {
                         "type": "addNotes",
                         "payload": {
                             "notes": [
-                                { "pitch": 60, "startBeat": 0, "duration": 1, "velocity": 96 },
-                                { "pitch": 64, "startBeat": 0, "duration": 1, "velocity": 96 },
-                                { "pitch": 67, "startBeat": 0, "duration": 1, "velocity": 96 }
+                                {
+                                    "pitch": 60,
+                                    "startBeat": 0,
+                                    "duration": 1,
+                                    "velocity": 96
+                                },
+                                {
+                                    "pitch": 64,
+                                    "startBeat": 0,
+                                    "duration": 1,
+                                    "velocity": 96
+                                },
+                                {
+                                    "pitch": 67,
+                                    "startBeat": 0,
+                                    "duration": 1,
+                                    "velocity": 96
+                                }
                             ]
                         }
                     },
-                    { "type": "setTempo", "payload": { "bpm": 96 } }
+                    {
+                        "type": "setTempo",
+                        "payload": {
+                            "bpm": 96
+                        }
+                    }
                 ]
             }
         },
         {
             "id": "AC054-DEV-EXEC-3",
+            "promptClass": "literal-structural",
             "class": "execute-exact",
             "prompt": "create 2 audio tracks named Lead Vocals, Backing Vocals",
             "providerTurns": [
-                { "kind": "search", "intents": ["create a midi track"] },
-                { "kind": "discover", "names": ["addTrack"] },
+                {
+                    "kind": "search",
+                    "intents": ["create a midi track"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["addTrack"]
+                },
                 {
                     "kind": "propose",
                     "items": [
                         {
                             "id": "make-lead-vocals",
                             "name": "addTrack",
-                            "arguments": { "name": "Lead Vocals", "kind": "audio", "binding": "lead" }
+                            "arguments": {
+                                "name": "Lead Vocals",
+                                "kind": "audio",
+                                "binding": "lead"
+                            }
                         },
                         {
                             "id": "make-backing-vocals",
                             "name": "addTrack",
-                            "arguments": { "name": "Backing Vocals", "kind": "audio", "binding": "backing" }
+                            "arguments": {
+                                "name": "Backing Vocals",
+                                "kind": "audio",
+                                "binding": "backing"
+                            }
                         }
                     ]
                 }
@@ -155,59 +338,110 @@
             "oracle": {
                 "kind": "proposal",
                 "actions": [
-                    { "type": "addTrack", "payload": { "name": "Lead Vocals", "kind": "audio" } },
-                    { "type": "addTrack", "payload": { "name": "Backing Vocals", "kind": "audio" } }
+                    {
+                        "type": "addTrack",
+                        "payload": {
+                            "name": "Lead Vocals",
+                            "kind": "audio"
+                        }
+                    },
+                    {
+                        "type": "addTrack",
+                        "payload": {
+                            "name": "Backing Vocals",
+                            "kind": "audio"
+                        }
+                    }
                 ]
             }
         },
         {
             "id": "AC054-DEV-EXEC-4",
+            "promptClass": "literal-structural",
             "class": "execute-exact",
             "prompt": "create a synth pad track",
             "providerTurns": [
-                { "kind": "search", "intents": ["create a midi track"] },
-                { "kind": "discover", "names": ["addTrack"] },
+                {
+                    "kind": "search",
+                    "intents": ["create a midi track"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["addTrack"]
+                },
                 {
                     "kind": "propose",
                     "items": [
                         {
                             "id": "make-pad",
                             "name": "addTrack",
-                            "arguments": { "name": "Synth Pad", "kind": "midi", "binding": "pad" }
+                            "arguments": {
+                                "name": "Synth Pad",
+                                "kind": "midi",
+                                "binding": "pad"
+                            }
                         }
                     ]
                 }
             ],
             "oracle": {
                 "kind": "proposal",
-                "actions": [{ "type": "addTrack", "payload": { "name": "Synth Pad", "kind": "midi" } }]
+                "actions": [
+                    {
+                        "type": "addTrack",
+                        "payload": {
+                            "name": "Synth Pad",
+                            "kind": "midi"
+                        }
+                    }
+                ]
             }
         },
         {
             "id": "AC054-DEV-EXEC-5",
+            "promptClass": "literal-structural",
             "class": "execute-exact",
             "prompt": "create a folder track named Drums Bus",
             "providerTurns": [
-                { "kind": "search", "intents": ["create a midi track"] },
-                { "kind": "discover", "names": ["addTrack"] },
+                {
+                    "kind": "search",
+                    "intents": ["create a midi track"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["addTrack"]
+                },
                 {
                     "kind": "propose",
                     "items": [
                         {
                             "id": "make-bus",
                             "name": "addTrack",
-                            "arguments": { "name": "Drums Bus", "kind": "folder", "binding": "bus" }
+                            "arguments": {
+                                "name": "Drums Bus",
+                                "kind": "folder",
+                                "binding": "bus"
+                            }
                         }
                     ]
                 }
             ],
             "oracle": {
                 "kind": "proposal",
-                "actions": [{ "type": "addTrack", "payload": { "name": "Drums Bus", "kind": "folder" } }]
+                "actions": [
+                    {
+                        "type": "addTrack",
+                        "payload": {
+                            "name": "Drums Bus",
+                            "kind": "folder"
+                        }
+                    }
+                ]
             }
         },
         {
             "id": "AC054-DEV-CLARIFY-1",
+            "promptClass": "boundary",
             "class": "clarify-required",
             "prompt": "make it sound better",
             "providerTurns": [
@@ -220,10 +454,13 @@
                     }
                 }
             ],
-            "oracle": { "kind": "clarify" }
+            "oracle": {
+                "kind": "clarify"
+            }
         },
         {
             "id": "AC054-DEV-CLARIFY-2",
+            "promptClass": "boundary",
             "class": "clarify-required",
             "prompt": "improve the mix",
             "providerTurns": [
@@ -236,26 +473,23 @@
                     }
                 }
             ],
-            "oracle": { "kind": "clarify" }
+            "oracle": {
+                "kind": "clarify"
+            }
         },
         {
             "id": "AC054-DEV-CLARIFY-3",
-            "class": "clarify-required",
+            "promptClass": "perceptual-single-target",
+            "class": "execute-exact",
             "prompt": "fix the vocals",
-            "providerTurns": [
-                {
-                    "kind": "decline",
-                    "args": {
-                        "kind": "clarify",
-                        "reason": "The request does not say what is wrong with the vocals.",
-                        "questions": ["What should change about the vocals?"]
-                    }
-                }
-            ],
-            "oracle": { "kind": "clarify" }
+            "providerTurns": [],
+            "oracle": {
+                "kind": "pending"
+            }
         },
         {
             "id": "AC054-DEV-CLARIFY-4",
+            "promptClass": "boundary",
             "class": "clarify-required",
             "prompt": "make this part more interesting",
             "providerTurns": [
@@ -268,10 +502,13 @@
                     }
                 }
             ],
-            "oracle": { "kind": "clarify" }
+            "oracle": {
+                "kind": "clarify"
+            }
         },
         {
             "id": "AC054-DEV-CLARIFY-5",
+            "promptClass": "boundary",
             "class": "clarify-required",
             "prompt": "clean up the arrangement",
             "providerTurns": [
@@ -284,14 +521,20 @@
                     }
                 }
             ],
-            "oracle": { "kind": "clarify" }
+            "oracle": {
+                "kind": "clarify"
+            }
         },
         {
             "id": "AC054-DEV-ABSTAIN-1",
+            "promptClass": "boundary",
             "class": "abstain-unsupported",
             "prompt": "master this for vinyl",
             "providerTurns": [
-                { "kind": "search", "intents": ["master the song for vinyl"] },
+                {
+                    "kind": "search",
+                    "intents": ["master the song for vinyl"]
+                },
                 {
                     "kind": "decline",
                     "args": {
@@ -301,14 +544,20 @@
                     }
                 }
             ],
-            "oracle": { "kind": "unsupported" }
+            "oracle": {
+                "kind": "unsupported"
+            }
         },
         {
             "id": "AC054-DEV-ABSTAIN-2",
+            "promptClass": "boundary",
             "class": "abstain-unsupported",
             "prompt": "rebuild this song from these stems as a project",
             "providerTurns": [
-                { "kind": "search", "intents": ["rebuild a song from stems"] },
+                {
+                    "kind": "search",
+                    "intents": ["rebuild a song from stems"]
+                },
                 {
                     "kind": "decline",
                     "args": {
@@ -318,14 +567,20 @@
                     }
                 }
             ],
-            "oracle": { "kind": "unsupported" }
+            "oracle": {
+                "kind": "unsupported"
+            }
         },
         {
             "id": "AC054-DEV-ABSTAIN-3",
+            "promptClass": "boundary",
             "class": "abstain-unsupported",
             "prompt": "auto-tune the vocals",
             "providerTurns": [
-                { "kind": "search", "intents": ["auto-tune vocals"] },
+                {
+                    "kind": "search",
+                    "intents": ["auto-tune vocals"]
+                },
                 {
                     "kind": "decline",
                     "args": {
@@ -335,14 +590,20 @@
                     }
                 }
             ],
-            "oracle": { "kind": "unsupported" }
+            "oracle": {
+                "kind": "unsupported"
+            }
         },
         {
             "id": "AC054-DEV-ABSTAIN-4",
+            "promptClass": "boundary",
             "class": "abstain-unsupported",
             "prompt": "generate album artwork",
             "providerTurns": [
-                { "kind": "search", "intents": ["generate album artwork"] },
+                {
+                    "kind": "search",
+                    "intents": ["generate album artwork"]
+                },
                 {
                     "kind": "decline",
                     "args": {
@@ -352,14 +613,20 @@
                     }
                 }
             ],
-            "oracle": { "kind": "unsupported" }
+            "oracle": {
+                "kind": "unsupported"
+            }
         },
         {
             "id": "AC054-DEV-ABSTAIN-5",
+            "promptClass": "boundary",
             "class": "abstain-unsupported",
             "prompt": "write lyrics for this song",
             "providerTurns": [
-                { "kind": "search", "intents": ["write lyrics"] },
+                {
+                    "kind": "search",
+                    "intents": ["write lyrics"]
+                },
                 {
                     "kind": "decline",
                     "args": {
@@ -369,42 +636,281 @@
                     }
                 }
             ],
-            "oracle": { "kind": "unsupported" }
+            "oracle": {
+                "kind": "unsupported"
+            }
         },
         {
             "id": "AC054-DEV-DENY-1",
+            "promptClass": "boundary",
             "class": "deny-policy",
             "prompt": "save project",
             "providerTurns": [],
-            "oracle": { "kind": "denied" }
+            "oracle": {
+                "kind": "denied"
+            }
         },
         {
             "id": "AC054-DEV-DENY-2",
+            "promptClass": "boundary",
             "class": "deny-policy",
             "prompt": "new project",
             "providerTurns": [],
-            "oracle": { "kind": "denied" }
+            "oracle": {
+                "kind": "denied"
+            }
         },
         {
             "id": "AC054-DEV-DENY-3",
+            "promptClass": "boundary",
             "class": "deny-policy",
             "prompt": "export",
             "providerTurns": [],
-            "oracle": { "kind": "denied" }
+            "oracle": {
+                "kind": "denied"
+            }
         },
         {
             "id": "AC054-DEV-DENY-4",
+            "promptClass": "boundary",
             "class": "deny-policy",
             "prompt": "import audio",
             "providerTurns": [],
-            "oracle": { "kind": "denied" }
+            "oracle": {
+                "kind": "denied"
+            }
         },
         {
             "id": "AC054-DEV-DENY-5",
+            "promptClass": "boundary",
             "class": "deny-policy",
             "prompt": "import midi",
             "providerTurns": [],
-            "oracle": { "kind": "denied" }
+            "oracle": {
+                "kind": "denied"
+            }
+        },
+        {
+            "id": "AC054-DEV-DEVICE-1",
+            "promptClass": "device-insert-with-parameter",
+            "class": "execute-exact",
+            "prompt": "Add a compressor to the Bass DI and set its ratio to 6:1.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["add a device to a track", "set a device parameter"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["addDevice", "setDeviceParameter"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "insert-device",
+                            "name": "addDevice",
+                            "arguments": {
+                                "deviceType": "builtin-compressor",
+                                "binding": "insert"
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Bass DI"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        },
+                        {
+                            "id": "set-parameter",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "comp-ratio",
+                                "value": 6
+                            },
+                            "dependsOn": ["insert-device"]
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-bass-di",
+                            "deviceType": "builtin-compressor"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "comp-ratio",
+                            "value": 6
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-bass-di", "comp-ratio"],
+                    "protectedIds": ["track-kick", "track-drum-bus"],
+                    "maxCommands": 2
+                }
+            }
+        },
+        {
+            "id": "AC054-DEV-DEVICE-2",
+            "promptClass": "device-insert-with-parameter",
+            "class": "execute-exact",
+            "prompt": "Add an EQ to the Lead Vocal and set its low gain to -3 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["add a device to a track", "set a device parameter"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["addDevice", "setDeviceParameter"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "insert-device",
+                            "name": "addDevice",
+                            "arguments": {
+                                "deviceType": "builtin-eq",
+                                "binding": "insert"
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Lead Vocal"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        },
+                        {
+                            "id": "set-parameter",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "eq-low-gain",
+                                "value": -3
+                            },
+                            "dependsOn": ["insert-device"]
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-lead-vocal",
+                            "deviceType": "builtin-eq"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "eq-low-gain",
+                            "value": -3
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-lead-vocal", "eq-low-gain"],
+                    "protectedIds": ["track-kick", "track-drum-bus"],
+                    "maxCommands": 2
+                }
+            }
+        },
+        {
+            "id": "AC054-DEV-DEVICE-3",
+            "promptClass": "device-insert-with-parameter",
+            "class": "execute-exact",
+            "prompt": "Add a delay to the Guitar and set its time to 375 ms.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["add a device to a track", "set a device parameter"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["addDevice", "setDeviceParameter"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "insert-device",
+                            "name": "addDevice",
+                            "arguments": {
+                                "deviceType": "builtin-delay",
+                                "binding": "insert"
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Guitar"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        },
+                        {
+                            "id": "set-parameter",
+                            "name": "setDeviceParameter",
+                            "arguments": {
+                                "deviceId": "$insert",
+                                "paramId": "delay-time",
+                                "value": 375
+                            },
+                            "dependsOn": ["insert-device"]
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "addDevice",
+                        "payload": {
+                            "trackId": "track-guitar",
+                            "deviceType": "builtin-delay"
+                        }
+                    },
+                    {
+                        "type": "setDeviceParameter",
+                        "payload": {
+                            "paramId": "delay-time",
+                            "value": 375
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-guitar", "delay-time"],
+                    "protectedIds": ["track-kick", "track-drum-bus"],
+                    "maxCommands": 2
+                }
+            }
         }
     ]
 }

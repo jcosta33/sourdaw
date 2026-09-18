@@ -7,8 +7,13 @@ const EXTERNAL_PLUGIN_DEVICE_TYPE = 'external-plugin';
  *
  * `withheldDeviceTypes` covers release-withheld stand-ins the offline print
  * reported. Non-bypassed `external-plugin` devices on this track are omitted
- * separately: live `buildDeviceChain` degrades them (`continue`, empty entries)
- * without setting `releaseWithheld`, so they never appear on the tally.
+ * separately, and the reason is which of the two plugin populations can still
+ * reach a completed print: a plugin whose instance the engine holds refuses
+ * inside `buildDeviceChain`, so the render never finishes and no tally is
+ * taken. One with no attached instance — a duplicated track, a track template,
+ * a project opened in the browser build — is silent live and still degrades
+ * (`continue`, empty entries) without setting `releaseWithheld`, so it never
+ * appears on the tally. That unattached device is what this omit list is for.
  */
 export function freezeCompensationOmitTypes(
     devices: readonly Device[],
