@@ -1,0 +1,14 @@
+scripts/__tests__/restampWasmInventory.spec.ts
+  h_1228e573df1f42 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dc00b37a2db353e46239a53663bb76a3c3deb730",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
