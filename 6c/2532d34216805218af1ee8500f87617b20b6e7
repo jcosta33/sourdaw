@@ -1,0 +1,26 @@
+tests/e2e/builtinDeviceAutomationOffline.spec.ts
+  s_87ab0a2f60ccf8::t_0753a2f6afb4cd 191-200,259-260
+  s_87ab0a2f60ccf8::t_1af555d91c27ea 1-2,5-13,19,20-22,44-48,51,52-57,60,61-66,69-76,77-79,81,87-91,94-101,102-107,110-117,118-123,126,127-168,178,180-182,187-190,201-207,209-212,216,220-258,261-270,273-284,287-294
+  h_1228e573df1f42 3-4,14-18,23-43,49-50,58-59,67-68,80,82-86,92-93,108-109,124-125,169-177,179,183-186,208,213,214-215,217,218-219,271-272,285-286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6c2532d34216805218af1ee8500f87617b20b6e7",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  },
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
