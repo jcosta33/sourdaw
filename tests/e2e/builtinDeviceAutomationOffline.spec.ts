@@ -11,32 +11,61 @@ type Case = {
     name: string;
     deviceType: 'builtin-gain' | 'builtin-compressor' | 'builtin-limiter';
     parameterId: string;
+    /** What the static device holds and what the lane drives the automated side to. */
+    targetValue: number;
+    /** What the automated device holds before the lane writes — must differ from the target. */
+    contrastValue: number;
+    /** The device's other parameters, identical on both channels. */
     parameterValues: Record<string, number>;
-    value: number;
     signal: 'steady' | 'dynamics';
 };
 
+/**
+ * Each case automates a parameter that is bound to a real `AudioParam` offline.
+ *
+ * `lim-ceiling` is deliberately absent: the advertised cap lives in the
+ * clipper's rebuilt WaveShaper curve rather than in a gain param, so
+ * `resolveDeviceParamTargets('builtin-limiter', 'lim-ceiling', …)` is empty and
+ * `automationScheduling` skips a lane aimed at it. A case riding it would render
+ * two statically-configured limiters and could never fail for the parity it
+ * names. The in-page `bindingResolved` assertion fails loudly if a future
+ * binding change leaves a case aimed at an unbound parameter.
+ *
+ * Each case builds the automated device holding `contrastValue`, writes
+ * `targetValue` into the static device, and drives the lane to `targetValue`. A
+ * lane that is dropped, unapplied, or never scheduled therefore leaves the
+ * automated channel at the contrast and pushes the residual outside the bound,
+ * while a working constant lane writes the target from frame 0 — the offline
+ * slew seeds `y[0]` from the curve at the window start, so a single-point lane
+ * applies immediately rather than gliding in — and renders bit-identically to
+ * the static device for the whole buffer. No settled window is excluded, because
+ * a constant lane has no entry transient to exclude.
+ */
 const CASES: readonly Case[] = [
     {
         name: 'builtin gain at 0 dB',
         deviceType: 'builtin-gain',
         parameterId: 'gain-level',
+        targetValue: 0,
+        contrastValue: -12,
         parameterValues: { 'gain-level': 0 },
-        value: 0,
         signal: 'steady',
     },
     {
         name: 'builtin gain at -6 dB',
         deviceType: 'builtin-gain',
         parameterId: 'gain-level',
+        targetValue: -6,
+        contrastValue: -18,
         parameterValues: { 'gain-level': -6 },
-        value: -6,
         signal: 'steady',
     },
     {
         name: 'compressor makeup at +6 dB',
         deviceType: 'builtin-compressor',
         parameterId: 'comp-makeup',
+        targetValue: 6,
+        contrastValue: 18,
         parameterValues: {
             'comp-threshold': 0,
             'comp-ratio': 1,
@@ -45,21 +74,23 @@ const CASES: readonly Case[] = [
             'comp-knee': 0,
             'comp-makeup': 6,
         },
-        value: 6,
         signal: 'steady',
     },
     {
-        name: 'limiter ceiling at -0.3 dB',
+        name: 'limiter threshold at -24 dB',
         deviceType: 'builtin-limiter',
-        parameterId: 'lim-ceiling',
-        parameterValues: { 'lim-threshold': 0, 'lim-release': 100, 'lim-ceiling': -0.3 },
-        value: -0.3,
-        signal: 'steady',
+        parameterId: 'lim-threshold',
+        targetValue: -24,
+        contrastValue: 0,
+        parameterValues: { 'lim-threshold': -24, 'lim-release': 100, 'lim-ceiling': 0 },
+        signal: 'dynamics',
     },
     {
         name: 'compressor attack at 10 ms',
         deviceType: 'builtin-compressor',
         parameterId: 'comp-attack',
+        targetValue: 10,
+        contrastValue: 100,
         parameterValues: {
             'comp-threshold': -24,
             'comp-ratio': 12,
@@ -68,13 +99,14 @@ const CASES: readonly Case[] = [
             'comp-knee': 0,
             'comp-makeup': 0,
         },
-        value: 10,
         signal: 'dynamics',
     },
     {
         name: 'compressor release at 100 ms',
         deviceType: 'builtin-compressor',
         parameterId: 'comp-release',
+        targetValue: 100,
+        contrastValue: 1_000,
         parameterValues: {
             'comp-threshold': -24,
             'comp-ratio': 12,
@@ -83,15 +115,15 @@ const CASES: readonly Case[] = [
             'comp-knee': 0,
             'comp-makeup': 0,
         },
-        value: 100,
         signal: 'dynamics',
     },
     {
         name: 'limiter release at 100 ms',
         deviceType: 'builtin-limiter',
         parameterId: 'lim-release',
+        targetValue: 100,
+        contrastValue: 400,
         parameterValues: { 'lim-threshold': -24, 'lim-release': 100, 'lim-ceiling': 0 },
-        value: 100,
         signal: 'dynamics',
     },
 ];
@@ -134,10 +166,23 @@ for (const input of CASES) {
                 bypassed: false,
                 parameterValues: caseInput.parameterValues,
             };
+            // The automated channel starts at the contrast; the static channel
+            // holds the target. Only the lane should close that gap.
+            const automatedDevice = createWebAudioDevice(context, {
+                ...device,
+                parameterValues: {
+                    ...caseInput.parameterValues,
+                    [caseInput.parameterId]: caseInput.contrastValue,
+                },
+            });
             const staticDevice = createWebAudioDevice(context, device);
-            const automatedDevice = createWebAudioDevice(context, device);
+            staticDevice.setParam(caseInput.parameterId, caseInput.targetValue);
             staticDevice.node.outputNode.connect(merger, 0, 0);
             automatedDevice.node.outputNode.connect(merger, 0, 1);
+
+            // An unbound parameter makes `resolveOfflineAutomation` return null,
+            // the scheduler skip the lane, and this case compare two statics.
+            const binding = automatedDevice.resolveOfflineAutomation(caseInput.parameterId);
 
             const sourceBuffer = context.createBuffer(1, frameCount, sampleRate);
             const samples = sourceBuffer.getChannelData(0);
@@ -165,13 +210,13 @@ for (const input of CASES) {
                 trackId: 'track-1',
                 parameterId: `device-1:${caseInput.parameterId}`,
                 parameterName: caseInput.parameterId,
-                points: [{ beat: 0, value: caseInput.value, curve: 'linear', tension: 0 }],
+                points: [{ beat: 0, value: caseInput.targetValue, curve: 'linear', tension: 0 }],
                 objects: [],
                 visible: true,
                 enabled: true,
                 collapsed: false,
-                minValue: Math.min(-60, caseInput.value),
-                maxValue: Math.max(1_000, caseInput.value),
+                minValue: Math.min(-60, caseInput.targetValue),
+                maxValue: Math.max(1_000, caseInput.targetValue),
             };
             scheduleTrackAutomation({
                 lanes: [lane],
@@ -223,6 +268,8 @@ for (const input of CASES) {
             return {
                 frameCount: rendered.length,
                 sampleRate: rendered.sampleRate,
+                bindingResolved: binding !== null,
+                bindingKind: binding?.kind ?? null,
                 staticPeak,
                 automatedPeak,
                 residualPeak,
@@ -235,6 +282,8 @@ for (const input of CASES) {
             body: JSON.stringify(metrics, null, 2),
             contentType: 'application/json',
         });
+        expect(input.contrastValue).not.toBe(input.targetValue);
+        expect(metrics.bindingResolved).toBe(true);
         expect(metrics.frameCount).toBe(FRAME_COUNT);
         expect(metrics.sampleRate).toBe(SAMPLE_RATE);
         expect(metrics.nonFiniteSamples).toBe(0);
