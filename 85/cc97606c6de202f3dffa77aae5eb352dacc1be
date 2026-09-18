@@ -1,0 +1,20 @@
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_914af328b3988f::t_419107f3771ba8 515-518
+  s_914af328b3988f::t_16aa091a06c449 506-514,519
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "85cc97606c6de202f3dffa77aae5eb352dacc1be",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
