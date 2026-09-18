@@ -1,0 +1,28 @@
+tests/e2e/timelineNavigation.spec.ts
+  s_728d23f5458683::t_8d2086dfdb47d2 39-46,52-54,56,59-61,67,71-74,79-81,86-90,96-97,109-112,114-117
+  s_9e15f5b7ec3308::t_2556a9f9112e8e 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fa807a40f18b7fef0082562d462482609ddf488b",
+  "prompts": {},
+  "sessions": {
+    "s_728d23f5458683": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af8333e68e899c0e9",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
