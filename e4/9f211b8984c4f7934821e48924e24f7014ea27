@@ -1,0 +1,56 @@
+electron/appIpc.ts
+  s_9b530f08172a54::t_dcedaee4e178be 162-167
+  s_9b530f08172a54::t_ea6ac20548bf09 236-239
+  s_9b530f08172a54::t_a587f6846da558 144
+  s_9b530f08172a54::t_5f952ef616b5ba 244
+electron/main.ts
+  s_9b530f08172a54::t_3d8f82a468121a 353
+  s_9b530f08172a54::t_1097fd19ab046c 671-674
+  s_9b530f08172a54::t_dae6198a38194f 818-821
+  s_9b530f08172a54::t_dab3310ec4d778 385-389
+  s_9b530f08172a54::t_9b3b5e26e92fea 321-326
+  s_9b530f08172a54::t_f0eef54f3b7e6c 807-812
+  s_9b530f08172a54::t_f217e73d415724 830-833,839-842
+  s_9b530f08172a54::t_470564a30d3d24 92
+electron/bridge.ts
+  s_9b530f08172a54::t_f1effd008ea9b1 236-239
+  s_9b530f08172a54::t_2e5dbc7362af68 240
+electron/router.ts
+  s_9b530f08172a54::t_560e799d3be5a5 118-123
+scripts/runLint.ts
+  s_9b530f08172a54::t_a2defacc1dbe90 145-146
+  s_9b530f08172a54::t_d804879b939fbd 144
+electron/shellComposition.ts
+  s_9b530f08172a54::t_81e1d6e8dffeb3 138-155,170,173
+electron/__tests__/commands.spec.ts
+  s_9b530f08172a54::t_4d15c6133a803a 452-453
+  s_9b530f08172a54::t_65e884d1d9022d 313-317
+electron/__tests__/bridge.spec.ts
+  s_9b530f08172a54::t_f69ebb40722d05 55-56
+  s_9b530f08172a54::t_7ba5986331f4f9 64-67
+electron/nativeMenuProjectState.ts
+  s_9b530f08172a54::t_6a0176b44872cc 38-40,44
+electron/pluginGui.ts
+  s_9b530f08172a54::t_bdfb649009e010 1039-1045,1048
+  s_9b530f08172a54::t_5fb65102056559 597-598
+electron/pluginEditorWindow.ts
+  s_9b530f08172a54::t_25448ff98369b6 3,14-15,22-27
+electron/applicationMenu.ts
+  s_9b530f08172a54::t_b6512111094a6b 210-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e49f211b8984c4f7934821e48924e24f7014ea27",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
