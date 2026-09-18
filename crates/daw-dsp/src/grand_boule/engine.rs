@@ -1324,7 +1324,7 @@ mod tests {
         assert_eq!(stealing.stage(), super::super::voice::VoiceStage::Stealing);
         let gain_before = stealing.amplitude();
 
-        // Isolate the outgoing tail so the sampled transient's fade is proven,
+        // Isolate the outgoing tail so its modelled fade is proven,
         // not hidden beneath the replacement note or shared resonators.
         for voice in engine.voices.iter_mut() {
             voice.kill();

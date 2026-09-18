@@ -265,11 +265,11 @@ Verify with: `manual` — confirm the "## Design decisions" and "## Test plan" s
 
 ### AC-033 — Implementation status of existing sampler primitives is recorded
 
-The spec must record where basic sampler functionality already exists — `Fermenter` (`sampler.rs`),
-`Levain` (`voice.rs`), and `Grand_Boule` (`attack_sampler.rs`) — and note that the missing/refactor
-items were tracked separately in the prior spec-of-the-gaps.
+The spec must record where basic sampler functionality already exists — `Fermenter` (`sampler.rs`)
+and `Levain` (`voice.rs`) — record that Grand Boule's hybrid sampled-attack pathway was retired in
+#3999, and note that the missing/refactor items were tracked separately in the prior spec-of-the-gaps.
 
-Verify with: `manual` — confirm the "## Implementation status" section below names the three existing engines and their files
+Verify with: `manual` — confirm the "## Implementation status" section below names the two existing engines and their files and records the Grand Boule retirement
 
 ### AC-034 — Incomplete velocity layer sets are rejected with uncovered ranges
 
@@ -376,8 +376,8 @@ Restored from the prior `specs/implemented/unified-sampler-suite.md`.
 
 Restored from the prior `specs/implemented/unified-sampler-suite.md`.
 
-- **What is implemented:** Basic sampler functionality is present within `Fermenter` (`sampler.rs`),
-  `Levain` (`voice.rs`), and `Grand_Boule` (`attack_sampler.rs`).
+- **What is implemented:** Basic sampler functionality is present within `Fermenter` (`sampler.rs`)
+  and `Levain` (`voice.rs`). Grand Boule's hybrid sampled-attack pathway was retired in #3999.
 - **What is not implemented / needs refactoring:** Tracked in the prior `spec-of-the-gaps` document.
 - **What is done well:** Core audio primitives (reading buffers, basic playback) exist in other engines.
 

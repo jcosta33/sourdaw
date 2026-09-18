@@ -100,10 +100,9 @@ load average between 20 and 180 from ordinary applications — Claude, Codex, Wi
 an earlier version of this harness gated on load and therefore produced no table at all.
 
 _This_ run was comparatively quiet: the Provenance block above records the load actually sampled,
-3.06 before and 5.47 after, and every row carries its own. That is a measurement, not a promise
-about the next run — which is exactly why the load is printed per row rather than asserted once in
-prose. The bounds argument below is what makes the table valid either way, and a quiet run only
-tightens it.
+and every row carries its own. That is a measurement, not a promise about the next run — which is
+exactly why the load is printed per row rather than asserted once in prose. The bounds argument
+below is what makes the table valid either way, and a quiet run only tightens it.
 
 The way out is one-directional, and it is what makes the result sound: **contention only ever adds
 time to a sample, it never removes it.** So from a single contended run:
