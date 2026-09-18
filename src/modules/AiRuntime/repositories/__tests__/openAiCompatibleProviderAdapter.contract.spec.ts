@@ -34,6 +34,7 @@ const runtime: OpenAiCompatibleCloudRuntime = {
     session_id: null,
     model: FIXTURE.model,
     base_url: 'http://localhost:1234/v1',
+    strict_tool_schemas: true,
 };
 
 const [firstDelta, secondDelta] = FIXTURE.textDeltas;
@@ -168,6 +169,11 @@ function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
                 },
             },
         ],
+        usage: {
+            prompt_tokens: FIXTURE.toolUsage.inputTokens,
+            completion_tokens: FIXTURE.toolUsage.outputTokens,
+            prompt_tokens_details: { cached_tokens: FIXTURE.toolUsage.cacheReadInputTokens },
+        },
     };
 }
 
@@ -191,7 +197,7 @@ function readRequest(): ProviderRequestObservation {
         throw new Error('Expected the adapter to send a JSON request body');
     }
     const body = JSON.parse(sent) as Record<string, unknown>;
-    return { model: body.model, stream: body.stream };
+    return { model: body.model, stream: body.stream, tools: body.tools };
 }
 
 function readSafeMessage(error: unknown): string {
@@ -255,6 +261,7 @@ describeProviderProtocolConformance('OpenAI-compatible chat completions', {
                 calls: plan.calls,
                 providerRequestId: plan.providerRequestId,
                 request: readRequest(),
+                usage: plan.usage,
             };
         } catch (error) {
             return {
@@ -262,7 +269,12 @@ describeProviderProtocolConformance('OpenAI-compatible chat completions', {
                 providerRequestId: null,
                 failure: { safeMessage: readSafeMessage(error) },
                 request: readRequest(),
+                usage: null,
             };
         }
+    },
+    readWireTool: (tool) => {
+        const wireTool = tool as { strict?: unknown; function?: { parameters?: unknown } };
+        return { strict: wireTool.strict, parameters: wireTool.function?.parameters };
     },
 });

@@ -162,9 +162,12 @@ describe('generateToolPlanningOutcome', () => {
 
     it('dispatches a hosted provider through the provider-neutral tool protocol', async () => {
         mocks.backendChain.value = ['cloud'];
-        mocks.generateCloudToolCalls.mockResolvedValue([
-            { id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
-        ]);
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
 
         await expect(generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)).resolves.toMatchObject(
             {
@@ -180,11 +183,49 @@ describe('generateToolPlanningOutcome', () => {
         });
     });
 
+    it('reports the provider-reported usage block for a completed hosted tool plan', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            strictToolSchemas: true,
+            usage: { inputTokens: 21, outputTokens: 6, cacheReadInputTokens: 3, cacheWriteInputTokens: 8 },
+        });
+        const onProviderResult = vi.fn();
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                undefined,
+                'mute the first track',
+                onProviderResult
+            )
+        ).resolves.toMatchObject({ status: 'complete' });
+
+        expect(onProviderResult).toHaveBeenCalledOnce();
+        expect(onProviderResult.mock.calls[0]?.[0]).toMatchObject({
+            status: 'complete',
+            strictToolSchemas: true,
+            cacheWriteInputTokens: 8,
+            usage: {
+                inputTokens: 21,
+                outputTokens: 6,
+                cachedInputTokens: 3,
+                provenance: 'provider-reported',
+            },
+        });
+    });
+
     it('admits the compiled request with the single-sourced output budget and wires it to the provider call', async () => {
         mocks.backendChain.value = ['cloud'];
-        mocks.generateCloudToolCalls.mockResolvedValue([
-            { id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
-        ]);
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
         const onProviderAttempt = vi.fn((_input: ProviderAttemptAdmission) => ({ status: 'admitted' as const }));
 
         await expect(
@@ -222,9 +263,12 @@ describe('generateToolPlanningOutcome', () => {
 
     it('admits the compiled request with the configured model output ceiling', async () => {
         mocks.backendChain.value = ['cloud'];
-        mocks.generateCloudToolCalls.mockResolvedValue([
-            { id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
-        ]);
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
         expect(configureAgentResourceLimits({ maxModelOutputTokens: 1_024 })).toMatchObject({ status: 'configured' });
         const onProviderAttempt = vi.fn((_input: ProviderAttemptAdmission) => ({ status: 'admitted' as const }));
 

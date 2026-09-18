@@ -155,6 +155,16 @@ export type ModelProviderResult = {
         categories: AgentDataCategory[];
         retention: AgentDataRetention;
     };
+    /**
+     * Whether a hosted tool-planning request that produced this result sent a strict
+     * tool schema. Absent for operations that carry no tool schema at all (plain
+     * text, structured output without tools) rather than defaulted to `false`, so a
+     * caller cannot mistake "no tools were sent" for "tools were sent loosely."
+     */
+    strictToolSchemas?: boolean;
+    /** Anthropic-only cache-write usage figure; carried here rather than widening the
+     * broadly shared {@link ModelProviderUsage} that every provider result reads. */
+    cacheWriteInputTokens?: number | null;
 };
 
 export type CompiledModelProviderRequest =

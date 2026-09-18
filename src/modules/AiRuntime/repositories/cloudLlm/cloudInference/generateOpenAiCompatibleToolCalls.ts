@@ -6,8 +6,9 @@ import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
 
 import { buildWireToolNameCodec } from './buildWireToolNameCodec';
-import { type HostedToolPlan } from './hostedToolPlan';
+import { type HostedToolPlan, type HostedToolPlanUsage } from './hostedToolPlan';
 import { parseToolCallArguments } from './parseToolCallArguments';
+import { projectOpenAiStrictToolSchema } from './projectOpenAiStrictToolSchema';
 import { readProviderRequestId } from './readProviderRequestId';
 import { rejectedBatchMessage } from './rejectedBatchMessage';
 import { requestHostedOpenAiProvider } from './requestOpenAiProvider';
@@ -136,13 +137,18 @@ export async function generateOpenAiCompatibleToolCalls({
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage },
         ],
-        tools: toolSchemas.map((schema) => ({
-            ...schema,
-            function: {
-                ...schema.function,
-                name: codec.encode(schema.function.name),
-            },
-        })),
+        tools: toolSchemas.map((schema) => {
+            const useStrictSchema = runtime.strict_tool_schemas === true;
+            const wireSchema = useStrictSchema ? projectOpenAiStrictToolSchema(schema) : schema;
+            return {
+                ...wireSchema,
+                function: {
+                    ...wireSchema.function,
+                    name: codec.encode(wireSchema.function.name),
+                },
+                ...(useStrictSchema ? { strict: true } : {}),
+            };
+        }),
         tool_choice: 'auto',
         n: 1,
         stream: false,
@@ -180,9 +186,29 @@ export async function generateOpenAiCompatibleToolCalls({
     return {
         providerRequestId: isRecord(payload) ? readProviderRequestId(payload.id) : null,
         calls: parseToolCalls(payload, codec.decode),
+        strictToolSchemas: runtime.strict_tool_schemas === true,
+        usage: isRecord(payload) ? readUsage(payload) : null,
     };
 }
 
 function hasErrorName(value: unknown, name: string): boolean {
     return isRecord(value) && value.name === name;
+}
+
+function readTokenCount(value: unknown): number | null {
+    return typeof value === 'number' ? value : null;
+}
+
+function readUsage(payload: Record<string, unknown>): HostedToolPlanUsage | null {
+    if (!isRecord(payload.usage)) {
+        return null;
+    }
+    const details = isRecord(payload.usage.prompt_tokens_details) ? payload.usage.prompt_tokens_details : null;
+    return {
+        inputTokens: readTokenCount(payload.usage.prompt_tokens),
+        outputTokens: readTokenCount(payload.usage.completion_tokens),
+        cacheReadInputTokens: readTokenCount(details?.cached_tokens),
+        // The chat-completions dialect reports no separate cache-write figure.
+        cacheWriteInputTokens: null,
+    };
 }

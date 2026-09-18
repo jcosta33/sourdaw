@@ -439,6 +439,13 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         executor = executors.find((candidate) => candidate === value.executor);
     }
     const fallbackReason = value.fallbackReason === undefined ? undefined : readNullableString(value.fallbackReason);
+    const strictToolSchemasIsValid =
+        value.strictToolSchemas === undefined || typeof value.strictToolSchemas === 'boolean';
+    const strictToolSchemas = strictToolSchemasIsValid ? (value.strictToolSchemas as boolean | undefined) : undefined;
+    const cacheWriteInputTokens =
+        value.cacheWriteInputTokens === undefined || value.cacheWriteInputTokens === null
+            ? value.cacheWriteInputTokens
+            : readNonNegativeInteger(value.cacheWriteInputTokens);
     const disclosure = (() => {
         if (value.disclosure === undefined) {
             return undefined;
@@ -490,7 +497,9 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         routeId === null ||
         (value.executor !== undefined && executor === undefined) ||
         (value.fallbackReason !== undefined && fallbackReason === undefined) ||
-        disclosure === null
+        disclosure === null ||
+        !strictToolSchemasIsValid ||
+        (cacheWriteInputTokens === null && value.cacheWriteInputTokens !== null)
     ) {
         return null;
     }
@@ -510,6 +519,8 @@ function readProviderUsage(value: unknown): AgentRunProviderUsage | null {
         ...(executor === undefined ? {} : { executor }),
         ...(fallbackReason === undefined ? {} : { fallbackReason }),
         ...(disclosure === undefined ? {} : { disclosure }),
+        ...(strictToolSchemas === undefined ? {} : { strictToolSchemas }),
+        ...(cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens }),
     };
 }
 

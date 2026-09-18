@@ -214,6 +214,10 @@ export type AgentRunProviderUsage = {
             unknown: 'unknown';
         };
     };
+    /** Whether the hosted tool-planning request behind this attempt sent a strict tool schema. */
+    strictToolSchemas?: boolean;
+    /** Anthropic-only cache-write usage figure; other providers report no figure for this. */
+    cacheWriteInputTokens?: number | null;
 };
 
 export type AgentRunModelRoute = {

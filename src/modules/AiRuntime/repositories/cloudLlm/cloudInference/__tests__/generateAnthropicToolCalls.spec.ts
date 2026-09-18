@@ -236,6 +236,55 @@ describe('generateAnthropicToolCalls', () => {
         ).rejects.toThrow('invalid tool-planning content type');
     });
 
+    it('sends a strict, bound-free wire schema and reads provider-reported usage', async () => {
+        const boundedSchemas = [
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setTempo',
+                    description: 'Set tempo',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { bpm: { type: 'number', minimum: 20, maximum: 300 } },
+                        required: ['bpm'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        returnPayload({
+            content: [{ type: 'tool_use', id: 'tool-1', name: 'setTempo', input: { bpm: 120 } }],
+            stop_reason: 'tool_use',
+            usage: { input_tokens: 50, output_tokens: 9, cache_read_input_tokens: 5, cache_creation_input_tokens: 8 },
+        });
+
+        const result = await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'faster',
+            toolSchemas: boundedSchemas,
+            maxOutputTokens: 8192,
+            signal: new AbortController().signal,
+        });
+
+        const request = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        if (!request) {
+            throw new Error('Expected a recorded provider request');
+        }
+        const body = JSON.parse(request.body) as {
+            tools: Array<{ strict?: boolean; input_schema: Record<string, unknown> }>;
+        };
+        expect(body.tools[0]?.strict).toBe(true);
+        expect(body.tools[0]?.input_schema).not.toHaveProperty(['properties', 'bpm', 'minimum']);
+        expect(result.strictToolSchemas).toBe(true);
+        expect(result.usage).toEqual({
+            inputTokens: 50,
+            outputTokens: 9,
+            cacheReadInputTokens: 5,
+            cacheWriteInputTokens: 8,
+        });
+    });
+
     it('encodes dotted tool names on the wire and decodes them on the response', async () => {
         const dottedSchemas = [
             {

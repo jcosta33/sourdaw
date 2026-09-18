@@ -5,9 +5,10 @@ import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type OpenAiCloudRuntime } from '../cloudSession';
 
 import { buildWireToolNameCodec } from './buildWireToolNameCodec';
-import { type HostedToolPlan } from './hostedToolPlan';
+import { type HostedToolPlan, type HostedToolPlanUsage } from './hostedToolPlan';
 import { isGpt56FamilyModel } from './openAiModelFamilies';
 import { parseToolCallArguments } from './parseToolCallArguments';
+import { projectOpenAiStrictToolSchema } from './projectOpenAiStrictToolSchema';
 import { readProviderRequestId } from './readProviderRequestId';
 import { rejectedBatchMessage } from './rejectedBatchMessage';
 import { requestHostedOpenAiProvider } from './requestOpenAiProvider';
@@ -121,6 +122,24 @@ function hasErrorName(value: unknown, name: string): boolean {
     return isRecord(value) && value.name === name;
 }
 
+function readTokenCount(value: unknown): number | null {
+    return typeof value === 'number' ? value : null;
+}
+
+function readUsage(payload: Record<string, unknown>): HostedToolPlanUsage | null {
+    if (!isRecord(payload.usage)) {
+        return null;
+    }
+    const details = isRecord(payload.usage.input_tokens_details) ? payload.usage.input_tokens_details : null;
+    return {
+        inputTokens: readTokenCount(payload.usage.input_tokens),
+        outputTokens: readTokenCount(payload.usage.output_tokens),
+        cacheReadInputTokens: readTokenCount(details?.cached_tokens),
+        // The Responses API reports no separate cache-write figure.
+        cacheWriteInputTokens: null,
+    };
+}
+
 export async function generateOpenAiResponsesToolCalls({
     runtime,
     systemPrompt,
@@ -134,13 +153,16 @@ export async function generateOpenAiResponsesToolCalls({
         model: runtime.model,
         instructions: systemPrompt,
         input: [{ role: 'user', content: userMessage }],
-        tools: toolSchemas.map((schema) => ({
-            type: 'function',
-            name: codec.encode(schema.function.name),
-            description: schema.function.description,
-            parameters: schema.function.parameters,
-            strict: false,
-        })),
+        tools: toolSchemas.map((schema) => {
+            const strictSchema = projectOpenAiStrictToolSchema(schema);
+            return {
+                type: 'function',
+                name: codec.encode(strictSchema.function.name),
+                description: strictSchema.function.description,
+                parameters: strictSchema.function.parameters,
+                strict: true,
+            };
+        }),
         tool_choice: 'auto',
         parallel_tool_calls: true,
         max_output_tokens: maxOutputTokens,
@@ -182,5 +204,7 @@ export async function generateOpenAiResponsesToolCalls({
     return {
         providerRequestId: isRecord(payload) ? readProviderRequestId(payload.id) : null,
         calls: parseToolPlan(payload, codec.decode),
+        strictToolSchemas: true,
+        usage: isRecord(payload) ? readUsage(payload) : null,
     };
 }

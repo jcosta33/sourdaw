@@ -167,6 +167,12 @@ function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
             { type: 'tool_use', id: plainCall?.id, name: plainCall?.wireName, input: plainCall?.arguments },
         ],
         stop_reason: 'tool_use',
+        usage: {
+            input_tokens: FIXTURE.toolUsage.inputTokens,
+            output_tokens: FIXTURE.toolUsage.outputTokens,
+            cache_read_input_tokens: FIXTURE.toolUsage.cacheReadInputTokens,
+            cache_creation_input_tokens: 8,
+        },
     };
 }
 
@@ -190,7 +196,7 @@ function readRequest(): ProviderRequestObservation {
         throw new Error('Expected the adapter to send a JSON request body');
     }
     const body = JSON.parse(sent) as Record<string, unknown>;
-    return { model: body.model, stream: body.stream };
+    return { model: body.model, stream: body.stream, tools: body.tools };
 }
 
 function readSafeMessage(error: unknown): string {
@@ -254,6 +260,7 @@ describeProviderProtocolConformance('Anthropic messages', {
                 calls: plan.calls,
                 providerRequestId: plan.providerRequestId,
                 request: readRequest(),
+                usage: plan.usage,
             };
         } catch (error) {
             return {
@@ -261,7 +268,12 @@ describeProviderProtocolConformance('Anthropic messages', {
                 providerRequestId: null,
                 failure: { safeMessage: readSafeMessage(error) },
                 request: readRequest(),
+                usage: null,
             };
         }
+    },
+    readWireTool: (tool) => {
+        const wireTool = tool as { strict?: unknown; input_schema?: unknown };
+        return { strict: wireTool.strict, parameters: wireTool.input_schema };
     },
 });

@@ -165,6 +165,7 @@ export const setCloudProviderConfig = inject({ logger })(
                             authentication: configuration.authentication,
                             adapter: null,
                             session_id: null,
+                            strict_tool_schemas: configuration.strictToolSchemas ?? false,
                         };
                     } else {
                         if (!isDesktopRuntime()) {
@@ -192,6 +193,7 @@ export const setCloudProviderConfig = inject({ logger })(
                                       authentication: configuration.authentication,
                                       adapter,
                                       session_id: sessionId,
+                                      strict_tool_schemas: configuration.strictToolSchemas ?? false,
                                   };
                     }
                 }

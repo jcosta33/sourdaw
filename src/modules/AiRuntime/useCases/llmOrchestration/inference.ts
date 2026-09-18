@@ -28,6 +28,7 @@ import { MODEL_TEXT_MAX_INPUT_TOKENS } from '../../models/ModelTextRequestLimits
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
+import { type HostedToolPlan } from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { initWebLlmEngine } from '../../repositories/webLlm/initWebLlmEngine';
 import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
@@ -328,6 +329,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             let providerSession: ModelProviderSession | null = null;
             let providerSource: ReturnType<typeof createModelProviderStreamWriter> | null = null;
             let providerSessionSettled = false;
+            let cloudToolPlan: HostedToolPlan | null = null;
             try {
                 if (signal?.aborted) {
                     throw createToolPlanningAbortError();
@@ -485,7 +487,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 let outcome: ToolPlanningOutcome;
 
                 if (backend === 'cloud') {
-                    let cloudInference: Promise<ToolCallResult[]>;
+                    let cloudInference: Promise<HostedToolPlan>;
                     if (signal === undefined) {
                         cloudInference = generateCloudToolCalls(
                             providerSystemPrompt,
@@ -502,7 +504,9 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             signal
                         );
                     }
-                    const toolCalls = await waitForInference(cloudInference, signal);
+                    const plan = await waitForInference(cloudInference, signal);
+                    cloudToolPlan = plan;
+                    const toolCalls = plan.calls;
                     outcome = { status: 'complete', toolCalls, proposal: extractAgentPlanProposal(toolCalls) };
                 } else if (backend === 'webllm') {
                     if (!isWebLlmLoaded()) {
@@ -545,9 +549,29 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             },
                         });
                     }
+                    if (cloudToolPlan?.usage) {
+                        providerSource.push({
+                            type: 'usage',
+                            mode: 'final',
+                            usage: {
+                                inputTokens: cloudToolPlan.usage.inputTokens,
+                                outputTokens: cloudToolPlan.usage.outputTokens,
+                                cachedInputTokens: cloudToolPlan.usage.cacheReadInputTokens,
+                                reasoningTokens: null,
+                            },
+                            provenance: 'provider-reported',
+                        });
+                    }
                     const normalizedResult = providerSource.finish({ reason: 'stop' });
                     providerSessionSettled = true;
-                    reportProviderResult(normalizedResult);
+                    const reportedResult: ModelProviderResult = cloudToolPlan
+                        ? {
+                              ...normalizedResult,
+                              strictToolSchemas: cloudToolPlan.strictToolSchemas,
+                              cacheWriteInputTokens: cloudToolPlan.usage?.cacheWriteInputTokens ?? null,
+                          }
+                        : normalizedResult;
+                    reportProviderResult(reportedResult);
                     logger.info(
                         `[AI Engine] (${backend}) ${String(outcome.toolCalls.length)} tool call(s): ${outcome.toolCalls.map((call) => call.name).join(', ')}`
                     );
