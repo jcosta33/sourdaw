@@ -497,9 +497,8 @@ function observeEnvelope(): ObservedEnvelope {
 
 /**
  * A marker that changed between the durable read and the swap belongs to an
- * instance that settled the reset first, so one re-read is enough to see its
- * envelope. A second inconclusive pass is left to a later boot rather than
- * spun on.
+ * instance that settled the reset first, so one re-read is enough to see its envelope. A
+ * second inconclusive pass is left to a later boot rather than spun on.
  */
 const RESET_CLASSIFICATION_ATTEMPTS = 2;
 
@@ -522,14 +521,13 @@ async function settleBoot(): Promise<BranchStateBootOutcome> {
     if (observed.status === 'storage-unavailable') {
         return 'storage-unavailable';
     }
-    if (observed.envelope === null) {
-        // Nothing durable to recover: hold the seed and let the first commit
-        // write revision 1.
-        hydrate(seedEnvelope());
-        return settledOrUnsequenced();
+    if (observed.envelope !== null && observed.envelope.reset !== null) {
+        // Every pass saw a fresh marker the owner kept superseding: it stays, project pending.
+        return 'reset-unavailable';
     }
-    if (observed.envelope.session === null) {
-        hydrate(observed.envelope);
+    // Nothing durable to recover means the seed; an envelope without a session settles as-is.
+    if (observed.envelope === null || observed.envelope.session === null) {
+        hydrate(observed.envelope ?? seedEnvelope());
         return settledOrUnsequenced();
     }
     return recoverAbandonedSession(observed.envelope, observed.envelope.session);
