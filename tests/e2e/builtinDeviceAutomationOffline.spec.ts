@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import type { AutomationLane } from '../../src/modules/Automation/models/Automation';
+
 const SAMPLE_RATE = 48_000;
 const DURATION_SECONDS = 0.5;
 const FRAME_COUNT = SAMPLE_RATE * DURATION_SECONDS;
@@ -158,13 +160,16 @@ for (const input of CASES) {
             source.connect(staticDevice.node.inputNode);
             source.connect(automatedDevice.node.inputNode);
 
-            const lane = {
+            const lane: AutomationLane = {
                 id: 'automation-1',
                 trackId: 'track-1',
                 parameterId: `device-1:${caseInput.parameterId}`,
                 parameterName: caseInput.parameterId,
                 points: [{ beat: 0, value: caseInput.value, curve: 'linear', tension: 0 }],
+                objects: [],
+                visible: true,
                 enabled: true,
+                collapsed: false,
                 minValue: Math.min(-60, caseInput.value),
                 maxValue: Math.max(1_000, caseInput.value),
             };
