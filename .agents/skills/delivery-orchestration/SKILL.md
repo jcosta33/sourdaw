@@ -38,6 +38,27 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 `branch:prune` defaults to dry run and deletes only branches whose every PR is
 merged or closed.
 
+## Claim at lane open
+
+Two agents taking the same work waste both. Before `lane:open`, read
+`git worktree list` and `gh pr list --state open` for a lane or PR already on
+the same issue or surface; a lane or PR you did not open is another agent's
+claim and is read-only for you.
+
+An issue-bound lane claims its issue in the same step: add the
+`status:active` label, remove `status:ready`, and move the tracker board
+item to In progress, reading the project's field and option ids live with
+`gh project field-list` rather than from any recorded list. After delivery,
+verify the issue is closed and the board item reads Done. This is the
+sanctioned manual-`gh` exception for an issue's own state, labels, and
+project membership until `lane:open` performs the claim itself.
+
+An issueless lane's worktree and PR are the claim: choose a slug that names
+the change precisely and publish early, before the head is final if
+needed. Work that outlives one lane or session — a campaign, or a hand-off to
+another agent — is filed first so each lane binds to the issue that
+carries it; a change one lane can land stays issueless.
+
 ## Script order
 
 The delivery sequence, in order:
