@@ -262,7 +262,9 @@ const {
         // Toaster and MIDI-learn bindings above: the sink-wiring assertion
         // pins this exact reference, so registering some other function in
         // its place — or dropping the registration outright — fails here.
-        recordNativeChainReleasesMock: vi.fn(),
+        // Returns a resolved promise so the sink wrapper pin can observe the discard: a
+        // bare undefined-returning mock cannot distinguish wrapper from bare use case.
+        recordNativeChainReleasesMock: vi.fn(() => Promise.resolve()),
         registerReleasedStripReportSinkMock: vi.fn<(sink: (reports: readonly unknown[]) => void) => void>(),
     };
 });
