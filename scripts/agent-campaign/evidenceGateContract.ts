@@ -91,6 +91,14 @@ export const EVIDENCE_SUITE_COMMANDS: Readonly<Record<string, string>> = {
     'AC-063': 'pnpm test:run src/modules/Command/useCases/__tests__/agentBatchBindings.spec.ts',
 };
 
+/**
+ * Extra fixtures a suite reads beyond what its verify command names — data a command loads at
+ * runtime rather than a path token in its own text, so `commandFixturePaths` can never see it.
+ */
+export const EVIDENCE_SUITE_DATA: Readonly<Record<string, readonly string[]>> = {
+    'AC-054': ['evidence/agent-campaign/corpora/development.json', 'evidence/agent-campaign/corpora/held-out.json'],
+};
+
 /** Task ownership of the requirement ids. Every id above appears under exactly one task. */
 export const EVIDENCE_TASK_GROUPINGS: readonly EvidenceTaskGrouping[] = [
     { id: 'TASK-SA-00-protocol-governance', gates: ['AC-006', 'AC-007', 'AC-008', 'AC-017', 'AC-055', 'AC-060'] },

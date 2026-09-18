@@ -796,13 +796,20 @@
             "command": "pnpm test:run src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts && node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --release --manifest evidence/agent-campaign/manifest.json",
             "fixtures": [
                 {
+                    "path": "evidence/agent-campaign/corpora/development.json",
+                    "digest": "45a77e884d452312c5c089a00bdb09b35654c0a97b3ca36b3c8624edb2b37d69"
+                },
+                {
+                    "path": "evidence/agent-campaign/corpora/held-out.json",
+                    "digest": "e6dba1296e36dd7094c735130e4eaa4be0ab99279381420bf8b4015a71bbc00a"
+                },
+                {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
-                    "digest": "7b06d66d695d6159b9212c7e975ddaf6ad871efc83eb99924172f626de203cd9"
+                    "digest": "d27bb464c56d9b1ad9a27b4e1bc51f3f2786cddff7c81cb94aeb65f79ed101f5"
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": null,
-                    "status": "absent"
+                    "digest": "0f5eb90362fbea21e21fee9c15af09395ec4a7af7acf45ba81707e7cd641cb7c"
                 }
             ]
         },
@@ -880,7 +887,7 @@
             "fixtures": [
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
-                    "digest": "7b06d66d695d6159b9212c7e975ddaf6ad871efc83eb99924172f626de203cd9"
+                    "digest": "d27bb464c56d9b1ad9a27b4e1bc51f3f2786cddff7c81cb94aeb65f79ed101f5"
                 },
                 {
                     "path": "src/app/__tests__/agentCampaignBaseline.spec.ts",
