@@ -3706,6 +3706,10 @@ export function shellPort(
             clearDeliveryReceiptAuthority(primaryRoot, number, expectedCurrent),
         syncAuthorshipNotes: ({ mergeCommitSha, headSha, baseSha, headRef, baseRef }) => {
             try {
+                // The squash merge this sync attributes was created through the API moments
+                // earlier, so the local repository has not seen it yet; git-ai's first probe
+                // is a cat-file on it and fails with exit 128 until it is fetched (#4344).
+                shell.run('git', ['fetch', '--no-tags', GITHUB_HTTPS_REMOTE, mergeCommitSha]);
                 // The launcher-bounded child PATH carries only resolved executables; git-ai
                 // reaches it through the trusted path the launcher freezes when present.
                 shell.run(process.env.SOURDAW_TRUSTED_GIT_AI_PATH ?? 'git-ai', [
