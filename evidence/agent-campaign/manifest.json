@@ -138,7 +138,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts",
-                    "digest": "9f5f08ff8e3c8fdcf37128b5eaf37a3cbeb2147e6dd604012e464ba61c32101f"
+                    "digest": "8ab2420b2a557aa8628d0270a8a62a7061884174574d4d617af8c67f84318d6e"
                 }
             ]
         },
@@ -915,7 +915,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts",
-                    "digest": "f605c825fcd8d4f9aabb9ef571d3d754458c9f35b5cd353a048366629ddd4f30"
+                    "digest": "9d556b61cb56b102f90f2ddb191947c84901a457567d70301c3f28b5edd88f94"
                 }
             ]
         },

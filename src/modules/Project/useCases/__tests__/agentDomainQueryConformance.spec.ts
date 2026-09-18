@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import {
     installTransactionalIndexedDb,
     type TransactionalIndexedDbInstallation,
@@ -324,6 +325,9 @@ describe('agent domain query conformance', () => {
     let indexedDb: TransactionalIndexedDbInstallation | null = null;
 
     beforeEach(async () => {
+        // jsdom ships no Web Locks API, and the durable reset the project
+        // bootstrap performs sequences on it.
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         indexedDb = installTransactionalIndexedDb();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
@@ -343,6 +347,7 @@ describe('agent domain query conformance', () => {
             savedPresetId = null;
         }
         await indexedDb?.dispose();
+        vi.unstubAllGlobals();
         indexedDb = null;
     });
 

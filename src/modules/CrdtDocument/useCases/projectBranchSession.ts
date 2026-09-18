@@ -13,11 +13,13 @@ import { validateStoredBranchStoreState } from '../stores/branchStore';
  * `__branches__` document are untrusted input, and this is the boundary where
  * they become durable. Refused as `superseded` once the session no longer owns
  * the durable list, so a session that lost ownership stops writing instead of
- * fighting the owner.
+ * fighting the owner, and as `reset-pending` while a project reset owns the
+ * envelope — the list this session projects describes the project being
+ * replaced.
  */
 export function projectBranchSession(
     handle: BranchSessionHandle,
     state: unknown
-): Promise<BranchStateCommitResult<'superseded'>> {
+): Promise<BranchStateCommitResult<'superseded' | 'reset-pending'>> {
     return branchStateAuthority.projectSession(handle, validateStoredBranchStoreState(state));
 }

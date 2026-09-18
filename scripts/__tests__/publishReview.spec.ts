@@ -70,10 +70,9 @@ function approvalContext(headSha = 'headsha', pr = 42) {
     return { pr, baseRefName: 'main', baseSha: 'base', headSha };
 }
 
-function approvalBody(headSha = 'headsha', summary = 'ok') {
-    return `${summary}\n\nEvidence SHA-256: ${createHash('sha256')
-        .update(JSON.stringify(approvalEvidence(headSha)))
-        .digest('hex')}`;
+// The compact-v1 posted body is exactly the reviewer-written conclusion: no generated footer.
+function approvalBody(summary = 'ok') {
+    return summary;
 }
 
 function removeTemporaryDirectory(root: string): void {
@@ -474,14 +473,23 @@ describe('review publish', () => {
         publishReview(42, { ...fixture.port, assertApprovalContext: undefined });
         expect(fixture.posted.review?.event).toBe('REQUEST_CHANGES');
     });
-    it('compact approval publishes only the conclusion and canonical evidence digest', () => {
+    it('compact approval publishes the document body verbatim with no evidence footer', () => {
         const evidence = approvalEvidence();
         const { port, posted } = fakePort({
             json: { format: 'compact-v1', event: 'APPROVE', body: 'Attacked; held.', comments: [], evidence },
         });
         publishReview(42, port);
-        const digest = createHash('sha256').update(JSON.stringify(evidence)).digest('hex');
-        expect(posted.review?.body).toBe(`Attacked; held.\n\nEvidence SHA-256: ${digest}`);
+        expect(posted.review?.body).toBe('Attacked; held.');
+        expect(posted.review?.body).not.toMatch(/Evidence SHA-256/);
+
+        // A body with surrounding whitespace must post byte for byte: `parseReviewDocument`
+        // rejects only a blank body, so trimming here would silently alter what GitHub stores.
+        const whitespaceBody = 'Attacked; held.\n';
+        const { port: whitespacePort, posted: whitespacePosted } = fakePort({
+            json: { format: 'compact-v1', event: 'APPROVE', body: whitespaceBody, comments: [], evidence },
+        });
+        publishReview(42, whitespacePort);
+        expect(whitespacePosted.review?.body).toBe(whitespaceBody);
     });
 
     it.each(['reviewer', 'acceptance'])('preserves legacy %s payload bytes with and without evidence', (role) => {
@@ -556,11 +564,10 @@ describe('review publish', () => {
     it.each([600, 601])(
         'enforces the complete compact public body at %i Unicode code points on both routes',
         (length) => {
-            const suffixLength = [...approvalBody('headsha', '')].length;
             const document = parseReviewDocument({
                 format: 'compact-v1',
                 event: 'APPROVE',
-                body: '🎵'.repeat(length - suffixLength),
+                body: '🎵'.repeat(length),
                 evidence: approvalEvidence(),
             });
             for (const prepared of [false, true]) {
@@ -573,7 +580,7 @@ describe('review publish', () => {
                     markDefinitiveNoMutationHttpStatus: vi.fn(),
                     registerSuccessfulCompletion: vi.fn(),
                 };
-                const body = approvalBody('headsha', document.body);
+                const body = approvalBody(document.body);
                 const publish = () => {
                     if (prepared) {
                         return publishPreparedReview(
@@ -606,6 +613,9 @@ describe('review publish', () => {
     );
 
     it('canonicalizes evidence keys while preserving claim order', () => {
+        // Rendering no longer folds evidence into the posted body (no digest), so this
+        // exercises `parseApprovalEvidence`'s canonicalization and order-preservation
+        // directly against the parsed document's `evidence`, not through the rendered body.
         const claim = approvalEvidence().claims[0];
         if (claim === undefined) {
             throw new Error('missing claim');
@@ -627,11 +637,12 @@ describe('review publish', () => {
                 ignored: 'extra',
             },
         };
-        expect(renderReviewDocumentBody(parseReviewDocument(raw))).toBe(approvalBody());
+        expect(parseReviewDocument(raw).evidence).toEqual({ headSha: 'headsha', claims: [claim] });
         const second = { observable: 'Other risk', verification: 'Other check', observed: 'Held' };
         const firstOrder = parseReviewDocument({ ...raw, evidence: { headSha: 'headsha', claims: [claim, second] } });
         const reverseOrder = parseReviewDocument({ ...raw, evidence: { headSha: 'headsha', claims: [second, claim] } });
-        expect(renderReviewDocumentBody(firstOrder)).not.toBe(renderReviewDocumentBody(reverseOrder));
+        expect(firstOrder.evidence?.claims).toEqual([claim, second]);
+        expect(reverseOrder.evidence?.claims).toEqual([second, claim]);
     });
 
     it.each([
@@ -694,43 +705,44 @@ describe('review publish', () => {
         expect(parseReviewDocument(parsed)).toEqual(parsed);
     });
 
-    it.each(['observable', 'verification', 'observed'] as const)(
-        'approval evidence %s cannot be altered after preparation before journaling',
-        (field) => {
-            const document = parseReviewDocument({
-                format: 'compact-v1',
-                event: 'APPROVE',
-                body: 'ok',
-                evidence: approvalEvidence(),
-            });
-            const payloadDigest = reviewPublicationPayloadDigest(
-                reviewPublicationPayload({ commitId: 'headsha', ...document, body: renderReviewDocumentBody(document) })
-            );
-            const claim = document.evidence?.claims[0];
-            if (claim === undefined) {
-                throw new Error('missing evidence claim');
-            }
-            claim[field] = 'Altered after preparation';
-            const { port, posted } = fakePort();
-            const journal = vi.fn();
-            expect(() =>
-                publishPreparedReview(
-                    42,
-                    { head: 'headsha', document, payloadDigest, approvalContext: approvalContext() },
-                    port,
-                    {
-                        ownerOid: 'owner',
-                        journalReviewPublication: journal,
-                        markRemoteMutationAttempt: vi.fn(),
-                        markDefinitiveNoMutationHttpStatus: vi.fn(),
-                        registerSuccessfulCompletion: vi.fn(),
-                    }
-                )
-            ).toThrow(/prepared digest/);
-            expect(journal).not.toHaveBeenCalled();
-            expect(posted.review).toBeUndefined();
+    it('approval evidence alteration after preparation does not move the prepared digest', () => {
+        // `payloadDigest` binds `commit_id`/`event`/`body`/`comments` — the literal bytes
+        // `postReview` sends to GitHub — never evidence. Since the posted body no longer folds
+        // evidence into a digest, altering an evidence claim between preparation and posting is
+        // no longer caught here; `assertPublicationEvidence`'s headSha binding is unaffected.
+        const document = parseReviewDocument({
+            format: 'compact-v1',
+            event: 'APPROVE',
+            body: 'ok',
+            evidence: approvalEvidence(),
+        });
+        const payloadDigest = reviewPublicationPayloadDigest(
+            reviewPublicationPayload({ commitId: 'headsha', ...document, body: renderReviewDocumentBody(document) })
+        );
+        const claim = document.evidence?.claims[0];
+        if (claim === undefined) {
+            throw new Error('missing evidence claim');
         }
-    );
+        claim.observable = 'Altered after preparation';
+        const { port, posted } = fakePort();
+        const journal = vi.fn();
+        expect(
+            publishPreparedReview(
+                42,
+                { head: 'headsha', document, payloadDigest, approvalContext: approvalContext() },
+                port,
+                {
+                    ownerOid: 'owner',
+                    journalReviewPublication: journal,
+                    markRemoteMutationAttempt: vi.fn(),
+                    markDefinitiveNoMutationHttpStatus: vi.fn(),
+                    registerSuccessfulCompletion: vi.fn(),
+                }
+            )
+        ).toBe(99);
+        expect(journal).toHaveBeenCalled();
+        expect(posted.review?.body).toBe('ok');
+    });
 
     it('approval evidence preserves legacy parse bytes and rejects blocker assertions', () => {
         const legacy = { event: 'APPROVE', body: 'Historical summary.\n', comments: [] };
@@ -746,8 +758,15 @@ describe('review publish', () => {
     });
 
     it.each([undefined, 'observable', 'verification', 'observed'] as const)(
-        'approval evidence recovery checks actual publication digest, altered=%s',
-        async (altered) => {
+        'recovery replay renders a compact document without the footer, evidence-only bundle edit=%s',
+        async (alteredEvidenceField) => {
+            // The rendered/posted body no longer folds evidence into a digest, so a bundle-file
+            // edit confined to evidence content (never the body GitHub actually stores) no longer
+            // moves the recovery digest: recovery still matches the retained lock and replays the
+            // bare conclusion. This is the accepted consequence of dropping the footer — the
+            // `payloadDigest` binds only `commit_id`/`event`/`body`/`comments`, the literal bytes
+            // `postReview` sends to GitHub, and evidence tampering is no longer detectable through
+            // it. `assertPublicationEvidence`'s headSha binding is unaffected and unchanged.
             const root = mkdtempSync(join(tmpdir(), 'sourdaw-approval-evidence-recovery-'));
             const head = 'a'.repeat(40);
             const number = 42;
@@ -759,13 +778,13 @@ describe('review publish', () => {
                 if (ownerOid === undefined) {
                     throw new Error('missing publication owner');
                 }
-                if (altered) {
+                if (alteredEvidenceField) {
                     const evidence = approvalEvidence(head);
                     const claim = evidence.claims[0];
                     if (claim === undefined) {
                         throw new Error('missing evidence claim');
                     }
-                    claim[altered] = 'Changed result';
+                    claim[alteredEvidenceField] = 'Changed result';
                     writeFileSync(
                         join(root, '.agents', 'review-bundles', `${number}-${head}`, 'review.json'),
                         JSON.stringify({
@@ -777,6 +796,8 @@ describe('review publish', () => {
                         })
                     );
                 }
+                // The body actually posted to GitHub: the bare conclusion, no `Evidence SHA-256` line.
+                const postedBody = approvalBody('Attacked; held.');
                 const inspect = vi.fn(() => ({
                     state: 'OPEN',
                     head,
@@ -784,30 +805,23 @@ describe('review publish', () => {
                         {
                             id: 99,
                             state: 'APPROVED',
-                            body: approvalBody(head, 'Attacked; held.'),
+                            body: postedBody,
                             commitId: head,
                             actorNodeId: REVIEWER_BOT_NODE_ID,
                             comments: [],
                         },
                     ],
                 }));
-                const recovery = runRecoverPublishReviewLockCli(
-                    [String(number), '--owner', ownerOid],
-                    recoveryDependencies(root, inspect)
-                );
-                if (altered) {
-                    await expect(recovery).rejects.toThrow(/payload does not match the retained lock/);
-                    expect(inspect).not.toHaveBeenCalled();
-                    expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)).toBe(
-                        ownerOid
-                    );
-                } else {
-                    await expect(recovery).resolves.toBe(0);
-                    expect(inspect).toHaveBeenCalledTimes(2);
-                    expect(
-                        readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)
-                    ).toBeUndefined();
-                }
+                await expect(
+                    runRecoverPublishReviewLockCli(
+                        [String(number), '--owner', ownerOid],
+                        recoveryDependencies(root, inspect)
+                    )
+                ).resolves.toBe(0);
+                expect(inspect).toHaveBeenCalledTimes(2);
+                expect(
+                    readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)
+                ).toBeUndefined();
             } finally {
                 restorePs();
                 removeTemporaryDirectory(root);
@@ -1040,7 +1054,7 @@ describe('review publish', () => {
                         reviewPublicationPayload({
                             commitId: 'a'.repeat(40),
                             event: 'APPROVE',
-                            body: approvalBody('a'.repeat(40), 'Attacked; held.'),
+                            body: approvalBody('Attacked; held.'),
                             comments: [],
                         })
                     ),
@@ -1988,7 +2002,7 @@ describe('review publish', () => {
 
         publishReview(42, port);
 
-        expect(calls[1]).toBe(`post:headsha:APPROVE:${approvalBody('headsha', 'Attacked the merge gate; it held.')}`);
+        expect(calls[1]).toBe(`post:headsha:APPROVE:${approvalBody('Attacked the merge gate; it held.')}`);
     });
 
     it('does not post when review.json is missing', () => {
@@ -3359,6 +3373,170 @@ describe('shellPort postReview state verification', () => {
         }
     });
 
+    it('recovers an orchestrator acceptance publication past the reviewer approval already landed at the same body', async () => {
+        const fixture = createJournaledRecoveryFixture('prepared');
+        try {
+            const bundle = join(fixture.root, '.agents', 'review-bundles', `${fixture.number}-${fixture.head}`);
+            const document = parseAcceptanceDocument({
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'Attacked; held.',
+                evidence: approvalEvidence(fixture.head),
+            });
+            writeFileSync(join(bundle, 'acceptance.json'), JSON.stringify(document));
+            const owner = readPullRequestMutationLockOwner(fixture.root, fixture.ownerOid, fixture.number);
+            if (owner.version !== 3) {
+                throw new Error('expected publication owner');
+            }
+            const ownerOid = writePullRequestMutationLockOwner(
+                fixture.root,
+                {
+                    ...owner,
+                    reviewerActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    payloadDigest: reviewPublicationPayloadDigest(
+                        reviewPublicationPayload({
+                            commitId: fixture.head,
+                            event: document.event,
+                            body: renderReviewDocumentBody(document),
+                            comments: document.comments,
+                        })
+                    ),
+                },
+                fixture.number
+            );
+            runGit(fixture.root, [
+                'update-ref',
+                pullRequestMutationLockRef(fixture.number),
+                ownerOid,
+                fixture.ownerOid,
+            ]);
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.number), '--owner', ownerOid], {
+                    ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                        otherActorReviews: [
+                            {
+                                id: 7,
+                                state: 'APPROVED',
+                                body: 'Attacked; held.',
+                                commitId: expectedHead,
+                                actorNodeId: REVIEWER_BOT_NODE_ID,
+                                comments: [],
+                            },
+                        ],
+                    })),
+                    authenticateOrchestrator: async () => ({
+                        minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
+                        session: { configDir: '/tmp/user', env: {}, dispose: () => undefined },
+                    }),
+                })
+            ).resolves.toBe(0);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBeUndefined();
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('recovers a reviewer publication past the orchestrator acceptance already landed at the same body', async () => {
+        const fixture = createJournaledRecoveryFixture('prepared');
+        try {
+            const bundle = join(fixture.root, '.agents', 'review-bundles', `${fixture.number}-${fixture.head}`);
+            const document = parseReviewDocument({
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'Attacked; held.',
+                evidence: approvalEvidence(fixture.head),
+                reviewerModel: 'claude-sonnet-5',
+            });
+            writeFileSync(join(bundle, 'review.json'), JSON.stringify(document));
+            const owner = readPullRequestMutationLockOwner(fixture.root, fixture.ownerOid, fixture.number);
+            if (owner.version !== 3) {
+                throw new Error('expected publication owner');
+            }
+            const ownerOid = writePullRequestMutationLockOwner(
+                fixture.root,
+                {
+                    ...owner,
+                    reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+                    payloadDigest: reviewPublicationPayloadDigest(
+                        reviewPublicationPayload({
+                            commitId: fixture.head,
+                            event: document.event,
+                            body: renderReviewDocumentBody(document),
+                            comments: document.comments,
+                        })
+                    ),
+                },
+                fixture.number
+            );
+            runGit(fixture.root, [
+                'update-ref',
+                pullRequestMutationLockRef(fixture.number),
+                ownerOid,
+                fixture.ownerOid,
+            ]);
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.number), '--owner', ownerOid], {
+                    ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                        otherActorReviews: [
+                            {
+                                id: 8,
+                                state: 'APPROVED',
+                                body: 'Attacked; held.',
+                                commitId: expectedHead,
+                                actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                                comments: [],
+                            },
+                        ],
+                    })),
+                })
+            ).resolves.toBe(0);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBeUndefined();
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('recovers a reviewer approval publication past the orchestrator acceptance already landed at the same body', async () => {
+        const fixture = createJournaledRecoveryFixture('prepared');
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                        otherActorReviews: [
+                            {
+                                id: 8,
+                                state: 'APPROVED',
+                                body: 'Attacked; held.',
+                                commitId: expectedHead,
+                                actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                                comments: [],
+                            },
+                        ],
+                    }))
+                )
+            ).resolves.toBe(0);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBeUndefined();
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
     it('retains the adopted owner when unauthorized landed evidence appears only on the second read', async () => {
         const fixture = createJournaledRecoveryFixture();
         let calls = 0;
@@ -4187,7 +4365,7 @@ describe('orchestrator acceptance', () => {
         const fixture = acceptanceFixture();
         await coordinateAcceptReview(42, fixture.dependencies);
         expect(fixture.calls[0]).toContain('/acceptance.json');
-        expect(fixture.posted.review?.body).toBe(approvalBody('headsha', 'Final contract held.'));
+        expect(fixture.posted.review?.body).toBe(approvalBody('Final contract held.'));
         expect(fixture.journal).toHaveBeenCalledWith(
             expect.objectContaining({ expectedHead: 'headsha', reviewerActorNodeId: ORCHESTRATOR_USER_NODE_ID })
         );

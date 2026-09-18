@@ -59,7 +59,13 @@ describe('branch state boot', () => {
         const committed = await instance.authority.commit({ expectedRevision: 0, next: legacy });
 
         expect(committed).toEqual({ status: 'committed', revision: 1 });
-        expect(readStoredEnvelope()).toEqual({ version: 1, revision: 1, current: legacy, session: null });
+        expect(readStoredEnvelope()).toEqual({
+            version: 1,
+            revision: 1,
+            current: legacy,
+            session: null,
+            reset: null,
+        });
     });
 
     it('starts on the default main list when nothing durable exists', async () => {
@@ -72,7 +78,7 @@ describe('branch state boot', () => {
 
     it('adopts an envelope with no session without writing to it', async () => {
         const current = branchList(feature);
-        writeStoredEnvelope({ version: 1, revision: 5, current, session: null });
+        writeStoredEnvelope({ version: 1, revision: 5, current, session: null, reset: null });
 
         const instance = await bootBranchStateInstance();
 
@@ -89,12 +95,19 @@ describe('branch state boot', () => {
             revision: 7,
             current: branchList(feature),
             session: { owner: 'o1', backup, baseRevision: 6, sequence: 1 },
+            reset: null,
         });
 
         const instance = await bootBranchStateInstance();
 
         expect(instance.outcome).toBe('restored');
-        expect(readStoredEnvelope()).toEqual({ version: 1, revision: 8, current: backup, session: null });
+        expect(readStoredEnvelope()).toEqual({
+            version: 1,
+            revision: 8,
+            current: backup,
+            session: null,
+            reset: null,
+        });
         expect(instance.store.value).toEqual(backup);
         expect(manager.requestedNames).toContain(sessionLockName('o1'));
     });
@@ -106,6 +119,7 @@ describe('branch state boot', () => {
             revision: 7,
             current,
             session: { owner: 'o1', backup: branchList(), baseRevision: 6, sequence: 1 },
+            reset: null,
         });
         // The session's own instance, still running: it holds the lifetime lock
         // for as long as the session lives.
@@ -120,6 +134,7 @@ describe('branch state boot', () => {
             revision: 7,
             current,
             session: { owner: 'o1', backup: branchList(), baseRevision: 6, sequence: 1 },
+            reset: null,
         });
         releaseLifetime();
     });
@@ -131,6 +146,7 @@ describe('branch state boot', () => {
             revision: 7,
             current: branchList(feature),
             session: { owner: 'o1', backup, baseRevision: 6, sequence: 1 },
+            reset: null,
         });
         // Held so this boot's recovery transaction waits, which is where the
         // other instance's restore lands.
@@ -140,7 +156,7 @@ describe('branch state boot', () => {
         late.authority.hydrateFromDurableState();
         const settling = late.authority.settleBoot();
 
-        writeStoredEnvelope({ version: 1, revision: 8, current: backup, session: null });
+        writeStoredEnvelope({ version: 1, revision: 8, current: backup, session: null, reset: null });
         releaseTransaction();
 
         await expect(settling).resolves.toBe('settled');
@@ -151,7 +167,7 @@ describe('branch state boot', () => {
 
     it('reports an unsequenceable boot when the Web Locks API is absent', async () => {
         const current = branchList(feature);
-        writeStoredEnvelope({ version: 1, revision: 5, current, session: null });
+        writeStoredEnvelope({ version: 1, revision: 5, current, session: null, reset: null });
         removeBranchStateLockManager();
 
         const instance = await bootBranchStateInstance();
@@ -181,7 +197,7 @@ describe('branch state boot', () => {
     it('keeps the session record when the origin quota refuses the restore', async () => {
         const session = { owner: 'o1', backup: branchList(), baseRevision: 6, sequence: 1 };
         const current = branchList(feature);
-        writeStoredEnvelope({ version: 1, revision: 7, current, session });
+        writeStoredEnvelope({ version: 1, revision: 7, current, session, reset: null });
         const restoreWrites = blockEveryDurableWrite();
 
         const instance = await bootBranchStateInstance();
@@ -190,11 +206,11 @@ describe('branch state boot', () => {
         restoreWrites();
         // The session record survives a refused restore, so the next boot
         // retries it rather than losing the pre-session list.
-        expect(readStoredEnvelope()).toEqual({ version: 1, revision: 7, current, session });
+        expect(readStoredEnvelope()).toEqual({ version: 1, revision: 7, current, session, reset: null });
     });
 
     it('reports a refused read instead of starting a recovery it cannot see', async () => {
-        writeStoredEnvelope({ version: 1, revision: 5, current: branchList(feature), session: null });
+        writeStoredEnvelope({ version: 1, revision: 5, current: branchList(feature), session: null, reset: null });
         const restoreReads = blockEveryDurableRead();
 
         const instance = await bootBranchStateInstance();

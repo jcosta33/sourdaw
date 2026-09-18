@@ -505,12 +505,28 @@ export function createGhSession(token: string, parent: NodeJS.ProcessEnv = proce
     };
 }
 
+export type OrchestratorAuthenticationInput = {
+    env?: NodeJS.ProcessEnv;
+    capture?: (command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => string;
+};
+
+export type OrchestratorAuthentication = { minted: { actorNodeId: string }; session: GhSession };
+
 export async function authenticateOrchestrator(
-    input: {
-        env?: NodeJS.ProcessEnv;
-        capture?: (command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => string;
-    } = {}
-): Promise<{ minted: { actorNodeId: string }; session: GhSession }> {
+    input: OrchestratorAuthenticationInput = {}
+): Promise<OrchestratorAuthentication> {
+    return authenticateOrchestratorSession(input);
+}
+
+/**
+ * The orchestrator credential resolves through synchronous captures alone, so the verification is
+ * exposed in both spellings from one body: `authenticateOrchestrator` for the awaiting callers, and
+ * this one for callers whose own boundary cannot await. Both accept only the immutable orchestrator
+ * actor, so neither is a weaker door than the other.
+ */
+export function authenticateOrchestratorSession(
+    input: OrchestratorAuthenticationInput = {}
+): OrchestratorAuthentication {
     const env = githubAuthorizationGitEnv(input.env ?? process.env);
     const capture = input.capture ?? spawnCapture;
     let token: string;

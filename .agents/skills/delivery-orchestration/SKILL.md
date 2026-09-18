@@ -80,6 +80,15 @@ reviews.
 `lane:publish` targets `main` for ordinary lanes and the verified parent branch
 for registered stack children.
 
+Labels and milestone are written by the author App. Project membership is not:
+installation tokens cannot reach user-owned Projects v2, so the project listing,
+the issue's and PR's own membership, and the `--add-project` write all go through
+the verified operator credential, in a second edit. Without that credential an
+explicit `--project` refuses, and every other case logs one line and leaves
+membership to the operator backfill — the rest of the publish still lands. An
+issueless lane derives its project from its derived type label and keeps it only
+when the live listing names that project.
+
 Author-locked off-convention branches may publish via `--lane <absolute-path>`
 only with an already open PR for that exact branch, proving it a genuine
 stranded lane. This path only pushes; it never writes PR title or body and
@@ -143,20 +152,23 @@ New APPROVE publication requires `format: compact-v1` and
 claim, with every value a nonblank, trimmed, single-line string: `observable`
 is expected behavior from the request or contract, `verification` is the exact
 command, check URL, or source comparison, and `observed` is the decisive result
-or excerpt. Keep the body to a short conclusion. Publication renders a
-generated `Evidence SHA-256: <digest>` footer that binds the retained
-structured evidence without publishing its prose. The complete rendered body
-must fit 600 Unicode code points; reject excess and report the actual and
-allowed lengths, never truncate. Record completeness, the digest, and head
+or excerpt. Keep the body to a short conclusion. Publication posts only that
+reviewer-written body; the structured evidence stays unpublished in
+`review.json`/`acceptance.json`, bound to the head by `headSha`.
+`review:accept` validates only `acceptance.json`'s own head-bound evidence;
+`review.json`'s evidence is read by the orchestrator, not by any script. The
+posted body must fit 600 Unicode code points; reject excess and report the
+actual and allowed lengths, never truncate. Record completeness and head
 binding do not prove truthful execution; the orchestrator remains responsible
-for verifying the claims. REQUEST_CHANGES must not carry approval evidence.
+for verifying the claims.
+REQUEST_CHANGES must not carry approval evidence.
 Unknown fresh formats fail closed. Historical unversioned documents remain
 readable only for exact reconstruction and recovery; never rewrite old bundles
 or posted reviews.
 
 Keep detailed logs in the session and the concise head-bound verification
 record in structured bundle evidence. The public approval carries only its
-short conclusion and evidence digest.
+short conclusion; the structured evidence never leaves the bundle.
 
 ### Stack children
 

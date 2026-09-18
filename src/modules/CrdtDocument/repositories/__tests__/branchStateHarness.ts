@@ -5,7 +5,11 @@ import { createControlledLockManager, type ControlledLockManager } from '#/infra
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { MAIN_BRANCH_ID, type BranchRecord, type BranchStoreState } from '../../stores/branchStore';
 import { type BranchStateBootOutcome } from '../branchStateAuthority';
-import { BRANCH_SESSION_LOCK_PREFIX, BRANCH_STATE_TRANSACTION_LOCK_NAME } from '../withBranchStateLock';
+import {
+    BRANCH_RESET_LOCK_PREFIX,
+    BRANCH_SESSION_LOCK_PREFIX,
+    BRANCH_STATE_TRANSACTION_LOCK_NAME,
+} from '../withBranchStateLock';
 
 export const BRANCH_STATE_STORAGE_KEY = 'sourdaw-branch-state';
 export const LEGACY_BRANCH_STORAGE_KEY = 'sourdaw-branches';
@@ -14,6 +18,10 @@ export { BRANCH_STATE_TRANSACTION_LOCK_NAME };
 
 export function sessionLockName(owner: string): string {
     return `${BRANCH_SESSION_LOCK_PREFIX}${owner}`;
+}
+
+export function resetLockName(owner: string): string {
+    return `${BRANCH_RESET_LOCK_PREFIX}${owner}`;
 }
 
 export const mainBranch: BranchRecord = {
@@ -49,11 +57,26 @@ export type StoredSessionRecord = {
     sequence: number;
 };
 
+export type StoredPersistenceAuthority = {
+    epoch: string;
+    revision: number;
+    rootLineage: string;
+};
+
+export type StoredResetRecord = {
+    owner: string;
+    old: StoredPersistenceAuthority;
+    target: StoredPersistenceAuthority;
+    previous: BranchStoreState;
+    intended: BranchStoreState;
+};
+
 export type StoredEnvelope = {
     version: number;
     revision: number;
     current: BranchStoreState;
     session: StoredSessionRecord | null;
+    reset: StoredResetRecord | null;
 };
 
 export function writeStoredEnvelope(envelope: StoredEnvelope): void {
@@ -181,6 +204,15 @@ export function lastRequestedSessionLockName(manager: ControlledLockManager): st
     const name = manager.requestedNames.findLast((requested) => requested.startsWith(BRANCH_SESSION_LOCK_PREFIX));
     if (name === undefined) {
         throw new Error('No session lifetime lock was requested');
+    }
+    return name;
+}
+
+/** The lifetime lock name an instance minted for its project reset. */
+export function lastRequestedResetLockName(manager: ControlledLockManager): string {
+    const name = manager.requestedNames.findLast((requested) => requested.startsWith(BRANCH_RESET_LOCK_PREFIX));
+    if (name === undefined) {
+        throw new Error('No reset lifetime lock was requested');
     }
     return name;
 }

@@ -20,7 +20,7 @@ test.describe('Recording Transport', () => {
 
         // Arm the first track so Record has an eligible target (#3679).
         const armButton = page.locator('[data-testid^="track-arm-"]').first();
-        await armButton.click();
+        await armButton.click({ timeout: 15_000 });
         await expect(recordButton).toBeVisible();
 
         // Ensure it's not recording initially

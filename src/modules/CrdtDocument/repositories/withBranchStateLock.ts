@@ -10,6 +10,13 @@ export const BRANCH_STATE_TRANSACTION_LOCK_NAME = 'sourdaw:branch-state';
  */
 export const BRANCH_SESSION_LOCK_PREFIX = 'sourdaw:branch-session:';
 
+/**
+ * Held for the lifetime of one project reset by the instance performing it, so
+ * a booting instance can tell a reset still running from one whose instance
+ * died partway. Probed with `ifAvailable`, exactly as a session lock is.
+ */
+export const BRANCH_RESET_LOCK_PREFIX = 'sourdaw:branch-reset:';
+
 export type BranchStateLockOutcome<TResult> =
     | { status: 'ran'; value: Awaited<TResult> }
     | {

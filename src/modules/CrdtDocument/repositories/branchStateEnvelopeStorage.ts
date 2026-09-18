@@ -2,7 +2,10 @@ import { parse } from 'superjson';
 
 import { type LocalStorageKey } from '#/infra/store/storage/LocalStorageKeys';
 
+import { parseCrdtRootLineage } from '../models/CrdtRootLineage';
 import { readBranchStoreStateRecord, type BranchStoreState } from '../stores/branchStore';
+
+import { type CrdtPersistenceAuthority } from './crdtPersistence/persistenceAuthorityModel';
 
 const BRANCH_STATE_STORAGE_KEY: LocalStorageKey = 'sourdaw-branch-state';
 const LEGACY_BRANCH_STORAGE_KEY: LocalStorageKey = 'sourdaw-branches';
@@ -27,6 +30,25 @@ export type BranchSessionRecord = {
 };
 
 /**
+ * A project reset that has started and not yet been finalized.
+ *
+ * Written before the outgoing root is destroyed, so a crash anywhere in the
+ * reset leaves the next boot something to classify rather than an old branch
+ * list to replay over a new or half-written project. `old` and `target` are the
+ * exact persistence authorities either side of the replacement: reading one of
+ * them back is what tells a boot whether the replacement bundle landed.
+ * `previous` is the list to put back when it did not, `intended` the list to
+ * publish when it did.
+ */
+export type BranchResetRecord = {
+    owner: string;
+    old: CrdtPersistenceAuthority;
+    target: CrdtPersistenceAuthority;
+    previous: BranchStoreState;
+    intended: BranchStoreState;
+};
+
+/**
  * One durable record for everything about branch state, written whole.
  *
  * The two-key predecessor (`sourdaw-branches` plus a retained session backup)
@@ -40,6 +62,7 @@ export type BranchStateEnvelope = {
     revision: number;
     current: BranchStoreState;
     session: BranchSessionRecord | null;
+    reset: BranchResetRecord | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -67,6 +90,39 @@ function readSessionRecord(value: unknown): BranchSessionRecord | null | 'invali
     return { owner: value.owner, backup, baseRevision: value.baseRevision, sequence: value.sequence };
 }
 
+function readPersistenceAuthority(value: unknown): CrdtPersistenceAuthority | null {
+    if (!isRecord(value) || typeof value.epoch !== 'string' || !isRevision(value.revision)) {
+        return null;
+    }
+    const rootLineage = parseCrdtRootLineage(value.rootLineage);
+    if (rootLineage === null) {
+        return null;
+    }
+    return { epoch: value.epoch, revision: value.revision, rootLineage };
+}
+
+/**
+ * An absent `reset` key reads as "no reset in progress" rather than as a
+ * corrupt envelope: the envelope shipped one version ago without the field, and
+ * an instance that reads such a record has nothing to recover.
+ */
+function readResetRecord(value: unknown): BranchResetRecord | null | 'invalid' {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    if (!isRecord(value) || typeof value.owner !== 'string' || value.owner === '') {
+        return 'invalid';
+    }
+    const old = readPersistenceAuthority(value.old);
+    const target = readPersistenceAuthority(value.target);
+    const previous = readBranchStoreStateRecord(value.previous);
+    const intended = readBranchStoreStateRecord(value.intended);
+    if (old === null || target === null || previous === null || intended === null) {
+        return 'invalid';
+    }
+    return { owner: value.owner, old, target, previous, intended };
+}
+
 function readEnvelope(value: unknown): BranchStateEnvelope | null {
     if (!isRecord(value) || value.version !== BRANCH_STATE_ENVELOPE_VERSION || !isRevision(value.revision)) {
         return null;
@@ -79,7 +135,11 @@ function readEnvelope(value: unknown): BranchStateEnvelope | null {
     if (session === 'invalid') {
         return null;
     }
-    return { version: BRANCH_STATE_ENVELOPE_VERSION, revision: value.revision, current, session };
+    const reset = readResetRecord(value.reset);
+    if (reset === 'invalid') {
+        return null;
+    }
+    return { version: BRANCH_STATE_ENVELOPE_VERSION, revision: value.revision, current, session, reset };
 }
 
 function resolveLocalStorage(): Storage | null {

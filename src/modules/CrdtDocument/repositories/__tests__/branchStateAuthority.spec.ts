@@ -10,15 +10,41 @@ import {
     bootBranchStateInstance,
     branchList,
     forkedBranch,
+    holdBranchStateLock,
     installBranchStateLockManager,
     isBranchStateLockFree,
+    lastRequestedResetLockName,
     lastRequestedSessionLockName,
+    resetLockName,
     settleBranchStateLocks,
     loadBranchStateInstance,
     readStoredEnvelope,
     writeStoredEnvelope,
     type BranchStateInstance,
+    type StoredPersistenceAuthority,
+    type StoredResetRecord,
 } from './branchStateHarness';
+
+const mocks = vi.hoisted(() => ({
+    loadPersistenceSnapshotFromIdb: vi.fn(),
+    loggerError: vi.fn(),
+    loggerWarn: vi.fn(),
+}));
+
+/**
+ * The durable persistence authority is what a boot compares a reset marker
+ * against, so it is the one dependency these cases drive. Mocked at its module
+ * rather than through a fake IndexedDB because `loadBranchStateInstance`
+ * rebuilds the module graph per instance, and a `vi.mock` factory is the only
+ * seam both graphs resolve to the same object.
+ */
+vi.mock('../crdtPersistence/loadPersistenceSnapshotFromIdb', () => ({
+    loadPersistenceSnapshotFromIdb: mocks.loadPersistenceSnapshotFromIdb,
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { error: mocks.loggerError, warn: mocks.loggerWarn, info: vi.fn(), debug: vi.fn() },
+}));
 
 /**
  * The same list a peer's `__branches__` document hands back: identical values,
@@ -45,12 +71,30 @@ const feature = forkedBranch('feature', 'Feature');
 const guest = forkedBranch('guest', 'Guest');
 const hotfix = forkedBranch('hotfix', 'Hotfix');
 
+/** The authority the outgoing project holds, and the one its replacement will write. */
+const outgoingAuthority: StoredPersistenceAuthority = { epoch: 'epoch-outgoing', revision: 4, rootLineage: 'main' };
+const replacementAuthority: StoredPersistenceAuthority = {
+    epoch: 'epoch-replacement',
+    revision: 5,
+    rootLineage: 'main',
+};
+/** The authority a second replacement in the same session writes. */
+const nextReplacementAuthority: StoredPersistenceAuthority = {
+    epoch: 'epoch-replacement-next',
+    revision: 6,
+    rootLineage: 'main',
+};
+
 describe('branchStateAuthority', () => {
     let manager: ControlledLockManager;
 
     beforeEach(() => {
         window.localStorage.clear();
         manager = installBranchStateLockManager();
+        mocks.loadPersistenceSnapshotFromIdb.mockReset();
+        mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue(null);
+        mocks.loggerError.mockReset();
+        mocks.loggerWarn.mockReset();
     });
 
     afterEach(() => {
@@ -68,18 +112,30 @@ describe('branchStateAuthority', () => {
 
             expect(committed).toEqual({ status: 'committed', revision: 6 });
             expect(instance.authority.captureRevision()).toBe(6);
-            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 6, current: next, session: null });
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 6,
+                current: next,
+                session: null,
+                reset: null,
+            });
         });
 
         it('refuses a write whose observed revision another instance has moved past', async () => {
             const instance = await bootAt(5, branchList());
             const elsewhere = branchList(guest);
-            writeStoredEnvelope({ version: 1, revision: 6, current: elsewhere, session: null });
+            writeStoredEnvelope({ version: 1, revision: 6, current: elsewhere, session: null, reset: null });
 
             const refused = await instance.authority.commit({ expectedRevision: 5, next: branchList(feature) });
 
             expect(refused).toEqual({ status: 'refused', reason: 'conflict' });
-            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 6, current: elsewhere, session: null });
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 6,
+                current: elsewhere,
+                session: null,
+                reset: null,
+            });
             // The refused writer is left holding the revision it has to retry
             // against, not the stale one it decided on.
             expect(instance.store.value).toEqual(elsewhere);
@@ -93,6 +149,7 @@ describe('branchStateAuthority', () => {
                 revision: 7,
                 current: branchList(feature),
                 session: { owner: 'o1', backup, baseRevision: 6, sequence: 1 },
+                reset: null,
             });
             const instance = await loadBranchStateInstance();
             instance.authority.hydrateFromDurableState();
@@ -107,6 +164,7 @@ describe('branchStateAuthority', () => {
                 revision: 9,
                 current: branchList(hotfix),
                 session: null,
+                reset: null,
             });
         });
 
@@ -123,6 +181,7 @@ describe('branchStateAuthority', () => {
                 revision: 7,
                 current: branchList(guest),
                 session: null,
+                reset: null,
             });
 
             // The licence was that one observed record and is spent: an
@@ -132,6 +191,7 @@ describe('branchStateAuthority', () => {
                 revision: 8,
                 current: branchList(guest),
                 session: { owner, backup: branchList(feature), baseRevision: 6, sequence: 0 },
+                reset: null,
             });
 
             const refused = await observer.authority.commit({ expectedRevision: 8, next: branchList(hotfix) });
@@ -148,6 +208,7 @@ describe('branchStateAuthority', () => {
                 revision: 7,
                 current: projected,
                 session: { owner: session, backup: branchList(feature), baseRevision: 6, sequence: 1 },
+                reset: null,
             });
 
             const refused = await observer.authority.commit({ expectedRevision: 6, next: branchList(hotfix) });
@@ -166,6 +227,7 @@ describe('branchStateAuthority', () => {
                 revision: 8,
                 current: branchList(feature),
                 session: { owner: 'o2', backup: branchList(feature), baseRevision: 8, sequence: 0 },
+                reset: null,
             });
 
             const refused = await observer.authority.commit({ expectedRevision: 8, next: branchList(hotfix) });
@@ -189,6 +251,7 @@ describe('branchStateAuthority', () => {
                 revision: 7,
                 current: branchList(hotfix),
                 session: { owner: begun.handle.owner, backup: branchList(feature), baseRevision: 6, sequence: 0 },
+                reset: null,
             });
         });
 
@@ -217,7 +280,7 @@ describe('branchStateAuthority', () => {
                 throw new Error('Expected the transition commit to land');
             }
             const successor = branchList(feature, guest);
-            writeStoredEnvelope({ version: 1, revision: 7, current: successor, session: null });
+            writeStoredEnvelope({ version: 1, revision: 7, current: successor, session: null, reset: null });
 
             const refused = await instance.authority.commit({
                 expectedRevision: committed.revision,
@@ -225,7 +288,13 @@ describe('branchStateAuthority', () => {
             });
 
             expect(refused).toEqual({ status: 'refused', reason: 'conflict' });
-            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 7, current: successor, session: null });
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 7,
+                current: successor,
+                session: null,
+                reset: null,
+            });
             expect(instance.store.value).toEqual(successor);
         });
 
@@ -264,6 +333,7 @@ describe('branchStateAuthority', () => {
                     baseRevision: 6,
                     sequence: 0,
                 },
+                reset: null,
             });
             await expect(isBranchStateLockFree(manager, lastRequestedSessionLockName(manager))).resolves.toBe(false);
         });
@@ -302,6 +372,7 @@ describe('branchStateAuthority', () => {
                 revision: 8,
                 current: second,
                 session: { owner: handle.owner, backup: branchList(feature), baseRevision: 6, sequence: 2 },
+                reset: null,
             });
         });
 
@@ -329,6 +400,7 @@ describe('branchStateAuthority', () => {
                 revision: 7,
                 current: committedLocally,
                 session: { owner: handle.owner, backup: preSession, baseRevision: 6, sequence: 0 },
+                reset: null,
             });
             // The transition that started right after the commit still holds
             // revision 7, so it has to land.
@@ -352,6 +424,7 @@ describe('branchStateAuthority', () => {
                 revision: 7,
                 current: committedLocally,
                 session: { owner: handle.owner, backup: preSession, baseRevision: 6, sequence: 0 },
+                reset: null,
             });
             expect(instance.store.value).toEqual(committedLocally);
         });
@@ -364,7 +437,13 @@ describe('branchStateAuthority', () => {
 
             await expect(instance.authority.endSession(handle)).resolves.toBe('restored');
 
-            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 8, current: local, session: null });
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 8,
+                current: local,
+                session: null,
+                reset: null,
+            });
             expect(instance.store.value).toEqual(local);
             await settleBranchStateLocks();
             await expect(isBranchStateLockFree(manager, lastRequestedSessionLockName(manager))).resolves.toBe(true);
@@ -374,12 +453,18 @@ describe('branchStateAuthority', () => {
             const instance = await bootAt(5, branchList(feature));
             const handle = await beginOwnSession(instance);
             const takenOver = branchList(guest);
-            writeStoredEnvelope({ version: 1, revision: 7, current: takenOver, session: null });
+            writeStoredEnvelope({ version: 1, revision: 7, current: takenOver, session: null, reset: null });
 
             const refused = await instance.authority.projectSession(handle, branchList(hotfix));
 
             expect(refused).toEqual({ status: 'refused', reason: 'superseded' });
-            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 7, current: takenOver, session: null });
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 7,
+                current: takenOver,
+                session: null,
+                reset: null,
+            });
             expect(instance.store.value).toEqual(takenOver);
         });
 
@@ -387,11 +472,17 @@ describe('branchStateAuthority', () => {
             const instance = await bootAt(5, branchList(feature));
             const handle = await beginOwnSession(instance);
             const takenOver = branchList(guest);
-            writeStoredEnvelope({ version: 1, revision: 7, current: takenOver, session: null });
+            writeStoredEnvelope({ version: 1, revision: 7, current: takenOver, session: null, reset: null });
 
             await expect(instance.authority.endSession(handle)).resolves.toBe('superseded');
 
-            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 7, current: takenOver, session: null });
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 7,
+                current: takenOver,
+                session: null,
+                reset: null,
+            });
             expect(instance.store.value).toEqual(takenOver);
             await settleBranchStateLocks();
             await expect(isBranchStateLockFree(manager, lastRequestedSessionLockName(manager))).resolves.toBe(true);
@@ -414,7 +505,13 @@ describe('branchStateAuthority', () => {
 
             await expect(instance.authority.endSession(handle)).resolves.toBe('restored');
 
-            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 7, current: local, session: null });
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 7,
+                current: local,
+                session: null,
+                reset: null,
+            });
             await settleBranchStateLocks();
             await expect(isBranchStateLockFree(manager, lastRequestedSessionLockName(manager))).resolves.toBe(true);
         });
@@ -429,7 +526,13 @@ describe('branchStateAuthority', () => {
             const refused = await instance.authority.projectSession(handle, branchList(hotfix));
 
             expect(refused).toEqual({ status: 'refused', reason: 'superseded' });
-            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 8, current: local, session: null });
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 8,
+                current: local,
+                session: null,
+                reset: null,
+            });
         });
 
         it('never replays a crashed session backup over a branch a later instance committed', async () => {
@@ -458,7 +561,13 @@ describe('branchStateAuthority', () => {
 
             expect(restarted.outcome).toBe('settled');
             expect(restarted.store.value).toEqual(forked);
-            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 9, current: forked, session: null });
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 9,
+                current: forked,
+                session: null,
+                reset: null,
+            });
         });
 
         it('restores its own abandoned session when it restarts alone', async () => {
@@ -472,12 +581,577 @@ describe('branchStateAuthority', () => {
 
             expect(restarted.outcome).toBe('restored');
             expect(restarted.store.value).toEqual(local);
-            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 8, current: local, session: null });
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 8,
+                current: local,
+                session: null,
+                reset: null,
+            });
         });
     });
 
+    describe('project resets', () => {
+        it('records the reset before the outgoing project is destroyed', async () => {
+            const current = branchList(feature);
+            const instance = await bootAt(5, current);
+            const intended = branchList();
+
+            const begun = await beginReset(instance, intended);
+
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 6,
+                current,
+                session: null,
+                reset: {
+                    owner: begun.owner,
+                    old: outgoingAuthority,
+                    target: replacementAuthority,
+                    previous: current,
+                    intended,
+                },
+            });
+            expect(lastRequestedResetLockName(manager)).toBe(resetLockName(begun.owner));
+            await expect(isBranchStateLockFree(manager, resetLockName(begun.owner))).resolves.toBe(false);
+        });
+
+        it('refuses to reset while a collaboration session owns the durable list', async () => {
+            await beginForeignSession(5, branchList(feature));
+            const instance = await bootBranchStateInstance();
+            const before = readStoredEnvelope();
+
+            const refused = await instance.authority.beginReset({
+                old: outgoingAuthority,
+                target: replacementAuthority,
+                intended: branchList(),
+            });
+
+            expect(refused).toEqual({ status: 'refused', reason: 'session-active' });
+            expect(readStoredEnvelope()).toEqual(before);
+            await settleBranchStateLocks();
+            await expect(isBranchStateLockFree(manager, lastRequestedResetLockName(manager))).resolves.toBe(true);
+        });
+
+        it('refuses to begin a second reset over one already recorded', async () => {
+            const current = branchList(feature);
+            const marker = storedReset('other-instance', current, branchList());
+            writeStoredEnvelope({ version: 1, revision: 5, current, session: null, reset: marker });
+            const releaseForeignReset = holdBranchStateLock(manager, resetLockName('other-instance'));
+            const instance = await bootBranchStateInstance();
+            expect(instance.outcome).toBe('reset-live');
+
+            const refused = await instance.authority.beginReset({
+                old: outgoingAuthority,
+                target: replacementAuthority,
+                intended: branchList(),
+            });
+
+            expect(refused).toEqual({ status: 'refused', reason: 'reset-active' });
+            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 5, current, session: null, reset: marker });
+            releaseForeignReset();
+        });
+
+        it('refuses an ordinary branch write while a reset owns the envelope', async () => {
+            const current = branchList(feature);
+            const instance = await bootAt(5, current);
+            await beginReset(instance, branchList());
+            const before = readStoredEnvelope();
+
+            const refused = await instance.authority.commit({ expectedRevision: 6, next: branchList(hotfix) });
+
+            expect(refused).toEqual({ status: 'refused', reason: 'reset-pending' });
+            expect(readStoredEnvelope()).toEqual(before);
+        });
+
+        it('refuses to begin a collaboration session while a reset owns the envelope', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            await beginReset(instance, branchList());
+
+            const refused = await instance.authority.beginSession();
+
+            expect(refused).toEqual({ status: 'refused', reason: 'reset-pending' });
+            await settleBranchStateLocks();
+            await expect(isBranchStateLockFree(manager, lastRequestedSessionLockName(manager))).resolves.toBe(true);
+        });
+
+        it('publishes the replacement list and clears the marker once the target authority is durable', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const intended = branchList();
+            const begun = await beginReset(instance, intended);
+
+            await expect(instance.authority.finalizeReset(begun, replacementAuthority)).resolves.toBe('finalized');
+
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 7,
+                current: intended,
+                session: null,
+                reset: null,
+            });
+            expect(instance.store.value).toEqual(intended);
+            await settleBranchStateLocks();
+            await expect(isBranchStateLockFree(manager, resetLockName(begun.owner))).resolves.toBe(true);
+        });
+
+        it('leaves the reset pending when the durable authority is still the outgoing one', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const begun = await beginReset(instance, branchList());
+            const before = readStoredEnvelope();
+
+            await expect(instance.authority.finalizeReset(begun, outgoingAuthority)).resolves.toBe(
+                'authority-mismatch'
+            );
+
+            expect(readStoredEnvelope()).toEqual(before);
+            await expect(isBranchStateLockFree(manager, resetLockName(begun.owner))).resolves.toBe(false);
+        });
+
+        /**
+         * An incremental save landed between the replacement's snapshot and
+         * this call, so the committed authority carries a later revision under
+         * the epoch this reset minted. It is still this replacement.
+         */
+        it('finalizes against a replacement authority an ordinary save has advanced', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const intended = branchList();
+            const begun = await beginReset(instance, intended);
+
+            await expect(
+                instance.authority.finalizeReset(begun, {
+                    ...replacementAuthority,
+                    revision: replacementAuthority.revision + 1,
+                })
+            ).resolves.toBe('finalized');
+
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 7,
+                current: intended,
+                session: null,
+                reset: null,
+            });
+            expect(instance.store.value).toEqual(intended);
+        });
+
+        it('leaves the reset pending when the replacement committed under another root lineage', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const begun = await beginReset(instance, branchList());
+            const before = readStoredEnvelope();
+
+            await expect(
+                instance.authority.finalizeReset(begun, {
+                    ...replacementAuthority,
+                    rootLineage: 'lineage-forked',
+                })
+            ).resolves.toBe('authority-mismatch');
+
+            expect(readStoredEnvelope()).toEqual(before);
+            await expect(isBranchStateLockFree(manager, resetLockName(begun.owner))).resolves.toBe(false);
+        });
+
+        it('leaves the reset pending when no save of the replacement committed at all', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const begun = await beginReset(instance, branchList());
+            const before = readStoredEnvelope();
+
+            await expect(instance.authority.finalizeReset(begun, null)).resolves.toBe('authority-mismatch');
+
+            expect(readStoredEnvelope()).toEqual(before);
+            await expect(isBranchStateLockFree(manager, resetLockName(begun.owner))).resolves.toBe(false);
+        });
+
+        it('reports a reset another instance already settled without writing over its list', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const begun = await beginReset(instance, branchList());
+            const settledElsewhere = branchList(guest);
+            writeStoredEnvelope({
+                version: 1,
+                revision: 7,
+                current: settledElsewhere,
+                session: null,
+                reset: null,
+            });
+
+            await expect(instance.authority.finalizeReset(begun, replacementAuthority)).resolves.toBe('superseded');
+
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 7,
+                current: settledElsewhere,
+                session: null,
+                reset: null,
+            });
+            expect(instance.store.value).toEqual(settledElsewhere);
+            await settleBranchStateLocks();
+            await expect(isBranchStateLockFree(manager, resetLockName(begun.owner))).resolves.toBe(true);
+        });
+
+        /**
+         * C6 — the first reset never finalized and nothing re-classifies its
+         * marker while the session runs, so refusing here would wedge every
+         * later New Project until a reload. The outgoing project is still the
+         * durable one, so the rollback list the new marker inherits is the one
+         * the abandoned reset recorded.
+         */
+        it('supersedes its own pending reset, inheriting the rollback list, when the outgoing project is durable', async () => {
+            const current = branchList(feature);
+            const instance = await bootAt(5, current);
+            const abandoned = await beginReset(instance, branchList(guest));
+
+            const begun = await instance.authority.beginReset({
+                old: outgoingAuthority,
+                target: nextReplacementAuthority,
+                intended: branchList(),
+            });
+
+            expect(begun.status).toBe('begun');
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 7,
+                current,
+                session: null,
+                reset: {
+                    owner: begun.status === 'begun' ? begun.handle.owner : '',
+                    old: outgoingAuthority,
+                    target: nextReplacementAuthority,
+                    previous: current,
+                    intended: branchList(),
+                },
+            });
+            // The superseded marker has left the envelope, so its holder can
+            // no longer publish anything and its lifetime lock describes
+            // nothing a boot has to wait for.
+            await expect(instance.authority.finalizeReset(abandoned, replacementAuthority)).resolves.toBe('superseded');
+            await settleBranchStateLocks();
+            await expect(isBranchStateLockFree(manager, resetLockName(abandoned.owner))).resolves.toBe(true);
+            // The retry is a whole reset: it finalizes on its own target and
+            // leaves the envelope clean, so the session is no longer wedged.
+            if (begun.status !== 'begun') {
+                throw new Error(`Expected a reset, got ${begun.reason}`);
+            }
+            await expect(instance.authority.finalizeReset(begun.handle, nextReplacementAuthority)).resolves.toBe(
+                'finalized'
+            );
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 8,
+                current: branchList(),
+                session: null,
+                reset: null,
+            });
+        });
+
+        /**
+         * C6b — the abandoned replacement did reach storage, it only failed to
+         * finalize. Its list is the durable project's, so that is the list the
+         * new reset has to restore if it rolls back.
+         */
+        it('supersedes its own pending reset, inheriting its intended list, when the replacement is durable', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const firstIntended = branchList(guest);
+            await beginReset(instance, firstIntended);
+
+            const begun = await instance.authority.beginReset({
+                old: replacementAuthority,
+                target: nextReplacementAuthority,
+                intended: branchList(),
+            });
+
+            expect(begun.status).toBe('begun');
+            // `current` is the settlement's too: the abandoned replacement is
+            // the durable project, so republishing the list this envelope was
+            // frozen with would put the project that reset replaced back.
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 7,
+                current: firstIntended,
+                session: null,
+                reset: {
+                    owner: begun.status === 'begun' ? begun.handle.owner : '',
+                    old: replacementAuthority,
+                    target: nextReplacementAuthority,
+                    previous: firstIntended,
+                    intended: branchList(),
+                },
+            });
+        });
+
+        /**
+         * C6c — the durable authority names neither side of the abandoned
+         * reset, so no list it carries describes the durable project and only a
+         * boot can say what that reset left.
+         */
+        it('refuses a second reset when the durable authority settles neither side of its own marker', async () => {
+            const current = branchList(feature);
+            const instance = await bootAt(5, current);
+            const abandoned = await beginReset(instance, branchList(guest));
+            const before = readStoredEnvelope();
+
+            const refused = await instance.authority.beginReset({
+                old: { epoch: 'epoch-elsewhere', revision: 9, rootLineage: 'main' },
+                target: nextReplacementAuthority,
+                intended: branchList(),
+            });
+
+            expect(refused).toEqual({ status: 'refused', reason: 'reset-active' });
+            expect(readStoredEnvelope()).toEqual(before);
+            // The abandoned reset is still the live one, lock included.
+            await expect(isBranchStateLockFree(manager, resetLockName(abandoned.owner))).resolves.toBe(false);
+        });
+
+        /**
+         * C7 — while this instance's reset is pending, `current` is still the
+         * outgoing project's list. A refused branch write must not put it back
+         * over the replacement's root: every later branch action would write
+         * the replaced project's branches there.
+         */
+        it('leaves the replacement list in memory when a branch write is refused during its own reset', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const intended = branchList();
+            await beginReset(instance, intended);
+            // The reset publishes the replacement's list, as
+            // `resetCrdtProjectAuthority` does once the marker is durable.
+            instance.store.set(intended);
+
+            const refused = await instance.authority.commit({ expectedRevision: 6, next: branchList(hotfix) });
+
+            expect(refused).toEqual({ status: 'refused', reason: 'reset-pending' });
+            expect(instance.store.value).toEqual(intended);
+        });
+
+        it('keeps the reset pending when its finalization cannot be written, and finishes on retry', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const intended = branchList();
+            const begun = await beginReset(instance, intended);
+            const before = readStoredEnvelope();
+            const restoreWrites = blockEveryDurableWrite();
+
+            await expect(instance.authority.finalizeReset(begun, replacementAuthority)).resolves.toBe('write-failed');
+
+            restoreWrites();
+            expect(readStoredEnvelope()).toEqual(before);
+            await expect(isBranchStateLockFree(manager, resetLockName(begun.owner))).resolves.toBe(false);
+
+            await expect(instance.authority.finalizeReset(begun, replacementAuthority)).resolves.toBe('finalized');
+
+            expect(readStoredEnvelope()?.reset).toBeNull();
+            expect(readStoredEnvelope()?.current).toEqual(intended);
+        });
+    });
+
+    describe('boot classification of an abandoned reset', () => {
+        const current = branchList(feature);
+        const previous = branchList(feature, guest);
+        const intended = branchList();
+
+        function writeAbandonedReset(): StoredResetRecord {
+            const marker = storedReset('crashed-instance', previous, intended);
+            writeStoredEnvelope({ version: 1, revision: 5, current, session: null, reset: marker });
+            return marker;
+        }
+
+        it('leaves a reset alone while the instance performing it is still alive', async () => {
+            const marker = writeAbandonedReset();
+            const releaseReset = holdBranchStateLock(manager, resetLockName('crashed-instance'));
+
+            const booted = await bootBranchStateInstance();
+
+            expect(booted.outcome).toBe('reset-live');
+            expect(booted.store.value).toEqual(current);
+            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 5, current, session: null, reset: marker });
+            releaseReset();
+        });
+
+        it('rolls the reset back when the outgoing project is still the durable one', async () => {
+            writeAbandonedReset();
+            durableAuthority(outgoingAuthority);
+
+            const booted = await bootBranchStateInstance();
+
+            expect(booted.outcome).toBe('reset-rolled-back');
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 6,
+                current: previous,
+                session: null,
+                reset: null,
+            });
+            expect(booted.store.value).toEqual(previous);
+        });
+
+        it('finalizes the reset when the replacement reached storage', async () => {
+            writeAbandonedReset();
+            durableAuthority(replacementAuthority);
+
+            const booted = await bootBranchStateInstance();
+
+            expect(booted.outcome).toBe('reset-finalized');
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 6,
+                current: intended,
+                session: null,
+                reset: null,
+            });
+            expect(booted.store.value).toEqual(intended);
+        });
+
+        /**
+         * Another tab saved the outgoing project after this reset read its
+         * authority. The durable project is still plainly the outgoing one —
+         * a save advances the revision, it does not change which project is
+         * on disk — so the reset rolls back rather than stranding the marker.
+         */
+        it('rolls the reset back when the outgoing project was saved after the reset read it', async () => {
+            writeAbandonedReset();
+            durableAuthority({ ...outgoingAuthority, revision: outgoingAuthority.revision + 1 });
+
+            const booted = await bootBranchStateInstance();
+
+            expect(booted.outcome).toBe('reset-rolled-back');
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 6,
+                current: previous,
+                session: null,
+                reset: null,
+            });
+            expect(booted.store.value).toEqual(previous);
+        });
+
+        /**
+         * The mirror case: the replacement reached storage and then took an
+         * ordinary save — the user pressing Cmd+S after a finalization that
+         * could not be written. The replacement is the durable project.
+         */
+        it('finalizes the reset when the replacement was saved again after it reached storage', async () => {
+            writeAbandonedReset();
+            durableAuthority({ ...replacementAuthority, revision: replacementAuthority.revision + 1 });
+
+            const booted = await bootBranchStateInstance();
+
+            expect(booted.outcome).toBe('reset-finalized');
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 6,
+                current: intended,
+                session: null,
+                reset: null,
+            });
+            expect(booted.store.value).toEqual(intended);
+        });
+
+        it('leaves the marker when a fork moved the outgoing project to another root lineage', async () => {
+            const marker = writeAbandonedReset();
+            const forked = { ...outgoingAuthority, rootLineage: 'lineage-forked' };
+            durableAuthority(forked);
+
+            const booted = await bootBranchStateInstance();
+
+            expect(booted.outcome).toBe('reset-unavailable');
+            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 5, current, session: null, reset: marker });
+            expect(booted.store.value).toEqual(current);
+            expect(reportedResetError()).toContain(`epoch ${forked.epoch} revision ${forked.revision}`);
+        });
+
+        it('leaves the marker when the replacement is durable under another root lineage', async () => {
+            const marker = writeAbandonedReset();
+            const forked = { ...replacementAuthority, rootLineage: 'lineage-forked' };
+            durableAuthority(forked);
+
+            const booted = await bootBranchStateInstance();
+
+            expect(booted.outcome).toBe('reset-unavailable');
+            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 5, current, session: null, reset: marker });
+            expect(booted.store.value).toEqual(current);
+            expect(reportedResetError()).toContain(`epoch ${forked.epoch} revision ${forked.revision}`);
+        });
+
+        it('leaves the marker when the durable authority belongs to a third epoch', async () => {
+            const marker = writeAbandonedReset();
+            const foreign = { epoch: 'epoch-foreign', revision: 9, rootLineage: 'main' };
+            durableAuthority(foreign);
+
+            const booted = await bootBranchStateInstance();
+
+            expect(booted.outcome).toBe('reset-unavailable');
+            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 5, current, session: null, reset: marker });
+            expect(booted.store.value).toEqual(current);
+            expect(reportedResetError()).toContain(`epoch ${foreign.epoch} revision ${foreign.revision}`);
+        });
+
+        it('leaves the marker when the durable authority cannot be read', async () => {
+            const marker = writeAbandonedReset();
+            mocks.loadPersistenceSnapshotFromIdb.mockRejectedValue(new Error('IDB transaction failed'));
+
+            const booted = await bootBranchStateInstance();
+
+            expect(booted.outcome).toBe('reset-unavailable');
+            expect(readStoredEnvelope()).toEqual({ version: 1, revision: 5, current, session: null, reset: marker });
+            expect(booted.store.value).toEqual(current);
+            expect(mocks.loggerError).toHaveBeenCalled();
+        });
+
+        it('defers to the instance that settled the reset while the authority was being read', async () => {
+            writeAbandonedReset();
+            const settledElsewhere = branchList(hotfix);
+            mocks.loadPersistenceSnapshotFromIdb.mockImplementation(async () => {
+                writeStoredEnvelope({
+                    version: 1,
+                    revision: 6,
+                    current: settledElsewhere,
+                    session: null,
+                    reset: null,
+                });
+                return { authority: outgoingAuthority, bundle: null };
+            });
+
+            const booted = await bootBranchStateInstance();
+
+            expect(booted.outcome).toBe('settled');
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 6,
+                current: settledElsewhere,
+                session: null,
+                reset: null,
+            });
+            expect(booted.store.value).toEqual(settledElsewhere);
+        });
+    });
+
+    function storedReset(owner: string, previous: BranchStoreState, intended: BranchStoreState): StoredResetRecord {
+        return { owner, old: outgoingAuthority, target: replacementAuthority, previous, intended };
+    }
+
+    function durableAuthority(authority: StoredPersistenceAuthority): void {
+        mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({ authority, bundle: null });
+    }
+
+    /** The message of the error a boot reported about an unclassifiable reset. */
+    function reportedResetError(): string {
+        const [reported] = mocks.loggerError.mock.calls.at(-1) ?? [];
+        if (!(reported instanceof Error)) {
+            throw new Error('No reset recovery error was reported');
+        }
+        return reported.message;
+    }
+
+    async function beginReset(instance: BranchStateInstance, intended: BranchStoreState): Promise<{ owner: string }> {
+        const begun = await instance.authority.beginReset({
+            old: outgoingAuthority,
+            target: replacementAuthority,
+            intended,
+        });
+        if (begun.status !== 'begun') {
+            throw new Error(`Expected a reset, got ${begun.reason}`);
+        }
+        return begun.handle;
+    }
+
     async function bootAt(revision: number, current: BranchStoreState): Promise<BranchStateInstance> {
-        writeStoredEnvelope({ version: 1, revision, current, session: null });
+        writeStoredEnvelope({ version: 1, revision, current, session: null, reset: null });
         const instance = await bootBranchStateInstance();
         return instance;
     }

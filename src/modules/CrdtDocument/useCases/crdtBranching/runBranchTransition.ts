@@ -13,6 +13,7 @@ import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStateAuthority } from '../../repositories/branchStateAuthority';
 import { branchStore, type BranchStoreState } from '../../stores/branchStore';
 import { compactProject } from '../compactProject';
+import { currentPersistenceReplacement } from '../currentPersistenceReplacement';
 import { loadCrdtProject } from '../loadCrdtProject';
 import { projectCrdtToStores } from '../projection/projectProjection';
 
@@ -77,13 +78,25 @@ async function recoverFailedTransition({
     capturedRootIdentity,
     snapshots,
     committedRevision,
+    capturedReplacement,
 }: {
     error: unknown;
     previousState: BranchStoreState;
     capturedRootIdentity: number;
     snapshots: DocumentSnapshot[];
     committedRevision: number | null;
+    capturedReplacement: number;
 }): Promise<void> {
+    if (currentPersistenceReplacement() !== capturedReplacement) {
+        // The project was replaced under this transition. The documents these
+        // snapshots describe belong to a repository that no longer exists, and
+        // the branch list the rollback would restore describes that repository
+        // too — writing either back would put the replaced project's branches
+        // over the replacement's.
+        logger.warn('[CrdtDocument] Skipped branch transition rollback: the project was replaced mid-transition.');
+        return;
+    }
+
     for (const snapshot of snapshots) {
         restoreDocumentSnapshot(snapshot, capturedRootIdentity);
     }
@@ -146,6 +159,7 @@ export async function runBranchTransition<TResult>({
     // subscribers make count as an outside writer, and a batch that detects one
     // revokes its own execution authority (Audit CC-10).
     const projectionScope = captureAutomergeStorageTransactionScope();
+    const capturedReplacement = currentPersistenceReplacement();
     const snapshots = [...new Set(affectedDocIds)].map(createDocumentSnapshot);
     branchTransitionInProgress = true;
 
@@ -178,7 +192,14 @@ export async function runBranchTransition<TResult>({
         // Nothing awaits the persistence once the transition is unwinding, and
         // an unobserved rejection here would be reported as an unhandled one.
         void persistence?.catch(() => undefined);
-        await recoverFailedTransition({ error, previousState, capturedRootIdentity, snapshots, committedRevision });
+        await recoverFailedTransition({
+            error,
+            previousState,
+            capturedRootIdentity,
+            snapshots,
+            committedRevision,
+            capturedReplacement,
+        });
         throw error;
     } finally {
         branchTransitionInProgress = false;

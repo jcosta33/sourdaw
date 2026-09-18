@@ -30,7 +30,8 @@ const {
     mockClearUndoHistory,
     mockCompactProject,
     mockProjectActionHistoryToStore,
-    mockResetCrdtProjectAuthority,
+    mockResetCrdtProject,
+    mockFinalizeReset,
     mockStartCrdtAutoSave,
     mockUnloadLoadedExternalPlugins,
     mockEnsureTrackStrips,
@@ -46,7 +47,11 @@ const {
     mockClearUndoHistory: vi.fn(),
     mockCompactProject: vi.fn(() => Promise.resolve()),
     mockProjectActionHistoryToStore: vi.fn(),
-    mockResetCrdtProjectAuthority: vi.fn(),
+    mockResetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
+        onAuthorityReplaced?.();
+        return Promise.resolve({ status: 'replaced', finalize: mockFinalizeReset });
+    }),
+    mockFinalizeReset: vi.fn(() => Promise.resolve('finalized')),
     mockStartCrdtAutoSave: vi.fn(() => () => {}),
     mockUnloadLoadedExternalPlugins: vi.fn(() => Promise.resolve()),
     mockEnsureTrackStrips: vi.fn(),
@@ -152,7 +157,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
     replaceCrdtDocInLineage: vi.fn(),
-    resetCrdtProjectAuthority: mockResetCrdtProjectAuthority,
+    resetCrdtProject: mockResetCrdtProject,
     endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
@@ -362,6 +367,11 @@ describe('project load dirty tracking (audit M-011)', () => {
                     throw new Error('initial compaction failed');
                 }
             });
+            if (compactionRejects) {
+                // Nothing of the fresh project reached storage, so its reset
+                // cannot finalize and the minted identity stays non-durable.
+                mockFinalizeReset.mockResolvedValueOnce('authority-mismatch');
+            }
 
             await withRealAutomergeStoragePort(async (readMutationCount) => {
                 await expect(newProject('Fresh Project')).resolves.toBe(true);

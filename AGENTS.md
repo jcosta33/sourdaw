@@ -261,8 +261,11 @@ family (flash, mini, pro, air, codex, thinking) and dropping only deployment-rou
 date-snapshot suffixes. `lane:publish` labels the PR with the model's bare name and carries the
 milestone and project membership of the bound issue;
 `--milestone`/`--project` override those values by open title on any lane — left empty rather than
-forced. Project membership is applied when the author App can access the owner's projects;
-otherwise it is left to the operator backfill. The PR also carries the repository's descriptive
+forced. Project membership is read and applied through the verified operator credential, because
+installation tokens cannot reach user-owned Projects v2; without that credential the publish says
+so and leaves membership to the operator backfill, while everything else stays under the author
+App. An issueless lane derives its project from its derived type label, and applies it only when a
+project of that name exists. The PR also carries the repository's descriptive
 labels: the bound issue's labels minus the `priority:` and `status:` namespaces, or on an issueless
 lane one type label derived from the conventional subject (`feat` → `enhancement`,
 `fix` → `bug`, `docs` → `documentation`); `--label <name>` adds more by live canonical name, and
@@ -328,8 +331,9 @@ gates exclude hand-rolled equivalents or bypasses. The only manual `gh` write ex
 correcting an issue's own state, labels, milestone, project membership, or sub-issue links; and
 backfilling a pull request's own labels, milestone, or project membership predating
 `lane:publish`'s metadata assertion — these use the operator account. Scripts use their
-designated App identities except final orchestrator acceptance and merge, which use the verified
-`jcosta33` user identity; no other manual `gh pr` write qualifies. Lane tooling owns every
+designated App identities except final orchestrator acceptance and merge, and `lane:publish`'s
+project-membership read and `--add-project` edit, which use the verified `jcosta33` user
+identity; no other manual `gh pr` write qualifies. Lane tooling owns every
 `git push`: other pushes break review anchors and can strand lanes. Read-only `gh` is
 unrestricted; use it for live tracker state.
 

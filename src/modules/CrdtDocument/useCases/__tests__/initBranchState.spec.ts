@@ -85,7 +85,7 @@ describe('initBranchState', () => {
     });
 
     it('hydrates the durable branch list before anything can read a branch id', async () => {
-        writeStoredEnvelope({ version: 1, revision: 4, current: preSessionState, session: null });
+        writeStoredEnvelope({ version: 1, revision: 4, current: preSessionState, session: null, reset: null });
 
         const { initBranchState, readBranchIds, whenBranchStateSettled } = await loadInitBranchState(manager);
         initBranchState();
@@ -105,6 +105,7 @@ describe('initBranchState', () => {
             revision: 7,
             current: sessionProjectedState,
             session: { owner: 'o1', backup: preSessionState, baseRevision: 6, sequence: 1 },
+            reset: null,
         });
 
         const { initBranchState, readBranchIds, whenBranchStateSettled } = await loadInitBranchState(manager);
@@ -117,6 +118,7 @@ describe('initBranchState', () => {
             revision: 8,
             current: preSessionState,
             session: null,
+            reset: null,
         });
         expect(mockLogger.error).not.toHaveBeenCalled();
     });
@@ -127,6 +129,7 @@ describe('initBranchState', () => {
             revision: 7,
             current: sessionProjectedState,
             session: { owner: 'o1', backup: preSessionState, baseRevision: 6, sequence: 1 },
+            reset: null,
         });
         const releaseLifetime = holdBranchStateLock(manager, sessionLockName('o1'));
 
@@ -145,7 +148,7 @@ describe('initBranchState', () => {
     });
 
     it('reports an unsequenceable boot when the Web Locks API is absent', async () => {
-        writeStoredEnvelope({ version: 1, revision: 4, current: preSessionState, session: null });
+        writeStoredEnvelope({ version: 1, revision: 4, current: preSessionState, session: null, reset: null });
 
         const { initBranchState, readBranchIds, whenBranchStateSettled } = await loadInitBranchState(null);
         expect(() => {
@@ -158,7 +161,7 @@ describe('initBranchState', () => {
     });
 
     it('starts on the default list and reports when durable storage cannot be read', async () => {
-        writeStoredEnvelope({ version: 1, revision: 4, current: preSessionState, session: null });
+        writeStoredEnvelope({ version: 1, revision: 4, current: preSessionState, session: null, reset: null });
 
         const { initBranchState, readBranchIds, whenBranchStateSettled } = await loadInitBranchState(manager);
         const restoreReads = blockEveryDurableRead();
@@ -173,6 +176,12 @@ describe('initBranchState', () => {
 
         restoreReads();
         // Nothing was written over the list this boot could not see.
-        expect(readStoredEnvelope()).toEqual({ version: 1, revision: 4, current: preSessionState, session: null });
+        expect(readStoredEnvelope()).toEqual({
+            version: 1,
+            revision: 4,
+            current: preSessionState,
+            session: null,
+            reset: null,
+        });
     });
 });
