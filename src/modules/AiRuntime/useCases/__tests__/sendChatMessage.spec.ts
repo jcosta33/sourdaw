@@ -1166,7 +1166,9 @@ describe('sendChatMessage retained-provider selection', () => {
         let observeUnexpectedChatCreate: (() => void) | null = null;
         let observeUnexpectedCompletionCreate: (() => void) | null = null;
         let releaseNextAdmission: (() => void) | null = null;
-        let queuedChatAdmission: ReturnType<typeof observeAbortListenerRegistration> | null = null;
+        const queuedChatAdmission: {
+            observation: ReturnType<typeof observeAbortListenerRegistration> | null;
+        } = { observation: null };
         async function* cancelledChatStream() {
             yield { choices: [{ delta: { content: 'Cancelled chat content.' }, finish_reason: 'stop' }] };
         }
@@ -1192,7 +1194,7 @@ describe('sendChatMessage retained-provider selection', () => {
         const engine = { interruptGenerate: vi.fn(), chat: { completions: { create } } };
         const bindAbortController = agentRunCancellation.bindAbortController;
         const bindCancellation = vi.spyOn(agentRunCancellation, 'bindAbortController').mockImplementation((input) => {
-            queuedChatAdmission = observeAbortListenerRegistration(input.controller.signal, 2);
+            queuedChatAdmission.observation = observeAbortListenerRegistration(input.controller.signal, 2);
             chatCancellationBound.resolve();
             return bindAbortController(input);
         });
@@ -1214,11 +1216,12 @@ describe('sendChatMessage retained-provider selection', () => {
             pending.push(queuedChat.catch(() => undefined));
             const activeAborter = await activeAborterExposed.promise;
             await chatCancellationBound.promise;
-            if (queuedChatAdmission === null) {
+            const observation = queuedChatAdmission.observation;
+            if (observation === null) {
                 throw new Error('Expected the queued explain chat cancellation binding to remain observable.');
             }
             const queuedChatAdmissionResult = await Promise.race([
-                queuedChatAdmission.registered.then(() => 'listener' as const),
+                observation.registered.then(() => 'listener' as const),
                 unexpectedChatCreate.promise.then(() => 'engine-create' as const),
             ]);
             if (queuedChatAdmissionResult === 'engine-create') {
@@ -1275,7 +1278,7 @@ describe('sendChatMessage retained-provider selection', () => {
         } finally {
             completionResponse.resolve({ choices: [{ finish_reason: 'stop', message: { content: 'Released.' } }] });
             await Promise.allSettled(pending);
-            queuedChatAdmission?.restore();
+            queuedChatAdmission.observation?.restore();
             releaseNextAdmission?.();
             bindCancellation.mockRestore();
         }

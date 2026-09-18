@@ -128,11 +128,11 @@ describe('generateWebLlmCompletion', () => {
         const queued = generateWebLlmCompletion('system', 'queued', { signal: queuedController.signal });
         const activeOutcome: Promise<Outcome<string>> = active.then(
             (value): Outcome<string> => ({ status: 'fulfilled', value }),
-            (reason: unknown): Outcome<string> => ({ status: 'rejected', reason })
+            (error: unknown): Outcome<string> => ({ status: 'rejected', reason: error })
         );
         const queuedOutcome: Promise<Outcome<string>> = queued.then(
             (value): Outcome<string> => ({ status: 'fulfilled', value }),
-            (reason: unknown): Outcome<string> => ({ status: 'rejected', reason })
+            (error: unknown): Outcome<string> => ({ status: 'rejected', reason: error })
         );
 
         try {

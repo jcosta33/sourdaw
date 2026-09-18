@@ -71,10 +71,10 @@ function releaseActive(engine: WebLlmEngine, active: ActiveRequest): void {
         return;
     }
     admission.active = null;
-    startNext(engine, admission);
+    startNext(admission);
 }
 
-function startNext(engine: WebLlmEngine, admission: EngineAdmission): void {
+function startNext(admission: EngineAdmission): void {
     if (admission.active || admission.retired !== null) {
         return;
     }
@@ -130,7 +130,7 @@ function admit<Result>(
         let started = false;
         let settled = false;
         let active: ActiveRequest | null = null;
-        let removeAbortListener = () => undefined;
+        let removeAbortListener: () => void = () => undefined;
 
         function resolveResult(value: Result): void {
             if (settled) {

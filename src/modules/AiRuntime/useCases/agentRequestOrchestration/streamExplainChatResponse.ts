@@ -83,15 +83,14 @@ type WebLlmStreamChunk = {
 };
 
 function readWebLlmStream(value: unknown): AsyncIterable<WebLlmStreamChunk> {
-    if (
-        typeof value !== 'object' ||
-        value === null ||
-        !(Symbol.asyncIterator in value) ||
-        typeof value[Symbol.asyncIterator] !== 'function'
-    ) {
+    if (typeof value !== 'object' || value === null || !isAsyncIterable(value)) {
         throw new Error('WebLLM did not return a stream');
     }
     return value;
+}
+
+function isAsyncIterable(value: object): value is AsyncIterable<WebLlmStreamChunk> {
+    return typeof Reflect.get(value, Symbol.asyncIterator) === 'function';
 }
 
 function getBackendModelId(backend: RunnableAiBackend): string {
