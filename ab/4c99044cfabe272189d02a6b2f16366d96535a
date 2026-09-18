@@ -1,0 +1,16 @@
+scripts/deliverPullRequest.ts
+  h_1228e573df1f42 2996,3003-3005
+scripts/githubAppIdentity.ts
+  h_1228e573df1f42 642,648-650
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ab4c99044cfabe272189d02a6b2f16366d96535a",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
