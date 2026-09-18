@@ -55,8 +55,9 @@ project membership until `lane:open` performs the claim itself.
 
 An issueless lane's worktree and PR are the claim: choose a slug that names
 the change precisely and publish early, before the head is final if
-needed. Work too large for a slug to describe, and not yet started, is filed
-as an issue first and the lane opened against it.
+needed. Work that outlives one lane or session — a campaign, or a hand-off to
+another agent — is filed first so each lane binds to the issue that
+carries it; a change one lane can land stays issueless.
 
 ## Script order
 
