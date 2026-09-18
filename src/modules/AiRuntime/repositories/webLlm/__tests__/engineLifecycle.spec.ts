@@ -4,6 +4,7 @@ import { engineState } from '../engineLifecycleState';
 import { initWebLlmEngine } from '../initWebLlmEngine';
 import { retireWebLlmEngine } from '../retireWebLlmEngine';
 import { unloadWebLlmEngine } from '../unloadWebLlmEngine';
+import { webLlmRequestCoordinator } from '../webLlmRequestCoordinator';
 
 const {
     admissionGate,
@@ -170,6 +171,22 @@ describe('WebLLM engineLifecycle injectables', () => {
         await vi.waitFor(() => expect(engineState.initPromise).toBeNull());
         expect(engineState.engine).toBeNull();
         expect(terminateWorkerMock).toHaveBeenCalledOnce();
+    });
+
+    it('retires the ready engine and rejects its waiting requests when the worker fails after initialization', async () => {
+        Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+        const engine = await initWebLlmEngine('test-model');
+        const worker = workerInstances[0];
+        if (!worker) {
+            throw new Error('Expected the initialized engine to own a worker instance.');
+        }
+        const waiting = webLlmRequestCoordinator.run(engine, { execute: () => new Promise(() => undefined) });
+
+        worker.dispatchEvent(new Event('messageerror'));
+
+        expect(engineState.engine).toBeNull();
+        expect(engineState.worker).toBeNull();
+        await expect(waiting).rejects.toThrow('WebLLM worker failed');
     });
 
     it('waits for complete artifact admission before creating a worker and passes the immutable app config', async () => {
