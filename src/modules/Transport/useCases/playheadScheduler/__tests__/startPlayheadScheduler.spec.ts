@@ -1058,7 +1058,9 @@ describe('startPlayheadScheduler', () => {
     });
 
     it('starts punch-in recording when the playhead crosses punchInBeat with armed audio tracks', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        trackStoreState.value = {
+            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', inputId: 'dev-punch' }],
+        };
         transportStoreState.value = playingState({
             punchInEnabled: true,
             punchInBeat: 0,
@@ -1076,7 +1078,7 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(arrangementMocks.startRecording).toHaveBeenCalledTimes(1);
-        expect(audioEngineMocks.startAudioRecording).toHaveBeenCalledTimes(1);
+        expect(audioEngineMocks.startAudioRecording).toHaveBeenCalledWith('rec-1', expect.any(Function), 'dev-punch');
         expect(schedulerSession.punchRecordingActive).toBe(true);
     });
 

@@ -593,7 +593,7 @@ describe('stopAudioRecording', () => {
         // Decouple the cached pointer from the still-owned first stream — the
         // ownership shape concurrent pre-fix acquisition left behind, where a
         // global count stopped only whichever stream the pointer held last.
-        sharedStreamState.stream = null;
+        sharedStreamState.streams.clear();
         await expect(startAudioRecording('track-distinct-b', vi.fn())).resolves.toBe(true);
         const secondWorklet = FakeAudioWorkletNode.last;
         if (!secondWorklet) {

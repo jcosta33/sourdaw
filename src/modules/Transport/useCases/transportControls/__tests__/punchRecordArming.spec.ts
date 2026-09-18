@@ -31,7 +31,7 @@ import { toggleRecording } from '../toggleRecording';
 
 type TestRecordingBuffer = { duration: number };
 type TestRecordingClip = { id: string; trackId: string; startBeat: number; endBeat: number };
-type TestTrack = { id: string; kind: 'audio' | 'midi'; armed: boolean };
+type TestTrack = { id: string; kind: 'audio' | 'midi'; armed: boolean; inputId?: string | null };
 type TestTrackState = { tracks: TestTrack[] };
 type StartAudioRecording = typeof import('#/modules/AudioEngine/useCases').startAudioRecording;
 
@@ -117,8 +117,10 @@ function seedTransport(patch: Partial<TransportState>): void {
     };
 }
 
-function armedAudioTrack(): void {
-    mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'track-audio', kind: 'audio', armed: true }] });
+function armedAudioTrack(inputId: string | null = null): void {
+    mocks.getTrackStoreState.mockReturnValue({
+        tracks: [{ id: 'track-audio', kind: 'audio', armed: true, inputId }],
+    });
 }
 
 /** Let `beginActualRecording`'s promise chain settle if one was started. */
@@ -129,6 +131,18 @@ async function settle(): Promise<void> {
 }
 
 describe('pressing Record with punch enabled', () => {
+    it("passes the armed audio track's selected input to the capture", async () => {
+        // Punch disabled records immediately, so the capture start is
+        // observable without waiting for a scheduler tick.
+        seedTransport({ playheadPosition: 4, punchInEnabled: false });
+        armedAudioTrack('dev-3773');
+
+        toggleRecording();
+        await settle();
+
+        expect(mocks.startAudioRecording).toHaveBeenCalledWith('track-audio', expect.any(Function), 'dev-3773');
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.resumeEngine.mockResolvedValue(undefined);
