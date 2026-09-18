@@ -32,6 +32,7 @@ import {
     canonicalLabelName,
     canonicalMilestoneTitle,
     canonicalProjectTitle,
+    conflictingPathsFromMergeTree,
     derivedLabelFromSubject,
     derivedProjectFromSubject,
     descriptiveLabelNames,
@@ -49,6 +50,7 @@ import {
     projectListArgs,
     projectTitlesFromListing,
     projectTitlesFromRow,
+    pullRequestMergeabilityArgs,
     pullRequestMetadataArgs,
     pullRequestLabelMetadataFromRow,
     pullRequestProjectItemsArgs,
@@ -58,6 +60,7 @@ import {
     issueLookupArgs,
     laneIssueNumber,
     matchingOpenPullRequest,
+    mergeabilityFromPullRequestRow,
     parsePublishLaneArgs,
     parsePublishWorktrees,
     publishLane,
@@ -65,6 +68,7 @@ import {
     shellPort,
     type LabelRow,
     type PullRequestLabelMetadata,
+    type PullRequestMergeability,
     type OpenPullRequestRow,
     type PublishLanePort,
     type PublishWorktree,
@@ -148,6 +152,10 @@ type FakeInput = {
     existingByCall?: Array<number | undefined>;
     existingBody?: unknown;
     existingTitle?: unknown;
+    /** Live structural mergeability the post-push pull-request read answers; defaults to mergeable. */
+    mergeability?: PullRequestMergeability;
+    /** Conflicting paths the lane's trial merge answers; defaults to none. */
+    conflictingPaths?: string[];
     issueExists?: boolean;
     guardFailureReceipt?: GuardFailureReceipt;
     guardFailure?: (laneName: string) => GuardFailureReceipt | undefined;
@@ -195,6 +203,14 @@ function fakePort(input: FakeInput = {}) {
         push: (_lane, branch, headSha) => {
             calls.push(`push:${branch}`);
             calls.push(`pushHead:${headSha}`);
+        },
+        readPullRequestMergeability: (number) => {
+            calls.push(`mergeability:${number}`);
+            return input.mergeability ?? 'mergeable';
+        },
+        conflictingPaths: (_lane, base, head) => {
+            calls.push(`conflicts:${base}:${head}`);
+            return input.conflictingPaths ?? [];
         },
         // The queried branch is the entire authorization decision on the legacy path, so it goes
         // into the ledger: a fake that discarded it would stay green if resolution asked about a
@@ -834,6 +850,56 @@ describe('lane publish', () => {
         expect(publishLane(12, port)).toBe(41);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
         expect(calls).toContain('edit:41');
+    });
+
+    it('reports a conflicted head and its locally merged path, and still publishes', () => {
+        // The defect this pins: a conflicted head gets no merge ref, so no `pull_request` run starts
+        // and the required Gate check can never appear. The publish has already succeeded, so the
+        // report must name the pull request, the head, why Gate cannot appear, and the path a real
+        // trial merge conflicts on — without refusing and without touching the pull request.
+        const head = '1'.repeat(40);
+        const base = '2'.repeat(40);
+        const { port, calls, logs } = fakePort({
+            headSha: head,
+            baseSha: base,
+            mergeability: 'conflicting',
+            conflictingPaths: ['src/modules/audio/engine.ts'],
+        });
+
+        expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+        const report = logs.join('\n');
+        expect(report).toContain('pull request #88');
+        expect(report).toContain(head);
+        expect(report).toContain(base);
+        expect(report).toContain('required Gate check cannot appear');
+        expect(report).toContain('src/modules/audio/engine.ts');
+        expect(calls).toContain(`conflicts:${base}:${head}`);
+        expect(calls).toContain('push:agent/12/work');
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(true);
+        expect(logs.at(-1)).toBe('88');
+    });
+
+    it('stays quiet about a mergeable head', () => {
+        const { port, calls, logs } = fakePort({ mergeability: 'mergeable' });
+
+        expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+        expect(calls).toContain('mergeability:88');
+        expect(calls.some((call) => call.startsWith('conflicts:'))).toBe(false);
+        expect(logs.some((line) => line.includes('conflict'))).toBe(false);
+        expect(logs.at(-1)).toBe('88');
+    });
+
+    it('reports an unknown mergeability as uncertainty, never as a conflict', () => {
+        const { port, calls, logs } = fakePort({ mergeability: 'unknown' });
+
+        expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+        expect(calls).toContain('mergeability:88');
+        expect(logs.some((line) => line.includes('not yet known'))).toBe(true);
+        expect(logs.some((line) => line.includes('conflict'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('conflicts:'))).toBe(false);
     });
 
     it('refuses to open a pull request without explicit test instructions', () => {
@@ -1939,6 +2005,51 @@ describe('lane publish', () => {
         }
     });
 
+    /**
+     * The conflict report must name paths a real merge actually conflicts on, so this measures the
+     * port's own `git merge-tree` against real history: a fake can prove only that the report prints
+     * what it is handed, never that the hand-off is a trial merge rather than a guess or a list.
+     */
+    it('derives conflicting paths from a real trial merge in the lane', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-trial-merge-'));
+        const session: GhSession = {
+            configDir: '/tmp/sourdaw-gh',
+            env: { PATH: process.env.PATH },
+            dispose: () => undefined,
+        };
+        const git = (args: string[]) => execFileSync('git', args, { cwd: repository, encoding: 'utf8' }).trim();
+        const write = (file: string, content: string) => writeFileSync(join(repository, file), content);
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            write('conflicted.txt', 'base\n');
+            write('untouched.txt', 'base\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'chore(fixture): base']);
+
+            git(['checkout', '-b', 'agent/12/work']);
+            write('conflicted.txt', 'lane\n');
+            write('lane-only.txt', 'lane\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'feat(fixture): lane change']);
+            const head = git(['rev-parse', 'HEAD']);
+
+            git(['checkout', 'main']);
+            write('conflicted.txt', 'main\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'fix(fixture): main change']);
+            const base = git(['rev-parse', 'HEAD']);
+
+            const port = shellPort(session, repository);
+            expect(port.conflictingPaths(repository, base, head)).toEqual(['conflicted.txt']);
+            // A clean trial merge names nothing, so the report can never invent a path from it.
+            expect(port.conflictingPaths(repository, base, base)).toEqual([]);
+        } finally {
+            rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
     it('requests headRefName, isCrossRepository, the title, and the body the update path must preserve', () => {
         expect(existingOpenPullRequestArgs('agent/12/work')).toEqual([
             'pr',
@@ -1966,6 +2077,18 @@ describe('lane publish', () => {
             'body text',
         ]);
         expect(updatePullRequestArgs(41, 'body text')).not.toContain('--title');
+    });
+
+    it('reads live mergeability from the pull request with only the field it needs', () => {
+        expect(pullRequestMergeabilityArgs(88)).toEqual([
+            'pr',
+            'view',
+            '88',
+            '--repo',
+            'jcosta33/sourdaw',
+            '--json',
+            'mergeable',
+        ]);
     });
 
     describe('matchingOpenPullRequest', () => {
@@ -2497,6 +2620,17 @@ describe('lane publish', () => {
                 labels: [],
                 fencedAuthorLabels: [],
             });
+            expect(mergeabilityFromPullRequestRow({ mergeable: 'CONFLICTING' })).toBe('conflicting');
+            expect(mergeabilityFromPullRequestRow({ mergeable: 'MERGEABLE' })).toBe('mergeable');
+            expect(mergeabilityFromPullRequestRow({ mergeable: 'UNKNOWN' })).toBe('unknown');
+            expect(mergeabilityFromPullRequestRow({ mergeable: 3 })).toBe('unknown');
+            expect(mergeabilityFromPullRequestRow({})).toBe('unknown');
+            expect(
+                conflictingPathsFromMergeTree(
+                    'tree-oid\na.ts\nb.ts\n\nAuto-merging a.ts\nCONFLICT (content): Merge conflict in a.ts\n'
+                )
+            ).toEqual(['a.ts', 'b.ts']);
+            expect(conflictingPathsFromMergeTree('tree-oid\n')).toEqual([]);
         });
 
         it('drops the issue-workflow namespaces and authored-by labels from inherited labels', () => {

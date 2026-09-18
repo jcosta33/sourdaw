@@ -321,6 +321,24 @@ export type PullRequestMetadataRow = {
     milestone?: { title?: unknown } | null;
 };
 
+/**
+ * GitHub's live structural mergeability, reduced to the three answers a publish report
+ * distinguishes. `CONFLICTING` is the only conflict; the `UNKNOWN` GitHub returns while it computes,
+ * and every other or unreadable value, is uncertainty. Reporting uncertainty as a conflict would
+ * send an operator to resolve a conflict that may not exist.
+ */
+export type PullRequestMergeability = 'mergeable' | 'conflicting' | 'unknown';
+
+export function mergeabilityFromPullRequestRow(row: { mergeable?: unknown }): PullRequestMergeability {
+    if (row.mergeable === 'MERGEABLE') {
+        return 'mergeable';
+    }
+    if (row.mergeable === 'CONFLICTING') {
+        return 'conflicting';
+    }
+    return 'unknown';
+}
+
 export function pullRequestLabelMetadataFromRow(row: PullRequestMetadataRow): PullRequestLabelMetadata {
     const milestoneTitle = titleOf(row.milestone);
     return {
@@ -522,6 +540,10 @@ export type PublishLanePort = {
     stackBase?: (lane: string, branch: string, head: string, main: string) => StackPublicationContext | undefined;
     pinStackParent?: (branch: string, number: number) => void;
     reportDiff?: (lane: string, base: string, head: string) => void;
+    /** Read after the push: the pull request's live mergeability, never a pre-push guess. */
+    readPullRequestMergeability: (number: number) => PullRequestMergeability;
+    /** The paths a real trial merge of `base` and `head` conflicts on, in the lane's own repository. */
+    conflictingPaths: (lane: string, base: string, head: string) => string[];
     createPullRequest: (input: { branch: string; title: string; body: string; base?: string }) => number;
     updatePullRequest: (number: number, input: { body: string }) => void;
     saveAuthorModel: (branch: string, model: string) => void;
@@ -898,6 +920,70 @@ export const DIRTY_LANE_FAILURE =
 export const NO_LANE_SUBJECT_FAILURE =
     'carries no non-merge commit above origin/main: commit the lane work with a conventional subject (type(scope): subject) before publishing';
 
+/**
+ * `git merge-tree --write-tree --name-only` writes the merged tree's object id, then one line per
+ * conflicted path, then a blank line before its human-readable conflict commentary. Only the path
+ * block names conflicts; the commentary repeats them with explanations, so the parse stops at the
+ * blank separator.
+ */
+export function conflictingPathsFromMergeTree(output: string): string[] {
+    const names: string[] = [];
+    for (const line of output.split('\n').slice(1)) {
+        if (line === '') {
+            return names;
+        }
+        names.push(line);
+    }
+    return names;
+}
+
+/**
+ * A pull request whose head conflicts with its base gets no GitHub merge ref, so no `pull_request`
+ * workflow run is created for that head and the required `Gate` check can never appear — waiting on
+ * it waits forever. The push and the pull-request write have already succeeded by the time this
+ * reads, so a conflict is reported, never refused, and the pull request is never modified.
+ *
+ * The conflicting paths come from a real in-memory trial merge of the pull request's base and head
+ * in the lane, because only the repository can name the actual conflict; a guess or a recorded list
+ * would name paths the push never touched. An `UNKNOWN` (or unreadable) mergeability is reported as
+ * uncertainty rather than as a conflict, so an unreadable state never sends the operator to resolve
+ * a conflict that may not exist.
+ */
+function reportPullRequestMergeability(
+    lane: ResolvedLane,
+    number: number,
+    base: string,
+    head: string,
+    port: PublishLanePort
+): void {
+    const mergeability = port.readPullRequestMergeability(number);
+    if (mergeability === 'mergeable') {
+        return;
+    }
+    if (mergeability === 'unknown') {
+        port.log(
+            `pull request #${number} mergeability is not yet known (GitHub answers UNKNOWN while it computes); ` +
+                'check it again before waiting on the required Gate check'
+        );
+        return;
+    }
+    port.log(
+        `pull request #${number} head ${head} conflicts with its base ${base}: GitHub mints no merge ref for a ` +
+            'conflicted head, so no pull_request workflow run is created and the required Gate check cannot appear'
+    );
+    const paths = port.conflictingPaths(lane.path, base, head);
+    if (paths.length === 0) {
+        port.log(
+            'the local trial merge named no conflicting path; resolve the conflict by hand, then push, before waiting on Gate'
+        );
+        return;
+    }
+    port.log(`conflicting paths from the local trial merge (git merge-tree --write-tree ${base} ${head}):`);
+    for (const path of paths) {
+        port.log(`  ${path}`);
+    }
+}
+
 export function publishLane(
     issue: number | undefined,
     port: PublishLanePort,
@@ -1035,6 +1121,7 @@ export function publishLane(
     if (metadata !== undefined) {
         assertPullRequestMetadata(number, metadata, port);
     }
+    reportPullRequestMergeability(lane, number, comparisonHead, headSha, port);
     port.log(String(number));
     return number;
 }
@@ -1641,6 +1728,31 @@ export function shellPort(
             }
             console.log(formatReviewDiffSummary(summarizeReviewDiff(lane, result.stdout)));
         },
+        readPullRequestMergeability: (number) => {
+            try {
+                return mergeabilityFromPullRequestRow(
+                    parseJson<{ mergeable?: unknown }>(
+                        gh(pullRequestMergeabilityArgs(number)),
+                        `pull request #${number} mergeability`
+                    )
+                );
+            } catch {
+                // GitHub computes mergeability lazily, and the push has already landed. A failed or
+                // unreadable read is uncertainty, never a conflict and never a refusal.
+                return 'unknown';
+            }
+        },
+        conflictingPaths: (lane, base, head) => {
+            const result = spawnSync(executables.git, ['merge-tree', '--write-tree', '--name-only', base, head], {
+                cwd: lane,
+                env: session.env,
+                encoding: 'utf8',
+            });
+            // Exit 1 is `merge-tree` reporting conflicts, and only that status writes the path
+            // block. A clean merge or a failed command names no path, and the report says exactly
+            // that rather than inventing one.
+            return result.status === 1 ? conflictingPathsFromMergeTree(result.stdout ?? '') : [];
+        },
         createPullRequest: ({ branch, title, body, base }) => {
             const url = gh([
                 'pr',
@@ -1819,6 +1931,10 @@ export function projectListArgs(owner: string): string[] {
 
 export function pullRequestMetadataArgs(number: number): string[] {
     return ['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'labels,milestone'];
+}
+
+export function pullRequestMergeabilityArgs(number: number): string[] {
+    return ['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'mergeable'];
 }
 
 export function pullRequestProjectItemsArgs(number: number): string[] {

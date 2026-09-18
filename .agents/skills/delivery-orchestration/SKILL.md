@@ -72,6 +72,12 @@ The delivery sequence, in order:
    session commits the work itself with a conventional subject first.
 2. Wait for `Gate` on the head, then `review:prepare <pr>` — write the bundle
    (below) and dispatch blind reviewers against it under the root Review rules.
+   A head that conflicts with its base gets no GitHub merge ref, so no
+   `pull_request` workflow run is created and `Gate` can never appear: waiting
+   on it waits forever. When `lane:publish` reports a conflicted head, read
+   `gh pr view <pr> --json mergeable` and resolve the reported paths with a
+   push before waiting; an `UNKNOWN` answer is GitHub still computing, so check
+   it again rather than treating it as a conflict.
 3. Validate every finding, write `review.json` (and `discarded.json` for
    discards), then `review:publish <pr>` — post validated blockers as the
    reviewer App BEFORE dispatching any repair.
