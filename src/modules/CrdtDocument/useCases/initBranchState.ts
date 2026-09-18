@@ -1,48 +1,64 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import { restoreBranchStateFromSessionBackup } from '../stores/branchStore';
+import { branchStateAuthority, type BranchStateBootOutcome } from '../repositories/branchStateAuthority';
 
 /**
  * Bring `branchStore` to the state the app should start in.
  *
- * A collaboration session projects the host's branch list over the local one
- * and stashes the local list in a session backup. If the app is killed mid
- * session — a crash, a reload, a closed tab — nothing runs the teardown that
- * puts the local list back, so the backup is still there at the next boot and
- * this is what consumes it.
+ * Two steps, because they cannot be one. Reading the durable envelope is
+ * synchronous and has to happen before anything reads a branch id, so the
+ * composition root gets its branch list from the first statement. Recovering a
+ * collaboration session that never tore down needs the session's lifetime lock
+ * to decide whether the session is live or abandoned, and Web Locks are
+ * asynchronous — so that runs behind `whenBranchStateSettled`, which the first
+ * project load awaits.
  *
- * The composition root owns this call. It used to be a side effect of
- * evaluating `branchStore.ts`, which meant a refused `localStorage` write threw
- * while the module was still evaluating and took every importer down with it —
- * an unbootable app on a full origin quota, with no reachable catch anywhere,
- * because the throw preceded all app code. Here a failure is a reported
- * degradation instead. See #1557.
+ * Nothing here throws. This used to be a side effect of evaluating
+ * `branchStore.ts`, where a refused `localStorage` write threw during module
+ * evaluation and took every importer down with it — an unbootable app on a full
+ * origin quota, with no reachable catch anywhere. See #1557.
  */
 export function initBranchState(): void {
-    const outcome = restoreBranchStateFromSessionBackup();
-    if (outcome === 'restored') {
+    if (branchStateAuthority.hydrateFromDurableState() === 'storage-unavailable') {
+        logger.error(
+            new Error(
+                'Branch state could not be read from durable storage; the app starts on the default branch list ' +
+                    'and no durable branch write will be accepted until storage recovers.'
+            )
+        );
+    }
+
+    void branchStateAuthority.settleBoot().then((outcome) => {
+        reportBootOutcome(outcome);
+    });
+}
+
+/**
+ * Worth an error rather than a warn: this is once per boot, it is not
+ * user-provoked, and each of these outcomes leaves the branch list in a state
+ * that does not match what a clean boot would produce.
+ */
+function reportBootOutcome(outcome: BranchStateBootOutcome): void {
+    if (outcome === 'settled' || outcome === 'restored') {
         return;
     }
 
-    // Worth an error rather than the adapter's warn: this is once per boot, it
-    // is not user-provoked, and both failures leave the branch list in a state
-    // that does not match what a reload would produce. Saying nothing would
-    // make a bounded, recoverable failure look like nothing happened at all.
-    if (outcome === 'state-not-persisted') {
-        logger.error(
-            new Error(
-                'Branch state recovered from the session backup could not be persisted; ' +
-                    'it is live for this session and the backup was kept for the next boot.'
-            )
+    if (outcome === 'foreign-session-live') {
+        // Not an error: another instance of the app is in a collaboration
+        // session and owns the branch list. It is only worth saying because
+        // local branch writes are refused until that session ends.
+        logger.warn(
+            '[CrdtDocument] Another window holds a collaboration session that owns the branch list; ' +
+                'local branch changes will not persist until it ends.'
         );
         return;
     }
 
-    if (outcome === 'storage-unavailable') {
+    if (outcome === 'lock-unavailable') {
         logger.error(
             new Error(
-                'Branch state could not be recovered because durable storage could not be read; ' +
-                    'the live branch list was left unchanged and the session backup remains retryable.'
+                'Branch state cannot be sequenced because the Web Locks API is unavailable; the branch list is ' +
+                    'live for this session and no branch change will survive a reload.'
             )
         );
         return;
@@ -50,9 +66,8 @@ export function initBranchState(): void {
 
     logger.error(
         new Error(
-            'Branch state recovered from the session backup was persisted, but the backup itself ' +
-                'could not be cleared; it will be applied again at the next boot until a later ' +
-                'branch write lands and invalidates it.'
+            'Branch state recovery could not read or write durable storage; a collaboration session backup may ' +
+                'still be pending and will be retried at the next boot.'
         )
     );
 }

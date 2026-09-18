@@ -1,5 +1,7 @@
 import { change, init, load } from '@automerge/automerge';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 
 import { automergeRepository } from '../../../repositories/automergeRepository';
 import { branchStore } from '../../../stores/branchStore';
@@ -20,6 +22,9 @@ describe('switchBranch sanitized peer branch integration', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         automergeRepository.reset();
+        // The real branch-state authority sequences every durable write on a
+        // Web Lock, and jsdom ships no Web Locks API.
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         createCrdtDoc('root');
         createCrdtDoc('branch_feat');
         branchStore.set({
@@ -45,6 +50,10 @@ describe('switchBranch sanitized peer branch integration', () => {
             ],
             activeBranchId: 'main',
         });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
     });
 
     it('should expose and serialize only metadata after switching to a sanitized peer branch', async () => {

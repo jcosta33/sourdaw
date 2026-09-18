@@ -46,9 +46,10 @@ export { replaceCrdtDoc } from './replaceCrdtDoc';
 export { replaceCrdtDocInLineage } from './replaceCrdtDocInLineage';
 export { sanitizeIncomingCrdtDocument } from './sanitizeIncomingCrdtDocument';
 export { initBranchState } from './initBranchState';
-export { preserveBranchStateForSession } from './preserveBranchStateForSession';
-export { replaceBranchState } from './replaceBranchState';
-export { restoreBranchStateAfterSession } from './restoreBranchStateAfterSession';
+export { whenBranchStateSettled } from './whenBranchStateSettled';
+export { beginBranchSession } from './beginBranchSession';
+export { projectBranchSession } from './projectBranchSession';
+export { endBranchSession } from './endBranchSession';
 
 export { registerCrdtStorageRuntime } from './registerCrdtStorageRuntime';
 export { transactSnapshot } from './transactSnapshot';
