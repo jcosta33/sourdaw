@@ -153,7 +153,7 @@ describe('renderOfflineWithNativeEngine — routing', () => {
             resolveTempoAtBeat: ({ defaultTempo }) => defaultTempo,
             renderableTracks,
             scheduledTracks: [],
-            scheduledTrackIds: new Set(),
+            contributingTrackIds: new Set(),
             soloGatedByTrackId: new Map(),
             vcaMultiplierByTrackId: new Map(),
         });
@@ -197,7 +197,7 @@ describe('renderOfflineWithNativeEngine — routing', () => {
             resolveTempoAtBeat: ({ defaultTempo }) => defaultTempo,
             renderableTracks,
             scheduledTracks: [audio],
-            scheduledTrackIds: new Set(['audio-1']),
+            contributingTrackIds: new Set(['audio-1']),
             soloGatedByTrackId: new Map([['verb', true]]),
             vcaMultiplierByTrackId: new Map(),
         });
@@ -267,7 +267,7 @@ describe('renderOfflineWithNativeEngine — device projection', () => {
             resolveTempoAtBeat: ({ defaultTempo }) => defaultTempo,
             renderableTracks: [audio],
             scheduledTracks: [audio],
-            scheduledTrackIds: new Set(['audio-1']),
+            contributingTrackIds: new Set(['audio-1']),
             soloGatedByTrackId: new Map(),
             vcaMultiplierByTrackId: new Map(),
         });
@@ -314,7 +314,7 @@ describe('renderOfflineWithNativeEngine — device projection', () => {
             resolveTempoAtBeat: ({ defaultTempo }) => defaultTempo,
             renderableTracks: [audio, bus],
             scheduledTracks: [audio],
-            scheduledTrackIds: new Set(['audio-1']),
+            contributingTrackIds: new Set(['audio-1']),
             soloGatedByTrackId: new Map(),
             vcaMultiplierByTrackId: new Map(),
         });

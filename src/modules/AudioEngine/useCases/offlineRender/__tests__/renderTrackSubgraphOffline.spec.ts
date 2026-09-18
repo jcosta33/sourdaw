@@ -1851,5 +1851,202 @@ describe('renderTrackSubgraphOffline', () => {
                 })
             ).rejects.toThrow('Bypass or remove the plugin');
         });
+
+        // #4376 — the refusal asks whether dropping the device could change what
+        // *this render prints*, which is a question about the routing graph, not
+        // about the strip's own mute. These cases drive the real chain build, so
+        // the observable is the user's own: the render either refuses naming the
+        // track and plugin, or completes with the dropped-device warning.
+        describe('print reachability (#4376)', () => {
+            async function seedSidechainRoutes(routes: readonly { source: string; target: string }[]): Promise<void> {
+                const { sidechainStore } = await import('#/modules/Routing/stores');
+                sidechainStore.set({
+                    ...sidechainStore.value!,
+                    routes: routes.map((route, index) => ({
+                        id: `route-${index}`,
+                        sourceTrackId: route.source,
+                        targetTrackId: route.target,
+                        targetDeviceId: 'comp-1',
+                        targetParameterId: 'threshold',
+                        gain: 1,
+                    })),
+                });
+            }
+
+            function audio(id: string, name: string, overrides: Partial<Track> = {}): Track {
+                return TrackDummy.create({ id, name, kind: 'audio', ...overrides });
+            }
+
+            it('refuses a plugin on a contributor that prints through a chain of unmuted hops', async () => {
+                const target = audio('target', 'Target');
+                const mid = audio('mid', 'Mid', { outputId: 'target' });
+                const source = audio('source', 'Source', {
+                    outputId: 'mid',
+                    devices: [pluginDevice('plugin-1')],
+                });
+                trackStore.set({ tracks: [source, mid, target], selectedTrackId: null, ghostClips: [] });
+
+                await expect(
+                    renderTrackSubgraphOffline({
+                        targetTrackId: 'target',
+                        // Upstream first: a single left-to-right pass would not yet
+                        // know that `mid` reaches the printed target.
+                        renderTracks: [source, mid, target],
+                        startBeat: 0,
+                        endBeat: 4,
+                        onWarning: vi.fn(),
+                    })
+                ).rejects.toThrow('Bypass or remove the plugin');
+            });
+
+            it('refuses a plugin on the target itself, which this render prints', async () => {
+                const target = audio('target', 'Target', { devices: [pluginDevice('plugin-1')] });
+                trackStore.set({ tracks: [target], selectedTrackId: null, ghostClips: [] });
+
+                await expect(
+                    renderTrackSubgraphOffline({
+                        targetTrackId: 'target',
+                        renderTracks: [target],
+                        startBeat: 0,
+                        endBeat: 4,
+                        onWarning: vi.fn(),
+                    })
+                ).rejects.toThrow('Bypass or remove the plugin');
+            });
+
+            it('refuses a plugin on a contributor routed through a muted non-key bus, because a deliverable print force-unmutes that bus', async () => {
+                const target = audio('target', 'Target');
+                const rail = TrackDummy.create({
+                    id: 'rail-bus',
+                    name: 'Rail Bus',
+                    kind: 'bus',
+                    muted: true,
+                    outputId: 'target',
+                });
+                const source = audio('source', 'Source', {
+                    outputId: 'rail-bus',
+                    devices: [pluginDevice('plugin-1')],
+                });
+                trackStore.set({ tracks: [source, rail, target], selectedTrackId: null, ghostClips: [] });
+
+                await expect(
+                    renderTrackSubgraphOffline({
+                        targetTrackId: 'target',
+                        renderTracks: [source, rail, target],
+                        startBeat: 0,
+                        endBeat: 4,
+                        onWarning: vi.fn(),
+                    })
+                ).rejects.toThrow('Bypass or remove the plugin');
+            });
+
+            it('degrades a plugin on a contributor whose only route dies at a muted sidechain key source', async () => {
+                const target = audio('comp-target', 'Comp Target', { devices: [COMPRESSOR_DEVICE] });
+                const keyBus = TrackDummy.create({
+                    id: 'key-bus',
+                    name: 'Key Bus',
+                    kind: 'bus',
+                    muted: true,
+                    outputId: 'master',
+                });
+                const source = audio('source', 'Source', {
+                    outputId: 'key-bus',
+                    devices: [pluginDevice('plugin-1')],
+                });
+                trackStore.set({ tracks: [target, keyBus, source], selectedTrackId: null, ghostClips: [] });
+                await seedSidechainRoutes([{ source: 'key-bus', target: 'comp-target' }]);
+                const onWarning = vi.fn();
+
+                const buffer = await renderTrackSubgraphOffline({
+                    targetTrackId: 'comp-target',
+                    renderTracks: [source, keyBus, target],
+                    startBeat: 0,
+                    endBeat: 4,
+                    onWarning,
+                });
+
+                expect(buffer).not.toBeNull();
+                expect(pluginWarningFor(onWarning, 'Source')).toBe(true);
+            });
+
+            it('degrades a plugin on a muted key source whose only send is post-fader', async () => {
+                const target = audio('comp-target', 'Comp Target', { devices: [COMPRESSOR_DEVICE] });
+                const key = audio('kick-key', 'Kick Key', {
+                    muted: true,
+                    outputId: 'master',
+                    devices: [pluginDevice('plugin-1')],
+                    sends: [{ busId: 'cue-bus', level: 1, preFader: false }],
+                });
+                const cueBus = TrackDummy.create({ id: 'cue-bus', name: 'Cue Bus', kind: 'bus' });
+                trackStore.set({ tracks: [target, key, cueBus], selectedTrackId: null, ghostClips: [] });
+                await seedSidechainRoutes([{ source: 'kick-key', target: 'comp-target' }]);
+                const onWarning = vi.fn();
+
+                const buffer = await renderTrackSubgraphOffline({
+                    targetTrackId: 'comp-target',
+                    renderTracks: [target, key, cueBus],
+                    startBeat: 0,
+                    endBeat: 4,
+                    onWarning,
+                });
+
+                expect(buffer).not.toBeNull();
+                expect(pluginWarningFor(onWarning, 'Kick Key')).toBe(true);
+            });
+
+            it('refuses a plugin on a key whose detector feed changes a printed compressor, though its own route is cut', async () => {
+                const target = audio('comp-target', 'Comp Target', { devices: [COMPRESSOR_DEVICE] });
+                const mutedKeyBus = TrackDummy.create({
+                    id: 'muted-key-bus',
+                    name: 'Muted Key Bus',
+                    kind: 'bus',
+                    muted: true,
+                    outputId: 'master',
+                });
+                const key = audio('kick-key', 'Kick Key', {
+                    outputId: 'muted-key-bus',
+                    devices: [pluginDevice('plugin-1')],
+                });
+                trackStore.set({ tracks: [target, key, mutedKeyBus], selectedTrackId: null, ghostClips: [] });
+                await seedSidechainRoutes([
+                    { source: 'muted-key-bus', target: 'comp-target' },
+                    { source: 'kick-key', target: 'comp-target' },
+                ]);
+
+                await expect(
+                    renderTrackSubgraphOffline({
+                        targetTrackId: 'comp-target',
+                        renderTracks: [target, key, mutedKeyBus],
+                        startBeat: 0,
+                        endBeat: 4,
+                        onWarning: vi.fn(),
+                    })
+                ).rejects.toThrow('Bypass or remove the plugin');
+            });
+
+            it('degrades a plugin on a muted target whose pre-fader send this render drops', async () => {
+                const target = audio('comp-target', 'Comp Target', {
+                    muted: true,
+                    devices: [COMPRESSOR_DEVICE, pluginDevice('plugin-1')],
+                    sends: [{ busId: 'cue-bus', level: 1, preFader: true }],
+                });
+                const cueBus = TrackDummy.create({ id: 'cue-bus', name: 'Cue Bus', kind: 'bus' });
+                trackStore.set({ tracks: [target, cueBus], selectedTrackId: null, ghostClips: [] });
+                await seedSidechainRoutes([{ source: 'comp-target', target: 'comp-target' }]);
+                const onWarning = vi.fn();
+
+                const buffer = await renderTrackSubgraphOffline({
+                    targetTrackId: 'comp-target',
+                    renderTracks: [target, cueBus],
+                    startBeat: 0,
+                    endBeat: 4,
+                    includeSends: false,
+                    onWarning,
+                });
+
+                expect(buffer).not.toBeNull();
+                expect(pluginWarningFor(onWarning, 'Comp Target')).toBe(true);
+            });
+        });
     });
 });

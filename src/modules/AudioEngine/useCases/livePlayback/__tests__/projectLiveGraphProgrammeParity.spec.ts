@@ -593,7 +593,7 @@ async function renderExportLeg(options?: {
         resolveTempoAtBeat,
         renderableTracks,
         scheduledTracks,
-        scheduledTrackIds: new Set(scheduledTracks.map((track) => track.id)),
+        contributingTrackIds: new Set(scheduledTracks.map((track) => track.id)),
         soloGatedByTrackId: new Map(),
         vcaMultiplierByTrackId: new Map(),
         onWarning:

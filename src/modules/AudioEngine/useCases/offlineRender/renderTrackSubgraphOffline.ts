@@ -8,6 +8,7 @@ import { getSidechainKeyDelay } from '../latencyCompensation/compensation/getSid
 
 import { clampRenderFrameCount } from './clampRenderFrameCount';
 import { collectDeviceRuntimeFailures } from './collectDeviceRuntimeFailures';
+import { collectWiredSidechainDetectorRoutes } from './collectWiredSidechainDetectorRoutes';
 import { connectOfflineToasterPadRoutes } from './connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './constants';
 import { createOfflineTrackStrip } from './createOfflineTrackStrip';
@@ -17,6 +18,7 @@ import { prepareOfflineContext } from './prepareOfflineContext';
 import { projectStripTrack, type TargetMixerDisposition } from './projectStripTrack';
 import { renderInSegments } from './renderInSegments';
 import { resolveHistoryAwareRenderContext } from './resolveHistoryAwareRenderContext';
+import { resolvePrintReachability } from './resolvePrintReachability';
 import { schedulePendingSuspends } from './schedulePendingSuspends';
 import { scheduleTrackClips } from './scheduleTrackClips';
 import { type OfflineScheduleTally, type OfflineTrackStrip, type PendingWorkletEvent } from './types';
@@ -58,56 +60,6 @@ function resolveContributorVcaMultiplier({ track, isTarget, groups }: ResolveCon
     }
 
     return deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups });
-}
-
-type ResolveStripContributesAudioInput = {
-    track: Track;
-    /** Whether this render honours the track's own mute — true for a sidechain key source only. */
-    honorMuted: boolean;
-    isTarget: boolean;
-    /** False drops the target's sends from the graph; every other strip keeps its own. */
-    includeSends: boolean;
-    /** Every track this render builds, so a send's bus can be resolved before its strip exists. */
-    renderTrackIds: ReadonlySet<string>;
-};
-
-/**
- * Whether one strip's device chain can reach the rendered file — the question
- * the mixdown answers with `scheduledTrackIds`, asked per strip because freeze
- * and bounce hand every strip to `buildDeviceChain` (#4355).
- *
- * The chain refuses a loaded hosted plugin only when dropping it would make
- * the file differ from the session. Freeze and bounce force every strip's mute
- * open except a sidechain key source's (see the call site), so a muted key's
- * post-fader output is zero and its device chain stops there — refusing over it
- * would make an ordinary freeze unrenderable over audio the file never carried.
- *
- * The pre-fader tap is the exception, because it sits upstream of the mute: a
- * muted key that still feeds a bus inside this render through a pre-fader send
- * prints its device chain into that bus exactly as live does, so it can change
- * the file after all. `renderOffline`'s `cueSendOnlyTracks` draws the same line.
- * A send reaches the file only when this render wires it — `includeSends`
- * governs the target's sends alone — and its bus is a track this render builds.
- * Membership is read from `renderTrackIds` rather than `trackStripsById`, which
- * is still filling as this runs.
- */
-function resolveStripContributesAudio({
-    track,
-    honorMuted,
-    isTarget,
-    includeSends,
-    renderTrackIds,
-}: ResolveStripContributesAudioInput): boolean {
-    if (!honorMuted || !track.muted) {
-        return true;
-    }
-
-    const sendsRendered = isTarget ? includeSends : true;
-    if (!sendsRendered) {
-        return false;
-    }
-
-    return track.sends.some((send) => send.preFader && renderTrackIds.has(send.busId));
 }
 
 type RenderTrackSubgraphOfflineInput = {
@@ -231,22 +183,33 @@ export async function renderTrackSubgraphOffline({
     // synchronously inside `createOfflineTrackStrip`, so a module registered
     // afterwards is registered too late and the device degrades silently.
     const renderTrackIds = new Set(renderTracks.map((track) => track.id));
-    const keyedSidechainDevices = new Set<object>();
+    const wiredDetectorRoutes = collectWiredSidechainDetectorRoutes({ tracks: renderTracks, routes: sidechainRoutes });
+    const keyedSidechainDevices = new Set<object>(wiredDetectorRoutes.map((route) => route.targetDevice));
     /** Tracks whose only role here is feeding a keyed device's detector. */
-    const sidechainKeySourceIds = new Set<string>();
-    for (const route of sidechainRoutes) {
-        if (!renderTrackIds.has(route.sourceTrackId)) {
-            continue;
-        }
-        const targetTrack = renderTracks.find((track) => track.id === route.targetTrackId);
-        const targetDevice = targetTrack?.devices.find(
-            (device) => device.id === route.targetDeviceId && !device.bypassed
-        );
-        if (targetDevice?.type === 'builtin-sidechain-compressor') {
-            keyedSidechainDevices.add(targetDevice);
-            sidechainKeySourceIds.add(route.sourceTrackId);
-        }
-    }
+    const sidechainKeySourceIds = new Set(wiredDetectorRoutes.map((route) => route.sourceTrackId));
+
+    // Which strips this render's print can actually carry, from the routing
+    // graph rather than from each strip's own mute alone (#4376). A content
+    // contributor routed into a muted key source is silent here even though its
+    // own mute is not the one that silenced it — the same answer the mixdown
+    // reaches from the same computation.
+    const printedTrackIds = new Set([targetTrackId, ...printTrackIds]);
+    const contributingTrackIds = resolvePrintReachability({
+        tracks: renderTracks,
+        honorMuted: (trackId) => sidechainKeySourceIds.has(trackId),
+        sendsRendered: (trackId) => (trackId === targetTrackId ? includeSends : true),
+        detectorRoutes: wiredDetectorRoutes,
+        resolveOutputRoute: (track) => {
+            if (printedTrackIds.has(track.id)) {
+                return { kind: 'prints' };
+            }
+            if (renderTrackIds.has(track.outputId)) {
+                return { kind: 'strip', trackId: track.outputId };
+            }
+            return { kind: 'outside-render' };
+        },
+    });
+
     await prepareOfflineContext({
         offlineCtx,
         tracks: renderTracks,
@@ -302,13 +265,7 @@ export async function renderTrackSubgraphOffline({
                         isTarget: track.id === targetTrackId,
                         groups: vcaGroups,
                     }),
-                    contributesAudio: resolveStripContributesAudio({
-                        track,
-                        honorMuted,
-                        isTarget: track.id === targetTrackId,
-                        includeSends,
-                        renderTrackIds,
-                    }),
+                    contributesAudio: contributingTrackIds.has(track.id),
                     onWarning,
                 }
             );
