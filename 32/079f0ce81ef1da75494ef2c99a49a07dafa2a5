@@ -1,0 +1,95 @@
+src/modules/Arrangement/handlers/track/__tests__/handleConsolidateAllTracks.spec.ts
+  s_9b530f08172a54::t_46017e89b6f932 93-124
+src/modules/AiRuntime/repositories/voiceNativeAdapter/__tests__/onDictationError.spec.ts
+  s_9b530f08172a54::t_9501ee7b218af4 8
+src/modules/SampleLibrary/repositories/__tests__/readNativeDirectory.spec.ts
+  s_9b530f08172a54::t_a88fcd2a20d36b 8
+src/modules/AiGeneration/repositories/nativeAIBridge/__tests__/invokeAI.spec.ts
+  s_9b530f08172a54::t_c966b1170be70b 8
+src/modules/AudioRendering/repositories/audioExport/__tests__/selectNativeAudioExportDirectory.spec.ts
+  s_9b530f08172a54::t_29a12b311b8546 8
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChain.spec.ts
+  s_9b530f08172a54::t_b0d42dc56ae6be 15-16,20-26
+  s_9b530f08172a54::t_a9ed4fc2bf28b2 246,259-277,283-284,304-328,340-341,356-360,366-367,382,388-389,405,411-412
+  s_9b530f08172a54::t_eeb9fe3f347199 67-68
+  s_9b530f08172a54::t_c52d5ffb3cf0cd 27-28
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  s_9b530f08172a54::t_70aa8133bc89ff 21
+  s_9b530f08172a54::t_3a043189105ae7 183-191,195-197,203,205
+  s_9b530f08172a54::t_6382db676fb720 279-293,295-296
+  s_9b530f08172a54::t_f1fb2dbf5836fb 339,342-345
+  s_9b530f08172a54::t_479856ee48e33f 346
+  s_9b530f08172a54::t_6bc8cdcc4e35a3 299-300
+  s_9b530f08172a54::t_d077db7e9fe923 192-194
+  s_9b530f08172a54::t_ff22df71b766bc 297-298
+  s_9b530f08172a54::t_11555b27a16e5e 404-406,411-412,414-415
+  s_9b530f08172a54::t_5bd47623704511 29
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChainRefusalTeardown.spec.ts
+  s_9b530f08172a54::t_10eab4cd15b039 79-80
+  s_9b530f08172a54::t_a6f514dcec7b56 51-52
+  s_9b530f08172a54::t_58db59499208a3 27-28
+  s_9b530f08172a54::t_48bad8922dce6a 47-50
+src/modules/Project/repositories/nativeTuning/__tests__/parseScl.spec.ts
+  s_9b530f08172a54::t_4db9d0342e3b54 8
+src/modules/AiRuntime/repositories/voiceNativeAdapter/__tests__/onDictationResult.spec.ts
+  s_9b530f08172a54::t_7422ef011cab1f 8
+src/modules/AudioEngine/repositories/deviceStrategy/isDesktopExternalPluginRuntime.ts
+  s_9b530f08172a54::t_8fd60f4f655398 1-15
+src/modules/Project/repositories/nativeFileDialog/__tests__/saveViaNative.spec.ts
+  s_9b530f08172a54::t_8b5e5fb1ca8cfa 8
+src/modules/AiRuntime/repositories/voiceNativeAdapter/__tests__/loadCachedWhisperModel.spec.ts
+  s_9b530f08172a54::t_a77325fabb477c 8
+src/modules/Arrangement/handlers/track/handleConsolidateAllTracks.ts
+  s_9b530f08172a54::t_c28e6affc808b4 80
+  s_9b530f08172a54::t_8b876abbe8797b 53-58,65-66,78-79
+src/modules/AudioEngine/useCases/livePlayback/readLoadedExternalInstanceIds.ts
+  s_9b530f08172a54::t_da3d7b62c470ac 1-34
+src/modules/Project/repositories/agentAssetSaga/__tests__/invokeAgentAssetSaga.spec.ts
+  s_9b530f08172a54::t_4668a83e6ca187 15
+src/modules/SampleLibrary/repositories/__tests__/readNativeAudioFileBytes.spec.ts
+  s_9b530f08172a54::t_7fd07fae6c4bd7 8
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/nativeGraphTransport.spec.ts
+  s_9b530f08172a54::t_a25410fec456c6 9
+src/modules/AudioRendering/repositories/audioExport/__tests__/selectNativeAudioExportFile.spec.ts
+  s_9b530f08172a54::t_c4356c6f192e15 8
+src/modules/DawInterchange/repositories/__tests__/saveDawProjectFileDialog.spec.ts
+  s_9b530f08172a54::t_01fa34b12723f4 9
+src/modules/AudioRendering/repositories/audioExport/__tests__/writeNativeAudioStemFile.spec.ts
+  s_9b530f08172a54::t_629edf2a18ea3c 8
+src/modules/AudioEngine/repositories/deviceStrategy/isEngineHostedPluginDeviceType.ts
+  s_9b530f08172a54::t_bb5b9df7952ae2 17-23
+src/modules/Crumbs/repositories/__tests__/get-dropped-crumbs-file-path.spec.ts
+  s_9b530f08172a54::t_2815ef02de4bb9 10
+src/modules/SampleLibrary/repositories/__tests__/pickNativeSampleFolder.spec.ts
+  s_9b530f08172a54::t_e20c2d3e8f7bc3 8
+src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts
+  s_9b530f08172a54::t_8e9cbde69a0df0 40
+src/modules/Project/repositories/nativeProjectFiles/__tests__/desktopInvoke.spec.ts
+  s_9b530f08172a54::t_4fc6ba1706c9fb 9
+src/modules/AiRuntime/repositories/voiceNativeAdapter/__tests__/startDictation.spec.ts
+  s_9b530f08172a54::t_a9030375f6ad47 8
+src/modules/Project/repositories/nativeFileDialog/__tests__/openViaNative.spec.ts
+  s_9b530f08172a54::t_03e8d322a962c7 9
+src/modules/CrdtDocument/repositories/nativeCrdtPersistence/__tests__/invokeCommand.desktopRuntime.spec.ts
+  s_9b530f08172a54::t_4aba644c71521d 6
+src/modules/AiRuntime/repositories/voiceNativeAdapter/__tests__/stopDictation.spec.ts
+  s_9b530f08172a54::t_86e935f5b77665 8
+src/modules/AudioRendering/repositories/audioExport/__tests__/writeNativeAudioMixdownFile.spec.ts
+  s_9b530f08172a54::t_825cfdac3c9f47 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "32079f0ce81ef1da75494ef2c99a49a07dafa2a5",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
