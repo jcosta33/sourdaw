@@ -217,6 +217,7 @@ export async function renderTrackSubgraphOffline({
     // `finally` rather than a line after the returned buffer.
     try {
         for (const track of renderTracks) {
+            const honorMuted = sidechainKeySourceIds.has(track.id);
             const strip = await createOfflineTrackStrip(
                 offlineCtx,
                 projectStripTrack({
@@ -245,12 +246,20 @@ export async function renderTrackSubgraphOffline({
                 // `resolveContributorVcaMultiplier` for why the target is the one
                 // track that does not get it.
                 {
-                    honorMuted: sidechainKeySourceIds.has(track.id),
+                    honorMuted,
                     vcaMultiplier: resolveContributorVcaMultiplier({
                         track,
                         isTarget: track.id === targetTrackId,
                         groups: vcaGroups,
                     }),
+                    // A strip whose mute this render honours prints silence, so
+                    // a device the chain cannot build on it cannot make the file
+                    // differ from the session — the same reason the mixdown marks
+                    // its unscheduled strips non-contributing. The target is
+                    // exempt: its strip output is the buffer this render exists
+                    // to capture, so a loaded plugin on the track being frozen or
+                    // bounced still refuses (#4355).
+                    contributesAudio: track.id === targetTrackId || !(honorMuted && track.muted),
                     onWarning,
                 }
             );
