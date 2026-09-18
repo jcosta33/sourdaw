@@ -1,0 +1,22 @@
+.agents/skills/review-stances/test-validity.md
+  h_1228e573df1f42 36-43
+AGENTS.md
+  h_1228e573df1f42 181
+scripts/__tests__/restampWasmInventory.spec.ts
+  h_1228e573df1f42 2-5,7,9-18,21-23,39-109,145,154-169,171-173,177-179,185-208,210-213,218-235,237-239,246-280
+scripts/restampDependencyBump.ts
+  h_1228e573df1f42 49
+scripts/restampWasmInventory.ts
+  h_1228e573df1f42 3,85-86,92-104,126-137,140,154,174-181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9036b72d8e3d2c19d01e00beb701332caa71377c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
