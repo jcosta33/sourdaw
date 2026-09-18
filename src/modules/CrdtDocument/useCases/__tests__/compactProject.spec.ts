@@ -5,10 +5,10 @@ import { automergeRepository } from '../../repositories/automergeRepository';
 import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromIdb';
 import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthorityModel';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
+import { beginPersistenceReplacement } from '../beginPersistenceReplacement';
 import { compactProject } from '../compactProject';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
 import { persistCrdtProject } from '../persistCrdtProject';
-import { runCrdtPersistenceOperation } from '../runCrdtPersistenceOperation';
 
 const mocks = vi.hoisted(() => ({
     openDatabase: vi.fn(),
@@ -55,7 +55,7 @@ describe('compactProject', () => {
         persistence = new TransactionalPersistence();
         mocks.openDatabase.mockResolvedValue(persistence.database);
         automergeRepository.reset();
-        void runCrdtPersistenceOperation('reset');
+        beginPersistenceReplacement({ epoch: crypto.randomUUID(), old: null });
         crdtProjectCompactionState.incrementalSaveCount = 0;
     });
 

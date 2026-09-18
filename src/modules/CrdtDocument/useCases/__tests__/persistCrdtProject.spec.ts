@@ -8,11 +8,10 @@ import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromId
 import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthorityModel';
 import { saveAllToIdb } from '../../repositories/crdtPersistence/saveAllToIdb';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
+import { beginPersistenceReplacement } from '../beginPersistenceReplacement';
 import { compactProject } from '../compactProject';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
-import { createCrdtProject } from '../createCrdtProject';
 import { persistCrdtProject } from '../persistCrdtProject';
-import { runCrdtPersistenceOperation } from '../runCrdtPersistenceOperation';
 
 type VersionedQueueState = {
     version: number;
@@ -173,7 +172,7 @@ describe('persistCrdtProject', () => {
         persistence = new TransactionalPersistence();
         mocks.openDatabase.mockResolvedValue(persistence.database);
         automergeRepository.reset();
-        void runCrdtPersistenceOperation('reset');
+        beginPersistenceReplacement({ epoch: crypto.randomUUID(), old: null });
         crdtProjectCompactionState.incrementalSaveCount = 0;
     });
 
@@ -527,7 +526,7 @@ describe('persistCrdtProject', () => {
         const oldPersist = persistCrdtProject();
         const oldIncremental = await persistence.waitForTransaction('readwrite', 2);
 
-        await runCrdtPersistenceOperation('reset');
+        beginPersistenceReplacement({ epoch: crypto.randomUUID(), old: null });
         expect(oldIncremental.isAbortRequested()).toBe(true);
         automergeRepository.createProject('new-project');
         const newProjectCompaction = compactProject();
@@ -565,11 +564,13 @@ describe('persistCrdtProject', () => {
         failedTransaction.abort();
         await expect(failedPersist).rejects.toThrow('IDB transaction aborted');
 
-        const newProject = createCrdtProject('new-project');
+        beginPersistenceReplacement({ epoch: crypto.randomUUID(), old: null });
+        automergeRepository.createProject('new-project');
+        const newProjectCompaction = compactProject();
         const newProjectSave = await persistence.waitForTransaction('readwrite', 3);
         expect(newProjectSave.writes.some((write) => write.kind === 'add')).toBe(false);
         newProjectSave.complete();
-        await newProject;
+        await newProjectCompaction;
         expect(getPersistedDocumentKeys(persistence)).toEqual(['root']);
 
         automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
@@ -620,7 +621,7 @@ describe('persistCrdtProject', () => {
             staleLoad = loadWithDeferredEmptySnapshot({ shouldCommit: () => loadIsCurrent });
             loadIsCurrent = false;
 
-            await runCrdtPersistenceOperation('reset');
+            beginPersistenceReplacement({ epoch: crypto.randomUUID(), old: null });
             automergeRepository.createProject('replacement');
             const replacementCompaction = compactProject();
             const replacementSave = await persistence.waitForTransaction('readwrite', 1);
@@ -967,9 +968,10 @@ describe('persistCrdtProject', () => {
         try {
             await importPersistenceAfterQueueVersionMismatch();
             const queueAfterMigration = await import('../runCrdtPersistenceOperation');
+            const replacementAfterMigration = await import('../beginPersistenceReplacement');
             await mergeStarted;
 
-            await queueAfterMigration.runCrdtPersistenceOperation('reset');
+            replacementAfterMigration.beginPersistenceReplacement({ epoch: crypto.randomUUID(), old: null });
             automergeRepository.createProject('replacement');
             automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
                 doc.replacementProject = true;
@@ -1418,7 +1420,7 @@ describe('persistCrdtProject', () => {
             recoverySave.complete();
             await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-            expect(state.version).toBe(5);
+            expect(state.version).toBe(6);
             expect(state.persistenceGeneration).toBe(previousGeneration + 1);
             expect(state.pendingChunks).toEqual([]);
             expect(state.pendingFullSnapshot).toBeNull();

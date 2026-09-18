@@ -17,7 +17,8 @@ const mocks = vi.hoisted(() => ({
     projectActionHistoryToStore: vi.fn(),
     projectSet: vi.fn(),
     resetAudioGraph: vi.fn(),
-    resetCrdtProjectAuthority: vi.fn(),
+    resetCrdtProject: vi.fn(),
+    finalize: vi.fn(),
     resetModuleStoresToDefault: vi.fn(),
     setAutoSaveHandle: vi.fn(),
     startCrdtAutoSave: vi.fn(),
@@ -85,7 +86,8 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     removeCrdtDoc: vi.fn(),
     projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
-    resetCrdtProjectAuthority: mocks.resetCrdtProjectAuthority,
+    resetCrdtProject: mocks.resetCrdtProject,
+    resetCrdtProjectAuthority: vi.fn(),
     endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
@@ -149,6 +151,13 @@ describe('createFromTemplate', () => {
         mocks.newProject.mockResolvedValue(true);
         mocks.unloadPlugin.mockResolvedValue(undefined);
         mocks.compactProject.mockResolvedValue(undefined);
+        mocks.finalize.mockResolvedValue('finalized');
+        // A replacing reset always reports the point of no return, so the
+        // default has to as well: every `authorityReplaced` branch depends on it.
+        mocks.resetCrdtProject.mockImplementation((_name: string, onAuthorityReplaced?: () => void) => {
+            onAuthorityReplaced?.();
+            return Promise.resolve({ status: 'replaced', finalize: mocks.finalize });
+        });
         mocks.acquireRuntimeTransition.mockResolvedValue(() => {});
         mocks.startCrdtAutoSave.mockReturnValue({});
         mocks.transactionPrepare.mockResolvedValue(true);
@@ -190,19 +199,23 @@ describe('createFromTemplate', () => {
         expect(created).toBe(true);
     });
 
-    it('converts a rejected template action to a failed outcome', async () => {
+    /**
+     * C4 — the action ran past the authority switch, so the previous project is
+     * out of the stores: `ensureTrackStrips` reads a track store the projection
+     * reset just emptied, and rebuilding from it would only look like a
+     * recovery while autosave compacted the half-built template over the user's
+     * project on disk.
+     */
+    it('converts a rejected template action to a failed outcome without a false recovery', async () => {
         mocks.executeAppAction.mockRejectedValue(new Error('device setup failed'));
+        // The build died before any snapshot, so nothing of the template
+        // reached storage and the reset cannot finalize.
+        mocks.finalize.mockResolvedValue('authority-mismatch');
 
         await expect(createFromTemplate('pop-song')).resolves.toBe(false);
-        expect(mocks.resetAudioGraph).toHaveBeenCalledTimes(2);
-        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
-
-        const recoveryResetOrder = mocks.resetAudioGraph.mock.invocationCallOrder[1];
-        const rebuildOrder = mocks.ensureTrackStrips.mock.invocationCallOrder[0];
-        if (recoveryResetOrder === undefined || rebuildOrder === undefined) {
-            throw new Error('expected graph recovery calls');
-        }
-        expect(rebuildOrder).toBeGreaterThan(recoveryResetOrder);
+        expect(mocks.resetAudioGraph).toHaveBeenCalledOnce();
+        expect(mocks.ensureTrackStrips).not.toHaveBeenCalled();
+        expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
     });
 
     it('recovers when initial graph reset throws after partial teardown', async () => {
@@ -217,7 +230,9 @@ describe('createFromTemplate', () => {
     });
 
     it('keeps recovery failures inside the boolean outcome boundary', async () => {
-        mocks.executeAppAction.mockRejectedValue(new Error('action failed'));
+        // Fails before the authority switch, which is the only point at which
+        // there is a previous project left to rebuild.
+        mocks.unloadPlugin.mockRejectedValue(new Error('native teardown failed'));
         mocks.resetAudioGraph
             .mockImplementationOnce(() => undefined)
             .mockImplementationOnce(() => {
@@ -230,16 +245,25 @@ describe('createFromTemplate', () => {
         await expect(createFromTemplate('pop-song')).resolves.toBe(false);
         expect(mocks.resetAudioGraph).toHaveBeenCalledTimes(2);
         expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(mocks.resetCrdtProject).not.toHaveBeenCalled();
     });
 
+    /**
+     * C4 — the template's writes did commit, so this project is the one the
+     * user keeps: its branch list has to become durable and autosave has to
+     * protect it from here. The previous project's graph is not restored, which
+     * past the switch would only look like a recovery.
+     */
     it('reports success when template truth committed before a degraded post-commit failure', async () => {
         const committedFailure = new Error('macro history failed after commit');
         mocks.executeAppAction.mockRejectedValue(committedFailure);
         mocks.isAppActionCommittedError.mockImplementation((error) => error === committedFailure);
 
         await expect(createFromTemplate('pop-song')).resolves.toBe(true);
-        expect(mocks.resetAudioGraph).toHaveBeenCalledTimes(2);
-        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(mocks.resetAudioGraph).toHaveBeenCalledOnce();
+        expect(mocks.ensureTrackStrips).not.toHaveBeenCalled();
+        expect(mocks.finalize).toHaveBeenCalledOnce();
+        expect(mocks.startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 
     it('lets project-replacement templates own the CRDT authority swap', async () => {
@@ -259,13 +283,13 @@ describe('createFromTemplate', () => {
         expect(mocks.transactionPrepare).toHaveBeenCalledOnce();
         expect(mocks.transactionActivate).toHaveBeenCalledOnce();
         expect(mocks.stopActiveAutoSave).toHaveBeenCalledOnce();
-        expect(mocks.resetCrdtProjectAuthority).toHaveBeenCalledWith('Pop Song');
+        expect(mocks.resetCrdtProject).toHaveBeenCalledWith('Pop Song', expect.any(Function));
         // The template owns the document from that call on, so the pedals
         // latched under the project just left are forgotten here and not at the
         // earlier graph reset, which restoreAudioGraph can still undo.
         expect(mocks.forgetProjectLatchedPedals).toHaveBeenCalledOnce();
         expect(mocks.forgetProjectLatchedPedals.mock.invocationCallOrder[0]!).toBeGreaterThan(
-            mocks.resetCrdtProjectAuthority.mock.invocationCallOrder[0]!
+            mocks.resetCrdtProject.mock.invocationCallOrder[0]!
         );
         expect(mocks.projectActionHistoryToStore).toHaveBeenCalledOnce();
         expect(mocks.resetModuleStoresToDefault).toHaveBeenCalledOnce();
@@ -292,6 +316,39 @@ describe('createFromTemplate', () => {
         expect(storeResetOrder).toBeGreaterThan(stopOrder);
         expect(actionOrder).toBeGreaterThan(storeResetOrder);
         expect(autosaveOrder).toBeGreaterThan(actionOrder);
+        // C3 — the template is not the durable project until the reset is
+        // finalized, so autosave must not run before that answer.
+        const compactionOrder = mocks.compactProject.mock.invocationCallOrder[0]!;
+        const finalizeOrder = mocks.finalize.mock.invocationCallOrder[0]!;
+        expect(finalizeOrder).toBeGreaterThan(compactionOrder);
+        expect(autosaveOrder).toBeGreaterThan(finalizeOrder);
+    });
+
+    // C1 — every refusal is decided before the switch, so the previous project
+    // is still the live one and this is an ordinary abort.
+    it('restores the previous project when the reset is refused', async () => {
+        mocks.resetCrdtProject.mockResolvedValue({ status: 'refused', reason: 'reset-active' });
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+
+        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(mocks.startCrdtAutoSave).toHaveBeenCalledOnce();
+        expect(mocks.compactProject).not.toHaveBeenCalled();
+        expect(mocks.finalize).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+    });
+
+    // C2 — nothing of the template reached storage, so the reset cannot
+    // finalize and autosave must stay stopped: starting it would compact the
+    // half-built template over the user's own project on disk.
+    it('leaves autosave stopped when the initial snapshot fails to persist', async () => {
+        mocks.compactProject.mockRejectedValue(new Error('initial compaction failed'));
+        mocks.finalize.mockResolvedValue('authority-mismatch');
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+
+        expect(mocks.finalize).toHaveBeenCalledOnce();
+        expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
     });
 
     it('returns false without teardown when the transition is superseded', async () => {
@@ -313,7 +370,7 @@ describe('createFromTemplate', () => {
         expect(mocks.stopPlayback).toHaveBeenCalledOnce();
         expect(mocks.stopActiveAutoSave).not.toHaveBeenCalled();
         expect(mocks.resetAudioGraph).not.toHaveBeenCalled();
-        expect(mocks.resetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(mocks.resetCrdtProject).not.toHaveBeenCalled();
         expect(mocks.resetModuleStoresToDefault).not.toHaveBeenCalled();
         expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
@@ -331,7 +388,7 @@ describe('createFromTemplate', () => {
         unloading.resolve();
 
         await expect(creation).resolves.toBe(false);
-        expect(mocks.resetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(mocks.resetCrdtProject).not.toHaveBeenCalled();
         // The player stays in the old project, whose graph restoreAudioGraph
         // rebuilds above, so a damper still held must survive the abandoned
         // template creation.

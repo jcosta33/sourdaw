@@ -13,6 +13,7 @@ const {
     mockLoadCrdtProject,
     mockProjectCrdtToStores,
     mockRunPersistenceOp,
+    mockCurrentPersistenceGeneration,
 } = vi.hoisted(() => ({
     mockCloneDoc: vi.fn((doc: unknown) => doc),
     mockIsAppError: vi.fn(() => false),
@@ -46,6 +47,7 @@ const {
     mockLoadCrdtProject: vi.fn(() => Promise.resolve(true)),
     mockProjectCrdtToStores: vi.fn(),
     mockRunPersistenceOp: vi.fn(() => Promise.resolve()),
+    mockCurrentPersistenceGeneration: vi.fn(() => 7),
 }));
 
 vi.mock('@automerge/automerge', () => ({ clone: mockCloneDoc }));
@@ -65,6 +67,9 @@ vi.mock('../../loadCrdtProject', () => ({ loadCrdtProject: mockLoadCrdtProject }
 vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mockProjectCrdtToStores }));
 vi.mock('../../runCrdtPersistenceOperation', () => ({
     runCrdtPersistenceOperation: mockRunPersistenceOp,
+}));
+vi.mock('../../currentPersistenceGeneration', () => ({
+    currentPersistenceGeneration: mockCurrentPersistenceGeneration,
 }));
 
 import { runBranchLineageTransition } from '../runBranchLineageTransition';
@@ -92,6 +97,7 @@ describe('runBranchLineageTransition', () => {
         mockRunPersistenceOp.mockResolvedValue(undefined);
         mockBranchStateAuthority.captureRevision.mockReturnValue(4);
         mockBranchStateAuthority.commit.mockResolvedValue({ status: 'committed', revision: 5 });
+        mockCurrentPersistenceGeneration.mockReturnValue(7);
     });
 
     it('applies the transition, commits next state, and returns the result', async () => {
@@ -216,6 +222,38 @@ describe('runBranchLineageTransition', () => {
         expect(mockBranchStateAuthority.commit).toHaveBeenCalledTimes(1);
         expect(mockBranchStore.set).not.toHaveBeenCalled();
         expect(mockProjectCrdtToStores).toHaveBeenCalled();
+    });
+
+    /**
+     * T1 — a project reset replaced the repository under this transition. The
+     * documents these snapshots describe belong to a repository that no longer
+     * exists, and the branch list the rollback would restore describes that
+     * repository too, so writing either back would put the replaced project's
+     * branches and documents over the replacement's.
+     */
+    it('skips the rollback when the project was replaced mid-transition', async () => {
+        (mockAutomergeRepo.getDoc as ReturnType<typeof vi.fn>).mockReturnValue({ data: 'doc-1-content' });
+        mockCurrentPersistenceGeneration.mockReturnValueOnce(7).mockReturnValue(8);
+
+        await expect(
+            runBranchLineageTransition({
+                affectedDocIds: ['doc-1'],
+                apply: () => {
+                    throw new Error('apply failed');
+                },
+                from: 'a',
+                previousState,
+                to: 'b',
+            })
+        ).rejects.toThrow('apply failed');
+
+        expect(mockAutomergeRepo.replaceDoc).not.toHaveBeenCalled();
+        expect(mockAutomergeRepo.replaceRootContentPreservingIdentity).not.toHaveBeenCalled();
+        expect(mockAutomergeRepo.removeDoc).not.toHaveBeenCalled();
+        expect(mockLoadCrdtProject).not.toHaveBeenCalled();
+        expect(mockProjectCrdtToStores).not.toHaveBeenCalled();
+        expect(mockBranchStateAuthority.commit).not.toHaveBeenCalled();
+        expect(mockBranchStore.set).not.toHaveBeenCalled();
     });
 
     it('deduplicates affectedDocIds when creating snapshots', async () => {

@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
+import { beginPersistenceReplacement } from '../../useCases/beginPersistenceReplacement';
 import { compactProject } from '../../useCases/compactProject';
 import { loadCrdtProject } from '../../useCases/loadCrdtProject';
 import { persistCrdtProject } from '../../useCases/persistCrdtProject';
-import { runCrdtPersistenceOperation } from '../../useCases/runCrdtPersistenceOperation';
 import { automergeRepository } from '../automergeRepository';
 import { loadAllFromIdb } from '../crdtPersistence/loadAllFromIdb';
 
@@ -54,7 +54,7 @@ describe('AutomergeRepository replacement load authority', () => {
         mocks.openDatabase.mockImplementation(() => Promise.resolve(persistence.database));
 
         automergeRepository.reset();
-        await runCrdtPersistenceOperation('reset');
+        beginPersistenceReplacement({ epoch: crypto.randomUUID(), old: null });
         automergeRepository.createProject('project');
         const baseCompaction = compactProject();
         const baseTransaction = await persistence.waitForTransaction('readwrite', 1);

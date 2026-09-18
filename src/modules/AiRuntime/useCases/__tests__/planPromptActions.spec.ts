@@ -36,6 +36,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     replaceCrdtDoc: vi.fn(),
     replaceCrdtDocInLineage: vi.fn(),
     resetCrdtProjectAuthority: vi.fn(),
+    resetCrdtProject: vi.fn(),
     endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),

@@ -37,7 +37,7 @@ const { mockAutomergeRepo, mockSaveAllToIdb, mockSaveIncrementals, mockLoadSnaps
                 authority: { epoch: 'default-epoch', revision: 0, rootLineage: 'main' },
             })
         ),
-        mockLoadSnapshot: vi.fn(() => Promise.resolve(null)),
+        mockLoadSnapshot: vi.fn<() => Promise<CrdtPersistenceSnapshot | null>>(() => Promise.resolve(null)),
         mockCompactionState: { incrementalSaveCount: 0 },
     })
 );
@@ -57,9 +57,12 @@ vi.mock('../crdtProjectCompactionState', () => ({
 
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 
+import { DEFAULT_CRDT_ROOT_LINEAGE } from '../../models/CrdtRootLineage';
+import { advancePersistenceAuthority } from '../../repositories/crdtPersistence/advancePersistenceAuthority';
 import { crdtPersistenceQueueCoordinator } from '../crdtPersistenceQueueCoordinator';
 import { sessionUndoWitnessStampPort } from '../sessionUndoWitnessStampPort';
 
+import type { CrdtPersistenceSnapshot } from '../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
 import type { SaveAllToIdbResult } from '../../repositories/crdtPersistence/saveAllToIdb';
 import type { SaveIncrementalsToIdbResult } from '../../repositories/crdtPersistence/saveIncrementalsToIdb';
 
@@ -69,8 +72,14 @@ describe('crdtPersistenceQueueCoordinator', () => {
         expect(typeof crdtPersistenceQueueCoordinator.runLoad).toBe('function');
     });
 
-    it('runOperation with reset resolves immediately', async () => {
-        await expect(crdtPersistenceQueueCoordinator.runOperation('reset')).resolves.toBeUndefined();
+    // K5 — the replacement is a new persistence generation, so every write the
+    // outgoing project still has in flight is revoked rather than retried.
+    it('advances the persistence generation when a replacement begins', () => {
+        const before = crdtPersistenceQueueCoordinator.currentGeneration();
+
+        crdtPersistenceQueueCoordinator.beginReplacement({ epoch: 'epoch-generation', old: null });
+
+        expect(crdtPersistenceQueueCoordinator.currentGeneration()).toBeGreaterThan(before);
     });
 
     it('holds autosave behind a cross-store persistence barrier until publication commits', async () => {
@@ -142,8 +151,8 @@ describe('crdtPersistenceQueueCoordinator', () => {
 });
 
 describe('crdtPersistenceQueueCoordinator / exact-heads collaboration persist does not force a pending write to land (#3331)', () => {
-    beforeEach(async () => {
-        await crdtPersistenceQueueCoordinator.runOperation('reset');
+    beforeEach(() => {
+        crdtPersistenceQueueCoordinator.beginReplacement({ epoch: crypto.randomUUID(), old: null });
         mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
         mockAutomergeRepo.saveDocIncremental.mockClear();
         mockAutomergeRepo.saveDocIncremental.mockReturnValue(undefined);
@@ -205,8 +214,8 @@ describe('crdtPersistenceQueueCoordinator / exact-heads collaboration persist do
 });
 
 describe('crdtPersistenceQueueCoordinator / compaction paths stamp the undo witness before the bundle read (#3331)', () => {
-    beforeEach(async () => {
-        await crdtPersistenceQueueCoordinator.runOperation('reset');
+    beforeEach(() => {
+        crdtPersistenceQueueCoordinator.beginReplacement({ epoch: crypto.randomUUID(), old: null });
         mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
         mockAutomergeRepo.saveDocIncremental.mockClear();
         mockAutomergeRepo.saveDocIncremental.mockReturnValue(undefined);
@@ -325,8 +334,8 @@ describe('crdtPersistenceQueueCoordinator / compaction paths stamp the undo witn
 });
 
 describe('crdtPersistenceQueueCoordinator / a failed pending-write settle still stamps and persists (#3331)', () => {
-    beforeEach(async () => {
-        await crdtPersistenceQueueCoordinator.runOperation('reset');
+    beforeEach(() => {
+        crdtPersistenceQueueCoordinator.beginReplacement({ epoch: crypto.randomUUID(), old: null });
         mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
         mockAutomergeRepo.saveDocIncremental.mockClear();
         mockAutomergeRepo.saveDocIncremental.mockReturnValue(new Uint8Array([1, 2, 3]));
@@ -349,5 +358,117 @@ describe('crdtPersistenceQueueCoordinator / a failed pending-write settle still 
         expect(stampSpy).toHaveBeenCalled();
         expect(mockSaveIncrementals).toHaveBeenCalled();
         stampSpy.mockRestore();
+    });
+});
+
+describe('crdtPersistenceQueueCoordinator / a project replacement claims the authority its caller read (#4249)', () => {
+    const outgoingAuthority = { epoch: 'epoch-outgoing', revision: 4, rootLineage: DEFAULT_CRDT_ROOT_LINEAGE };
+    const replacementEpoch = 'epoch-replacement';
+    const replacementAuthority = advancePersistenceAuthority(
+        outgoingAuthority,
+        replacementEpoch,
+        DEFAULT_CRDT_ROOT_LINEAGE
+    );
+
+    beforeEach(() => {
+        mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
+        mockAutomergeRepo.mergeBundle.mockClear();
+        mockAutomergeRepo.mergeBundle.mockResolvedValue(undefined);
+        mockAutomergeRepo.saveAll.mockReturnValue(new Map([['root', new Uint8Array([1])]]));
+        mockAutomergeRepo.saveAllOffThread.mockClear();
+        mockAutomergeRepo.saveAllOffThread.mockResolvedValue(new Map([['root', new Uint8Array([1])]]));
+        // `mockReset`, not `mockClear`: a case that refuses before consuming its
+        // queued follow-up save would otherwise hand that result to the next one.
+        mockSaveAllToIdb.mockReset();
+        mockSaveAllToIdb.mockResolvedValue({ status: 'committed', authority: replacementAuthority });
+        mockLoadSnapshot.mockClear();
+        mockLoadSnapshot.mockResolvedValue(null);
+        vi.mocked(flushAutomergeStorageWrites).mockClear();
+        vi.mocked(flushAutomergeStorageWrites).mockImplementation(() => undefined);
+    });
+
+    // K1 — the reset has to learn what another realm may have written, which
+    // the cached authority cannot tell it.
+    it('reads the durable authority from storage rather than the authority the queue already holds', async () => {
+        const durableAuthority = { epoch: 'epoch-durable', revision: 9, rootLineage: DEFAULT_CRDT_ROOT_LINEAGE };
+        mockLoadSnapshot.mockResolvedValue({ authority: durableAuthority, bundle: null });
+        crdtPersistenceQueueCoordinator.beginReplacement({ epoch: replacementEpoch, old: outgoingAuthority });
+
+        await expect(crdtPersistenceQueueCoordinator.readDurableAuthority()).resolves.toEqual(durableAuthority);
+
+        // Reading storage must not adopt what it read: the replacement's
+        // compare-and-swap still claims the authority its caller handed in.
+        await crdtPersistenceQueueCoordinator.runOperation('compact');
+        expect(mockSaveAllToIdb).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ expectedAuthority: outgoingAuthority })
+        );
+    });
+
+    // K2
+    it('swaps the replacement in against the authority the caller read, under the new epoch', async () => {
+        crdtPersistenceQueueCoordinator.beginReplacement({ epoch: replacementEpoch, old: outgoingAuthority });
+
+        await crdtPersistenceQueueCoordinator.runOperation('compact');
+
+        expect(mockSaveAllToIdb).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({
+                expectedAuthority: outgoingAuthority,
+                nextEpoch: replacementEpoch,
+                nextRootLineage: DEFAULT_CRDT_ROOT_LINEAGE,
+            })
+        );
+        expect(crdtPersistenceQueueCoordinator.committedAuthority()).toEqual(replacementAuthority);
+    });
+
+    // K3 — merging here would fold the project the user just left into the one
+    // they just created, so a lost swap has to surface as a failure instead.
+    it('refuses to merge the project being replaced into the replacement when the swap is lost', async () => {
+        crdtPersistenceQueueCoordinator.beginReplacement({ epoch: replacementEpoch, old: outgoingAuthority });
+        const conflictAuthority = advancePersistenceAuthority(outgoingAuthority);
+        // Only the first save conflicts: a merge would let the retry commit, so
+        // a coordinator that merged here fails this case rather than looping on
+        // an endlessly conflicting save.
+        mockSaveAllToIdb.mockResolvedValueOnce({
+            status: 'conflict',
+            authority: conflictAuthority,
+            bundle: new Map([['root', new Uint8Array([2])]]),
+        });
+        mockSaveAllToIdb.mockResolvedValueOnce({
+            status: 'committed',
+            authority: advancePersistenceAuthority(conflictAuthority),
+        });
+
+        await expect(crdtPersistenceQueueCoordinator.runOperation('compact')).rejects.toMatchObject({
+            _tag: 'CrdtPersistenceReplacementConflict',
+            expected: outgoingAuthority,
+        });
+
+        expect(mockAutomergeRepo.mergeBundle).not.toHaveBeenCalled();
+        expect(crdtPersistenceQueueCoordinator.committedAuthority()).toBeNull();
+    });
+
+    // K4 — the refusal belongs to replacements alone; two realms editing one
+    // project both belong in the result.
+    it('still merges an ordinary same-epoch conflict when no replacement is in flight', async () => {
+        await crdtPersistenceQueueCoordinator.runLoad(async () => ({
+            loaded: true,
+            snapshot: { authority: outgoingAuthority, bundle: new Map([['root', new Uint8Array([1])]]) },
+        }));
+        const conflictAuthority = advancePersistenceAuthority(outgoingAuthority);
+        mockSaveAllToIdb.mockResolvedValueOnce({
+            status: 'conflict',
+            authority: conflictAuthority,
+            bundle: new Map([['root', new Uint8Array([2])]]),
+        });
+        mockSaveAllToIdb.mockResolvedValueOnce({
+            status: 'committed',
+            authority: advancePersistenceAuthority(conflictAuthority),
+        });
+
+        await crdtPersistenceQueueCoordinator.runOperation('compact');
+
+        expect(mockAutomergeRepo.mergeBundle).toHaveBeenCalledTimes(1);
     });
 });

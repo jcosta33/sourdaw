@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { compactProject, resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
+import { compactProject, resetCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
@@ -59,7 +59,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     removeCrdtDoc: vi.fn(),
     projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
-    resetCrdtProjectAuthority: vi.fn(),
+    resetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
+        onAuthorityReplaced?.();
+        return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
+    }),
     endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
@@ -120,7 +123,7 @@ describe('newProject with the native host absent', () => {
 
         // Activation really drove the native teardown into the rejecting bridge.
         expect(pluginHostMocks.unloadPlugin).toHaveBeenCalled();
-        expect(resetCrdtProjectAuthority).toHaveBeenCalledWith('Hostless Project');
+        expect(resetCrdtProject).toHaveBeenCalledWith('Hostless Project', expect.any(Function));
 
         // `initialized: true` with `loading: false` is what AppShell's ready
         // latch reads to mount the workspace over the launch screen.

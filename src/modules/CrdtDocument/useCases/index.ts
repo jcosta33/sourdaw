@@ -41,6 +41,7 @@ export { projectActionHistoryToStore } from './projection/projectActionHistoryTo
 export { setupProjectionBridge } from './projection/setupProjectionBridge';
 
 export { removeCrdtDoc } from './removeCrdtDoc';
+export { resetCrdtProject } from './resetCrdtProject';
 export { resetCrdtProjectAuthority } from './resetCrdtProjectAuthority';
 export { replaceCrdtDoc } from './replaceCrdtDoc';
 export { replaceCrdtDocInLineage } from './replaceCrdtDocInLineage';

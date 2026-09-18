@@ -5,7 +5,7 @@ import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#
 import {
     compactProject,
     projectActionHistoryToStore,
-    resetCrdtProjectAuthority,
+    resetCrdtProject,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
@@ -21,6 +21,9 @@ import {
 import { stopActiveAutoSave } from '../../projectPersistence/helpers/stopActiveAutoSave';
 
 import { templates } from './helpers';
+
+/** The replacement branch of the reset contract, derived from its callable shape. */
+type ReplacedProject = Extract<Awaited<ReturnType<typeof resetCrdtProject>>, { status: 'replaced' }>;
 
 function restoreAudioGraph(templateId: string): void {
     try {
@@ -43,6 +46,28 @@ function restorePersistence(): void {
     }
 }
 
+/**
+ * Publish the template's branch list and let autosave run again.
+ *
+ * Autosave stays stopped until the reset is finalized: until then the template
+ * is not the durable project, and a compaction landing in between would move
+ * the durable authority past the one the reset recorded, leaving the next boot
+ * unable to tell which project the bundle belongs to.
+ */
+async function finalizeTemplatePersistence(templateId: string, replaced: ReplacedProject | null): Promise<void> {
+    if (replaced === null) {
+        return;
+    }
+    const outcome = await replaced.finalize();
+    if (outcome !== 'finalized') {
+        logger.warn(
+            `[createFromTemplate] Project reset did not finalize for "${templateId}" (${outcome}); autosave stays stopped until the next load.`
+        );
+        return;
+    }
+    restorePersistence();
+}
+
 export async function createFromTemplate(templateId: string): Promise<boolean> {
     const template = templates.find((time) => time.id === templateId);
     if (!template) {
@@ -61,6 +86,8 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
     const transaction = runProjectLoadTransaction();
     let graphWasReset = false;
     let persistenceStopped = false;
+    let authorityReplaced = false;
+    let replaced: ReplacedProject | null = null;
     let releaseRuntimeTransition: (() => void) | null = null;
     try {
         const prepared = await transaction.prepare();
@@ -93,7 +120,19 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
             releaseRuntimeTransition();
             return false;
         }
-        resetCrdtProjectAuthority(template.name);
+        const reset = await resetCrdtProject(template.name, () => {
+            authorityReplaced = true;
+        });
+        if (reset.status === 'refused') {
+            // Decided before the switch, so the previous project is intact and
+            // the ordinary abort recovery still applies.
+            logger.warn(`[createFromTemplate] Project reset refused for "${templateId}" (${reset.reason})`);
+            restoreAudioGraph(templateId);
+            restorePersistence();
+            releaseRuntimeTransition();
+            return false;
+        }
+        replaced = reset;
         // Point of no return: the template owns the document now, so the
         // previous project's latched pedals can no longer be replayed. Above
         // this line `restoreAudioGraph` still puts the old graph back.
@@ -129,18 +168,27 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
         if (readyProject) {
             projectStore.set({ ...readyProject, loading: false, initialized: true });
         }
-        restorePersistence();
         await compactProject();
+        await finalizeTemplatePersistence(templateId, replaced);
         releaseRuntimeTransition();
         return true;
     } catch (error) {
-        if (graphWasReset) {
+        // Past the authority switch there is nothing to restore: the previous
+        // project is out of the stores, and restarting autosave would compact
+        // the half-built template over it on disk.
+        if (graphWasReset && !authorityReplaced) {
             restoreAudioGraph(templateId);
         }
-        if (persistenceStopped) {
+        if (persistenceStopped && !authorityReplaced) {
             restorePersistence();
         }
         releaseRuntimeTransition?.();
+        // The reset marker is settled on every path past the switch. A failed
+        // build leaves the replacement non-durable and finalization is what
+        // records that where the next boot reads it; a build whose writes did
+        // commit is the project the user keeps, so its branch list has to
+        // become durable and autosave has to protect it from here.
+        await finalizeTemplatePersistence(templateId, replaced);
         if (isAppActionCommittedError(error)) {
             logger.warn(`[createFromTemplate] Template "${templateId}" committed with recovery errors:`, error);
             return true;

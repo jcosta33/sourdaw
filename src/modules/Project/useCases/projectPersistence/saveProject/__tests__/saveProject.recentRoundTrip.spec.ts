@@ -53,7 +53,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: mocks.persistCrdtProject,
     projectActionHistoryToStore: vi.fn(),
-    resetCrdtProjectAuthority: vi.fn(),
+    resetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
+        onAuthorityReplaced?.();
+        return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
+    }),
     startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
 vi.mock('../../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));

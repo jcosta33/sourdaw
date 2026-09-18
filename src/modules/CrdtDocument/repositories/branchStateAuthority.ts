@@ -1,13 +1,22 @@
+import { logger } from '#/infra/logger/appLogger';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { branchStore, createDefaultBranchStoreState, type BranchStoreState } from '../stores/branchStore';
 
 import {
     branchStateEnvelopeStorage,
+    type BranchResetRecord,
     type BranchSessionRecord,
     type BranchStateEnvelope,
 } from './branchStateEnvelopeStorage';
+import { arePersistenceAuthoritiesEqual } from './crdtPersistence/arePersistenceAuthoritiesEqual';
+import { loadPersistenceSnapshotFromIdb } from './crdtPersistence/loadPersistenceSnapshotFromIdb';
 import {
+    EMPTY_PERSISTENCE_AUTHORITY,
+    type CrdtPersistenceAuthority,
+} from './crdtPersistence/persistenceAuthorityModel';
+import {
+    BRANCH_RESET_LOCK_PREFIX,
     BRANCH_SESSION_LOCK_PREFIX,
     BRANCH_STATE_TRANSACTION_LOCK_NAME,
     withBranchStateLock,
@@ -19,13 +28,23 @@ import {
  * - `conflict` — another writer committed since the caller read the revision.
  * - `session-active` — a collaboration session owns the list and this writer
  *   cannot prove the session is abandoned.
+ * - `reset-active` — a project reset already owns the envelope.
+ * - `reset-pending` — a project reset owns the envelope, and only the reset's
+ *   own begin/finalize pair may write while it does.
  * - `superseded` — the session this call belongs to no longer owns the list.
  * - `write-failed` — storage refused the write (full origin quota).
  * - `storage-unavailable` — storage refused the read.
  * - `lock-unavailable` — no Web Locks API, so no write can be sequenced.
  */
 export type BranchStateRefusal =
-    'conflict' | 'session-active' | 'superseded' | 'write-failed' | 'storage-unavailable' | 'lock-unavailable';
+    | 'conflict'
+    | 'session-active'
+    | 'reset-active'
+    | 'reset-pending'
+    | 'superseded'
+    | 'write-failed'
+    | 'storage-unavailable'
+    | 'lock-unavailable';
 
 /** Refusals every transaction can produce whatever it decided. */
 type BranchStateTransactionRefusal = 'write-failed' | 'storage-unavailable' | 'lock-unavailable';
@@ -33,8 +52,25 @@ type BranchStateTransactionRefusal = 'write-failed' | 'storage-unavailable' | 'l
 export type BranchStateCommitResult<TRefusal extends BranchStateRefusal = BranchStateRefusal> =
     { status: 'committed'; revision: number } | { status: 'refused'; reason: TRefusal | BranchStateTransactionRefusal };
 
+/**
+ * How a boot classified what it found.
+ *
+ * The four `reset-*` outcomes answer the one question a reset marker poses:
+ * `reset-live` another instance is still performing it; `reset-rolled-back` the
+ * replacement never reached storage and the previous list is back;
+ * `reset-finalized` it did and the new list is published; `reset-unavailable`
+ * the durable authority answers neither, so the marker stays for a later boot.
+ */
 export type BranchStateBootOutcome =
-    'settled' | 'restored' | 'foreign-session-live' | 'lock-unavailable' | 'storage-unavailable';
+    | 'settled'
+    | 'restored'
+    | 'foreign-session-live'
+    | 'reset-live'
+    | 'reset-rolled-back'
+    | 'reset-finalized'
+    | 'reset-unavailable'
+    | 'lock-unavailable'
+    | 'storage-unavailable';
 
 export type BranchSessionHandle = { owner: string };
 
@@ -44,10 +80,21 @@ export type BranchSessionBeginResult =
 export type BranchSessionEndOutcome =
     'restored' | 'superseded' | 'write-failed' | 'storage-unavailable' | 'lock-unavailable';
 
+export type BranchResetHandle = { owner: string };
+
+export type BranchResetRefusal =
+    'session-active' | 'reset-active' | 'write-failed' | 'storage-unavailable' | 'lock-unavailable';
+
+export type BranchResetBeginResult =
+    { status: 'begun'; handle: BranchResetHandle } | { status: 'refused'; reason: BranchResetRefusal };
+
+export type BranchResetFinalizeOutcome =
+    'finalized' | 'authority-mismatch' | 'superseded' | 'write-failed' | 'storage-unavailable' | 'lock-unavailable';
+
 type BranchStateDecision<TRefusal extends BranchStateRefusal> =
     { kind: 'write'; next: BranchStateEnvelope } | { kind: 'refuse'; reason: TRefusal } | { kind: 'noop' };
 
-type SessionLifetimeHold = { status: 'held'; release: () => void } | { status: 'lock-unavailable' };
+type LifetimeHold = { status: 'held'; release: () => void } | { status: 'lock-unavailable' };
 
 /**
  * How a hydration reaches `branchStore`.
@@ -77,9 +124,25 @@ let ownSession: { owner: string; release: () => void } | null = null;
  * the boot read keeps its protection.
  */
 let capturedForeignSession: { owner: string; baseRevision: number; backup: BranchStoreState } | null = null;
+/**
+ * The reset this instance began and has not finalized, with the hold on its
+ * lifetime lock. The lock is what tells a booting instance that the reset is
+ * still being performed rather than abandoned, so it is released only once the
+ * marker has left the envelope.
+ */
+let ownReset: {
+    owner: string;
+    target: CrdtPersistenceAuthority;
+    intended: BranchStoreState;
+    release: () => void;
+} | null = null;
 
 function sessionLockName(owner: string): string {
     return `${BRANCH_SESSION_LOCK_PREFIX}${owner}`;
+}
+
+function resetLockName(owner: string): string {
+    return `${BRANCH_RESET_LOCK_PREFIX}${owner}`;
 }
 
 function hydrate(envelope: BranchStateEnvelope, project: BranchStateProjectionScope = projectDirectly): void {
@@ -100,14 +163,25 @@ function seedEnvelope(): BranchStateEnvelope {
         revision: 0,
         current: branchStateEnvelopeStorage.readLegacySeed() ?? createDefaultBranchStoreState(),
         session: null,
+        reset: null,
     };
 }
 
 function advance(
     envelope: BranchStateEnvelope,
-    next: { current: BranchStoreState; session: BranchStateEnvelope['session'] }
+    next: {
+        current: BranchStoreState;
+        session: BranchStateEnvelope['session'];
+        reset?: BranchStateEnvelope['reset'];
+    }
 ): BranchStateEnvelope {
-    return { version: 1, revision: envelope.revision + 1, current: next.current, session: next.session };
+    return {
+        version: 1,
+        revision: envelope.revision + 1,
+        current: next.current,
+        session: next.session,
+        reset: next.reset ?? null,
+    };
 }
 
 function runTransaction<TRefusal extends BranchStateRefusal>(
@@ -164,7 +238,14 @@ function decideCommit(
     envelope: BranchStateEnvelope,
     expectedRevision: number,
     next: BranchStoreState
-): { decision: BranchStateDecision<'conflict' | 'session-active'>; supersedes: boolean } {
+): { decision: BranchStateDecision<'conflict' | 'session-active' | 'reset-pending'>; supersedes: boolean } {
+    if (envelope.reset !== null) {
+        // A reset in progress owns the envelope: the list it publishes is
+        // decided by whether its replacement bundle commits, and an ordinary
+        // write landing in between would be rolled back or finalized away
+        // without its author ever learning that it was.
+        return { decision: { kind: 'refuse', reason: 'reset-pending' }, supersedes: false };
+    }
     if (envelope.revision !== expectedRevision) {
         return { decision: { kind: 'refuse', reason: 'conflict' }, supersedes: false };
     }
@@ -258,24 +339,182 @@ async function recoverAbandonedSession(
     return outcome.value;
 }
 
-async function settleBoot(): Promise<BranchStateBootOutcome> {
-    let observed: BranchStateEnvelope | null;
+function describeAuthority({ epoch, revision, rootLineage }: CrdtPersistenceAuthority): string {
+    return `epoch ${epoch === '' ? '(none)' : epoch} revision ${revision} lineage ${rootLineage}`;
+}
+
+/**
+ * Whether the marker still in the envelope is the one this boot classified.
+ *
+ * Owner, `old` and `target` together: an owner alone would let a restarted
+ * instance's second reset be settled by the first one's durable reading.
+ */
+function isSameResetRecord(fresh: BranchResetRecord | null, observed: BranchResetRecord): boolean {
+    return (
+        fresh !== null &&
+        fresh.owner === observed.owner &&
+        arePersistenceAuthoritiesEqual(fresh.old, observed.old) &&
+        arePersistenceAuthoritiesEqual(fresh.target, observed.target)
+    );
+}
+
+/**
+ * Which side of the replacement the durable persistence authority proves.
+ *
+ * The epoch decides it. A reset mints a fresh epoch for the project it is
+ * writing, so the target epoch names the replacement and the old epoch names
+ * the project it is replacing; nothing else can be writing under either one.
+ * Revision and lineage cannot take part: an ordinary save advances the revision
+ * on whichever side survived — this instance saving the replacement after a
+ * failed finalization, or another tab saving the outgoing project — and that
+ * save does not change which project is durable.
+ *
+ * `null` only for a third epoch, which says the durable project is neither side
+ * of this reset, so no branch list this marker carries describes it.
+ */
+function getResetSettlement(
+    reset: BranchResetRecord,
+    durable: CrdtPersistenceAuthority
+): { current: BranchStoreState; outcome: 'reset-rolled-back' | 'reset-finalized' } | null {
+    if (durable.epoch === reset.old.epoch) {
+        return { current: reset.previous, outcome: 'reset-rolled-back' };
+    }
+    if (durable.epoch === reset.target.epoch) {
+        return { current: reset.intended, outcome: 'reset-finalized' };
+    }
+    return null;
+}
+
+/** `null` when the marker changed underneath, so the caller classifies again. */
+async function resolveAbandonedReset(
+    observed: BranchStateEnvelope,
+    reset: BranchResetRecord
+): Promise<BranchStateBootOutcome | null> {
+    let durable: CrdtPersistenceAuthority;
     try {
-        observed = branchStateEnvelopeStorage.read();
+        const snapshot = await loadPersistenceSnapshotFromIdb();
+        durable = snapshot?.authority ?? EMPTY_PERSISTENCE_AUTHORITY;
+    } catch (error) {
+        hydrate(observed);
+        logger.error(
+            new Error('Project reset recovery could not read the durable persistence authority', { cause: error })
+        );
+        return 'reset-unavailable';
+    }
+
+    const settlement = getResetSettlement(reset, durable);
+    if (settlement === null) {
+        hydrate(observed);
+        logger.error(
+            new Error(
+                `Project reset recovery found a durable persistence authority matching neither side of the reset: ` +
+                    `durable is ${describeAuthority(durable)}, the reset left ${describeAuthority(reset.old)} and ` +
+                    `was writing ${describeAuthority(reset.target)}. The reset marker is left for a later boot.`
+            )
+        );
+        return 'reset-unavailable';
+    }
+
+    let settled = false;
+    const result = await transact<never>((fresh) => {
+        if (!isSameResetRecord(fresh.reset, reset)) {
+            // Another instance settled this reset while the authority was being
+            // read. Its envelope is the truth; writing here would replay a
+            // decision that instance has already made.
+            return { kind: 'noop' };
+        }
+        settled = true;
+        return { kind: 'write', next: advance(fresh, { current: settlement.current, session: null }) };
+    });
+    if (result.status === 'refused') {
+        // The marker stays durable, so the next boot retries the same
+        // classification; both refusals are storage saying no.
+        return result.reason === 'lock-unavailable' ? 'lock-unavailable' : 'storage-unavailable';
+    }
+    return settled ? settlement.outcome : null;
+}
+
+/**
+ * Classify a reset marker while holding its lifetime lock.
+ *
+ * The lock is taken with `ifAvailable` and held across the durable read and the
+ * swap, so the instance that owns the reset cannot restart and begin a second
+ * one in the middle of this decision. Lifetime lock first, transaction lock
+ * inside it — the same order every other caller uses.
+ */
+async function classifyAbandonedReset(
+    observed: BranchStateEnvelope,
+    reset: BranchResetRecord
+): Promise<BranchStateBootOutcome | null> {
+    const outcome = await withBranchStateLock({
+        name: resetLockName(reset.owner),
+        ifAvailable: true,
+        run: async (granted): Promise<BranchStateBootOutcome | null> => {
+            if (!granted) {
+                // The instance performing the reset is still alive, and only it
+                // knows whether its replacement bundle is going to commit.
+                hydrate(observed);
+                return 'reset-live';
+            }
+            return resolveAbandonedReset(observed, reset);
+        },
+    });
+
+    if (outcome.status === 'lock-unavailable') {
+        hydrate(observed);
+        return 'lock-unavailable';
+    }
+    return outcome.value;
+}
+
+type ObservedEnvelope = { status: 'read'; envelope: BranchStateEnvelope | null } | { status: 'storage-unavailable' };
+
+function observeEnvelope(): ObservedEnvelope {
+    try {
+        return { status: 'read', envelope: branchStateEnvelopeStorage.read() };
     } catch {
+        return { status: 'storage-unavailable' };
+    }
+}
+
+/**
+ * A marker that changed between the durable read and the swap belongs to an
+ * instance that settled the reset first, so one re-read is enough to see its
+ * envelope. A second inconclusive pass is left to a later boot rather than
+ * spun on.
+ */
+const RESET_CLASSIFICATION_ATTEMPTS = 2;
+
+async function settleBoot(): Promise<BranchStateBootOutcome> {
+    let observed = observeEnvelope();
+    for (let attempt = 0; attempt < RESET_CLASSIFICATION_ATTEMPTS; attempt++) {
+        if (observed.status === 'storage-unavailable') {
+            return 'storage-unavailable';
+        }
+        if (observed.envelope === null || observed.envelope.reset === null) {
+            break;
+        }
+        const outcome = await classifyAbandonedReset(observed.envelope, observed.envelope.reset);
+        if (outcome !== null) {
+            return outcome;
+        }
+        observed = observeEnvelope();
+    }
+
+    if (observed.status === 'storage-unavailable') {
         return 'storage-unavailable';
     }
-    if (observed === null) {
+    if (observed.envelope === null) {
         // Nothing durable to recover: hold the seed and let the first commit
         // write revision 1.
         hydrate(seedEnvelope());
         return settledOrUnsequenced();
     }
-    if (observed.session === null) {
-        hydrate(observed);
+    if (observed.envelope.session === null) {
+        hydrate(observed.envelope);
         return settledOrUnsequenced();
     }
-    return recoverAbandonedSession(observed, observed.session);
+    return recoverAbandonedSession(observed.envelope, observed.envelope.session);
 }
 
 /** A promise that stays pending until `release` is called. */
@@ -287,11 +526,12 @@ function createReleasableHold(): { held: Promise<void>; release: () => void } {
     return { held, release };
 }
 
-function holdSessionLifetimeLock(owner: string): Promise<SessionLifetimeHold> {
-    return new Promise<SessionLifetimeHold>((resolve) => {
+/** Take `name` and keep it until the returned `release` is called. */
+function holdLifetimeLock(name: string): Promise<LifetimeHold> {
+    return new Promise<LifetimeHold>((resolve) => {
         const { held, release } = createReleasableHold();
         const request = withBranchStateLock({
-            name: sessionLockName(owner),
+            name,
             run: async () => {
                 resolve({ status: 'held', release });
                 await held;
@@ -322,12 +562,15 @@ async function beginSession(): Promise<BranchSessionBeginResult> {
     // Lifetime lock before the transaction lock, always: the reverse order
     // would let a boot holding the lifetime lock wait on a transaction lock
     // held by a session that is waiting for the lifetime lock.
-    const lifetime = await holdSessionLifetimeLock(owner);
+    const lifetime = await holdLifetimeLock(sessionLockName(owner));
     if (lifetime.status === 'lock-unavailable') {
         return { status: 'refused', reason: 'lock-unavailable' };
     }
 
-    const result = await transact<'session-active'>((envelope) => {
+    const result = await transact<'session-active' | 'reset-pending'>((envelope) => {
+        if (envelope.reset !== null) {
+            return { kind: 'refuse', reason: 'reset-pending' };
+        }
         if (envelope.session !== null) {
             return { kind: 'refuse', reason: 'session-active' };
         }
@@ -356,9 +599,12 @@ async function beginSession(): Promise<BranchSessionBeginResult> {
 async function projectSession(
     handle: BranchSessionHandle,
     state: BranchStoreState
-): Promise<BranchStateCommitResult<'superseded'>> {
+): Promise<BranchStateCommitResult<'superseded' | 'reset-pending'>> {
     await branchStateAuthority.settleBoot();
-    return transact<'superseded'>((envelope) => {
+    return transact<'superseded' | 'reset-pending'>((envelope) => {
+        if (envelope.reset !== null) {
+            return { kind: 'refuse', reason: 'reset-pending' };
+        }
         const session = envelope.session;
         if (session?.owner !== handle.owner) {
             return { kind: 'refuse', reason: 'superseded' };
@@ -397,6 +643,119 @@ async function endSession(handle: BranchSessionHandle): Promise<BranchSessionEnd
     // The session record is still durable, so the lifetime lock stays held: a
     // retry has to be able to finish the restore, and a booting instance must
     // keep seeing this session as live until it does.
+    return result.reason;
+}
+
+function releaseOwnReset(owner: string): void {
+    if (ownReset?.owner !== owner) {
+        return;
+    }
+    ownReset.release();
+    ownReset = null;
+}
+
+/**
+ * Record a project reset durably before the outgoing root is destroyed.
+ *
+ * `old` is the persistence authority the replacement compare-and-swaps against
+ * and `target` the one it writes, so the marker alone tells a later boot which
+ * project the durable bundle belongs to. `intended` is the list to publish once
+ * `target` is durable — passed in rather than derived here because the caller's
+ * default list carries a creation timestamp, and a second call to the factory
+ * would publish a list the caller never saw.
+ */
+async function beginReset({
+    old,
+    target,
+    intended,
+}: {
+    old: CrdtPersistenceAuthority;
+    target: CrdtPersistenceAuthority;
+    intended: BranchStoreState;
+}): Promise<BranchResetBeginResult> {
+    await branchStateAuthority.settleBoot();
+    const owner = globalThis.crypto.randomUUID();
+    // Lifetime lock before the transaction lock, as every other lifetime holder
+    // does: a boot holding this lock waits on the transaction lock inside it.
+    const lifetime = await holdLifetimeLock(resetLockName(owner));
+    if (lifetime.status === 'lock-unavailable') {
+        return { status: 'refused', reason: 'lock-unavailable' };
+    }
+
+    const result = await transact<'session-active' | 'reset-active'>((envelope) => {
+        if (envelope.session !== null) {
+            // A collaboration session owns the list, and the backup it holds
+            // describes the project this reset is about to destroy.
+            return { kind: 'refuse', reason: 'session-active' };
+        }
+        if (envelope.reset !== null) {
+            return { kind: 'refuse', reason: 'reset-active' };
+        }
+        return {
+            kind: 'write',
+            next: advance(envelope, {
+                current: envelope.current,
+                session: null,
+                reset: { owner, old, target, previous: envelope.current, intended },
+            }),
+        };
+    });
+    if (result.status === 'refused') {
+        lifetime.release();
+        return { status: 'refused', reason: result.reason };
+    }
+
+    ownReset = { owner, target, intended, release: lifetime.release };
+    return { status: 'begun', handle: { owner } };
+}
+
+/**
+ * Publish the replacement's branch list and clear the marker.
+ *
+ * `committed` is the authority the replacement actually reached storage with.
+ * Its epoch is what decides: this reset minted the target epoch for the project
+ * it is writing, so a commit under that epoch is a commit of this replacement
+ * whatever revision it carries — an incremental save landing between the
+ * snapshot and this call advances the revision without changing which project
+ * is durable. A commit under any other epoch is not this replacement.
+ *
+ * The comparison is against the target from memory, before any transaction: the
+ * envelope's `current` is still the replaced project's list, so a refusing
+ * transaction would hydrate it back over the list the reset already projected —
+ * the precise defect a durable marker exists to prevent.
+ */
+async function finalizeReset(
+    handle: BranchResetHandle,
+    committed: CrdtPersistenceAuthority | null
+): Promise<BranchResetFinalizeOutcome> {
+    const own = ownReset;
+    if (own?.owner !== handle.owner) {
+        return 'superseded';
+    }
+    if (committed === null || committed.epoch !== own.target.epoch) {
+        // The marker stays durable: a boot reading the authority is the only
+        // thing that can say which project this half-finished reset left.
+        return 'authority-mismatch';
+    }
+
+    const result = await transact<'superseded'>((envelope) => {
+        const reset = envelope.reset;
+        if (reset?.owner !== handle.owner) {
+            return { kind: 'refuse', reason: 'superseded' };
+        }
+        return { kind: 'write', next: advance(envelope, { current: reset.intended, session: null }) };
+    });
+
+    if (result.status === 'committed') {
+        releaseOwnReset(handle.owner);
+        return 'finalized';
+    }
+    if (result.reason === 'superseded') {
+        releaseOwnReset(handle.owner);
+        return 'superseded';
+    }
+    // The marker is still durable, so the lifetime lock stays held: a booting
+    // instance must keep seeing this reset as live until it clears.
     return result.reason;
 }
 
@@ -463,10 +822,10 @@ export const branchStateAuthority = {
         expectedRevision: number;
         next: BranchStoreState;
         projectionScope?: BranchStateProjectionScope;
-    }): Promise<BranchStateCommitResult<'conflict' | 'session-active'>> {
+    }): Promise<BranchStateCommitResult<'conflict' | 'session-active' | 'reset-pending'>> {
         await branchStateAuthority.settleBoot();
         let supersedes = false;
-        const result = await transact<'conflict' | 'session-active'>((envelope) => {
+        const result = await transact<'conflict' | 'session-active' | 'reset-pending'>((envelope) => {
             const commit = decideCommit(envelope, expectedRevision, next);
             supersedes = commit.supersedes;
             return commit.decision;
@@ -495,4 +854,10 @@ export const branchStateAuthority = {
 
     /** Put the pre-session list back and hand the durable list back to local writers. */
     endSession,
+
+    /** Record a project reset durably before the outgoing root is destroyed. */
+    beginReset,
+
+    /** Publish the replacement's branch list once its bundle is durable. */
+    finalizeReset,
 };

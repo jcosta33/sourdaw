@@ -7,6 +7,7 @@ import {
     TransactionalPersistence,
     type TransactionalPersistenceTransaction,
 } from '../../../testing/transactionalPersistence';
+import { beginPersistenceReplacement } from '../../beginPersistenceReplacement';
 import { compactProject } from '../../compactProject';
 import { crdtProjectCompactionState } from '../../crdtProjectCompactionState';
 import { persistCrdtProject } from '../../persistCrdtProject';
@@ -78,7 +79,7 @@ describe('mergeBranch persistence', () => {
         ];
         mocks.branchState.activeBranchId = 'feat';
         automergeRepository.reset();
-        void runCrdtPersistenceOperation('reset');
+        beginPersistenceReplacement({ epoch: crypto.randomUUID(), old: null });
         crdtProjectCompactionState.incrementalSaveCount = 0;
     });
 
