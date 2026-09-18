@@ -70,17 +70,13 @@ describe('wasm restamp write and refusals', () => {
             surfaces: [{ ...freshSurface, revisions: ['stale'] }],
             snapshots: [{ path: 'public/wasm/manifest.json', sha256: 'older-snapshot' }],
         };
-        const plan = wasmRestampPlan(inventory.surfaces[0]!, expectedSurface, inventory.snapshots[0]!, 'current');
+        const recordedSurface = inventory.surfaces[0]!;
+        const recordedSnapshot = inventory.snapshots[0]!;
+        const plan = wasmRestampPlan(recordedSurface, expectedSurface, recordedSnapshot, 'current');
         if (plan === undefined || plan.snapshotSha === undefined) {
             throw new Error('expected a full plan');
         }
-        const written = applyWasmRestamp(
-            inventory,
-            inventory.surfaces[0]!,
-            inventory.snapshots[0]!,
-            expectedSurface,
-            plan
-        );
+        const written = applyWasmRestamp(inventory, recordedSurface, recordedSnapshot, expectedSurface, plan);
         const parsed = JSON.parse(written) as { surfaces: unknown[]; snapshots: { sha256: string }[] };
         expect(parsed.surfaces[0]).toEqual({ id: 'project-wasm', ...expectedSurface });
         expect(parsed.snapshots[0]?.sha256).toBe('current');
