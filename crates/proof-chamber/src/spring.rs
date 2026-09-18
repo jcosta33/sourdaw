@@ -56,6 +56,15 @@ pub struct SpringReverb {
     delay_write: usize,
     delay_len: usize,
 
+    /// Pre-delay on the wet path only, so the wet onset tracks the control
+    /// while the dry signal is not delayed with it.
+    ///
+    /// Sized for the whole 0..500 ms range in the constructor; every write
+    /// retunes inside that capacity, because `set_param` is audio-thread work.
+    predelay_buf: Vec<f32>,
+    predelay_pos: usize,
+    predelay_len: usize,
+
     // Feedback and damping
     feedback: f32,
     damp_state: f32,
@@ -90,6 +99,7 @@ impl SpringReverb {
         // Default: medium spring (~150ms round-trip)
         let delay_len = (sample_rate * 0.15) as usize;
         let max_delay = (sample_rate * 0.5) as usize; // 500ms max
+        let predelay_max = (sample_rate * 0.5) as usize; // 500ms max
 
         // Dispersion coefficient: higher = more frequency spread
         // Typical spring: 0.5-0.8
@@ -106,6 +116,11 @@ impl SpringReverb {
             delay_buf: vec![0.0; max_delay],
             delay_write: 0,
             delay_len,
+            predelay_buf: vec![0.0; predelay_max],
+            predelay_pos: 0,
+            // The descriptor's default, and what every project carries until
+            // something writes the control.
+            predelay_len: ((15.0 / 1000.0) * sample_rate) as usize,
             feedback: 0.7,
             damp_state: 0.0,
             damping: 0.3,
@@ -120,8 +135,9 @@ impl SpringReverb {
         }
     }
 
-    /// Return to the state `new` leaves behind, reusing the tank delay line and
-    /// the allpass cascade rather than allocating a fresh pair.
+    /// Return to the state `new` leaves behind, reusing the tank delay line, the
+    /// allpass cascade and the pre-delay buffer rather than allocating fresh
+    /// ones.
     ///
     /// Selecting an algorithm is audio-thread work, so the engine that becomes
     /// active is reset here instead of being rebuilt. Every value below is the
@@ -136,6 +152,9 @@ impl SpringReverb {
         self.delay_buf.fill(0.0);
         self.delay_write = 0;
         self.delay_len = (self.sample_rate * 0.15) as usize;
+        self.predelay_buf.fill(0.0);
+        self.predelay_pos = 0;
+        self.predelay_len = ((15.0 / 1000.0) * self.sample_rate) as usize;
         self.feedback = 0.7;
         self.damp_state = 0.0;
         self.damping = 0.3;
@@ -164,6 +183,10 @@ impl SpringReverb {
             // something on an engine whose wet path has two different channels.
             "width" => self.output.set_width(value),
             "mix" => self.mix = value.clamp(0.0, 1.0),
+            "predelay" => {
+                self.predelay_len = ((value / 1000.0) * self.sample_rate) as usize;
+                self.predelay_len = self.predelay_len.min(self.predelay_buf.len() - 1);
+            }
             "decay" | "feedback" => {
                 self.feedback = value.clamp(0.0, 0.95);
                 self.update_decay_eq_loop();
@@ -226,8 +249,20 @@ impl SpringReverb {
             let dry_r = right[i];
             let mono = (dry_l + dry_r) * 0.5;
 
-            // Detect transients for drip emphasis
-            let abs_in = mono.abs();
+            // Pre-delay. The write happens first and the read counts back from
+            // the slot just written, so a request for 0 ms reads the sample it
+            // was given rather than the oldest one in the buffer (#1547).
+            let pd_len = self.predelay_buf.len();
+            self.predelay_buf[self.predelay_pos % pd_len] = mono;
+            let pd_read = (self.predelay_pos + pd_len - self.predelay_len) % pd_len;
+            let predelayed = self.predelay_buf[pd_read];
+            self.predelay_pos = (self.predelay_pos + 1) % pd_len;
+
+            // Detect transients for drip emphasis. Measured on the delayed
+            // sample, not the raw input: the drip is part of the wet signal, so
+            // detecting it at the input would add wet output at sample 0 and
+            // undo the Pre-Delay this stage exists to apply.
+            let abs_in = predelayed.abs();
             if abs_in > self.drip_envelope * 2.0 {
                 self.drip_envelope = abs_in;
             }
@@ -255,7 +290,7 @@ impl SpringReverb {
             let feedback_signal = self.decay_eq.process(self.damp_state * self.feedback);
 
             // Input + feedback through dispersive allpass cascade
-            let mut signal = mono + feedback_signal;
+            let mut signal = predelayed + feedback_signal;
             for ap in self.allpass_cascade.iter_mut() {
                 signal = ap.process(signal);
             }
@@ -286,7 +321,15 @@ impl SpringReverb {
     }
 
     pub fn param_names(&self) -> Vec<&str> {
-        let mut names = vec!["mix", "decay", "damping", "size", "dispersion", "mod_depth"];
+        let mut names = vec![
+            "mix",
+            "decay",
+            "damping",
+            "size",
+            "predelay",
+            "dispersion",
+            "mod_depth",
+        ];
         names.extend(crate::decay_eq::PARAM_NAMES);
         names.extend(OutputStage::PARAM_NAMES);
         names.push(OutputStage::WIDTH);

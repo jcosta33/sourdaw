@@ -105,7 +105,14 @@ const EXPECTED_AT_SMALLEST_SIZE: [[Character; 4]; 2] = [
             rms: 0.023_802_584,
             active_span_ms: 963.946,
             late_energy_ratio: 0.000_000_106,
-            high_frequency_ratio: 0.170_458_42,
+            // Re-measured when Spring gained the 15 ms default Pre-Delay it
+            // shares with the plate and the FDN pair. Peak, RMS and duration
+            // hold (the wet path is a time shift), but the burst now meets the
+            // loop's modulation at a different LFO phase, and the resulting
+            // one-sample change in the modulated read moves this ratio by
+            // 2.8%. The other four figures are left as measured before the
+            // change because they stayed inside their tolerances.
+            high_frequency_ratio: 0.165_666_193,
         },
         Character {
             // Updated for the complementary sin² overlap (#3792): the
@@ -138,7 +145,8 @@ const EXPECTED_AT_SMALLEST_SIZE: [[Character; 4]; 2] = [
             rms: 0.023_865_303,
             active_span_ms: 941.542,
             late_energy_ratio: 0.000_000_104,
-            high_frequency_ratio: 0.170_841_14,
+            // Same re-measurement as the 44.1 kHz Spring row above.
+            high_frequency_ratio: 0.175_849_587,
         },
         Character {
             peak: 0.321_296_245,
