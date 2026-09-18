@@ -1,0 +1,16 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  h_1228e573df1f42 1642-1663,1666,1673-1674,1712-1733,1738,1745,1749-1842,1847
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  h_1228e573df1f42 63-112,305-311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "25a8e6f3b5e8b1f603cd88ce4e3d7682ca4c73a0",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
