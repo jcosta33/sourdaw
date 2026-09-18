@@ -60,6 +60,56 @@ function resolveContributorVcaMultiplier({ track, isTarget, groups }: ResolveCon
     return deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups });
 }
 
+type ResolveStripContributesAudioInput = {
+    track: Track;
+    /** Whether this render honours the track's own mute — true for a sidechain key source only. */
+    honorMuted: boolean;
+    isTarget: boolean;
+    /** False drops the target's sends from the graph; every other strip keeps its own. */
+    includeSends: boolean;
+    /** Every track this render builds, so a send's bus can be resolved before its strip exists. */
+    renderTrackIds: ReadonlySet<string>;
+};
+
+/**
+ * Whether one strip's device chain can reach the rendered file — the question
+ * the mixdown answers with `scheduledTrackIds`, asked per strip because freeze
+ * and bounce hand every strip to `buildDeviceChain` (#4355).
+ *
+ * The chain refuses a loaded hosted plugin only when dropping it would make
+ * the file differ from the session. Freeze and bounce force every strip's mute
+ * open except a sidechain key source's (see the call site), so a muted key's
+ * post-fader output is zero and its device chain stops there — refusing over it
+ * would make an ordinary freeze unrenderable over audio the file never carried.
+ *
+ * The pre-fader tap is the exception, because it sits upstream of the mute: a
+ * muted key that still feeds a bus inside this render through a pre-fader send
+ * prints its device chain into that bus exactly as live does, so it can change
+ * the file after all. `renderOffline`'s `cueSendOnlyTracks` draws the same line.
+ * A send reaches the file only when this render wires it — `includeSends`
+ * governs the target's sends alone — and its bus is a track this render builds.
+ * Membership is read from `renderTrackIds` rather than `trackStripsById`, which
+ * is still filling as this runs.
+ */
+function resolveStripContributesAudio({
+    track,
+    honorMuted,
+    isTarget,
+    includeSends,
+    renderTrackIds,
+}: ResolveStripContributesAudioInput): boolean {
+    if (!honorMuted || !track.muted) {
+        return true;
+    }
+
+    const sendsRendered = isTarget ? includeSends : true;
+    if (!sendsRendered) {
+        return false;
+    }
+
+    return track.sends.some((send) => send.preFader && renderTrackIds.has(send.busId));
+}
+
 type RenderTrackSubgraphOfflineInput = {
     /** Track whose strip output is captured into the returned buffer. */
     targetTrackId: string;
@@ -252,14 +302,13 @@ export async function renderTrackSubgraphOffline({
                         isTarget: track.id === targetTrackId,
                         groups: vcaGroups,
                     }),
-                    // A strip whose mute this render honours prints silence, so
-                    // a device the chain cannot build on it cannot make the file
-                    // differ from the session — the same reason the mixdown marks
-                    // its unscheduled strips non-contributing. The target is
-                    // exempt: its strip output is the buffer this render exists
-                    // to capture, so a loaded plugin on the track being frozen or
-                    // bounced still refuses (#4355).
-                    contributesAudio: track.id === targetTrackId || !(honorMuted && track.muted),
+                    contributesAudio: resolveStripContributesAudio({
+                        track,
+                        honorMuted,
+                        isTarget: track.id === targetTrackId,
+                        includeSends,
+                        renderTrackIds,
+                    }),
                     onWarning,
                 }
             );

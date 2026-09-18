@@ -1639,59 +1639,39 @@ describe('renderTrackSubgraphOffline', () => {
     });
 
     // #4355 — the plugin refusal exists because dropping a loaded instance bakes
-    // a file the session does not play. A muted sidechain key source is the one
-    // strip in this subgraph that prints silence: the render honours its mute,
-    // so its plugin sits upstream of a zeroed fader and never reaches the
-    // buffer. Refusing there made an ordinary freeze unrenderable over audio the
-    // file never carried at all. An unmuted key still refuses, because its
-    // plugin does change the detector feed and therefore the printed
-    // compression.
-    describe('sidechain key source plugin refusal (#4355)', () => {
-        function createKeySubgraph({ keyMuted }: { keyMuted: boolean }): Track[] {
-            const target = TrackDummy.create({
-                id: 'comp-target',
-                name: 'Comp Target',
-                kind: 'audio',
-                devices: [
-                    {
-                        id: 'comp-1',
-                        name: 'Sidechain',
-                        type: 'builtin-sidechain-compressor',
-                        bypassed: false,
-                        parameterValues: {},
-                    },
-                ],
-            });
-            const key = TrackDummy.create({
-                id: 'kick-key',
-                name: 'Kick Key',
-                kind: 'audio',
-                muted: keyMuted,
-                outputId: 'master',
-                devices: [
-                    {
-                        id: 'plugin-1',
-                        name: 'Analog EQ',
-                        type: 'external-plugin',
-                        bypassed: false,
-                        parameterValues: {},
-                        externalInstanceId: 'inst-1',
-                    },
-                ],
-            });
-            trackStore.set({ tracks: [target, key], selectedTrackId: null, ghostClips: [] });
-            return [target, key];
+    // a file the session does not play. The real question is whether this
+    // render would print the device's output at all, so every case below drives
+    // the real chain build and reads back whether the render refuses or
+    // completes with a warning.
+    describe('hosted plugin refusal per strip (#4355)', () => {
+        const COMPRESSOR_DEVICE: Track['devices'][number] = {
+            id: 'comp-1',
+            name: 'Sidechain',
+            type: 'builtin-sidechain-compressor',
+            bypassed: false,
+            parameterValues: {},
+        };
+
+        function pluginDevice(deviceId: string): Track['devices'][number] {
+            return {
+                id: deviceId,
+                name: 'Analog EQ',
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalInstanceId: 'inst-1',
+            };
         }
 
-        async function seedKeyRoute(): Promise<void> {
+        async function seedSidechainRoute(sourceTrackId: string, targetTrackId: string): Promise<void> {
             const { sidechainStore } = await import('#/modules/Routing/stores');
             sidechainStore.set({
                 ...sidechainStore.value!,
                 routes: [
                     {
                         id: 'route-1',
-                        sourceTrackId: 'kick-key',
-                        targetTrackId: 'comp-target',
+                        sourceTrackId,
+                        targetTrackId,
                         targetDeviceId: 'comp-1',
                         targetParameterId: 'threshold',
                         gain: 1,
@@ -1729,34 +1709,142 @@ describe('renderTrackSubgraphOffline', () => {
             sidechainStore.set({ ...sidechainStore.value!, routes: [] });
         });
 
-        it('degrades a loaded plugin on a muted key source and still produces the render', async () => {
-            const tracks = createKeySubgraph({ keyMuted: true });
-            await seedKeyRoute();
+        function pluginWarningFor(onWarning: ReturnType<typeof vi.fn>, trackName: string): boolean {
+            const warnings = onWarning.mock.calls.map(([message]) => String(message));
+            return warnings.some((message) => message.includes('external-plugin') && message.includes(trackName));
+        }
+
+        it('degrades a loaded plugin on a muted key source with no rendered send, and still produces the render', async () => {
+            const target = TrackDummy.create({
+                id: 'comp-target',
+                name: 'Comp Target',
+                kind: 'audio',
+                devices: [COMPRESSOR_DEVICE],
+            });
+            const key = TrackDummy.create({
+                id: 'kick-key',
+                name: 'Kick Key',
+                kind: 'audio',
+                muted: true,
+                outputId: 'master',
+                devices: [pluginDevice('plugin-1')],
+            });
+            trackStore.set({ tracks: [target, key], selectedTrackId: null, ghostClips: [] });
+            await seedSidechainRoute('kick-key', 'comp-target');
             const onWarning = vi.fn();
 
             const buffer = await renderTrackSubgraphOffline({
                 targetTrackId: 'comp-target',
-                renderTracks: tracks,
+                renderTracks: [target, key],
                 startBeat: 0,
                 endBeat: 4,
                 onWarning,
             });
 
             expect(buffer).not.toBeNull();
-            const warnings = onWarning.mock.calls.map(([message]) => String(message));
-            expect(
-                warnings.some((message) => message.includes('external-plugin') && message.includes('Kick Key'))
-            ).toBe(true);
+            expect(pluginWarningFor(onWarning, 'Kick Key')).toBe(true);
         });
 
         it('refuses a loaded plugin on an unmuted key source, whose detector feed the print carries', async () => {
-            const tracks = createKeySubgraph({ keyMuted: false });
-            await seedKeyRoute();
+            const target = TrackDummy.create({
+                id: 'comp-target',
+                name: 'Comp Target',
+                kind: 'audio',
+                devices: [COMPRESSOR_DEVICE],
+            });
+            const key = TrackDummy.create({
+                id: 'kick-key',
+                name: 'Kick Key',
+                kind: 'audio',
+                muted: false,
+                outputId: 'master',
+                devices: [pluginDevice('plugin-1')],
+            });
+            trackStore.set({ tracks: [target, key], selectedTrackId: null, ghostClips: [] });
+            await seedSidechainRoute('kick-key', 'comp-target');
 
             await expect(
                 renderTrackSubgraphOffline({
                     targetTrackId: 'comp-target',
-                    renderTracks: tracks,
+                    renderTracks: [target, key],
+                    startBeat: 0,
+                    endBeat: 4,
+                    onWarning: vi.fn(),
+                })
+            ).rejects.toThrow('Bypass or remove the plugin');
+        });
+
+        it('refuses a loaded plugin on a muted key source whose pre-fader send still prints into this render', async () => {
+            const target = TrackDummy.create({
+                id: 'comp-target',
+                name: 'Comp Target',
+                kind: 'audio',
+                devices: [COMPRESSOR_DEVICE],
+            });
+            // The pre-fader tap sits upstream of the mute, so this strip's
+            // device chain reaches the cue bus even though the track is muted.
+            const key = TrackDummy.create({
+                id: 'kick-key',
+                name: 'Kick Key',
+                kind: 'audio',
+                muted: true,
+                outputId: 'master',
+                devices: [pluginDevice('plugin-1')],
+                sends: [{ busId: 'cue-bus', level: 1, preFader: true }],
+            });
+            const cueBus = TrackDummy.create({ id: 'cue-bus', name: 'Cue Bus', kind: 'bus' });
+            trackStore.set({ tracks: [target, key, cueBus], selectedTrackId: null, ghostClips: [] });
+            await seedSidechainRoute('kick-key', 'comp-target');
+
+            await expect(
+                renderTrackSubgraphOffline({
+                    targetTrackId: 'comp-target',
+                    renderTracks: [target, key, cueBus],
+                    startBeat: 0,
+                    endBeat: 4,
+                    onWarning: vi.fn(),
+                })
+            ).rejects.toThrow('Bypass or remove the plugin');
+        });
+
+        it('degrades a loaded plugin on a self-keyed muted target, whose captured output the mute zeroes', async () => {
+            const target = TrackDummy.create({
+                id: 'comp-target',
+                name: 'Comp Target',
+                kind: 'audio',
+                muted: true,
+                devices: [COMPRESSOR_DEVICE, pluginDevice('plugin-1')],
+            });
+            trackStore.set({ tracks: [target], selectedTrackId: null, ghostClips: [] });
+            await seedSidechainRoute('comp-target', 'comp-target');
+            const onWarning = vi.fn();
+
+            const buffer = await renderTrackSubgraphOffline({
+                targetTrackId: 'comp-target',
+                renderTracks: [target],
+                startBeat: 0,
+                endBeat: 4,
+                onWarning,
+            });
+
+            expect(buffer).not.toBeNull();
+            expect(pluginWarningFor(onWarning, 'Comp Target')).toBe(true);
+        });
+
+        it('refuses a loaded plugin on a muted target that is not a key source, because its mute is not honoured', async () => {
+            const target = TrackDummy.create({
+                id: 'comp-target',
+                name: 'Comp Target',
+                kind: 'audio',
+                muted: true,
+                devices: [pluginDevice('plugin-1')],
+            });
+            trackStore.set({ tracks: [target], selectedTrackId: null, ghostClips: [] });
+
+            await expect(
+                renderTrackSubgraphOffline({
+                    targetTrackId: 'comp-target',
+                    renderTracks: [target],
                     startBeat: 0,
                     endBeat: 4,
                     onWarning: vi.fn(),
