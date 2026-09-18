@@ -8,9 +8,12 @@
 pub struct VintageProcessor {
     mode: VintageMode,
     sample_rate: f32,
-    // Decimation state (for 1970s mode)
+    // Decimation state (for 1970s mode). One counter, so both channels share
+    // the decimation clock, and one hold per channel, so a channel is
+    // reconstructed from its own last held sample rather than from the mid.
     decimate_counter: usize,
-    decimate_hold: f32,
+    decimate_hold_l: f32,
+    decimate_hold_r: f32,
     // Bandwidth limiter
     lp_state_l: f32,
     lp_state_r: f32,
@@ -33,7 +36,8 @@ impl VintageProcessor {
             mode: VintageMode::Modern,
             sample_rate,
             decimate_counter: 0,
-            decimate_hold: 0.0,
+            decimate_hold_l: 0.0,
+            decimate_hold_r: 0.0,
             lp_state_l: 0.0,
             lp_state_r: 0.0,
             lp_coeff: 0.0,
@@ -85,14 +89,18 @@ impl VintageProcessor {
 
             // Decimation (1970s mode: hold every Nth sample)
             if self.mode == VintageMode::Seventies {
-                // Effective ~20kHz rate: skip every other sample at 44.1kHz
+                // Effective ~20kHz rate: skip every other sample at 44.1kHz.
+                // Both channels share the hold tick; each holds its own sample,
+                // so the stage degrades each channel instead of matrixing the
+                // pair to mid/side.
                 self.decimate_counter += 1;
                 if self.decimate_counter >= 2 {
                     self.decimate_counter = 0;
-                    self.decimate_hold = (l + r) * 0.5;
+                    self.decimate_hold_l = l;
+                    self.decimate_hold_r = r;
                 }
-                l = self.decimate_hold + (l - self.decimate_hold) * 0.3;
-                r = self.decimate_hold + (r - self.decimate_hold) * 0.3;
+                l = self.decimate_hold_l + (l - self.decimate_hold_l) * 0.3;
+                r = self.decimate_hold_r + (r - self.decimate_hold_r) * 0.3;
             }
 
             // Bandwidth limiting (one-pole lowpass)
