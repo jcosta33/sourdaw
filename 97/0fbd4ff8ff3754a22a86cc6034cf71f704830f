@@ -1,0 +1,92 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_1228e573df1f42 43-46
+docs/architecture/agent-release-gates.md
+  h_1228e573df1f42 3-7,38-80,83-97
+evidence/agent-campaign/corpora/development.json
+  h_1228e573df1f42 2,4-55,59,63-70,77-81,101-118,129-143,148-165,174,182-185,192-196,216-233,238-244,251-265,270-287,291-296,302,306-313,320-324,329-333,341-354,360,364-371,378-382,389-397,402,406-413,420-424,431-439,444,457-459,463,476-478,482-483,485-488,492,505-507,511,524-526,530,534-537,547-549,553,557-560,570-572,576,580-583,593-595,599,603-606,616-618,622,626-629,639-641,645,649-651,655,659-661,665,669-671,675,679-681,685,689-913
+evidence/agent-campaign/corpora/fixture-project.json
+  h_1228e573df1f42 1-639
+evidence/agent-campaign/corpora/held-out.json
+  h_1228e573df1f42 2,4-55,59,63-70,77-81,101-112,123-137,142-153,162,170-173,180-184,203-210,214-220,227-241,245-252,255-260,266,270-277,284-288,293-297,305-318,324,328-335,342-346,353-361,366,370-377,384-388,395-403,408-409,411-414,418-419,421-424,428-429,431-434,438,451-453,457,470-472,476,480-483,493-495,499,503-506,516-518,522,526-529,539-541,545,549-552,562-564,568,572-575,585-587,591,595-597,601,605-607,611,615-617,621,625-627,631,635-859
+evidence/agent-campaign/manifest.json
+  h_1228e573df1f42 6,800-804,808,812,816,894
+release/open-source-inventory.json
+  h_1228e573df1f42 1205
+scripts/__tests__/agentCampaignHarness.spec.ts
+  h_1228e573df1f42 45-65,83-99
+scripts/__tests__/pruneRemoteBranches.spec.ts
+  h_1228e573df1f42 4,180,220-223,538,615-768,899-983
+scripts/__tests__/runEvidenceGate.spec.ts
+  h_1228e573df1f42 13,15,397-478
+scripts/agent-campaign/evidenceGateContract.ts
+  h_1228e573df1f42 99-103
+scripts/agent-campaign/run-evidence-gate.ts
+  h_1228e573df1f42 333,341,354,378-457,613
+scripts/measurementRevisionHolders.ts
+  h_1228e573df1f42 1-162
+scripts/pruneRemoteBranches.ts
+  h_1228e573df1f42 18-24,39,558-564
+src/app/__tests__/bootstrap.spec.ts
+  h_1228e573df1f42 265-267,936-941,943-951
+src/app/bootstrap.ts
+  h_1228e573df1f42 316-320
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  h_1228e573df1f42 12-13,16,19-20,38-39,57-58,60-61,66-78,95-106,108,111-112,116,123-124,126,128-129,143-167,223,230-247,296-298,300-307,338,350,352,354-359,368-369,371,380-381,383,405-471,473,479,495-499,508-526,540-572,577-578,580-583,597,600,606,608,613-644,652,654,660,664-674,680,686,699-704,710,716-723,727-730,741-743,745
+src/modules/AiRuntime/models/AgentAcceptanceOutcome.ts
+  h_1228e573df1f42 5,16-55,60,64-65,80-86,90-92,96,98,104,112-113,115,132-133,135,144-145,147
+src/modules/AiRuntime/services/agentAcceptanceScorer.ts
+  h_1228e573df1f42 5,10,12-14,47-49,52-67,94-118,127-129,131,133-134,143-148,151,153,160-165,168-169,195-206,210-211
+src/modules/Arrangement/handlers/track/__tests__/handleConsolidateAllTracks.spec.ts
+  h_1228e573df1f42 93-124
+src/modules/Arrangement/handlers/track/handleConsolidateAllTracks.ts
+  h_1228e573df1f42 53-58,65-66,78-80
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts
+  h_1228e573df1f42 37,67-70,523-548
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceTrack.spec.ts
+  h_1228e573df1f42 57,98-101,339-371
+src/modules/Arrangement/useCases/freezeBounce/bounceSelection.ts
+  h_1228e573df1f42 74-88
+src/modules/Arrangement/useCases/freezeBounce/bounceTrack.ts
+  h_1228e573df1f42 111-132
+src/modules/Arrangement/useCases/freezeBounce/detectSilentBake.ts
+  h_1228e573df1f42 66-68
+src/modules/Arrangement/useCases/freezeBounce/freezeCompensationOmitTypes.ts
+  h_1228e573df1f42 10-16
+src/modules/AudioEngine/repositories/deviceStrategy/isDesktopExternalPluginRuntime.ts
+  h_1228e573df1f42 1-15
+src/modules/AudioEngine/repositories/deviceStrategy/isEngineHostedPluginDeviceType.ts
+  h_1228e573df1f42 1-30
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChain.spec.ts
+  h_1228e573df1f42 15-16,20-30,67-68,178,180-183,217-273,275-277,283-284,286-319,324-423
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChainRefusalTeardown.spec.ts
+  h_1228e573df1f42 1-141
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  h_1228e573df1f42 21-22,29,179-254,279-300,308-309,337-347,400-407,411-418
+src/modules/AudioEngine/useCases/livePlayback/__tests__/mirrorDeviceChainDelta.spec.ts
+  h_1228e573df1f42 645
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readLoadedExternalInstanceIds.spec.ts
+  h_1228e573df1f42 1-62
+src/modules/AudioEngine/useCases/livePlayback/__tests__/recordNativeChainReleases.spec.ts
+  h_1228e573df1f42 3-4,9-12,18,22,25,30,34,41,45,50,60,66-91
+src/modules/AudioEngine/useCases/livePlayback/readLoadedExternalInstanceIds.ts
+  h_1228e573df1f42 1-34
+src/modules/AudioEngine/useCases/livePlayback/recordNativeChainReleases.ts
+  h_1228e573df1f42 12-20,23,39-50
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  h_1228e573df1f42 3,7,9-10,267-269,278-283,370-386,1640-1854
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  h_1228e573df1f42 63-112,270,299,305-311
+tests/e2e/timelineNavigation.spec.ts
+  h_1228e573df1f42 2,39-46,52-54,56,59-61,67,71-74,79-81,86-90,96-97,109-112,114-117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "970fbd4ff8ff3754a22a86cc6034cf71f704830f",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
