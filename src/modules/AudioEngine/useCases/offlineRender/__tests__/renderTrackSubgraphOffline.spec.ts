@@ -1,10 +1,13 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
-import { trackStore, vcaGroupStore, type Track } from '#/modules/Arrangement/stores';
+import { trackStore, vcaGroupStore, type Device, type Track } from '#/modules/Arrangement/stores';
 // Statically imported so the barrel load is paid once at module init rather
 // than inside a test's time budget.
 import { getEffectiveGain } from '#/modules/Arrangement/useCases';
+import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
 
+import { type AudioDeviceStrategy } from '../../../repositories/deviceStrategy/setupDeviceStrategies';
+import { UnsupportedDeviceTypeError } from '../../../repositories/deviceStrategy/unsupportedDeviceTypeError';
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
 import { renderTrackSubgraphOffline } from '../renderTrackSubgraphOffline';
 
@@ -261,6 +264,9 @@ const mocks = vi.hoisted(() => ({
     getAudioContext: vi.fn(() => ({ sampleRate: SAMPLE_RATE })),
     instrumentNoteOn: vi.fn(),
     instrumentNoteOff: vi.fn(),
+    /** Device factories for the cases that drive the real chain build. */
+    createDevice: vi.fn<(ctx: BaseAudioContext, device: Device) => Promise<AudioDeviceStrategy>>(),
+    isDesktopRuntime: vi.fn<() => boolean>(() => true),
     /** Fader level the real strip builder computed, per track, in build order. */
     builtFaderGains: new Map<string, number>(),
     /** The full strip the real builder produced, per track id, for wiring reads. */
@@ -269,6 +275,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../buildDeviceChain', () => ({ buildDeviceChain: mocks.buildDeviceChain }));
 vi.mock('../../engineAccess/getAudioContext', () => ({ getAudioContext: mocks.getAudioContext }));
+vi.mock('../../../repositories/deviceStrategy/isDesktopExternalPluginRuntime', () => ({
+    isDesktopExternalPluginRuntime: mocks.isDesktopRuntime,
+}));
+vi.mock('../../../repositories/deviceStrategy/setupDeviceStrategies', () => ({
+    createDeviceRegistry: () => ({ createDevice: mocks.createDevice }),
+}));
 
 // The real strip builder runs; this only records the level it computed so a
 // rendered track's fader can be read back and compared against live.
@@ -352,6 +364,23 @@ function createHistorySensitiveInstrumentEntry(deviceId: string): DeviceNodeEntr
                 });
             },
         },
+    };
+}
+
+/**
+ * The stand-in the stubbed device factories hand back for a device that does
+ * build: just enough node surface for `buildDeviceChain`'s wiring and for
+ * `connectOfflineSidechainRoutes` to see a two-input detector.
+ */
+function createCompressorStrategy(): AudioDeviceStrategy {
+    const inputNode = { ...createNode(), numberOfInputs: 2 } as unknown as AudioNode;
+    const outputNode = createNode() as unknown as AudioNode;
+    return {
+        node: { inputNode, outputNode, nodes: [] },
+        acceptsNotes: false,
+        setParam: vi.fn(),
+        resolveOfflineAutomation: () => null,
+        destroy: vi.fn(),
     };
 }
 
@@ -1606,6 +1635,221 @@ describe('renderTrackSubgraphOffline', () => {
             });
 
             expect(mocks.builtStripsById.get('kick-key')!.postFaderGain.gain.value).toBe(1);
+        });
+    });
+
+    // #4355 — the plugin refusal exists because dropping a loaded instance bakes
+    // a file the session does not play. The real question is whether this
+    // render would print the device's output at all, so every case below drives
+    // the real chain build and reads back whether the render refuses or
+    // completes with a warning.
+    describe('hosted plugin refusal per strip (#4355)', () => {
+        const COMPRESSOR_DEVICE: Track['devices'][number] = {
+            id: 'comp-1',
+            name: 'Sidechain',
+            type: 'builtin-sidechain-compressor',
+            bypassed: false,
+            parameterValues: {},
+        };
+
+        function pluginDevice(deviceId: string): Track['devices'][number] {
+            return {
+                id: deviceId,
+                name: 'Analog EQ',
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalInstanceId: 'inst-1',
+            };
+        }
+
+        async function seedSidechainRoute(sourceTrackId: string, targetTrackId: string): Promise<void> {
+            const { sidechainStore } = await import('#/modules/Routing/stores');
+            sidechainStore.set({
+                ...sidechainStore.value!,
+                routes: [
+                    {
+                        id: 'route-1',
+                        sourceTrackId,
+                        targetTrackId,
+                        targetDeviceId: 'comp-1',
+                        targetParameterId: 'threshold',
+                        gain: 1,
+                    },
+                ],
+            });
+        }
+
+        beforeEach(async () => {
+            // The real chain build, so the refusal and the degrade are the ones
+            // the user's render actually runs; only the device factories are
+            // stubbed, because no factory in this process can build a hosted
+            // plugin.
+            mocks.createDevice.mockImplementation(async (_ctx, device) => {
+                if (device.type === 'external-plugin') {
+                    throw new UnsupportedDeviceTypeError(device.type, 'the native engine hosts this device');
+                }
+                return createCompressorStrategy();
+            });
+            mocks.isDesktopRuntime.mockReturnValue(true);
+            // Written the way `activateExternalPlugin` writes a plugin loaded
+            // while the transport is parked: a snapshot exists, the engine has
+            // not attached it yet, and it still sounds on the next Play.
+            externalPluginParameterStore.set({
+                byInstanceId: { 'inst-1': { engineAttached: false, parameters: [] } },
+            });
+            const { buildDeviceChain: realBuildDeviceChain } =
+                await vi.importActual<typeof import('../../buildDeviceChain')>('../../buildDeviceChain');
+            mocks.buildDeviceChain.mockImplementation(realBuildDeviceChain);
+        });
+
+        afterEach(async () => {
+            externalPluginParameterStore.set(defaultExternalPluginParameterState);
+            const { sidechainStore } = await import('#/modules/Routing/stores');
+            sidechainStore.set({ ...sidechainStore.value!, routes: [] });
+        });
+
+        function pluginWarningFor(onWarning: ReturnType<typeof vi.fn>, trackName: string): boolean {
+            const warnings = onWarning.mock.calls.map(([message]) => String(message));
+            return warnings.some((message) => message.includes('external-plugin') && message.includes(trackName));
+        }
+
+        it('degrades a loaded plugin on a muted key source with no rendered send, and still produces the render', async () => {
+            const target = TrackDummy.create({
+                id: 'comp-target',
+                name: 'Comp Target',
+                kind: 'audio',
+                devices: [COMPRESSOR_DEVICE],
+            });
+            const key = TrackDummy.create({
+                id: 'kick-key',
+                name: 'Kick Key',
+                kind: 'audio',
+                muted: true,
+                outputId: 'master',
+                devices: [pluginDevice('plugin-1')],
+            });
+            trackStore.set({ tracks: [target, key], selectedTrackId: null, ghostClips: [] });
+            await seedSidechainRoute('kick-key', 'comp-target');
+            const onWarning = vi.fn();
+
+            const buffer = await renderTrackSubgraphOffline({
+                targetTrackId: 'comp-target',
+                renderTracks: [target, key],
+                startBeat: 0,
+                endBeat: 4,
+                onWarning,
+            });
+
+            expect(buffer).not.toBeNull();
+            expect(pluginWarningFor(onWarning, 'Kick Key')).toBe(true);
+        });
+
+        it('refuses a loaded plugin on an unmuted key source, whose detector feed the print carries', async () => {
+            const target = TrackDummy.create({
+                id: 'comp-target',
+                name: 'Comp Target',
+                kind: 'audio',
+                devices: [COMPRESSOR_DEVICE],
+            });
+            const key = TrackDummy.create({
+                id: 'kick-key',
+                name: 'Kick Key',
+                kind: 'audio',
+                muted: false,
+                outputId: 'master',
+                devices: [pluginDevice('plugin-1')],
+            });
+            trackStore.set({ tracks: [target, key], selectedTrackId: null, ghostClips: [] });
+            await seedSidechainRoute('kick-key', 'comp-target');
+
+            await expect(
+                renderTrackSubgraphOffline({
+                    targetTrackId: 'comp-target',
+                    renderTracks: [target, key],
+                    startBeat: 0,
+                    endBeat: 4,
+                    onWarning: vi.fn(),
+                })
+            ).rejects.toThrow('Bypass or remove the plugin');
+        });
+
+        it('refuses a loaded plugin on a muted key source whose pre-fader send still prints into this render', async () => {
+            const target = TrackDummy.create({
+                id: 'comp-target',
+                name: 'Comp Target',
+                kind: 'audio',
+                devices: [COMPRESSOR_DEVICE],
+            });
+            // The pre-fader tap sits upstream of the mute, so this strip's
+            // device chain reaches the cue bus even though the track is muted.
+            const key = TrackDummy.create({
+                id: 'kick-key',
+                name: 'Kick Key',
+                kind: 'audio',
+                muted: true,
+                outputId: 'master',
+                devices: [pluginDevice('plugin-1')],
+                sends: [{ busId: 'cue-bus', level: 1, preFader: true }],
+            });
+            const cueBus = TrackDummy.create({ id: 'cue-bus', name: 'Cue Bus', kind: 'bus' });
+            trackStore.set({ tracks: [target, key, cueBus], selectedTrackId: null, ghostClips: [] });
+            await seedSidechainRoute('kick-key', 'comp-target');
+
+            await expect(
+                renderTrackSubgraphOffline({
+                    targetTrackId: 'comp-target',
+                    renderTracks: [target, key, cueBus],
+                    startBeat: 0,
+                    endBeat: 4,
+                    onWarning: vi.fn(),
+                })
+            ).rejects.toThrow('Bypass or remove the plugin');
+        });
+
+        it('degrades a loaded plugin on a self-keyed muted target, whose captured output the mute zeroes', async () => {
+            const target = TrackDummy.create({
+                id: 'comp-target',
+                name: 'Comp Target',
+                kind: 'audio',
+                muted: true,
+                devices: [COMPRESSOR_DEVICE, pluginDevice('plugin-1')],
+            });
+            trackStore.set({ tracks: [target], selectedTrackId: null, ghostClips: [] });
+            await seedSidechainRoute('comp-target', 'comp-target');
+            const onWarning = vi.fn();
+
+            const buffer = await renderTrackSubgraphOffline({
+                targetTrackId: 'comp-target',
+                renderTracks: [target],
+                startBeat: 0,
+                endBeat: 4,
+                onWarning,
+            });
+
+            expect(buffer).not.toBeNull();
+            expect(pluginWarningFor(onWarning, 'Comp Target')).toBe(true);
+        });
+
+        it('refuses a loaded plugin on a muted target that is not a key source, because its mute is not honoured', async () => {
+            const target = TrackDummy.create({
+                id: 'comp-target',
+                name: 'Comp Target',
+                kind: 'audio',
+                muted: true,
+                devices: [pluginDevice('plugin-1')],
+            });
+            trackStore.set({ tracks: [target], selectedTrackId: null, ghostClips: [] });
+
+            await expect(
+                renderTrackSubgraphOffline({
+                    targetTrackId: 'comp-target',
+                    renderTracks: [target],
+                    startBeat: 0,
+                    endBeat: 4,
+                    onWarning: vi.fn(),
+                })
+            ).rejects.toThrow('Bypass or remove the plugin');
         });
     });
 });

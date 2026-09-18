@@ -63,8 +63,9 @@ function describeTally(tally: RenderScheduleTally): string {
  * instrument node that loads but emits zeros, a subgraph that resolves
  * disconnected, and a worklet whose offline setup leaves it inert. A device
  * that fails to *load* is dropped with a warning and a MIDI track then falls
- * back to the builtin synth, which is audible; an unrenderable catalog device
- * throws out of `buildDeviceChain` before any of this runs.
+ * back to the builtin synth, which is audible. Two cases throw out of
+ * `buildDeviceChain` before any of this runs: an unrenderable catalog device,
+ * and a hosted plugin whose instance the engine holds.
  *
  * **A withheld device is decided separately, and ahead of all of that.** It is
  * the one input here that is a fact rather than an inference — the build does
