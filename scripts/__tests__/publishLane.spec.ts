@@ -1642,6 +1642,94 @@ describe('lane publish', () => {
         }
     });
 
+    /**
+     * A plan that only touches project membership must never fire the App edit: the call-site
+     * guard exists precisely because `gh pr edit` with no `--add-label`/`--remove-label`/
+     * `--milestone` flag is refused, so an unguarded call would still reach a real `gh` with
+     * nothing to do. Only a real `gh` child proves the App edit never happened at all.
+     */
+    it('carries a project-only plan through the operator edit alone, never the App edit', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-publish-project-only-'));
+        try {
+            const log = join(root, 'gh.log');
+            const ghPath = join(root, 'gh');
+            writeFileSync(
+                ghPath,
+                '#!/usr/bin/env node\n' +
+                    "import { appendFileSync } from 'node:fs';\n" +
+                    'const args = process.argv.slice(2);\n' +
+                    `appendFileSync(${JSON.stringify(log)}, JSON.stringify({ token: process.env.GH_TOKEN, args }) + '\\n');\n`
+            );
+            chmodSync(ghPath, 0o700);
+            const app: GhSession = {
+                configDir: join(root, 'app'),
+                env: { PATH: process.env.PATH, GH_TOKEN: 'app-token' },
+                dispose: () => {},
+            };
+            const operator = operatorSessionAccess({}, () => ({
+                session: {
+                    configDir: join(root, 'operator'),
+                    env: { PATH: process.env.PATH, GH_TOKEN: 'operator-token' },
+                    dispose: () => {},
+                },
+            }));
+            const port = shellPort(app, root, root, { git: 'git', gh: ghPath }, operator);
+
+            port.applyPullRequestMetadata(88, {
+                addLabels: [],
+                removeLabels: [],
+                addProjectTitles: ['Sourdaw Bugs'],
+            });
+
+            const entries = readFileSync(log, 'utf8')
+                .trim()
+                .split('\n')
+                .map((line) => JSON.parse(line) as { token: string; args: string[] });
+            const edits = entries.filter((entry) => entry.args[0] === 'pr' && entry.args[1] === 'edit');
+            expect(edits.filter((entry) => entry.token === 'app-token')).toEqual([]);
+            expect(edits).toEqual([
+                {
+                    token: 'operator-token',
+                    args: ['pr', 'edit', '88', '--repo', 'jcosta33/sourdaw', '--add-project', 'Sourdaw Bugs'],
+                },
+            ]);
+        } finally {
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    /**
+     * A pull request already on its board must not be re-added: `assertPullRequestMetadata` reads
+     * `readPullRequestProjectTitles` and folds it into the plan precisely so a rerun converges
+     * instead of re-issuing the operator edit. Labels and milestone are already right too, so the
+     * only way an edit could fire here is the project read being discarded.
+     */
+    it('issues no operator edit when the pull request already carries its derived board', () => {
+        const laneBranch = 'agent/fix-board';
+        const lanePath = '/repo/.agents/worktrees/agent--fix-board';
+        const title = 'fix(delivery): keep pull requests on their board';
+        const { port, calls } = fakePort({
+            trees: [worktree({ path: lanePath, branch: laneBranch })],
+            cwd: lanePath,
+            existing: 88,
+            existingTitle: title,
+            // Issueless: the body's Related issues section must read `None.`, not the fixture
+            // default's `Closes #12`.
+            existingBody: composePublishBody(undefined, title, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
+            knownProjects: ['Sourdaw Bugs'],
+            currentMetadata: {
+                labels: [modelLabelName('glm-5.3'), 'bug'],
+                fencedAuthorLabels: [modelLabelName('glm-5.3')],
+                projectTitles: ['Sourdaw Bugs'],
+            },
+        });
+
+        expect(publishLane(undefined, port)).toBe(88);
+
+        expect(calls).toContain('prProjects:88');
+        expect(calls.some((call) => call.startsWith('metaEdit:'))).toBe(false);
+    });
+
     it('refuses the project reads when the operator identity is unverifiable or absent', () => {
         const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => {} };
         const here = import.meta.dirname;
@@ -1659,6 +1747,44 @@ describe('lane publish', () => {
         expect(() => shellPort(session, here, here).knownProjectTitles()).toThrow(
             /project membership needs the verified operator credential/
         );
+    });
+
+    /**
+     * `runPublishLaneCli` disposes the operator access unconditionally in its `finally`, but
+     * `operatorSessionAccess` opens the underlying session lazily on first `session()` call: a
+     * publish that never reads project membership must never authenticate at all, and one that
+     * does must dispose the real session exactly once no matter how many times `dispose` is
+     * called afterward.
+     */
+    it('disposes the lazily opened operator session exactly once, and never authenticates unopened', () => {
+        let authenticateCalls = 0;
+        let disposeCalls = 0;
+        const fakeSession: GhSession = {
+            configDir: '/tmp/sourdaw-operator',
+            env: {},
+            dispose: () => {
+                disposeCalls += 1;
+            },
+        };
+        const access = operatorSessionAccess({}, () => {
+            authenticateCalls += 1;
+            return { session: fakeSession };
+        });
+
+        access.dispose();
+        expect(authenticateCalls).toBe(0);
+        expect(disposeCalls).toBe(0);
+
+        access.session();
+        access.session();
+        expect(authenticateCalls).toBe(1);
+        expect(disposeCalls).toBe(0);
+
+        access.dispose();
+        expect(disposeCalls).toBe(1);
+
+        access.dispose();
+        expect(disposeCalls).toBe(1);
     });
 
     /**

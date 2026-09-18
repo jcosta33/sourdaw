@@ -331,8 +331,9 @@ gates exclude hand-rolled equivalents or bypasses. The only manual `gh` write ex
 correcting an issue's own state, labels, milestone, project membership, or sub-issue links; and
 backfilling a pull request's own labels, milestone, or project membership predating
 `lane:publish`'s metadata assertion — these use the operator account. Scripts use their
-designated App identities except final orchestrator acceptance and merge, which use the verified
-`jcosta33` user identity; no other manual `gh pr` write qualifies. Lane tooling owns every
+designated App identities except final orchestrator acceptance and merge, and `lane:publish`'s
+project-membership read and `--add-project` edit, which use the verified `jcosta33` user
+identity; no other manual `gh pr` write qualifies. Lane tooling owns every
 `git push`: other pushes break review anchors and can strand lanes. Read-only `gh` is
 unrestricted; use it for live tracker state.
 
