@@ -1,0 +1,24 @@
+electron/__tests__/scanWorker.spec.ts
+  s_9b530f08172a54::t_5049ab28fdf05e 47,49
+electron/security.ts
+  s_9b530f08172a54::t_0f8ffccd6226e1 18
+  s_9b530f08172a54::t_66d16188142d28 17
+electron/pluginEditorWindow.ts
+  s_9b530f08172a54::t_caf8812c4f9423 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7089c3bda5c48161982dceb0f8412c0b283cadb5",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
