@@ -26,6 +26,7 @@ type PersistenceContext = {
         runCrdtPersistenceBarrier: typeof import('../runCrdtPersistenceBarrier').runCrdtPersistenceBarrier;
         runCrdtPersistenceOperation: typeof import('../runCrdtPersistenceOperation').runCrdtPersistenceOperation;
         runCrdtPersistenceLoad: typeof import('../runCrdtPersistenceLoad').runCrdtPersistenceLoad;
+        beginPersistenceReplacement: typeof import('../beginPersistenceReplacement').beginPersistenceReplacement;
     };
     repository: typeof import('../../repositories/automergeRepository');
     snapshot: typeof import('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb');
@@ -40,10 +41,11 @@ type ConflictAttempt = {
 
 async function importContext(): Promise<PersistenceContext> {
     vi.resetModules();
-    const [barrierQueue, operationQueue, loadQueue, repository, snapshot] = await Promise.all([
+    const [barrierQueue, operationQueue, loadQueue, replacementQueue, repository, snapshot] = await Promise.all([
         import('../runCrdtPersistenceBarrier'),
         import('../runCrdtPersistenceOperation'),
         import('../runCrdtPersistenceLoad'),
+        import('../beginPersistenceReplacement'),
         import('../../repositories/automergeRepository'),
         import('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb'),
     ]);
@@ -52,6 +54,7 @@ async function importContext(): Promise<PersistenceContext> {
             runCrdtPersistenceBarrier: barrierQueue.runCrdtPersistenceBarrier,
             runCrdtPersistenceOperation: operationQueue.runCrdtPersistenceOperation,
             runCrdtPersistenceLoad: loadQueue.runCrdtPersistenceLoad,
+            beginPersistenceReplacement: replacementQueue.beginPersistenceReplacement,
         },
         repository,
         snapshot,
@@ -286,15 +289,22 @@ describe('CRDT persistence across independent queue contexts', () => {
         const transaction = await persistence.waitForTransaction('readwrite', 2);
         expect(transaction.writes.some((write) => write.key.startsWith('root:incremental:'))).toBe(true);
         transaction.complete();
-        await context.queue.runCrdtPersistenceOperation('reset');
+        // An ordinary project load supersedes the in-flight generation without
+        // pending a replacement: the live documents already are the durable
+        // project, so this load only re-adopts its authority.
+        const supersedingLoad = context.queue.runCrdtPersistenceLoad(async () => ({
+            loaded: true,
+            snapshot: await context.snapshot.loadPersistenceSnapshotFromIdb(),
+        }));
 
         await expect(superseded).resolves.toMatchObject({
             status: 'superseded',
             durable: { write: 'committed', authority: { revision: 2 } },
         });
+        await expect(supersedingLoad).resolves.toBe(true);
         const snapshot = await context.snapshot.loadPersistenceSnapshotFromIdb();
         if (!snapshot?.bundle) {
-            throw new Error('Expected the synchronously committed root after queue reset');
+            throw new Error('Expected the synchronously committed root after the superseding load');
         }
         const reload = await importContext();
         await reload.repository.automergeRepository.loadAll({ bundle: snapshot.bundle, shouldCommit: () => true });

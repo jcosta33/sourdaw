@@ -10,7 +10,7 @@ import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
     compactProject,
     projectActionHistoryToStore,
-    resetCrdtProjectAuthority,
+    resetCrdtProject,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
@@ -18,6 +18,7 @@ import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { removeProjectJson } from '../../repositories/project/removeProjectJson';
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
+import { projectLoadFailureStore } from '../../stores/projectLoadFailureStore';
 import { projectStore, type ProjectStoreState } from '../../stores/projectStore';
 import { createFreshProjectMetadata } from '../createFreshProjectMetadata';
 
@@ -36,17 +37,57 @@ type ActivateNewProjectInput = {
     transaction: ProjectLoadTransaction;
 };
 
+/** The replacement branch of the reset contract, derived from its callable shape. */
+type ReplacedProject = Extract<Awaited<ReturnType<typeof resetCrdtProject>>, { status: 'replaced' }>;
+
 function failNewProjectActivation({
     previousTransientState,
     transaction,
-}: Pick<ActivateNewProjectInput, 'previousTransientState' | 'transaction'>): false {
+}: Pick<ActivateNewProjectInput, 'previousTransientState' | 'transaction'>): void {
     if (transaction.isCurrent() || transaction.canActivate()) {
         const project = projectStore.value;
         if (project && previousTransientState) {
             projectStore.set({ ...project, ...previousTransientState });
         }
     }
-    return false;
+}
+
+/**
+ * Publish the failure surface for a throw past the authority switch.
+ *
+ * Not an abort: the previous project is out of the repository and out of the
+ * stores, so restoring the transient flags would present an empty project as a
+ * normally opened session, and restarting autosave would compact that empty
+ * project over the user's own on disk. Nothing has compacted, so IndexedDB
+ * still holds their project and a reload restores it.
+ */
+function failNewProjectAfterAuthorityReplaced(name: string): void {
+    try {
+        projectLoadFailureStore.set({
+            message: 'Your previous session was closed to create a new project, and the new project failed to open.',
+            projectName: name,
+        });
+    } catch (error) {
+        logger.error(new Error('[newProject] Failed to publish the activation failure', { cause: error }));
+    }
+}
+
+/**
+ * Settle the reset marker for an activation that failed past the switch.
+ *
+ * The marker is settled on every path past the switch, as the other project
+ * replacements do it: the new project never became durable, and finalization is
+ * what records that where the next boot reads it. Autosave stays stopped either
+ * way — there is no project here worth compacting.
+ */
+async function settleAbandonedNewProjectReset(replaced: ReplacedProject | null): Promise<void> {
+    if (replaced === null) {
+        return;
+    }
+    const outcome = await replaced.finalize();
+    if (outcome !== 'finalized') {
+        logger.warn(`[newProject] Abandoned project reset did not finalize (${outcome}).`);
+    }
 }
 
 function restorePreviousProjectRuntime(): void {
@@ -62,23 +103,36 @@ function restorePreviousProjectRuntime(): void {
     }
 }
 
-async function activateNewProject({
+/**
+ * Tear the previous project down and switch the CRDT authority to a new one.
+ *
+ * `null` means the previous project is still the live one or its loss has
+ * already been published; either way the bookkeeping for that outcome is done
+ * and the caller only has to stop.
+ */
+async function switchToNewProject({
     name,
     previousTransientState,
     transaction,
-}: ActivateNewProjectInput): Promise<boolean> {
+}: ActivateNewProjectInput): Promise<ReplacedProject | null> {
     let graphTeardownStarted = false;
     let previousPersistenceStopped = false;
+    let authorityReplaced = false;
+    // Hoisted out of the try: a throw past the switch has to be able to settle
+    // the reset this activation began.
+    let replaced: ReplacedProject | null = null;
     try {
         if (!(await transaction.prepare()) || !transaction.activate()) {
-            return failNewProjectActivation({ previousTransientState, transaction });
+            failNewProjectActivation({ previousTransientState, transaction });
+            return null;
         }
 
         const releaseRuntimeTransition = await projectLoadEpoch.acquireRuntimeTransition();
         try {
             await stopPlayback();
             if (!transaction.isCurrent()) {
-                return failNewProjectActivation({ previousTransientState, transaction });
+                failNewProjectActivation({ previousTransientState, transaction });
+                return null;
             }
             stopActiveAutoSave();
             previousPersistenceStopped = true;
@@ -87,23 +141,48 @@ async function activateNewProject({
             await unloadLoadedExternalPlugins();
             if (!transaction.isCurrent()) {
                 restorePreviousProjectRuntime();
-                return failNewProjectActivation({ previousTransientState, transaction });
+                failNewProjectActivation({ previousTransientState, transaction });
+                return null;
             }
-            resetCrdtProjectAuthority(name);
+            const reset = await resetCrdtProject(name, () => {
+                authorityReplaced = true;
+            });
+            if (reset.status === 'refused') {
+                // Decided before the switch, so nothing was replaced: the
+                // previous project is intact and this is an ordinary abort.
+                logger.warn(`[newProject] Project reset refused (${reset.reason})`);
+                restorePreviousProjectRuntime();
+                failNewProjectActivation({ previousTransientState, transaction });
+                return null;
+            }
+            replaced = reset;
             // Point of no return: the fresh project owns the document now, so
             // the old project's latched pedals can no longer be replayed.
             forgetProjectLatchedPedals();
+            return reset;
         } finally {
             releaseRuntimeTransition();
         }
     } catch (error) {
         logger.warn('[newProject] Failed to activate project:', error);
+        if (authorityReplaced) {
+            await settleAbandonedNewProjectReset(replaced);
+            failNewProjectAfterAuthorityReplaced(name);
+            return null;
+        }
         if (graphTeardownStarted || previousPersistenceStopped) {
             restorePreviousProjectRuntime();
         }
-        return failNewProjectActivation({ previousTransientState, transaction });
+        failNewProjectActivation({ previousTransientState, transaction });
+        return null;
     }
+}
 
+/** Populate, publish and make durable the project the authority switch installed. */
+async function commitNewProject({
+    name,
+    finalize,
+}: { name: string } & Pick<ReplacedProject, 'finalize'>): Promise<true> {
     let degraded = false;
     function runCommittedStep(step: string, operation: () => void): void {
         try {
@@ -140,23 +219,48 @@ async function activateNewProject({
     runCommittedStep('project cache removal', removeProjectJson);
     runCommittedStep('runtime audio buffer reset', clearRuntimeCachedAudioBuffers);
     runCommittedStep('undo history reset', clearUndoHistory);
-    runCommittedStep('autosave start', () => setAutoSaveHandle(startCrdtAutoSave()));
 
     try {
         await compactProject();
-        const current = projectStore.value;
-        if (current?.identityPersistencePending && current.projectId === publishedProjectId) {
-            projectStore.set({ ...current, identityPersistencePending: false });
-        }
     } catch (error) {
         degraded = true;
         logger.warn('[newProject] Initial CRDT snapshot persistence failed:', error);
+    }
+
+    // The reset marker is settled whether or not that snapshot landed: a failed
+    // compaction leaves the replacement non-durable, and finalization is what
+    // writes that conclusion where the next boot reads it. Autosave stays
+    // stopped until it answers, because an autosave compacting this project
+    // would race the compare-and-swap deciding whether the reset is kept.
+    try {
+        const outcome = await finalize();
+        if (outcome === 'finalized') {
+            runCommittedStep('autosave start', () => setAutoSaveHandle(startCrdtAutoSave()));
+            const current = projectStore.value;
+            if (current?.identityPersistencePending && current.projectId === publishedProjectId) {
+                projectStore.set({ ...current, identityPersistencePending: false });
+            }
+        } else {
+            degraded = true;
+            logger.warn(`[newProject] Project reset did not finalize (${outcome}); the project is not durable yet.`);
+        }
+    } catch (error) {
+        degraded = true;
+        logger.warn('[newProject] Project reset finalization failed:', error);
     }
 
     if (degraded) {
         logger.warn('[newProject] Project activated with recovery errors; save before closing.');
     }
     return true;
+}
+
+async function activateNewProject(input: ActivateNewProjectInput): Promise<boolean> {
+    const replaced = await switchToNewProject(input);
+    if (replaced === null) {
+        return false;
+    }
+    return commitNewProject({ name: input.name, finalize: replaced.finalize });
 }
 
 export function newProject(name = 'Untitled Project'): Promise<boolean> {

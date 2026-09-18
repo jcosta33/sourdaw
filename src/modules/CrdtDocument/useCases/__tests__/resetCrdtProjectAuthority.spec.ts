@@ -39,30 +39,23 @@ const mocks = vi.hoisted(() => {
         branchStoreSet: vi.fn(),
         defaultBranchState,
         createDefaultBranchStoreState: vi.fn(() => defaultBranchState),
-        captureRevision: vi.fn(() => 3),
-        commit: vi.fn(async (): Promise<{ status: string; revision?: number; reason?: string }> => {
-            return { status: 'committed', revision: 4 };
-        }),
         rootDocs,
         docs,
         createProjectImplementation,
         createProject: vi.fn(createProjectImplementation),
         resetActionReplayAuthority: vi.fn(),
-        runCrdtPersistenceOperation: vi.fn(),
+        beginPersistenceReplacement: vi.fn(),
     };
 });
 
-vi.mock('../runCrdtPersistenceOperation', () => ({
-    runCrdtPersistenceOperation: mocks.runCrdtPersistenceOperation,
+vi.mock('../beginPersistenceReplacement', () => ({
+    beginPersistenceReplacement: mocks.beginPersistenceReplacement,
 }));
 
 vi.mock('../../stores/branchStore', () => ({
     branchStore: { set: mocks.branchStoreSet },
     createDefaultBranchStoreState: mocks.createDefaultBranchStoreState,
     MAIN_BRANCH_ID: 'main',
-}));
-vi.mock('../../repositories/branchStateAuthority', () => ({
-    branchStateAuthority: { captureRevision: mocks.captureRevision, commit: mocks.commit },
 }));
 vi.mock('../../repositories/automergeRepository', () => ({
     automergeRepository: { createProject: mocks.createProject },
@@ -83,9 +76,7 @@ describe('resetCrdtProjectAuthority', () => {
         mocks.createProject.mockReset();
         mocks.createProject.mockImplementation(mocks.createProjectImplementation);
         mocks.resetActionReplayAuthority.mockReset();
-        mocks.runCrdtPersistenceOperation.mockReset();
-        mocks.captureRevision.mockReturnValue(3);
-        mocks.commit.mockResolvedValue({ status: 'committed', revision: 4 });
+        mocks.beginPersistenceReplacement.mockReset();
         mocks.rootDocs.length = 0;
         mocks.docs.clear();
         const initialRoot = {};
@@ -124,14 +115,45 @@ describe('resetCrdtProjectAuthority', () => {
             branches: [expect.objectContaining({ branchId: 'main', rootDocId: 'root', sourceBranchId: null })],
             activeBranchId: 'main',
         });
-        // The same list is committed durably, against the revision this caller
-        // observed, so a reload does not come back on the replaced project's
-        // branch list.
-        expect(mocks.commit).toHaveBeenCalledWith({ expectedRevision: 3, next: mocks.defaultBranchState });
         expect(mocks.createProject.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.branchStoreSet.mock.invocationCallOrder[0]!
         );
         expect(mocks.createProject).toHaveBeenCalledWith('Imported');
+    });
+
+    // Without a recorded reset there is nothing for the queue to claim, so it
+    // reads its own authority lazily on the first save of the new project.
+    it('points the persistence queue at a replacement before the root is swapped', () => {
+        resetCrdtProjectAuthority('Imported');
+
+        expect(mocks.beginPersistenceReplacement).toHaveBeenCalledWith({
+            epoch: expect.any(String),
+            old: null,
+        });
+        expect(mocks.beginPersistenceReplacement.mock.invocationCallOrder[0]!).toBeLessThan(
+            mocks.createProject.mock.invocationCallOrder[0]!
+        );
+    });
+
+    /**
+     * The durable path already recorded which authority the replacement's first
+     * save must compare-and-swap against, and which branch list the record
+     * promises to publish. Minting either in here would leave the marker
+     * describing a save and a list that never happen.
+     */
+    it('claims the recorded authority and publishes the recorded list when a reset supplies them', () => {
+        const old = { epoch: 'epoch-outgoing', revision: 4, rootLineage: 'main' };
+        const recordedList = { ...mocks.defaultBranchState, activeBranchId: 'main' };
+
+        resetCrdtProjectAuthority('New Project', undefined, {
+            epoch: 'epoch-replacement',
+            old,
+            branchState: recordedList,
+        });
+
+        expect(mocks.beginPersistenceReplacement).toHaveBeenCalledWith({ epoch: 'epoch-replacement', old });
+        expect(mocks.branchStoreSet).toHaveBeenLastCalledWith(recordedList);
+        expect(mocks.createDefaultBranchStoreState).not.toHaveBeenCalled();
     });
 
     it('clears repair state owned by the replaced project authority', () => {
@@ -204,12 +226,12 @@ describe('resetCrdtProjectAuthority', () => {
     describe('point-of-no-return reporting', () => {
         it('says nothing was replaced, and leaves undo alone, when it throws before the swap', () => {
             const onAuthorityReplaced = vi.fn();
-            mocks.runCrdtPersistenceOperation.mockImplementationOnce(() => {
-                throw new Error('persistence reset failed');
+            mocks.beginPersistenceReplacement.mockImplementationOnce(() => {
+                throw new Error('persistence replacement failed');
             });
 
             expect(() => resetCrdtProjectAuthority('New Project', onAuthorityReplaced)).toThrow(
-                'persistence reset failed'
+                'persistence replacement failed'
             );
 
             expect(mocks.createProject).not.toHaveBeenCalled();
@@ -235,60 +257,6 @@ describe('resetCrdtProjectAuthority', () => {
             expect(onAuthorityReplaced).toHaveBeenCalledTimes(1);
             // The swap did not complete, so nothing after it ran.
             expect(mocks.resetActionReplayAuthority).not.toHaveBeenCalled();
-        });
-
-        it('does not let a refused durable write escape the authority switch it cannot undo', async () => {
-            const onAuthorityReplaced = vi.fn();
-            // A full origin quota is the last thing that can fail here, and the
-            // switch is already irreversible: throwing out of this caller used
-            // to abort a project load back into a session that no longer exists.
-            mocks.commit.mockResolvedValueOnce({ status: 'refused', reason: 'write-failed' });
-
-            expect(() => resetCrdtProjectAuthority('New Project', onAuthorityReplaced)).not.toThrow();
-            await Promise.resolve();
-
-            expect(onAuthorityReplaced).toHaveBeenCalledTimes(1);
-            // The document these entries describe is gone, so they must go too.
-            expect(mocks.resetActionReplayAuthority).toHaveBeenCalledTimes(1);
-            // Memory still went to Main: every reader after the switch sees the
-            // new project's branch list whether or not it reached storage.
-            expect(mocks.branchStoreSet).toHaveBeenCalledWith(mocks.defaultBranchState);
-        });
-
-        it('keeps the reset project on Main when a live foreign session owns the durable list', async () => {
-            // A collaboration session another window still owns holds the
-            // envelope, so the commit is refused with `session-active` — and a
-            // refused transaction hydrates the store from the envelope it read.
-            // That list names documents this project does not have.
-            const foreignSessionList = {
-                branches: [
-                    ...mocks.defaultBranchState.branches,
-                    {
-                        branchId: 'peer-feature',
-                        name: 'Peer feature',
-                        rootDocId: 'branch_peer_feature',
-                        sourceBranchId: 'main',
-                        createdAt: 400,
-                        createdFromHeads: [],
-                        note: '',
-                    },
-                ],
-                activeBranchId: 'peer-feature',
-            };
-            mocks.commit.mockImplementationOnce(async () => {
-                mocks.branchStoreSet(foreignSessionList);
-                return { status: 'refused', reason: 'session-active' };
-            });
-
-            resetCrdtProjectAuthority('New Project');
-            await vi.waitFor(() => expect(mocks.commit).toHaveBeenCalledTimes(1));
-            // The refusal hydrated the foreign list into memory, so the reset is
-            // only correct if a later write puts Main back.
-            expect(mocks.branchStoreSet).toHaveBeenCalledWith(foreignSessionList);
-
-            // Last write wins, and it has to be Main: a freshly reset project
-            // showing a peer's branches is the observable defect.
-            await vi.waitFor(() => expect(mocks.branchStoreSet).toHaveBeenLastCalledWith(mocks.defaultBranchState));
         });
 
         it('reports the replacement before anything that runs after it', () => {

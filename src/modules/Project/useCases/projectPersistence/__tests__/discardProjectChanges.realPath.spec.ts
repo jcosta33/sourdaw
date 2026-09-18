@@ -12,7 +12,7 @@ import {
     captureProjectRevision,
     compactProject,
     projectActionHistoryToStore,
-    resetCrdtProjectAuthority,
+    resetCrdtProject,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin } from '#/modules/PluginHost/useCases';
@@ -126,7 +126,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
     replaceCrdtDocInLineage: vi.fn(),
-    resetCrdtProjectAuthority: vi.fn(),
+    resetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
+        onAuthorityReplaced?.();
+        return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
+    }),
     endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
@@ -201,7 +204,7 @@ describe('discardProjectChanges real load path', () => {
         vi.mocked(resetActionReplayAuthority).mockReset();
         vi.mocked(clearUndoHistory).mockReset();
         vi.mocked(projectActionHistoryToStore).mockReset();
-        vi.mocked(resetCrdtProjectAuthority).mockReset();
+        vi.mocked(resetCrdtProject).mockReset();
         vi.mocked(startCrdtAutoSave).mockReset().mockReturnValue(vi.fn());
         vi.mocked(getAudioContext).mockClear();
     });
@@ -225,6 +228,6 @@ describe('discardProjectChanges real load path', () => {
         await expect(discard).resolves.toBe(false);
         expect(projectStore.value?.projectId).toBe('original-project');
         expect(projectStore.value?.dirty).toBe(true);
-        expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(resetCrdtProject).not.toHaveBeenCalled();
     });
 });

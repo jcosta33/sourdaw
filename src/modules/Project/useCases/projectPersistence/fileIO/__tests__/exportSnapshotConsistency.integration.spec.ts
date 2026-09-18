@@ -49,6 +49,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, resetActionReplayAuthority } from '#/modules/Command/useCases';
@@ -212,6 +213,9 @@ function expectCoherentProjectA(data: CoherentProjectSnapshot, projectId: string
 
 describe('project export snapshot consistency integration', () => {
     beforeEach(async () => {
+        // jsdom ships no Web Locks API, and the durable reset the project
+        // bootstrap performs sequences on it.
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         Container.clear();
         localStorage.clear();
         installMultiDatabaseIndexedDb();

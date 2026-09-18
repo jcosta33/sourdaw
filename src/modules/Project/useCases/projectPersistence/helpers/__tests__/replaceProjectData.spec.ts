@@ -13,7 +13,8 @@ const {
     mockClearUndoHistory,
     mockCompactProject,
     mockProjectActionHistoryToStore,
-    mockResetCrdtProjectAuthority,
+    mockResetCrdtProject,
+    mockFinalizeReset,
     mockStartCrdtAutoSave,
     mockUnloadLoadedExternalPlugins,
     mockEnsureTrackStrips,
@@ -42,7 +43,8 @@ const {
     mockClearUndoHistory: vi.fn(),
     mockCompactProject: vi.fn(() => Promise.resolve()),
     mockProjectActionHistoryToStore: vi.fn(),
-    mockResetCrdtProjectAuthority: vi.fn(),
+    mockResetCrdtProject: vi.fn(),
+    mockFinalizeReset: vi.fn(),
     mockStartCrdtAutoSave: vi.fn(() => 'auto-save-handle'),
     mockUnloadLoadedExternalPlugins: vi.fn(() => Promise.resolve()),
     mockEnsureTrackStrips: vi.fn(),
@@ -83,7 +85,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: mockCompactProject,
     projectActionHistoryToStore: mockProjectActionHistoryToStore,
-    resetCrdtProjectAuthority: mockResetCrdtProjectAuthority,
+    resetCrdtProject: mockResetCrdtProject,
     startCrdtAutoSave: mockStartCrdtAutoSave,
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
@@ -177,6 +179,13 @@ describe('replaceProjectData', () => {
         mockStopPlayback.mockResolvedValue(undefined);
         mockCompactProject.mockResolvedValue(undefined);
         mockStartCrdtAutoSave.mockReturnValue('handle');
+        mockFinalizeReset.mockResolvedValue('finalized');
+        // A replacing reset always reports the point of no return, so the
+        // default has to as well: every `authorityReplaced` branch depends on it.
+        mockResetCrdtProject.mockImplementation((_name: string, onAuthorityReplaced?: () => void) => {
+            onAuthorityReplaced?.();
+            return Promise.resolve({ status: 'replaced', finalize: mockFinalizeReset });
+        });
         mockUnloadLoadedExternalPlugins.mockResolvedValue(undefined);
     });
 
@@ -214,7 +223,7 @@ describe('replaceProjectData', () => {
         });
 
         expect(result.status).toBe('aborted');
-        expect(mockResetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(mockResetCrdtProject).not.toHaveBeenCalled();
     });
 
     it('aborts when transaction.prepare throws', async () => {
@@ -266,13 +275,13 @@ describe('replaceProjectData', () => {
         expect(mockUnloadLoadedExternalPlugins).toHaveBeenCalledOnce();
         // Second argument is the point-of-no-return callback the abort path
         // uses to tell a recoverable failure from an unrecoverable one.
-        expect(mockResetCrdtProjectAuthority).toHaveBeenCalledWith('Test Project', expect.any(Function));
+        expect(mockResetCrdtProject).toHaveBeenCalledWith('Test Project', expect.any(Function));
         // The loaded project owns the document from that call on, so the pedals
         // latched under the project just left are forgotten here and not at the
         // earlier graph reset, which an abort can still undo.
         expect(mockForgetProjectLatchedPedals).toHaveBeenCalledOnce();
         expect(mockForgetProjectLatchedPedals.mock.invocationCallOrder[0]!).toBeGreaterThan(
-            mockResetCrdtProjectAuthority.mock.invocationCallOrder[0]!
+            mockResetCrdtProject.mock.invocationCallOrder[0]!
         );
         expect(mockResetModuleStores).toHaveBeenCalled();
         expect(mockHydrateArrangement).toHaveBeenCalled();
@@ -284,6 +293,16 @@ describe('replaceProjectData', () => {
         );
         expect(mockClearRuntimeCachedAudioBuffers.mock.invocationCallOrder[0]).toBeLessThan(
             embeddedPublish.mock.invocationCallOrder[0]!
+        );
+        // C3 — the durability lifecycle starts only once the reset is
+        // finalized: an autosave compacting before then would move the durable
+        // authority past the one the reset recorded.
+        expect(mockFinalizeReset).toHaveBeenCalledOnce();
+        expect(mockFinalizeReset.mock.invocationCallOrder[0]!).toBeGreaterThan(
+            mockCompactProject.mock.invocationCallOrder[0]!
+        );
+        expect(mockAutoSaveHandle.setAutoSaveHandle.mock.invocationCallOrder[0]!).toBeGreaterThan(
+            mockFinalizeReset.mock.invocationCallOrder[0]!
         );
     });
 
@@ -340,7 +359,7 @@ describe('replaceProjectData', () => {
         unloading.resolve();
 
         await expect(replacement).resolves.toEqual({ status: 'aborted' });
-        expect(mockResetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(mockResetCrdtProject).not.toHaveBeenCalled();
         expect(mockEnsureTrackStrips).toHaveBeenCalledOnce();
         // The player stays in the old project, whose graph is rebuilt above, so
         // a damper still held must survive the abandoned load.
@@ -359,8 +378,29 @@ describe('replaceProjectData', () => {
         ).resolves.toEqual({ status: 'aborted' });
 
         expect(mockCancelPreparedStoredBuffers).toHaveBeenCalledOnce();
-        expect(mockResetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(mockResetCrdtProject).not.toHaveBeenCalled();
     });
+    /**
+     * The marker is settled on every path past the authority switch, this one
+     * included: the loaded project never became durable, and finalization is
+     * what records that where the next boot reads it.
+     */
+    it('settles the reset when a step throws past the authority switch', async () => {
+        mockProjectActionHistoryToStore.mockImplementationOnce(() => {
+            throw new Error('action history projection failed');
+        });
+
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+        });
+
+        expect(result.status).toBe('failed');
+        expect(mockFinalizeReset).toHaveBeenCalledOnce();
+        expect(mockStartCrdtAutoSave).not.toHaveBeenCalled();
+    });
+
     it('returns degraded=true when a committed step fails', async () => {
         mockHydrateArrangement.mockImplementation(() => {
             throw new Error('hydrate failed');
@@ -382,7 +422,13 @@ describe('replaceProjectData', () => {
     });
 
     it('reports a committed replacement as non-durable only when CRDT snapshot compaction fails', async () => {
+        // The published project the barrier is raised on; the store mock does
+        // not feed its own writes back, so this stands in for it.
+        mockProjectStore.value = { name: 'Test Project', identityPersistencePending: false };
         mockCompactProject.mockRejectedValueOnce(new Error('snapshot persistence failed'));
+        // Nothing of the replacement reached storage, so the reset cannot
+        // finalize and the marker stays for the next boot to classify.
+        mockFinalizeReset.mockResolvedValue('authority-mismatch');
 
         const result = await replaceProjectData({
             context: 'loadRecentProject',
@@ -391,6 +437,52 @@ describe('replaceProjectData', () => {
         });
 
         expect(result).toMatchObject({ status: 'committed', degraded: true, durable: false });
+        // C2 — the marker is settled either way, and autosave stays stopped
+        // because this project is not the durable one.
+        expect(mockFinalizeReset).toHaveBeenCalledOnce();
+        expect(mockAutoSaveHandle.setAutoSaveHandle).not.toHaveBeenCalled();
+        expect(mockProjectStore.set).toHaveBeenCalledWith(
+            expect.objectContaining({ identityPersistencePending: true })
+        );
+    });
+
+    // C1 — every refusal is decided before the switch, so the previous project
+    // is still the live one and this is an ordinary abort.
+    it('hands the previous project back when the reset is refused', async () => {
+        mockProjectStore.value = { name: 'Old', initialized: true, loading: false };
+        mockResetCrdtProject.mockResolvedValue({ status: 'refused', reason: 'lock-unavailable' });
+
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+        });
+
+        expect(result).toEqual({ status: 'aborted' });
+        expect(mockEnsureTrackStrips).toHaveBeenCalledOnce();
+        expect(mockAutoSaveHandle.setAutoSaveHandle).toHaveBeenCalledOnce();
+        expect(mockCompactProject).not.toHaveBeenCalled();
+        expect(mockFinalizeReset).not.toHaveBeenCalled();
+        expect(mockProjectLoadFailureStore.set).not.toHaveBeenCalled();
+    });
+
+    /**
+     * C2/C4 — a reset that cannot finalize leaves the loaded project
+     * non-durable: the durability barrier stays raised and autosave stays
+     * stopped even though the snapshot itself landed.
+     */
+    it('withholds durability when the snapshot landed but the reset did not finalize', async () => {
+        mockFinalizeReset.mockResolvedValue('authority-mismatch');
+
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+        });
+
+        expect(result).toMatchObject({ status: 'committed', durable: false });
+        expect(mockAutoSaveHandle.setAutoSaveHandle).not.toHaveBeenCalled();
+        expect(mockLogger.error).toHaveBeenCalled();
     });
 
     it('aborts when embedded buffer import returns null', async () => {
