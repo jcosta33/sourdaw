@@ -3696,7 +3696,9 @@ export function shellPort(
             clearDeliveryReceiptAuthority(primaryRoot, number, expectedCurrent),
         syncAuthorshipNotes: ({ mergeCommitSha, headSha, baseSha, headRef, baseRef }) => {
             try {
-                shell.run('git-ai', [
+                // The launcher-bounded child PATH carries only resolved executables; git-ai
+                // reaches it through the trusted path the launcher freezes when present.
+                shell.run(process.env.SOURDAW_TRUSTED_GIT_AI_PATH ?? 'git-ai', [
                     'ci',
                     'local',
                     'merge',

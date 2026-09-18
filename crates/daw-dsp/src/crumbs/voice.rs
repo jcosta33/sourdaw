@@ -1467,7 +1467,7 @@ mod tests {
     }
 
     /// One voice rendered at `ratio`x, reached by `note` plus `tune_cents`.
-    fn render_at_ratio(source_frequency: f32, ratio: usize, note: u8, tune_cents: f32) -> Vec<f32> {
+    fn render_at_ratio(source_frequency: f32, note: u8, tune_cents: f32) -> Vec<f32> {
         let semitones = (note as f32 - 60.0) + tune_cents / 100.0;
         render_at_semitones(source_frequency, semitones)
     }
@@ -1481,12 +1481,12 @@ mod tests {
     /// this ratio, not a proxy for it.
     fn foldback_margin_db(ratio: usize, note: u8, tune_cents: f32) -> (f32, f32) {
         let passband = bin_magnitude(
-            &render_at_ratio(8_000.0 / ratio as f32, ratio, note, tune_cents),
+            &render_at_ratio(8_000.0 / ratio as f32, note, tune_cents),
             8_000.0,
             SAMPLE_RATE,
         );
         let foldback = bin_magnitude(
-            &render_at_ratio(32_000.0 / ratio as f32, ratio, note, tune_cents),
+            &render_at_ratio(32_000.0 / ratio as f32, note, tune_cents),
             16_000.0,
             SAMPLE_RATE,
         );
