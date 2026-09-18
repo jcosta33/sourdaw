@@ -51,16 +51,18 @@ export const activeSessions = createHmrPersistentState<Map<string, RecordingSess
 );
 
 export const sharedStreamState = createHmrPersistentState<{
-    stream: MediaStream | null;
-    pendingRequest: Promise<MediaStream> | null;
+    /** One cached stream per requested input key — distinct devices never share a stream (#3773). */
+    streams: Map<string, MediaStream>;
+    pendingRequests: Map<string, Promise<MediaStream>>;
     streamUsage: Map<MediaStream, number>;
 }>(
-    // v2: the shape gained pendingRequest and per-stream usage; a dev session
-    // holding the v1 object would come back without streamUsage and crash.
-    'audioRecorder.sharedStreamState.v2',
+    // v3: the single-slot cache became per-input maps when recording started
+    // honoring the track's input selection; a dev session holding the v2
+    // object would come back without them and share the wrong microphone.
+    'audioRecorder.sharedStreamState.v3',
     () => ({
-        stream: null,
-        pendingRequest: null,
+        streams: new Map(),
+        pendingRequests: new Map(),
         streamUsage: new Map(),
     })
 );

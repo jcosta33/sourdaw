@@ -500,29 +500,33 @@ export function startPlayheadScheduler(): void {
                 if (track.kind === 'audio') {
                     const recClip = clips.find((context) => context.trackId === track.id);
                     Promise.resolve(
-                        startAudioRecording(track.id, (result) => {
-                            if (result.kind === 'failed') {
-                                // A capture that dies mid-punch (ring overrun,
-                                // worker crash, a WAV that never decoded) must
-                                // not strand an empty provisional clip on the
-                                // arrangement or stay silent about it (#4265).
-                                notifyUser('Punch-in recording failed — the partial take was discarded.', 'error');
-                                if (recClip) {
-                                    removeClip(recClip.id);
+                        startAudioRecording(
+                            track.id,
+                            (result) => {
+                                if (result.kind === 'failed') {
+                                    // A capture that dies mid-punch (ring overrun,
+                                    // worker crash, a WAV that never decoded) must
+                                    // not strand an empty provisional clip on the
+                                    // arrangement or stay silent about it (#4265).
+                                    notifyUser('Punch-in recording failed — the partial take was discarded.', 'error');
+                                    if (recClip) {
+                                        removeClip(recClip.id);
+                                    }
+                                    return;
                                 }
-                                return;
-                            }
-                            const { buffer } = result;
-                            const bufferId = `rec-${crypto.randomUUID()}`;
-                            cacheAudioBuffer({ buffer, bufferId });
-                            if (recClip) {
-                                // Route the cross-module write through Arrangement's own
-                                // use case rather than mutating trackStore directly (audit
-                                // row 9). updateClip locates the clip across all tracks and
-                                // applies the updater, preserving the prior behaviour.
-                                updateClip(recClip.id, (clip) => ({ ...clip, audioBufferId: bufferId }));
-                            }
-                        })
+                                const { buffer } = result;
+                                const bufferId = `rec-${crypto.randomUUID()}`;
+                                cacheAudioBuffer({ buffer, bufferId });
+                                if (recClip) {
+                                    // Route the cross-module write through Arrangement's own
+                                    // use case rather than mutating trackStore directly (audit
+                                    // row 9). updateClip locates the clip across all tracks and
+                                    // applies the updater, preserving the prior behaviour.
+                                    updateClip(recClip.id, (clip) => ({ ...clip, audioBufferId: bufferId }));
+                                }
+                            },
+                            track.inputId
+                        )
                     ).catch((error: unknown) => {
                         logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
                     });

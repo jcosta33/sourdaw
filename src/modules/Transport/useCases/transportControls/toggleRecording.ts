@@ -58,59 +58,63 @@ async function beginActualRecording(
         const trackLatencySec = getCompensationDelay(track.id);
         const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
 
-        return startAudioRecording(track.id, (result) => {
-            if (result.kind === 'failed') {
-                // A capture that dies mid-take (ring overrun, worker crash, a
-                // WAV that never decoded) must not strand an empty provisional
-                // clip on the arrangement or stay silent about it (#4265).
-                notifyUser(
-                    'Recording failed — the partial take was discarded. Check your audio input and try again.',
-                    'error'
-                );
-                const failedClip = clips.find((context) => context.trackId === track.id);
-                if (failedClip) {
-                    removeClip(failedClip.id);
+        return startAudioRecording(
+            track.id,
+            (result) => {
+                if (result.kind === 'failed') {
+                    // A capture that dies mid-take (ring overrun, worker crash, a
+                    // WAV that never decoded) must not strand an empty provisional
+                    // clip on the arrangement or stay silent about it (#4265).
+                    notifyUser(
+                        'Recording failed — the partial take was discarded. Check your audio input and try again.',
+                        'error'
+                    );
+                    const failedClip = clips.find((context) => context.trackId === track.id);
+                    if (failedClip) {
+                        removeClip(failedClip.id);
+                    }
+                    return;
                 }
-                return;
-            }
-            const { buffer } = result;
-            const recClip = clips.find((context) => context.trackId === track.id);
-            if (recClip) {
-                const bufferId = `rec-${crypto.randomUUID()}`;
-                cacheAudioBuffer({ buffer, bufferId });
+                const { buffer } = result;
+                const recClip = clips.find((context) => context.trackId === track.id);
+                if (recClip) {
+                    const bufferId = `rec-${crypto.randomUUID()}`;
+                    cacheAudioBuffer({ buffer, bufferId });
 
-                const transport = getTransportState();
-                const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
-                const tempoChanges = tempoMapStore.value?.changes ?? [];
-                // The capture is open before the transport is asked to roll, and
-                // on a desktop build the roll waits for the native session, so
-                // the buffer's first sample predates the beat the clip is
-                // anchored on by that wait. It is subtracted like hardware
-                // latency. The wait and the take both sit on the timeline the
-                // active tempo map shapes, so both convert through the map's own
-                // integration — the base tempo only falls back where no change
-                // governs. `samplesToBeat` inverts exactly that integration; a
-                // rate of one sample per second makes its coordinate seconds.
-                const offsetSeconds = totalLatencySec + heldTransportSeconds(transportHold, ctx.currentTime);
-                const anchorSeconds = secondsBetweenBeats(tempoChanges, 0, recClip.startBeat, defaultTempo);
-                const newStartBeat = Math.max(
-                    0,
-                    samplesToBeat(tempoChanges, anchorSeconds - offsetSeconds, defaultTempo, 1)
-                );
-                const startSeconds = secondsBetweenBeats(tempoChanges, 0, newStartBeat, defaultTempo);
-                const exactEndBeat = samplesToBeat(tempoChanges, startSeconds + buffer.duration, defaultTempo, 1);
+                    const transport = getTransportState();
+                    const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
+                    const tempoChanges = tempoMapStore.value?.changes ?? [];
+                    // The capture is open before the transport is asked to roll, and
+                    // on a desktop build the roll waits for the native session, so
+                    // the buffer's first sample predates the beat the clip is
+                    // anchored on by that wait. It is subtracted like hardware
+                    // latency. The wait and the take both sit on the timeline the
+                    // active tempo map shapes, so both convert through the map's own
+                    // integration — the base tempo only falls back where no change
+                    // governs. `samplesToBeat` inverts exactly that integration; a
+                    // rate of one sample per second makes its coordinate seconds.
+                    const offsetSeconds = totalLatencySec + heldTransportSeconds(transportHold, ctx.currentTime);
+                    const anchorSeconds = secondsBetweenBeats(tempoChanges, 0, recClip.startBeat, defaultTempo);
+                    const newStartBeat = Math.max(
+                        0,
+                        samplesToBeat(tempoChanges, anchorSeconds - offsetSeconds, defaultTempo, 1)
+                    );
+                    const startSeconds = secondsBetweenBeats(tempoChanges, 0, newStartBeat, defaultTempo);
+                    const exactEndBeat = samplesToBeat(tempoChanges, startSeconds + buffer.duration, defaultTempo, 1);
 
-                void Promise.resolve().then(() => {
-                    updateClip(recClip.id, (context) => ({
-                        ...context,
-                        audioBufferId: bufferId,
-                        startBeat: newStartBeat,
-                        endBeat: exactEndBeat,
-                    }));
-                    return null;
-                });
-            }
-        });
+                    void Promise.resolve().then(() => {
+                        updateClip(recClip.id, (context) => ({
+                            ...context,
+                            audioBufferId: bufferId,
+                            startBeat: newStartBeat,
+                            endBeat: exactEndBeat,
+                        }));
+                        return null;
+                    });
+                }
+            },
+            track.inputId
+        );
     });
 
     if (recordingStarts.length > 0) {

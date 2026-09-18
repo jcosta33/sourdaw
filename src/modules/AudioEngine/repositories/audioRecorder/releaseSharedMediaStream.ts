@@ -15,7 +15,12 @@ export function releaseSharedMediaStream(stream: MediaStream): void {
     for (const track of stream.getTracks()) {
         track.stop();
     }
-    if (sharedStreamState.stream === stream) {
-        sharedStreamState.stream = null;
+    // Drop whichever input slot points at the released stream: the cache holds
+    // one stream per requested input, and a released device's slot must not
+    // hand a stopped stream to the next arming call.
+    for (const [key, cached] of sharedStreamState.streams) {
+        if (cached === stream) {
+            sharedStreamState.streams.delete(key);
+        }
     }
 }

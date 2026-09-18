@@ -205,6 +205,69 @@ describe('startAudioRecording', () => {
         expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
     });
 
+    it('acquires distinct streams for tracks assigned distinct inputs', async () => {
+        const streamA = { getTracks: () => [{ stop: media_track_stop }] } as unknown as MediaStream;
+        const streamB = { getTracks: () => [{ stop: media_track_stop }] } as unknown as MediaStream;
+        const getUserMedia = vi.mocked(globalThis.navigator.mediaDevices.getUserMedia);
+        getUserMedia.mockImplementation((request?: MediaStreamConstraints) => {
+            const audio = request?.audio;
+            const deviceId = typeof audio === 'object' ? audio.deviceId : undefined;
+            const exact =
+                typeof deviceId === 'object' && deviceId !== null && !Array.isArray(deviceId)
+                    ? deviceId.exact
+                    : undefined;
+            const selected = exact === 'dev-b' ? streamB : streamA;
+            return Promise.resolve(selected);
+        });
+
+        await expect(startAudioRecording('track-input-a', vi.fn(), 'dev-a')).resolves.toBe(true);
+        await expect(startAudioRecording('track-input-b', vi.fn(), 'dev-b')).resolves.toBe(true);
+
+        expect(getUserMedia).toHaveBeenCalledTimes(2);
+        const firstCall = getUserMedia.mock.calls[0];
+        const secondCall = getUserMedia.mock.calls[1];
+        if (firstCall === undefined || secondCall === undefined) {
+            throw new Error('Expected two acquisition calls');
+        }
+        expect(firstCall[0]?.audio).toEqual({
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            deviceId: { exact: 'dev-a' },
+        });
+        expect(secondCall[0]?.audio).toEqual({
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            deviceId: { exact: 'dev-b' },
+        });
+        expect(vi.mocked(audioEngine.context.createMediaStreamSource)).toHaveBeenNthCalledWith(1, streamA);
+        expect(vi.mocked(audioEngine.context.createMediaStreamSource)).toHaveBeenNthCalledWith(2, streamB);
+    });
+
+    it('shares one cached stream across concurrent starts on the same input', async () => {
+        let grantMicrophone: ((stream: MediaStream) => void) | undefined;
+        vi.mocked(globalThis.navigator.mediaDevices.getUserMedia).mockImplementationOnce(
+            () =>
+                new Promise<MediaStream>((resolve) => {
+                    grantMicrophone = resolve;
+                })
+        );
+        const sharedStream = { getTracks: () => [{ stop: media_track_stop }] } as unknown as MediaStream;
+
+        const first = startAudioRecording('track-same-a', vi.fn(), 'dev-shared');
+        const second = startAudioRecording('track-same-b', vi.fn(), 'dev-shared');
+        const grant = grantMicrophone;
+        if (!grant) {
+            throw new Error('Expected a pending microphone request');
+        }
+        grant(sharedStream);
+
+        await expect(first).resolves.toBe(true);
+        await expect(second).resolves.toBe(true);
+        expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+    });
+
     it('shares one pending microphone request across two concurrent starts', async () => {
         let grantMicrophone: ((stream: MediaStream) => void) | undefined;
         vi.mocked(globalThis.navigator.mediaDevices.getUserMedia).mockImplementationOnce(
