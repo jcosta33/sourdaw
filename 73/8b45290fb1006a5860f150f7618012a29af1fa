@@ -1,0 +1,14 @@
+tests/e2e/builtinDeviceAutomationOffline.spec.ts
+  h_1228e573df1f42 14-18,23-43,49-50,58-59,67-68,80,82-86,92-93,108-109,124-125,169-177,179,183-186,213,218-219,271-272,285-286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "738b45290fb1006a5860f150f7618012a29af1fa",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
