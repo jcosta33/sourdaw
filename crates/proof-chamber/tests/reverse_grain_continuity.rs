@@ -3,10 +3,17 @@
 //!
 //! `reverse_engine_character.rs` measures the two things that make Reverse a
 //! distinct engine — a late onset and a rising envelope — on a single decaying
-//! burst that is over long before the second grain begins. Nothing in this
-//! crate has ever looked at what happens *between* grains, and that is where
-//! this engine spends most of its life: fed sustained material it swaps buffers
-//! every reverse time, forever.
+//! burst that is over long before the second grain begins. The impulse sweeps
+//! beside the engine (`phase_sweep_over_a_small_window_loses_no_impulse`,
+//! `phase_sweep_interior_achieves_near_full_amplitude`,
+//! `production_rate_window_survives_boundary_phases`) sweep impulses through
+//! every phase of the capture, boundary included, and
+//! `steady_tone_produces_continuous_output` checks a sustained tone never gates
+//! the wet path. None of them compares the running output level across the
+//! boundary — the property a listener hears as a stutter. That is where this
+//! engine spends most of its life: fed sustained material it re-arms its two
+//! alternating grain readers every `reverse_len − crossfade_len` samples,
+//! forever.
 //!
 //! The property under test is the one every windowed-grain engine has to
 //! satisfy and the one a listener notices immediately: **the output level does
@@ -32,8 +39,11 @@ const REVERSE: f32 = 6.0;
 const SIZE: f32 = 0.0;
 const REVERSE_SECONDS: f32 = 0.5;
 
-/// Four reverse times: two to fill and settle, two measured.
+/// Four seconds at 48 kHz, which is eight reverse times at the 0.5 s reverse
+/// time below.
 const RENDER_FRAMES: usize = (SAMPLE_RATE * 4.0) as usize;
+/// Two reverse times in, so six of the eight are measured: the first two fill
+/// and settle the capture, the rest carry the analysis.
 const ANALYSIS_START: usize = (SAMPLE_RATE * REVERSE_SECONDS * 2.0) as usize;
 
 /// A sustained tone rather than a burst: a grain boundary is only observable
