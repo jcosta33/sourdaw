@@ -175,7 +175,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts",
-                    "digest": "329deb31b4001d070aa7363b3d0a84e066dece8d13d13b04b6d870f0e632b668"
+                    "digest": "3a4be51857632b45c38aacb3fe13433bcb97daa4f6cadd034d41746688a5482c"
                 }
             ]
         },
@@ -199,7 +199,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts",
-                    "digest": "bc6f9c1473b5a996f7f68546c9d7b32ea994a005250218d15b0cc353f4f5ce86"
+                    "digest": "7e477d70c1d73a99c5c88168ae7e2b5ee14f631cc57443edb503af242b21dd6e"
                 }
             ]
         },
@@ -223,7 +223,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/CrdtDocument/useCases/__tests__/previewCommandBatch.spec.ts",
-                    "digest": "17ce5f7ca92af879cdec9f2dd329987534694617a531597031d3e6c5efaa47bb"
+                    "digest": "9c1d8f3f27f439761049c3c7aaa7a9d27b09499bde19c06c949f90ddd572ccee"
                 }
             ]
         },
@@ -283,7 +283,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts",
-                    "digest": "e38b38cad8b012b71862e63bc95a57529374cad4d7fa07c001ded1eafbbcb326"
+                    "digest": "182cf73725708eea89832f14df1f883ab27e6bca9a1236425f66645c0a5b2100"
                 }
             ]
         },
