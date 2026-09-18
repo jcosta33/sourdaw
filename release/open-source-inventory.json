@@ -166,7 +166,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:df7f22dfb518328a0665e7ab55a3b6b1bda29fca0fa62c53c737d81fccd35eed:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:290718f4ad170d26c1e7ea40ff9799e579613cbd6e5f127c559002ffffb11cbc:release/dependency-license-proofs.json"
+                "sha256:9405011f0d6f0aaa9a02a142a994b40e1eff350e3b2e844f20e5e7210882e6fa:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1335,11 +1335,11 @@
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
                 "daw-dsp sha256:2f523231b85890282cf97cf34503842e2012fd65eb1a02a7f4493c8bc82171e7",
                 "daw-wasm-decoder sha256:216f742f3bba1ebd053748f16f9c269468cdfe3c5d22f854107e4b7992931daa",
-                "proof-chamber sha256:511a8360ce25f0fb01a63b7f6e9193190c0c794eb08ece6fc6748d562bc779af",
+                "proof-chamber sha256:93a7bef9db12dc107b1920ceb6e351f273d049049ec98a6e38fe93555a559aad",
                 "scoring sha256:7a62b22c4f4dccb8fa44c6936fc7dd071b0dfcdfcd395fbf4380434bc60e5047"
             ],
             "digests": [
-                "sha256:6d38005891e0d593286dc107dfe33f6cb3eeccbe02f7491df29d87f45f5e7fd9:public/wasm/manifest.json"
+                "sha256:9bc7b65d8e4d3e2e5d9b9d3ec1221f3469f4224b7ea6c6be403ac13d4fe74e6b:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1692,7 +1692,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "04ea7e0d6c7d40604760374324b992b597c3cc694b859210a5eb74c40dbf9185"
+            "sha256": "93e6fdeaa0763902acf58f2fdbf4ef51de51746788fd117763c43f14de9a0bd6"
         },
         {
             "path": "server/package.json",
@@ -1720,7 +1720,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "6d38005891e0d593286dc107dfe33f6cb3eeccbe02f7491df29d87f45f5e7fd9"
+            "sha256": "9bc7b65d8e4d3e2e5d9b9d3ec1221f3469f4224b7ea6c6be403ac13d4fe74e6b"
         }
     ],
     "externalReferences": [

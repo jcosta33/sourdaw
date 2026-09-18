@@ -40,6 +40,7 @@ import {
     authorWorkflowWriteRequired,
     type FileReader,
     type GitHubJsonClient,
+    spawnRun,
 } from '../githubAppIdentity.ts';
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -1154,5 +1155,15 @@ describe('spawnCapture output capacity', () => {
             `process.stdout.write("--capture-start--\\n" + "x".repeat(4 * 1024 * 1024) + "\\n--capture-end--")`,
         ]);
         expect(captured).toBe(payload);
+    });
+});
+
+describe('spawnRun stderr capture', () => {
+    it("names the failing child's own words in the thrown error", () => {
+        expect(() =>
+            spawnRun(process.execPath, ['-e', "console.error('identity-child-boom'); process.exit(1)"], {
+                env: { ...process.env },
+            })
+        ).toThrow(/identity-child-boom/);
     });
 });

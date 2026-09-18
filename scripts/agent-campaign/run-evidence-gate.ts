@@ -15,7 +15,7 @@ import { parseArgs } from 'node:util';
 
 import { format, resolveConfig } from 'prettier';
 
-import { EVIDENCE_SUITE_COMMANDS, EVIDENCE_TASK_GROUPINGS } from './evidenceGateContract.ts';
+import { EVIDENCE_SUITE_COMMANDS, EVIDENCE_SUITE_DATA, EVIDENCE_TASK_GROUPINGS } from './evidenceGateContract.ts';
 import {
     EVIDENCE_CAMPAIGN,
     EVIDENCE_CAPABILITY_INVENTORY_SOURCE,
@@ -87,6 +87,16 @@ function commandFixturePaths(command: string): readonly string[] {
 }
 
 /**
+ * A suite's fixtures: the paths its command's own text names, plus the data files
+ * `EVIDENCE_SUITE_DATA` declares for it — files a command loads at runtime rather than names on its
+ * own command line, so `commandFixturePaths` can never discover them by parsing tokens.
+ */
+function suiteFixturePaths(id: string, command: string): readonly string[] {
+    const dataFixtures = EVIDENCE_SUITE_DATA[id] ?? [];
+    return [...new Set([...commandFixturePaths(command), ...dataFixtures])].sort();
+}
+
+/**
  * Every suite's command must equal the frozen contract's verbatim text. `evidenceManifest.ts` stays
  * free of any dependency beyond node builtins (the app's baseline spec type-checks it too), so this
  * check lives here rather than in `validateEvidenceManifest`: it is the one caller that already
@@ -146,7 +156,7 @@ function buildSuites(root: string): readonly EvidenceSuite[] {
                 task,
                 kind: suiteKindOf(command),
                 command,
-                fixtures: commandFixturePaths(command).map((path) => buildFixture(root, path)),
+                fixtures: suiteFixturePaths(id, command).map((path) => buildFixture(root, path)),
             };
         });
 }

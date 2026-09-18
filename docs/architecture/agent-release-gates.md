@@ -17,7 +17,10 @@ The development corpus and the held-out corpus are distinct sealed files under
 `evidence/agent-campaign/corpora/`. Each entry carries an exact semantic oracle: a command batch, a
 project delta, receipt fields, or a byte-equivalent no-effect. The scorer is deterministic and
 model-independent — the same corpus entry and the same outcome always score the same, whichever
-model produced the outcome.
+model produced the outcome. For an `execute-exact` entry, the scorer compares the compiled command
+batch — each command's type and its oracle-named payload fields, in order — against the oracle
+before any commit is attempted; commitment itself is observed only through the unintended-mutation
+row, never by this comparison.
 
 `evidence/agent-campaign/corpora/source-examples.json` is a third register, distinct from the
 scored corpora above: it tracks the normative EX/MF source examples (AC-056) by disposition —
@@ -45,7 +48,9 @@ tracker.
 | cost and latency                                                              | recorded per run, not thresholded | recorded  |
 
 Per-class false-positive and false-negative counts are reported for every class in every scoring
-run, including classes that meet their threshold.
+run, including classes that meet their threshold. A class with zero cases in a corpus run reports a
+failing `per-class support` row of its own, because that class's precision, recall, and F1 would
+otherwise read as vacuously perfect with nothing left to have gotten wrong.
 
 ## Evidence manifest
 

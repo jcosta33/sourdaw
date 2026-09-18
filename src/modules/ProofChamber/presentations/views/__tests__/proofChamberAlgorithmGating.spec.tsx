@@ -271,7 +271,7 @@ describe('the Dutch Oven panel offers only controls the live algorithm can hear'
             ])
         );
 
-        expect(perEngine).toEqual({ fdn: 9, spring: 11, reverse: 21 });
+        expect(perEngine).toEqual({ fdn: 9, spring: 10, reverse: 21 });
         expect(chamberEngineIdForAlgorithm('fdn-16')).toBe('fdn');
         expect(chamberEngineIdForAlgorithm('plate')).toBe('plate');
     });

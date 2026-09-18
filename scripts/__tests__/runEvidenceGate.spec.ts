@@ -147,6 +147,22 @@ describe('evidence manifest generation', () => {
         });
     });
 
+    it('lists a suite data fixture beside its command fixtures, even absent from the tree', () => {
+        const { manifest } = fixture();
+        const suite = suiteOf(manifest, { task: 'TASK-SA-09-evidence', gate: 'AC-054' });
+
+        expect(suite.fixtures).toContainEqual({
+            path: 'evidence/agent-campaign/corpora/development.json',
+            digest: null,
+            status: 'absent',
+        });
+        expect(suite.fixtures).toContainEqual({
+            path: 'evidence/agent-campaign/corpora/held-out.json',
+            digest: null,
+            status: 'absent',
+        });
+    });
+
     it('accepts the generated manifest', () => {
         const { manifest } = fixture();
 
