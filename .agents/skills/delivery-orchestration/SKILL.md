@@ -80,6 +80,15 @@ reviews.
 `lane:publish` targets `main` for ordinary lanes and the verified parent branch
 for registered stack children.
 
+Labels and milestone are written by the author App. Project membership is not:
+installation tokens cannot reach user-owned Projects v2, so the project listing,
+the issue's and PR's own membership, and the `--add-project` write all go through
+the verified operator credential, in a second edit. Without that credential an
+explicit `--project` refuses, and every other case logs one line and leaves
+membership to the operator backfill — the rest of the publish still lands. An
+issueless lane derives its project from its derived type label and keeps it only
+when the live listing names that project.
+
 Author-locked off-convention branches may publish via `--lane <absolute-path>`
 only with an already open PR for that exact branch, proving it a genuine
 stranded lane. This path only pushes; it never writes PR title or body and
