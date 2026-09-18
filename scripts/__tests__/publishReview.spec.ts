@@ -70,10 +70,11 @@ function approvalContext(headSha = 'headsha', pr = 42) {
     return { pr, baseRefName: 'main', baseSha: 'base', headSha };
 }
 
-function approvalBody(headSha = 'headsha', summary = 'ok') {
-    return `${summary}\n\nEvidence SHA-256: ${createHash('sha256')
-        .update(JSON.stringify(approvalEvidence(headSha)))
-        .digest('hex')}`;
+// The compact-v1 posted body is exactly the reviewer-written conclusion: no generated
+// footer. `_headSha` is kept so every call site below still reads as "the body posted
+// for this head", even though rendering no longer depends on it.
+function approvalBody(_headSha = 'headsha', summary = 'ok') {
+    return summary;
 }
 
 function removeTemporaryDirectory(root: string): void {
@@ -474,14 +475,14 @@ describe('review publish', () => {
         publishReview(42, { ...fixture.port, assertApprovalContext: undefined });
         expect(fixture.posted.review?.event).toBe('REQUEST_CHANGES');
     });
-    it('compact approval publishes only the conclusion and canonical evidence digest', () => {
+    it('compact approval publishes the document body verbatim with no evidence footer', () => {
         const evidence = approvalEvidence();
         const { port, posted } = fakePort({
             json: { format: 'compact-v1', event: 'APPROVE', body: 'Attacked; held.', comments: [], evidence },
         });
         publishReview(42, port);
-        const digest = createHash('sha256').update(JSON.stringify(evidence)).digest('hex');
-        expect(posted.review?.body).toBe(`Attacked; held.\n\nEvidence SHA-256: ${digest}`);
+        expect(posted.review?.body).toBe('Attacked; held.');
+        expect(posted.review?.body).not.toMatch(/Evidence SHA-256/);
     });
 
     it.each(['reviewer', 'acceptance'])('preserves legacy %s payload bytes with and without evidence', (role) => {
@@ -606,6 +607,9 @@ describe('review publish', () => {
     );
 
     it('canonicalizes evidence keys while preserving claim order', () => {
+        // Rendering no longer folds evidence into the posted body (no digest), so this
+        // exercises `parseApprovalEvidence`'s canonicalization and order-preservation
+        // directly against the parsed document's `evidence`, not through the rendered body.
         const claim = approvalEvidence().claims[0];
         if (claim === undefined) {
             throw new Error('missing claim');
@@ -627,11 +631,12 @@ describe('review publish', () => {
                 ignored: 'extra',
             },
         };
-        expect(renderReviewDocumentBody(parseReviewDocument(raw))).toBe(approvalBody());
+        expect(parseReviewDocument(raw).evidence).toEqual({ headSha: 'headsha', claims: [claim] });
         const second = { observable: 'Other risk', verification: 'Other check', observed: 'Held' };
         const firstOrder = parseReviewDocument({ ...raw, evidence: { headSha: 'headsha', claims: [claim, second] } });
         const reverseOrder = parseReviewDocument({ ...raw, evidence: { headSha: 'headsha', claims: [second, claim] } });
-        expect(renderReviewDocumentBody(firstOrder)).not.toBe(renderReviewDocumentBody(reverseOrder));
+        expect(firstOrder.evidence?.claims).toEqual([claim, second]);
+        expect(reverseOrder.evidence?.claims).toEqual([second, claim]);
     });
 
     it.each([
@@ -695,8 +700,12 @@ describe('review publish', () => {
     });
 
     it.each(['observable', 'verification', 'observed'] as const)(
-        'approval evidence %s cannot be altered after preparation before journaling',
+        'approval evidence %s alteration after preparation does not move the prepared digest',
         (field) => {
+            // `payloadDigest` binds `commit_id`/`event`/`body`/`comments` — the literal bytes
+            // `postReview` sends to GitHub — never evidence. Since the posted body no longer folds
+            // evidence into a digest, altering an evidence claim between preparation and posting is
+            // no longer caught here; `assertPublicationEvidence`'s headSha binding is unaffected.
             const document = parseReviewDocument({
                 format: 'compact-v1',
                 event: 'APPROVE',
@@ -713,7 +722,7 @@ describe('review publish', () => {
             claim[field] = 'Altered after preparation';
             const { port, posted } = fakePort();
             const journal = vi.fn();
-            expect(() =>
+            expect(
                 publishPreparedReview(
                     42,
                     { head: 'headsha', document, payloadDigest, approvalContext: approvalContext() },
@@ -726,9 +735,9 @@ describe('review publish', () => {
                         registerSuccessfulCompletion: vi.fn(),
                     }
                 )
-            ).toThrow(/prepared digest/);
-            expect(journal).not.toHaveBeenCalled();
-            expect(posted.review).toBeUndefined();
+            ).toBe(99);
+            expect(journal).toHaveBeenCalled();
+            expect(posted.review?.body).toBe('ok');
         }
     );
 
@@ -746,8 +755,15 @@ describe('review publish', () => {
     });
 
     it.each([undefined, 'observable', 'verification', 'observed'] as const)(
-        'approval evidence recovery checks actual publication digest, altered=%s',
-        async (altered) => {
+        'recovery replay renders a compact document without the footer, evidence-only bundle edit=%s',
+        async (alteredEvidenceField) => {
+            // The rendered/posted body no longer folds evidence into a digest, so a bundle-file
+            // edit confined to evidence content (never the body GitHub actually stores) no longer
+            // moves the recovery digest: recovery still matches the retained lock and replays the
+            // bare conclusion. This is the accepted consequence of dropping the footer — the
+            // `payloadDigest` binds only `commit_id`/`event`/`body`/`comments`, the literal bytes
+            // `postReview` sends to GitHub, and evidence tampering is no longer detectable through
+            // it. `assertPublicationEvidence`'s headSha binding is unaffected and unchanged.
             const root = mkdtempSync(join(tmpdir(), 'sourdaw-approval-evidence-recovery-'));
             const head = 'a'.repeat(40);
             const number = 42;
@@ -759,13 +775,13 @@ describe('review publish', () => {
                 if (ownerOid === undefined) {
                     throw new Error('missing publication owner');
                 }
-                if (altered) {
+                if (alteredEvidenceField) {
                     const evidence = approvalEvidence(head);
                     const claim = evidence.claims[0];
                     if (claim === undefined) {
                         throw new Error('missing evidence claim');
                     }
-                    claim[altered] = 'Changed result';
+                    claim[alteredEvidenceField] = 'Changed result';
                     writeFileSync(
                         join(root, '.agents', 'review-bundles', `${number}-${head}`, 'review.json'),
                         JSON.stringify({
@@ -777,6 +793,9 @@ describe('review publish', () => {
                         })
                     );
                 }
+                // The body actually posted to GitHub: the bare conclusion, no `Evidence SHA-256` line.
+                const postedBody = approvalBody(head, 'Attacked; held.');
+                expect(postedBody).not.toMatch(/Evidence SHA-256/);
                 const inspect = vi.fn(() => ({
                     state: 'OPEN',
                     head,
@@ -784,30 +803,23 @@ describe('review publish', () => {
                         {
                             id: 99,
                             state: 'APPROVED',
-                            body: approvalBody(head, 'Attacked; held.'),
+                            body: postedBody,
                             commitId: head,
                             actorNodeId: REVIEWER_BOT_NODE_ID,
                             comments: [],
                         },
                     ],
                 }));
-                const recovery = runRecoverPublishReviewLockCli(
-                    [String(number), '--owner', ownerOid],
-                    recoveryDependencies(root, inspect)
-                );
-                if (altered) {
-                    await expect(recovery).rejects.toThrow(/payload does not match the retained lock/);
-                    expect(inspect).not.toHaveBeenCalled();
-                    expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)).toBe(
-                        ownerOid
-                    );
-                } else {
-                    await expect(recovery).resolves.toBe(0);
-                    expect(inspect).toHaveBeenCalledTimes(2);
-                    expect(
-                        readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)
-                    ).toBeUndefined();
-                }
+                await expect(
+                    runRecoverPublishReviewLockCli(
+                        [String(number), '--owner', ownerOid],
+                        recoveryDependencies(root, inspect)
+                    )
+                ).resolves.toBe(0);
+                expect(inspect).toHaveBeenCalledTimes(2);
+                expect(
+                    readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)
+                ).toBeUndefined();
             } finally {
                 restorePs();
                 removeTemporaryDirectory(root);

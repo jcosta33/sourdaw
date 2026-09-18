@@ -143,20 +143,21 @@ New APPROVE publication requires `format: compact-v1` and
 claim, with every value a nonblank, trimmed, single-line string: `observable`
 is expected behavior from the request or contract, `verification` is the exact
 command, check URL, or source comparison, and `observed` is the decisive result
-or excerpt. Keep the body to a short conclusion. Publication renders a
-generated `Evidence SHA-256: <digest>` footer that binds the retained
-structured evidence without publishing its prose. The complete rendered body
-must fit 600 Unicode code points; reject excess and report the actual and
-allowed lengths, never truncate. Record completeness, the digest, and head
-binding do not prove truthful execution; the orchestrator remains responsible
-for verifying the claims. REQUEST_CHANGES must not carry approval evidence.
+or excerpt. Keep the body to a short conclusion. Publication posts only that
+reviewer-written body; the structured evidence stays unpublished in
+`review.json`/`acceptance.json`, where `review:accept` and the orchestrator
+consume it, bound to the head by `headSha`. The posted body must fit 600
+Unicode code points; reject excess and report the actual and allowed lengths,
+never truncate. Record completeness and head binding do not prove truthful
+execution; the orchestrator remains responsible for verifying the claims.
+REQUEST_CHANGES must not carry approval evidence.
 Unknown fresh formats fail closed. Historical unversioned documents remain
 readable only for exact reconstruction and recovery; never rewrite old bundles
 or posted reviews.
 
 Keep detailed logs in the session and the concise head-bound verification
 record in structured bundle evidence. The public approval carries only its
-short conclusion and evidence digest.
+short conclusion; the structured evidence never leaves the bundle.
 
 ### Stack children
 
