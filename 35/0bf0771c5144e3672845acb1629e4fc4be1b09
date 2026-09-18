@@ -1,0 +1,19 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_9e15f5b7ec3308::t_c7a0d74ddf9144 943-945
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "350bf0771c5144e3672845acb1629e4fc4be1b09",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
