@@ -173,7 +173,7 @@ const ADD_TRACK_STEP_TIMEOUT_MS = 15_000;
 export async function add_midi_track(page: Page): Promise<void> {
     const emptyStateMidiButton = page.locator('button').filter({ hasText: 'MIDI' }).filter({ hasText: 'Keys' });
     await emptyStateMidiButton.waitFor({ state: 'visible', timeout: ADD_TRACK_STEP_TIMEOUT_MS });
-    await emptyStateMidiButton.click();
+    await emptyStateMidiButton.click({ timeout: ADD_TRACK_STEP_TIMEOUT_MS });
     const trackList = page.getByRole('grid', { name: /Track list/i });
     await trackList
         .getByRole('row')
