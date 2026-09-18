@@ -94,7 +94,7 @@
         {
             "id": "AC054-HO-EXEC-3",
             "class": "execute-exact",
-            "prompt": "create 2 midi tracks named Piano, Strings",
+            "prompt": "create 2 midi tracks named Grand Piano, String Ensemble",
             "providerTurns": [
                 { "kind": "search", "intents": ["create a midi track"] },
                 { "kind": "discover", "names": ["addTrack"] },
@@ -104,12 +104,12 @@
                         {
                             "id": "make-piano",
                             "name": "addTrack",
-                            "arguments": { "name": "Piano", "kind": "midi", "binding": "piano" }
+                            "arguments": { "name": "Grand Piano", "kind": "midi", "binding": "piano" }
                         },
                         {
                             "id": "make-strings",
                             "name": "addTrack",
-                            "arguments": { "name": "Strings", "kind": "midi", "binding": "strings" }
+                            "arguments": { "name": "String Ensemble", "kind": "midi", "binding": "strings" }
                         }
                     ]
                 }

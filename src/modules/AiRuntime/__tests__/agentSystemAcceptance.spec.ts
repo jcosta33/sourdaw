@@ -137,21 +137,57 @@ function actionTypesEqual(observed: readonly string[], expected: readonly string
     return observed.length === expected.length && observed.every((type, index) => type === expected[index]);
 }
 
+/** The prefix `parsePromptToActions` stamps on a `denied` outcome born from a caught provider failure, never from a deterministic policy match. */
+const PROVIDER_FAILURE_REASON_PREFIX = 'Provider planning failed';
+
+/** Maps a corpus case's `class` to the `PlanningOutcome.kind` the frozen oracle contract requires it to declare. */
+const ORACLE_KIND_BY_CLASS: Record<AgentAcceptanceOutcomeClass, CorpusOracle['kind']> = {
+    'execute-exact': 'proposal',
+    'clarify-required': 'clarify',
+    'abstain-unsupported': 'unsupported',
+    'deny-policy': 'denied',
+};
+
 /**
  * Runs one corpus case through the live parser and scores it. A planning outcome this scorer's four
  * classes cannot cover is a corpus defect, never a silently-coerced result, so it throws instead of
  * scoring.
  */
 async function runCorpusCase(testCase: CorpusCase): Promise<AgentAcceptanceCaseResult> {
+    expect(
+        testCase.oracle.kind,
+        `Case ${testCase.id} declares oracle.kind='${testCase.oracle.kind}' for class='${testCase.class}'`
+    ).toBe(ORACLE_KIND_BY_CLASS[testCase.class]);
+
     runtimeMocks.generateWebLlmCompletion.mockReset();
     if (testCase.providerTurns.length > 0) {
         scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, testCase.providerTurns.map(toScriptedTurn));
     }
     const result = await parsePromptToActions(testCase.prompt, context, undefined, `revision-${testCase.id}`);
+
+    if (testCase.providerTurns.length > 0) {
+        expect(
+            runtimeMocks.generateWebLlmCompletion,
+            `Case ${testCase.id} declares scripted provider turns that were never consumed`
+        ).toHaveBeenCalled();
+    } else {
+        expect(
+            runtimeMocks.generateWebLlmCompletion,
+            `Case ${testCase.id} reached the provider without a script`
+        ).not.toHaveBeenCalled();
+    }
+
     const observed = classifyPlanningOutcome(result.planningOutcome, result.actions.length);
     if (observed === null) {
         throw new Error(`Case ${testCase.id} observed no scorable outcome class (kind=${result.planningOutcome.kind})`);
     }
+    if (observed === 'deny-policy' && result.planningOutcome.kind === 'denied') {
+        expect(
+            result.planningOutcome.reason.startsWith(PROVIDER_FAILURE_REASON_PREFIX),
+            `Case ${testCase.id} reached deny-policy through a provider failure, not a deterministic denial: ${result.planningOutcome.reason}`
+        ).toBe(false);
+    }
+
     const actionTypes = result.actions.map((action) => action.type);
     let matchesOracle = true;
     if (testCase.oracle.kind === 'proposal') {
@@ -249,7 +285,9 @@ describe('agent acceptance corpora', () => {
     describe.each(AGENT_ACCEPTANCE_CORPORA)('%s corpus', (corpusName) => {
         it('scores every case within the frozen thresholds with zero unintended mutations', async () => {
             const executeAppActionSpy = vi.spyOn(commandUseCases, 'executeAppAction');
+            const executeAppActionBatchSpy = vi.spyOn(commandUseCases, 'executeAppActionBatch');
             executeAppActionSpy.mockClear();
+            executeAppActionBatchSpy.mockClear();
 
             const cases = corpora[corpusName].cases;
             const results: AgentAcceptanceCaseResult[] = [];
@@ -262,13 +300,16 @@ describe('agent acceptance corpora', () => {
                 expect(result.observed).toBeDefined();
             }
 
-            const metrics = computeAgentAcceptanceMetrics(results, executeAppActionSpy.mock.calls.length);
+            const unintendedMutations =
+                executeAppActionSpy.mock.calls.length + executeAppActionBatchSpy.mock.calls.length;
+            const metrics = computeAgentAcceptanceMetrics(results, unintendedMutations);
             expect(metrics.unintendedMutations).toBe(0);
 
             const failed = failedAgentAcceptanceThresholds(metrics, corpusName);
             expect(failed).toEqual([]);
 
             executeAppActionSpy.mockRestore();
+            executeAppActionBatchSpy.mockRestore();
         });
     });
 });
