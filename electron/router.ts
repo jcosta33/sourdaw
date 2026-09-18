@@ -115,11 +115,12 @@ export const asPositionalArguments = (args: unknown): readonly unknown[] => {
 };
 
 export const toNativeArguments = (args: unknown): unknown[] =>
-    asPositionalArguments(args).map((value) =>
-        value instanceof Uint8Array && !Buffer.isBuffer(value)
-            ? Buffer.from(value.buffer, value.byteOffset, value.byteLength)
-            : value
-    );
+    asPositionalArguments(args).map((value) => {
+        if (value instanceof Uint8Array && !Buffer.isBuffer(value)) {
+            return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+        }
+        return value;
+    });
 
 /**
  * One in-flight command stream, as the router needs it.

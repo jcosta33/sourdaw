@@ -141,7 +141,7 @@ const grantPickedPaths = async (
 };
 
 const asRecord = (value: unknown): Record<string, unknown> =>
-    typeof value === 'object' && value !== null ? { ...value } : {};
+    typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 
 const optionalString = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
 
@@ -159,9 +159,12 @@ const optionalFilters = (value: unknown): FileFilter[] | undefined => {
     const filters = value.flatMap((entry): FileFilter[] => {
         const filter = asRecord(entry);
         const name = optionalString(filter.name);
-        const extensions = Array.isArray(filter.extensions)
-            ? filter.extensions.filter((extension): extension is string => typeof extension === 'string')
-            : [];
+        let extensions: string[];
+        if (Array.isArray(filter.extensions)) {
+            extensions = filter.extensions.filter((extension): extension is string => typeof extension === 'string');
+        } else {
+            extensions = [];
+        }
         return name !== undefined && extensions.length > 0 ? [{ name, extensions }] : [];
     });
     return filters.length > 0 ? filters : undefined;
@@ -230,14 +233,15 @@ export const registerDialogChannels = ({
             const request = asRecord(options);
             const multiple = request.multiple === true;
             const directory = request.directory === true;
+            const properties: NonNullable<OpenDialogOptions['properties']> = [directory ? 'openDirectory' : 'openFile'];
+            if (multiple) {
+                properties.push('multiSelections');
+            }
             const result = await dialogs.showOpenDialog({
                 title: optionalString(request.title),
                 defaultPath: optionalString(request.defaultPath),
                 filters: optionalFilters(request.filters),
-                properties: [
-                    directory ? 'openDirectory' : 'openFile',
-                    ...(multiple ? (['multiSelections'] as const) : []),
-                ],
+                properties,
             });
             if (result.canceled || result.filePaths.length === 0) {
                 return null;

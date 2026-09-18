@@ -135,8 +135,20 @@ export const createProductionShellComposition = <Menu>({
         readonly approveTeardown: () => void;
         readonly shouldRecreateAfterCrash: () => boolean;
     };
-}) =>
-    createShellComposition({
+}) => {
+    const quitDependencies: QuitDependencies = {
+        canQuit: async () => {
+            const approved = await closeCoordinator.requestClose();
+            if (approved) {
+                lifecycle.approveTeardown();
+            }
+            return approved;
+        },
+        beforeRun: quit.quiesceBeforeQuit,
+        exit: quit.exit,
+        report: quit.report,
+    };
+    return createShellComposition({
         isMac,
         buildMenu,
         setMenu,
@@ -151,18 +163,7 @@ export const createProductionShellComposition = <Menu>({
         sendToNativeResponder: isMac ? sendToFirstResponder : undefined,
         dispatchMenuIntent: (intent) => menuDispatcher.dispatch(intent),
         runShutdown,
-        quitDependencies: {
-            canQuit: async () => {
-                const approved = await closeCoordinator.requestClose();
-                if (approved) {
-                    lifecycle.approveTeardown();
-                }
-                return approved;
-            },
-            beforeRun: quit.quiesceBeforeQuit,
-            exit: quit.exit,
-            report: quit.report,
-            ...(quit.timers === undefined ? {} : { timers: quit.timers }),
-        },
+        quitDependencies: quit.timers === undefined ? quitDependencies : { ...quitDependencies, timers: quit.timers },
         lifecycle,
     });
+};
