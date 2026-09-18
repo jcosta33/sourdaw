@@ -1,6 +1,8 @@
 import { init as automergeInit } from '@automerge/automerge';
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 
+import { canonicalJson } from '#/utils/canonicalDigest';
+
 import {
     PEER_COLORS,
     type CollaborationState,
@@ -130,9 +132,20 @@ const crdtMock = vi.hoisted(() => {
         waitForCrdtDocumentTransition: vi.fn<(docId: string) => Promise<'aborted' | 'committed'> | null>(),
         subscribeToCrdtChanges: vi.fn().mockReturnValue(unsubscribeAutomergeChanges),
         unsubscribeAutomergeChanges,
-        preserveBranchStateForSession: vi.fn(),
-        replaceBranchState: vi.fn(),
-        restoreBranchStateAfterSession: vi.fn(),
+        beginBranchSession: vi.fn(() => Promise.resolve({ status: 'begun', handle: { owner: 'owner-mock' } })),
+        projectBranchSession: vi.fn<
+            (
+                handle: { owner: string },
+                state: unknown
+            ) => Promise<
+                | { status: 'committed'; revision: number }
+                | {
+                      status: 'refused';
+                      reason: 'superseded' | 'write-failed' | 'storage-unavailable' | 'lock-unavailable';
+                  }
+            >
+        >(() => Promise.resolve({ status: 'committed', revision: 1 })),
+        endBranchSession: vi.fn(() => Promise.resolve('restored')),
         replaceCrdtDocInLineage: vi.fn(),
     };
 });
@@ -294,9 +307,9 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     runCrdtPersistenceBarrier: crdtMock.runCrdtPersistenceBarrier,
     waitForCrdtDocumentTransition: crdtMock.waitForCrdtDocumentTransition,
     subscribeToCrdtChanges: crdtMock.subscribeToCrdtChanges,
-    preserveBranchStateForSession: crdtMock.preserveBranchStateForSession,
-    replaceBranchState: crdtMock.replaceBranchState,
-    restoreBranchStateAfterSession: crdtMock.restoreBranchStateAfterSession,
+    beginBranchSession: crdtMock.beginBranchSession,
+    projectBranchSession: crdtMock.projectBranchSession,
+    endBranchSession: crdtMock.endBranchSession,
     replaceCrdtDocInLineage: crdtMock.replaceCrdtDocInLineage,
 }));
 
@@ -330,6 +343,12 @@ function latestAutomergeSync() {
 function latestAssetTransfer() {
     return assetTransferMock.instances.at(-1)!;
 }
+function nextMacrotask(): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, 0);
+    });
+}
+
 function makePeer(overrides: Partial<PeerInfo> = {}): PeerInfo {
     return {
         id: 'peer-x',
@@ -456,7 +475,7 @@ describe('sessionRuntimePrimitives', () => {
         it('starts with no active peer manager or pending invite', () => {
             expect(sessionRuntimePrimitives.state.peerManager).toBeNull();
             expect(sessionRuntimePrimitives.state.pendingInviteId).toBeNull();
-            expect(sessionRuntimePrimitives.state.hasBranchStateBackup).toBe(false);
+            expect(sessionRuntimePrimitives.state.branchSession).toBeNull();
         });
     });
 });
@@ -521,9 +540,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
     afterEach(async () => {
         vi.useRealTimers();
+        // `clearAllMocks` drops recorded calls but keeps implementations, so
+        // anything a case wires up has to be reset back to the hoisted default
+        // here or it runs inside every later case.
         crdtMock.getCrdtDoc
             .mockReset()
             .mockImplementation((docId: string) => (docId === 'root' ? rootDocument : undefined));
+        crdtMock.mutateCrdtDoc.mockReset();
+        crdtMock.projectBranchSession.mockReset();
         sessionRuntimePrimitives.cleanup();
         await sessionRuntimePrimitives.settleRetainedTeardown().catch(() => undefined);
     });
@@ -960,11 +984,11 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('does not persist or settle handoffs until branch restoration succeeds', async () => {
             await sessionRuntimePrimitives.initialize('project-owner-branch-retry');
-            sessionRuntimePrimitives.startBranchSync(true);
-            crdtMock.restoreBranchStateAfterSession
-                .mockReturnValueOnce('state-not-persisted')
-                .mockReturnValueOnce('state-not-persisted')
-                .mockReturnValueOnce('restored');
+            await sessionRuntimePrimitives.startBranchSync(true);
+            crdtMock.endBranchSession
+                .mockResolvedValueOnce('write-failed')
+                .mockResolvedValueOnce('write-failed')
+                .mockResolvedValueOnce('restored');
 
             sessionRuntimePrimitives.cleanup();
             await expect(sessionRuntimePrimitives.settleRetainedTeardown()).rejects.toThrow(
@@ -1825,12 +1849,12 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         it('seeds the __branches__ doc from the current branch list when hosting', async () => {
             branchStoreMock.value = { branches: [{ id: 'b1' }], activeBranchId: 'b1' };
 
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
 
             expect(crdtMock.removeCrdtDoc).toHaveBeenCalledWith('__branches__');
             expect(crdtMock.createCrdtDoc).toHaveBeenCalledWith('__branches__');
-            expect(crdtMock.preserveBranchStateForSession).toHaveBeenCalledTimes(1);
-            expect(sessionRuntimePrimitives.state.hasBranchStateBackup).toBe(true);
+            expect(crdtMock.beginBranchSession).toHaveBeenCalledTimes(1);
+            expect(sessionRuntimePrimitives.state.branchSession).toEqual({ owner: 'owner-mock' });
 
             const seedCall = crdtMock.mutateCrdtDoc.mock.calls.find(
                 (call) => (call[0] as { id: string }).id === '__branches__'
@@ -1841,7 +1865,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('does not seed the doc when joining as a non-host', async () => {
-            sessionRuntimePrimitives.startBranchSync(false);
+            await sessionRuntimePrimitives.startBranchSync(false);
 
             expect(crdtMock.removeCrdtDoc).not.toHaveBeenCalled();
             expect(crdtMock.createCrdtDoc).not.toHaveBeenCalled();
@@ -1849,7 +1873,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('mirrors local branch mutations into the doc when a doc already exists', async () => {
             crdtMock.hasCrdtDoc.mockReturnValue(true);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1874,7 +1898,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             });
             crdtMock.hasCrdtDoc.mockReturnValue(true);
             crdtMock.waitForCrdtDocumentTransition.mockReturnValue(transition);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1904,7 +1928,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             });
             crdtMock.hasCrdtDoc.mockReturnValue(true);
             crdtMock.waitForCrdtDocumentTransition.mockReturnValue(transition);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1923,7 +1947,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             const transition = Promise.withResolvers<'aborted' | 'committed'>();
             crdtMock.hasCrdtDoc.mockReturnValue(true);
             crdtMock.waitForCrdtDocumentTransition.mockReturnValue(transition.promise);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1941,24 +1965,232 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
         });
 
-        it('does not mirror branch mutations while a projection is already in flight', async () => {
+        it('does not write a projection echo back into the doc', async () => {
             crdtMock.hasCrdtDoc.mockReturnValue(true);
-            sessionRuntimePrimitives.startBranchSync(true);
+            // What the store looks like straight after a projection: the list it
+            // holds is the one already in the doc.
+            crdtMock.getCrdtDoc.mockReturnValue({ branches: [{ id: 'echoed' }] });
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
             crdtMock.mutateCrdtDoc.mockClear();
-            sessionRuntimePrimitives.state.isProjectingBranches = true;
 
-            branchStoreListener({ branches: [{ id: 'ignored' }], activeBranchId: 'b1' });
+            branchStoreListener({ branches: [{ id: 'echoed' }], activeBranchId: 'b1' });
 
             expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
-            sessionRuntimePrimitives.state.isProjectingBranches = false;
+        });
+
+        it('does not write a projection echo back into the doc when the document orders the record keys differently', async () => {
+            // The store builds a branch record in declaration order; Automerge
+            // materialises a map with its keys sorted. The same record therefore
+            // serialises two ways, and a key-order-sensitive comparison reads
+            // the projection's own hydrate as a local change.
+            const storeRecord = {
+                branchId: 'b-take-2',
+                name: 'Take 2',
+                rootDocId: 'doc-take-2',
+                sourceBranchId: 'main-branch-mock',
+                createdAt: 1_700_000_000_000,
+            };
+            const docRecord = {
+                branchId: 'b-take-2',
+                createdAt: 1_700_000_000_000,
+                name: 'Take 2',
+                rootDocId: 'doc-take-2',
+                sourceBranchId: 'main-branch-mock',
+            };
+            const doc = { branches: [docRecord] };
+            crdtMock.hasCrdtDoc.mockReturnValue(true);
+            crdtMock.getCrdtDoc.mockImplementation((docId: string) => (docId === '__branches__' ? doc : undefined));
+            branchStoreMock.value = { branches: [], activeBranchId: 'main-branch-mock' };
+            const branchStoreListener = () =>
+                branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
+                    state: { branches: unknown[]; activeBranchId: string } | null
+                ) => void;
+            // The durable projection hydrates the store with the store-shaped
+            // list before it reports committed.
+            crdtMock.projectBranchSession.mockImplementation(() => {
+                const hydrated = { branches: [storeRecord], activeBranchId: 'main-branch-mock' };
+                branchStoreMock.value = hydrated;
+                branchStoreListener()(hydrated);
+                return Promise.resolve({ status: 'committed' as const, revision: 1 });
+            });
+
+            await sessionRuntimePrimitives.startBranchSync(false);
+            const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
+                docId?: string
+            ) => void;
+            crdtMock.mutateCrdtDoc.mockClear();
+
+            crdtChangeListener('__branches__');
+
+            expect(crdtMock.projectBranchSession).toHaveBeenCalledTimes(1);
+            expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
+        });
+
+        it('mirrors a local branch write that lands while a projection is still in flight', async () => {
+            crdtMock.hasCrdtDoc.mockReturnValue(true);
+            // The doc holds the peers' list; the projection that is publishing
+            // it has not resolved yet.
+            crdtMock.getCrdtDoc.mockReturnValue({ branches: [{ id: 'from-peer' }] });
+            const projection = Promise.withResolvers<{ status: 'committed'; revision: number }>();
+            crdtMock.projectBranchSession.mockReturnValueOnce(projection.promise);
+            await sessionRuntimePrimitives.startBranchSync(true);
+            const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
+                docId?: string
+            ) => void;
+            const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
+                state: { branches: unknown[]; activeBranchId: string } | null
+            ) => void;
+            crdtChangeListener('__branches__');
+            crdtMock.mutateCrdtDoc.mockClear();
+
+            // A local fork/delete commits on the same transaction lock the
+            // projection is waiting on, and its hydration lands inside the
+            // projection's window. Swallowing it leaves the peers on a list that
+            // no longer exists locally.
+            branchStoreListener({ branches: [{ id: 'local-fork' }], activeBranchId: 'local-fork' });
+
+            expect(crdtMock.mutateCrdtDoc).toHaveBeenCalledTimes(1);
+            const [{ id, changeFn }] = crdtMock.mutateCrdtDoc.mock.calls[0] as [
+                { id: string; changeFn: (doc: Record<string, unknown>) => void },
+            ];
+            expect(id).toBe('__branches__');
+            const doc: Record<string, unknown> = {};
+            changeFn(doc);
+            expect(doc.branches).toEqual([{ id: 'local-fork' }]);
+
+            projection.resolve({ status: 'committed', revision: 2 });
+            await projection.promise;
+        });
+
+        /**
+         * A local commit and a peer change queued one behind the other used to
+         * feed each other forever: every projection hydrated the store with a
+         * list the doc no longer held, the mirror wrote that list back, and the
+         * change listener queued the other one again — one durable branch write
+         * and one broadcast per macrotask, without end.
+         */
+        it('settles on one branch list instead of trading a local commit against a peer change', async () => {
+            const base = { id: 'base' };
+            const local = { id: 'local' };
+            const peer = { id: 'peer' };
+            const doc: { branches: unknown[] } = { branches: [base] };
+            branchStoreMock.value = { branches: [base], activeBranchId: 'base' };
+            crdtMock.hasCrdtDoc.mockReturnValue(true);
+            crdtMock.getCrdtDoc.mockImplementation((docId: string) => (docId === '__branches__' ? doc : undefined));
+            const branchStoreListener = () =>
+                branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
+                    state: { branches: unknown[]; activeBranchId: string } | null
+                ) => void;
+            const crdtChangeListener = () =>
+                crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (docId?: string) => void;
+
+            // The durable projection queue: one list per macrotask, hydrating
+            // the store — and so running the mirror — before it reports
+            // committed, exactly as the real lock-serialised write does.
+            let projections = Promise.resolve();
+            let revision = 0;
+            crdtMock.projectBranchSession.mockImplementation((_handle, next) => {
+                const projected = next as { branches: unknown[]; activeBranchId: string };
+                const hydrated = projections.then(async () => {
+                    await nextMacrotask();
+                    branchStoreMock.value = projected;
+                    branchStoreListener()(projected);
+                });
+                projections = hydrated.then(
+                    () => undefined,
+                    () => undefined
+                );
+                revision += 1;
+                const committed = { status: 'committed' as const, revision };
+                return hydrated.then(() => committed);
+            });
+
+            await sessionRuntimePrimitives.startBranchSync(true);
+            crdtMock.mutateCrdtDoc.mockImplementation(
+                ({ id, changeFn }: { id: string; changeFn: (target: Record<string, unknown>) => void }) => {
+                    if (id !== '__branches__') {
+                        return;
+                    }
+                    changeFn(doc);
+                    crdtChangeListener()('__branches__');
+                }
+            );
+            // Drop the host's seeding write so what remains is what the
+            // exchange below costs.
+            crdtMock.mutateCrdtDoc.mockClear();
+
+            // The local commit hydrates the store, so the mirror publishes it
+            // and the change listener queues a projection of it. The peer's
+            // change lands before that projection runs.
+            branchStoreListener()({ branches: [base, local], activeBranchId: 'base' });
+            doc.branches = [base, peer];
+            crdtChangeListener()('__branches__');
+            for (let macrotask = 0; macrotask < 20; macrotask += 1) {
+                await nextMacrotask();
+            }
+
+            // One projection per list that really arrived, and the local
+            // commit's own mirror write. Nothing repeats.
+            expect(crdtMock.projectBranchSession).toHaveBeenCalledTimes(2);
+            expect(
+                crdtMock.mutateCrdtDoc.mock.calls.filter((call) => (call[0] as { id: string }).id === '__branches__')
+            ).toHaveLength(1);
+            const settledJson = canonicalJson(doc.branches);
+            expect(canonicalJson(branchStoreMock.value?.branches)).toBe(settledJson);
+            expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(settledJson);
+            expect(sessionRuntimePrimitives.state.projectingBranchesJson).toEqual([]);
+        });
+
+        it('mirrors a local write of a list an earlier settled projection had published', async () => {
+            const listA = [{ id: 'a' }];
+            const listB = [{ id: 'b' }];
+            const doc: { branches: unknown[] } = { branches: [] };
+            crdtMock.hasCrdtDoc.mockReturnValue(true);
+            crdtMock.getCrdtDoc.mockImplementation((docId: string) => (docId === '__branches__' ? doc : undefined));
+            branchStoreMock.value = { branches: [], activeBranchId: 'b1' };
+            crdtMock.projectBranchSession.mockResolvedValue({ status: 'committed', revision: 1 });
+
+            await sessionRuntimePrimitives.startBranchSync(false);
+            const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
+                docId?: string
+            ) => void;
+            const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
+                state: { branches: unknown[]; activeBranchId: string } | null
+            ) => void;
+
+            doc.branches = listA;
+            crdtChangeListener('__branches__');
+            await vi.waitFor(() =>
+                expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(canonicalJson(listA))
+            );
+            doc.branches = listB;
+            crdtChangeListener('__branches__');
+            await vi.waitFor(() =>
+                expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(canonicalJson(listB))
+            );
+            crdtMock.mutateCrdtDoc.mockClear();
+
+            // The user forks back to the list the first projection published.
+            // The doc holds B, so this is a local change the peers need — and
+            // only a projection that is still in flight may suppress a write.
+            branchStoreListener({ branches: listA, activeBranchId: 'b1' });
+
+            expect(crdtMock.mutateCrdtDoc).toHaveBeenCalledTimes(1);
+            const [{ id, changeFn }] = crdtMock.mutateCrdtDoc.mock.calls[0] as [
+                { id: string; changeFn: (target: Record<string, unknown>) => void },
+            ];
+            expect(id).toBe('__branches__');
+            const written: Record<string, unknown> = {};
+            changeFn(written);
+            expect(written.branches).toEqual(listA);
         });
 
         it('does not mirror branch mutations when the doc has not been created yet', async () => {
             crdtMock.hasCrdtDoc.mockReturnValue(false);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1971,7 +2203,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         it('does not mirror a null branchStore state', async () => {
             crdtMock.hasCrdtDoc.mockReturnValue(true);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1982,8 +2214,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
         });
 
-        it('projects an incoming __branches__ doc change into branchStore via replaceBranchState', async () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+        it('projects an incoming __branches__ doc change through this session claim', async () => {
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
@@ -1992,15 +2224,22 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             crdtChangeListener('__branches__');
 
-            expect(crdtMock.replaceBranchState).toHaveBeenCalledWith({
-                branches: [{ id: 'incoming' }],
-                activeBranchId: 'active-1',
-            });
-            expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(JSON.stringify([{ id: 'incoming' }]));
+            expect(crdtMock.projectBranchSession).toHaveBeenCalledWith(
+                { owner: 'owner-mock' },
+                { branches: [{ id: 'incoming' }], activeBranchId: 'active-1' }
+            );
+            // The durable write is asynchronous, and only a committed one may
+            // record the projected list: a refused projection that recorded it
+            // would suppress the retry of the very list it failed to publish.
+            await vi.waitFor(() =>
+                expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(
+                    JSON.stringify([{ id: 'incoming' }])
+                )
+            );
         });
 
         it('falls back to MAIN_BRANCH_ID when branchStore has no active branch yet', async () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
@@ -2009,14 +2248,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             crdtChangeListener(undefined);
 
-            expect(crdtMock.replaceBranchState).toHaveBeenCalledWith({
-                branches: [{ id: 'incoming' }],
-                activeBranchId: 'main-branch-mock',
-            });
+            expect(crdtMock.projectBranchSession).toHaveBeenCalledWith(
+                { owner: 'owner-mock' },
+                { branches: [{ id: 'incoming' }], activeBranchId: 'main-branch-mock' }
+            );
         });
 
         it('ignores a change notification for an unrelated doc id', async () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
@@ -2025,11 +2264,11 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             crdtChangeListener('some-other-doc');
 
             expect(crdtMock.getCrdtDoc).not.toHaveBeenCalled();
-            expect(crdtMock.replaceBranchState).not.toHaveBeenCalled();
+            expect(crdtMock.projectBranchSession).not.toHaveBeenCalled();
         });
 
         it('ignores a change notification whose doc has no branches array yet', async () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
@@ -2037,26 +2276,85 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             crdtChangeListener('__branches__');
 
-            expect(crdtMock.replaceBranchState).not.toHaveBeenCalled();
+            expect(crdtMock.projectBranchSession).not.toHaveBeenCalled();
         });
 
         it('skips re-projecting the same branch JSON twice in a row', async () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
             crdtMock.getCrdtDoc.mockReturnValue({ branches: [{ id: 'same' }] });
 
             crdtChangeListener('__branches__');
-            crdtMock.replaceBranchState.mockClear();
+            await vi.waitFor(() =>
+                expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(JSON.stringify([{ id: 'same' }]))
+            );
+            crdtMock.projectBranchSession.mockClear();
             crdtChangeListener('__branches__');
 
-            expect(crdtMock.replaceBranchState).not.toHaveBeenCalled();
+            expect(crdtMock.projectBranchSession).not.toHaveBeenCalled();
+        });
+
+        it('re-projects an identical branch list after the durable write was refused', async () => {
+            crdtMock.projectBranchSession.mockResolvedValueOnce({ status: 'refused', reason: 'write-failed' });
+            await sessionRuntimePrimitives.startBranchSync(true);
+            const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
+                docId?: string
+            ) => void;
+            crdtMock.getCrdtDoc.mockReturnValue({ branches: [{ id: 'retried' }] });
+
+            crdtChangeListener('__branches__');
+            await vi.waitFor(() =>
+                expect(loggerMock.warn).toHaveBeenCalledWith(
+                    '[Collaboration] Incoming branch list could not be persisted (write-failed)'
+                )
+            );
+            // Nothing was published, so nothing may be remembered as published.
+            expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBeNull();
+
+            // The same list arriving again is the retry. Recording it on the
+            // first attempt would make this arrival a no-op and leave the list
+            // the session received permanently unpublished.
+            crdtChangeListener('__branches__');
+
+            expect(crdtMock.projectBranchSession).toHaveBeenCalledTimes(2);
+            await vi.waitFor(() =>
+                expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(
+                    JSON.stringify([{ id: 'retried' }])
+                )
+            );
+        });
+
+        it('stops both branch directions when another instance takes the list over mid-flight', async () => {
+            const projection = Promise.withResolvers<{ status: 'refused'; reason: 'superseded' }>();
+            crdtMock.projectBranchSession.mockReturnValueOnce(projection.promise);
+            await sessionRuntimePrimitives.startBranchSync(true);
+            const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
+                docId?: string
+            ) => void;
+            crdtMock.getCrdtDoc.mockReturnValue({ branches: [{ id: 'peer-list' }] });
+
+            crdtChangeListener('__branches__');
+            projection.resolve({ status: 'refused', reason: 'superseded' });
+            await vi.waitFor(() => expect(sessionRuntimePrimitives.state.unsubscribeBranchStore).toBeNull());
+
+            // Both directions go: this session can no longer publish what it
+            // receives, and mirroring local writes into a doc peers still sync
+            // would hand them a list nobody owns. The mirror subscription being
+            // gone is what keeps a later `branchStore.set` out of the doc.
+            expect(branchStoreMock.unsubscribeBranchStore).toHaveBeenCalledTimes(1);
+            expect(crdtMock.unsubscribeAutomergeChanges).toHaveBeenCalledTimes(1);
+            expect(sessionRuntimePrimitives.state.unsubscribeAutomergeChanges).toBeNull();
+            expect(loggerMock.warn).toHaveBeenCalledWith(
+                '[Collaboration] The branch list is no longer owned by this session; branch sync stopped.'
+            );
+            expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBeNull();
         });
 
         it('stops branch sync on cleanup: unsubscribes, removes the doc, restores state, and persists', async () => {
             branchStoreMock.value = { branches: [], activeBranchId: 'b1' };
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             crdtMock.removeCrdtDoc.mockClear();
 
             sessionRuntimePrimitives.cleanup();
@@ -2065,24 +2363,25 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(branchStoreMock.unsubscribeBranchStore).toHaveBeenCalledTimes(1);
             expect(crdtMock.unsubscribeAutomergeChanges).toHaveBeenCalledTimes(1);
             expect(crdtMock.removeCrdtDoc).toHaveBeenCalledWith('__branches__');
-            expect(crdtMock.restoreBranchStateAfterSession).toHaveBeenCalledTimes(1);
+            expect(crdtMock.endBranchSession).toHaveBeenCalledWith({ owner: 'owner-mock' });
+            expect(crdtMock.endBranchSession).toHaveBeenCalledTimes(1);
             expect(crdtMock.persistCrdtProject).toHaveBeenCalledTimes(1);
-            expect(sessionRuntimePrimitives.state.hasBranchStateBackup).toBe(false);
+            expect(sessionRuntimePrimitives.state.branchSession).toBeNull();
             expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBeNull();
             await Promise.resolve();
         });
 
-        it('does not restore branch state on cleanup when no backup was ever taken', async () => {
+        it('does not hand back the branch list on cleanup when this session never claimed it', async () => {
             sessionRuntimePrimitives.cleanup();
 
-            expect(crdtMock.restoreBranchStateAfterSession).not.toHaveBeenCalled();
+            expect(crdtMock.endBranchSession).not.toHaveBeenCalled();
         });
 
         it('surfaces a store error and logs a warning when post-cleanup persistence fails', async () => {
             collaborationStore.set(makeState());
             const persistenceError = new Error('disk full');
             crdtMock.persistCrdtProject.mockRejectedValueOnce(persistenceError);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
 
             await expect(leaveSession()).rejects.toBe(persistenceError);
 
@@ -2097,7 +2396,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             collaborationStore.set(makeState());
             const persistence = Promise.withResolvers<void>();
             crdtMock.persistCrdtProject.mockReturnValueOnce(persistence.promise);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
 
             const decompression = Promise.withResolvers<string>();
             const decompressInvite = vi
@@ -2119,7 +2418,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             collaborationStore.set(makeState());
             const persistence = Promise.withResolvers<void>();
             crdtMock.persistCrdtProject.mockReturnValueOnce(persistence.promise);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
 
             const oldCleanupError = new Error('old cleanup failed');
             const firstCreate = createSession('Session B');

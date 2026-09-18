@@ -24,7 +24,7 @@ const mockRuntime = vi.hoisted(() => ({
             ) => Promise<PeerConnectionManager>
         >(),
     startPlayheadBroadcast: vi.fn<() => void>(),
-    startBranchSync: vi.fn<(isHost: boolean) => void>(),
+    startBranchSync: vi.fn<(isHost: boolean) => Promise<void>>(() => Promise.resolve()),
     captureOwner: vi.fn<() => object | null>(),
     isInstalled: vi.fn<(owner: object | null) => boolean>(),
     canWrite: vi.fn<(owner: object | null) => boolean>(),

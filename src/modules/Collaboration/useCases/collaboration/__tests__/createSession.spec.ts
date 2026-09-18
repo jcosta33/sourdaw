@@ -17,7 +17,7 @@ const mockRuntime = vi.hoisted(() => ({
     settleRetainedTeardown: vi.fn<() => Promise<void>>(),
     runLifecycle: vi.fn(<T>(operation: () => Promise<T>) => operation()),
     startPlayheadBroadcast: vi.fn<() => void>(),
-    startBranchSync: vi.fn<(isHost: boolean) => void>(),
+    startBranchSync: vi.fn<(isHost: boolean) => Promise<void>>(() => Promise.resolve()),
     generatePeerId: vi.fn<() => string>(),
     generateSessionId: vi.fn<() => string>(),
     generateSessionSecret: vi.fn<() => string>(),

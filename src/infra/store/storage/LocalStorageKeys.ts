@@ -121,11 +121,11 @@ export type LocalStorageKey =
     // Stores the sidebar collapsed/expanded state
     | 'sourdaw-sidebar-state'
 
-    // Stores project branch metadata (branch registry)
+    // Stores the legacy project branch metadata (branch registry), read once to seed 'sourdaw-branch-state'
     | 'sourdaw-branches'
 
-    // Stores the pre-collaboration branch registry until session cleanup completes
-    | 'sourdaw-branch-session-backup'
+    // Stores the revisioned branch registry with the collaboration-session record that owns it
+    | 'sourdaw-branch-state'
 
     // Stores AI action history (undo groups, timestamps, prompts)
     | 'sourdaw-ai-history'

@@ -26,7 +26,7 @@ export function createSession(name: string): Promise<string> {
             await runtime.initialize(collaborationAssetOwnership.getOwnerId());
             owner = runtime.captureOwner();
             runtime.startPlayheadBroadcast();
-            runtime.startBranchSync(true);
+            await runtime.startBranchSync(true);
         } catch (error) {
             try {
                 runtime.cleanup(owner);
