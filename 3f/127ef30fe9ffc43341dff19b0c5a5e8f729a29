@@ -1,0 +1,14 @@
+src/modules/AiRuntime/repositories/webLlm/__tests__/engineLifecycle.spec.ts
+  h_1228e573df1f42 7,176-191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3f127ef30fe9ffc43341dff19b0c5a5e8f729a29",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
