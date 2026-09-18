@@ -2993,16 +2993,19 @@ export function run(command: string, args: string[]): void {
         // stderr is captured rather than inherited so a failing child names its own failure —
         // the git-ai authorship sync's exit 1 was unattributable without it (#4344).
         stdio: ['inherit', 'inherit', 'pipe'],
+        maxBuffer: 64 * 1024 * 1024,
         shell: false,
         ...(command === 'git' ? { env: trustedDeliveryGitEnv() } : {}),
     });
     if (result.error !== undefined) {
         throw result.error;
     }
+    if (result.stderr !== null && result.stderr.length > 0) {
+        console.error(result.stderr.toString().trim());
+    }
     if (result.status !== 0) {
         const stderr = result.stderr === null ? '' : result.stderr.toString().trim();
         if (stderr !== '') {
-            console.error(stderr);
             throw new Error(`${command} failed with exit ${result.status ?? 'signal'}: ${stderr}`);
         }
         throw new Error(`${command} failed with exit ${result.status ?? 'signal'}`);
