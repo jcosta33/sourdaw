@@ -1,0 +1,18 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readLoadedExternalInstanceIds.spec.ts
+  h_1228e573df1f42 1-62
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  h_1228e573df1f42 3,7,9-10,267-269,278-283,370-386,1640-1766
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  h_1228e573df1f42 220,249,255-262
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0cd976b7ccd8019192b5aa84286d9a96694791c6",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
