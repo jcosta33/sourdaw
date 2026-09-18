@@ -1,0 +1,18 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_1228e573df1f42 40-43
+scripts/__tests__/pruneRemoteBranches.spec.ts
+  h_1228e573df1f42 5,13,181-182,220-221,534-535,568-740
+scripts/pruneRemoteBranches.ts
+  h_1228e573df1f42 33-34,43-52,162-190,390,412-449,628-629
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b66902cddb21bc5fe8dbf8d4f941b0079a815049",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
