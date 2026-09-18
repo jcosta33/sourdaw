@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { projectStore, type ProjectStoreState } from '../../../../stores/projectStore';
 import { createFromTemplate } from '../createFromTemplate';
 
 const mocks = vi.hoisted(() => ({
@@ -19,6 +20,8 @@ const mocks = vi.hoisted(() => ({
     resetAudioGraph: vi.fn(),
     resetCrdtProject: vi.fn(),
     finalize: vi.fn(),
+    /** The last value written through the project store double. */
+    projectState: { value: null as Partial<ProjectStoreState> | null },
     resetModuleStoresToDefault: vi.fn(),
     setAutoSaveHandle: vi.fn(),
     startCrdtAutoSave: vi.fn(),
@@ -133,10 +136,13 @@ vi.mock('../../../projectPersistence/helpers/stopActiveAutoSave', () => ({
     stopActiveAutoSave: mocks.stopActiveAutoSave,
 }));
 
+// Writes through, unlike a fixed getter: the durability barrier this file
+// pins is the LAST write to the store, and a double that forgets every write
+// cannot tell a raised barrier from a missing one.
 vi.mock('#/modules/Project/stores/projectStore', () => ({
     projectStore: {
         get value() {
-            return { name: 'Pop Song', initialized: false, loading: true };
+            return mocks.projectState.value;
         },
         set: mocks.projectSet,
     },
@@ -145,6 +151,10 @@ vi.mock('#/modules/Project/stores/projectStore', () => ({
 describe('createFromTemplate', () => {
     beforeEach(() => {
         vi.resetAllMocks();
+        mocks.projectState.value = { name: 'Pop Song', initialized: false, loading: true };
+        mocks.projectSet.mockImplementation((next: Partial<ProjectStoreState>) => {
+            mocks.projectState.value = next;
+        });
         mocks.createPopSongTemplate.mockResolvedValue(undefined);
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.isAppActionCommittedError.mockReturnValue(false);
@@ -348,6 +358,23 @@ describe('createFromTemplate', () => {
         await expect(createFromTemplate('pop-song')).resolves.toBe(false);
 
         expect(mocks.finalize).toHaveBeenCalledOnce();
+        expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
+    });
+
+    /**
+     * C8 — the template is published either way, so an unfinalized reset
+     * leaves a clean-looking workspace over storage that still holds the
+     * previous project. The durability barrier is what stops a recovery caller
+     * from closing that session, and only the normal save path clears it.
+     */
+    it('marks the template not durable when the reset cannot finalize', async () => {
+        mocks.finalize.mockResolvedValue('authority-mismatch');
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(true);
+
+        expect(mocks.finalize).toHaveBeenCalledOnce();
+        expect(projectStore.value?.identityPersistencePending).toBe(true);
+        expect(projectStore.value?.initialized).toBe(true);
         expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
     });
 

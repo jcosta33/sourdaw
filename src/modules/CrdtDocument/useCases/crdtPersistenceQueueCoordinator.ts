@@ -742,6 +742,19 @@ async function persistIncrementalCrdtProject(
     settlePendingWrites: boolean,
     attempt: PersistenceAttempt
 ): Promise<void> {
+    if (persistenceState.replacementEpoch !== null) {
+        // A replacement has no incremental to write: its documents share no
+        // base record with the durable project, and `beginPersistenceReplacement`
+        // seeds the root as persisted, so a root-only replacement would pass the
+        // shape check below and commit a chunk under the OUTGOING epoch. That
+        // commit adopts the outgoing authority, clears this epoch, and leaves
+        // the reset unable to recognise its own target — the marker then
+        // answers `authority-mismatch` and the next boot rolls the replaced
+        // project's branch list back over a record holding both projects.
+        await compactCrdtProject(generation, settlePendingWrites, attempt);
+        return;
+    }
+
     await flushPendingFullSnapshot(generation, attempt);
     const expectedAuthority = await ensurePersistenceAuthority(generation);
     recordPersistenceNoop(attempt, expectedAuthority);

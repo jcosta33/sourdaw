@@ -13,6 +13,7 @@ import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
 import { setAutoSaveHandle } from '../../projectPersistence/helpers/autoSaveHandle';
+import { markProjectDurabilityPending } from '../../projectPersistence/helpers/markProjectDurabilityPending';
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
 import {
     projectLoadEpoch,
@@ -52,7 +53,10 @@ function restorePersistence(): void {
  * Autosave stays stopped until the reset is finalized: until then the template
  * is not the durable project, and a compaction landing in between would move
  * the durable authority past the one the reset recorded, leaving the next boot
- * unable to tell which project the bundle belongs to.
+ * unable to tell which project the bundle belongs to. The template is published
+ * either way, so an unfinalized reset also has to raise the durability barrier
+ * — the same one `replaceProjectData` raises — or the workspace presents a
+ * project that storage does not hold as a normally opened session.
  */
 async function finalizeTemplatePersistence(templateId: string, replaced: ReplacedProject | null): Promise<void> {
     if (replaced === null) {
@@ -60,6 +64,7 @@ async function finalizeTemplatePersistence(templateId: string, replaced: Replace
     }
     const outcome = await replaced.finalize();
     if (outcome !== 'finalized') {
+        markProjectDurabilityPending();
         logger.warn(
             `[createFromTemplate] Project reset did not finalize for "${templateId}" (${outcome}); autosave stays stopped until the next load.`
         );

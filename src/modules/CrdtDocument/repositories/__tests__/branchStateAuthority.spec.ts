@@ -859,12 +859,21 @@ describe('branchStateAuthority', () => {
             });
 
             expect(begun.status).toBe('begun');
-            expect(readStoredEnvelope()?.reset).toEqual({
-                owner: begun.status === 'begun' ? begun.handle.owner : '',
-                old: replacementAuthority,
-                target: nextReplacementAuthority,
-                previous: firstIntended,
-                intended: branchList(),
+            // `current` is the settlement's too: the abandoned replacement is
+            // the durable project, so republishing the list this envelope was
+            // frozen with would put the project that reset replaced back.
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 7,
+                current: firstIntended,
+                session: null,
+                reset: {
+                    owner: begun.status === 'begun' ? begun.handle.owner : '',
+                    old: replacementAuthority,
+                    target: nextReplacementAuthority,
+                    previous: firstIntended,
+                    intended: branchList(),
+                },
             });
         });
 

@@ -28,6 +28,7 @@ import { setAutoSaveHandle } from './autoSaveHandle';
 import { collectProjectAudioBufferIds } from './collectProjectAudioBufferIds';
 import { hydrateArrangementStoreFromProjectData } from './hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from './hydrateModuleStoresFromProjectData';
+import { markProjectDurabilityPending } from './markProjectDurabilityPending';
 import { resetModuleStoresToDefault } from './resetModuleStoresToDefault';
 import { projectLoadEpoch, type ProjectLoadTransaction } from './runProjectLoadTransaction';
 import { stopActiveAutoSave } from './stopActiveAutoSave';
@@ -271,21 +272,17 @@ export async function replaceProjectData({
      * Called on every path past the authority switch, the failing ones
      * included: an unsettled marker is what a later boot would have to
      * classify, and a finalization that cannot answer leaves the project
-     * pending rather than throwing over the failure being recovered.
+     * pending instead.
      */
     async function finalizeProjectReset(): Promise<boolean> {
         if (replaced === null) {
             return false;
         }
-        try {
-            const outcome = await replaced.finalize();
-            if (outcome === 'finalized') {
-                return true;
-            }
-            logger.error(new Error(`[${context}] Project reset did not finalize (${outcome})`));
-        } catch (error) {
-            logger.error(new Error(`[${context}] Project reset finalization failed`, { cause: error }));
+        const outcome = await replaced.finalize();
+        if (outcome === 'finalized') {
+            return true;
         }
+        logger.error(new Error(`[${context}] Project reset did not finalize (${outcome})`));
         return false;
     }
 
@@ -435,18 +432,6 @@ export async function replaceProjectData({
         logger.error(new Error(`[${context}] Committed embedded audio buffer persistence threw`, { cause: error }));
     }
 
-    // A durable recovery caller must not close a clean-looking loaded
-    // projection whose initial CRDT snapshot failed. This transient
-    // Project-owned barrier is cleared only by the normal save path.
-    function markProjectDurabilityPending(): void {
-        runCommittedStep('project durability pending', () => {
-            const project = projectStore.value;
-            if (project) {
-                projectStore.set({ ...project, identityPersistencePending: true });
-            }
-        });
-    }
-
     let durable = true;
     if (transaction.isCurrent()) {
         try {
@@ -454,7 +439,7 @@ export async function replaceProjectData({
         } catch (error) {
             degraded = true;
             durable = false;
-            markProjectDurabilityPending();
+            runCommittedStep('project durability pending', markProjectDurabilityPending);
             logger.error(new Error(`[${context}] Initial CRDT snapshot persistence failed`, { cause: error }));
         }
     }
@@ -465,7 +450,7 @@ export async function replaceProjectData({
     const finalized = await finalizeProjectReset();
     if (!finalized) {
         durable = false;
-        markProjectDurabilityPending();
+        runCommittedStep('project durability pending', markProjectDurabilityPending);
     }
 
     if (finalized && transaction.isCurrent()) {

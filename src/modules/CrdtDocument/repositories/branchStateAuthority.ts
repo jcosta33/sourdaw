@@ -735,10 +735,15 @@ async function beginReset({
             // boot can say what it left.
             return { kind: 'refuse', reason: 'reset-active' };
         }
+        // Both lists are the settlement's: `current` describes the project the
+        // durable authority proves is on disk, and that same list is what a
+        // rollback of this new reset has to restore. The envelope's own
+        // `current` was frozen when the abandoned reset began, so keeping it
+        // would republish the project that reset already replaced.
         return {
             kind: 'write',
             next: advance(envelope, {
-                current: envelope.current,
+                current: settlement.current,
                 session: null,
                 reset: { owner, old, target, previous: settlement.current, intended },
             }),

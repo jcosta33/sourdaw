@@ -3,8 +3,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
     flushAutomergeStorageWrites: vi.fn(),
 }));
+
+const { hmrPersistentState } = vi.hoisted(() => ({ hmrPersistentState: new Map<string, unknown>() }));
+
 vi.mock('#/utils/HMR/createHmrPersistentState', () => ({
-    createHmrPersistentState: vi.fn((_key: string, factory: () => unknown) => factory()),
+    // Mirrors the real helper: one state object per key, handed back on every
+    // later evaluation of the module that owns it. A factory call per
+    // invocation would make the coordinator's own version migration — the
+    // branch that decides what a reload carries over — unreachable.
+    createHmrPersistentState: vi.fn((key: string, factory: () => unknown) => {
+        if (!hmrPersistentState.has(key)) {
+            hmrPersistentState.set(key, factory());
+        }
+        return hmrPersistentState.get(key);
+    }),
 }));
 
 const { mockAutomergeRepo, mockSaveAllToIdb, mockSaveIncrementals, mockLoadSnapshot, mockCompactionState } = vi.hoisted(
@@ -84,6 +96,9 @@ describe('crdtPersistenceQueueCoordinator', () => {
 
     it('holds autosave behind a cross-store persistence barrier until publication commits', async () => {
         const order: string[] = [];
+        // An ordinary autosave is the one being ordered here, so the queue has
+        // to be in the state one runs from rather than mid-replacement.
+        await loadRootOnlyProject();
         mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
         let releaseBarrier: (() => void) | undefined;
         const blocked = new Promise<void>((resolve) => {
@@ -150,9 +165,25 @@ describe('crdtPersistenceQueueCoordinator', () => {
     });
 });
 
+/**
+ * The queue state an ordinary editing session sits in: a project loaded, its
+ * durable authority adopted, and the root already a base record incrementals
+ * can extend. Every incremental save runs from here — a queue with a
+ * replacement still pending writes a full bundle instead.
+ */
+async function loadRootOnlyProject(): Promise<void> {
+    await crdtPersistenceQueueCoordinator.runLoad(async () => ({
+        loaded: true,
+        snapshot: {
+            authority: { epoch: 'epoch-loaded', revision: 1, rootLineage: DEFAULT_CRDT_ROOT_LINEAGE },
+            bundle: new Map([['root', new Uint8Array([1])]]),
+        },
+    }));
+}
+
 describe('crdtPersistenceQueueCoordinator / exact-heads collaboration persist does not force a pending write to land (#3331)', () => {
-    beforeEach(() => {
-        crdtPersistenceQueueCoordinator.beginReplacement({ epoch: crypto.randomUUID(), old: null });
+    beforeEach(async () => {
+        await loadRootOnlyProject();
         mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
         mockAutomergeRepo.saveDocIncremental.mockClear();
         mockAutomergeRepo.saveDocIncremental.mockReturnValue(undefined);
@@ -214,8 +245,8 @@ describe('crdtPersistenceQueueCoordinator / exact-heads collaboration persist do
 });
 
 describe('crdtPersistenceQueueCoordinator / compaction paths stamp the undo witness before the bundle read (#3331)', () => {
-    beforeEach(() => {
-        crdtPersistenceQueueCoordinator.beginReplacement({ epoch: crypto.randomUUID(), old: null });
+    beforeEach(async () => {
+        await loadRootOnlyProject();
         mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
         mockAutomergeRepo.saveDocIncremental.mockClear();
         mockAutomergeRepo.saveDocIncremental.mockReturnValue(undefined);
@@ -231,7 +262,7 @@ describe('crdtPersistenceQueueCoordinator / compaction paths stamp the undo witn
     });
 
     it('stamps before the bundle read when a doc-shape change routes an incremental persist into compaction', async () => {
-        // `persistedBaseDocIds` only holds 'root' after reset; a second active
+        // The load left 'root' as the only base record; a second active
         // document changes the persisted shape and routes into compactCrdtProject.
         mockAutomergeRepo.getDocIds.mockReturnValue(['arrangement', 'root']);
         const stampSpy = vi.spyOn(sessionUndoWitnessStampPort, 'stamp');
@@ -334,8 +365,8 @@ describe('crdtPersistenceQueueCoordinator / compaction paths stamp the undo witn
 });
 
 describe('crdtPersistenceQueueCoordinator / a failed pending-write settle still stamps and persists (#3331)', () => {
-    beforeEach(() => {
-        crdtPersistenceQueueCoordinator.beginReplacement({ epoch: crypto.randomUUID(), old: null });
+    beforeEach(async () => {
+        await loadRootOnlyProject();
         mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
         mockAutomergeRepo.saveDocIncremental.mockClear();
         mockAutomergeRepo.saveDocIncremental.mockReturnValue(new Uint8Array([1, 2, 3]));
@@ -449,6 +480,29 @@ describe('crdtPersistenceQueueCoordinator / a project replacement claims the aut
         expect(crdtPersistenceQueueCoordinator.committedAuthority()).toBeNull();
     });
 
+    // K6 — `beginPersistenceReplacement` seeds the root as already persisted,
+    // so a root-only replacement passes the shape check the incremental path
+    // uses. A chunk written there commits under the OUTGOING epoch, adopts that
+    // authority and clears the replacement epoch, leaving the reset unable to
+    // recognise the target it recorded.
+    it('writes the replacement as a full snapshot rather than an incremental while its epoch is pending', async () => {
+        mockSaveIncrementals.mockClear();
+        mockAutomergeRepo.saveDocIncremental.mockClear();
+        // A real chunk, so the incremental route would have something to commit.
+        mockAutomergeRepo.saveDocIncremental.mockReturnValue(new Uint8Array([7, 8, 9]));
+        crdtPersistenceQueueCoordinator.beginReplacement({ epoch: replacementEpoch, old: outgoingAuthority });
+
+        await crdtPersistenceQueueCoordinator.runOperation('incremental');
+
+        expect(mockSaveIncrementals).not.toHaveBeenCalled();
+        expect(mockSaveAllToIdb).toHaveBeenCalledTimes(1);
+        expect(mockSaveAllToIdb).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ expectedAuthority: outgoingAuthority, nextEpoch: replacementEpoch })
+        );
+        expect(crdtPersistenceQueueCoordinator.committedAuthority()).toEqual(replacementAuthority);
+    });
+
     // K4 — the refusal belongs to replacements alone; two realms editing one
     // project both belong in the result.
     it('still merges an ordinary same-epoch conflict when no replacement is in flight', async () => {
@@ -470,5 +524,39 @@ describe('crdtPersistenceQueueCoordinator / a project replacement claims the aut
         await crdtPersistenceQueueCoordinator.runOperation('compact');
 
         expect(mockAutomergeRepo.mergeBundle).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('crdtPersistenceQueueCoordinator / an HMR state migration replaces no project (#4249)', () => {
+    /** The key the coordinator stores its queue state under. */
+    const QUEUE_STATE_KEY = 'crdtDocument.persistenceQueue';
+
+    // K7 — a reload moves the queue on without replacing the project, so a
+    // branch transition spanning the migration still has to see its own
+    // project. Only the count can tell those apart, so only the count carries.
+    it('carries the replacement count across the migration and advances only the generation', async () => {
+        mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
+        mockAutomergeRepo.saveAllOffThread.mockResolvedValue(new Map([['root', new Uint8Array([1])]]));
+        mockSaveAllToIdb.mockReset();
+        mockSaveAllToIdb.mockResolvedValue({
+            status: 'committed',
+            authority: { epoch: 'epoch-migrated', revision: 1, rootLineage: DEFAULT_CRDT_ROOT_LINEAGE },
+        });
+        mockLoadSnapshot.mockClear();
+        mockLoadSnapshot.mockResolvedValue(null);
+        // What a state written before this version holds: the two counters and
+        // the tail the migration recovery has to queue behind. Every other
+        // field is one the migration writes rather than reads.
+        const stale = { version: 6, persistenceGeneration: 11, replacementCount: 4, operationTail: Promise.resolve() };
+        hmrPersistentState.set(QUEUE_STATE_KEY, stale);
+
+        vi.resetModules();
+        const { crdtPersistenceQueueCoordinator: migrated } = await import('../crdtPersistenceQueueCoordinator');
+        // The migration installed its recovery as the new tail; awaiting it
+        // keeps the compaction it schedules out of the next spec file.
+        await stale.operationTail;
+
+        expect(migrated.currentReplacement()).toBe(4);
+        expect(stale.persistenceGeneration).toBe(12);
     });
 });

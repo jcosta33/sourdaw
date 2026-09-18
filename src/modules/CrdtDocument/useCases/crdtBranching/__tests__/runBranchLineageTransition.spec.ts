@@ -13,7 +13,7 @@ const {
     mockLoadCrdtProject,
     mockProjectCrdtToStores,
     mockRunPersistenceOp,
-    mockCurrentPersistenceReplacement,
+    persistenceQueue,
 } = vi.hoisted(() => ({
     mockCloneDoc: vi.fn((doc: unknown) => doc),
     mockIsAppError: vi.fn(() => false),
@@ -47,7 +47,16 @@ const {
     mockLoadCrdtProject: vi.fn(() => Promise.resolve(true)),
     mockProjectCrdtToStores: vi.fn(),
     mockRunPersistenceOp: vi.fn(() => Promise.resolve()),
-    mockCurrentPersistenceReplacement: vi.fn(() => 3),
+    /**
+     * The two figures the persistence queue keeps about itself.
+     *
+     * `generation` moves whenever the queue moves on — a load, an HMR
+     * migration, or this transition's own lineage operation. `replacement`
+     * moves only when another project takes the live one's place. Both are
+     * published here so a case can move one without the other, and which one
+     * the transition's rollback guard reads is what decides the outcome.
+     */
+    persistenceQueue: { generation: 7, replacement: 3 },
 }));
 
 vi.mock('@automerge/automerge', () => ({ clone: mockCloneDoc }));
@@ -68,19 +77,17 @@ vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mock
 vi.mock('../../runCrdtPersistenceOperation', () => ({
     runCrdtPersistenceOperation: mockRunPersistenceOp,
 }));
-vi.mock('../../currentPersistenceReplacement', () => ({
-    currentPersistenceReplacement: mockCurrentPersistenceReplacement,
+// Mocked at the queue rather than at the accessor in front of it, so the real
+// accessor the transition imports is the one under test: a guard reading the
+// wrong figure reads it through this same double.
+vi.mock('../../crdtPersistenceQueueCoordinator', () => ({
+    crdtPersistenceQueueCoordinator: {
+        currentGeneration: () => persistenceQueue.generation,
+        currentReplacement: () => persistenceQueue.replacement,
+    },
 }));
 
 import { runBranchLineageTransition } from '../runBranchLineageTransition';
-
-/**
- * The coordinator's persistence generation, which the mocked lineage operation
- * advances the way `beginRootLineageTransition` does. Nothing under test reads
- * it: a transition is about the project it started on, and a generation change
- * does not mean that project is gone.
- */
-let persistenceGeneration = 7;
 
 const previousState = {
     activeBranchId: 'branch-a',
@@ -105,8 +112,8 @@ describe('runBranchLineageTransition', () => {
         mockRunPersistenceOp.mockResolvedValue(undefined);
         mockBranchStateAuthority.captureRevision.mockReturnValue(4);
         mockBranchStateAuthority.commit.mockResolvedValue({ status: 'committed', revision: 5 });
-        mockCurrentPersistenceReplacement.mockReturnValue(3);
-        persistenceGeneration = 7;
+        persistenceQueue.generation = 7;
+        persistenceQueue.replacement = 3;
     });
 
     it('applies the transition, commits next state, and returns the result', async () => {
@@ -242,12 +249,15 @@ describe('runBranchLineageTransition', () => {
      */
     it('skips the rollback when the project was replaced mid-transition', async () => {
         (mockAutomergeRepo.getDoc as ReturnType<typeof vi.fn>).mockReturnValue({ data: 'doc-1-content' });
-        mockCurrentPersistenceReplacement.mockReturnValueOnce(3).mockReturnValue(4);
 
         await expect(
             runBranchLineageTransition({
                 affectedDocIds: ['doc-1'],
                 apply: () => {
+                    // Faithful to `beginPersistenceReplacement`: a reset
+                    // revokes the generation and then counts the replacement.
+                    persistenceQueue.generation += 1;
+                    persistenceQueue.replacement += 1;
                     throw new Error('apply failed');
                 },
                 from: 'a',
@@ -276,9 +286,10 @@ describe('runBranchLineageTransition', () => {
         (mockAutomergeRepo.getDoc as ReturnType<typeof vi.fn>).mockReturnValue({ data: 'doc-1-content' });
         mockRunPersistenceOp.mockImplementation(() => {
             // Faithful to the coordinator: `root-lineage-transition` runs
-            // `beginRootLineageTransition` synchronously, so the generation has
-            // already moved by the time the commit is refused.
-            persistenceGeneration += 1;
+            // `beginRootLineageTransition` synchronously, so the generation it
+            // revokes has already moved by the time the commit is refused. The
+            // replacement count stays put — no project was replaced.
+            persistenceQueue.generation += 1;
             return Promise.resolve();
         });
         mockBranchStateAuthority.commit.mockResolvedValueOnce({ status: 'refused', reason: 'conflict' });
@@ -294,7 +305,10 @@ describe('runBranchLineageTransition', () => {
             })
         ).rejects.toThrow(/Branch state could not be persisted \(conflict\)/);
 
-        expect(persistenceGeneration).toBe(8);
+        expect(persistenceQueue.generation).toBe(8);
+        expect(persistenceQueue.replacement).toBe(3);
+        // The rollback ran whole: the snapshots went back, persistence was
+        // reloaded, and the stores were re-projected off the restored documents.
         expect(mockAutomergeRepo.insertDoc).toHaveBeenCalledWith('doc-1', { data: 'doc-1-content' });
         expect(mockLoadCrdtProject).toHaveBeenCalled();
         expect(mockProjectCrdtToStores).toHaveBeenCalled();

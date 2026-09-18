@@ -84,13 +84,9 @@ async function settleAbandonedNewProjectReset(replaced: ReplacedProject | null):
     if (replaced === null) {
         return;
     }
-    try {
-        const outcome = await replaced.finalize();
-        if (outcome !== 'finalized') {
-            logger.warn(`[newProject] Abandoned project reset did not finalize (${outcome}).`);
-        }
-    } catch (error) {
-        logger.warn('[newProject] Abandoned project reset finalization failed:', error);
+    const outcome = await replaced.finalize();
+    if (outcome !== 'finalized') {
+        logger.warn(`[newProject] Abandoned project reset did not finalize (${outcome}).`);
     }
 }
 
