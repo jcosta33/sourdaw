@@ -1,292 +1,226 @@
 import { stringify } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type BranchRecord, type BranchStoreState, MAIN_BRANCH_ID } from '../branchStore';
+import { Container } from '#/infra/di/Container';
+import { type ControlledLockManager } from '#/infra/testing/createControlledLockManager';
 
-const BRANCH_STORAGE_KEY = 'sourdaw-branches';
-const BRANCH_SESSION_BACKUP_STORAGE_KEY = 'sourdaw-branch-session-backup';
+import {
+    BRANCH_STATE_TRANSACTION_LOCK_NAME,
+    blockEveryDurableRead,
+    blockEveryDurableWrite,
+    bootBranchStateInstance,
+    branchList,
+    forkedBranch,
+    holdBranchStateLock,
+    installBranchStateLockManager,
+    LEGACY_BRANCH_STORAGE_KEY,
+    loadBranchStateInstance,
+    mainBranch,
+    readStoredEnvelope,
+    removeBranchStateLockManager,
+    sessionLockName,
+    writeRawStoredEnvelope,
+    writeStoredEnvelope,
+} from '../../repositories/__tests__/branchStateHarness';
+import { MAIN_BRANCH_ID } from '../branchStore';
 
-const validMainBranch = {
-    branchId: MAIN_BRANCH_ID,
-    name: 'Main',
-    rootDocId: 'root',
-    sourceBranchId: null,
-    createdAt: 100,
-    createdFromHeads: [],
-    note: '',
-} satisfies BranchRecord;
-
-const validFeatureBranch = {
-    branchId: 'feature',
-    name: 'Feature',
-    rootDocId: 'branch_feature',
-    sourceBranchId: MAIN_BRANCH_ID,
-    createdAt: 200,
-    createdFromHeads: [],
-    note: '',
-} satisfies BranchRecord;
+const feature = forkedBranch('feature', 'Feature');
 
 /**
- * Blocked storage access and a full origin quota both surface as a throw from
- * `setItem` — `SecurityError` and `QuotaExceededError` respectively. Neither is
- * distinguishable at the adapter, and both must be survivable.
+ * Boot is the half of the branch-state protocol that runs before anything else
+ * can read a branch id, and the half that decides the fate of a collaboration
+ * session whose instance never came back. Each case is one storage state plus
+ * one answer from that session's lifetime lock.
  */
-function blockEveryDurableWrite(): void {
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-        throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-    });
-}
+describe('branch state boot', () => {
+    let manager: ControlledLockManager;
 
-describe('branchStore module evaluation with a rejecting localStorage', () => {
     beforeEach(() => {
         window.localStorage.clear();
-        vi.resetModules();
+        manager = installBranchStateLockManager();
     });
 
     afterEach(() => {
         vi.restoreAllMocks();
+        Container.clear();
         window.localStorage.clear();
     });
 
-    it('evaluates the module when the origin quota rejects the seed write', async () => {
-        // `getItem` returns null, so `createStore` seeds — and the seed is the
-        // first durable write of the boot.
-        blockEveryDurableWrite();
+    it('seeds the legacy branch list into memory without writing anything', async () => {
+        const legacy = branchList(feature);
+        window.localStorage.setItem(LEGACY_BRANCH_STORAGE_KEY, stringify(legacy));
 
-        await expect(import('../branchStore')).resolves.toBeDefined();
+        const instance = await bootBranchStateInstance();
+
+        expect(instance.store.value).toEqual(legacy);
+        expect(readStoredEnvelope()).toBeNull();
+        expect(instance.authority.captureRevision()).toBe(0);
+
+        const committed = await instance.authority.commit({ expectedRevision: 0, next: legacy });
+
+        expect(committed).toEqual({ status: 'committed', revision: 1 });
+        expect(readStoredEnvelope()).toEqual({
+            version: 1,
+            revision: 1,
+            current: legacy,
+            session: null,
+            reset: null,
+        });
     });
 
-    it('evaluates the module when the origin quota rejects the session-backup restore', async () => {
-        const remoteState = {
-            branches: [validMainBranch, validFeatureBranch],
-            activeBranchId: validFeatureBranch.branchId,
-        } satisfies BranchStoreState;
-        const localState = {
-            branches: [validMainBranch],
-            activeBranchId: MAIN_BRANCH_ID,
-        } satisfies BranchStoreState;
+    it('starts on the default main list when nothing durable exists', async () => {
+        const instance = await bootBranchStateInstance();
 
-        window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
-        window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
-        blockEveryDurableWrite();
-
-        const module = await import('../branchStore');
-
-        // The restore is no longer a module-evaluation side effect, so importing
-        // the module cannot fail on a durable write at all.
-        expect(module.branchStore.value).toEqual(remoteState);
-
-        // ...and running it explicitly reports rather than throwing.
-        expect(module.restoreBranchStateFromSessionBackup()).toBe('state-not-persisted');
+        expect(instance.outcome).toBe('settled');
+        expect(instance.store.value?.branches).toEqual([expect.objectContaining({ branchId: MAIN_BRANCH_ID })]);
+        expect(readStoredEnvelope()).toBeNull();
     });
 
-    it('keeps the session backup when the restore could not be persisted so a later boot can retry', async () => {
-        const remoteState = {
-            branches: [validMainBranch, validFeatureBranch],
-            activeBranchId: validFeatureBranch.branchId,
-        } satisfies BranchStoreState;
-        const localState = {
-            branches: [validMainBranch],
-            activeBranchId: MAIN_BRANCH_ID,
-        } satisfies BranchStoreState;
+    it('adopts an envelope with no session without writing to it', async () => {
+        const current = branchList(feature);
+        writeStoredEnvelope({ version: 1, revision: 5, current, session: null, reset: null });
 
-        window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
-        window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
-        blockEveryDurableWrite();
+        const instance = await bootBranchStateInstance();
 
-        const module = await import('../branchStore');
-        module.restoreBranchStateFromSessionBackup();
-
-        expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(localState));
+        expect(instance.outcome).toBe('settled');
+        expect(instance.store.value).toEqual(current);
+        expect(instance.authority.captureRevision()).toBe(5);
+        expect(readStoredEnvelope()?.revision).toBe(5);
     });
 
-    /**
-     * The removal is the second half of consuming the backup, and an origin
-     * whose storage access is blocked outright refuses it too. Before
-     * this it reported a clean restore: nothing logged, nothing shown, and a
-     * backup left on disk that every subsequent boot re-applies, pinning the
-     * branch list to the pre-session snapshot permanently.
-     */
-    it('reports the retained backup when the durable write lands but the removal is refused', async () => {
-        const remoteState = {
-            branches: [validMainBranch, validFeatureBranch],
-            activeBranchId: validFeatureBranch.branchId,
-        } satisfies BranchStoreState;
-        const localState = {
-            branches: [validMainBranch],
-            activeBranchId: MAIN_BRANCH_ID,
-        } satisfies BranchStoreState;
-
-        window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
-        window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
-        vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
-            throw new DOMException('The operation is insecure.', 'SecurityError');
+    it('restores the backup of a session whose instance is gone', async () => {
+        const backup = branchList();
+        writeStoredEnvelope({
+            version: 1,
+            revision: 7,
+            current: branchList(feature),
+            session: { owner: 'o1', backup, baseRevision: 6, sequence: 1 },
+            reset: null,
         });
 
-        const module = await import('../branchStore');
+        const instance = await bootBranchStateInstance();
 
-        expect(module.restoreBranchStateFromSessionBackup()).toBe('backup-not-cleared');
-        // The branch state itself did land.
-        expect(module.branchStore.value).toEqual(localState);
-        expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(localState));
+        expect(instance.outcome).toBe('restored');
+        expect(readStoredEnvelope()).toEqual({
+            version: 1,
+            revision: 8,
+            current: backup,
+            session: null,
+            reset: null,
+        });
+        expect(instance.store.value).toEqual(backup);
+        expect(manager.requestedNames).toContain(sessionLockName('o1'));
     });
 
-    /**
-     * A retained backup is a retry only while durable state has not moved on.
-     * Once a later write lands it becomes a rollback: the next boot would revert
-     * the branch list and orphan any `branch_<uuid>` created since.
-     */
-    describe('invalidating a retained backup', () => {
-        it('keeps the backup while no durable write has landed since the failure', async () => {
-            const remoteState = {
-                branches: [validMainBranch, validFeatureBranch],
-                activeBranchId: validFeatureBranch.branchId,
-            } satisfies BranchStoreState;
-            const localState = {
-                branches: [validMainBranch],
-                activeBranchId: MAIN_BRANCH_ID,
-            } satisfies BranchStoreState;
-
-            window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
-            window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
-            blockEveryDurableWrite();
-
-            const module = await import('../branchStore');
-            expect(module.restoreBranchStateFromSessionBackup()).toBe('state-not-persisted');
-
-            // A branch write attempted while the quota is still full: `set`
-            // throws and the adapter cache does not advance, so nothing durable
-            // moved and the backup is still a faithful retry.
-            expect(() => {
-                module.branchStore.set({ branches: [validMainBranch], activeBranchId: MAIN_BRANCH_ID });
-            }).toThrow();
-
-            expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(localState));
+    it('leaves a session whose instance is still running untouched', async () => {
+        const current = branchList(feature);
+        writeStoredEnvelope({
+            version: 1,
+            revision: 7,
+            current,
+            session: { owner: 'o1', backup: branchList(), baseRevision: 6, sequence: 1 },
+            reset: null,
         });
+        // The session's own instance, still running: it holds the lifetime lock
+        // for as long as the session lives.
+        const releaseLifetime = holdBranchStateLock(manager, sessionLockName('o1'));
 
-        it('keeps the backup when a notification fires without a durable write', async () => {
-            // `trySet` notifies whether or not the write landed, so a
-            // notification alone is not evidence that anything reached the
-            // backing store — this is the rollback path in
-            // `runBranchLineageTransition`. Invalidating here would drop the
-            // backup while durable state is still the host's, losing the
-            // pre-session branch list outright.
-            const remoteState = {
-                branches: [validMainBranch, validFeatureBranch],
-                activeBranchId: validFeatureBranch.branchId,
-            } satisfies BranchStoreState;
-            const localState = {
-                branches: [validMainBranch],
-                activeBranchId: MAIN_BRANCH_ID,
-            } satisfies BranchStoreState;
+        const instance = await bootBranchStateInstance();
 
-            window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
-            window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
-            blockEveryDurableWrite();
-
-            const module = await import('../branchStore');
-            expect(module.restoreBranchStateFromSessionBackup()).toBe('state-not-persisted');
-
-            // Notifies, does not persist, and `removeItem` is not blocked — so
-            // only the durability check stands between this and a dropped backup.
-            expect(
-                module.branchStore.trySet({
-                    branches: [validMainBranch, validFeatureBranch],
-                    activeBranchId: MAIN_BRANCH_ID,
-                })
-            ).toBe(false);
-
-            expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(localState));
+        expect(instance.outcome).toBe('foreign-session-live');
+        expect(instance.store.value).toEqual(current);
+        expect(readStoredEnvelope()).toEqual({
+            version: 1,
+            revision: 7,
+            current,
+            session: { owner: 'o1', backup: branchList(), baseRevision: 6, sequence: 1 },
+            reset: null,
         });
+        releaseLifetime();
+    });
 
-        /**
-         * The invalidation reads "durable branch state moved" as "the user wrote
-         * a branch". Inside a collaboration session that is wrong in the one way
-         * that matters: the host's projected list is a durable write too, and it
-         * is the write the backup exists to protect against. Left armed, the
-         * projection ate the backup and the following leave reported `restored`
-         * with the user's local-only branch gone from the store and the backup
-         * both — a permanent loss reported as success.
-         */
-        it('does not let a collaboration projection consume the backup', async () => {
-            const localState = {
-                branches: [validMainBranch, validFeatureBranch],
-                activeBranchId: MAIN_BRANCH_ID,
-            } satisfies BranchStoreState;
-            const hostProjectedState = {
-                branches: [validMainBranch],
-                activeBranchId: MAIN_BRANCH_ID,
-            } satisfies BranchStoreState;
-
-            // The new session's host publishes a list that differs from the one
-            // already on disk — otherwise nothing durable moves and the
-            // invalidation correctly declines for an unrelated reason.
-            const newHostProjectedState = {
-                branches: [validMainBranch, { ...validFeatureBranch, branchId: 'someone-else', name: 'Theirs' }],
-                activeBranchId: MAIN_BRANCH_ID,
-            } satisfies BranchStoreState;
-
-            window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(hostProjectedState));
-            window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
-            const blocked = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-                throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-            });
-
-            const branchStoreModule = await import('../branchStore');
-            const preserve = await import('../../useCases/preserveBranchStateForSession');
-
-            // Boot cannot persist the restore, so the invalidation is armed.
-            expect(branchStoreModule.restoreBranchStateFromSessionBackup()).toBe('state-not-persisted');
-
-            // The quota frees up and the user joins a session.
-            blocked.mockRestore();
-            preserve.preserveBranchStateForSession();
-
-            // The host's list projects, durably.
-            branchStoreModule.branchStore.set(newHostProjectedState);
-
-            // The backup is the only remaining copy of the local-only branch.
-            expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBe(stringify(localState));
-
-            // ...and leaving the session gets it back.
-            expect(branchStoreModule.restoreBranchStateFromSessionBackup()).toBe('restored');
-            expect(branchStoreModule.branchStore.value?.branches.map((branch) => branch.branchId)).toEqual([
-                MAIN_BRANCH_ID,
-                validFeatureBranch.branchId,
-            ]);
+    it('does not restore a second time when another instance already restored', async () => {
+        const backup = branchList();
+        writeStoredEnvelope({
+            version: 1,
+            revision: 7,
+            current: branchList(feature),
+            session: { owner: 'o1', backup, baseRevision: 6, sequence: 1 },
+            reset: null,
         });
+        // Held so this boot's recovery transaction waits, which is where the
+        // other instance's restore lands.
+        const releaseTransaction = holdBranchStateLock(manager, BRANCH_STATE_TRANSACTION_LOCK_NAME);
 
-        it('drops the backup on the first durable write after the failure', async () => {
-            const remoteState = {
-                branches: [validMainBranch, validFeatureBranch],
-                activeBranchId: validFeatureBranch.branchId,
-            } satisfies BranchStoreState;
-            const localState = {
-                branches: [validMainBranch],
-                activeBranchId: MAIN_BRANCH_ID,
-            } satisfies BranchStoreState;
-            const branchCreatedAfterwards = {
-                branches: [validMainBranch, { ...validFeatureBranch, branchId: 'later', name: 'Later' }],
-                activeBranchId: MAIN_BRANCH_ID,
-            } satisfies BranchStoreState;
+        const late = await loadBranchStateInstance();
+        late.authority.hydrateFromDurableState();
+        const settling = late.authority.settleBoot();
 
-            window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
-            window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
-            const blocked = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-                throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-            });
+        writeStoredEnvelope({ version: 1, revision: 8, current: backup, session: null, reset: null });
+        releaseTransaction();
 
-            const module = await import('../branchStore');
-            expect(module.restoreBranchStateFromSessionBackup()).toBe('state-not-persisted');
+        await expect(settling).resolves.toBe('settled');
+        expect(readStoredEnvelope()?.revision).toBe(8);
+        expect(late.store.value).toEqual(backup);
+        expect(late.authority.captureRevision()).toBe(8);
+    });
 
-            // The origin frees up and the user creates a branch, which lands.
-            blocked.mockRestore();
-            module.branchStore.set(branchCreatedAfterwards);
+    it('reports an unsequenceable boot when the Web Locks API is absent', async () => {
+        const current = branchList(feature);
+        writeStoredEnvelope({ version: 1, revision: 5, current, session: null, reset: null });
+        removeBranchStateLockManager();
 
-            // Without this the next boot would re-apply the backup and the
-            // branch just created would vanish, durably and silently.
-            expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBeNull();
-            expect(module.branchStore.value).toEqual(branchCreatedAfterwards);
-        });
+        const instance = await bootBranchStateInstance();
+
+        expect(instance.outcome).toBe('lock-unavailable');
+        expect(instance.store.value).toEqual(current);
+
+        const refused = await instance.authority.commit({ expectedRevision: 5, next: branchList() });
+
+        expect(refused).toEqual({ status: 'refused', reason: 'lock-unavailable' });
+        expect(readStoredEnvelope()?.revision).toBe(5);
+    });
+
+    it('starts on the default main list when the envelope is not readable JSON', async () => {
+        writeRawStoredEnvelope('{not-json');
+
+        const instance = await bootBranchStateInstance();
+
+        expect(instance.outcome).toBe('settled');
+        expect(instance.store.value?.branches).toEqual([expect.objectContaining({ branchId: MAIN_BRANCH_ID })]);
+
+        const committed = await instance.authority.commit({ expectedRevision: 0, next: branchList(feature) });
+
+        expect(committed).toEqual({ status: 'committed', revision: 1 });
+    });
+
+    it('keeps the session record when the origin quota refuses the restore', async () => {
+        const session = { owner: 'o1', backup: branchList(), baseRevision: 6, sequence: 1 };
+        const current = branchList(feature);
+        writeStoredEnvelope({ version: 1, revision: 7, current, session, reset: null });
+        const restoreWrites = blockEveryDurableWrite();
+
+        const instance = await bootBranchStateInstance();
+
+        expect(instance.outcome).toBe('storage-unavailable');
+        restoreWrites();
+        // The session record survives a refused restore, so the next boot
+        // retries it rather than losing the pre-session list.
+        expect(readStoredEnvelope()).toEqual({ version: 1, revision: 7, current, session, reset: null });
+    });
+
+    it('reports a refused read instead of starting a recovery it cannot see', async () => {
+        writeStoredEnvelope({ version: 1, revision: 5, current: branchList(feature), session: null, reset: null });
+        const restoreReads = blockEveryDurableRead();
+
+        const instance = await bootBranchStateInstance();
+
+        expect(instance.hydration).toBe('storage-unavailable');
+        expect(instance.outcome).toBe('storage-unavailable');
+        restoreReads();
+        expect(readStoredEnvelope()?.revision).toBe(5);
+        // Nothing was hydrated, so the default list stands and no writer can
+        // claim to have observed revision 5.
+        expect(instance.store.value?.branches).toEqual([expect.objectContaining({ branchId: mainBranch.branchId })]);
     });
 });

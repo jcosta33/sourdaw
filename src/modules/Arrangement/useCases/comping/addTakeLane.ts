@@ -1,7 +1,7 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
-
 import { createTakeLane } from '../../models/TakeLane';
-import { takeLaneStore, type TakeLaneStoreState } from '../../stores/takeLaneStore';
+import { takeLaneStore } from '../../stores/takeLaneStore';
+
+import { pushTargetedTakeLaneUndoEntry } from './takeLaneUndo';
 
 export function addTakeLane(trackId: string): void {
     const state = takeLaneStore.value;
@@ -9,20 +9,22 @@ export function addTakeLane(trackId: string): void {
         return;
     }
 
-    const exists = state.lanes.some((length) => length.trackId === trackId);
+    const exists = state.lanes.some((lane) => lane.trackId === trackId);
     if (exists) {
         return;
     }
 
-    const previous: TakeLaneStoreState = state;
-    const next: TakeLaneStoreState = {
-        lanes: [...state.lanes, createTakeLane(trackId)],
-    };
-    takeLaneStore.set(next);
+    const lane = createTakeLane(trackId);
+    takeLaneStore.set({
+        lanes: [...state.lanes, lane],
+    });
 
-    pushUndoEntry(
-        'Add take lane',
-        () => takeLaneStore.set(previous),
-        () => takeLaneStore.set(next)
-    );
+    // The entry captures only the added lane (#4081): replaying a whole-store
+    // snapshot on undo erased every later edit to any other lane.
+    pushTargetedTakeLaneUndoEntry({
+        kind: 'lane-added',
+        label: 'Add take lane',
+        lane,
+        laneIndex: state.lanes.length,
+    });
 }

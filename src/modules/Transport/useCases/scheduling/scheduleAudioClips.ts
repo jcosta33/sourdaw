@@ -1,5 +1,5 @@
-import { trackStore } from '#/modules/Arrangement/stores';
-import { getGainAtBeat, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
+import { getGainEnvelopeSeries, trackStore } from '#/modules/Arrangement/stores';
+import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     createBufferSource,
     ensureTrackStrip,
@@ -15,6 +15,11 @@ import {
     clampClipFadeInDurationSeconds,
     clampClipFadeOutStartSeconds,
 } from '#/utils/clipFadeScheduleClamp';
+import {
+    applyGainCurveAnchorsToParam,
+    envelopeGainDbToLinear,
+    foldGainCurveAnchorsToAudibleStart,
+} from '#/utils/clipGainEnvelopeSchedule';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
@@ -71,8 +76,27 @@ export function scheduleAudioClips(
     const changes = tempoMapStore.value?.changes ?? [];
     const ctx = getAudioContext();
 
+    // #3651 — the live twin of the offline mixdown's FX-8 cue-send rule. The
+    // strip's mute node (`postFaderGain`) sits downstream of the pre-fader tap
+    // (`TrackNode.setMute`), so a muted track still feeds its pre-fader (cue)
+    // sends. Skipping the track here left the send with no source: the bus was
+    // silent live while the export, which schedules these tracks, played them.
+    // A muted track is therefore scheduled when a pre-fader send can still
+    // reach a bus; the strip's own mute keeps the direct path silent. A
+    // post-fader send dies with the mute, and a send to a bus that no longer
+    // exists reaches nothing, so both stay skipped. Solo gating keeps its
+    // stronger exclusion law in the engine: `setSoloGate` closes `preFaderTap`
+    // itself, upstream of every send tap, so a solo-gated track feeds nothing
+    // even when scheduled — the scheduler stays solo-blind, as it always has.
+    const busTrackIds = new Set(
+        tracks.filter((candidate) => candidate.kind === 'bus').map((candidate) => candidate.id)
+    );
+
     for (const track of tracks) {
-        if (track.kind !== 'audio' || track.muted) {
+        if (track.kind !== 'audio') {
+            continue;
+        }
+        if (track.muted && !track.sends.some((send) => send.preFader && busTrackIds.has(send.busId))) {
             continue;
         }
 
@@ -223,12 +247,18 @@ export function scheduleAudioClips(
                 const fadeGain = acquireGainNode(ctx);
                 (source as SourceWithFade).fadeGainNode = fadeGain;
 
-                const envGainDb = getGainAtBeat(clip.id, iterOffsetBeats);
-                const hasEnvGain = envGainDb !== 0;
-                const envGainNode = hasEnvGain ? acquireGainNode(ctx) : null;
-                if (envGainNode) {
-                    envGainNode.gain.value = 10 ** (envGainDb / 20);
-                }
+                // #2865 — the envelope is the whole curve over this
+                // iteration's span, not one sample of it pinned as a static
+                // value. The series is acquired here, next to the node it
+                // rides; its ramp anchors go on below, once the beat→time
+                // mapping they anchor to has been computed. Absent when the
+                // clip carries no envelope that moves, so the node is too.
+                const envelopeSeries = getGainEnvelopeSeries(
+                    clip.id,
+                    iterOffsetBeats,
+                    iterOffsetBeats + iterDurationBeats
+                );
+                const envGainNode = envelopeSeries ? acquireGainNode(ctx) : null;
 
                 let outputNode: AudioNode = strip.gainNode;
                 if (fadeGain) {
@@ -381,6 +411,26 @@ export function scheduleAudioClips(
                         );
                         fadeGain.gain.linearRampToValueAtTime(0, iterEndTime);
                     }
+                }
+
+                if (envGainNode && envelopeSeries) {
+                    // #2865 — the envelope's breakpoints, mapped through the
+                    // same beat→time law every fade above uses and held to
+                    // where sound actually begins, laid on the param as a ramp
+                    // series. The offline render folds its copy at the
+                    // playback's `startSec` on the same shared law, so the
+                    // curve a bounce prints is the curve monitored here.
+                    // Anchors may precede `now` on a mid-clip transport start;
+                    // the param evaluates them exactly as drawn, which is why
+                    // the fold — not a re-anchoring — keeps a resume mid-curve.
+                    const anchors = foldGainCurveAnchorsToAudibleStart(
+                        envelopeSeries.map((point) => ({
+                            time: beatToAudioTime(clip.startBeat + point.beatOffset),
+                            gain: envelopeGainDbToLinear(point.gainDb),
+                        })),
+                        Math.max(soundStartTime, now)
+                    );
+                    applyGainCurveAnchorsToParam(envGainNode.gain, anchors);
                 }
 
                 activeAudioSources.push(source);

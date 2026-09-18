@@ -6,6 +6,7 @@ import { buildSemanticProjectDiff } from '../buildSemanticProjectDiff';
 import { compilePartialCommandBatchAcceptance } from '../compilePartialCommandBatchAcceptance';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
+import { getCommandBatchGroupDependencies } from '../getCommandBatchGroupDependencies';
 import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 import { partialCommandBatchSelection } from '../partialCommandBatchSelection';
 import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
@@ -16,6 +17,9 @@ const SECTION_COMMAND_ID = '33333333-3333-4333-8333-333333333333';
 const REMOVE_MARKER_COMMAND_ID = '44444444-4444-4444-8444-444444444444';
 const BUS_COMMAND_ID = '55555555-5555-4555-8555-555555555555';
 const SEND_COMMAND_ID = '66666666-6666-4666-8666-666666666666';
+const CHAIN_ROOT_COMMAND_ID = '10000000-0000-4000-8000-000000000001';
+const CHAIN_MIDDLE_COMMAND_ID = '10000000-0000-4000-8000-000000000002';
+const CHAIN_LEAF_COMMAND_ID = '10000000-0000-4000-8000-000000000003';
 
 function command(input: {
     action: AppAction;
@@ -94,6 +98,95 @@ function previewBatch() {
             parsed.envelope.commands.map((entry) => entry.commandId)
         ),
     };
+}
+
+/** A producer whose created bus a consumer reaches only through a batch-local binding. */
+function bindingBatch() {
+    const producer = {
+        ...command({
+            action: {
+                type: 'createBus',
+                payload: {
+                    name: '$fx',
+                    busId: 'bus-real',
+                    color: '#123456',
+                    initialAlternativeId: 'alternative-real',
+                },
+            },
+            commandId: BUS_COMMAND_ID,
+            expectedEffect: 'Create the shared FX bus.',
+        }),
+        groupId: 'batch-binding-edges',
+        applicationAssignedIds: [
+            { argument: 'busId', value: 'bus-real' },
+            { argument: 'initialAlternativeId', value: 'alternative-real' },
+        ],
+    };
+    const consumer = {
+        ...command({
+            action: { type: 'addSend', payload: { trackId: 'track-vocal', busId: '$fx', level: 0.5, preFader: false } },
+            commandId: SEND_COMMAND_ID,
+            dependencyIds: [BUS_COMMAND_ID],
+            expectedEffect: 'Route the vocal to the shared FX bus.',
+        }),
+        groupId: 'batch-binding-edges',
+        objectReferences: [
+            { argument: 'trackId', id: 'track-vocal', scope: 'stable' as const },
+            { argument: 'busId', id: '$fx', scope: 'batch-local' as const },
+        ],
+    };
+    const compiled = compileVersionedCommandBatchEnvelope({
+        baseRevision: 'revision-1',
+        batchId: 'batch-binding-edges',
+        batchLocalBindings: [{ bindingId: '$fx', producerArgument: 'busId', producerCommandId: BUS_COMMAND_ID }],
+        commands: [producer, consumer].map(serializeVersionedCommandEnvelope),
+        intent: 'Create a shared FX route.',
+        mode: 'preview',
+        projectId: 'project-1',
+        runId: 'run-binding-edges',
+    });
+    const parsed = parseVersionedCommandBatchEnvelope(compiled.serialized, compiled.authority);
+    if (parsed.status === 'invalid') {
+        throw new Error(parsed.reason);
+    }
+    return { ...compiled, envelope: parsed.envelope };
+}
+
+/** Three commands in one declared dependency chain: leaf depends on middle, middle on root. */
+function chainBatch() {
+    const commands = [
+        command({
+            action: { type: 'setTempo', payload: { bpm: 120 } },
+            commandId: CHAIN_ROOT_COMMAND_ID,
+            expectedEffect: 'Set the project tempo to 120 BPM.',
+        }),
+        command({
+            action: { type: 'setTrackGain', payload: { trackId: 'track-bass', gain: 0.9, expectedGain: 1 } },
+            commandId: CHAIN_MIDDLE_COMMAND_ID,
+            dependencyIds: [CHAIN_ROOT_COMMAND_ID],
+            expectedEffect: 'Lower Bass to 0.9 gain.',
+        }),
+        command({
+            action: { type: 'renameTrack', payload: { trackId: 'track-bass', name: 'Bass' } },
+            commandId: CHAIN_LEAF_COMMAND_ID,
+            dependencyIds: [CHAIN_MIDDLE_COMMAND_ID],
+            expectedEffect: 'Rename the Bass track.',
+        }),
+    ].map((entry) => ({ ...entry, groupId: 'batch-chain' }));
+    const compiled = compileVersionedCommandBatchEnvelope({
+        baseRevision: 'revision-1',
+        batchId: 'batch-chain',
+        commands: commands.map(serializeVersionedCommandEnvelope),
+        intent: 'Retune and rename the bass.',
+        mode: 'preview',
+        projectId: 'project-1',
+        runId: 'run-chain',
+    });
+    const parsed = parseVersionedCommandBatchEnvelope(compiled.serialized, compiled.authority);
+    if (parsed.status === 'invalid') {
+        throw new Error(parsed.reason);
+    }
+    return { ...compiled, envelope: parsed.envelope };
 }
 
 describe('semantic project diff', () => {
@@ -512,6 +605,104 @@ describe('semantic project diff', () => {
             'deletion',
         ]);
         expect(diff.warnings).toContain('6 destructive changes require explicit acceptance.');
+    });
+
+    // Red when a group stops reporting the declared dependency its subset would drag in.
+    it('reports the declared dependency edges between intent groups', () => {
+        const { envelope } = previewBatch();
+
+        const diff = buildSemanticProjectDiff({ envelope });
+
+        expect(
+            diff.intentGroups.map((group) => ({ id: group.id, dependsOnGroupIds: group.dependsOnGroupIds }))
+        ).toEqual([
+            { id: TEMPO_COMMAND_ID, dependsOnGroupIds: [] },
+            { id: GAIN_COMMAND_ID, dependsOnGroupIds: [TEMPO_COMMAND_ID] },
+            { id: SECTION_COMMAND_ID, dependsOnGroupIds: [] },
+            { id: REMOVE_MARKER_COMMAND_ID, dependsOnGroupIds: [] },
+        ]);
+    });
+
+    // Red when only `dependencyIds` feeds the edges: the binding is then the sole remaining source.
+    it('reports the producer of a batch-local reference as a group dependency', () => {
+        const { envelope } = bindingBatch();
+        const [producer, consumer] = envelope.commands;
+
+        expect(
+            buildSemanticProjectDiff({ envelope }).intentGroups.map((group) => ({
+                id: group.id,
+                dependsOnGroupIds: group.dependsOnGroupIds,
+            }))
+        ).toEqual([
+            { id: BUS_COMMAND_ID, dependsOnGroupIds: [] },
+            { id: SEND_COMMAND_ID, dependsOnGroupIds: [BUS_COMMAND_ID] },
+        ]);
+        const withoutDeclaredDependency = {
+            ...envelope,
+            commands: [producer!, { ...consumer!, dependencyIds: [] }],
+        };
+        expect([...getCommandBatchGroupDependencies(withoutDeclaredDependency)]).toEqual([
+            [BUS_COMMAND_ID, []],
+            [SEND_COMMAND_ID, [BUS_COMMAND_ID]],
+        ]);
+    });
+
+    // Red when partial acceptance is advertised for a proposal that cannot be partitioned.
+    it('reports partial acceptance availability for dynamic, single-group, and multi-group proposals', () => {
+        const chain = chainBatch();
+
+        expect(
+            buildSemanticProjectDiff({
+                envelope: { ...chain.envelope, dynamicEffects: { affectedTargetIds: ['track-collateral'] } },
+            }).partialAcceptance
+        ).toEqual({
+            available: false,
+            reason: 'Aggregate dynamic effects cannot be partitioned across intent groups.',
+        });
+        expect(buildSemanticProjectDiff({ envelope: chain.envelope }).partialAcceptance).toEqual({
+            available: true,
+            reason: null,
+        });
+        expect(
+            buildSemanticProjectDiff({
+                envelope: { ...chain.envelope, commands: [chain.envelope.commands[0]!] },
+            }).partialAcceptance
+        ).toEqual({ available: false, reason: 'The proposal has a single intent group.' });
+    });
+
+    // Red when the compiled subset and the reported edges stop walking the same relation.
+    it('includes exactly the transitive closure of the reported group dependencies', () => {
+        const chain = chainBatch();
+        const dependencies = getCommandBatchGroupDependencies(chain.envelope);
+        const transitiveClosure = new Set([CHAIN_LEAF_COMMAND_ID]);
+        const pending = [CHAIN_LEAF_COMMAND_ID];
+        while (pending.length > 0) {
+            for (const dependencyGroupId of dependencies.get(pending.pop()!) ?? []) {
+                if (!transitiveClosure.has(dependencyGroupId)) {
+                    transitiveClosure.add(dependencyGroupId);
+                    pending.push(dependencyGroupId);
+                }
+            }
+        }
+
+        const partial = compilePartialCommandBatchAcceptance({
+            batchId: 'batch-chain-partial',
+            previewSelection: partialCommandBatchSelection.create(
+                chain.envelope,
+                chain.envelope.commands.map((entry) => entry.commandId)
+            ),
+            runId: 'run-chain-partial',
+            selectedIntentGroupIds: [CHAIN_LEAF_COMMAND_ID],
+        });
+
+        expect(partial.status).toBe('compiled');
+        if (partial.status !== 'compiled') {
+            throw new Error(partial.reason);
+        }
+        expect([...transitiveClosure].sort()).toEqual(
+            [CHAIN_ROOT_COMMAND_ID, CHAIN_MIDDLE_COMMAND_ID, CHAIN_LEAF_COMMAND_ID].sort()
+        );
+        expect([...partial.includedOriginalCommandIds].sort()).toEqual([...transitiveClosure].sort());
     });
 
     it('rejects empty or unknown partial selections without producing authority', () => {

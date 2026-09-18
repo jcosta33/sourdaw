@@ -31,6 +31,7 @@ export { isCloudAvailable } from './cloudApiManagement/isCloudAvailable';
 
 export { getProjectContext } from './getProjectContext';
 export { getAiRuntimeProtocolContracts } from './getAiRuntimeProtocolContracts';
+export { getAgentCapabilityCatalog } from './getAgentCapabilityCatalog';
 export { assertCanonicalLlmActionStrategies } from './assertCanonicalLlmActionStrategies';
 
 export { resolveBackend } from './llmOrchestration/backendResolution/helpers';
@@ -48,6 +49,8 @@ export { notifyAiChange } from './notifyAiChange';
 export { describePlannedAction } from './describePlannedAction';
 
 export { submitAdmittedPromptRequest } from './submitAdmittedPromptRequest';
+
+export { configureAgentResourceLimits } from './configureAgentResourceLimits';
 
 export { injectVoicePromptDraft } from './injectVoicePromptDraft';
 export { injectPromptDraft } from './injectPromptDraft';
@@ -73,7 +76,23 @@ export { admitAgentRetry } from './admitAgentRetry';
 export { admitBoundedAgentCorrection } from './admitBoundedAgentCorrection';
 export { createAgentSagaStep } from './createAgentSagaStep';
 export { agentRunControls } from './getAgentRunControlProjection';
+export { agentRunCancellation } from './cancelAgentRun';
+export { confirmPendingChatActions } from './confirmPendingChatActions';
+export { cancelPendingChatActions } from './cancelPendingChatActions';
+export { getAgentApprovalView } from './getAgentApprovalView';
+export { reproposePendingChatActions } from './reproposePendingChatActions';
+export { revertAiActionGroup } from './aiHistoryActions';
+export { agentChangeComparison, getAgentChangeComparisonView } from './agentChangeComparison';
+export { getProviderRouteView } from './getProviderRouteView';
 export { deleteAgentRunArtifacts } from './deleteAgentRunArtifacts';
+export { deleteAgentRun } from './deleteAgentRun';
 export { getAgentRunSagaProjection } from './getAgentRunSagaProjection';
+export { projectAgentRunTelemetry } from './projectAgentRunTelemetry';
+export { projectAgentRunDiagnostics } from './projectAgentRunDiagnostics';
 export { settleRetainedSectionRenderManualReview } from './settleRetainedSectionRenderManualReview';
 export { selectRetainedSectionRenderManualReviews } from './selectRetainedSectionRenderManualReviews';
+export { auditionAgentCatalogCandidate } from './agentCatalogAudition/auditionAgentCatalogCandidate';
+export { applyAgentAuditionCandidate } from './agentCatalogAudition/applyAgentAuditionCandidate';
+export { resolveAgentPreviewDomains } from './agentDomainPreview/resolveAgentPreviewDomains';
+export { resolveAgentDomainPreviewSupport } from './agentDomainPreview/resolveAgentDomainPreviewSupport';
+export { buildAgentDomainPreviews } from './agentDomainPreview/buildAgentDomainPreviews';

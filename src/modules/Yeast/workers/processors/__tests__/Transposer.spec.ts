@@ -87,6 +87,59 @@ describe('Transposer', () => {
         expect(noteOff?.kind.note).toBe(67); // 60 + 7
     });
 
+    it('keeps identified overlapping voices paired when releases arrive out of order', () => {
+        trans.setParam('semitones', 1);
+        const output: MidiEvent[] = [];
+        trans.processMidi(
+            [
+                {
+                    timeSamples: 0,
+                    trackId: 'track-a',
+                    noteInstanceId: 'voice-a',
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+            ],
+            output,
+            transport
+        );
+        trans.setParam('semitones', 12);
+        trans.processMidi(
+            [
+                {
+                    timeSamples: 1,
+                    trackId: 'track-a',
+                    noteInstanceId: 'voice-b',
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+            ],
+            output,
+            transport
+        );
+        trans.processMidi(
+            [
+                {
+                    timeSamples: 2,
+                    trackId: 'track-a',
+                    noteInstanceId: 'voice-b',
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+                {
+                    timeSamples: 3,
+                    trackId: 'track-a',
+                    noteInstanceId: 'voice-a',
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+            ],
+            output,
+            transport
+        );
+
+        expect(output.filter(isNoteOff)).toMatchObject([
+            { noteInstanceId: 'voice-b', kind: { type: 'noteOff', note: 72 } },
+            { noteInstanceId: 'voice-a', kind: { type: 'noteOff', note: 61 } },
+        ]);
+    });
+
     it('clamps notes to range', () => {
         trans.setParam('semitones', -100);
         trans.setParam('clamp_min', 12);

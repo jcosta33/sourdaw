@@ -3,8 +3,7 @@
  * of the repository root in `nativeGraphTransport.ts`.
  */
 
-import { isDesktopRuntime } from '#/utils/desktopBridge';
-
+import { isNativeGraphRuntime } from './isNativeGraphRuntime';
 import { createDesktopNativeGraphTransport, type NativeGraphTransport } from './nativeGraphTransport';
 
 export type NativeGraphAvailability =
@@ -30,7 +29,7 @@ export type NativeGraphAvailability =
  * the caller can degrade observably instead of exporting into an error.
  */
 export async function probeNativeGraphTransport(): Promise<NativeGraphAvailability> {
-    if (!isDesktopRuntime()) {
+    if (!isNativeGraphRuntime()) {
         return { available: false, reason: 'no desktop bridge (browser runtime)', runtime: 'browser' };
     }
     const transport = createDesktopNativeGraphTransport();

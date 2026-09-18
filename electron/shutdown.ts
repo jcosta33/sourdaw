@@ -140,6 +140,8 @@ export const runShutdownWithDeadline = async ({
 export type BeforeQuitCascadeInput = {
     /** Close shell admission for plugin runtime commands. */
     readonly refusePluginCommands: () => void;
+    /** Release the power-save blocker, if the shell still holds one (#2165). */
+    readonly releasePowerSave?: () => void;
     /** Kill the out-of-process scan worker, if one is running. */
     readonly disposeScanSupervisor?: () => void;
     /** Live native host, or undefined when the addon never loaded. */
@@ -150,16 +152,19 @@ export type BeforeQuitCascadeInput = {
 };
 
 /**
- * The body of `before-quit`: refuse plugin IPC, dispose the scan worker, then
- * run the native cascade under the deadline.
+ * The body of `before-quit`: refuse plugin IPC, release the power-save blocker,
+ * dispose the scan worker, then run the native cascade under the deadline.
  *
  * Admission must close before `host.shutdown()` so a late `load_plugin` cannot
- * insert an instance after the drain. The scan worker is disposed next — it
- * holds its own addon — then the host cascade, or a completed outcome when no
- * host was loaded.
+ * insert an instance after the drain. The blocker releases beside it — quit is
+ * the one moment the shell stops claiming its audio is live, and holding the
+ * machine awake through the cascade's exit would outlive the audio it protected.
+ * The scan worker is disposed next — it holds its own addon — then the host
+ * cascade, or a completed outcome when no host was loaded.
  */
 export const runBeforeQuitCascade = async ({
     refusePluginCommands,
+    releasePowerSave,
     disposeScanSupervisor,
     host,
     timers,
@@ -167,6 +172,7 @@ export const runBeforeQuitCascade = async ({
     armWatchdog,
 }: BeforeQuitCascadeInput): Promise<ShutdownOutcome> => {
     refusePluginCommands();
+    releasePowerSave?.();
     disposeScanSupervisor?.();
     if (host === undefined) {
         return { status: 'completed', report: undefined };

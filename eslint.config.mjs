@@ -2343,6 +2343,7 @@ export default defineConfig(
             'public/',
             'coverage/',
             'storybook-static/',
+            'electron/out/**',
             // Standalone agent helper scripts run directly under `node`, not
             // part of the `src` app tree and intentionally excluded from
             // tsconfig.eslint.json — ignore so the type-aware parser does not
@@ -2359,6 +2360,9 @@ export default defineConfig(
             'test-manual-fix.mjs',
             'test-manual-fix.ts',
             '**/*.md',
+            // Deliberate sourdaw-craft fixtures: they exist to fail the oxlint
+            // JS plugin and would fail this ESLint pass if parsed as app code.
+            'scripts/oxlintCraft/__tests__/fixtures/**',
         ],
     },
 

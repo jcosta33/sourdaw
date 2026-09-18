@@ -13,6 +13,11 @@
  */
 
 import { clampClipFadeInDurationSeconds, clampClipFadeOutStartSeconds } from '#/utils/clipFadeScheduleClamp';
+import {
+    applyGainCurveAnchorsToParam,
+    foldGainCurveAnchorsToAudibleStart,
+    type GainCurveAnchor,
+} from '#/utils/clipGainEnvelopeSchedule';
 
 export type OfflineClipFadeIn = {
     /**
@@ -30,6 +35,15 @@ export type OfflineClipFadeOut = {
      */
     userStartSec?: number;
 };
+
+/**
+ * One anchor of a clip's gain-envelope curve, already on the destination
+ * timeline: when the curve reaches this level, as a linear amplitude (#2865).
+ */
+export type OfflineClipEnvelopeAnchor = Readonly<{
+    timeSec: number;
+    gain: number;
+}>;
 
 export type ScheduleOfflineClipSourceInput = {
     context: BaseAudioContext;
@@ -58,6 +72,15 @@ export type ScheduleOfflineClipSourceInput = {
     /** Absent when the sound continues past this playback. */
     fadeOut?: OfflineClipFadeOut;
     /**
+     * The clip's gain-envelope curve over this playback, in destination
+     * seconds (#2865). Absent when the clip carries no envelope the render
+     * applies. A curve cannot share the fade param with the fades below — a
+     * param timeline is one series, and two curves on one node multiply only
+     * through two nodes — so this rides its own gain node, exactly as the
+     * live scheduler chains one beside its fade gain.
+     */
+    envelope?: readonly OfflineClipEnvelopeAnchor[];
+    /**
      * The anti-click floor. Applied whether or not the user asked for a fade,
      * and also the minimum a user's own fade is held to: a buffer started or
      * stopped on a non-zero sample steps the output.
@@ -77,6 +100,7 @@ export function scheduleOfflineClipSource(input: ScheduleOfflineClipSourceInput)
         clipGainValue,
         fadeIn,
         fadeOut,
+        envelope,
         microFadeSeconds,
     } = input;
 
@@ -88,9 +112,27 @@ export function scheduleOfflineClipSource(input: ScheduleOfflineClipSourceInput)
 
     const endSec = startSec + playDuration;
 
+    // Source → envelope → fade → destination, the same chain the live
+    // scheduler builds (and in the same node order — fade first, envelope
+    // second): the envelope shapes the material, the fades own the edges, and
+    // the clip's own level stays the plateau the fades target.
     const fadeGain = context.createGain();
-    source.connect(fadeGain);
+    const envelopeGain = context.createGain();
+    source.connect(envelopeGain);
+    envelopeGain.connect(fadeGain);
     fadeGain.connect(destinationNode);
+
+    if (envelope && envelope.length > 0) {
+        // Folded to where this playback's sound begins — the same hold the
+        // live scheduler makes at its own audible start — so an iteration
+        // entered part-way by a region trim or a pre-roll enters the curve at
+        // the level it holds there instead of stepping to a breakpoint.
+        const anchors = foldGainCurveAnchorsToAudibleStart(
+            envelope.map((anchor): GainCurveAnchor => ({ time: anchor.timeSec, gain: anchor.gain })),
+            startSec
+        );
+        applyGainCurveAnchorsToParam(envelopeGain.gain, anchors);
+    }
 
     fadeGain.gain.setValueAtTime(clipGainValue, startSec);
 

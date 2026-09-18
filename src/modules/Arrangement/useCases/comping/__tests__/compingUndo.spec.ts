@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTakeLane } from '../../../models/TakeLane';
 import { type TakeLaneStoreState } from '../../../stores/takeLaneStore';
+import { trackStore } from '../../../stores/trackStore';
 import { addTake } from '../addTake';
 import { addTakeLane } from '../addTakeLane';
 import { flattenComp } from '../flattenComp';
@@ -9,17 +11,22 @@ import { removeCompRegion } from '../removeCompRegion';
 import { selectTake } from '../selectTake';
 import { setCompRegion } from '../setCompRegion';
 
-const { pushUndoEntryMock, takeLaneStoreMock } = vi.hoisted(() => ({
+const { executeUserAppActionMock, pushUndoEntryMock, takeLaneStoreMock } = vi.hoisted(() => ({
+    executeUserAppActionMock: vi.fn(),
     pushUndoEntryMock: vi.fn(),
     takeLaneStoreMock: {
         value: null as TakeLaneStoreState | null,
-        set: vi.fn<(value: TakeLaneStoreState | null) => void>(),
+        set: vi.fn<(value: TakeLaneStoreState | null) => void>((value) => {
+            takeLaneStoreMock.value = value;
+        }),
     },
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeUserAppAction: vi.fn(),
+    executeAppAction: vi.fn(),
+    executeUserAppAction: executeUserAppActionMock,
     pushUndoEntry: pushUndoEntryMock,
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
@@ -53,36 +60,36 @@ describe('comping undo entries', () => {
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Add take lane');
     });
 
-    it('selectTake skips undo when the take is already selected', () => {
+    it('selectTake dispatches the guarded selection action instead of pushing a callback undo entry (#4072)', async () => {
         const lane = createTakeLane('t1');
         const take = { id: 'tk', clipId: 'c', name: 'n', startBeat: 0, endBeat: 1, selected: true };
         takeLaneStoreMock.value = { lanes: [{ ...lane, takes: [take] }] };
-        selectTake('t1', 'tk');
+
+        await selectTake('t1', 'tk');
+
+        expect(executeUserAppActionMock).toHaveBeenCalledWith({
+            type: 'selectTake',
+            payload: { trackId: 't1', takeId: 'tk' },
+        });
         expect(pushUndoEntryMock).not.toHaveBeenCalled();
     });
 
-    it('selectTake pushes undo when the selected take changes', () => {
-        const lane = createTakeLane('t1');
-        const takeA = { id: 'a', clipId: 'c', name: 'A', startBeat: 0, endBeat: 1, selected: true };
-        const takeB = { id: 'b', clipId: 'c', name: 'B', startBeat: 1, endBeat: 2, selected: false };
-        takeLaneStoreMock.value = { lanes: [{ ...lane, takes: [takeA, takeB] }] };
-        selectTake('t1', 'b');
-        expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
-        expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Select take');
-    });
-
-    it('setCompRegion skips undo when no lane matches the track', () => {
+    it('setCompRegion skips action dispatch when no lane matches the track', () => {
         takeLaneStoreMock.value = { lanes: [] };
         setCompRegion('missing', { startBeat: 0, endBeat: 4, takeId: 'x' });
-        expect(pushUndoEntryMock).not.toHaveBeenCalled();
+        expect(executeUserAppActionMock).not.toHaveBeenCalled();
     });
 
-    it('setCompRegion pushes undo when region is applied', () => {
+    it('setCompRegion delegates valid undo ownership to Command', () => {
         const lane = createTakeLane('t1');
+        lane.takes = [{ id: 'x', clipId: 'clip-x', name: 'X', startBeat: 0, endBeat: 4, selected: true }];
         takeLaneStoreMock.value = { lanes: [lane] };
         setCompRegion('t1', { startBeat: 0, endBeat: 4, takeId: 'x' });
-        expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
-        expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Set comp region');
+        expect(executeUserAppActionMock).toHaveBeenCalledWith({
+            type: 'setCompRegion',
+            payload: { trackId: 't1', startBeat: 0, endBeat: 4, takeId: 'x' },
+        });
+        expect(pushUndoEntryMock).not.toHaveBeenCalled();
     });
 
     it('removeCompRegion skips undo when no matching region exists', () => {
@@ -105,6 +112,13 @@ describe('comping undo entries', () => {
         const laneA = createTakeLane('t1');
         const laneB = createTakeLane('t2');
         takeLaneStoreMock.value = { lanes: [laneA, laneB] };
+        // Flatten reads the track to materialise the comp programme onto it;
+        // a lane selecting nothing takes the lane-only route either way.
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 't1', clips: [] })],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        });
         flattenComp('t1');
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Flatten comp');

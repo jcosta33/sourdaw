@@ -274,7 +274,6 @@ impl HeldVoiceHarness for PianoVoice {
             pitch_ratio: 1.0,
             stiffness_scale: 1.0,
             mass_scale: 1.0,
-            attack_length: 0,
         });
     }
 

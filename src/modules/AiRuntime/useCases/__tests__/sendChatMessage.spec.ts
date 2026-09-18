@@ -3,8 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '#/infra/logger/appLogger';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { commandBatchPreflightPort, commandTrackDefaultsPort } from '#/modules/Command/useCases';
+import {
+    type parseVersionedCommandBatchEnvelope,
+    commandBatchPreflightPort,
+    commandTrackDefaultsPort,
+} from '#/modules/Command/useCases';
 
+import { DEFAULT_AGENT_RESOURCE_LIMITS, describeAgentRunCreationRefusal } from '../../models/AgentResourceLimits';
 import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 import { type ProjectContext } from '../../models/ProjectContext';
@@ -12,7 +17,9 @@ import {
     type CloudChatCompletionOutcome,
     type streamCloudChatCompletion,
 } from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
-import { agentRunStore } from '../../stores/agentRunStore';
+import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
+import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { agentRunStore, readAgentRunState } from '../../stores/agentRunStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { getAgentPlanProposalIdentity } from '../../transformers/normalizeAgentPlanProposal';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
@@ -34,6 +41,81 @@ import { sendChatMessage } from '../sendChatMessage';
 type PlanPromptActionsInput = Parameters<typeof planPromptActions>[0];
 type PreparedStemReadiness = 'ready' | 'missing' | 'cleanup-pending';
 type CloudStreamOptions = Parameters<typeof streamCloudChatCompletion>[2];
+type ParsedCommandBatch = Extract<ReturnType<typeof parseVersionedCommandBatchEnvelope>, { status: 'valid' }>;
+type BatchEnvelope = ParsedCommandBatch['envelope'];
+type BatchCommandEnvelope = BatchEnvelope['commands'][number];
+
+const FIXTURE_BUDGETS: BatchEnvelope['budgets'] = {
+    maxCommands: 16,
+    maxCreatedTracks: 4,
+    maxDeletedObjects: 4,
+    maxAffectedTracks: 8,
+    maxAffectedClips: 8,
+    maxAutomationPoints: 64,
+    maxImportedAssets: 8,
+    maxRenderJobs: 2,
+};
+
+function fixtureCommandEnvelope(
+    commandId: string,
+    operation: BatchCommandEnvelope['operation'],
+    overrides: Partial<BatchCommandEnvelope> = {}
+): BatchCommandEnvelope {
+    return {
+        schemaVersion: 1,
+        commandId,
+        issuedAt: 0,
+        operation,
+        arguments: {},
+        argumentsDigest: `digest-${commandId}`,
+        dependencyIds: [],
+        reason: `Fixture ${operation}`,
+        expectedEffect: `Fixture ${operation} effect`,
+        objectReferences: [],
+        time: [],
+        parameterUnits: [],
+        seed: null,
+        normalizedProjectRevision: 'revision-fixture',
+        availableDeviceVersions: {},
+        applicationAssignedIds: [],
+        ...overrides,
+    };
+}
+
+/**
+ * The real parser hands back a whole batch envelope, and the confirmation path now reads the
+ * dependency and effect fields as well as the scope, so the mocked parse returns the whole shape.
+ */
+function validParsedBatch(input: {
+    batchId: string;
+    commands?: readonly BatchCommandEnvelope[];
+    grants: BatchEnvelope['grants'];
+    idempotencyKey: string;
+    preconditions?: BatchEnvelope['preconditions'];
+    scope: BatchEnvelope['scope'];
+}): ParsedCommandBatch {
+    return {
+        status: 'valid',
+        envelope: {
+            schemaVersion: 1,
+            runId: 'run-fixture',
+            batchId: input.batchId,
+            projectId: 'project-fixture',
+            baseRevision: 'revision-fixture',
+            idempotencyKey: input.idempotencyKey,
+            intent: 'Fixture batch',
+            mode: 'commit',
+            scope: input.scope,
+            preconditions: input.preconditions ?? [],
+            commands: input.commands ?? [],
+            postconditions: [],
+            dependencies: [],
+            batchLocalBindings: [],
+            grants: input.grants,
+            budgets: FIXTURE_BUDGETS,
+        },
+    };
+}
 
 const PROVIDER_PERSISTENCE_WARNING =
     'Agent run provider response recovery state could not be persisted after execution. The retained response remains visible, but its lifecycle is not durably settled. Review it before retrying.';
@@ -73,6 +155,7 @@ const mocks = vi.hoisted(() => ({
     getActiveModelId: vi.fn(),
     getCloudProviderInfo: vi.fn(),
     getLlmEngine: vi.fn(),
+    initWebLlmEngine: vi.fn(),
     isCloudAvailable: vi.fn(),
     parseVersionedCommandBatchEnvelope: vi.fn(),
     planPromptActions: vi.fn(),
@@ -107,14 +190,14 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     loadCrdtProject: vi.fn(),
     mutateCrdtDoc: vi.fn(),
     persistCrdtProject: vi.fn(),
-    preserveBranchStateForSession: vi.fn(),
+    beginBranchSession: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     projectCrdtToStores: vi.fn(),
     removeCrdtDoc: vi.fn(),
-    replaceBranchState: vi.fn(),
+    projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
     resetCrdtProjectAuthority: vi.fn(),
-    restoreBranchStateAfterSession: vi.fn(),
+    endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
     setupProjectionBridge: vi.fn(),
@@ -137,6 +220,10 @@ vi.mock('../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion', 
 
 vi.mock('../../repositories/webLlm/getLlmEngine', () => ({
     getLlmEngine: mocks.getLlmEngine,
+}));
+
+vi.mock('../../repositories/webLlm/initWebLlmEngine', () => ({
+    initWebLlmEngine: mocks.initWebLlmEngine,
 }));
 
 vi.mock('../../repositories/webLlm/getActiveModelId', () => ({
@@ -311,7 +398,7 @@ function createCommandGraphForwardingFixture() {
         throw new Error(guarded.reason);
     }
     const createdBus = guarded.actions.find((action) => action.type === 'createBus');
-    if (createdBus?.type !== 'createBus') {
+    if (createdBus?.type !== 'createBus' || createdBus.payload.busId === undefined) {
         throw new Error('Expected the compiler graph to retain its batch-local bus producer');
     }
     return {
@@ -408,16 +495,14 @@ function configureCommandPlanning(action: ExecutableRuntimeAction) {
         agentApproval: { policy: { risk: 'confirm', reasons: [] } },
         requiresConfirmation: true,
     });
-    mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
-        status: 'valid',
-        envelope: {
+    mocks.parseVersionedCommandBatchEnvelope.mockReturnValue(
+        validParsedBatch({
             batchId: 'batch-fixture',
-            commands: [],
+            grants,
             idempotencyKey: 'batch-fixture-idempotency',
-            preconditions: [],
             scope,
-        },
-    });
+        })
+    );
     return { grants, scope };
 }
 
@@ -498,20 +583,21 @@ function configureCommandGraphForwarding(
         agentApproval: { policy: { risk: requiresConfirmation ? 'confirm' : 'low', reasons: [] } },
         requiresConfirmation,
     });
-    mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
-        status: 'valid',
-        envelope: {
+    mocks.parseVersionedCommandBatchEnvelope.mockReturnValue(
+        validParsedBatch({
             batchId: 'batch-graph',
             commands: [
-                { commandId: 'command-create-bus' },
-                { commandId: 'command-gain-bus' },
-                { commandId: 'command-remove-kick' },
+                fixtureCommandEnvelope('command-create-bus', 'createBus'),
+                fixtureCommandEnvelope('command-gain-bus', 'setTrackGain', {
+                    dependencyIds: ['command-create-bus'],
+                }),
+                fixtureCommandEnvelope('command-remove-kick', 'removeTrack'),
             ],
+            grants,
             idempotencyKey: 'batch-graph-idempotency',
-            preconditions: [],
             scope,
-        },
-    });
+        })
+    );
     mocks.executePlannedActions.mockResolvedValue({ status: 'no-op', actions: [] });
     mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
         const runId = input.streamIdentity?.runId;
@@ -629,6 +715,22 @@ function createFailingWebLlmEngine(content: string, error: Error) {
     };
 }
 
+function observeAbortListenerRegistration(signal: AbortSignal, expectedRegistration: number) {
+    const registered = Promise.withResolvers<void>();
+    const addEventListener = signal.addEventListener.bind(signal);
+    let registrations = 0;
+    const addAbortListener = vi.spyOn(signal, 'addEventListener').mockImplementation((type, listener, options) => {
+        if (type === 'abort') {
+            registrations += 1;
+            if (registrations === expectedRegistration) {
+                registered.resolve();
+            }
+        }
+        addEventListener(type, listener, options);
+    });
+    return { registered: registered.promise, restore: () => addAbortListener.mockRestore() };
+}
+
 describe('sendChatMessage retained-provider selection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -662,7 +764,19 @@ describe('sendChatMessage retained-provider selection', () => {
         commandBatchPreflightPort.setProvider(null);
         commandTrackDefaultsPort.setTrackColorProvider(null);
         agentRunLifecycle.clear();
+        agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
         llmStatusStore.set({ state: 'idle' });
+    });
+
+    it('refuses an explain request longer than the configured request ceiling without admitting a run', async () => {
+        mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine('The mix is balanced.'));
+        agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, requestChars: 4 });
+
+        await expect(sendChatMessage('summarize this', { mode: 'explain' })).rejects.toThrow(
+            describeAgentRunCreationRefusal('requestChars')
+        );
+
+        expect(readAgentRunState().runs).toEqual([]);
     });
 
     it('fails closed when the explicitly selected hosted provider is not configured', async () => {
@@ -759,7 +873,7 @@ describe('sendChatMessage retained-provider selection', () => {
                     },
                     provenance: 'provider-reported',
                 });
-                return { status: 'complete' };
+                return { status: 'complete', finishReason: 'stop', providerRequestId: null };
             }
         );
 
@@ -945,6 +1059,231 @@ describe('sendChatMessage retained-provider selection', () => {
         }
     });
 
+    it('keeps a cancelled queued completion from interrupting an active chat stream before admitting the next completion', async () => {
+        const streamPaused = Promise.withResolvers<void>();
+        const releaseStream = Promise.withResolvers<void>();
+        const engineFinishedStream = Promise.withResolvers<void>();
+        const unexpectedCompletionCreate = Promise.withResolvers<void>();
+        const events: string[] = [];
+        const pending: Promise<unknown>[] = [];
+        let observeUnexpectedCompletionCreate: (() => void) | null = null;
+        let releaseNextAdmission: (() => void) | null = null;
+        async function* activeStream() {
+            yield { choices: [{ delta: { content: 'The active answer starts. ' } }] };
+            streamPaused.resolve();
+            await releaseStream.promise;
+            yield { choices: [{ delta: { content: 'The active answer finishes.' }, finish_reason: 'stop' }] };
+            events.push('active-stream-finished');
+            engineFinishedStream.resolve();
+        }
+        const create = vi.fn(async (params: Record<string, unknown>) => {
+            if (params.stream === true) {
+                events.push('active-stream-created');
+                return activeStream();
+            }
+            observeUnexpectedCompletionCreate?.();
+            events.push('queued-completion-created');
+            return { choices: [{ finish_reason: 'stop', message: { content: 'The next completion.' } }] };
+        });
+        const engine = { interruptGenerate: vi.fn(), chat: { completions: { create } } };
+        const cancelled = new AbortController();
+        const cancelledAdmission = observeAbortListenerRegistration(cancelled.signal, 1);
+        mocks.getLlmEngine.mockReturnValue(engine);
+        mocks.initWebLlmEngine.mockResolvedValue(engine);
+
+        try {
+            const activeChat = sendChatMessage('Keep streaming this answer.', { mode: 'explain' });
+            pending.push(activeChat.catch(() => undefined));
+            await streamPaused.promise;
+
+            observeUnexpectedCompletionCreate = unexpectedCompletionCreate.resolve;
+            const cancelledCompletion = generateWebLlmCompletion('system', 'cancel me', { signal: cancelled.signal });
+            pending.push(cancelledCompletion.catch(() => undefined));
+            const cancelledAdmissionResult = await Promise.race([
+                cancelledAdmission.registered.then(() => 'listener' as const),
+                unexpectedCompletionCreate.promise.then(() => 'engine-create' as const),
+            ]);
+            if (cancelledAdmissionResult === 'engine-create') {
+                expect(create).toHaveBeenCalledTimes(1);
+            }
+            observeUnexpectedCompletionCreate = null;
+            expect(create).toHaveBeenCalledOnce();
+
+            cancelled.abort(new DOMException('Cancelled while queued.', 'AbortError'));
+            await expect(cancelledCompletion).rejects.toMatchObject({ name: 'AbortError' });
+            expect(engine.interruptGenerate).not.toHaveBeenCalled();
+
+            const next = new AbortController();
+            const nextAdmission = observeAbortListenerRegistration(next.signal, 1);
+            releaseNextAdmission = nextAdmission.restore;
+            const unexpectedNextCompletionCreate = Promise.withResolvers<void>();
+            observeUnexpectedCompletionCreate = unexpectedNextCompletionCreate.resolve;
+            const nextCompletion = generateWebLlmCompletion('system', 'run after the stream', { signal: next.signal });
+            pending.push(nextCompletion.catch(() => undefined));
+            const nextAdmissionResult = await Promise.race([
+                nextAdmission.registered.then(() => 'listener' as const),
+                unexpectedNextCompletionCreate.promise.then(() => 'engine-create' as const),
+            ]);
+            if (nextAdmissionResult === 'engine-create') {
+                expect(create).toHaveBeenCalledTimes(1);
+            }
+            observeUnexpectedCompletionCreate = null;
+            releaseNextAdmission();
+            releaseNextAdmission = null;
+            expect(create).toHaveBeenCalledOnce();
+
+            releaseStream.resolve();
+            await engineFinishedStream.promise;
+            await expect(activeChat).resolves.toBeUndefined();
+            await expect(nextCompletion).resolves.toBe('The next completion.');
+
+            expect(events).toEqual(['active-stream-created', 'active-stream-finished', 'queued-completion-created']);
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    content: 'The active answer starts. The active answer finishes.',
+                })
+            );
+            expect(engine.interruptGenerate).not.toHaveBeenCalled();
+        } finally {
+            releaseStream.resolve();
+            await Promise.allSettled(pending);
+            cancelledAdmission.restore();
+            releaseNextAdmission?.();
+        }
+    });
+
+    it('keeps an active completion intact when a queued explain chat is cancelled before the next completion starts', async () => {
+        const completionResponse = Promise.withResolvers<unknown>();
+        const completionStarted = Promise.withResolvers<void>();
+        const activeAborterExposed = Promise.withResolvers<AbortController>();
+        const chatCancellationBound = Promise.withResolvers<void>();
+        const unexpectedChatCreate = Promise.withResolvers<void>();
+        const events: string[] = [];
+        const pending: Promise<unknown>[] = [];
+        let completionCount = 0;
+        let observeUnexpectedChatCreate: (() => void) | null = null;
+        let observeUnexpectedCompletionCreate: (() => void) | null = null;
+        let releaseNextAdmission: (() => void) | null = null;
+        const queuedChatAdmission: {
+            observation: ReturnType<typeof observeAbortListenerRegistration> | null;
+        } = { observation: null };
+        async function* cancelledChatStream() {
+            yield { choices: [{ delta: { content: 'Cancelled chat content.' }, finish_reason: 'stop' }] };
+        }
+        const create = vi.fn((params: Record<string, unknown>) => {
+            if (params.stream === true) {
+                observeUnexpectedChatCreate?.();
+                events.push('queued-chat-created');
+                return Promise.resolve(cancelledChatStream());
+            }
+            completionCount += 1;
+            if (completionCount === 1) {
+                events.push('active-completion-created');
+                completionStarted.resolve();
+                return completionResponse.promise.then((response) => {
+                    events.push('active-completion-finished');
+                    return response;
+                });
+            }
+            observeUnexpectedCompletionCreate?.();
+            events.push('next-completion-created');
+            return Promise.resolve({ choices: [{ finish_reason: 'stop', message: { content: 'Next completion.' } }] });
+        });
+        const engine = { interruptGenerate: vi.fn(), chat: { completions: { create } } };
+        const bindAbortController = agentRunCancellation.bindAbortController;
+        const bindCancellation = vi.spyOn(agentRunCancellation, 'bindAbortController').mockImplementation((input) => {
+            queuedChatAdmission.observation = observeAbortListenerRegistration(input.controller.signal, 2);
+            chatCancellationBound.resolve();
+            return bindAbortController(input);
+        });
+        mocks.getLlmEngine.mockReturnValue(engine);
+        mocks.initWebLlmEngine.mockResolvedValue(engine);
+        mocks.setActiveAborter.mockImplementation((value) => {
+            if (value instanceof AbortController) {
+                activeAborterExposed.resolve(value);
+            }
+        });
+
+        try {
+            const activeCompletion = generateWebLlmCompletion('system', 'finish this answer');
+            pending.push(activeCompletion.catch(() => undefined));
+            await completionStarted.promise;
+
+            observeUnexpectedChatCreate = unexpectedChatCreate.resolve;
+            const queuedChat = sendChatMessage('Cancel this queued chat.', { mode: 'explain' });
+            pending.push(queuedChat.catch(() => undefined));
+            const activeAborter = await activeAborterExposed.promise;
+            await chatCancellationBound.promise;
+            const observation = queuedChatAdmission.observation;
+            if (observation === null) {
+                throw new Error('Expected the queued explain chat cancellation binding to remain observable.');
+            }
+            const queuedChatAdmissionResult = await Promise.race([
+                observation.registered.then(() => 'listener' as const),
+                unexpectedChatCreate.promise.then(() => 'engine-create' as const),
+            ]);
+            if (queuedChatAdmissionResult === 'engine-create') {
+                expect(create).toHaveBeenCalledTimes(1);
+            }
+            observeUnexpectedChatCreate = null;
+            expect(create).toHaveBeenCalledOnce();
+
+            activeAborter.abort(new DOMException('Cancelled while queued.', 'AbortError'));
+            await expect(queuedChat).resolves.toBeUndefined();
+            expect(engine.interruptGenerate).not.toHaveBeenCalled();
+            expect(agentRunLifecycle.get(getMostRecentlyAdmittedRunId())).toMatchObject({
+                phase: 'cancelled',
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'cancelled' })],
+            });
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ isStreaming: false, content: '' })
+            );
+
+            const next = new AbortController();
+            const nextAdmission = observeAbortListenerRegistration(next.signal, 1);
+            releaseNextAdmission = nextAdmission.restore;
+            const unexpectedNextCompletionCreate = Promise.withResolvers<void>();
+            observeUnexpectedCompletionCreate = unexpectedNextCompletionCreate.resolve;
+            const nextCompletion = generateWebLlmCompletion('system', 'run after the active completion', {
+                signal: next.signal,
+            });
+            pending.push(nextCompletion.catch(() => undefined));
+            const nextAdmissionResult = await Promise.race([
+                nextAdmission.registered.then(() => 'listener' as const),
+                unexpectedNextCompletionCreate.promise.then(() => 'engine-create' as const),
+            ]);
+            if (nextAdmissionResult === 'engine-create') {
+                expect(create).toHaveBeenCalledTimes(1);
+            }
+            observeUnexpectedCompletionCreate = null;
+            releaseNextAdmission();
+            releaseNextAdmission = null;
+            expect(create).toHaveBeenCalledOnce();
+
+            completionResponse.resolve({
+                choices: [{ finish_reason: 'stop', message: { content: '<think>hidden</think>Active completion.' } }],
+            });
+            await expect(activeCompletion).resolves.toBe('Active completion.');
+            await expect(nextCompletion).resolves.toBe('Next completion.');
+
+            expect(events).toEqual([
+                'active-completion-created',
+                'active-completion-finished',
+                'next-completion-created',
+            ]);
+            expect(engine.interruptGenerate).not.toHaveBeenCalled();
+        } finally {
+            completionResponse.resolve({ choices: [{ finish_reason: 'stop', message: { content: 'Released.' } }] });
+            await Promise.allSettled(pending);
+            queuedChatAdmission.observation?.restore();
+            releaseNextAdmission?.();
+            bindCancellation.mockRestore();
+        }
+    });
+
     it('retains a hosted completed response with a persistence warning when completion settlement cannot persist', async () => {
         const content = 'The hosted completion remains visible.';
         const settlementFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
@@ -971,7 +1310,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 onToken(content);
                 markCompletionReady();
                 return new Promise<CloudChatCompletionOutcome>((resolve) => {
-                    releaseCompletion = () => resolve({ status: 'complete' });
+                    releaseCompletion = () =>
+                        resolve({ status: 'complete', finishReason: 'stop', providerRequestId: null });
                 });
             }
         );
@@ -2477,16 +2817,15 @@ describe('sendChatMessage retained-provider selection', () => {
                 agentApproval: { policy: { risk: 'confirm', reasons: [] } },
                 requiresConfirmation: true,
             });
-            mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
-                status: 'valid',
-                envelope: {
+            mocks.parseVersionedCommandBatchEnvelope.mockReturnValue(
+                validParsedBatch({
                     batchId: 'batch-application-assigned',
-                    commands: [],
+                    grants,
                     idempotencyKey: 'batch-application-assigned-idempotency',
                     preconditions: [{ kind: 'targets-absent', targetIds: ['track-application-assigned'] }],
                     scope,
-                },
-            });
+                })
+            );
 
             await sendChatMessage('Add a reference track', { mode });
 

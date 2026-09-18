@@ -1,3 +1,5 @@
+import { clampMidiData7, clampVelocity } from '#/utils/midiData';
+
 import { createMidiError } from '../../errors/MidiError';
 import { createMidiNote, type MidiNote } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
@@ -14,8 +16,8 @@ export function addMidiNote(
         throw createMidiError('MIDI store not initialized');
     }
 
-    const safePitch = Math.round(Math.max(0, Math.min(127, pitch)));
-    const safeVelocity = Math.round(Math.max(1, Math.min(127, velocity)));
+    const safePitch = Math.round(clampMidiData7(pitch));
+    const safeVelocity = Math.round(clampVelocity(velocity));
     const safeStart = Math.max(0, startBeat);
     const safeDuration = Math.max(0.0625, duration); // 64th note minimum
 

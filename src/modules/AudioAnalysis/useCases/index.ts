@@ -9,6 +9,9 @@ export { isStemSeparationAvailable } from './audioAi/isStemSeparationAvailable';
 
 export { summarizeFeatures } from './summarizeFeatures';
 
+export { analyzeAgentRenderReceipt } from './analyzeAgentRenderReceipt';
+export { analyzeAgentAuditionBuffer } from './analyzeAgentAuditionBuffer';
+
 export { audioToMidi } from './audioToMidi';
 export { detectOnsets } from './detectOnsets';
 
@@ -21,7 +24,7 @@ export { detectDominantPitch } from './pitchDetection';
 
 export { polyphonicAudioToMidi } from './polyphonicAudioToMidi';
 
-export { analyzeMix as analyzeMixFromTrackLayout } from './referenceMixComparison/analyzeMix/analyzeMix';
+export { analyzeMix as analyzeCurrentMix } from './referenceMixComparison/analyzeMix/analyzeMix';
 
 export { compareToReference } from './referenceMixComparison/compareToReference';
 

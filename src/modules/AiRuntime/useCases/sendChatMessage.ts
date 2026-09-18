@@ -3,6 +3,7 @@ import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocu
 
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
+import { describeAgentRunCreationRefusal } from '../models/AgentResourceLimits';
 import { type AgentRunBudgets, type AgentRunDecisionResume } from '../models/AgentRun';
 import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
 import { type ModelProviderName } from '../models/ModelProviderProtocol';
@@ -83,7 +84,7 @@ export async function sendChatMessage(
     }
 
     const runId = `agent-run-${crypto.randomUUID()}`;
-    agentRunLifecycle.create({
+    const admission = agentRunLifecycle.create({
         runId,
         request: userText,
         mode: interactionMode,
@@ -95,6 +96,9 @@ export async function sendChatMessage(
         budgets: options?.budgets,
         resume: options?.resume,
     });
+    if (admission.status === 'hard-limit-reached') {
+        throw createAiRuntimeError(describeAgentRunCreationRefusal(admission.reason));
+    }
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
     const providerWorkId = 'provider-response';
     const providerReceiptIdentity = `provider:${backend}:${runId}`;

@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getNativeModeMock = vi.hoisted(() => vi.fn<() => boolean>());
 const getMidiAccessMock = vi.hoisted(() => vi.fn<() => { inputs: Map<string, unknown> } | null>());
-const setStateMock = vi.hoisted(() => vi.fn<(next: Record<string, unknown>) => void>());
+const setStateMock = vi.hoisted(() =>
+    vi.fn<(next: Record<string, unknown>, options?: { persistSelection?: boolean; identityScheme?: string }) => void>()
+);
 const attachInputMock = vi.hoisted(() => vi.fn());
 const selectMidiInputNativeMock = vi.hoisted(() => vi.fn<() => Promise<void>>());
 const listNativeMidiInputsMock = vi.hoisted(() =>
@@ -19,6 +21,7 @@ vi.mock('../selectMidiInputNative', () => ({ selectMidiInputNative: selectMidiIn
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: loggerWarnMock, error: vi.fn(), info: vi.fn() } }));
 
 import { type WebMidiInputMessage } from '../../../../models/WebMidiTypes';
+import { NATIVE_IDENTITY_SCHEME, WEB_MIDI_IDENTITY_SCHEME } from '../../selectedInputIdStorageKeys';
 import { selectMidiInput } from '../selectMidiInput';
 
 const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
@@ -37,7 +40,12 @@ describe('selectMidiInput', () => {
         // Not yet — the enumeration and the port are still in flight.
         expect(setStateMock).not.toHaveBeenCalled();
 
-        await vi.waitFor(() => expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'Launchkey' }));
+        await vi.waitFor(() =>
+            expect(setStateMock).toHaveBeenCalledWith(
+                { selectedInputId: 'Launchkey' },
+                { persistSelection: true, identityScheme: NATIVE_IDENTITY_SCHEME }
+            )
+        );
         expect(selectMidiInputNativeMock).toHaveBeenCalledWith({ portIndex: 2, portName: 'Launchkey', onMidiMessage });
     });
 
@@ -96,7 +104,10 @@ describe('selectMidiInput', () => {
         selectMidiInput({ deviceId: 'in-1', onMidiMessage });
 
         expect(attachInputMock).toHaveBeenCalledWith({ input, onMidiMessage });
-        expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'in-1' });
+        expect(setStateMock).toHaveBeenCalledWith(
+            { selectedInputId: 'in-1' },
+            { persistSelection: true, identityScheme: WEB_MIDI_IDENTITY_SCHEME }
+        );
     });
 
     it('commits nothing when the requested Web MIDI input is not present', () => {

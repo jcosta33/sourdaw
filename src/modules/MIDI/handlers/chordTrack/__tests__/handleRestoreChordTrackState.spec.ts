@@ -71,6 +71,25 @@ describe('handleRestoreChordTrackState — execute', () => {
         expect(setArg.events[0]?.id).toBe('c1');
     });
 
+    it('writes replacement when equivalent state keys were serialized in a different order', () => {
+        const expected: ChordTrackState = {
+            enabled: true,
+            events: [{ id: 'c1', beat: 0, root: 0, quality: 'major', duration: 4 }],
+        };
+        setState({
+            events: [{ duration: 4, quality: 'major', root: 0, beat: 0, id: 'c1' }],
+            enabled: true,
+        });
+
+        const result = handleRestoreChordTrackState.execute({
+            type: 'restoreChordTrackState',
+            payload: { expected, replacement: { enabled: false, events: [] } },
+        });
+
+        expect(result).toEqual({ status: 'written' });
+        expect(mockedSet).toHaveBeenCalledTimes(1);
+    });
+
     it('returns conflict when current state does not match expected', () => {
         setState({ enabled: true, events: [] });
         const expected: ChordTrackState = { enabled: false, events: [] };

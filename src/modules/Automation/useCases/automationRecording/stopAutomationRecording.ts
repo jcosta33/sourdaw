@@ -49,7 +49,19 @@ function pointsEqual(a: AutomationPoint[], b: AutomationPoint[]): boolean {
     return true;
 }
 
-export function stopAutomationRecording(): void {
+/**
+ * Commit every active recording session at a transport boundary.
+ *
+ * `finalBoundaryBeat` is the beat the audible transport actually stood at when
+ * the boundary hit — the moving cursor at the stop/pause/seek, supplied by the
+ * Transport-owned scheduler teardown (`stopPlayheadScheduler` reads it before
+ * anything resets the clock). Without it the pass can only commit through its
+ * last buffered gesture, and write/latch passes silently drop the held tail:
+ * the lane replays the old curve the pass had suppressed (#3798). Omitting it
+ * (no argument) keeps the last-gesture behavior for callers without a live
+ * clock to read.
+ */
+export function stopAutomationRecording(finalBoundaryBeat?: number): void {
     const tracks = trackStore.value?.tracks ?? [];
 
     // Per-lane before/after snapshots, scoped to ONLY the lanes this session
@@ -65,8 +77,13 @@ export function stopAutomationRecording(): void {
         const track = tracks.find((time) => time.id === session.trackId);
         // write + latch overwrite the span they pass over. A loop wrap ends a
         // pass the same way a stop does, so both go through the same commit.
-        const overwrites = track?.automationMode === 'write' || track?.automationMode === 'latch';
-        commitRecordedPass(key, overwrites);
+        if (track?.automationMode === 'write' || track?.automationMode === 'latch') {
+            commitRecordedPass(key, track.automationMode, finalBoundaryBeat ?? null);
+            continue;
+        }
+        // Touch (and any non-overwriting mode) only flushes; its release keeps
+        // the separate AutoMatch return-to-curve behavior.
+        commitRecordedPass(key, 'touch', null);
     }
 
     // Build the scoped undo from the lanes actually touched. Each callback maps

@@ -10,6 +10,9 @@ import {
     clearAiHistory,
 } from '../aiActionHistoryStore';
 
+/** Groups the retention policy keeps: an older stamp would be dropped before the assertion reads it. */
+const RETAINED_TIMESTAMP = Date.now();
+
 async function loadHistoryStateFromStoredValue(storedValue: unknown): Promise<AiActionHistoryState | null> {
     vi.resetModules();
     window.localStorage.setItem('sourdaw-ai-history', stringify(storedValue));
@@ -67,7 +70,7 @@ describe('aiActionHistoryStore', () => {
                         id: 'history-1',
                         prompt: 'Add a bassline',
                         groupId: 'group-1',
-                        timestamp: 123,
+                        timestamp: RETAINED_TIMESTAMP,
                         reverted: false,
                         executionKind: 'runtime',
                         actions: [{ kind: 'appAction', actionType: 'track.create', label: 'Create track' }],
@@ -86,7 +89,7 @@ describe('aiActionHistoryStore', () => {
                 id: 'history-1',
                 prompt: 'Keep this one',
                 groupId: 'group-1',
-                timestamp: 123,
+                timestamp: RETAINED_TIMESTAMP,
                 reverted: false,
                 actions: [{ kind: 'appAction', actionType: 'track.create', label: 'Create track' }],
             };
@@ -97,7 +100,7 @@ describe('aiActionHistoryStore', () => {
                         id: 'legacy-history',
                         prompt: 'Retired JSON edit',
                         groupId: 'legacy-group',
-                        timestamp: 122,
+                        timestamp: RETAINED_TIMESTAMP - 1,
                         reverted: false,
                         actions: [{ kind: 'jsonEdit', label: 'Edit project JSON' }],
                     },
@@ -123,7 +126,7 @@ describe('aiActionHistoryStore', () => {
                 id: 'history-1',
                 prompt: 'Keep this one',
                 groupId: 'group-1',
-                timestamp: 123,
+                timestamp: RETAINED_TIMESTAMP,
                 reverted: false,
                 actions: [{ kind: 'appAction', actionType: 'track.create', label: 'Create track' }],
             };
@@ -143,7 +146,7 @@ describe('aiActionHistoryStore', () => {
                         id: 'history-3',
                         prompt: 'Invalid action entry',
                         groupId: 'group-3',
-                        timestamp: 456,
+                        timestamp: RETAINED_TIMESTAMP + 1,
                         reverted: false,
                         actions: [{ kind: 'appAction', actionType: 'track.create' }],
                     },
@@ -162,7 +165,7 @@ describe('aiActionHistoryStore', () => {
                 prompt: 'test prompt',
                 actions: [],
                 groupId: 'g1',
-                timestamp: 123,
+                timestamp: RETAINED_TIMESTAMP,
                 reverted: false,
             };
 
@@ -181,7 +184,7 @@ describe('aiActionHistoryStore', () => {
                     prompt: 'test prompt',
                     actions: [],
                     groupId: `g${index}`,
-                    timestamp: index,
+                    timestamp: RETAINED_TIMESTAMP + index,
                     reverted: false,
                 });
             }
@@ -200,7 +203,7 @@ describe('aiActionHistoryStore', () => {
                 prompt: 'test prompt',
                 actions: [],
                 groupId: 'g1',
-                timestamp: 123,
+                timestamp: RETAINED_TIMESTAMP,
                 reverted: false,
             });
 
@@ -215,7 +218,7 @@ describe('aiActionHistoryStore', () => {
                 prompt: 'test',
                 actions: [],
                 groupId: 'g1',
-                timestamp: 1,
+                timestamp: RETAINED_TIMESTAMP,
                 reverted: false,
             });
 
@@ -230,7 +233,7 @@ describe('aiActionHistoryStore', () => {
                 prompt: 'play',
                 actions: [{ kind: 'appAction', actionType: 'setPlayback', label: 'Start playback' }],
                 groupId: 'g1',
-                timestamp: 1,
+                timestamp: RETAINED_TIMESTAMP,
                 reverted: false,
                 executionKind: 'runtime',
             });
@@ -260,7 +263,7 @@ describe('aiActionHistoryStore', () => {
                 prompt: 'test',
                 actions: [],
                 groupId: 'g1',
-                timestamp: 1,
+                timestamp: RETAINED_TIMESTAMP,
                 reverted: false,
             });
 

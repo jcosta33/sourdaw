@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { runInNewContext } from 'node:vm';
+
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { notRunningEngineRtDiagnostics } from '../../src/modules/AudioEngine/models/EngineRtDiagnostics.ts';
 import {
@@ -10,11 +12,14 @@ import {
     findQuarantineReason,
     GAUGE_NAMES,
     hasLivePluginOnTrack,
+    isAudibleLatencyReading,
+    isRunningEngineTitle,
     MONOTONIC_COUNTER_NAMES,
     parseArgs,
     parseEngineTitle,
     parseLatencyMs,
     parseMasterLevelDb,
+    readStatusBarInDocument,
 } from '../desktopLatencyReadings.ts';
 
 const argv = (...flags: string[]): string[] => ['node', 'scripts/measureDesktopLatency.ts', ...flags];
@@ -126,6 +131,85 @@ describe('parseEngineTitle', () => {
 
     it('refuses a title that is not the engine dot', () => {
         expect(() => parseEngineTitle('Output latency 11.0 ms')).toThrow('does not start with "Engine: "');
+    });
+});
+
+describe('isRunningEngineTitle', () => {
+    // `useStatusBarMetrics.ts`'s `describeEngineIndicator` (#3706) names the
+    // engine the dot describes; these are the exact titles it composes.
+    it('accepts a healthy running native carrier', () => {
+        expect(
+            isRunningEngineTitle('Engine: native running · Web Audio: running · missed render deadlines: 0 (0.0 ms)')
+        ).toBe(true);
+    });
+
+    it('accepts a running Web Audio carrier', () => {
+        expect(isRunningEngineTitle('Engine: Web Audio running · missed render deadlines: 0 (0.0 ms)')).toBe(true);
+    });
+
+    it('refuses a running native carrier with an output stream fault', () => {
+        expect(
+            isRunningEngineTitle(
+                'Engine: native running · native output stream fault: deviceDisconnected · Web Audio: running'
+            )
+        ).toBe(false);
+    });
+
+    it('refuses a native carrier with no diagnostics reading yet', () => {
+        expect(isRunningEngineTitle('Engine: native (no reading yet) · Web Audio: running')).toBe(false);
+    });
+
+    it('refuses a stopped native carrier', () => {
+        expect(isRunningEngineTitle('Engine: native stopped · Web Audio: running')).toBe(false);
+    });
+
+    it('refuses the pre-#3706 single-carrier vocabulary, which no current build writes', () => {
+        expect(isRunningEngineTitle('Engine: running · missed render deadlines: 0 (0.0 ms)')).toBe(false);
+    });
+});
+
+describe('isAudibleLatencyReading', () => {
+    const nativeRunning = 'Engine: native running · Web Audio: running · missed render deadlines: 0 (0.0 ms)';
+    const webAudioRunning = 'Engine: Web Audio running · missed render deadlines: 0 (0.0 ms)';
+    const nativeTitle =
+        'Output latency 10.7 ms = native engine buffer 10.7 ms + device 0.0 ms. ' +
+        'Hardware output path only — excludes plug-in delay compensation.';
+    const webAudioTitle =
+        'Output latency 16.3 ms = context 5.3 ms + device 11.0 ms. ' +
+        'Hardware output path only — excludes plug-in delay compensation.';
+
+    it('refuses "n/a" under a native engine — the #4275 readout before the native figure lands', () => {
+        expect(
+            isAudibleLatencyReading({
+                latencyText: 'n/a',
+                latencyTitle:
+                    'Native engine is the audible output; its output latency has not been published.' +
+                    ' Web Audio figures would describe a path nobody hears.',
+                engineTitle: nativeRunning,
+            })
+        ).toBe(false);
+    });
+
+    it('accepts a native-buffer figure under a native engine', () => {
+        expect(
+            isAudibleLatencyReading({ latencyText: '10.7ms', latencyTitle: nativeTitle, engineTitle: nativeRunning })
+        ).toBe(true);
+    });
+
+    it('refuses a Web Audio context figure under a native engine — the path nobody hears', () => {
+        expect(
+            isAudibleLatencyReading({ latencyText: '16.3ms', latencyTitle: webAudioTitle, engineTitle: nativeRunning })
+        ).toBe(false);
+    });
+
+    it('accepts the same Web Audio figure once Web Audio is the audible engine', () => {
+        expect(
+            isAudibleLatencyReading({
+                latencyText: '16.3ms',
+                latencyTitle: webAudioTitle,
+                engineTitle: webAudioRunning,
+            })
+        ).toBe(true);
     });
 });
 
@@ -297,5 +381,155 @@ describe('findQuarantineReason', () => {
 
     it('returns null for an empty entry list', () => {
         expect(findQuarantineReason([], harnessPath)).toBeNull();
+    });
+});
+
+describe('readStatusBarInDocument', () => {
+    const SELECTOR = 'footer[aria-label="Application status"]';
+
+    // Mirrors `StatusBar.tsx`'s real DOM shape: `DawReadoutRow` renders a
+    // label span and a value span as a row's only two direct span children;
+    // the Latency value span carries one more nested `span[title]` —
+    // `useStatusBarMetrics.ts` sets `.title` on that inner span directly,
+    // never on the outer one.
+    const EXPANDED_FOOTER_HTML = `
+        <footer aria-label="Application status">
+            <div><span>Rate</span><span>48kHz</span></div>
+            <div><span>Latency</span><span><span title="128 frames @ 48000Hz (native engine buffer)">2.7ms</span></span></div>
+            <div><span>Out</span><span>-12.4 dB</span></div>
+            <span title="Engine: running"></span>
+        </footer>
+    `;
+
+    // The compact layout (at or below `COMPACT_STATUS_BAR_MAX_WIDTH`) moves
+    // "Out" behind the Radix Popover trigger; Rate and Latency stay in the
+    // footer.
+    const COMPACT_FOOTER_HTML = `
+        <footer aria-label="Application status">
+            <div><span>Rate</span><span>48kHz</span></div>
+            <div><span>Latency</span><span><span title="128 frames @ 48000Hz (native engine buffer)">2.7ms</span></span></div>
+            <span title="Engine: running"></span>
+            <button aria-label="More application status"></button>
+        </footer>
+    `;
+
+    const NO_OUT_NO_TRIGGER_FOOTER_HTML = `
+        <footer aria-label="Application status">
+            <div><span>Rate</span><span>48kHz</span></div>
+            <div><span>Latency</span><span><span title="128 frames @ 48000Hz (native engine buffer)">2.7ms</span></span></div>
+            <span title="Engine: running"></span>
+        </footer>
+    `;
+
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    it('reads Rate, Latency and Out from a footer in its expanded layout', () => {
+        document.body.innerHTML = EXPANDED_FOOTER_HTML;
+        window.innerWidth = 1440;
+
+        expect(readStatusBarInDocument({ selector: SELECTOR })).toEqual({
+            sampleRateText: '48kHz',
+            latencyText: '2.7ms',
+            latencyTitle: '128 frames @ 48000Hz (native engine buffer)',
+            engineTitle: 'Engine: running',
+            masterLevelText: '-12.4 dB',
+        });
+    });
+
+    it('names the compact layout and the More trigger when Out sits behind it', () => {
+        document.body.innerHTML = COMPACT_FOOTER_HTML;
+        window.innerWidth = 1024;
+
+        let thrown: unknown;
+        try {
+            readStatusBarInDocument({ selector: SELECTOR });
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(Error);
+        const message = (thrown as Error).message;
+        expect(message).toContain('compact layout at 1024 px');
+        expect(message).toContain('"Out"');
+        expect(message).toContain('More application status');
+    });
+
+    it('falls back to the generic missing-readout message when there is no More trigger to blame', () => {
+        document.body.innerHTML = NO_OUT_NO_TRIGGER_FOOTER_HTML;
+        window.innerWidth = 1024;
+
+        expect(() => readStatusBarInDocument({ selector: SELECTOR })).toThrow(
+            'the status bar has no readout labelled "Out"'
+        );
+    });
+
+    it('refuses when the status bar is not in the document', () => {
+        document.body.innerHTML = '';
+
+        expect(() => readStatusBarInDocument({ selector: SELECTOR })).toThrow('the status bar is not in the document');
+    });
+
+    // The whole reason this function exists as one function rather than a
+    // tested reference plus a hand-kept in-page copy: `desktopLatencyConnect.ts`
+    // hands the function itself to `page.evaluate`, which serialises it by
+    // `Function.prototype.toString()` and runs that text in a realm carrying
+    // none of this module's imports, module-level constants, or sibling
+    // functions. Running the serialised text here, in a `vm` context given
+    // only `document`, `window`, `Error` and `HTMLElement` — the exact
+    // identifiers the function's own doc comment claims are the whole
+    // allowance — is what proves the function actually survives that trip
+    // rather than merely reading as if it would.
+    it("survives being serialised by source text and run in a context with none of this module's bindings", () => {
+        document.body.innerHTML = EXPANDED_FOOTER_HTML;
+        window.innerWidth = 1440;
+
+        const serialised = runInNewContext(`(${readStatusBarInDocument.toString()})`, {
+            document,
+            window,
+            Error,
+            HTMLElement,
+        }) as typeof readStatusBarInDocument;
+
+        expect(serialised({ selector: SELECTOR })).toEqual(readStatusBarInDocument({ selector: SELECTOR }));
+    });
+
+    // The success path above never reaches the compact-layout wording, so it
+    // alone cannot catch a leak that only that branch takes — such as moving
+    // the compact message into a `const` declared outside the function and
+    // referencing it from inside: the reference resolves fine in this module
+    // (ordinary closure), and the returned reading above never touches it, so
+    // that leak would otherwise ship unnoticed. Running the compact-layout
+    // fixture through the same serialised function is what forces that branch
+    // to execute in the stripped realm and turns a silent closure leak into an
+    // observed `ReferenceError`.
+    it('throws the identical compact-layout message whether serialised or called in this module', () => {
+        document.body.innerHTML = COMPACT_FOOTER_HTML;
+        window.innerWidth = 1024;
+
+        const serialised = runInNewContext(`(${readStatusBarInDocument.toString()})`, {
+            document,
+            window,
+            Error,
+            HTMLElement,
+        }) as typeof readStatusBarInDocument;
+
+        let direct: unknown;
+        try {
+            readStatusBarInDocument({ selector: SELECTOR });
+        } catch (error) {
+            direct = error;
+        }
+        let fromVm: unknown;
+        try {
+            serialised({ selector: SELECTOR });
+        } catch (error) {
+            fromVm = error;
+        }
+
+        expect(direct).toBeInstanceOf(Error);
+        expect(fromVm).toBeInstanceOf(Error);
+        expect((fromVm as Error).message).toBe((direct as Error).message);
     });
 });

@@ -2,9 +2,10 @@
  * Use case: Render Kokoro TTS vocal preview.
  *
  * Pipeline (spec §12, §13):
- * 1. Load Kokoro ONNX model from OPFS into the inference worker session cache
- * 2. Fetch the per-voice style embedding from HuggingFace CDN (indexed by token count)
- * 3. Tokenize text: ARPAbet phonemizer → Kokoro IPA token IDs
+ * 1. Tokenize text: ARPAbet phonemizer → Kokoro IPA token IDs — text past the
+ *    model's context limit is refused here, before any render work (#3761)
+ * 2. Load Kokoro ONNX model from OPFS into the inference worker session cache
+ * 3. Fetch the per-voice style embedding from HuggingFace CDN (indexed by token count)
  * 4. Run Kokoro ONNX inference in the worker (24 kHz output)
  * 5. Resample 24 kHz → 44.1 kHz
  * 6. Time-stretch to fit the target region duration (simple rate adjustment)
@@ -28,7 +29,7 @@ import { readRenderCache } from '../repositories/readRenderCache';
 import { readVerifiedModel } from '../repositories/readVerifiedModel';
 import { sha256ArrayBuffer } from '../repositories/sha256ArrayBuffer';
 import { writeRenderCache } from '../repositories/writeRenderCache';
-import { resampleTo44100, applyFades } from '../services/audioResampler';
+import { resampleTo44100, applyFades, TARGET_SAMPLE_RATE } from '../services/audioResampler';
 import { textToKokoroInputIds } from '../services/kokoroTokenizer';
 import { startActiveRender, clearActiveRender } from '../stores/inferenceProgressStore';
 import {
@@ -142,6 +143,20 @@ export const renderKokoroTts = inject({
                 throw new Error(`Unknown Kokoro voice "${speakerId}"`);
             }
 
+            // 1. Tokenize before superseding or queueing anything: the tokenizer caps input at
+            //    the model's context limit and reports the loss as a warning. Refusing on that
+            //    warning keeps a truncated render out of the queue, the cache, and the "ready"
+            //    announcement, and leaves the caller's text intact for the user to shorten (#3761).
+            const { inputIds, tokenCount, warnings } = textToKokoroInputIds(text);
+            const truncationWarning = warnings.find((warning) => /truncat/i.test(warning));
+            if (truncationWarning !== undefined) {
+                // Only truncation silently drops input; the tokenizer's other warnings
+                // (dropped unknown phonemes) are non-fatal and must still render.
+                throw new Error(
+                    `Vocal preview text too long — ${truncationWarning}. Shorten the text and render again.`
+                );
+            }
+
             // Deterministic cache key
             const textEncoder = new TextEncoder();
             const durationKey =
@@ -170,12 +185,12 @@ export const renderKokoroTts = inject({
                         tier: 'browser-preview',
                     };
                     markRenderComplete(phraseId, requestId, cacheKey);
-                    return { audio: cached, sampleRate: 44100, provenance };
+                    return { audio: cached, sampleRate: TARGET_SAMPLE_RATE, provenance };
                 }
 
                 updateRenderStatus(phraseId, requestId, 'rendering-browser');
 
-                // 1. Load Kokoro model from OPFS → worker session cache
+                // 2. Load Kokoro model from OPFS → worker session cache
                 //    loadOnnxSession is idempotent — the worker caches by modelId.
                 const modelDataPort = await readVerifiedModel({
                     family: 'kokoro',
@@ -192,9 +207,6 @@ export const renderKokoroTts = inject({
                 }
                 await inferenceWorkerBridge.loadOnnxSession({ modelId: KOKORO_MODEL_ID, modelDataPort });
                 assertCurrentRenderRequest(phraseId, requestId);
-
-                // 2. Tokenize text on the main thread
-                const { inputIds, tokenCount } = textToKokoroInputIds(text);
 
                 // 3. Fetch voice embedding (CDN, cached in memory)
                 const style = await fetchVoiceStyle(voice, tokenCount);
@@ -239,13 +251,13 @@ export const renderKokoroTts = inject({
                 // 6. Time-stretch to target duration if requested
                 let finalAudio = resampled;
                 if (targetDurationSec !== undefined && targetDurationSec > 0) {
-                    const currentDuration = resampled.length / 44100;
+                    const currentDuration = resampled.length / TARGET_SAMPLE_RATE;
                     const stretchRatio = currentDuration / targetDurationSec;
                     if (Math.abs(stretchRatio - 1) > 0.01) {
                         // Simple resample-based time-stretch (quality: low but fast for scratch tracks)
                         finalAudio = await resampleTo44100({
                             audio: resampled,
-                            fromSampleRate: Math.round(44100 * stretchRatio),
+                            fromSampleRate: Math.round(TARGET_SAMPLE_RATE * stretchRatio),
                         });
                         assertCurrentRenderRequest(phraseId, requestId);
                     }
@@ -265,8 +277,10 @@ export const renderKokoroTts = inject({
                     tier: 'browser-preview',
                 };
 
-                logger.info(`[BrowserAi] Kokoro TTS complete: ${phraseId} (${String(finalAudio.length / 44100)}s)`);
-                return { audio: finalAudio, sampleRate: 44100, provenance };
+                logger.info(
+                    `[BrowserAi] Kokoro TTS complete: ${phraseId} (${String(finalAudio.length / TARGET_SAMPLE_RATE)}s)`
+                );
+                return { audio: finalAudio, sampleRate: TARGET_SAMPLE_RATE, provenance };
             } catch (error) {
                 updateRenderStatus(phraseId, requestId, 'error');
                 throw error;

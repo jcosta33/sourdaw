@@ -15,62 +15,40 @@ describe('listNativeMidiInputs', () => {
         vi.clearAllMocks();
     });
 
-    it('identifies a port by its name, so the id survives a change of enumeration order', async () => {
+    it('passes the backend identity through unchanged, with the enumeration index as portIndex', async () => {
         desktopInvokeMock.mockResolvedValue([
-            { index: 0, name: 'Built-in' },
-            { index: 1, name: 'Launchkey' },
-        ]);
-
-        const before = await listNativeMidiInputs();
-
-        // Same two devices, replugged in the other order.
-        desktopInvokeMock.mockResolvedValue([
-            { index: 0, name: 'Launchkey' },
-            { index: 1, name: 'Built-in' },
-        ]);
-
-        const after = await listNativeMidiInputs();
-
-        expect(before.map((port) => port.id)).toEqual(['Built-in', 'Launchkey']);
-        expect(after.find((port) => port.id === 'Launchkey')?.portIndex).toBe(0);
-        expect(before.find((port) => port.id === 'Launchkey')?.portIndex).toBe(1);
-    });
-
-    it('qualifies only the ports whose names collide', async () => {
-        desktopInvokeMock.mockResolvedValue([
-            { index: 0, name: 'MPK Mini' },
-            { index: 1, name: 'Built-in' },
-            { index: 2, name: 'MPK Mini' },
+            { index: 0, id: '254', name: 'Built-in' },
+            { index: 1, id: '817', name: 'Launchkey' },
         ]);
 
         const ports = await listNativeMidiInputs();
 
-        // Nothing but the order separates two units of the same controller, so
-        // those fall back to an ordinal-qualified id; the unique one must not.
-        expect(ports.map((port) => port.id)).toEqual(['MPK Mini #0', 'Built-in', 'MPK Mini #1']);
-        expect(ports[2]?.portIndex).toBe(2);
+        // The id is built native-side; this layer's job is to carry it verbatim
+        // so a saved selection keeps meaning the same device.
+        expect(ports).toEqual([
+            { id: '254', name: 'Built-in', portIndex: 0 },
+            { id: '817', name: 'Launchkey', portIndex: 1 },
+        ]);
     });
 
-    it('keeps colliding ids stable when an unrelated device leaves', async () => {
-        // Qualified by the global enumeration index, unplugging the Built-in —
-        // a device the user never touched — would renumber "MPK Mini #2" to
-        // "#1" and strand the saved selection on the other unit.
+    it('keeps same-named ports distinct under the backend ids that separate them', async () => {
         desktopInvokeMock.mockResolvedValue([
-            { index: 0, name: 'MPK Mini' },
-            { index: 1, name: 'Built-in' },
-            { index: 2, name: 'MPK Mini' },
+            { index: 0, id: '817', name: 'MPK Mini' },
+            { index: 1, id: '254', name: 'MPK Mini' },
         ]);
-        const before = await listNativeMidiInputs();
 
-        desktopInvokeMock.mockResolvedValue([
-            { index: 0, name: 'MPK Mini' },
-            { index: 1, name: 'MPK Mini' },
-        ]);
-        const after = await listNativeMidiInputs();
+        const ports = await listNativeMidiInputs();
 
-        expect(before.filter((port) => port.name === 'MPK Mini').map((port) => port.id)).toEqual(
-            after.map((port) => port.id)
-        );
+        expect(ports.map((port) => port.id)).toEqual(['817', '254']);
+        expect(ports.every((port) => port.name === 'MPK Mini')).toBe(true);
+    });
+
+    it('rejects a payload whose entries carry no id', async () => {
+        // The pre-identity payload shape: without the guard, its absence would
+        // cross as `id: undefined` and strand every saved selection.
+        desktopInvokeMock.mockResolvedValue([{ index: 0, name: 'Built-in' }]);
+
+        await expect(listNativeMidiInputs()).rejects.toThrow(TypeError);
     });
 
     it('rejects a payload that is not a device list', async () => {

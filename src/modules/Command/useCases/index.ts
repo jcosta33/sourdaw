@@ -13,7 +13,12 @@ export { configureCommandBatchIdempotency } from './configureCommandBatchIdempot
 export { resetCommandBatchIdempotency } from './resetCommandBatchIdempotency';
 export { canExecuteCommandBatchEffects } from './canExecuteCommandBatchEffects';
 export { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
+export { classifyCommandRecovery } from './classifyCommandRecovery';
+export { describeCommandBatchRecovery } from './describeCommandBatchRecovery';
+export { commandBatchGroupId } from './commandBatchGroupId';
+export { getCommandBatchGroupDependencies } from './getCommandBatchGroupDependencies';
 export { compilePartialCommandBatchAcceptance } from './compilePartialCommandBatchAcceptance';
+export { previewVersionedCommandBatchEnvelope } from './previewVersionedCommandBatchEnvelope';
 export { commandDeviceVersionsPort } from './commandDeviceVersionsPort';
 export { commandTrackDefaultsPort } from './commandTrackDefaultsPort';
 export { captureCommandTargetFingerprints } from './captureCommandTargetFingerprints';
@@ -29,6 +34,7 @@ export { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
 export { getVerifiedBatchReceiptIdentity } from './getVerifiedBatchReceiptIdentity';
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
 export { getAppActionStaticAuthority } from './getAppActionStaticAuthority';
+export { getAppActionPreviewExecution } from './getAppActionPreviewExecution';
 export { getAgentActionRiskPolicy } from './getAgentActionRiskPolicy';
 export { getExecutableAppActionIntentCatalog } from './getExecutableAppActionIntentCatalog';
 export {
@@ -43,6 +49,7 @@ export { getExecutableAppActionProviderSchema } from './getExecutableAppActionPr
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';
 export { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
+export { getExecutableAppActionEffect } from './executableAppActionEffects';
 export { isExecutableAppActionType } from './executableAppActionRegistry';
 export { registerProductionCommandHandlers } from './registerProductionCommandHandlers';
 export { getVersionedCommandSemanticFingerprint } from './getVersionedCommandSemanticFingerprint';
@@ -72,9 +79,11 @@ export { getVersionedCommandBatchCommitDisposition } from './getVersionedCommand
 export { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
 export { getVersionedCommandTargetRanges } from './getVersionedCommandTargetRanges';
 export { getCommandProtocolContracts } from './getCommandProtocolContracts';
+export { getAgentCommandLedger } from './getAgentCommandLedger';
 export { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 export { createAppActionCommittedError } from './createAppActionCommittedError';
 export { isAppActionCommittedError } from './isAppActionCommittedError';
+export { isAppActionConflictError } from './isAppActionConflictError';
 
 export { getMacroHandlers } from './getMacroHandlers';
 export { getUndoRedoHandlers } from './getUndoRedoHandlers';

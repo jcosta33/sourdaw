@@ -1,3 +1,5 @@
+import { isValidSerializedAudioBuffer, type SerializedAudioBuffer } from '../models/SerializedAudioBuffer';
+
 export type PreparedAudioBufferOwner = {
     schemaVersion: 1;
     createdAtMs?: number;
@@ -10,16 +12,13 @@ export type PreparedAudioBufferOwner = {
 export type PreparedAudioBufferMetadata = {
     freezeProjectId?: number;
     lastAccessed: number;
+    persistenceRevision?: string;
     preparedOwner?: PreparedAudioBufferOwner;
     sizeInBytes: number;
 };
 
-export type PreparedSerializedAudioBuffer = {
-    sampleRate: number;
-    numberOfChannels: number;
-    channelData: Float32Array[];
+export type PreparedSerializedAudioBuffer = SerializedAudioBuffer & {
     lastAccessed: number;
-    sizeInBytes: number;
 };
 
 export type PreparedAudioBufferRecoveryMetadata = {
@@ -103,34 +102,11 @@ export function readPreparedAudioRecoveryRecord(value: unknown): PreparedAudioBu
     return recovery as PreparedAudioBufferRecoveryRecord;
 }
 
-function isFloat32Array(value: unknown): value is Float32Array {
-    return Object.prototype.toString.call(value) === '[object Float32Array]';
-}
-
 export function isValidPreparedSerializedAudioBuffer(data: unknown): data is PreparedSerializedAudioBuffer {
-    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-        return false;
-    }
-    const candidate = data as Record<string, unknown>;
-    const channelData = candidate.channelData;
-    if (!Array.isArray(channelData) || !channelData.every(isFloat32Array)) {
-        return false;
-    }
-    const length = channelData[0]?.length ?? 0;
-    const sizeInBytes = channelData.reduce((total, channel) => total + channel.byteLength, 0);
     return (
-        typeof candidate.sampleRate === 'number' &&
-        Number.isFinite(candidate.sampleRate) &&
-        candidate.sampleRate > 0 &&
-        typeof candidate.numberOfChannels === 'number' &&
-        Number.isInteger(candidate.numberOfChannels) &&
-        candidate.numberOfChannels > 0 &&
-        length > 0 &&
-        channelData.length === candidate.numberOfChannels &&
-        channelData.every((channel) => channel.length === length) &&
-        typeof candidate.lastAccessed === 'number' &&
-        Number.isFinite(candidate.lastAccessed) &&
-        candidate.sizeInBytes === sizeInBytes
+        isValidSerializedAudioBuffer(data) &&
+        typeof (data as Record<string, unknown>).lastAccessed === 'number' &&
+        Number.isFinite((data as Record<string, unknown>).lastAccessed)
     );
 }
 
@@ -156,6 +132,9 @@ export function readPreparedOwner(metadata: unknown): PreparedAudioBufferOwner |
         return null;
     }
     if (owner === null || typeof owner !== 'object' || Array.isArray(owner)) {
+        return 'invalid';
+    }
+    if ((metadata as Record<string, unknown>).persistenceRevision !== undefined) {
         return 'invalid';
     }
     const candidate = owner as Record<string, unknown>;
@@ -189,6 +168,25 @@ export function readPreparedOwner(metadata: unknown): PreparedAudioBufferOwner |
         validated.promotionRevision = promotionRevision;
     }
     return validated;
+}
+
+export function readPersistentPcmRevision(metadata: unknown): string | null {
+    if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) {
+        return null;
+    }
+    const candidate = metadata as Record<string, unknown>;
+    const ordinaryRevision = candidate.persistenceRevision;
+    const owner = readPreparedOwner(metadata);
+    if (owner === 'invalid') {
+        return null;
+    }
+    if (owner !== null) {
+        return owner.persistenceRevision ?? null;
+    }
+    if (ordinaryRevision === undefined) {
+        return null;
+    }
+    return typeof ordinaryRevision === 'string' && ordinaryRevision.trim().length > 0 ? ordinaryRevision : null;
 }
 
 export function isValidPreparedAudioBufferPair(

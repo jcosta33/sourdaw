@@ -3,7 +3,7 @@
 /// Targets known string frequencies (guitar, bass, custom). Much cheaper than
 /// NMF or transcription because the problem is constrained to known pitches.
 use crate::preprocess::Bandpass;
-use crate::yin::{max_analysis_window, YinDetector};
+use crate::yin::{max_analysis_window, YinDetector, MAX_TAU};
 
 pub const MAX_STRINGS: usize = 8;
 
@@ -77,7 +77,7 @@ impl PolyStringTracker {
             sample_rate,
             buffers: Vec::new(),
             buf_positions: Vec::new(),
-            buf_size: 4096,
+            buf_size: MAX_TAU,
             hop_counter: 0,
             hop_size: (sample_rate / 15.0) as usize,
             next_string: 0,
@@ -124,7 +124,7 @@ impl PolyStringTracker {
         self.buf_size = if lowest_lo.is_finite() {
             max_analysis_window(self.sample_rate, lowest_lo)
         } else {
-            4096
+            MAX_TAU
         };
         self.filters = targets[..n]
             .iter()
@@ -136,7 +136,9 @@ impl PolyStringTracker {
             .collect();
         self.detectors = targets[..n]
             .iter()
-            .map(|t| YinDetector::new(self.sample_rate, t.lo_hz, t.hi_hz))
+            .map(|t| {
+                YinDetector::new_with_window(self.sample_rate, t.lo_hz, t.hi_hz, self.buf_size)
+            })
             .collect();
         self.buffers = (0..n).map(|_| vec![0.0; self.buf_size]).collect();
         self.buf_positions = vec![0; n];

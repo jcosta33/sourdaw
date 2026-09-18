@@ -7,6 +7,7 @@ import { completeMixAnalysis } from '../completeMixAnalysis';
 
 const previous_result: MixAnalysis = {
     timestamp: 1,
+    status: { availability: 'measured', provenance: 'live-analyser-snapshot' },
     overallLevel: { peakDb: -6, rmsDb: -12 },
     frequencyBalance: {
         sub: 0,
@@ -23,6 +24,7 @@ const previous_result: MixAnalysis = {
 
 const completed_result: MixAnalysis = {
     timestamp: 2,
+    status: { availability: 'measured', provenance: 'live-analyser-snapshot' },
     overallLevel: { peakDb: -3, rmsDb: -9 },
     frequencyBalance: {
         sub: 1,

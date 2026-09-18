@@ -6,6 +6,7 @@
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
+import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS } from '../models/ProofChamberAutomationParams';
 import proofChamberProcessorUrl from '../services/proofChamberProcessor.ts?worker&url';
 
@@ -64,8 +65,8 @@ export async function createProofChamberNode(
         node = new AudioWorkletNode(ctx, 'proof-chamber-processor', {
             numberOfInputs: 1,
             numberOfOutputs: 1,
-            outputChannelCount: [2],
-            channelCount: 2,
+            outputChannelCount: [STEREO_CHANNEL_COUNT],
+            channelCount: STEREO_CHANNEL_COUNT,
             channelCountMode: 'explicit',
             processorOptions: { wasmModule: wasmLease.module },
         });

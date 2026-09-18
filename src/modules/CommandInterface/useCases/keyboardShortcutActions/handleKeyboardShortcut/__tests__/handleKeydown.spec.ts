@@ -25,7 +25,7 @@ import {
     openExportDialog,
     openPreferencesDialog,
     setEditingTool,
-    showAutomationPanel,
+    showDevicePanel,
     startToolSwap,
     toggleCommandPalette,
     toggleMixer,
@@ -114,6 +114,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     selectAllClips: vi.fn(),
     selectClipWithFocus: vi.fn(),
     setMarqueeSelection: vi.fn(),
+    getLastClipEndBeat: getLastClipEndBeatMock,
 }));
 
 vi.mock('#/modules/SessionLauncher/stores', () => ({
@@ -141,7 +142,7 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     openExportDialog: vi.fn(),
     openPreferencesDialog: vi.fn(),
     setEditingTool: vi.fn(),
-    showAutomationPanel: vi.fn(),
+    showDevicePanel: vi.fn(),
     startToolSwap: vi.fn(),
     toggleCommandPalette: vi.fn(),
     toggleMixer: vi.fn(),
@@ -168,7 +169,6 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     };
 });
 vi.mock('../../../selectionHelpers/getAllClipIds', () => ({ getAllClipIds: vi.fn(() => []) }));
-vi.mock('../../../selectionHelpers/getLastClipEndBeat', () => ({ getLastClipEndBeat: getLastClipEndBeatMock }));
 vi.mock('../../../selectionHelpers/goToNextMarker', () => ({ goToNextMarker: goToNextMarkerMock }));
 vi.mock('../../../selectionHelpers/goToPreviousMarker', () => ({ goToPreviousMarker: goToPreviousMarkerMock }));
 vi.mock('../../clipShortcuts/duplicateSelectedClipsForward', () => ({ duplicateSelectedClipsForward: vi.fn() }));
@@ -661,7 +661,7 @@ describe('handleKeydown', () => {
                 },
                 {
                     callbackId: 'showAutomationPanel',
-                    assertDispatched: () => expect(showAutomationPanel).toHaveBeenCalledTimes(1),
+                    assertDispatched: () => expect(showDevicePanel).toHaveBeenCalledTimes(1),
                 },
                 {
                     callbackId: 'openExportDialog',

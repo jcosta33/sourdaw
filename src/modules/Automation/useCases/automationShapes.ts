@@ -11,6 +11,9 @@ import { getAutomationLaneCeiling } from './automation/getAutomationLaneCeiling'
 // another module's transformer or use case surface.
 export type AutomationShapeType = 'sine' | 'triangle' | 'sawtooth-up' | 'sawtooth-down' | 'square' | 'random';
 
+/** Hump character of the 'smooth' shape: 0.5 gives the symmetric S-hump. */
+const SMOOTH_CURVE_TENSION = 0.5;
+
 type GenerateAutomationShapePointsInput = {
     shape: AutomationShapeType;
     startBeat: number;
@@ -65,11 +68,21 @@ function generateAutomationShapePoints({
             return [makePoint({ beat: startBeat, norm: 1 }), makePoint({ beat: endBeat, norm: 0 })];
         case 'sine':
             return [
-                makePoint({ beat: startBeat, norm: 0, curve: 'smooth', tension: 0.5 }),
-                makePoint({ beat: startBeat + duration * 0.25, norm: 1, curve: 'smooth', tension: 0.5 }),
-                makePoint({ beat: mid, norm: 0, curve: 'smooth', tension: 0.5 }),
-                makePoint({ beat: startBeat + duration * 0.75, norm: 0, curve: 'smooth', tension: 0.5 }),
-                makePoint({ beat: endBeat, norm: 0, curve: 'smooth', tension: 0.5 }),
+                makePoint({ beat: startBeat, norm: 0, curve: 'smooth', tension: SMOOTH_CURVE_TENSION }),
+                makePoint({
+                    beat: startBeat + duration * 0.25,
+                    norm: 1,
+                    curve: 'smooth',
+                    tension: SMOOTH_CURVE_TENSION,
+                }),
+                makePoint({ beat: mid, norm: 0, curve: 'smooth', tension: SMOOTH_CURVE_TENSION }),
+                makePoint({
+                    beat: startBeat + duration * 0.75,
+                    norm: 0,
+                    curve: 'smooth',
+                    tension: SMOOTH_CURVE_TENSION,
+                }),
+                makePoint({ beat: endBeat, norm: 0, curve: 'smooth', tension: SMOOTH_CURVE_TENSION }),
             ];
         case 'random': {
             // Seed the RNG from the cycle's start beat so the same insertion

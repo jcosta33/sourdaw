@@ -10,7 +10,24 @@ export {
 } from './aiActionHistoryStore';
 export type { AiActionEntry, AiActionGroup, AiActionHistoryState } from './aiActionHistoryStore';
 
+export { agentRunStore } from './agentRunStore';
+
+export { agentChangeComparisonStore } from './agentChangeComparisonStore';
+export type {
+    AgentChangeComparisonEnding,
+    AgentChangeComparisonEndReason,
+    AgentChangeComparisonLoudness,
+    AgentChangeComparisonMeasurement,
+    AgentChangeComparisonSession,
+    AgentChangeComparisonSide,
+    AgentChangeComparisonState,
+} from './agentChangeComparisonStore';
+
+export { pendingActionConfirmationStore } from './pendingActionConfirmationStore';
+
 export { aiBackendPreferenceStore } from './aiBackendPreferenceStore';
+
+export { agentResourceLimitsStore } from './agentResourceLimitsStore';
 
 export { llmStatusStore } from './llmStatusStore';
 export type { LlmEngineStatus } from './llmStatusStore';

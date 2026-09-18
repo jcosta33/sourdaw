@@ -2,15 +2,18 @@ import { restoreAutomationLanes, restoreTrackModulationReferences } from '#/modu
 import { restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { ensureBusStrip, restoreSidechainRoutes, setBusGain, wireSidechainRoutes } from '#/modules/Routing/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { type Track } from '../../stores/trackStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackAdded } from '../../useCases/publishTrackAdded';
 import { refreshToasterPadBindings } from '../../useCases/refreshToasterPadBindings';
 import { setTrackState } from '../../useCases/setTrackState';
+import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPriorBatchActions';
 
 /**
  * Inverse-action handler for `removeTrack`. Replays snapshot data carried in the
@@ -20,7 +23,7 @@ import { setTrackState } from '../../useCases/setTrackState';
  */
 export const handleRestoreTrack = createHandler<'restoreTrack'>({
     canReapplyAfterDivergence: () => true,
-    validate: (action) => restoreStateMatches(action),
+    validate: (action, context) => restoreStateMatches(action, context),
     execute: (alpha) => {
         const {
             trackSnapshot,
@@ -226,8 +229,27 @@ function hasExpectedRoutingState(current: RoutingState, expected: RoutingState):
     });
 }
 
+/**
+ * #3814 order sensitivity: a group's inverse batch replays newest-first, so a
+ * `restoreTrack` whose `removeTrack` member committed LAST validates first,
+ * against the live state that member's reconciliation produced — the plain
+ * live read is then exact. A sibling CAN precede it when a later group member
+ * edited a surviving track's routing (its own inverse — `setTrackOutput` is
+ * self-inverse — runs before this restore): the preflight must read that
+ * sibling's projected effect, or a group the sequential execution would
+ * cleanly replay refuses here on every retry, wedging the group. Siblings
+ * that do not touch the patched track project it unchanged.
+ */
+function projectedRoutingState(track: Track, context: HandlerValidationContext | undefined): RoutingState {
+    if (!context) {
+        return track;
+    }
+    return projectTrackThroughPriorBatchActions(track, context);
+}
+
 function restoreStateMatches(
-    action: Extract<import('#/utils/handlerContract').AppAction, { type: 'restoreTrack' }>
+    action: Extract<AppAction, { type: 'restoreTrack' }>,
+    context?: HandlerValidationContext
 ): boolean {
     const state = getTrackStoreState();
     if (!state || state.tracks.some((track) => track.id === action.payload.trackId)) {
@@ -239,6 +261,9 @@ function restoreStateMatches(
             return true;
         }
         const current = state.tracks.find((track) => track.id === patch.trackId);
-        return current !== undefined && hasExpectedRoutingState(current, patch.expected);
+        if (current === undefined) {
+            return false;
+        }
+        return hasExpectedRoutingState(projectedRoutingState(current, context), patch.expected);
     });
 }

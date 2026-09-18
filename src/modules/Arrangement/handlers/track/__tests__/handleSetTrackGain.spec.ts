@@ -3,8 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleSetTrackGain } from '../handleSetTrackGain';
 
 const mocks = vi.hoisted(() => ({
+    captureAutomationRecordingRollback: vi.fn<() => () => void>(() => vi.fn()),
     setTrackGain: vi.fn(),
     getTrackStoreState: vi.fn(),
+}));
+
+vi.mock('#/modules/Automation/useCases', () => ({
+    captureAutomationRecordingRollback: mocks.captureAutomationRecordingRollback,
 }));
 
 vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackGain', () => ({
@@ -68,7 +73,22 @@ describe('handleSetTrackGain', () => {
                 type: 'setTrackGain',
                 payload: { trackId: 't1', gain: 0.5, expectedGain: 1 },
             });
-            expect(mocks.setTrackGain).toHaveBeenCalledWith('t1', 0.5);
+            expect(mocks.setTrackGain).toHaveBeenCalledWith('t1', 0.5, false, {
+                automationRecordingPolicy: undefined,
+            });
+        });
+
+        it('carries a suppressed recording policy into the write it delegates', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', gain: 1 }] });
+
+            void handleSetTrackGain.execute({
+                type: 'setTrackGain',
+                payload: { trackId: 't1', gain: 0.5, expectedGain: 1, automationRecordingPolicy: 'suppressed' },
+            });
+
+            expect(mocks.setTrackGain).toHaveBeenCalledWith('t1', 0.5, false, {
+                automationRecordingPolicy: 'suppressed',
+            });
         });
 
         it('rejects a gain write when current project truth diverged', () => {
@@ -121,6 +141,98 @@ describe('handleSetTrackGain', () => {
                 payload: { trackId: 't1', gain: 0.5, expectedGain: 1 },
             });
         });
+
+        it('carries a suppressed recording policy into the inverse and redo it describes', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', gain: 1.0 }] });
+
+            const desc = handleSetTrackGain.describe({
+                type: 'setTrackGain',
+                payload: { trackId: 't1', gain: 0.5, expectedGain: 1, automationRecordingPolicy: 'suppressed' },
+            });
+
+            expect(desc.inverseAction).toEqual({
+                type: 'setTrackGain',
+                payload: {
+                    trackId: 't1',
+                    gain: 1.0,
+                    expectedGain: 0.5,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            });
+            expect(desc.redoAction).toEqual({
+                type: 'setTrackGain',
+                payload: {
+                    trackId: 't1',
+                    gain: 0.5,
+                    expectedGain: 1.0,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            });
+        });
+    });
+
+    describe('prepareAbort', () => {
+        it('snapshots the automation-recording state for an ordinary gain write', () => {
+            handleSetTrackGain.prepareAbort?.({
+                type: 'setTrackGain',
+                payload: { trackId: 't1', gain: 0.5, expectedGain: 1 },
+            });
+
+            expect(mocks.captureAutomationRecordingRollback).toHaveBeenCalledOnce();
+        });
+
+        it('leaves the automation-recording maps alone for a suppressed gain write', () => {
+            const rollback = handleSetTrackGain.prepareAbort?.({
+                type: 'setTrackGain',
+                payload: { trackId: 't1', gain: 0.5, expectedGain: 1, automationRecordingPolicy: 'suppressed' },
+            });
+
+            expect(rollback).toBeTypeOf('function');
+            expect(rollback?.()).toBeUndefined();
+            expect(mocks.captureAutomationRecordingRollback).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('validateSessionEntry', () => {
+        it.each([
+            { forward: 'suppressed' as const, name: 'suppressed forward, unsuppressed inverse', replay: undefined },
+            { forward: undefined, name: 'unsuppressed forward, suppressed inverse', replay: 'suppressed' as const },
+        ])('refuses a persisted $name pair', ({ forward, replay }) => {
+            expect(
+                handleSetTrackGain.validateSessionEntry?.({
+                    action: {
+                        type: 'setTrackGain',
+                        payload: { trackId: 't1', gain: 0.5, expectedGain: 1, automationRecordingPolicy: forward },
+                    },
+                    inverseAction: {
+                        type: 'setTrackGain',
+                        payload: { trackId: 't1', gain: 1, expectedGain: 0.5, automationRecordingPolicy: replay },
+                    },
+                })
+            ).toBe(false);
+        });
+
+        it.each([{ policy: 'suppressed' as const }, { policy: undefined }])(
+            'accepts a persisted entry agreeing on $policy across forward, inverse and redo',
+            ({ policy }) => {
+                expect(
+                    handleSetTrackGain.validateSessionEntry?.({
+                        action: {
+                            type: 'setTrackGain',
+                            payload: { trackId: 't1', gain: 0.5, expectedGain: 1, automationRecordingPolicy: policy },
+                        },
+                        inverseAction: {
+                            type: 'setTrackGain',
+                            payload: { trackId: 't1', gain: 1, expectedGain: 0.5, automationRecordingPolicy: policy },
+                        },
+                        redoAction: {
+                            type: 'setTrackGain',
+                            payload: { trackId: 't1', gain: 0.5, expectedGain: 1, automationRecordingPolicy: policy },
+                        },
+                    })
+                ).toBe(true);
+            }
+        );
     });
 
     // `docs/manual/02-concepts.md` lists track gain among the operations that

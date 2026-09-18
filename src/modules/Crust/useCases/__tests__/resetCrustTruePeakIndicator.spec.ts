@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-import { crustStore, defaultCrustState } from '../../stores/crustStore';
+import {
+    crustMeterStore,
+    crustStore,
+    getCrustMeters,
+    getCrustState,
+    setCrustParam,
+    updateCrustMeters,
+} from '../../stores/crustStore';
 import { resetCrustTruePeakIndicator } from '../resetCrustTruePeakIndicator';
 
 const mocks = vi.hoisted(() => ({
@@ -26,9 +33,11 @@ describe('resetCrustTruePeakIndicator', () => {
             trackId: 'track-1',
             deviceId: 'device-1',
         });
-        crustStore.set({
-            ...defaultCrustState,
-            patch: { ...defaultCrustState.patch, name: 'Hot patch', uiLevel: 4 },
+        crustStore.set({});
+        crustMeterStore.set({});
+        setCrustParam('device-1', 'name', 'Hot patch');
+        setCrustParam('device-1', 'uiLevel', 4);
+        updateCrustMeters('device-1', {
             grDb: -5,
             inputDb: -18,
             outputDb: -1,
@@ -41,12 +50,10 @@ describe('resetCrustTruePeakIndicator', () => {
         });
     });
 
-    it('should reset only the true peak indicator fields', () => {
-        resetCrustTruePeakIndicator();
+    it('should reset only the true peak indicator fields of the addressed device', () => {
+        resetCrustTruePeakIndicator('device-1');
 
-        expect(crustStore.value).toEqual({
-            ...defaultCrustState,
-            patch: { ...defaultCrustState.patch, name: 'Hot patch', uiLevel: 4 },
+        expect(getCrustMeters('device-1')).toEqual({
             grDb: -5,
             inputDb: -18,
             outputDb: -1,
@@ -57,12 +64,25 @@ describe('resetCrustTruePeakIndicator', () => {
             truepeakMax: -100,
             truepeakExceeded: false,
         });
+        // The patch — including the per-device disclosure level — is untouched.
+        expect(getCrustState('device-1').patch.name).toBe('Hot patch');
+        expect(getCrustState('device-1').patch.uiLevel).toBe(4);
+    });
+
+    it('leaves another instance’s held true-peak reading alone', () => {
+        updateCrustMeters('device-2', { truepeakMax: -2.2, truepeakExceeded: true });
+
+        resetCrustTruePeakIndicator('device-1');
+
+        expect(getCrustMeters('device-2').truepeakMax).toBe(-2.2);
+        expect(getCrustMeters('device-2').truepeakExceeded).toBe(true);
     });
 
     it('should not throw when Crust state is unavailable', () => {
+        crustMeterStore.set(null);
         crustStore.set(null);
 
-        expect(() => resetCrustTruePeakIndicator()).not.toThrow();
+        expect(() => resetCrustTruePeakIndicator('device-1')).not.toThrow();
     });
 
     // Clearing only the store would be undone by the next meter poll: the
@@ -80,6 +100,6 @@ describe('resetCrustTruePeakIndicator', () => {
         resetCrustTruePeakIndicator('device-1');
 
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
-        expect(crustStore.value?.truepeakMax).toBe(-100);
+        expect(getCrustMeters('device-1').truepeakMax).toBe(-100);
     });
 });

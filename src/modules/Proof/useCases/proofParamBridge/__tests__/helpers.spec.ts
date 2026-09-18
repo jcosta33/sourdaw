@@ -1,10 +1,14 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { bridges, type ProofAudioBridge } from '../helpers';
 
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    updateDeviceParam: vi.fn(),
+    updateDevicePatch: vi.fn(),
+}));
+
 function makeBridge(): ProofAudioBridge {
     return {
-        setParam: () => {},
         reorderModules: () => {},
         resetIntegrated: () => {},
     };

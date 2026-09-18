@@ -2,6 +2,7 @@
 //! Produces metallic, bell-like, and pitched percussive sounds.
 //! One operator with self-feedback + a second modulator operator.
 
+use crate::params::{DECAY, DRIVE, TONE, TUNE};
 use core::f32::consts::TAU;
 
 const DEFAULT_BASE_FREQ: f32 = 200.0;
@@ -133,20 +134,20 @@ impl FmPercEngine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "decay" => {
+            DECAY => {
                 // Normalize 0-1 to amp decay range 0.02-2.0s
                 let v = value.clamp(0.0, 1.0);
                 let decay_s = 0.02 + v * 1.98;
                 self.amp_decay_coeff = (-1.0 / (decay_s * 44100.0)).exp();
             }
-            "tune" => {
+            TUNE => {
                 self.tune_ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0);
             }
-            "tone" => {
+            TONE => {
                 // Map 0-1 to mod_amount (FM brightness)
                 self.mod_amount = value.clamp(0.0, 1.0) * 8.0;
             }
-            "drive" => self.drive = value.clamp(0.0, 10.0),
+            DRIVE => self.drive = value.clamp(0.0, 10.0),
             "base_freq" | "freq" => self.base_freq = value.clamp(40.0, 4000.0),
             "mod_ratio" | "ratio" => self.mod_ratio = value.clamp(0.5, 16.0),
             "mod_amount" | "amount" => self.mod_amount = value.clamp(0.0, 8.0),

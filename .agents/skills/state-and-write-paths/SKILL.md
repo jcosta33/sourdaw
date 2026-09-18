@@ -72,6 +72,27 @@ Never persist a derivative as truth. Selectors stay read-only — no write side 
 
 **Why:** stored derivatives drift from source truth and become a second model.
 
+### Command entry must prove normalized state reaches every authority
+
+For a normalized project-state command, test the authoritative terminal projection through the public command entry: raw document, owning store projection, visible control state, and engine projection must agree on the same committed value. #4082 (commit `418906`, merged as `dcb995a`) showed that a Loop control could update a visible flag while leaving an invalid loop region that the document decoder rejected. A direct use-case or static-prop fixture cannot prove this agreement.
+
+### Identity-scoped replay must prove owner and empty-state recovery
+
+Attack undo and redo after replacing an aggregate with a new owner that reuses the same track and child identities, and
+exercise a forward write whose prior state is empty. Persistence evidence must create history through the real producer,
+persist and reload the document, hydrate that saved history, then replay it; an injected undo entry proves neither the
+producer nor the saved contract.
+
+### Grouped inverse capture must read the owning action prefix
+
+`executeAppActionBatch` describes every member before any member executes. When a handler's description captures an
+inverse from project state, project the earlier siblings through the owning domain before reading that state, then use
+the same projection for batch validation. PR #4083 introduced guarded take-selection replay with green single-handler
+coverage but captured each grouped inverse from the same live pre-batch selection; PR #4073 added projected validation
+for heterogeneous grouped replay without closing that description-time capture route. Prove prefix-dependent capture
+through real grouped undo and redo, inspecting both raw CRDT authority and the owning store projection; independently
+green handler tests do not establish sibling-state capture.
+
 ### 8. Async fetch/cache is not editable business state
 
 Edit project truth through domain writes, then invalidate or refetch. The query cache is never a mutable document.
@@ -87,12 +108,29 @@ over stale disk PCM. Review every acquisition route with a genuine durability re
 change the source after retention commits and prove exact-token cleanup either removes the row or reports retained
 ownership explicitly.
 
+### Async cache admission must stay release-visible before every await
+
+Review the path from request admission through every await before cache registration. Release or cancel while transfer
+data is pending, then admit a fresh request and prove late cleanup affects only its exact former entry. Tests must
+observe release-visible ownership before provider creation begins.
+
 ## Prepared settlement review crosses module instances
 
-Use a strongest-tier integrity review with two module instances sharing IndexedDB and the named storage lock. Reuse
-one buffer ID and lease with different PCM and persistence revisions, then exercise both promotion and discard over
-temporary and already-settled durable owners. Local runtime tokens and lease equality do not establish persistent PCM
-identity; the observed coverage gap was the absence of this cross-instance proof.
+Use a strongest-tier integrity review with two module instances sharing IndexedDB and the named storage lock. Test
+known durable, hydrated, and evicted PCM, and attack fresh durability checks separately from acquisition through an
+older receipt. Reuse one buffer ID and lease with different PCM and persistence revisions, then exercise promotion and
+discard over temporary and already-settled durable owners. Local object identity, runtime tokens, lease equality, and
+scope locks do not establish persistent PCM identity; the source map introduced by #3877 and receipt authentication
+added by #4051 each require this cross-instance proof. Compose eviction with an explicit retained project reset and
+hydration in one attack: isolated eviction and hydration cases do not prove that the retained transition preserves an
+identity witness when no decoded runtime remains.
+
+Treat any pre-commit cache invalidation as an identity transition, not cleanup. A cold module can authenticate an exact
+prepared row from its durable revision, stage deletion and then observe an aborted transaction; the unchanged row must
+remain readable and recoverable in that same module. Carry explicit preserved, read-origin and admitted-commit
+witnesses through invalidation, and attack each with a later source replacement before accepting retry or recovery.
+Capture a prepared release's publication authority at mutation admission, before it waits for the storage lock; recapturing
+inside the queued storage phase can authenticate an intervening ordinary replacement as the older prepared commit.
 
 ## References
 

@@ -1,7 +1,8 @@
 import { createInvalidTempoError } from '../errors/InvalidTempoError';
 import { createTempoRampWriteError } from '../errors/TempoRampWriteError';
+import { MAX_TEMPO_MAP_TEMPO, MIN_TEMPO_MAP_TEMPO } from '../models/TempoMap';
 import { updateTransportState } from '../repositories/transport/updateTransportState';
-import { MIN_TEMPO_MAP_TEMPO, MAX_TEMPO_MAP_TEMPO, tempoMapStore } from '../stores/tempoMapStore';
+import { tempoMapStore } from '../stores/tempoMapStore';
 import { MIN_TEMPO, MAX_TEMPO } from '../stores/transportStore';
 
 import { getTempoWriteTarget } from './transportQueries/getTempoWriteTarget';

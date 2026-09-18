@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     resolveEligibleDeviceWriteTarget: vi.fn(),
     getToasterControls: vi.fn(),
     getTrackStrip: vi.fn(),
+    writeNativeBuiltinParameters: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
@@ -20,6 +21,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getToasterDeviceControls: mocks.getToasterDeviceControls,
     getTrackStrip: mocks.getTrackStrip,
+    writeNativeBuiltinParameters: mocks.writeNativeBuiltinParameters,
 }));
 
 vi.mock('../getToasterControls', () => ({ getToasterControls: mocks.getToasterControls }));

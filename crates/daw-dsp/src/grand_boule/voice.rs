@@ -79,7 +79,6 @@ pub struct PianoVoiceStart {
     pub pitch_ratio: f32,
     pub stiffness_scale: f32,
     pub mass_scale: f32,
-    pub attack_length: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -122,9 +121,6 @@ pub struct PianoVoice {
     key: u32,
     base_bandwidth: f32,
     extra_damping_hz: f32,
-    attack_key: u32,
-    attack_position: u32,
-    attack_length: u32,
     /// Output gain. On note-off we ramp this down to zero over ~150 ms.
     amplitude: f32,
     /// Per-sample multiplier applied during the release phase.
@@ -176,9 +172,6 @@ impl PianoVoice {
             key: 1,
             base_bandwidth: 0.0,
             extra_damping_hz: 0.0,
-            attack_key: 0,
-            attack_position: 0,
-            attack_length: 0,
             amplitude: 1.0,
             release_coefficient: 1.0,
             decay_envelope: 0.0,
@@ -231,32 +224,6 @@ impl PianoVoice {
         self.amplitude
     }
 
-    /// Attempt to arm the hybrid sampled-attack playhead for this voice.
-    /// `clip_length` in samples; a length of 0 disables sampled attack.
-    pub fn arm_attack(&mut self, key: u32, clip_length: usize) {
-        self.attack_key = key;
-        self.attack_position = 0;
-        self.attack_length = clip_length.min(u32::MAX as usize) as u32;
-    }
-
-    /// Current sampled-attack playhead state: (key, position, length).
-    /// Returns `None` if no clip is loaded / playback has finished.
-    pub fn attack_playhead(&self) -> Option<(u32, u32, u32)> {
-        if self.attack_length == 0 || self.attack_position >= self.attack_length {
-            return None;
-        }
-        Some((self.attack_key, self.attack_position, self.attack_length))
-    }
-
-    /// Advance the attack playhead by one sample. Called by the engine
-    /// after it has read the sample for the current frame.
-    #[inline]
-    pub fn advance_attack(&mut self) {
-        if self.attack_length > 0 && self.attack_position < self.attack_length {
-            self.attack_position += 1;
-        }
-    }
-
     /// Fade this displaced voice to silence over one millisecond.
     ///
     /// The engine moves the voice into a preallocated tail slot before calling
@@ -303,7 +270,6 @@ impl PianoVoice {
             pitch_ratio,
             stiffness_scale,
             mass_scale,
-            attack_length,
         } = start;
         self.midi_note = midi_note;
         self.channel = channel;
@@ -378,9 +344,6 @@ impl PianoVoice {
         // assembly adds its separate project-authored prompt and aftersound
         // decay bandwidths from each detuned string frequency.
         let base_bandwidth = 0.05 + 0.0002 * fundamental;
-        self.attack_key = 0;
-        self.attack_position = 0;
-        self.attack_length = 0;
         self.fundamental_hz = fundamental;
         self.nominal_fundamental_hz = nominal_fundamental;
         self.key = key;
@@ -403,7 +366,6 @@ impl PianoVoice {
         // Strike velocity scales with MIDI velocity. A velocity of 1.0 maps to
         // ~4 m/s at the top of the project velocity range.
         self.hammer.strike(0.8 + 4.0 * self.velocity);
-        self.arm_attack(key, attack_length);
     }
 
     /// Begin the release phase. The voice keeps ringing but its amplitude
@@ -460,8 +422,6 @@ impl PianoVoice {
         self.decay_envelope = 0.0;
         self.decay_peak = 0.0;
         self.age_samples = 0;
-        self.attack_position = 0;
-        self.attack_length = 0;
         self.last_string_displacement = 0.0;
         self.hammer = HammerState::idle();
         self.strings.reset();
@@ -673,7 +633,6 @@ mod tests {
             pitch_ratio: 1.0,
             stiffness_scale: 1.0,
             mass_scale: 1.0,
-            attack_length: 0,
         });
 
         assert_eq!(voice.quality(), VoiceQuality::High);
@@ -694,7 +653,6 @@ mod tests {
             pitch_ratio: 1.0,
             stiffness_scale: 1.0,
             mass_scale: 1.0,
-            attack_length: 0,
         });
         assert_eq!(voice.quality(), VoiceQuality::High);
 
@@ -732,7 +690,6 @@ mod tests {
             pitch_ratio: 1.0,
             stiffness_scale: 1.0,
             mass_scale: 1.0,
-            attack_length: 0,
         });
 
         for _ in 0..(48_000 * 5) {

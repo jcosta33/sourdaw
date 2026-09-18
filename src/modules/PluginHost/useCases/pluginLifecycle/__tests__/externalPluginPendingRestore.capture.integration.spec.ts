@@ -68,7 +68,6 @@ const DEVICE_ID = 'device-pending-restore';
 const SAVE_INSTANCE_ID = 'instance-pending-restore-save';
 const EXPORT_INSTANCE_ID = 'instance-pending-restore-export';
 const REVOKED_INSTANCE_ID = 'instance-final-native-revocation';
-const ENGINE_SAMPLE_RATE = 44_100;
 const RESTORE_ERROR = 'Error: state chunk rejected during retry';
 
 const bytesOf = (value: string): Uint8Array => new TextEncoder().encode(value);
@@ -225,7 +224,6 @@ function activateInstance(instanceId: string, stateChunk: string): Promise<unkno
         pluginId: 'serum',
         instanceId,
         stateChunk,
-        engineSampleRate: ENGINE_SAMPLE_RATE,
     });
 }
 

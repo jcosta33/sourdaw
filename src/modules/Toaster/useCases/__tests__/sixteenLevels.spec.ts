@@ -32,6 +32,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getTrackStrip: vi.fn(),
+    writeNativeBuiltinParameters: vi.fn(),
 }));
 
 vi.mock('../../stores/toasterStore', () => ({

@@ -1,6 +1,7 @@
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type ChatMessage } from '../../../models/Chat';
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../../models/GetPendingEffectRecoveryPolicy';
 import * as retainedReviewProjection from '../../../useCases/selectRetainedSectionRenderManualReviews';
 import { ChatPanel } from '../ChatPanel';
@@ -28,6 +29,7 @@ vi.mock('#/infra/store/useStore', () => ({
 
 vi.mock('#/modules/AiRuntime/stores/chatStore', () => ({
     chatStore: { kind: 'chat' },
+    appendChatMessage: vi.fn(),
     clearChatMessages: vi.fn(),
     toggleReasoning: vi.fn(),
     setChatMode: vi.fn(),
@@ -101,6 +103,7 @@ vi.mock('../../components/ChatComposer', () => ({
         onExecutionModeChange,
         isGenerating,
         isLlmAvailable,
+        inputValue,
     }: {
         executionMode?: string;
         onSend: () => void;
@@ -109,6 +112,7 @@ vi.mock('../../components/ChatComposer', () => ({
         onExecutionModeChange?: (mode: string) => void;
         isGenerating: boolean;
         isLlmAvailable: boolean;
+        inputValue: string;
     }) => (
         <div data-testid="chat-composer">
             <label>
@@ -123,7 +127,7 @@ vi.mock('../../components/ChatComposer', () => ({
             </label>
             <label>
                 Chat message input
-                <input onChange={(event) => onChange(event.target.value)} />
+                <input value={inputValue} onChange={(event) => onChange(event.target.value)} />
             </label>
             <button onClick={onSend} disabled={!isLlmAvailable}>
                 Send
@@ -142,6 +146,7 @@ const { confirmPendingChatActions } = await import('../../../useCases/confirmPen
 const { cancelPendingChatActions } = await import('../../../useCases/cancelPendingChatActions');
 const { recoverAgentRunPendingEffects } = await import('../../../useCases/recoverAgentRunPendingEffects');
 const { agentRunStore } = await import('#/modules/AiRuntime/stores/agentRunStore');
+const { appendChatMessage } = await import('#/modules/AiRuntime/stores/chatStore');
 const { agentSectionRenderArtifactStore } = await import('#/modules/AudioRendering/stores');
 const { capabilityStore, isWebGpuAvailable } = await import('#/modules/BrowserAi/stores');
 const { toggleChat } = await import('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat');
@@ -218,6 +223,7 @@ function createRetainedReview(input: {
                     frameCount: 48_000,
                     channelCount: 2,
                     byteSize: 384_000,
+                    contentAddress: 'content-address-fixture',
                     warnings: [],
                     buffer: input.buffer,
                 },
@@ -245,6 +251,8 @@ describe('ChatPanel', () => {
             return chatState;
         });
         (agentRunControls.listDecisions as ReturnType<typeof vi.fn>).mockReturnValue([]);
+        // Production sendChatMessage always returns a promise; default submissions to acceptance.
+        (sendChatMessage as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
         (agentRunControls.resumeDecision as ReturnType<typeof vi.fn>).mockResolvedValue({
             status: 'resumed',
             sourceRunId: 'decision-run',
@@ -326,7 +334,7 @@ describe('ChatPanel', () => {
         expect(screen.getByTestId('chat-composer')).toBeInTheDocument();
     });
 
-    it('routes the selected execution mode into the agent interaction', () => {
+    it('routes the selected execution mode into the agent interaction', async () => {
         render(<ChatPanel />);
 
         fireEvent.change(screen.getByLabelText('Agent execution mode'), { target: { value: 'plan' } });
@@ -334,8 +342,76 @@ describe('ChatPanel', () => {
             target: { value: 'Outline the chorus' },
         });
         fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+        await act(async () => {});
 
         expect(sendChatMessage).toHaveBeenCalledWith('Outline the chorus', { mode: 'plan' });
+    });
+
+    it('restores a rejected submission in the composer and announces the failure in the conversation', async () => {
+        const appended: ChatMessage[] = [];
+        (appendChatMessage as ReturnType<typeof vi.fn>).mockImplementation((message: ChatMessage) => {
+            appended.push(message);
+        });
+        (sendChatMessage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Hosted AI is not configured.'));
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store: unknown) => {
+            if (store === agentRunStore) {
+                return { schemaVersion: 1, runs: [] };
+            }
+            if (store === capabilityStore) {
+                return useRealStore(capabilityStore);
+            }
+            if (store === agentSectionRenderArtifactStore) {
+                return useRealStore(agentSectionRenderArtifactStore);
+            }
+            return { ...chatState, messages: [...appended] };
+        });
+
+        render(<ChatPanel />);
+
+        fireEvent.change(screen.getByLabelText('Chat message input'), {
+            target: { value: 'Return the drums to the intro fill' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+        expect(sendChatMessage).toHaveBeenCalledWith('Return the drums to the intro fill', { mode: 'explain' });
+
+        await act(async () => {});
+
+        expect(screen.getByText('Hosted AI is not configured.')).toBeInTheDocument();
+        expect(screen.getByText('Assistant')).toBeInTheDocument();
+        expect(appendChatMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                role: 'assistant',
+                content: 'Hosted AI is not configured.',
+                error: 'Hosted AI is not configured.',
+            })
+        );
+        expect(screen.getByLabelText('Chat message input')).toHaveValue('Return the drums to the intro fill');
+    });
+
+    it('clears the composer for an accepted submission and never announces a failure', async () => {
+        let resolveSend: (() => void) | null = null;
+        const pendingSend = new Promise<void>((resolve) => {
+            resolveSend = resolve;
+        });
+        (sendChatMessage as ReturnType<typeof vi.fn>).mockReturnValueOnce(pendingSend);
+
+        render(<ChatPanel />);
+
+        fireEvent.change(screen.getByLabelText('Chat message input'), {
+            target: { value: 'Summarize the mix balance' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+        expect(sendChatMessage).toHaveBeenCalledWith('Summarize the mix balance', { mode: 'explain' });
+        expect(screen.getByLabelText('Chat message input')).toHaveValue('');
+
+        await act(async () => {
+            resolveSend?.();
+        });
+
+        expect(screen.getByLabelText('Chat message input')).toHaveValue('');
+        expect(appendChatMessage).not.toHaveBeenCalled();
     });
 
     it('should let the user confirm or cancel pending prompt actions', () => {

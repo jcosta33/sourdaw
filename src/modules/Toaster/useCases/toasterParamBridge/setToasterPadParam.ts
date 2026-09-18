@@ -4,6 +4,8 @@ import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 import { toPadStoreUpdate } from '../../models/PadStoreUpdate';
 import { type PadState } from '../../models/ToasterKit';
 import { updatePad } from '../../stores/toasterStore';
+import { toasterPadEngineParamName } from '../toasterPadEngineParamName';
+import { writeToasterParamsNatively } from '../writeToasterParamsNatively';
 
 import { findReadyToasterControlsOnStrip } from './findReadyToasterControlsOnStrip';
 import { padLatest, padPending } from './toasterPadParamQueue';
@@ -29,6 +31,20 @@ function flushPadParam(cacheKey: string): void {
     if (toasterControls) {
         toasterControls.setPadParam(entry.pad, entry.name, entry.value);
     }
+    // The worklet translates the pad field at its own door; the native body has
+    // no such door, so the engine's spelling is resolved here.
+    writeToasterParamsNatively({
+        trackId: target.trackId,
+        deviceId: entry.deviceId,
+        messages: [
+            {
+                type: 'padParam',
+                pad: entry.pad,
+                name: toasterPadEngineParamName(entry.name),
+                value: entry.value,
+            },
+        ],
+    });
 }
 
 export function setToasterPadParam(deviceId: string, padIndex: number, key: keyof PadState, value: number): void {

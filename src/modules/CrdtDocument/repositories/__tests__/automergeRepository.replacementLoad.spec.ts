@@ -4,9 +4,10 @@ import { TransactionalPersistence } from '../../testing/transactionalPersistence
 import { compactProject } from '../../useCases/compactProject';
 import { loadCrdtProject } from '../../useCases/loadCrdtProject';
 import { persistCrdtProject } from '../../useCases/persistCrdtProject';
-import { runCrdtPersistenceOperation } from '../../useCases/runCrdtPersistenceOperation';
+import { runCrdtPersistenceLoad } from '../../useCases/runCrdtPersistenceLoad';
 import { automergeRepository } from '../automergeRepository';
 import { loadAllFromIdb } from '../crdtPersistence/loadAllFromIdb';
+import { EMPTY_PERSISTENCE_AUTHORITY } from '../crdtPersistence/persistenceAuthorityModel';
 
 import {
     completePersistenceWritesUntilSettled,
@@ -28,6 +29,27 @@ vi.mock('../crdtPersistence/helpers', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../crdtPersistence/helpers')>()),
     openDatabase: mocks.openDatabase,
 }));
+
+/**
+ * The queue state an ordinary editing session sits in: a project loaded, its
+ * durable authority adopted, and the root already a base record incrementals
+ * can extend. A queue with a replacement still pending writes a full bundle
+ * instead.
+ *
+ * The authority is the empty one because this fixture's store starts empty, so
+ * the first save's compare-and-swap claims exactly the revision that is there.
+ */
+async function loadRootOnlyProject(): Promise<void> {
+    await runCrdtPersistenceLoad(() =>
+        Promise.resolve({
+            loaded: true,
+            snapshot: {
+                authority: EMPTY_PERSISTENCE_AUTHORITY,
+                bundle: new Map([['root', new Uint8Array([1])]]),
+            },
+        })
+    );
+}
 
 /**
  * Split out of automergeRepository.worker.spec.ts: there, per-test
@@ -54,7 +76,7 @@ describe('AutomergeRepository replacement load authority', () => {
         mocks.openDatabase.mockImplementation(() => Promise.resolve(persistence.database));
 
         automergeRepository.reset();
-        await runCrdtPersistenceOperation('reset');
+        await loadRootOnlyProject();
         automergeRepository.createProject('project');
         const baseCompaction = compactProject();
         const baseTransaction = await persistence.waitForTransaction('readwrite', 1);

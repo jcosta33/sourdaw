@@ -28,6 +28,7 @@ import {
     type CommittedEffectFailureResult,
 } from './confirmedBatchOutcomeSupport';
 import { pendingActionResourceSettlement } from './pendingActionResourceSettlement';
+import { recordOwnedRenderReceipt } from './recordOwnedRenderReceipt';
 
 type ExecuteConfirmedCommandBatchInput = {
     confirmation: PendingAppActionConfirmation;
@@ -266,6 +267,14 @@ export async function executeConfirmedCommandBatch(
     // on its first in-transaction call and retains it across handler awaits.
     const isProjectMutationAuthorized = captureProjectMutationAuthorization();
     let renderJobAttempts = 0;
+    const workOwner = trackedWorkLease
+        ? {
+              runId: trackedWorkLease.runId,
+              workId: trackedWorkLease.workId,
+              leaseId: trackedWorkLease.leaseId,
+              cancellationGeneration: trackedWorkLease.cancellationGeneration,
+          }
+        : null;
     let committedProjectRevision: string | null = null;
     let finalizationEvidenceFailure: string | null = null;
     let canRebindSectionRenderArtifacts = false;
@@ -274,9 +283,13 @@ export async function executeConfirmedCommandBatch(
             ...group,
             signal: aborter.signal,
             source: 'prompt' as const,
+            workOwner,
             onDeferredEffectAttempt: (attempt: HandlerDeferredEffectAttempt) => {
-                if (attempt.operation === 'renderProjectSections') {
+                if (attempt.kind === 'work-attempt' && attempt.operation === 'renderProjectSections') {
                     renderJobAttempts += 1;
+                }
+                if (attempt.kind === 'render-receipt') {
+                    recordOwnedRenderReceipt(confirmation.runId, workOwner, attempt.receipt);
                 }
             },
             onProjectCommitCheckpoint: ({ receipt }: { receipt: CommandVerifiedBatchReceipt }) => {

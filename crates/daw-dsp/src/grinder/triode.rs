@@ -303,6 +303,15 @@ impl Preamp {
         }
     }
 
+    pub fn latency_samples(&self) -> f32 {
+        let num_stages = match self.channel {
+            0 => 1,
+            1 => 2,
+            _ => 3,
+        };
+        num_stages as f32 * StageOversampler2x::GROUP_DELAY_SAMPLES
+    }
+
     pub fn process_sample(&mut self, input: f32) -> f32 {
         let gain_scale = self.gain / 10.0;
         let (
@@ -872,5 +881,19 @@ mod tests {
             average_diff > 5.0e-3,
             "tube bias should audibly change the preamp response, got diff {average_diff}"
         );
+    }
+
+    #[test]
+    fn preamp_latency_tracks_channel_stage_count() {
+        let mut preamp = Preamp::new(48_000.0);
+
+        preamp.set_param("channel", 0.0);
+        assert_eq!(preamp.latency_samples(), 6.5);
+
+        preamp.set_param("channel", 1.0);
+        assert_eq!(preamp.latency_samples(), 13.0);
+
+        preamp.set_param("channel", 2.0);
+        assert_eq!(preamp.latency_samples(), 19.5);
     }
 }

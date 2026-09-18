@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 
 import { type CrustPatch } from '../../../models/CrustPatch';
-import { crustStore, defaultCrustState, setCrustParam } from '../../../stores/crustStore';
+import { crustMeterStore, crustStore, getCrustState, setCrustParam } from '../../../stores/crustStore';
 import { paramBatcher } from '../helpers';
 import { setCrustParamWithAudio } from '../setCrustParamWithAudio';
 
@@ -44,7 +44,8 @@ describe('setCrustParamWithAudio style → algorithm store sync', () => {
             trackId: TRACK_ID,
             deviceId: DEVICE_ID,
         });
-        crustStore.set({ ...defaultCrustState });
+        crustStore.set({});
+        crustMeterStore.set({});
         paramBatcher.cancelAll();
         rafQueue = [];
         vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback): number => {
@@ -58,7 +59,8 @@ describe('setCrustParamWithAudio style → algorithm store sync', () => {
 
     afterEach(() => {
         paramBatcher.cancelAll();
-        crustStore.set({ ...defaultCrustState });
+        crustStore.set({});
+        crustMeterStore.set({});
         vi.unstubAllGlobals();
     });
 
@@ -71,35 +73,48 @@ describe('setCrustParamWithAudio style → algorithm store sync', () => {
     }
 
     it.each([
-        ['transparent', 'transparent'],
-        ['punchy', 'punchy'],
-        ['loud', 'wall'],
-    ] as const)('should map style %s to store algorithm %s without a second engine flush', (style, algorithm) => {
-        setCrustParam('algorithm', 'aggressive');
-        expect(crustStore.value?.patch.algorithm).toBe('aggressive');
+        ['transparent', 'transparent', 0, 0],
+        ['punchy', 'punchy', 1, 1],
+        ['loud', 'wall', 2, 7],
+    ] as const)(
+        'should map style %s to store algorithm %s and persist style then algorithm from one flush',
+        (style, algorithm, styleIndex, algorithmIndex) => {
+            setCrustParam(DEVICE_ID, 'algorithm', 'aggressive');
+            expect(getCrustState(DEVICE_ID).patch.algorithm).toBe('aggressive');
 
-        setCrustParamWithAudio(DEVICE_ID, 'style', style);
+            setCrustParamWithAudio(DEVICE_ID, 'style', style);
 
-        expect(crustStore.value?.patch.style).toBe(style);
-        expect(crustStore.value?.patch.algorithm).toBe(algorithm);
-        expect(paramBatcher.pendingSize).toBe(1);
+            expect(getCrustState(DEVICE_ID).patch.style).toBe(style);
+            expect(getCrustState(DEVICE_ID).patch.algorithm).toBe(algorithm);
+            expect(paramBatcher.pendingSize).toBe(1);
 
-        runPendingRaf();
+            // nothing is persisted before the flush, so the record's first insertion is decided by the flush order, not by a synchronous write.
+            expect(mocks.persistDeviceParam).not.toHaveBeenCalled();
 
-        expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
-        expect(mocks.updateDeviceParam).toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, 'style', expect.any(Number));
-        expect(mocks.updateDeviceParam).not.toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, 'algorithm', expect.any(Number));
-        expect(mocks.persistDeviceParam).toHaveBeenCalledTimes(1);
-        expect(mocks.persistDeviceParam).toHaveBeenCalledWith(DEVICE_ID, 'style', expect.any(Number));
-    });
+            runPendingRaf();
+
+            expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+            expect(mocks.updateDeviceParam).toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, 'style', styleIndex);
+            expect(mocks.updateDeviceParam).not.toHaveBeenCalledWith(
+                TRACK_ID,
+                DEVICE_ID,
+                'algorithm',
+                expect.any(Number)
+            );
+            expect(mocks.persistDeviceParam.mock.calls).toEqual([
+                [DEVICE_ID, 'style', styleIndex],
+                [DEVICE_ID, 'algorithm', algorithmIndex],
+            ]);
+        }
+    );
 
     it('should skip both store writes for an unknown style', () => {
         const corruptStyle = 'brutal' as CrustPatch['style'];
 
         setCrustParamWithAudio(DEVICE_ID, 'style', corruptStyle);
 
-        expect(crustStore.value?.patch.style).toBe('transparent');
-        expect(crustStore.value?.patch.algorithm).toBe('transparent');
+        expect(getCrustState(DEVICE_ID).patch.style).toBe('transparent');
+        expect(getCrustState(DEVICE_ID).patch.algorithm).toBe('transparent');
         expect(paramBatcher.pendingSize).toBe(0);
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
         expect(mocks.persistDeviceParam).not.toHaveBeenCalled();

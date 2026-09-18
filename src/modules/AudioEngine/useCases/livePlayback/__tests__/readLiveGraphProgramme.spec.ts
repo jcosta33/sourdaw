@@ -9,11 +9,16 @@
  * natively over material the native engine never received.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type Track } from '#/modules/Arrangement/stores';
 
+vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
+    getCompensationDelay: vi.fn(() => 0),
+}));
+
 import { offlinePpqEndpointProjectorState } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import { getCompensationDelay } from '../../latencyCompensation/compensation/getCompensationDelay';
 import { readLiveGraphProgramme } from '../readLiveGraphProgramme';
 
 const SAMPLE_RATE = 48_000;
@@ -73,9 +78,27 @@ function midiClip(): Track['clips'][number] {
     };
 }
 
+/** The projector the composition root injects, at a flat 120 BPM. */
+function configureProjector(): void {
+    offlinePpqEndpointProjectorState.project = ({ startPpq, endPpq, sampleRate }) => {
+        const startSeconds = startPpq * 0.5;
+        const endSeconds = endPpq * 0.5;
+        return {
+            startSamples: startSeconds * sampleRate,
+            endSamples: endSeconds * sampleRate,
+            durationSamples: (endSeconds - startSeconds) * sampleRate,
+            startSeconds,
+            endSeconds,
+            durationSeconds: endSeconds - startSeconds,
+        };
+    };
+    offlinePpqEndpointProjectorState.resolveTempoAtBeat = () => 120;
+}
+
 beforeEach(() => {
     offlinePpqEndpointProjectorState.project = null;
     offlinePpqEndpointProjectorState.resolveTempoAtBeat = null;
+    vi.mocked(getCompensationDelay).mockClear();
 });
 
 afterEach(() => {
@@ -93,5 +116,38 @@ describe('readLiveGraphProgramme', () => {
 
         expect(programme.playbacksByStripId.size).toBe(0);
         expect(programme.webVoicedStripIds.has('midi-1')).toBe(true);
+    });
+
+    // The engine-hosted set is what stops a device the native engine
+    // compensates itself from being counted twice, and this reader is where a
+    // session states it. Read at the compensation boundary rather than off a
+    // figure, because the correction is invisible in a project holding no such
+    // device.
+    it('reads its strips against the engine-hosted set the session names', () => {
+        configureProjector();
+        const hosted: ReadonlySet<string> = new Set(['audio-1']);
+
+        readLiveGraphProgramme({
+            stripTracks: [createTrack({ id: 'audio-1', kind: 'audio' })],
+            attachedInstanceIds: new Set(),
+            sampleRate: SAMPLE_RATE,
+            engineHostedStripIds: hosted,
+        });
+
+        expect(vi.mocked(getCompensationDelay).mock.calls).toEqual([['audio-1', undefined, hosted]]);
+    });
+
+    // A session naming none is the web-carried case, where every device counts
+    // and a gated worklet's own reported figure is what aligns the strip.
+    it('reads its strips against no hosted set when the session names none', () => {
+        configureProjector();
+
+        readLiveGraphProgramme({
+            stripTracks: [createTrack({ id: 'audio-1', kind: 'audio' })],
+            attachedInstanceIds: new Set(),
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(vi.mocked(getCompensationDelay).mock.calls).toEqual([['audio-1', undefined, undefined]]);
     });
 });

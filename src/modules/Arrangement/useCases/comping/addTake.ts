@@ -1,25 +1,38 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { createTake, type TakeLane } from '../../models/TakeLane';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 
-import { createTake } from '../../models/TakeLane';
-import { takeLaneStore, type TakeLaneStoreState } from '../../stores/takeLaneStore';
+import { pushTargetedTakeLaneUndoEntry } from './takeLaneUndo';
 
-export function addTake(trackId: string, clipId: string, name: string, startBeat: number, endBeat: number): void {
+export function addTake(
+    trackId: string,
+    clipId: string,
+    name: string,
+    startBeat: number,
+    endBeat: number,
+    sourceOffsetBeats?: number
+): void {
     const state = takeLaneStore.value;
     if (!state) {
         return;
     }
+    const lane = state.lanes.find((l) => l.trackId === trackId);
+    if (!lane) {
+        return;
+    }
 
-    const take = createTake(clipId, name, startBeat, endBeat);
+    const take = createTake(clipId, name, startBeat, endBeat, sourceOffsetBeats);
+    const nextLane: TakeLane = { ...lane, takes: [...lane.takes, take] };
+    takeLaneStore.set({
+        lanes: state.lanes.map((l) => (l.trackId === trackId ? nextLane : l)),
+    });
 
-    const previous: TakeLaneStoreState = state;
-    const next: TakeLaneStoreState = {
-        lanes: state.lanes.map((l) => (l.trackId === trackId ? { ...l, takes: [...l.takes, take] } : l)),
-    };
-    takeLaneStore.set(next);
-
-    pushUndoEntry(
-        `Add take: ${name}`,
-        () => takeLaneStore.set(previous),
-        () => takeLaneStore.set(next)
-    );
+    // The entry captures only this lane's takes (#4081): replaying a
+    // whole-store snapshot on undo erased every later edit to any lane.
+    pushTargetedTakeLaneUndoEntry({
+        kind: 'facet',
+        label: `Add take: ${name}`,
+        laneId: lane.id,
+        before: { kind: 'takes', value: lane.takes },
+        after: { kind: 'takes', value: nextLane.takes },
+    });
 }

@@ -176,4 +176,58 @@ describe('syncKneadToEngine', () => {
 
         expect(syncKneadState).not.toHaveBeenCalled();
     });
+
+    /**
+     * The audio scheduler reads source content from the clip's audio offset,
+     * while the Knead worklet picks blobs by subtracting this anchor from song
+     * time. Shipping the raw clip start made a slipped clip sound source 1 s
+     * while Knead edited source 0 — so the anchor is pulled back by the offset
+     * and both sides land on the same source position (issue #3717).
+     */
+    it('pulls the anchor back by the clip audio offset at the start beat tempo', () => {
+        // 120 BPM: 2 offset beats are 1 s of source.
+        setTrack({
+            ...trackWithKnead(),
+            clips: [{ id: 'clip-1', startBeat: 0, endBeat: 4, audioOffsetBeats: 2 }],
+        } as unknown as Track);
+
+        // Clip starts at song second 0; the scheduler seeks source second 1.
+        expect(lastPushedStartSeconds()).toBeCloseTo(-1, 12);
+    });
+
+    it('converts the offset at the flat tempo at the clip start, not the integrated map', () => {
+        // Clip starts at beat 12, inside the 60 BPM region: integrated start
+        // is 8.0 s. Two offset beats at the *flat* 60 BPM are 2 s — integrating
+        // them through the map would count the 120 BPM span they never
+        // crossed, the arithmetic the audio projector deliberately avoids.
+        tempoMapStore.set({ changes: TEMPO_CHANGES });
+        setTrack({
+            ...trackWithKnead(),
+            clips: [{ id: 'clip-1', startBeat: 12, endBeat: 16, audioOffsetBeats: 2 }],
+        } as unknown as Track);
+
+        expect(lastPushedStartSeconds()).toBeCloseTo(6, 12);
+    });
+
+    it('moves the anchor the other way for a negative offset pre-roll', () => {
+        // -2 beats at 120 BPM: the clip's head sits before its source, the
+        // anchor opens by 1 s, and the negative lookup window matches no blob —
+        // the span in which nothing sounds.
+        setTrack({
+            ...trackWithKnead(),
+            clips: [{ id: 'clip-1', startBeat: 0, endBeat: 4, audioOffsetBeats: -2 }],
+        } as unknown as Track);
+
+        expect(lastPushedStartSeconds()).toBeCloseTo(1, 12);
+    });
+
+    it('treats a clip with no audio offset as an unshifted anchor', () => {
+        setTrack({
+            ...trackWithKnead(),
+            clips: [{ id: 'clip-1', startBeat: 2, endBeat: 6 }],
+        } as unknown as Track);
+
+        // 2 beats at 120 BPM, no offset: the anchor is the plain clip start.
+        expect(lastPushedStartSeconds()).toBeCloseTo(1, 12);
+    });
 });

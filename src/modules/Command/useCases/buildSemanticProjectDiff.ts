@@ -3,7 +3,14 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type CommandBatchRange, type VersionedCommandBatchEnvelope } from '../models/VersionedCommandBatchEnvelope';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
 
+import { commandBatchGroupId } from './commandBatchGroupId';
+import { getCommandBatchGroupDependencies } from './getCommandBatchGroupDependencies';
+
 const SEMANTIC_PROJECT_DIFF_SCHEMA_VERSION = 1 as const;
+
+const DYNAMIC_EFFECTS_PARTIAL_ACCEPTANCE_REASON =
+    'Aggregate dynamic effects cannot be partitioned across intent groups.';
+const SINGLE_GROUP_PARTIAL_ACCEPTANCE_REASON = 'The proposal has a single intent group.';
 
 type SemanticRecovery = 'inverse' | 'compensable' | 'irreversible';
 type SemanticFactKind = 'created' | 'moved' | 'renamed' | 'edited' | 'routed' | 'automated' | 'asset' | 'project';
@@ -137,7 +144,20 @@ const NO_AUDIO_OPERATIONS = new Set<AppAction['type']>([
 ]);
 
 function groupId(command: VersionedCommandEnvelope): string {
-    return command.commandId;
+    return commandBatchGroupId(command);
+}
+
+function partialAcceptanceAvailability(
+    envelope: VersionedCommandBatchEnvelope,
+    groupCount: number
+): { available: boolean; reason: string | null } {
+    if (envelope.dynamicEffects !== undefined) {
+        return { available: false, reason: DYNAMIC_EFFECTS_PARTIAL_ACCEPTANCE_REASON };
+    }
+    if (groupCount < 2) {
+        return { available: false, reason: SINGLE_GROUP_PARTIAL_ACCEPTANCE_REASON };
+    }
+    return { available: true, reason: null };
 }
 
 function unique(values: readonly string[]): string[] {
@@ -367,6 +387,7 @@ export function buildSemanticProjectDiff(input: BuildSemanticProjectDiffInput) {
         return range ? [range] : [];
     });
     const impact = greatestImpact(commands);
+    const dependenciesByGroupId = getCommandBatchGroupDependencies({ ...input.envelope, commands });
     const groups = unique(commands.map(groupId)).map((id) => {
         const groupCommands = commands.filter((command) => groupId(command) === id);
         const groupImpact = greatestImpact(groupCommands);
@@ -383,6 +404,7 @@ export function buildSemanticProjectDiff(input: BuildSemanticProjectDiffInput) {
                 const range = commandTimeRange(command);
                 return range ? [range] : [];
             }),
+            dependsOnGroupIds: dependenciesByGroupId.get(id) ?? [],
             estimatedAudioImpact: { level: groupImpact, summary: impactSummary(groupImpact) },
             warnings: groupDestructiveChanges.map((change) => `${change.classification}: ${change.consequence}`),
             destructiveChanges: groupDestructiveChanges,
@@ -401,6 +423,7 @@ export function buildSemanticProjectDiff(input: BuildSemanticProjectDiffInput) {
         ]).sort(),
         affectedTimeRanges: ranges,
         estimatedAudioImpact: { level: impact, summary: impactSummary(impact) },
+        partialAcceptance: partialAcceptanceAvailability(input.envelope, groups.length),
         warnings: unique(warningValues),
         destructiveChanges,
         facts: { ...facts, protectedUnchanged },

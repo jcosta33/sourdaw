@@ -30,6 +30,7 @@
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
+import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import {
     GRAND_BOULE_CONTROL_HEADER_BYTES,
     GRAND_BOULE_CONTROL_INT_COUNT,
@@ -78,7 +79,6 @@ export type GrandBouleNodeResult = {
     setSostenuto: (engaged: boolean) => void;
     noteOnMidi2: (midiNote: number, velocity16bit: number, pitchOffsetQ24: number) => void;
     setTemperament: (index: number) => void;
-    loadAttackClip: (key: number, samples: Float32Array) => void;
     allNotesOff: () => void;
     setBypass: (bypassed: boolean) => void;
     connect: (dest: AudioNode) => void;
@@ -207,8 +207,8 @@ function createWorkerRingTransport({ ctx, wasmModule, onFault }: CreateGrandBoul
     const node = new AudioWorkletNode(ctx, 'grand-boule-processor', {
         numberOfInputs: 0,
         numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
+        outputChannelCount: [STEREO_CHANNEL_COUNT],
+        channelCount: STEREO_CHANNEL_COUNT,
         channelCountMode: 'explicit',
     });
 
@@ -226,6 +226,10 @@ function createWorkerRingTransport({ ctx, wasmModule, onFault }: CreateGrandBoul
     // including when either cursor crosses the Int32 boundary. Separate from the
     // ring SAB so the ring layout stays exactly as the SPSC proofs describe it.
     const syncSab = new SharedArrayBuffer(GRAND_BOULE_SYNC_INT_COUNT * Int32Array.BYTES_PER_ELEMENT);
+
+    // Null when the page is not cross-origin isolated: there is no shared buffer
+    // to count into, so this transport never opens dropout coverage.
+    const dropoutSab = dropoutCounters.getSab();
 
     // Create the engine Worker.
     const engineWorker = new Worker(new URL('../workers/grandBouleEngineWorker.ts', import.meta.url), {
@@ -246,11 +250,29 @@ function createWorkerRingTransport({ ctx, wasmModule, onFault }: CreateGrandBoul
 
     let stopped = false;
     let transportReady = false;
+    let dropoutCoverageOpen = false;
+    // Coverage opens on the worklet's own `ready`, not on the `init` post that
+    // hands it the buffer: until the worklet replies it has mapped nothing and
+    // counts nothing, so a transport that fails in between would leave underruns
+    // reading as an observed zero.
+    const openDropoutCoverage = (): void => {
+        if (dropoutCoverageOpen || stopped || !dropoutSab) {
+            return;
+        }
+        dropoutCoverageOpen = true;
+        dropoutCounters.openCoverage();
+    };
+    // The one teardown both the normal stop and `stopFailedTransport` reach, so
+    // an opened coverage is dropped exactly once.
     const stopTransport = (): void => {
         if (stopped) {
             return;
         }
         stopped = true;
+        if (dropoutCoverageOpen) {
+            dropoutCoverageOpen = false;
+            dropoutCounters.closeCoverage();
+        }
         node.onprocessorerror = null;
         engineWorker.onerror = null;
         engineWorker.onmessageerror = null;
@@ -296,6 +318,9 @@ function createWorkerRingTransport({ ctx, wasmModule, onFault }: CreateGrandBoul
     };
     node.port.onmessage = (event: MessageEvent) => {
         const outcome = workletHandshake.onMessage(event);
+        if (outcome === 'ready') {
+            openDropoutCoverage();
+        }
         if (outcome === 'error' || reportsTransportError(event)) {
             stopFailedTransport(readHandshakeError(event, 'GrandBouleNode worklet failed during initialization'));
         }
@@ -323,7 +348,7 @@ function createWorkerRingTransport({ ctx, wasmModule, onFault }: CreateGrandBoul
     node.port.postMessage({
         type: 'init',
         sab,
-        dropoutSab: dropoutCounters.getSab(),
+        dropoutSab,
         syncSab,
         countPreRollStarvation: false,
     });
@@ -382,8 +407,8 @@ function createInlineWorkletTransport({
     const node = new AudioWorkletNode(ctx, 'grand-boule-offline-processor', {
         numberOfInputs: 0,
         numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
+        outputChannelCount: [STEREO_CHANNEL_COUNT],
+        channelCount: STEREO_CHANNEL_COUNT,
         channelCountMode: 'explicit',
         processorOptions: { wasmModule },
     });
@@ -649,10 +674,6 @@ export async function createGrandBouleNode(
         },
         setTemperament(index: number) {
             post({ type: 'temperament', index });
-        },
-        loadAttackClip(key: number, samples: Float32Array) {
-            const buf = new Float32Array(samples);
-            post({ type: 'loadAttackClip', key, samples: buf });
         },
         allNotesOff() {
             post({ type: 'allNotesOff' });

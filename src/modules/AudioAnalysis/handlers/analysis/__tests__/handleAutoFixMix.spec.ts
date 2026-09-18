@@ -67,11 +67,13 @@ function create_track_level(input: Partial<TrackLevel> & Pick<TrackLevel, 'track
 type CreateAnalysisResultInput = {
     trackLevels?: AnalyzeMixOutput['trackLevels'];
     overallLevel?: Partial<AnalyzeMixOutput['overallLevel']>;
+    status?: AnalyzeMixOutput['status'];
 };
 
 function create_analysis_result(input: CreateAnalysisResultInput = {}): AnalyzeMixOutput {
     return {
         timestamp: 1,
+        status: input.status ?? { availability: 'measured', provenance: 'live-analyser-snapshot' },
         overallLevel: {
             peakDb: -10,
             rmsDb: -20,
@@ -274,6 +276,53 @@ describe('handleAutoFixMix', () => {
 
         expect(stoppedBeforeSettleDelay).toBe(true);
         expect(analyzeMix).toHaveBeenCalledOnce();
+    });
+
+    it('refuses to correct anything when the measurement found no signal — the issue #3842 mutating consumer', async () => {
+        vi.mocked(analyzeMix).mockResolvedValue(
+            create_analysis_result({
+                trackLevels: [create_track_level({ trackId: 't1', isClipping: true, peakDb: 2 })],
+                overallLevel: { peakDb: -100 },
+                status: { availability: 'insufficient', reason: 'no-signal', provenance: 'live-analyser-snapshot' },
+            })
+        );
+
+        await handleAutoFixMix.execute({ type: 'autoFixMix' });
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        // The insufficient readout still reaches the display.
+        expect(mocks.completeLifecycle).toHaveBeenCalledWith({
+            token: 11,
+            result: expect.objectContaining({
+                status: expect.objectContaining({ availability: 'insufficient' }),
+            }),
+        });
+        expect(mocks.failLifecycle).not.toHaveBeenCalled();
+    });
+
+    it('refuses the master decision when the post-correction re-read becomes insufficient', async () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', gain: 0.8 }] });
+
+        // Measured evidence justifies the track correction...
+        vi.mocked(analyzeMix).mockResolvedValueOnce(
+            create_analysis_result({
+                trackLevels: [create_track_level({ trackId: 't1', isClipping: true, peakDb: 2 })],
+            })
+        );
+        // ...but after the write, the re-read no longer carries signal (the
+        // section went silent), so the master decision must not run on it.
+        vi.mocked(analyzeMix).mockResolvedValueOnce(
+            create_analysis_result({
+                overallLevel: { peakDb: -100 },
+                status: { availability: 'insufficient', reason: 'no-signal', provenance: 'live-analyser-snapshot' },
+            })
+        );
+
+        await handleAutoFixMix.execute({ type: 'autoFixMix' });
+
+        const actions = mocks.executeAppAction.mock.calls.map(([action]) => action);
+        expect(actions.some((action) => action.type === 'setTrackGain')).toBe(true);
+        expect(actions.some((action) => action.type === 'setMasterGain')).toBe(false);
     });
 
     it('should log the error and reset analyzing state on error', async () => {

@@ -4,7 +4,7 @@ import { type MixAnalysis, type MixComparisonResult } from '../../../models/MixC
 import { compareToReference } from '../compareToReference';
 
 const mocks = vi.hoisted(() => ({
-    analyzeMix: vi.fn<() => MixAnalysis>(),
+    analyzeMix: vi.fn(),
     compareMixes: vi.fn<(reference: MixAnalysis, current: MixAnalysis) => MixComparisonResult>(),
     createReferenceAnalysis: vi.fn<() => MixAnalysis>(),
 }));
@@ -48,6 +48,13 @@ const referenceAnalysis: MixAnalysis = {
     crestFactor: 5,
 };
 
+const measured = {
+    status: 'measured' as const,
+    analysis: currentAnalysis,
+    source: 'program-audio' as const,
+    measuredAt: 1,
+};
+
 const expectedResult: MixComparisonResult = {
     overallScore: 88,
     scores: {
@@ -67,16 +74,34 @@ describe('compareToReference', () => {
         vi.clearAllMocks();
     });
 
-    it('should analyze the current mix, create a reference, and delegate comparison', () => {
-        mocks.analyzeMix.mockReturnValue(currentAnalysis);
+    it('compares the measured current mix against the specified reference target', () => {
+        mocks.analyzeMix.mockReturnValue(measured);
         mocks.createReferenceAnalysis.mockReturnValue(referenceAnalysis);
         mocks.compareMixes.mockReturnValue(expectedResult);
 
-        const result = compareToReference();
+        const programAudio = [{} as AudioBuffer];
+        const result = compareToReference(programAudio);
 
-        expect(mocks.analyzeMix).toHaveBeenCalledTimes(1);
+        expect(mocks.analyzeMix).toHaveBeenCalledWith(programAudio);
         expect(mocks.createReferenceAnalysis).toHaveBeenCalledTimes(1);
         expect(mocks.compareMixes).toHaveBeenCalledWith(referenceAnalysis, currentAnalysis);
-        expect(result).toBe(expectedResult);
+        expect(result).toEqual({ ...expectedResult, referenceKind: 'specified-target' });
+    });
+
+    it('reports unavailable instead of a fabricated score when there is no program audio', () => {
+        mocks.analyzeMix.mockReturnValue({ status: 'unavailable', reason: 'no-program-audio' });
+
+        const result = compareToReference();
+
+        expect(result).toEqual({ status: 'unavailable', reason: 'no-program-audio' });
+        expect(mocks.compareMixes).not.toHaveBeenCalled();
+        expect(mocks.createReferenceAnalysis).not.toHaveBeenCalled();
+    });
+
+    it('reports unavailable instead of a score for a silent source', () => {
+        mocks.analyzeMix.mockReturnValue({ status: 'unavailable', reason: 'silent-program-audio' });
+
+        expect(compareToReference()).toEqual({ status: 'unavailable', reason: 'silent-program-audio' });
+        expect(mocks.compareMixes).not.toHaveBeenCalled();
     });
 });

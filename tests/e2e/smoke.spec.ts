@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
-import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { launch_new_project, PREFERENCES_STORAGE_KEY, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
 const OFFLINE_IDLE_WINDOW_MS = 500;
@@ -182,7 +182,7 @@ async function openNewProject(
 ): Promise<() => Promise<void>> {
     const assertOffline = await blockExternalRequests(page);
     await setupWorkspace(page, {
-        localStorage: [{ name: 'sourdaw-preferences', value: MANUAL_SAVE_PREFERENCES }],
+        localStorage: [{ name: PREFERENCES_STORAGE_KEY, value: MANUAL_SAVE_PREFERENCES }],
     });
     await launch_new_project(page, { firstPaintTimeoutMs });
     return assertOffline;

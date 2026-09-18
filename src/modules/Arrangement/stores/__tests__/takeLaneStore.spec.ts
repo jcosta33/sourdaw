@@ -387,6 +387,86 @@ describe('sanitize_take_lane_store_state', () => {
             })
         ).toEqual(defaultTakeLaneStoreState);
     });
+
+    it('should preserve a take sourceOffsetBeats and drop takes carrying a malformed one', () => {
+        expect(
+            sanitize_take_lane_store_state({
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: 'track-1',
+                        takes: [
+                            {
+                                id: 'take-origin',
+                                clipId: 'clip-1',
+                                name: 'Origin',
+                                startBeat: 0,
+                                endBeat: 4,
+                                selected: false,
+                            },
+                            {
+                                id: 'take-pass-2',
+                                clipId: 'clip-1',
+                                name: 'Pass 2',
+                                startBeat: 0,
+                                endBeat: 4,
+                                selected: false,
+                                sourceOffsetBeats: 4,
+                            },
+                            {
+                                id: 'take-negative',
+                                clipId: 'clip-1',
+                                name: 'Negative',
+                                startBeat: 0,
+                                endBeat: 4,
+                                selected: false,
+                                sourceOffsetBeats: -4,
+                            },
+                            {
+                                id: 'take-non-numeric',
+                                clipId: 'clip-1',
+                                name: 'NonNumeric',
+                                startBeat: 0,
+                                endBeat: 4,
+                                selected: false,
+                                sourceOffsetBeats: '4',
+                            },
+                        ],
+                        activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-pass-2' }],
+                    },
+                ],
+            })
+        ).toEqual({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'track-1',
+                    takes: [
+                        {
+                            id: 'take-origin',
+                            clipId: 'clip-1',
+                            name: 'Origin',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                        },
+                        {
+                            id: 'take-pass-2',
+                            clipId: 'clip-1',
+                            name: 'Pass 2',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                            sourceOffsetBeats: 4,
+                        },
+                    ],
+                    // Regions targeting dropped takes are dropped with them;
+                    // the region on the surviving take stays.
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-pass-2' }],
+                },
+            ],
+        });
+    });
 });
 
 describe('takeLaneStore', () => {

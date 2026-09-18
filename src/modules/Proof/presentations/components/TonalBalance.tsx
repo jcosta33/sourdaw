@@ -4,16 +4,17 @@
  * Shows the current signal's frequency content against the research-derived
  * Harman target curve, helping engineers achieve balanced spectral content.
  *
- * Uses the master analyser node for real-time FFT data.
+ * Reads real-time FFT data from this Proof instance's own output node.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 
 import { Row } from '#/components/layout';
+import { MAX_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
 import { type ProofAnalyserStatus } from '../hooks/useProofAnalyser';
 
 const MIN_FREQ = 20;
-const MAX_FREQ = 20000;
+const MAX_FREQ = MAX_AUDIBLE_FREQ_HZ;
 const MIN_DB = -50;
 const MAX_DB = 10;
 
@@ -38,7 +39,7 @@ const HARMAN_CURVE: Array<{ freq: number; db: number }> = [
     { freq: 10000, db: -5 },
     { freq: 12000, db: -7 },
     { freq: 16000, db: -10 },
-    { freq: 20000, db: -15 },
+    { freq: MAX_FREQ, db: -15 },
 ];
 
 /** Genre target adjustments. */
@@ -63,7 +64,7 @@ const GENRE_ADJUSTMENTS: Record<string, Array<{ freq: number; db: number }>> = {
 type Props = {
     /**
      * Whether the spectrum tap is connected at all. Required, because a null
-     * `fftData` alone cannot tell "the master is silent" from "there is no
+     * `fftData` alone cannot tell "the signal is silent" from "there is no
      * analyser", and the display would report both as a flat, empty spectrum.
      */
     status: ProofAnalyserStatus;

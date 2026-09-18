@@ -13,6 +13,7 @@ import { type AgentRunWorkLease } from '../../models/AgentRun';
 import { type ChatMessage } from '../../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../../models/ChatSystemPrompt';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
+import { EXPLAIN_TEMPERATURE } from '../../models/LlmSamplingTemperatures';
 import { estimateCompiledProviderRequestTokenCeiling } from '../../models/ModelProviderBudgetEstimate';
 import {
     type ModelProviderFinish,
@@ -20,6 +21,7 @@ import {
     type ModelProviderResult,
     type ModelProviderSession,
 } from '../../models/ModelProviderProtocol';
+import { MODEL_TEXT_MAX_INPUT_TOKENS } from '../../models/ModelTextRequestLimits';
 import {
     type CloudChatCompletionOutcome,
     streamCloudChatCompletion,
@@ -28,6 +30,12 @@ import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProvid
 import { isCloudAvailable } from '../../repositories/cloudLlm/isCloudAvailable';
 import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
 import { getLlmEngine } from '../../repositories/webLlm/getLlmEngine';
+import { retireWebLlmEngine } from '../../repositories/webLlm/retireWebLlmEngine';
+import {
+    webLlmRequestCoordinator,
+    WebLlmStreamProviderError,
+} from '../../repositories/webLlm/webLlmRequestCoordinator';
+import { readAgentResourceLimits } from '../../stores/agentResourceLimitsStore';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import {
     chatStore,
@@ -51,6 +59,9 @@ import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 
 import { AGENT_RUN_STALE_COMPLETION_WARNING, settleAgentRunWorkLeaseSafely } from './settleAgentRunWorkLeaseSafely';
 
+/** The explain route's own output ceiling; the configured model ceiling can only lower it. */
+const EXPLAIN_MAX_OUTPUT_TOKENS = 2_048;
+
 type StreamExplainChatResponseInput = {
     userText: string;
     runId: string;
@@ -59,6 +70,28 @@ type StreamExplainChatResponseInput = {
     providerReceiptIdentity: string;
     providerWorkId: string;
 };
+
+type WebLlmStreamChunk = {
+    choices?: Array<{ delta: { content?: string }; finish_reason?: string | null }>;
+    type?: string;
+    usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        prompt_tokens_details?: { cached_tokens?: number };
+        completion_tokens_details?: { reasoning_tokens?: number };
+    };
+};
+
+function readWebLlmStream(value: unknown): AsyncIterable<WebLlmStreamChunk> {
+    if (typeof value !== 'object' || value === null || !isAsyncIterable(value)) {
+        throw new Error('WebLLM did not return a stream');
+    }
+    return value;
+}
+
+function isAsyncIterable(value: object): value is AsyncIterable<WebLlmStreamChunk> {
+    return typeof Reflect.get(value, Symbol.asyncIterator) === 'function';
+}
 
 function getBackendModelId(backend: RunnableAiBackend): string {
     return backend === 'cloud' ? (getCloudProviderInfo()?.model ?? 'cloud') : getActiveModelId();
@@ -78,6 +111,22 @@ function getProviderBudgetCategory(backend: RunnableAiBackend): string {
 
 function readProviderTokenCount(value: unknown): number | null {
     return Number.isSafeInteger(value) && typeof value === 'number' && value >= 0 ? value : null;
+}
+
+function readHostedProviderFinish(
+    outcome: Extract<CloudChatCompletionOutcome, { status: 'incomplete' }>
+): ModelProviderFinish {
+    if (outcome.finishReason === 'length') {
+        return { reason: 'length' };
+    }
+    return {
+        reason: outcome.finishReason === 'refusal' ? 'refusal' : 'error',
+        failure: {
+            code: outcome.finishReason === 'refusal' ? 'provider-refusal' : 'incomplete-output',
+            retryable: outcome.finishReason !== 'refusal',
+            safeMessage: outcome.safeMessage,
+        },
+    };
 }
 
 function tryRecordTerminalFailure(input: Parameters<typeof agentRunLifecycle.recordError>[0]): void {
@@ -189,6 +238,10 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
             provider: getModelProviderName(backend),
             model: getBackendModelId(backend),
         });
+        const explainMaxOutputTokens = Math.min(
+            EXPLAIN_MAX_OUTPUT_TOKENS,
+            readAgentResourceLimits().maxModelOutputTokens
+        );
         const compiledProviderRequest = providerProtocol.compileRequest({
             correlationId: providerReceiptIdentity,
             runId,
@@ -198,9 +251,13 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
             modality: 'text',
             messages: [{ role: 'system', content: agentContext.message }, ...conversationHistory],
             stream: true,
-            limits: { maxOutputTokens: 2_048 },
+            limits: { maxOutputTokens: explainMaxOutputTokens },
             controls: { cache: 'provider-default', reasoning: 'provider-default' },
-            budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
+            budget: {
+                maxInputTokens: MODEL_TEXT_MAX_INPUT_TOKENS,
+                maxOutputTokens: explainMaxOutputTokens,
+                maxTotalTokens: MODEL_TEXT_MAX_INPUT_TOKENS + explainMaxOutputTokens,
+            },
             dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
             ...(remoteDisclosure === undefined
                 ? {}
@@ -267,7 +324,7 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
                     updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
                 },
                 {
-                    temperature: 0.7,
+                    temperature: EXPLAIN_TEMPERATURE,
                     maxTokens: providerRequest.limits.maxOutputTokens,
                     signal: aborter.signal,
                     onUsage: (event) => activeProviderStreamWriter.push(event),
@@ -279,48 +336,80 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
             await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
             aborter.signal.throwIfAborted();
             const engine = getLlmEngine()!;
-            function interruptWebLlm(): void {
-                engine.interruptGenerate();
-            }
-            aborter.signal.addEventListener('abort', interruptWebLlm, { once: true });
-
             try {
-                const asyncChunkGenerator = (await engine.chat.completions.create({
-                    messages: providerRequest.messages,
-                    temperature: 0.7,
-                    max_tokens: providerRequest.limits.maxOutputTokens,
-                    stream: true,
-                })) as AsyncIterable<{
-                    choices?: Array<{ delta: { content?: string }; finish_reason?: string | null }>;
-                    type?: string;
-                    usage?: {
-                        prompt_tokens?: number;
-                        completion_tokens?: number;
-                        prompt_tokens_details?: { cached_tokens?: number };
-                        completion_tokens_details?: { reasoning_tokens?: number };
-                    };
-                }>;
                 let sawTerminalReason = false;
                 let sawFinalUsage = false;
-
-                for await (const chunk of asyncChunkGenerator) {
-                    if (aborter.signal.aborted) {
-                        break;
-                    }
-                    if (sawTerminalReason && !Array.isArray(chunk.choices)) {
-                        throw new Error('WebLLM stream returned an event after completion');
-                    }
-                    if (!Array.isArray(chunk.choices)) {
-                        activeProviderStreamWriter.push({
-                            type: 'unknown',
-                            providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
-                        });
-                        continue;
-                    }
-                    const choice = chunk.choices[0];
-                    const deltaDesc = choice?.delta.content;
-                    if (sawTerminalReason) {
-                        if (chunk.choices.length === 0 && chunk.usage && !sawFinalUsage) {
+                await webLlmRequestCoordinator.stream(engine, {
+                    signal: aborter.signal,
+                    create: async () =>
+                        readWebLlmStream(
+                            await engine.chat.completions.create({
+                                messages: providerRequest.messages,
+                                temperature: EXPLAIN_TEMPERATURE,
+                                max_tokens: providerRequest.limits.maxOutputTokens,
+                                stream: true,
+                            })
+                        ),
+                    onProviderFailure: (error) => retireWebLlmEngine(engine, error),
+                    consume: (chunk) => {
+                        if (sawTerminalReason && !Array.isArray(chunk.choices)) {
+                            throw new Error('WebLLM stream returned an event after completion');
+                        }
+                        if (!Array.isArray(chunk.choices)) {
+                            activeProviderStreamWriter.push({
+                                type: 'unknown',
+                                providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
+                            });
+                            return;
+                        }
+                        const choice = chunk.choices[0];
+                        const deltaDesc = choice?.delta.content;
+                        if (sawTerminalReason) {
+                            if (chunk.choices.length === 0 && chunk.usage && !sawFinalUsage) {
+                                activeProviderStreamWriter.push({
+                                    type: 'usage',
+                                    mode: 'final',
+                                    usage: {
+                                        inputTokens: readProviderTokenCount(chunk.usage.prompt_tokens),
+                                        outputTokens: readProviderTokenCount(chunk.usage.completion_tokens),
+                                        cachedInputTokens: readProviderTokenCount(
+                                            chunk.usage.prompt_tokens_details?.cached_tokens
+                                        ),
+                                        reasoningTokens: readProviderTokenCount(
+                                            chunk.usage.completion_tokens_details?.reasoning_tokens
+                                        ),
+                                    },
+                                    provenance: 'provider-reported',
+                                });
+                                sawFinalUsage = true;
+                                return;
+                            }
+                            if (deltaDesc !== undefined) {
+                                throw new Error('WebLLM stream returned text after completion');
+                            }
+                            if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
+                                throw new Error('WebLLM stream returned duplicate completion');
+                            }
+                            throw new Error('WebLLM stream returned an event after completion');
+                        }
+                        if (chunk.choices.length === 0 && !chunk.usage) {
+                            activeProviderStreamWriter.push({
+                                type: 'unknown',
+                                providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
+                            });
+                        }
+                        if (deltaDesc !== undefined) {
+                            activeProviderStreamWriter.push({ type: 'text', mode: 'delta', text: deltaDesc });
+                            const parsed = thinkParser.push(deltaDesc);
+                            updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
+                        }
+                        if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
+                            sawTerminalReason = true;
+                            if (choice.finish_reason !== 'stop') {
+                                webLlmIncompleteReason = choice.finish_reason;
+                            }
+                        }
+                        if (chunk.usage) {
                             activeProviderStreamWriter.push({
                                 type: 'usage',
                                 mode: 'final',
@@ -337,57 +426,17 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
                                 provenance: 'provider-reported',
                             });
                             sawFinalUsage = true;
-                            continue;
                         }
-                        if (deltaDesc !== undefined) {
-                            throw new Error('WebLLM stream returned text after completion');
-                        }
-                        if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
-                            throw new Error('WebLLM stream returned duplicate completion');
-                        }
-                        throw new Error('WebLLM stream returned an event after completion');
-                    }
-                    if (chunk.choices.length === 0 && !chunk.usage) {
-                        activeProviderStreamWriter.push({
-                            type: 'unknown',
-                            providerEventType: `webllm:${chunk.type ?? 'unknown'}`,
-                        });
-                    }
-                    if (deltaDesc !== undefined) {
-                        activeProviderStreamWriter.push({ type: 'text', mode: 'delta', text: deltaDesc });
-                        const parsed = thinkParser.push(deltaDesc);
-                        updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
-                    }
-                    if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
-                        sawTerminalReason = true;
-                        if (choice.finish_reason !== 'stop') {
-                            webLlmIncompleteReason = choice.finish_reason;
-                        }
-                    }
-                    if (chunk.usage) {
-                        activeProviderStreamWriter.push({
-                            type: 'usage',
-                            mode: 'final',
-                            usage: {
-                                inputTokens: readProviderTokenCount(chunk.usage.prompt_tokens),
-                                outputTokens: readProviderTokenCount(chunk.usage.completion_tokens),
-                                cachedInputTokens: readProviderTokenCount(
-                                    chunk.usage.prompt_tokens_details?.cached_tokens
-                                ),
-                                reasoningTokens: readProviderTokenCount(
-                                    chunk.usage.completion_tokens_details?.reasoning_tokens
-                                ),
-                            },
-                            provenance: 'provider-reported',
-                        });
-                        sawFinalUsage = true;
-                    }
-                }
+                    },
+                });
                 if (!aborter.signal.aborted && !sawTerminalReason) {
                     throw new Error('WebLLM chat stream ended unexpectedly');
                 }
-            } finally {
-                aborter.signal.removeEventListener('abort', interruptWebLlm);
+            } catch (error) {
+                if (error instanceof WebLlmStreamProviderError) {
+                    throw error.cause;
+                }
+                throw error;
             }
         }
 
@@ -396,17 +445,7 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
         }
         let providerFinish: ModelProviderFinish = { reason: 'stop' };
         if (cloudOutcome?.status === 'incomplete') {
-            providerFinish =
-                cloudOutcome.reason === 'length' || cloudOutcome.reason === 'token limit'
-                    ? { reason: 'length' }
-                    : {
-                          reason: 'error',
-                          failure: {
-                              code: 'incomplete-output',
-                              retryable: true,
-                              safeMessage: 'The hosted provider returned an incomplete response.',
-                          },
-                      };
+            providerFinish = readHostedProviderFinish(cloudOutcome);
         } else if (webLlmIncompleteReason !== null) {
             providerFinish =
                 webLlmIncompleteReason === 'length'

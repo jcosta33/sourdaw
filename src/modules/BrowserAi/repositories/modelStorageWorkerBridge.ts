@@ -1,6 +1,8 @@
 import { ZipArchiveError } from '#/infra/archive/extractGuardedZip';
 
 import {
+    MODEL_STORAGE_REQUEST_TYPE,
+    MODEL_STORAGE_RESPONSE_TYPE,
     type ModelStorageWorkerRequest,
     type ModelStorageWorkerResponse,
     type ModelStorageWriteStage,
@@ -52,7 +54,9 @@ export type ModelStoragePort = {
 const pendingRequests = new Map<string, PendingRequest>();
 let worker: Worker | null = null;
 
-function deserializeError(response: Extract<ModelStorageWorkerResponse, { type: 'error' }>): Error {
+function deserializeError(
+    response: Extract<ModelStorageWorkerResponse, { type: typeof MODEL_STORAGE_RESPONSE_TYPE.error }>
+): Error {
     if (response.name === 'ZipArchiveError') {
         return new ZipArchiveError(response.message);
     }
@@ -89,12 +93,12 @@ function getWorker(): Worker {
         if (!pending) {
             return;
         }
-        if (response.type === 'write-progress') {
+        if (response.type === MODEL_STORAGE_RESPONSE_TYPE.writeProgress) {
             pending.onProgress?.(response.stage);
             return;
         }
         pendingRequests.delete(response.requestId);
-        if (response.type === 'error') {
+        if (response.type === MODEL_STORAGE_RESPONSE_TYPE.error) {
             pending.reject(deserializeError(response));
             return;
         }
@@ -127,14 +131,14 @@ export const modelStorageWorkerBridge: ModelStoragePort & { terminate: () => voi
         const channel = new MessageChannel();
         const requestId = crypto.randomUUID();
         const request: ModelStorageWorkerRequest = {
-            type: 'read-model',
+            type: MODEL_STORAGE_REQUEST_TYPE.readModel,
             requestId,
             ...input,
             destinationPort: channel.port1,
         };
         try {
             const response = await sendRequest(request, [channel.port1]);
-            if (response.type !== 'read-complete') {
+            if (response.type !== MODEL_STORAGE_RESPONSE_TYPE.readComplete) {
                 throw new Error(`Unexpected model storage response: ${response.type}`);
             }
             if (!response.found) {
@@ -151,8 +155,13 @@ export const modelStorageWorkerBridge: ModelStoragePort & { terminate: () => voi
     async beginModelWrite(input): Promise<string> {
         const requestId = crypto.randomUUID();
         const writeId = crypto.randomUUID();
-        const response = await sendRequest({ type: 'begin-model-write', requestId, writeId, ...input });
-        if (response.type !== 'write-begun') {
+        const response = await sendRequest({
+            type: MODEL_STORAGE_REQUEST_TYPE.beginModelWrite,
+            requestId,
+            writeId,
+            ...input,
+        });
+        if (response.type !== MODEL_STORAGE_RESPONSE_TYPE.writeBegun) {
             throw new Error(`Unexpected model storage response: ${response.type}`);
         }
         return writeId;
@@ -160,10 +169,10 @@ export const modelStorageWorkerBridge: ModelStoragePort & { terminate: () => voi
 
     async writeModelChunk({ writeId, chunk }): Promise<number> {
         const response = await sendRequest(
-            { type: 'write-model-chunk', requestId: crypto.randomUUID(), writeId, chunk },
+            { type: MODEL_STORAGE_REQUEST_TYPE.writeModelChunk, requestId: crypto.randomUUID(), writeId, chunk },
             [chunk]
         );
-        if (response.type !== 'chunk-written') {
+        if (response.type !== MODEL_STORAGE_RESPONSE_TYPE.chunkWritten) {
             throw new Error(`Unexpected model storage response: ${response.type}`);
         }
         return response.bytesWritten;
@@ -171,49 +180,68 @@ export const modelStorageWorkerBridge: ModelStoragePort & { terminate: () => voi
 
     async commitModelWrite({ writeId, onProgress }) {
         const response = await sendRequest(
-            { type: 'commit-model-write', requestId: crypto.randomUUID(), writeId },
+            { type: MODEL_STORAGE_REQUEST_TYPE.commitModelWrite, requestId: crypto.randomUUID(), writeId },
             [],
             onProgress
         );
-        if (response.type !== 'write-committed') {
+        if (response.type !== MODEL_STORAGE_RESPONSE_TYPE.writeCommitted) {
             throw new Error(`Unexpected model storage response: ${response.type}`);
         }
         return { storedBytes: response.storedBytes, extractedPath: response.extractedPath };
     },
 
     async abortModelWrite(writeId): Promise<void> {
-        const response = await sendRequest({ type: 'abort-model-write', requestId: crypto.randomUUID(), writeId });
-        if (response.type !== 'write-aborted') {
+        const response = await sendRequest({
+            type: MODEL_STORAGE_REQUEST_TYPE.abortModelWrite,
+            requestId: crypto.randomUUID(),
+            writeId,
+        });
+        if (response.type !== MODEL_STORAGE_RESPONSE_TYPE.writeAborted) {
             throw new Error(`Unexpected model storage response: ${response.type}`);
         }
     },
 
     async deleteModel(input): Promise<void> {
-        const response = await sendRequest({ type: 'delete-model', requestId: crypto.randomUUID(), ...input });
-        if (response.type !== 'model-deleted') {
+        const response = await sendRequest({
+            type: MODEL_STORAGE_REQUEST_TYPE.deleteModel,
+            requestId: crypto.randomUUID(),
+            ...input,
+        });
+        if (response.type !== MODEL_STORAGE_RESPONSE_TYPE.modelDeleted) {
             throw new Error(`Unexpected model storage response: ${response.type}`);
         }
     },
 
     async checkModel(input): Promise<boolean> {
-        const response = await sendRequest({ type: 'check-model', requestId: crypto.randomUUID(), ...input });
-        if (response.type !== 'model-checked') {
+        const response = await sendRequest({
+            type: MODEL_STORAGE_REQUEST_TYPE.checkModel,
+            requestId: crypto.randomUUID(),
+            ...input,
+        });
+        if (response.type !== MODEL_STORAGE_RESPONSE_TYPE.modelChecked) {
             throw new Error(`Unexpected model storage response: ${response.type}`);
         }
         return response.cached;
     },
 
     async verifyModel(input): Promise<boolean> {
-        const response = await sendRequest({ type: 'verify-model', requestId: crypto.randomUUID(), ...input });
-        if (response.type !== 'model-verified') {
+        const response = await sendRequest({
+            type: MODEL_STORAGE_REQUEST_TYPE.verifyModel,
+            requestId: crypto.randomUUID(),
+            ...input,
+        });
+        if (response.type !== MODEL_STORAGE_RESPONSE_TYPE.modelVerified) {
             throw new Error(`Unexpected model storage response: ${response.type}`);
         }
         return response.verified;
     },
 
     async measureStorage(): Promise<number> {
-        const response = await sendRequest({ type: 'measure-storage', requestId: crypto.randomUUID() });
-        if (response.type !== 'storage-measured') {
+        const response = await sendRequest({
+            type: MODEL_STORAGE_REQUEST_TYPE.measureStorage,
+            requestId: crypto.randomUUID(),
+        });
+        if (response.type !== MODEL_STORAGE_RESPONSE_TYPE.storageMeasured) {
             throw new Error(`Unexpected model storage response: ${response.type}`);
         }
         return response.usedBytes;

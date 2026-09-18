@@ -24,6 +24,7 @@ import {
     resolveAutoMatchValue,
 } from '#/modules/Automation/useCases';
 import { applyFermenterRuntimeParam, mapFermenterParamToDspParam } from '#/modules/Fermenter/useCases';
+import { fromStereoPan } from '#/utils/audioLevelLaw';
 import {
     getDeviceAutomationParameterId,
     resolveDeviceAutomationTargetIndex,
@@ -372,7 +373,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
             });
             gainAutomationTrackIds.add(lane.trackId);
         } else if (lane.parameterId === 'pan') {
-            scheduleTrackPan(lane.trackId, value * 50, now + compensationFor(lane.trackId));
+            scheduleTrackPan(lane.trackId, fromStereoPan(value), now + compensationFor(lane.trackId));
         } else {
             const sendBusId = getSendAutomationBusId(lane.parameterId);
             if (sendBusId !== null) {

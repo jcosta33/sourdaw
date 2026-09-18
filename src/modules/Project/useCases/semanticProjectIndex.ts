@@ -4,7 +4,7 @@ import { automationStore } from '#/modules/Automation/stores';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
-import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { isCanonicalProjectId } from '../models/ProjectData';
 import {
@@ -13,6 +13,7 @@ import {
     type SemanticProjectIndexSnapshot,
     type SemanticProjectRevision,
 } from '../models/SemanticProjectQuery';
+import { createBoundedRevisionToken } from '../services/createBoundedRevisionToken';
 import { type ProjectStoreState, projectStore } from '../stores/projectStore';
 
 import { semanticRangeOverlaps } from './semanticRangeOverlap';
@@ -109,17 +110,6 @@ function getClipAssetType(clip: { type: 'audio' | 'midi'; assetHash?: string }):
         return 'midi';
     }
     return clip.assetHash ? 'managed-audio' : 'audio';
-}
-
-function createBoundedRevisionToken(projectRevision: string, semanticSignature: string): string {
-    let fnv = 2_166_136_261;
-    let djb = 5_381;
-    for (const character of `${projectRevision}\u0000${semanticSignature}`) {
-        const codePoint = character.codePointAt(0) ?? 0;
-        fnv = Math.imul(fnv ^ codePoint, 16_777_619);
-        djb = Math.imul(djb, 33) ^ codePoint;
-    }
-    return `spq1.${(fnv >>> 0).toString(36)}.${(djb >>> 0).toString(36)}`;
 }
 
 function parseRevision(value: string): SemanticProjectRevision {
@@ -292,7 +282,7 @@ function buildTempoEntities(): SemanticIndexEntity[] {
         name: 'Project tempo',
         startBeat: 0,
         endBeat: 0,
-        tempo: transport?.tempo ?? 120,
+        tempo: transport?.tempo ?? DEFAULT_TEMPO_BPM,
         meter: [transport?.timeSignatureNumerator ?? 4, transport?.timeSignatureDenominator ?? 4],
     };
     const tempos = (tempoMapStore.value?.changes ?? []).map((change): SemanticIndexEntity => ({

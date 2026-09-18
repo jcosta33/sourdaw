@@ -7,10 +7,12 @@
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { INIT_SAB_MESSAGE_TYPE, LATENCY_CHANGED_MESSAGE_TYPE } from '#/infra/audioWorklet/workletPortMessages';
 import { logger } from '#/infra/logger/appLogger';
 
 import { createBacteriaRuntimeParameterIds } from '../models/BacteriaRuntimeControl';
-import { type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
+import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
+import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
 import bacteriaProcessorUrl from '../services/bacteriaProcessor.ts?worker&url';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
 
@@ -40,6 +42,50 @@ export type BacteriaMeterData = {
     latency: number;
 };
 
+/**
+ * One row of the engine's modulation matrix, in the numeric ids the wasm
+ * instance takes: `sourceId` 0-13 per its source table, `targetParam` per its
+ * target table (mix, band gains, per-band module slots). The Bacteria bridge
+ * owns the string-to-id mapping; this node only carries the numbers.
+ */
+export type BacteriaNodeModAssignment = { sourceId: number; targetParam: number; amount: number };
+
+/** The one structured key Bacteria's patch door carries; everything else in a patch is ignored here. */
+const MOD_ASSIGNMENTS_KEY = 'modAssignments';
+
+function isNumericAssignmentRow(entry: unknown): entry is BacteriaNodeModAssignment {
+    if (typeof entry !== 'object' || entry === null) {
+        return false;
+    }
+    const row = entry as Record<string, unknown>;
+    return (
+        Number.isSafeInteger(row.sourceId) &&
+        Number.isSafeInteger(row.targetParam) &&
+        typeof row.amount === 'number' &&
+        Number.isFinite(row.amount)
+    );
+}
+
+/**
+ * Read the modulation-assignment table out of a patch-shaped record, or `null`
+ * when the record carries no such table. A present-but-malformed table yields
+ * `null` too — a replacement must never be spelled from half a table — and the
+ * worklet re-validates whatever survives, because project data is untrusted at
+ * that boundary.
+ */
+export function extractBacteriaModAssignments(
+    patch: Record<string, unknown>
+): readonly BacteriaNodeModAssignment[] | null {
+    const table = patch[MOD_ASSIGNMENTS_KEY];
+    if (!Array.isArray(table)) {
+        return null;
+    }
+    if (!table.every(isNumericAssignmentRow)) {
+        return null;
+    }
+    return table;
+}
+
 /** Slot floats → meter snapshot. Pure: the seqlock reader may re-run it on retry. */
 function projectBacteriaMeter(view: Float32Array): BacteriaMeterData {
     const bandLevels = Array.from({ length: BACTERIA_BAND_COUNT }, (): number => 0);
@@ -59,6 +105,14 @@ export type BacteriaNodeResult = {
     workletNode: AudioWorkletNode;
     setParam: (name: string, value: number, sampleFrame?: number) => void;
     setBypass: (bypassed: boolean) => void;
+    /**
+     * Replace the engine's whole modulation-assignment table. Removal, undo,
+     * and patch reloads all arrive as this one replacement, spelled
+     * clear-then-re-add inside the worklet.
+     */
+    setModAssignments: (assignments: readonly BacteriaNodeModAssignment[]) => void;
+    /** Drop the engine's in-flight audio (engine re-init / program change), via the worklet. */
+    reset: () => void;
     onMeterData: (cb: (data: BacteriaMeterData) => void) => void;
     onLatencyChanged: (cb: (latency: number) => void) => void;
     connect: (dest: AudioNode) => void;
@@ -125,8 +179,8 @@ export async function createBacteriaNode(
         node = new AudioWorkletNode(ctx, 'bacteria-processor', {
             numberOfInputs: 1,
             numberOfOutputs: 1,
-            outputChannelCount: [2],
-            channelCount: 2,
+            outputChannelCount: [STEREO_CHANNEL_COUNT],
+            channelCount: STEREO_CHANNEL_COUNT,
             channelCountMode: 'explicit',
             processorOptions: { wasmModule: wasmLease.module },
         });
@@ -174,7 +228,7 @@ export async function createBacteriaNode(
         const result = compileRuntimeDeviceControl(
             {
                 schemaVersion: 1,
-                command: 'set-fallback-param',
+                command: SET_FALLBACK_PARAM_COMMAND,
                 target: {
                     trackId: fallbackControlTarget.trackId,
                     deviceId: fallbackControlTarget.deviceId,
@@ -194,7 +248,7 @@ export async function createBacteriaNode(
     };
 
     if (slot) {
-        node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
+        node.port.postMessage({ type: INIT_SAB_MESSAGE_TYPE, sab: slot.sab, byteOffset: slot.byteOffset });
     }
 
     const handshake = createReadyHandshake({ pluginName: 'BacteriaNode' });
@@ -202,7 +256,7 @@ export async function createBacteriaNode(
         const outcome = handshake.onMessage(event);
         if (outcome === 'other') {
             const data: unknown = event.data;
-            if (isRecord(data) && data.type === 'latency-changed' && typeof data.latency === 'number') {
+            if (isRecord(data) && data.type === LATENCY_CHANGED_MESSAGE_TYPE && typeof data.latency === 'number') {
                 reportLatencyChange(data.latency);
             }
             return;
@@ -236,6 +290,23 @@ export async function createBacteriaNode(
         },
         setBypass(state: boolean) {
             postFallbackControl('bypass', state ? 1 : 0);
+        },
+        setModAssignments(assignments: readonly BacteriaNodeModAssignment[]) {
+            if (destroyed || assignments.length > 64) {
+                return;
+            }
+            node.port.postMessage(
+                Object.freeze({
+                    type: 'set-mod-assignments',
+                    assignments: Object.freeze([...assignments]),
+                })
+            );
+        },
+        reset() {
+            if (destroyed) {
+                return;
+            }
+            node.port.postMessage({ type: 'reset' });
         },
         onMeterData(cb: (data: BacteriaMeterData) => void) {
             if (meterRafId !== null) {

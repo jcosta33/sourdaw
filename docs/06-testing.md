@@ -9,6 +9,7 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 - **Shallow unit tests only.** Every test exercises one function, one class, or one component in isolation. Every dependency that crosses a module boundary, touches the OS, or hits the audio thread is mocked at the import boundary.
 - **Unit-first.** Playwright E2E lives under `tests/e2e/`. Run only affected specs with `pnpm test:e2e -- <spec>`. Prefer Vitest unit/component coverage; grow E2E only with a real reason.
 - **Ad-hoc live-UI probes are not E2E.** One-off browser probes/screenshots live in `.agents/ui-scripts/` per the `playwright-ui-bridge` skill — never add them to `tests/e2e/`.
+- **Two reference hosts, no test-only privilege.** Surfaces that have to hold in both hosts are proven in both. `tests/e2e/agentWorkspace.spec.ts` drives the agent workspace in the standalone browser — chat composer, Agent bottom tab, approval card, A/B comparison, revert — against an OpenAI-compatible endpoint on loopback admitted through `configureCloudProvider`. `pnpm desktop:agent-proof` (`scripts/proveDesktopAgentWorkspace.ts`, nightly only) drives the same flow in the packaged Electron app over the DevTools protocol, admitting the same endpoint through the Preferences AI form because the packaged renderer has no `/src/...` to import, and streaming one explain-mode answer back from it — as `tests/e2e/aiConfirmApplyUndo.spec.ts` does for the browser host — because admission alone is a local write and proves no round trip. Neither adds a hook, a test id, or a relaxed policy to the app or the preload: a proof that needs a privilege the product does not ship is proving something the product is not.
 - **One test file per source file.** The spec lives in **`__tests__/`** inside the same folder as the source file — e.g. `useCases/addTrack.ts` → `useCases/__tests__/addTrack.spec.ts`. Do **not** place `*.spec.ts` beside production files. If a source file is hard to unit-test, that is a signal about the source file, not the tests.
 - **Mock surface dependencies, not internals.** When testing a use case, mock the repositories it calls. When testing a repository, mock `#/utils/desktopBridge` or `AudioContext`. When testing a transformer, mock nothing — it is pure.
 - **Real domain types in tests.** Event payloads and `AppError` values are constructed for real in tests. They are cheap, correct, and faking them hides bugs.
@@ -678,6 +679,20 @@ mod tests {
 ### Native command tests
 
 Command bodies in `crates/sourdaw-native/src/commands/` carry in-crate `#[cfg(test)]` coverage. Add command tests beside the Rust module they exercise; test the body directly rather than routing through the desktop shell's IPC.
+
+### Hosted browser quantum measurements
+
+Changes to the browser quantum harness, its measured DSP closure, or the committed WASM it loads trigger
+`quantum-measurements.yml`. The workflow measures the complete reference project on a standard Ubuntu runner,
+checks the resulting JSON and Markdown against the checked-out pull-request head, and returns a one-day artifact
+containing those two data files, the raw log, and a receipt bound to the repository, pull request, head, run, and
+attempt. It never commits measurement data.
+
+Treat the returned artifact as a candidate, not repository evidence. Before installing its JSON and Markdown,
+independently obtain the workflow run and artifact metadata, verify the receipt identity and file hashes, and
+compare the recorded source revision, source digests, and full device population with the clean consumer head.
+Failed runs produce no qualified artifact; their Actions log is diagnostic evidence and must not be retried
+unchanged into a passing record.
 
 ---
 

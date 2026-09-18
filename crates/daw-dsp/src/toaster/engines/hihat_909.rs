@@ -12,6 +12,7 @@
 //! The tune parameter affects playback speed, not buffer content.
 //! Sample rate: 32,040 Hz (measured; the actual 909 runs at ~32 kHz).
 
+use crate::params::{DECAY, TUNE};
 use std::sync::Arc;
 
 use crate::toaster::dc_block::DcBlocker;
@@ -165,8 +166,8 @@ impl HiHat909Engine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "tune" => self.tune = value.clamp(-24.0, 24.0),
-            "decay" => self.decay = value.clamp(0.0, 1.0),
+            TUNE => self.tune = value.clamp(-24.0, 24.0),
+            DECAY => self.decay = value.clamp(0.0, 1.0),
             "open" => self.is_open = value > 0.5,
             _ => {}
         }

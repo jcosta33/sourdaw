@@ -26,6 +26,7 @@ import {
     parseCgroupAvailableBytes,
     parseCliArgs,
     parseMemAvailableBytes,
+    pnpmScriptName,
     psSamplingArgs,
     readGuardFailureReceipt,
     resolveDefaultMaxRssBytes,
@@ -853,6 +854,48 @@ describe('default budgets', () => {
             args: ['test:e2e:browser-ai-webgpu-admission'],
             expected: 5.5 * 1024 ** 3,
         },
+        {
+            profile: 'broad' as const,
+            command: 'pnpm',
+            args: ['--config.verify-deps-before-run=false', 'typecheck:test'],
+            expected: 6 * 1024 ** 3,
+        },
+        {
+            profile: 'broad' as const,
+            command: 'pnpm',
+            args: ['--config.verify-deps-before-run=false', 'run', 'typecheck:test'],
+            expected: 6 * 1024 ** 3,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['--filter', 'sourdaw', 'deps:validate'],
+            expected: 5.5 * 1024 ** 3,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['--filter=sourdaw', 'deps:validate'],
+            expected: 5.5 * 1024 ** 3,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['-C', 'packages/app', 'test:e2e'],
+            expected: 5.5 * 1024 ** 3,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['--dir', 'packages/app', 'test:e2e'],
+            expected: 5.5 * 1024 ** 3,
+        },
+        {
+            profile: 'broad' as const,
+            command: 'pnpm',
+            args: ['--silent', 'run', 'typecheck:test'],
+            expected: 6 * 1024 ** 3,
+        },
     ])('resolves $profile/$command/$args to $expected bytes', ({ profile, command, args, expected }) => {
         expect(resolveDefaultMaxRssBytes({ profile, command, args })).toBe(expected);
     });
@@ -876,6 +919,17 @@ describe('default budgets', () => {
             });
             expect(typecheckResult.code).toBe(0);
             expect(typecheckResult.maxRssBytes).toBe(6 * 1024 ** 3);
+
+            const prefixedResult = await runIsolatedGuardedCommand({
+                command: 'pnpm',
+                args: ['--config.verify-deps-before-run=false', 'typecheck:test'],
+                profile: 'focused',
+                cwd: root,
+                env: shimEnv,
+                availableMemoryBytes: abundantMemoryBytes,
+            });
+            expect(prefixedResult.code).toBe(0);
+            expect(prefixedResult.maxRssBytes).toBe(6 * 1024 ** 3);
 
             const e2eResult = await runIsolatedGuardedCommand({
                 command: 'pnpm',
@@ -910,6 +964,123 @@ describe('default budgets', () => {
             });
             expect(explicitResult.code).toBe(0);
             expect(explicitResult.maxRssBytes).toBe(5 * 1024 ** 3);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('pnpmScriptName', () => {
+    it.each([
+        { command: 'pnpm', args: ['typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['run', 'typecheck:test'], expected: 'typecheck:test' },
+        {
+            command: 'pnpm',
+            args: ['--config.verify-deps-before-run=false', 'typecheck:test'],
+            expected: 'typecheck:test',
+        },
+        {
+            command: 'pnpm',
+            args: ['--config.verify-deps-before-run=false', 'run', 'typecheck:test'],
+            expected: 'typecheck:test',
+        },
+        { command: 'pnpm', args: ['--filter', 'sourdaw', 'typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['-F', 'sourdaw', 'typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['--filter=sourdaw', 'typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['-C', '/tmp', 'typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['--dir', '/tmp', 'typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['--dir=/tmp', 'typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['--silent', 'typecheck:test'], expected: 'typecheck:test' },
+        { command: 'pnpm', args: ['-s', 'typecheck:test'], expected: 'typecheck:test' },
+        {
+            command: 'pnpm',
+            args: ['--config.foo=bar', '--dir', '/tmp', '--silent', 'run', 'typecheck:test'],
+            expected: 'typecheck:test',
+        },
+        { command: 'pnpm', args: ['--silent'], expected: undefined },
+        { command: 'pnpm', args: ['--filter', 'sourdaw'], expected: undefined },
+        { command: 'pnpm', args: ['--'], expected: undefined },
+        { command: 'node', args: ['--config.foo=bar', 'typecheck:test'], expected: undefined },
+    ])('resolves script name for $command with $args to $expected', ({ command, args, expected }) => {
+        expect(pnpmScriptName(command, args)).toBe(expected);
+    });
+});
+
+/**
+ * Issue #4118: a lane whose node_modules symlinks into another checkout rewrites that checkout's
+ * install metadata on every pnpm run, and the next pnpm run in the real owner aborts every
+ * trusted delivery script with ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY. The guard is the
+ * shared entry every local verification flows through, so the preflight runs there, before
+ * anything it wraps can write through the link.
+ */
+describe('pnpm modules preflight', () => {
+    function okResult(): GuardedCommandResult {
+        return {
+            code: 0,
+            signal: null,
+            output: '',
+            omittedBytes: 0,
+            peakRssBytes: 1024 ** 2,
+            maxRssBytes: 4 * 1024 ** 3,
+            durationMs: 10,
+        };
+    }
+
+    it("refuses before any command runs when the checkout holds another project's install", async () => {
+        const errors: string[] = [];
+        let commandRan = false;
+        let laneProbed = false;
+
+        const code = await runGuardCli(['--', 'pnpm', 'test:run', 'x.spec.ts'], {
+            detectLane: () => {
+                laneProbed = true;
+                return undefined;
+            },
+            runCommand: async () => {
+                commandRan = true;
+                return okResult();
+            },
+            assertModulesPreflight: () => {
+                throw new Error('refusing: foreign pnpm install record');
+            },
+            error: (message) => errors.push(message),
+        });
+
+        expect(code).toBe(1);
+        expect(errors).toEqual(['refusing: foreign pnpm install record']);
+        expect(commandRan).toBe(false);
+        expect(laneProbed).toBe(false);
+    });
+
+    it('refuses a --recover re-execution before the recovery runs', async () => {
+        const errors: string[] = [];
+
+        const code = await runGuardCli(['--recover'], {
+            detectLane: () => undefined,
+            assertModulesPreflight: () => {
+                throw new Error('refusing: foreign pnpm install record');
+            },
+            error: (message) => errors.push(message),
+        });
+
+        expect(code).toBe(1);
+        expect(errors).toEqual(['refusing: foreign pnpm install record']);
+    });
+
+    it('wires the real preflight by default and stands down outside a git checkout', async () => {
+        const root = fixtureRoot('preflight-default');
+        try {
+            let commandRan = false;
+            const code = await runGuardCli(['--', 'pnpm', 'test:run', 'x.spec.ts'], {
+                cwd: root,
+                detectLane: () => undefined,
+                runCommand: async () => {
+                    commandRan = true;
+                    return okResult();
+                },
+            });
+            expect(code).toBe(0);
+            expect(commandRan).toBe(true);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

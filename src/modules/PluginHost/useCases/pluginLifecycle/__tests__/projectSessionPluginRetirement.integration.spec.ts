@@ -34,7 +34,6 @@ const attemptLateActivation = async (
     instanceId: string
 ): Promise<void> => {
     const activation = activateExternalPlugin({
-        engineSampleRate: 48_000,
         pluginId: 'compressor',
         instanceId,
     });

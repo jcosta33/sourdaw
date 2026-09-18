@@ -5,6 +5,14 @@ import {
     withProjectAudioStorageLock,
 } from '#/infra/storage/withProjectAudioStorageLock';
 
+import {
+    CHECKPOINT_AUDIO_VERSION_META_STORE_NAME,
+    CHECKPOINT_AUDIO_VERSION_STORE_NAME,
+    CHECKPOINT_RETENTION_STORE_NAME,
+    readCheckpointAudioRetention,
+    readCheckpointAudioVersionKey,
+} from '../models/CheckpointAudioRetention';
+
 import { fetchDurableOwnedAudioBufferIds } from './durableAudioBufferOwnership';
 import {
     createPreparedAudioBufferLifecycle,
@@ -12,6 +20,7 @@ import {
 } from './preparedAudioBufferLifecycle';
 import {
     isValidPreparedSerializedAudioBuffer,
+    readPersistentPcmRevision,
     readPreparedOwner,
     requiresPromotionReconciliation,
     type PreparedAudioBufferMetadata,
@@ -181,7 +190,7 @@ function waveformCacheSet(key: string, peaks: Float32Array): void {
 }
 
 const DB_NAME = 'sourdaw-audio';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE_NAME = 'buffers';
 
 /** Everything the age and size collectors read, split out of the record so that
@@ -207,17 +216,7 @@ const STORE_NAME = 'buffers';
  * for a record written before this store existed. */
 const META_STORE_NAME = 'bufferMeta';
 const RECOVERY_STORE_NAME = 'preparedBufferRecovery';
-const CHECKPOINT_RETENTION_STORE_NAME = 'checkpointRetentions';
-
 type BufferMeta = PreparedAudioBufferMetadata;
-
-type CheckpointAudioRetention = {
-    schemaVersion: 1;
-    checkpointId: string;
-    projectOwnerId: string;
-    bufferIds: string[];
-    ownershipToken: string;
-};
 
 type CheckpointRetentionDurabilityReceipt = {
     status: 'durable';
@@ -227,13 +226,9 @@ type CheckpointRetentionDurabilityReceipt = {
 
 type CheckpointRetentionDurabilityAuthority = {
     bufferIds: readonly string[];
+    expectedPersistenceRevisionById: ReadonlyMap<string, string>;
     isCurrent: () => boolean;
 };
-
-type CheckpointRetentionAcquisitionResult =
-    | { status: 'retained'; ownershipToken: string }
-    | { status: 'superseded' }
-    | { status: 'cleanup-failed'; ownershipToken: string };
 
 const checkpointRetentionAuthorityByReceipt = new WeakMap<
     CheckpointRetentionDurabilityReceipt,
@@ -347,8 +342,9 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
             settled = true;
             reject(new Error(OPEN_BLOCKED_MESSAGE));
         };
-        req.onupgradeneeded = () => {
-            // Creates stores and nothing else. A v1 -> v2 back-fill that walked
+        req.onupgradeneeded = (event) => {
+            // Creates stores and clears obsolete checkpoint-retention ownership.
+            // A v1 -> v2 back-fill that walked
             // the records here would hold the upgrade transaction — and every
             // context waiting on it — for as long as it takes to read a store
             // the freeze cleanup allows to reach 2 GiB, on the startup path.
@@ -372,6 +368,19 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
             }
             if (!db.objectStoreNames.contains(CHECKPOINT_RETENTION_STORE_NAME)) {
                 db.createObjectStore(CHECKPOINT_RETENTION_STORE_NAME);
+            }
+            if (!db.objectStoreNames.contains(CHECKPOINT_AUDIO_VERSION_STORE_NAME)) {
+                db.createObjectStore(CHECKPOINT_AUDIO_VERSION_STORE_NAME);
+            }
+            if (!db.objectStoreNames.contains(CHECKPOINT_AUDIO_VERSION_META_STORE_NAME)) {
+                db.createObjectStore(CHECKPOINT_AUDIO_VERSION_META_STORE_NAME);
+            }
+            if (event.oldVersion < 5 && event.oldVersion >= 4) {
+                const upgradeTransaction = req.transaction;
+                if (upgradeTransaction === null) {
+                    throw new Error('Audio buffer cache upgrade transaction is unavailable.');
+                }
+                upgradeTransaction.objectStore(CHECKPOINT_RETENTION_STORE_NAME).clear();
             }
         };
         req.onsuccess = () => {
@@ -406,7 +415,7 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
     });
 }
 
-function openDb(): Promise<IDBDatabase> {
+export function openAudioBufferCacheDatabase(): Promise<IDBDatabase> {
     if (versionChangeLatched) {
         return Promise.reject(new Error(VERSION_CHANGE_LATCH_MESSAGE));
     }
@@ -429,6 +438,8 @@ function openDb(): Promise<IDBDatabase> {
     });
     return dbPromise;
 }
+
+const openDb = openAudioBufferCacheDatabase;
 
 /** Resolve with a request's result. An IndexedDB request's `success` fires
  * before the transaction commits (IDB 3.0 §5.6), so this is only ever used to
@@ -453,6 +464,13 @@ function awaitTransaction(transaction: IDBTransaction): Promise<void> {
 
 type SerializedBuffer = PreparedSerializedAudioBuffer;
 
+type PersistentPcmIdentity =
+    | { status: 'candidate'; revision: string }
+    | { status: 'authenticated'; revision: string }
+    | { status: 'unauthenticated' };
+
+type CachedAudioPersistenceSettlement = { status: 'committed'; persistenceRevision: string } | { status: 'failed' };
+
 type OrdinaryStoredBuffer = Omit<SerializedBuffer, 'lastAccessed' | 'sizeInBytes'> & {
     lastAccessed?: number;
     sizeInBytes?: number;
@@ -463,17 +481,23 @@ type CachedAudioDurabilitySource = {
     data: SerializedBuffer | undefined;
     dataFactory: (() => SerializedBuffer) | undefined;
     freezeProjectId: number | undefined;
+    identity: PersistentPcmIdentity;
     isAuthoritative: () => boolean;
-    persistence: Promise<boolean> | undefined;
+    persistence: Promise<CachedAudioPersistenceSettlement> | undefined;
     revision: number;
     status: 'durable' | 'external' | 'failed' | 'pending' | 'removed' | 'unpersisted';
 };
 
 type RetainedCachedAudioDurabilitySource = Readonly<
-    Pick<CachedAudioDurabilitySource, 'data' | 'dataFactory' | 'freezeProjectId' | 'persistence'> & {
-        status: 'durable' | 'failed' | 'pending' | 'unpersisted';
-    }
+    Pick<
+        CachedAudioDurabilitySource,
+        'data' | 'dataFactory' | 'freezeProjectId' | 'identity' | 'persistence' | 'status'
+    >
 >;
+
+type StoredPcmHydrationAdmission =
+    | { status: 'authenticated'; persistenceRevision: string; sourceStatus: CachedAudioDurabilitySource['status'] }
+    | { status: 'unknown' };
 
 let nextDurabilitySourceRevision = 0;
 const durabilitySourceById = new Map<string, CachedAudioDurabilitySource>();
@@ -701,6 +725,7 @@ function recordCachedAudioDurabilitySource(
         data,
         dataFactory: undefined,
         freezeProjectId,
+        identity: { status: 'candidate', revision: crypto.randomUUID() },
         isAuthoritative: () => true,
         persistence: undefined,
         revision: ++nextDurabilitySourceRevision,
@@ -722,6 +747,7 @@ function recordLazyCachedAudioDurabilitySource(
         data: undefined,
         dataFactory,
         freezeProjectId,
+        identity: { status: 'candidate', revision: crypto.randomUUID() },
         isAuthoritative,
         persistence: undefined,
         revision: ++nextDurabilitySourceRevision,
@@ -735,11 +761,13 @@ function invalidateCachedAudioDurabilitySource(
     id: string,
     status: CachedAudioDurabilitySource['status'] = 'external'
 ): void {
+    const existing = durabilitySourceById.get(id);
     durabilitySourceById.set(id, {
         attempt: undefined,
         data: undefined,
         dataFactory: undefined,
         freezeProjectId: undefined,
+        identity: existing?.identity ?? { status: 'unauthenticated' },
         isAuthoritative: () => true,
         persistence: undefined,
         revision: ++nextDurabilitySourceRevision,
@@ -756,6 +784,7 @@ function rebindCachedAudioDurabilitySourceForRemoval(id: string): CachedAudioDur
               data: existing.data,
               dataFactory: existing.dataFactory,
               freezeProjectId: existing.freezeProjectId,
+              identity: existing.identity,
               isAuthoritative: existing.isAuthoritative,
               persistence: undefined,
               revision: ++nextDurabilitySourceRevision,
@@ -766,6 +795,7 @@ function rebindCachedAudioDurabilitySourceForRemoval(id: string): CachedAudioDur
               data: undefined,
               dataFactory: undefined,
               freezeProjectId: undefined,
+              identity: { status: 'unauthenticated' },
               isAuthoritative: () => true,
               persistence: undefined,
               revision: ++nextDurabilitySourceRevision,
@@ -783,14 +813,117 @@ function rebindCachedAudioDurabilitySourceForRemoval(id: string): CachedAudioDur
     return source;
 }
 
-function captureCachedAudioDurabilitySourceInvalidation(id: string): () => boolean {
-    const source = durabilitySourceById.get(id);
-    return () => {
-        if (durabilitySourceById.get(id) !== source || (source !== undefined && !source.isAuthoritative())) {
+type PreparedPcmInvalidationWitness =
+    | { kind: 'preserve' }
+    | { kind: 'read'; persistenceRevision: string | undefined }
+    | { kind: 'committed'; persistenceRevision: string | undefined };
+
+type PreparedPcmPublicationAuthority = {
+    acceptsRead: (persistenceRevision: string | undefined) => boolean;
+    invalidate: (witness: PreparedPcmInvalidationWitness) => boolean;
+    isCurrent: () => boolean;
+    publishCommitted: (buffer: AudioBuffer, lastAccessed: number, persistenceRevision: string) => boolean;
+    publishRead: (buffer: AudioBuffer, lastAccessed: number, persistenceRevision: string | undefined) => boolean;
+};
+
+function capturePreparedPcmPublicationAuthority(id: string): PreparedPcmPublicationAuthority {
+    let expectedRuntime = cache.get(id);
+    let expectedSource = durabilitySourceById.get(id);
+    if (expectedSource === undefined && expectedRuntime !== undefined) {
+        expectedSource = {
+            attempt: undefined,
+            data: undefined,
+            dataFactory: undefined,
+            freezeProjectId: residentFreezeProjectIdById.get(id),
+            identity: { status: 'unauthenticated' },
+            isAuthoritative: () => true,
+            persistence: undefined,
+            revision: ++nextDurabilitySourceRevision,
+            status: 'external',
+        };
+        durabilitySourceById.set(id, expectedSource);
+    }
+    const isCurrent = (): boolean =>
+        durabilitySourceById.get(id) === expectedSource &&
+        cache.get(id) === expectedRuntime &&
+        (expectedSource === undefined || expectedSource.isAuthoritative());
+    const acceptsRead = (persistenceRevision: string | undefined): boolean => {
+        if (!isCurrent() || !isNonEmptyString(persistenceRevision)) {
             return false;
         }
-        invalidateCachedAudioDurabilitySource(id);
+        if (expectedSource === undefined) {
+            return expectedRuntime === undefined;
+        }
+        return (
+            expectedSource.identity.status === 'authenticated' &&
+            expectedSource.identity.revision === persistenceRevision
+        );
+    };
+    const publish = (buffer: AudioBuffer, lastAccessed: number, persistenceRevision: string): boolean => {
+        if (!isCurrent()) {
+            return false;
+        }
+        writeAudioCacheEntry(id, buffer, undefined, true);
+        expectedRuntime = buffer;
+        expectedSource = {
+            attempt: undefined,
+            data: undefined,
+            dataFactory: undefined,
+            freezeProjectId: undefined,
+            identity: { status: 'authenticated', revision: persistenceRevision },
+            isAuthoritative: () => true,
+            persistence: undefined,
+            revision: ++nextDurabilitySourceRevision,
+            status: 'durable',
+        };
+        durabilitySourceById.set(id, expectedSource);
+        clearWaveformCachesForId(id);
+        accessRefreshStampById.set(id, lastAccessed);
         return true;
+    };
+    return {
+        acceptsRead,
+        invalidate: (witness) => {
+            let identity: PersistentPcmIdentity;
+            if (witness.kind === 'preserve') {
+                if (!isCurrent()) {
+                    return false;
+                }
+                identity = expectedSource?.identity ?? { status: 'unauthenticated' };
+            } else if (witness.kind === 'read') {
+                if (!isNonEmptyString(witness.persistenceRevision) || !acceptsRead(witness.persistenceRevision)) {
+                    return false;
+                }
+                identity = { status: 'authenticated', revision: witness.persistenceRevision };
+            } else {
+                if (!isCurrent() || !isNonEmptyString(witness.persistenceRevision)) {
+                    return false;
+                }
+                identity = { status: 'authenticated', revision: witness.persistenceRevision };
+            }
+            expectedSource = {
+                attempt: undefined,
+                data: undefined,
+                dataFactory: undefined,
+                freezeProjectId: undefined,
+                identity,
+                isAuthoritative: () => true,
+                persistence: undefined,
+                revision: ++nextDurabilitySourceRevision,
+                status: 'external',
+            };
+            durabilitySourceById.set(id, expectedSource);
+            return true;
+        },
+        isCurrent,
+        publishCommitted: (buffer, lastAccessed, persistenceRevision) =>
+            isNonEmptyString(persistenceRevision) && publish(buffer, lastAccessed, persistenceRevision),
+        publishRead: (buffer, lastAccessed, persistenceRevision) => {
+            if (!acceptsRead(persistenceRevision)) {
+                return false;
+            }
+            return publish(buffer, lastAccessed, persistenceRevision!);
+        },
     };
 }
 
@@ -809,23 +942,28 @@ function materializeCachedAudioDurabilitySource(source: CachedAudioDurabilitySou
 function trackCachedAudioDurabilityAttempt(
     id: string,
     source: CachedAudioDurabilitySource,
-    persistence: Promise<boolean>
+    persistence: Promise<CachedAudioPersistenceSettlement>
 ): Promise<boolean> {
     if (durabilitySourceById.get(id) !== source || !source.isAuthoritative()) {
         return Promise.resolve(false);
     }
     source.status = 'pending';
     const settlement = persistence.then(
-        (persisted) => persisted,
-        () => false
+        (result) => result,
+        (): CachedAudioPersistenceSettlement => ({ status: 'failed' })
     );
     source.persistence = settlement;
-    const attempt = settlement.then((persisted) => {
+    const attempt = settlement.then((result) => {
         if (durabilitySourceById.get(id) !== source || !source.isAuthoritative()) {
             return false;
         }
         source.persistence = undefined;
-        if (persisted) {
+        if (
+            result.status === 'committed' &&
+            source.identity.status === 'candidate' &&
+            source.identity.revision === result.persistenceRevision
+        ) {
+            source.identity = { status: 'authenticated', revision: result.persistenceRevision };
             source.status = 'durable';
             source.data = undefined;
             source.dataFactory = undefined;
@@ -858,10 +996,14 @@ function startCachedAudioDurabilityAttempt(
     if (!data) {
         return Promise.resolve(false);
     }
+    if (source.identity.status !== 'candidate') {
+        source.status = 'failed';
+        return Promise.resolve(false);
+    }
     return trackCachedAudioDurabilityAttempt(
         id,
         source,
-        persistSerializedToIdb(id, data, source.freezeProjectId, scope)
+        persistSerializedToIdb(id, data, source.identity.revision, source.freezeProjectId, scope)
     );
 }
 
@@ -870,17 +1012,15 @@ function captureRetainedCachedAudioDurabilitySources(
 ): Map<string, RetainedCachedAudioDurabilitySource> {
     const retainedSources = new Map<string, RetainedCachedAudioDurabilitySource>();
     for (const id of retainedIds) {
-        if (!cache.has(id)) {
-            continue;
-        }
         const source = durabilitySourceById.get(id);
-        if (!source || !source.isAuthoritative() || source.status === 'external' || source.status === 'removed') {
+        if (!source || !source.isAuthoritative()) {
             continue;
         }
         retainedSources.set(id, {
             data: source.data,
             dataFactory: source.dataFactory,
             freezeProjectId: source.freezeProjectId,
+            identity: source.identity,
             persistence: source.persistence,
             status: source.status,
         });
@@ -892,14 +1032,12 @@ function restoreRetainedCachedAudioDurabilitySources(
     retainedSources: ReadonlyMap<string, RetainedCachedAudioDurabilitySource>
 ): void {
     for (const [id, retained] of retainedSources) {
-        if (!cache.has(id)) {
-            continue;
-        }
         const source: CachedAudioDurabilitySource = {
             attempt: undefined,
             data: retained.data,
             dataFactory: retained.dataFactory,
             freezeProjectId: retained.freezeProjectId,
+            identity: retained.identity,
             isAuthoritative: () => true,
             persistence: undefined,
             revision: ++nextDurabilitySourceRevision,
@@ -1102,15 +1240,16 @@ function refreshAccessTime(id: string): void {
 function persistSerializedToIdb(
     id: string,
     data: SerializedBuffer,
+    persistenceRevision: string,
     freezeProjectId?: number,
     scope?: ProjectAudioStorageLockScope
-): Promise<boolean> {
+): Promise<CachedAudioPersistenceSettlement> {
     return runAudioStorageWrite(scope, async () => {
         const generation = claimPersistenceGeneration(id);
         try {
             const db = await openDb();
             if (persistenceGenerationById.get(id) !== generation) {
-                return false;
+                return { status: 'failed' };
             }
             // One transaction over both stores. Two transactions would let the
             // record commit while its metadata row rolled back (or the reverse),
@@ -1118,16 +1257,22 @@ function persistSerializedToIdb(
             // collector evicting the wrong things or nothing at all.
             const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
             tx.objectStore(STORE_NAME).put(data, id);
-            const metadata: BufferMeta = { lastAccessed: data.lastAccessed, sizeInBytes: data.sizeInBytes };
+            const metadata: BufferMeta = {
+                lastAccessed: data.lastAccessed,
+                persistenceRevision,
+                sizeInBytes: data.sizeInBytes,
+            };
             if (freezeProjectId !== undefined) {
                 metadata.freezeProjectId = freezeProjectId;
             }
             tx.objectStore(META_STORE_NAME).put(metadata, id);
             await awaitTransaction(tx);
-            return persistenceGenerationById.get(id) === generation;
+            return persistenceGenerationById.get(id) === generation
+                ? { status: 'committed', persistenceRevision }
+                : { status: 'failed' };
         } catch (error) {
             logger.warn('[audioBufferCache] Audio buffer persistence failed', { id, error });
-            return false;
+            return { status: 'failed' };
         } finally {
             if (persistenceGenerationById.get(id) === generation) {
                 persistenceGenerationById.delete(id);
@@ -1243,7 +1388,7 @@ function clearRuntimeCacheState(retainedIds?: ReadonlySet<string>): void {
 
 const preparedAudioBufferLifecycle = createPreparedAudioBufferLifecycle({
     bufferStoreName: STORE_NAME,
-    captureDurabilitySourceInvalidation: captureCachedAudioDurabilitySourceInvalidation,
+    capturePcmPublicationAuthority: capturePreparedPcmPublicationAuthority,
     claimDurableMutation: claimPersistenceGeneration,
     createRuntimeBuffer,
     evictRuntime: dropCachedBufferEntry,
@@ -1258,11 +1403,6 @@ const preparedAudioBufferLifecycle = createPreparedAudioBufferLifecycle({
     isValidSerializedBuffer,
     metadataStoreName: META_STORE_NAME,
     openDatabase: openDb,
-    publishRuntime: (id, buffer, lastAccessed) => {
-        writeAudioCacheEntry(id, buffer, undefined, true);
-        clearWaveformCachesForId(id);
-        accessRefreshStampById.set(id, lastAccessed);
-    },
     recoveryStoreName: RECOVERY_STORE_NAME,
 });
 
@@ -1295,7 +1435,13 @@ async function prepareBuffersFromIdb({
     if (ids !== undefined) {
         recordAudioStorageIntent(ids);
     }
-    const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
+    const staged: Array<{
+        admission: StoredPcmHydrationAdmission;
+        buffer: AudioBuffer;
+        id: string;
+        metadata: BufferMeta | undefined;
+        persistenceRevision: string | null;
+    }> = [];
     const temporaryCaptures = preparedAudioBufferLifecycle.captureTemporaryPublications(ids);
     const provisionalReservations = ids ? preparedAudioBufferLifecycle.beginProjectReservations(ids) : undefined;
     let candidateSettled = false;
@@ -1407,11 +1553,28 @@ async function prepareBuffersFromIdb({
             ) {
                 continue;
             }
+            const persistenceRevision = readPersistentPcmRevision(meta);
+            const source = durabilitySourceById.get(id);
+            let admission: StoredPcmHydrationAdmission = { status: 'unknown' };
+            if (source !== undefined) {
+                if (
+                    !source.isAuthoritative() ||
+                    source.identity.status !== 'authenticated' ||
+                    source.identity.revision !== persistenceRevision
+                ) {
+                    continue;
+                }
+                admission = {
+                    status: 'authenticated',
+                    persistenceRevision: source.identity.revision,
+                    sourceStatus: source.status,
+                };
+            }
             const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
             for (let channel = 0; channel < data.numberOfChannels; channel++) {
                 buffer.getChannelData(channel).set(data.channelData[channel]!);
             }
-            staged.push({ id, buffer });
+            staged.push({ admission, id, buffer, metadata: meta, persistenceRevision });
         }
     } catch {
         releaseReservations();
@@ -1443,10 +1606,38 @@ async function prepareBuffersFromIdb({
             published = true;
             candidateSettled = true;
             publishProjectReservations();
-            for (const { id, buffer } of staged) {
-                audioCacheSet(id, buffer);
+            let publishedCount = 0;
+            for (const { admission, id, buffer, metadata, persistenceRevision } of staged) {
+                const currentSource = durabilitySourceById.get(id);
+                const sourceIsCurrent =
+                    admission.status === 'unknown'
+                        ? currentSource === undefined
+                        : currentSource !== undefined &&
+                          currentSource.isAuthoritative() &&
+                          currentSource.status === admission.sourceStatus &&
+                          currentSource.identity.status === 'authenticated' &&
+                          currentSource.identity.revision === admission.persistenceRevision;
+                if (cache.has(id) || !sourceIsCurrent) {
+                    continue;
+                }
+                audioCacheSet(id, buffer, metadata?.freezeProjectId, metadata !== undefined);
+                durabilitySourceById.set(id, {
+                    attempt: undefined,
+                    data: undefined,
+                    dataFactory: undefined,
+                    freezeProjectId: metadata?.freezeProjectId,
+                    identity:
+                        typeof persistenceRevision === 'string'
+                            ? { status: 'authenticated', revision: persistenceRevision }
+                            : { status: 'unauthenticated' },
+                    isAuthoritative: () => true,
+                    persistence: undefined,
+                    revision: ++nextDurabilitySourceRevision,
+                    status: typeof persistenceRevision === 'string' ? 'durable' : 'external',
+                });
+                publishedCount++;
             }
-            return staged.length;
+            return publishedCount;
         },
     };
 }
@@ -1547,14 +1738,14 @@ type CachedAudioBuffersDurabilityResult =
           status: 'superseded';
       };
 
-function isDurableAudioBufferPair(data: unknown, metadata: unknown): boolean {
+function readDurableAudioBufferRevision(data: unknown, metadata: unknown): string | null {
     if (
         !isValidSerializedBuffer(data) ||
         metadata === null ||
         typeof metadata !== 'object' ||
         Array.isArray(metadata)
     ) {
-        return false;
+        return null;
     }
     const candidate = metadata as Record<string, unknown>;
     if (
@@ -1566,63 +1757,21 @@ function isDurableAudioBufferPair(data: unknown, metadata: unknown): boolean {
                 !Number.isSafeInteger(candidate.freezeProjectId) ||
                 candidate.freezeProjectId < 0))
     ) {
-        return false;
+        return null;
     }
     const owner = readPreparedOwner(metadata);
-    return (
+    if (!(
         owner === null ||
         (owner !== 'invalid' && owner.status === 'project-owned' && !requiresPromotionReconciliation(owner))
-    );
+    )) {
+        return null;
+    }
+    const revision = readPersistentPcmRevision(metadata);
+    return typeof revision === 'string' ? revision : null;
 }
 
 function isNonEmptyString(value: unknown): value is string {
     return typeof value === 'string' && value.trim().length > 0;
-}
-
-function isDenseNonEmptyStringArray(values: readonly unknown[]): values is readonly string[] {
-    for (let index = 0; index < values.length; index++) {
-        if (!Object.hasOwn(values, index) || !isNonEmptyString(values[index])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-function canonicalAudioBufferIds(bufferIds: readonly unknown[]): string[] {
-    if (!isDenseNonEmptyStringArray(bufferIds)) {
-        throw new Error('Checkpoint audio retention requires non-empty buffer IDs.');
-    }
-    return [...new Set(bufferIds)].toSorted();
-}
-
-function readCheckpointAudioRetention(value: unknown, key: IDBValidKey): CheckpointAudioRetention | null {
-    if (value === null || typeof value !== 'object' || Array.isArray(value) || typeof key !== 'string') {
-        return null;
-    }
-    const candidate = value as Record<string, unknown>;
-    const bufferIds = candidate.bufferIds;
-    if (
-        candidate.schemaVersion !== 1 ||
-        candidate.checkpointId !== key ||
-        !isNonEmptyString(candidate.checkpointId) ||
-        !isNonEmptyString(candidate.projectOwnerId) ||
-        !isNonEmptyString(candidate.ownershipToken) ||
-        !Array.isArray(bufferIds) ||
-        !isDenseNonEmptyStringArray(bufferIds)
-    ) {
-        return null;
-    }
-    const canonicalIds = canonicalAudioBufferIds(bufferIds);
-    if (canonicalIds.length !== bufferIds.length || canonicalIds.some((id, index) => id !== bufferIds[index])) {
-        return null;
-    }
-    return {
-        schemaVersion: 1,
-        checkpointId: candidate.checkpointId,
-        projectOwnerId: candidate.projectOwnerId,
-        bufferIds: canonicalIds,
-        ownershipToken: candidate.ownershipToken,
-    };
 }
 
 async function readCheckpointRetainedBufferIds(transaction: IDBTransaction): Promise<Set<string>> {
@@ -1640,150 +1789,26 @@ async function readCheckpointRetainedBufferIds(transaction: IDBTransaction): Pro
         if (retention === null) {
             throw new Error('Checkpoint audio retention ownership is invalid.');
         }
-        for (const id of retention.bufferIds) {
-            retainedIds.add(id);
+        for (const versionKey of retention.versionKeys) {
+            retainedIds.add(readCheckpointAudioVersionKey(versionKey)![0]);
         }
     }
     return retainedIds;
 }
 
-async function acquireCheckpointAudioRetentionInIdb({
-    checkpointId,
-    projectOwnerId,
-    bufferIds,
-    isCurrent,
-}: {
-    checkpointId: string;
-    projectOwnerId: string;
-    bufferIds: readonly string[];
-    isCurrent: () => boolean;
-}): Promise<{ status: 'retained'; ownershipToken: string } | { status: 'superseded' }> {
-    if (!isNonEmptyString(checkpointId) || !isNonEmptyString(projectOwnerId)) {
-        throw new Error('Checkpoint audio retention requires checkpoint and project owner IDs.');
+export function authenticateCheckpointAudioRetentionReceipt(
+    durabilityReceipt: CheckpointRetentionDurabilityReceipt
+): CheckpointRetentionDurabilityAuthority {
+    const authority = checkpointRetentionAuthorityByReceipt.get(durabilityReceipt);
+    if (!authority) {
+        throw new Error('Checkpoint audio retention requires an authentic active durability receipt.');
     }
-    const canonicalBufferIds = canonicalAudioBufferIds(bufferIds);
-    if (!isCurrent()) {
-        return { status: 'superseded' };
-    }
-    const database = await openDb();
-    if (!isCurrent()) {
-        return { status: 'superseded' };
-    }
-    const transaction = database.transaction(
-        [STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME],
-        'readwrite'
-    );
-    const bufferStore = transaction.objectStore(STORE_NAME);
-    const metadataStore = transaction.objectStore(META_STORE_NAME);
-    const retentionStore = transaction.objectStore(CHECKPOINT_RETENTION_STORE_NAME);
-    const [retentionKeys, durablePairs] = await Promise.all([
-        awaitRequest(retentionStore.getAllKeys()),
-        Promise.all(
-            canonicalBufferIds.map((id) =>
-                Promise.all([
-                    awaitRequest(bufferStore.get(id) as IDBRequest<SerializedBuffer | undefined>),
-                    awaitRequest(metadataStore.get(id) as IDBRequest<BufferMeta | undefined>),
-                ])
-            )
-        ),
-    ]);
-    let refusal: Error | undefined;
-    if (retentionKeys.includes(checkpointId)) {
-        refusal = new Error(`Checkpoint audio retention already exists for ${checkpointId}.`);
-    } else if (durablePairs.some(([data, metadata]) => !isDurableAudioBufferPair(data, metadata))) {
-        refusal = new Error('Checkpoint audio retention has missing or invalid PCM.');
-    }
-    if (refusal) {
-        await awaitTransaction(transaction);
-        throw refusal;
-    }
-    if (!isCurrent()) {
-        await awaitTransaction(transaction);
-        return { status: 'superseded' };
-    }
-    const ownershipToken = crypto.randomUUID();
-    retentionStore.put(
-        {
-            schemaVersion: 1,
-            checkpointId,
-            projectOwnerId,
-            bufferIds: canonicalBufferIds,
-            ownershipToken,
-        } satisfies CheckpointAudioRetention,
-        checkpointId
-    );
-    await awaitTransaction(transaction);
-    return { status: 'retained', ownershipToken };
+    return authority;
 }
 
-function acquireCheckpointAudioRetention({
-    checkpointId,
-    projectOwnerId,
-    durabilityReceipt,
-    scope,
-}: {
-    checkpointId: string;
-    projectOwnerId: string;
-    durabilityReceipt: CheckpointRetentionDurabilityReceipt;
-    scope: ProjectAudioStorageLockScope;
-}): Promise<CheckpointRetentionAcquisitionResult> {
-    return runInProjectAudioStorageLock(scope, async () => {
-        const authority = checkpointRetentionAuthorityByReceipt.get(durabilityReceipt);
-        if (!authority) {
-            throw new Error('Checkpoint audio retention requires an authentic active durability receipt.');
-        }
-        const acquisition = await acquireCheckpointAudioRetentionInIdb({
-            checkpointId,
-            projectOwnerId,
-            bufferIds: authority.bufferIds,
-            isCurrent: authority.isCurrent,
-        });
-        if (acquisition.status === 'superseded' || authority.isCurrent()) {
-            return acquisition;
-        }
-        try {
-            const cleaned = await releaseCheckpointAudioRetentionInIdb({
-                checkpointId,
-                projectOwnerId,
-                ownershipToken: acquisition.ownershipToken,
-            });
-            return cleaned
-                ? { status: 'superseded' }
-                : { status: 'cleanup-failed', ownershipToken: acquisition.ownershipToken };
-        } catch {
-            return { status: 'cleanup-failed', ownershipToken: acquisition.ownershipToken };
-        }
-    });
-}
-
-async function releaseCheckpointAudioRetentionInIdb({
-    checkpointId,
-    projectOwnerId,
-    ownershipToken,
-}: {
-    checkpointId: string;
-    projectOwnerId: string;
-    ownershipToken: string;
-}): Promise<boolean> {
-    const database = await openDb();
-    const transaction = database.transaction(CHECKPOINT_RETENTION_STORE_NAME, 'readwrite');
-    const retentionStore = transaction.objectStore(CHECKPOINT_RETENTION_STORE_NAME);
-    const value = await awaitRequest(retentionStore.get(checkpointId) as IDBRequest<unknown>);
-    const retention = readCheckpointAudioRetention(value, checkpointId);
-    const matches =
-        retention !== null &&
-        retention.projectOwnerId === projectOwnerId &&
-        retention.ownershipToken === ownershipToken;
-    if (matches) {
-        retentionStore.delete(checkpointId);
-    }
-    await awaitTransaction(transaction);
-    return matches;
-}
-
-async function findNonDurableAudioBufferIds(ids: readonly string[]): Promise<string[]> {
+async function readDurableAudioBufferRevisions(ids: readonly string[]): Promise<ReadonlyMap<string, string | null>> {
     if (ids.length === 0) {
-        return [];
+        return new Map();
     }
     const database = await openDb();
     const transaction = database.transaction([STORE_NAME, META_STORE_NAME], 'readonly');
@@ -1798,7 +1823,9 @@ async function findNonDurableAudioBufferIds(ids: readonly string[]): Promise<str
         )
     );
     await awaitTransaction(transaction);
-    return ids.filter((_, index) => !isDurableAudioBufferPair(pairs[index]?.[0], pairs[index]?.[1]));
+    return new Map(
+        ids.map((id, index) => [id, readDurableAudioBufferRevision(pairs[index]?.[0], pairs[index]?.[1])] as const)
+    );
 }
 
 async function ensureDurableAudioBuffersInScope(
@@ -1815,11 +1842,30 @@ async function ensureDurableAudioBuffersInScope(
     ) {
         return { status: 'superseded' };
     }
-    const sourceRevisionById = new Map(
-        requiredIds.map((id) => [id, durabilitySourceById.get(id)?.revision ?? null] as const)
-    );
+    const capturedSourceById = new Map<string, CachedAudioDurabilitySource | undefined>();
+    const runtimeAbsentAtCaptureById = new Map<string, boolean>();
+    for (const id of requiredIds) {
+        const runtimeAbsent = !cache.has(id);
+        runtimeAbsentAtCaptureById.set(id, runtimeAbsent);
+        let source = durabilitySourceById.get(id);
+        if (source === undefined && !runtimeAbsent) {
+            source = {
+                attempt: undefined,
+                data: undefined,
+                dataFactory: undefined,
+                freezeProjectId: residentFreezeProjectIdById.get(id),
+                identity: { status: 'unauthenticated' },
+                isAuthoritative: () => true,
+                persistence: undefined,
+                revision: ++nextDurabilitySourceRevision,
+                status: 'external',
+            };
+            durabilitySourceById.set(id, source);
+        }
+        capturedSourceById.set(id, source);
+    }
     const isSourceCurrent = (): boolean =>
-        requiredIds.every((id) => (durabilitySourceById.get(id)?.revision ?? null) === sourceRevisionById.get(id));
+        requiredIds.every((id) => durabilitySourceById.get(id) === capturedSourceById.get(id));
     const capturedAttempts = requiredIds.flatMap((id) => {
         const source = durabilitySourceById.get(id);
         if (!source) {
@@ -1884,18 +1930,68 @@ async function ensureDurableAudioBuffersInScope(
         if (recovery === 'failed') {
             return failAndRelease(requiredIds);
         }
-        const failedIds = await findNonDurableAudioBufferIds(requiredIds);
+        const durableRevisionById = await readDurableAudioBufferRevisions(requiredIds);
         if (!isCurrent()) {
             reservations.release();
             return { status: 'superseded' };
         }
+        const failedIds = requiredIds.filter((id) => durableRevisionById.get(id) === null);
         if (failedIds.length > 0) {
             return failAndRelease(failedIds);
         }
+        for (const id of requiredIds) {
+            const revision = durableRevisionById.get(id)!;
+            const source = capturedSourceById.get(id);
+            if (source !== undefined) {
+                if (source.identity.status !== 'authenticated') {
+                    return failAndRelease([id]);
+                }
+                if (source.identity.revision !== revision) {
+                    reservations.release();
+                    return { status: 'superseded' };
+                }
+                continue;
+            }
+            if (runtimeAbsentAtCaptureById.get(id) !== true || cache.has(id) || durabilitySourceById.has(id)) {
+                reservations.release();
+                return { status: 'superseded' };
+            }
+        }
+        for (const id of requiredIds) {
+            if (capturedSourceById.get(id) !== undefined) {
+                continue;
+            }
+            const source: CachedAudioDurabilitySource = {
+                attempt: undefined,
+                data: undefined,
+                dataFactory: undefined,
+                freezeProjectId: undefined,
+                identity: { status: 'authenticated', revision: durableRevisionById.get(id)! },
+                isAuthoritative: () => true,
+                persistence: undefined,
+                revision: ++nextDurabilitySourceRevision,
+                status: 'durable',
+            };
+            durabilitySourceById.set(id, source);
+            capturedSourceById.set(id, source);
+        }
+        const expectedPersistenceRevisionById = new Map(
+            requiredIds.map((id) => [id, durableRevisionById.get(id)!] as const)
+        );
         let released = false;
         const authority: CheckpointRetentionDurabilityAuthority = {
             bufferIds: requiredIds.toSorted(),
-            isCurrent: () => !released && isCurrent(),
+            expectedPersistenceRevisionById,
+            isCurrent: () =>
+                !released &&
+                isCurrent() &&
+                requiredIds.every((id) => {
+                    const source = capturedSourceById.get(id);
+                    return (
+                        source?.identity.status === 'authenticated' &&
+                        source.identity.revision === expectedPersistenceRevisionById.get(id)
+                    );
+                }),
         };
         const receipt: CheckpointRetentionDurabilityReceipt = {
             status: 'durable',
@@ -2007,10 +2103,6 @@ export const audioBufferCache = {
     },
 
     ensureDurable: ensureDurableAudioBuffers,
-
-    acquireCheckpointRetention: acquireCheckpointAudioRetention,
-
-    releaseCheckpointRetention: releaseCheckpointAudioRetentionInIdb,
 
     persistPreparedBuffer,
 
@@ -2469,12 +2561,13 @@ export const audioBufferCache = {
                     for (const entry of entriesToPersist) {
                         const source = entry.durabilitySource;
                         const data = source ? materializeCachedAudioDurabilitySource(source) : undefined;
-                        if (!data) {
+                        if (!data || source?.identity.status !== 'candidate') {
                             throw new Error('Imported audio source is unavailable');
                         }
                         objectStore.put(data, entry.id);
                         const metadata: BufferMeta = {
                             lastAccessed: data.lastAccessed,
+                            persistenceRevision: source.identity.revision,
                             sizeInBytes: data.sizeInBytes,
                         };
                         if (entry.freezeProjectId !== undefined) {
@@ -2546,7 +2639,15 @@ export const audioBufferCache = {
                 const sourcesToPersist = sources.filter(([, source]) => source.status !== 'durable');
                 const batchPersistence = persistImportBatch();
                 const sourceAttempts = sourcesToPersist.map(([id, source]) =>
-                    trackCachedAudioDurabilityAttempt(id, source, batchPersistence)
+                    trackCachedAudioDurabilityAttempt(
+                        id,
+                        source,
+                        batchPersistence.then((committed): CachedAudioPersistenceSettlement =>
+                            committed && source.identity.status === 'candidate'
+                                ? { status: 'committed', persistenceRevision: source.identity.revision }
+                                : { status: 'failed' }
+                        )
+                    )
                 );
                 persistenceAttempt = Promise.all(sourceAttempts).then((results) => {
                     const succeeded =
@@ -2835,93 +2936,96 @@ export const audioBufferCache = {
         }
         return deletedCount;
     },
+};
 
-    async garbageCollectBySize(maxSizeBytes: number): Promise<number> {
+export function garbageCollectAudioBufferCacheBySize(
+    maxSizeBytes: number,
+    scope: ProjectAudioStorageLockScope,
+    checkpointRetainedIds: ReadonlySet<string>
+): Promise<number> {
+    return runInProjectAudioStorageLock(scope, async () => {
         let deletedCount = 0;
         try {
-            await withProjectAudioStorageLock(async () => {
-                const durableOwnedIds = await readDurableOwnedIdsOrAbort();
-                if (durableOwnedIds === null) {
-                    return;
-                }
-                const recoveryCollection = await preparedAudioBufferLifecycle.collectRecoveries({ maxSizeBytes });
-                deletedCount += recoveryCollection.count;
-                const ordinarySizeBudget = Math.max(0, maxSizeBytes - recoveryCollection.remainingBytes);
-                const db = await openDb();
-                const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
-                const store = tx.objectStore(STORE_NAME);
-                const metaStore = tx.objectStore(META_STORE_NAME);
-                // Metadata rows, for the same reason as `garbageCollectByAge`, and
-                // with the same consequence: a record with no row is neither a
-                // deletion candidate nor part of `currentTotal`.
-                //
-                // This collector does not sweep for un-migrated records itself.
-                // `cleanupUnusedFreezeFiles` runs `garbageCollectByAge` immediately
-                // before it, and that pass seeds or reaps them, so by the time this
-                // runs the rows exist for everything the budget reached. Doing the
-                // sweep in both would double the migration read for no gain.
-                //
-                // Until then those records are out of the total, so this collector
-                // evicts *less* than it should. That is the direction to be wrong
-                // in — the alternative is counting a record whose size is unknown as
-                // zero, which under-reports the total just as badly *and* makes it
-                // a candidate that frees nothing when deleted, so the loop would
-                // walk the whole store deleting audio without the total ever
-                // falling.
-                const [metas, keys, checkpointRetainedIds] = await Promise.all([
-                    awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
-                    awaitRequest(metaStore.getAllKeys()),
-                    readCheckpointRetainedBufferIds(tx),
-                ]);
+            const durableOwnedIds = await readDurableOwnedIdsOrAbort();
+            if (durableOwnedIds === null) {
+                return deletedCount;
+            }
+            const recoveryCollection = await preparedAudioBufferLifecycle.collectRecoveries({ maxSizeBytes });
+            deletedCount += recoveryCollection.count;
+            const ordinarySizeBudget = Math.max(0, maxSizeBytes - recoveryCollection.remainingBytes);
+            const db = await openDb();
+            const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const metaStore = tx.objectStore(META_STORE_NAME);
+            // Metadata rows, for the same reason as `garbageCollectByAge`, and
+            // with the same consequence: a record with no row is neither a
+            // deletion candidate nor part of `currentTotal`.
+            //
+            // This collector does not sweep for un-migrated records itself.
+            // `cleanupUnusedFreezeFiles` runs `garbageCollectByAge` immediately
+            // before it, and that pass seeds or reaps them, so by the time this
+            // runs the rows exist for everything the budget reached. Doing the
+            // sweep in both would double the migration read for no gain.
+            //
+            // Until then those records are out of the total, so this collector
+            // evicts *less* than it should. That is the direction to be wrong
+            // in — the alternative is counting a record whose size is unknown as
+            // zero, which under-reports the total just as badly *and* makes it
+            // a candidate that frees nothing when deleted, so the loop would
+            // walk the whole store deleting audio without the total ever
+            // falling.
+            const [metas, keys] = await Promise.all([
+                awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
+                awaitRequest(metaStore.getAllKeys()),
+            ]);
 
-                // Sort by access time ascending (oldest first)
-                const entries = metas
-                    .map((meta, index) => ({
-                        id: keys[index]! as string,
-                        lastAccessed: meta.lastAccessed,
-                        protected:
-                            durableOwnedIds.has(keys[index]! as string) ||
-                            checkpointRetainedIds.has(keys[index]! as string) ||
-                            isProtectedFromCollection(meta),
-                        size: meta.sizeInBytes,
-                    }))
-                    .filter((entry) => typeof entry.lastAccessed === 'number' && typeof entry.size === 'number')
-                    .sort((alpha, b) => alpha.lastAccessed - b.lastAccessed);
+            // Sort by access time ascending (oldest first)
+            const entries = metas
+                .map((meta, index) => ({
+                    id: keys[index]! as string,
+                    lastAccessed: meta.lastAccessed,
+                    protected:
+                        durableOwnedIds.has(keys[index]! as string) ||
+                        checkpointRetainedIds.has(keys[index]! as string) ||
+                        isProtectedFromCollection(meta),
+                    size: meta.sizeInBytes,
+                }))
+                .filter((entry) => typeof entry.lastAccessed === 'number' && typeof entry.size === 'number')
+                .sort((alpha, b) => alpha.lastAccessed - b.lastAccessed);
 
-                let currentTotal = entries.reduce((acc, event) => acc + event.size, 0);
-                const collectedSources = new Map<string, CachedAudioDurabilitySource | undefined>();
-                let pendingDeletedCount = 0;
+            let currentTotal = entries.reduce((acc, event) => acc + event.size, 0);
+            const collectedSources = new Map<string, CachedAudioDurabilitySource | undefined>();
+            let pendingDeletedCount = 0;
 
-                for (const entry of entries) {
-                    if (currentTotal <= ordinarySizeBudget) {
-                        break;
-                    }
-                    if (
-                        persistenceGenerationById.has(entry.id) ||
-                        preparedAudioBufferLifecycle.hasProjectCollectionReservation(entry.id) ||
-                        entry.protected
-                    ) {
-                        continue;
-                    }
-                    collectedSources.set(entry.id, durabilitySourceById.get(entry.id));
-                    store.delete(entry.id);
-                    metaStore.delete(entry.id);
-                    currentTotal -= entry.size;
-                    pendingDeletedCount++;
+            for (const entry of entries) {
+                if (currentTotal <= ordinarySizeBudget) {
+                    break;
                 }
-                // The count is reported only for deletes that committed.
-                await awaitTransaction(tx);
-                for (const [key, source] of collectedSources) {
-                    if (durabilitySourceById.get(key) === source) {
-                        evictCachedBuffer(key);
-                    }
+                if (
+                    persistenceGenerationById.has(entry.id) ||
+                    preparedAudioBufferLifecycle.hasProjectCollectionReservation(entry.id) ||
+                    entry.protected
+                ) {
+                    continue;
                 }
-                deletedCount += pendingDeletedCount;
-            });
+                collectedSources.set(entry.id, durabilitySourceById.get(entry.id));
+                store.delete(entry.id);
+                metaStore.delete(entry.id);
+                currentTotal -= entry.size;
+                pendingDeletedCount++;
+            }
+            // The count is reported only for deletes that committed.
+            await awaitTransaction(tx);
+            for (const [key, source] of collectedSources) {
+                if (durabilitySourceById.get(key) === source) {
+                    evictCachedBuffer(key);
+                }
+            }
+            deletedCount += pendingDeletedCount;
         } catch (error) {
             logger.warn('[audioBufferCache] Size-based collection failed', { error });
             return deletedCount;
         }
         return deletedCount;
-    },
-};
+    });
+}

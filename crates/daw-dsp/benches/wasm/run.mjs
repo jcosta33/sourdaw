@@ -97,6 +97,10 @@ import { fileURLToPath } from 'node:url';
 
 import { chromium } from 'playwright';
 
+import {
+    calibrateQuantumMeasurementPayload,
+    calibrationFailureReport,
+} from '../../../../scripts/quantumMeasurementCalibration.ts';
 import { COST_SITE, DUTY_CYCLE } from './deviceRecipes.js';
 import { grandBouleMeasurementSourcePaths } from './measurementCensus.mjs';
 import { startServer } from './server.mjs';
@@ -355,6 +359,27 @@ function sig2(value) {
 }
 
 /**
+ * @param {{
+ *   headline: string;
+ *   failures: readonly string[];
+ *   failedRun: unknown;
+ *   jsonPath: string | null;
+ * }} report
+ */
+function reportFailedRun({ headline, failures, failedRun, jsonPath }) {
+    console.error(`\nNOT PUBLISHABLE — ${headline}:\n`);
+    for (const failure of failures) {
+        console.error(`  - ${failure}`);
+    }
+    console.error('');
+    if (jsonPath !== null) {
+        writeFileSync(jsonPath, `${JSON.stringify(failedRun, null, 2)}\n`);
+        console.error(`wrote ${jsonPath} (failed run — retained so the failure is auditable)`);
+    }
+    process.exitCode = 1;
+}
+
+/**
  * The reference project, defined here because **nothing in the repository
  * defines it**, split by where each device's cost is actually charged.
  */
@@ -439,6 +464,19 @@ async function main() {
     const busiestLoad = Math.max(loadBefore, loadAfter);
 
     // -- analysis ----------------------------------------------------------
+    const calibration = calibrateQuantumMeasurementPayload(payload);
+    if (calibration.status === 'refused') {
+        const report = calibrationFailureReport(calibration.failure);
+        reportFailedRun({
+            headline: 'calibration failed before statistical analysis',
+            failures: report.failedRun.failures,
+            failedRun: { machine, ...report.failedRun },
+            jsonPath: options.json,
+        });
+        return;
+    }
+
+    let calibratedRowIndex = 0;
     const rows = payload.results.map((result) => {
         const rates = result.segmentRates.filter((rate) => Number.isFinite(rate) && rate > 0);
         const sortedRates = [...rates].sort((a, b) => a - b);
@@ -446,12 +484,7 @@ async function main() {
         const rateSpreadPct =
             sortedRates.length > 1 ? ((sortedRates[sortedRates.length - 1] - sortedRates[0]) / medianRate) * 100 : 0;
 
-        // Each sample is converted with the rate of the segment it was taken
-        // in, not with one rate for the whole run.
-        const samplesMs = result.samplesTicks.map((ticks, index) => {
-            const rate = rates[Math.min(result.segmentIndex[index], rates.length - 1)] ?? medianRate;
-            return ticks / rate;
-        });
+        const samplesMs = calibration.rows[calibratedRowIndex++].samplesMs;
         const floorMs = result.harnessFloorTicks.map((ticks) => ticks / medianRate);
 
         const timedTotalMs = samplesMs.reduce((total, value) => total + value, 0);
@@ -549,16 +582,12 @@ async function main() {
     }
 
     if (failures.length > 0) {
-        console.error('\nNOT PUBLISHABLE — gates are evaluated before the table is printed, and these failed:\n');
-        for (const failure of failures) {
-            console.error(`  - ${failure}`);
-        }
-        console.error('');
-        if (options.json !== null) {
-            writeFileSync(options.json, `${JSON.stringify({ machine, failures, rows }, null, 2)}\n`);
-            console.error(`wrote ${options.json} (failed run — retained so the failure is auditable)`);
-        }
-        process.exitCode = 1;
+        reportFailedRun({
+            headline: 'gates are evaluated before the table is printed, and these failed',
+            failures,
+            failedRun: { machine, failures, rows },
+            jsonPath: options.json,
+        });
         return;
     }
 

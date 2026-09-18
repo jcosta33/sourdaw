@@ -1,6 +1,13 @@
 import { type OfflineDeviceNode } from '../types';
 
+import { PHASER_STAGES_RANGE, wirePhaserStages } from './phaserWiring';
+
 // ── Phaser ───────────────────────────────────────────────────────────────
+
+/** Descriptor default for `phaser-stages`. */
+export const DEFAULT_PHASER_STAGES = 4;
+/** Shared allpass resonance; deliberately independent of the stage count. */
+export const PHASER_ALLPASS_Q = 0.5;
 
 export function createPhaser(ctx: BaseAudioContext): OfflineDeviceNode {
     const splitter = ctx.createGain();
@@ -8,17 +15,15 @@ export function createPhaser(ctx: BaseAudioContext): OfflineDeviceNode {
     dry.gain.value = 0.5;
     const wet = ctx.createGain();
     wet.gain.value = 0.5;
-    const stages = 4;
+    // Every stage the knob can request is built once, up front; changing the
+    // stage count only rewires the chain, it never allocates nodes.
     const filters: BiquadFilterNode[] = [];
-    for (let index = 0; index < stages; index++) {
+    for (let index = 0; index < PHASER_STAGES_RANGE.max; index++) {
         const freq = ctx.createBiquadFilter();
         freq.type = 'allpass';
         freq.frequency.value = 1000 * (index + 1);
-        freq.Q.value = 0.5;
+        freq.Q.value = PHASER_ALLPASS_Q;
         filters.push(freq);
-    }
-    for (let index = 0; index < filters.length - 1; index++) {
-        filters[index]!.connect(filters[index + 1]!);
     }
     const lfo = ctx.createOscillator();
     lfo.frequency.value = 0.5;
@@ -29,37 +34,23 @@ export function createPhaser(ctx: BaseAudioContext): OfflineDeviceNode {
     feedback.gain.value = 0.5;
     const merger = ctx.createGain();
     splitter.connect(dry);
-    splitter.connect(filters[0]!);
     lfo.connect(lfoGain);
     for (const freq of filters) {
         lfoGain.connect(freq.frequency);
     }
-    const lastFilter = filters[filters.length - 1]!;
-    lastFilter.connect(feedback);
-    feedback.connect(filters[0]!);
-    lastFilter.connect(wet);
     dry.connect(merger);
     wet.connect(merger);
     lfo.start(0);
-    const nodes = [splitter, dry, wet, ...filters, lfo, lfoGain, feedback, merger];
+    const namedNodes: Record<string, AudioNode> = { splitter, dry, wet, lfo, lfoGain, feedback, merger };
+    for (let index = 0; index < filters.length; index++) {
+        namedNodes[`filter${index}`] = filters[index]!;
+    }
     let disposed = false;
-    return {
+    const dn: OfflineDeviceNode = {
         inputNode: splitter,
         outputNode: merger,
-        nodes,
-        namedNodes: {
-            splitter,
-            dry,
-            wet,
-            lfo,
-            lfoGain,
-            feedback,
-            merger,
-            filter0: filters[0]!,
-            filter1: filters[1]!,
-            filter2: filters[2]!,
-            filter3: filters[3]!,
-        },
+        nodes: [splitter, dry, wet, ...filters, lfo, lfoGain, feedback, merger],
+        namedNodes,
         dispose() {
             if (disposed) {
                 return;
@@ -68,4 +59,6 @@ export function createPhaser(ctx: BaseAudioContext): OfflineDeviceNode {
             lfo.stop();
         },
     };
+    wirePhaserStages(dn, DEFAULT_PHASER_STAGES);
+    return dn;
 }

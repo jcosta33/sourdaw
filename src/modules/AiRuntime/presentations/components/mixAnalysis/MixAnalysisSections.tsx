@@ -61,9 +61,21 @@ export const BAND_LABELS: Array<{ key: keyof MixAnalysis['frequencyBalance']; la
 
 // ── FrequencyBar ────────────────────────────────────────────────────────
 
-type FrequencyBarProps = { label: string; range: string; db: number };
+type FrequencyBarProps = { label: string; range: string; db: number | null };
 
 export const FrequencyBar = ({ label, range, db }: FrequencyBarProps): ReactElement => {
+    // `null` means the analyser could not resolve this band; it renders as an
+    // unavailable readout instead of a number that was never measured.
+    if (db === null) {
+        return (
+            <DawUtilityMetric
+                label={<span title={range}>{label}</span>}
+                value="—"
+                meterValue={0}
+                meterFillClassName="bg-[var(--color-muted)]"
+            />
+        );
+    }
     const normalizedWidth = Math.max(0, Math.min(100, ((db + 100) / 100) * 100));
     return (
         <DawUtilityMetric
@@ -72,6 +84,29 @@ export const FrequencyBar = ({ label, range, db }: FrequencyBarProps): ReactElem
             meterValue={normalizedWidth}
             meterFillClassName={levelColor(db)}
         />
+    );
+};
+
+// ── EvidenceStatus ──────────────────────────────────────────────────────
+
+type EvidenceStatusProps = { status: MixAnalysis['status'] };
+
+export const EvidenceStatus = ({ status }: EvidenceStatusProps): ReactElement | null => {
+    if (status.availability !== 'insufficient') {
+        return null;
+    }
+    const message =
+        status.reason === 'audio-context-suspended'
+            ? 'The audio engine is not running — measurements are unavailable until it starts.'
+            : 'No signal was measured — start playback so the analyser hears the mix.';
+    return (
+        <div
+            role="status"
+            data-testid="mix-analysis-insufficient"
+            className="rounded bg-surface-overlay px-2 py-1.5 text-[10px] text-[var(--color-state-warning)]"
+        >
+            {message}
+        </div>
     );
 };
 

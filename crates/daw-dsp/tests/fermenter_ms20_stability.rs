@@ -107,14 +107,14 @@ fn shipped_ms20_presets_render_without_numeric_blowup() {
         (
             &CRUSTY_SCREAM,
             render(&CRUSTY_SCREAM, SAMPLE_RATE, 60),
-            0.40749264,
-            0.1182144,
+            0.31839293,
+            0.09098517,
         ),
         (
             &CRACKER_CLAV,
             render(&CRACKER_CLAV, SAMPLE_RATE, 60),
-            0.20233074,
-            0.026556833,
+            0.14306943,
+            0.018778516,
         ),
     ];
 
@@ -141,15 +141,15 @@ fn shipped_ms20_presets_render_without_numeric_blowup() {
 #[test]
 fn shipped_ms20_level_guard_rejects_a_40_db_drop() {
     let attenuated = Measurement {
-        peak: 0.0040749264,
-        rms: 0.001182144,
+        peak: 0.0031839293,
+        rms: 0.0009098517,
         nan_flushes: 0,
     };
 
     assert!(!shipped_level_is_acceptable(
         &attenuated,
-        0.40749264,
-        0.1182144
+        0.31839293,
+        0.09098517
     ));
 }
 

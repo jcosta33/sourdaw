@@ -8,6 +8,7 @@ import { failMixAnalysis } from '../failMixAnalysis';
 
 const stale_result: MixAnalysis = {
     timestamp: 1,
+    status: { availability: 'measured', provenance: 'live-analyser-snapshot' },
     overallLevel: { peakDb: -6, rmsDb: -12 },
     frequencyBalance: {
         sub: 0,
@@ -24,6 +25,7 @@ const stale_result: MixAnalysis = {
 
 const interleaved_result: MixAnalysis = {
     timestamp: 2,
+    status: { availability: 'measured', provenance: 'live-analyser-snapshot' },
     overallLevel: { peakDb: -4, rmsDb: -10 },
     frequencyBalance: {
         sub: 1,

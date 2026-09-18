@@ -35,6 +35,23 @@
  * is an offer on `nativeEngineRearmStore`, and Transport's
  * `rearmNativeSessionAfterEngineRetire` decides what to do with it.
  *
+ * ── A start pending anywhere supersedes the offer ─────────────────────────
+ *
+ * The orphan release still runs, and so does the forget: both are about the
+ * engine this call retired, whichever play is current. The offer is not, so it
+ * is withheld while `startsPending` is above zero — that start owns the session
+ * the offer would re-arm, and a re-arm claimed against it would anchor a
+ * `rolling` join on a transport whose Web Audio start is still being held,
+ * landing the roll a whole hold ahead of anything audible.
+ *
+ * A snapshot of `rearmEpoch` cannot decide this. It sees only a start that
+ * bumps *after* the snapshot, and a start queued behind this retire bumped
+ * before it: the epoch then reads unchanged, the orphan is still in place
+ * because that start has not run yet, and the offer goes out into a play that
+ * has not sounded a frame. The count answers the question the epoch cannot —
+ * is a start pending at all — because it is raised at the call and lowered
+ * only when that start settles.
+ *
  * Queued on the session's own command chain, exactly like the park, so it
  * orders after any start or stop already queued on it.
  */
@@ -87,6 +104,15 @@ export function retireOrphanedNativeEngine(): Promise<void> {
                 return;
             }
             forgetRetiredPluginInstances(result.retiredInstanceIds);
+            if (nativeLiveGraphSession.startsPending > 0) {
+                // A start is pending — requested inside this round trip, or
+                // queued behind it and not run yet — so it owns the session
+                // now. The offer is for the play whose engine died; publishing
+                // it would anchor a `rolling` join against a transport that has
+                // not moved yet, and the roll would land a whole hold ahead of
+                // what anybody can hear.
+                return;
+            }
             offerNativeSessionRearm();
         } catch (error) {
             // The command answered, but the answer could not be read, so which

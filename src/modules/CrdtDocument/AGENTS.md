@@ -8,7 +8,7 @@ Automerge CRDT document repository, reactive store projections, multi-branch sta
 - `useCases`:
     - **Document & Project Lifecycle**: `createCrdtDoc`, `getCrdtDoc`, `getCrdtDocIds`, `hasCrdtDoc`, `removeCrdtDoc`, `replaceCrdtDoc`, `mutateCrdtDoc`, `compactProject`, `resetCrdtProjectAuthority`, `createCrdtProject`, `loadCrdtProject`, `persistCrdtProject`, `getPersistenceBackend`, `registerCrdtStorageRuntime`, `startCrdtAutoSave`, `subscribeToCrdtChanges`, `waitForCrdtDocumentTransition`, `transactSnapshot`, `sessionUndoWitnessStampPort`.
     - **Action History**: `recordActionHistoryEntry`, `clearActionHistory`, `markActionHistoryEntryReverted`.
-    - **Branching**: `initBranchState`, `preserveBranchStateForSession`, `replaceBranchState`, `restoreBranchStateAfterSession`, `captureActiveBranchReference`, `getDrumPreviewBranchHandlers`.
+    - **Branching**: `initBranchState`, `whenBranchStateSettled`, `beginBranchSession`, `projectBranchSession`, `endBranchSession`, `captureActiveBranchReference`, `getDrumPreviewBranchHandlers`.
     - **Projections**: `projectCrdtToStores`, `projectActionHistoryToStore`, `setupProjectionBridge`.
     - **Inspection & Repair**: `captureProjectRevision`, `captureDurableDocumentWitness`, `captureProjectMutationAuthorization`, `captureUnownedProjectMutations`, `agentProjectInspectionPort`, `inspectAgentProjectDivergence`, `findAutomergeProjectConflicts`, `inspectCurrentAgentProjectRepairState`, `createCommandPreviewWorkspace`, `createCommandRecoveryWorkspace`, `sanitizeIncomingCrdtDocument`.
 - `presentations/views`: `BranchManagerDialog`, `MergeResultDialog`.
@@ -21,6 +21,7 @@ Automerge CRDT document repository, reactive store projections, multi-branch sta
 - **Store Projection Bridge**: `projection/` drives uni-directional projection from Automerge documents to frontend memory stores (`projectCrdtToStores`, `setupProjectionBridge`).
 - **Action History & Semantic Context**: Granular undo/redo tracking linked to semantic operation metadata (`models/ActionHistoryState.ts`, `stores/semanticChangeContext.ts`).
 - **Branch Management**: Manages branch forks, merges, and temporary preview branches (`stores/branchStore.ts`, `handlers/previewBranches/`).
+- **Durable Branch State**: `repositories/branchStateAuthority.ts` owns the one revisioned envelope every branch write goes through (`repositories/branchStateEnvelopeStorage.ts`, `repositories/withBranchStateLock.ts`).
 
 ## Invariants & Traps
 
@@ -28,6 +29,7 @@ Automerge CRDT document repository, reactive store projections, multi-branch sta
 - **Lineage Conflict Guards**: `CrdtPersistenceRootLineageConflictError` and `CrdtPersistenceMembershipConflictError` prevent loading mismatched or divergent document lineages into the same project storage key.
 - **Worker / Off-Thread Saves**: Document serialization and compaction run off the main thread; do not block audio or UI rendering with synchronous Automerge binary encodes.
 - **Uni-Directional Projection**: Store updates flow CRDT -> Store Projections. Dispatched commands must target use cases/handlers mutating CRDT, not directly write to stores.
+- **Single Branch-State Writer**: `branchStore` is a memory projection. Durable branch state is one revisioned envelope written only by `branchStateAuthority`, under a Web Lock, as a compare-and-swap against the revision the writer observed (`captureRevision`). Never persist branch state from anywhere else, and never restore a collaboration session's pre-session list without its session record still owning the envelope.
 - **Automerge WASM Entry**: `@automerge/automerge` requires the base64 wasm alias in Vite configuration.
 
 ## Verification

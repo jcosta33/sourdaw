@@ -291,7 +291,9 @@ describe('offline device-param automation capability coverage', () => {
         expect(census.verdicts).toBe(114);
         // Moving Grand Boule out of the device-level class removes its five
         // parameter pairs from that count.
-        expect(census.deviceLevelExemptions).toBe(182);
+        // 182 → 180: #2076 removed the bacteria `morphX`/`morphY` descriptor
+        // entries, taking their two device-level-exempt pairs with them.
+        expect(census.deviceLevelExemptions).toBe(180);
         // 17 → 23: #1539's six `decay_eq_*` bands on `dutch-oven`. They land in
         // this class rather than in `verdicts` because the Dutch Oven declares
         // exactly two offline ordinals (`mix`, `decay`) and always has — the

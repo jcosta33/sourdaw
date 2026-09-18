@@ -17,11 +17,24 @@
  * table equal to the one derived from the addon's `#[napi]` signatures, and
  * `src/utils/__tests__/desktopBridge.spec.ts` proves the seam orders arguments
  * by it.
+ *
+ * The keys restate the command names the shell owns: no import route crosses
+ * from `src/` into `electron/`, so this table is the renderer realm's copy of
+ * the surface `electron/commands.ts` defines. The shell branches on
+ * `apply_graph_commands`, `retire_native_engine`, and `scan_plugins` by name
+ * (consts there); those names appear here as keys, and the Rust-derived pin
+ * above is what keeps the two realms equal.
  */
 export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
+    ['agent_asset_cleanup', ['saga_id', 'owner']],
+    ['agent_asset_finalize_export', ['saga_id', 'owner', 'authorization']],
+    ['agent_asset_import', ['handle_id', 'owner', 'declared']],
+    ['agent_asset_register_handle', ['path', 'mode', 'owner']],
+    ['agent_asset_stage_export', ['destination_handle_id', 'owner', 'expected_sha256', 'data']],
     ['analyze_pitch', ['analysis_id', 'audio_path']],
     ['apply_graph_commands', ['batch']],
     ['arm_recording', ['instance_id', 'threshold', 'target_pad', 'max_duration_secs']],
+    ['begin_levain_bank', ['bank_key', 'instrument_id']],
     ['cancel_provider_gateway_request', ['request_id']],
     ['close_midi_input', []],
     ['close_plugin_gui', ['instance_id']],
@@ -33,6 +46,7 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['collab_load_bundle', ['path']],
     ['collab_merge_bundle', ['path']],
     ['collab_save_bundle', ['path']],
+    ['commit_levain_bank', ['bank_key', 'layout']],
     ['commit_pitch_edit', ['request']],
     ['create_crumbs', ['instance_id']],
     ['crumbs_all_sound_off', ['instance_id']],
@@ -45,6 +59,7 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['engine_rt_diagnostics', []],
     ['engine_transport_position', []],
     ['engine_transport_set_maps', ['maps']],
+    ['get_crumbs_dropped_sample_writes', ['instance_id']],
     ['get_crumbs_position', ['instance_id']],
     ['get_default_plugin_paths', []],
     ['get_plugin_parameters', ['instance_id']],
@@ -54,7 +69,7 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['list_directory', ['path']],
     ['list_midi_inputs', []],
     ['load_cached_whisper_model', []],
-    ['load_plugin', ['plugin_id', 'instance_id', 'sample_rate']],
+    ['load_plugin', ['plugin_id', 'instance_id']],
     ['load_sample', ['instance_id', 'file_path']],
     ['map_graph_batch', ['prior', 'batch', 'sample_rate', 'session']],
     ['open_midi_input', ['port_index']],
@@ -64,7 +79,9 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['parse_scl', ['content', 'root_note', 'root_freq']],
     ['provider_gateway_request', ['request_id', 'session_id', 'operation', 'body']],
     ['read_file_bytes', ['path']],
+    ['register_levain_sample', ['bank_key', 'sample_id', 'sample_rate', 'channels', 'pcm']],
     ['register_timeline_sample', ['sample_id', 'sample_rate', 'channels', 'pcm']],
+    ['release_levain_bank', ['bank_key']],
     ['render_graph_offline', ['batch', 'frames', 'sample_rate']],
     ['retire_native_engine', []],
     ['scan_plugins', ['paths', 'retry_quarantined']],

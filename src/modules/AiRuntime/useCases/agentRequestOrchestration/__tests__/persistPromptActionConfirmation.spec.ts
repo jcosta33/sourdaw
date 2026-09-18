@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     compileVersionedCommandBatchEnvelope,
     createVersionedCommandEnvelope,
@@ -11,6 +12,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { persistPromptActionConfirmation } from '../persistPromptActionConfirmation';
 
 const COMMAND_ID = '11111111-1111-4111-8111-111111111111';
+const REMOVE_COMMAND_ID = '22222222-2222-4222-8222-222222222222';
 
 const mocks = vi.hoisted(() => ({
     createResourceLease: vi.fn(),
@@ -21,6 +23,11 @@ const mocks = vi.hoisted(() => ({
     transitionPhase: vi.fn(),
     updateBatchStatus: vi.fn(),
     updateChatMessage: vi.fn(),
+    warn: vi.fn(),
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { warn: mocks.warn, error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('../../../stores/chatStore', () => ({
@@ -51,26 +58,53 @@ vi.mock('../../describeAgentRiskApproval', () => ({
     describeAgentRiskApproval: mocks.describeRisk,
 }));
 
-function createInput(): Parameters<typeof persistPromptActionConfirmation>[0] {
-    const action = {
-        type: 'setTrackGain',
-        payload: { trackId: 'track-kick', gain: 0.8, expectedGain: 1 },
-    } satisfies AppAction;
+type CommandShape = {
+    action: AppAction;
+    commandId: string;
+    dynamicEffects?: Parameters<typeof compileVersionedCommandBatchEnvelope>[0]['dynamicEffects'];
+    expectedEffect: string;
+    label: string;
+    parameterUnits: Parameters<typeof createVersionedCommandEnvelope>[0]['parameterUnits'];
+    reason: string;
+};
+
+const GAIN_COMMAND: CommandShape = {
+    action: { type: 'setTrackGain', payload: { trackId: 'track-kick', gain: 0.8, expectedGain: 1 } },
+    commandId: COMMAND_ID,
+    expectedEffect: 'Set Kick gain to 0.8.',
+    label: 'Set Kick gain',
+    parameterUnits: [
+        { argument: 'gain', unit: 'linear-gain' },
+        { argument: 'expectedGain', unit: 'linear-gain' },
+    ],
+    reason: 'Apply the confirmed Kick gain.',
+};
+
+const REMOVE_COMMAND: CommandShape = {
+    action: { type: 'removeTrack', payload: { trackId: 'track-kick' } },
+    commandId: REMOVE_COMMAND_ID,
+    // Removing a track deletes whatever it holds, so the compiler refuses the batch without bounds.
+    dynamicEffects: { affectedTrackIds: ['track-kick'], deletedObjects: 1 },
+    expectedEffect: 'Remove the Kick track.',
+    label: 'Remove Kick',
+    parameterUnits: [],
+    reason: 'Drop the track the request retires.',
+};
+
+function createInputFor(shape: CommandShape): Parameters<typeof persistPromptActionConfirmation>[0] {
+    const action = shape.action;
     const command = {
         ...createVersionedCommandEnvelope({
             action,
             availableDeviceVersions: {},
-            expectedEffect: 'Set Kick gain to 0.8.',
+            expectedEffect: shape.expectedEffect,
             normalizedProjectRevision: 'revision-confirmation',
             objectReferences: [{ argument: 'trackId', id: 'track-kick', scope: 'stable' }],
-            parameterUnits: [
-                { argument: 'gain', unit: 'linear-gain' },
-                { argument: 'expectedGain', unit: 'linear-gain' },
-            ],
-            reason: 'Apply the confirmed Kick gain.',
+            parameterUnits: shape.parameterUnits,
+            reason: shape.reason,
             time: [],
         }),
-        commandId: COMMAND_ID,
+        commandId: shape.commandId,
     };
     const serializedCommand = serializeVersionedCommandEnvelope(command);
     const commandBatch = compileVersionedCommandBatchEnvelope({
@@ -80,6 +114,7 @@ function createInput(): Parameters<typeof persistPromptActionConfirmation>[0] {
         baseRevision: 'revision-confirmation',
         intent: 'Set the Kick gain',
         commands: [serializedCommand],
+        dynamicEffects: shape.dynamicEffects,
         protectedTargetIds: ['track-vocals'],
     });
     const parsedCommandBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
@@ -91,7 +126,7 @@ function createInput(): Parameters<typeof persistPromptActionConfirmation>[0] {
         prompt: 'Set the kick gain',
         assistantMessageId: 'assistant-confirmation',
         actions: [action],
-        actionLabels: ['Set Kick gain'],
+        actionLabels: [shape.label],
         commandEnvelopes: [serializedCommand],
         commandBatch,
         agentApproval: {
@@ -125,11 +160,32 @@ function createInput(): Parameters<typeof persistPromptActionConfirmation>[0] {
     };
 }
 
+function createInput(): Parameters<typeof persistPromptActionConfirmation>[0] {
+    return createInputFor(GAIN_COMMAND);
+}
+
+function createRemoveTrackInput(): Parameters<typeof persistPromptActionConfirmation>[0] {
+    return createInputFor(REMOVE_COMMAND);
+}
+
+const gainHandler = {
+    describe: () => ({ label: 'Set Kick gain', inverseAction: null }),
+    execute: () => ({ status: 'written' as const }),
+    undoable: true,
+    validate: () => true,
+};
+
 describe('persistPromptActionConfirmation', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.describeRisk.mockReturnValue('Risk approval required.');
         mocks.createResourceLease.mockReturnValue({ bytes: 64 });
+        clearHandlerRegistry();
+        registerHandlerMap({ setTrackGain: gainHandler });
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
     });
 
     it('records a terminal capacity rejection in exact lifecycle and chat order', () => {
@@ -245,5 +301,74 @@ describe('persistPromptActionConfirmation', () => {
         });
         expect(mocks.updateBatchStatus).not.toHaveBeenCalled();
         expect(mocks.recordError).not.toHaveBeenCalled();
+    });
+
+    // Red when the stored proposal carries no semantic diff, or one whose recoveries ignore the registry.
+    it('stores a semantic diff keyed by the envelope group ids with registry-derived recoveries', () => {
+        mocks.proposeConfirmation.mockReturnValue({ id: 'retained-confirmation' });
+        clearHandlerRegistry();
+        registerHandlerMap({
+            setTrackGain: {
+                ...gainHandler,
+                describe: () => ({
+                    label: 'Set Kick gain',
+                    inverseAction: {
+                        type: 'setTrackGain',
+                        payload: { trackId: 'track-kick', gain: 1, expectedGain: 0.8 },
+                    },
+                }),
+            },
+        });
+
+        persistPromptActionConfirmation(createInput());
+
+        const semanticDiff = mocks.proposeConfirmation.mock.calls[0]?.[0]?.semanticDiff;
+        expect(semanticDiff).toMatchObject({ batchId: 'batch-confirmation', baseRevision: 'revision-confirmation' });
+        expect(semanticDiff?.intentGroups.map((group: { id: string }) => group.id)).toEqual([COMMAND_ID]);
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    // Red when a handler that cannot describe its action aborts the proposal instead of degrading the diff.
+    it('degrades a destructive change to irreversible and warns when the batch cannot be described', () => {
+        mocks.proposeConfirmation.mockReturnValue({ id: 'retained-confirmation' });
+        const removeInput = createRemoveTrackInput();
+        clearHandlerRegistry();
+        registerHandlerMap({
+            removeTrack: {
+                ...gainHandler,
+                describe: () => ({
+                    label: 'Remove Kick',
+                    inverseAction: { type: 'addTrack', payload: { name: 'Kick', kind: 'audio' } },
+                }),
+            },
+        });
+
+        persistPromptActionConfirmation(removeInput);
+
+        expect(mocks.proposeConfirmation.mock.calls[0]?.[0]?.semanticDiff?.destructiveChanges).toEqual([
+            expect.objectContaining({ groupId: REMOVE_COMMAND_ID, recovery: 'inverse' }),
+        ]);
+        expect(mocks.warn).not.toHaveBeenCalled();
+
+        mocks.proposeConfirmation.mockClear();
+        clearHandlerRegistry();
+        registerHandlerMap({
+            removeTrack: {
+                ...gainHandler,
+                describe: () => {
+                    throw new Error('the kick track is gone');
+                },
+            },
+        });
+
+        persistPromptActionConfirmation(createRemoveTrackInput());
+
+        expect(mocks.warn).toHaveBeenCalledWith(
+            'Command batch recovery could not be described: Could not preflight removeTrack: the kick track is gone'
+        );
+        expect(mocks.proposeConfirmation.mock.calls[0]?.[0]?.semanticDiff?.destructiveChanges).toEqual([
+            expect.objectContaining({ groupId: REMOVE_COMMAND_ID, recovery: 'irreversible' }),
+        ]);
+        expect(mocks.transitionPhase).toHaveBeenCalledTimes(2);
     });
 });

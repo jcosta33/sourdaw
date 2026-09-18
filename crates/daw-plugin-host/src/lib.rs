@@ -20,7 +20,8 @@ pub mod vst3_scanner;
 pub mod vst3_wrapper;
 
 pub use clap_host::{
-    signal_pending_editor_resize, signal_pending_tail_change, take_pending_editor_resize_signal,
+    signal_pending_editor_resize, signal_pending_latency_requery, signal_pending_tail_change,
+    take_pending_editor_resize_signal, take_pending_latency_requery_signal,
     take_pending_tail_change_signal,
 };
 pub use clap_wrapper::ClapWrapper;

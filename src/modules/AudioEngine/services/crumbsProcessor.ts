@@ -181,7 +181,14 @@ class CrumbsProcessor extends AudioWorkletProcessor {
                     // to await a reply for an id it has no other use for.
                     const sampleId = inst.add_sample(msg.data, msg.channels, msg.sampleRate);
                     inst.set_active_sample(sampleId);
-                    this.port.postMessage({ type: 'sampleLoaded', loadToken: msg.loadToken });
+                    // Carry the pool's refusal count on the ack so the main
+                    // thread can warn when the instance's sample budget is
+                    // exhausted and loads started failing silently.
+                    this.port.postMessage({
+                        type: 'sampleLoaded',
+                        loadToken: msg.loadToken,
+                        droppedWrites: inst.dropped_sample_writes(),
+                    });
                 } catch (error) {
                     this.port.postMessage({
                         type: 'sampleLoadError',

@@ -12,7 +12,8 @@ import { unloadPlugin } from '../unloadPlugin';
 
 import type { PluginLatencyChange } from '../types';
 
-vi.mock('#/utils/desktopBridge', () => ({
+vi.mock('#/utils/desktopBridge', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/utils/desktopBridge')>()),
     isDesktopRuntime: vi.fn(),
     desktopInvoke: vi.fn(),
     desktopListen: vi.fn(),
@@ -28,7 +29,7 @@ describe('pluginBridge repository', () => {
     describe('loadPlugin', () => {
         it('should return unavailable in browser', async () => {
             vi.mocked(isDesktopRuntime).mockReturnValue(false);
-            const result = await loadPlugin('p1', 'i1', 44_100);
+            const result = await loadPlugin('p1', 'i1');
             expect(result.name).toBe('Unavailable');
             expect(desktopInvoke).not.toHaveBeenCalled();
         });
@@ -38,11 +39,10 @@ describe('pluginBridge repository', () => {
             const mockInstance = { instance_id: 'i1', name: 'FabFilter Pro-Q 3' };
             vi.mocked(desktopInvoke).mockResolvedValue(mockInstance);
 
-            const result = await loadPlugin('p1', 'i1', 44_100);
+            const result = await loadPlugin('p1', 'i1');
             expect(desktopInvoke).toHaveBeenCalledWith('load_plugin', {
                 pluginId: 'p1',
                 instanceId: 'i1',
-                sampleRate: 44_100,
             });
             expect(result).toEqual(mockInstance);
         });
@@ -78,6 +78,30 @@ describe('pluginBridge repository', () => {
             });
 
             await expect(unloadPlugin('i1')).rejects.toThrow('Invalid unload_plugin response');
+        });
+
+        it('answers the browser result when the native host is not available', async () => {
+            // A shell whose addon never loaded has no native instances to
+            // retire, so an unload there is the browser's no-op — not a failure
+            // that project activation must recover from.
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(desktopInvoke).mockRejectedValue(
+                new Error('unload_plugin rejected: the native host is not available')
+            );
+
+            await expect(unloadPlugin()).resolves.toEqual({ unloadedInstanceIds: [], errors: [], reports: [] });
+            await expect(unloadPlugin('i1')).resolves.toEqual({
+                unloadedInstanceIds: ['i1'],
+                errors: [],
+                reports: [],
+            });
+        });
+
+        it('still rejects an ordinary unload failure', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(desktopInvoke).mockRejectedValue(new Error('engine lock poisoned'));
+
+            await expect(unloadPlugin('i1')).rejects.toThrow('engine lock poisoned');
         });
     });
 

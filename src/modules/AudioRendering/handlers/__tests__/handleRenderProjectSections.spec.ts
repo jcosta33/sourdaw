@@ -62,11 +62,13 @@ describe('handleRenderProjectSections', () => {
         }
         const controller = new AbortController();
         const onDeferredEffectAttempt = vi.fn();
+        const workOwner = { runId: 'run-1', workId: 'work-1', leaseId: 'lease-1', cancellationGeneration: 2 };
         const result = await handleRenderProjectSections.execute(action, {
             actions: [action],
             actionIndex: 0,
             signal: controller.signal,
             onDeferredEffectAttempt,
+            workOwner,
         });
 
         if (!result) {
@@ -89,6 +91,8 @@ describe('handleRenderProjectSections', () => {
             sourceRevision: 'revision-after-commit',
             signal: controller.signal,
             onRenderAttempt: expect.any(Function),
+            owner: workOwner,
+            onReceipt: expect.any(Function),
         });
         const firstRenderInput = mocks.renderAgentProjectSections.mock.calls[0]?.[0];
         firstRenderInput?.onRenderAttempt?.(firstJob);
@@ -98,6 +102,65 @@ describe('handleRenderProjectSections', () => {
             workId: 'render-chorus-one',
         });
         expect(handleRenderProjectSections.requiresAbortCompensation).toBe(false);
+    });
+
+    it('forwards each render receipt as a render-receipt attempt keyed by the work it settles', async () => {
+        const action = createAction([createJob(), createJob({ jobId: 'render-chorus-two' })]);
+        const onDeferredEffectAttempt = vi.fn();
+        const result = await handleRenderProjectSections.execute(action, {
+            actions: [action],
+            actionIndex: 0,
+            onDeferredEffectAttempt,
+            workOwner: null,
+        });
+        if (result?.status !== 'written') {
+            throw new Error('Expected renderProjectSections to be writable');
+        }
+        await result.afterCommit?.();
+        const renderInput = mocks.renderAgentProjectSections.mock.calls[0]?.[0];
+        const provenance = {
+            jobId: 'render-chorus-one',
+            sectionId: 'section-chorus-one',
+            sectionName: 'Chorus One',
+            startBeat: 16,
+            endBeat: 48,
+            sampleRate: 44_100,
+            tailSeconds: 0,
+            sourceRevision: 'revision-after-commit',
+        };
+        const renderedReceipt = {
+            phase: 'rendered' as const,
+            owner: null,
+            provenance,
+            contentAddress: 'address-one',
+            frameCount: 4,
+            channelCount: 2,
+            renderedAt: 17,
+        };
+        const settledReceipt = {
+            phase: 'batch-settled' as const,
+            owner: null,
+            outcome: 'completed' as const,
+            jobIds: ['render-chorus-one', 'render-chorus-two'],
+        };
+
+        renderInput?.onReceipt?.(renderedReceipt);
+        renderInput?.onReceipt?.(settledReceipt);
+
+        expect(onDeferredEffectAttempt.mock.calls.map(([attempt]) => attempt)).toEqual([
+            {
+                kind: 'render-receipt',
+                operation: 'renderProjectSections',
+                workId: 'render-chorus-one',
+                receipt: renderedReceipt,
+            },
+            {
+                kind: 'render-receipt',
+                operation: 'renderProjectSections',
+                workId: 'render-chorus-one,render-chorus-two',
+                receipt: settledReceipt,
+            },
+        ]);
     });
 
     it('rejects malformed, duplicate, and conflicting job snapshots before commit', () => {

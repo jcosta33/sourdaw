@@ -4,7 +4,7 @@
  */
 import { createStore } from '#/infra/store/createStore';
 
-import { type BacteriaPatch, DEFAULT_PATCH } from '../models/BacteriaPatch';
+import { type BacteriaModAssignment, type BacteriaPatch, DEFAULT_PATCH } from '../models/BacteriaPatch';
 
 export type BacteriaUiLevel = 1 | 2 | 3 | 4 | 5;
 
@@ -90,6 +90,41 @@ export function loadBacteriaPatch(deviceId: string, patch: BacteriaPatch): void 
     const instances = bacteriaStore.value ?? {};
     const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
     bacteriaStore.set({ ...instances, [deviceId]: { ...state, patch } });
+}
+
+/**
+ * Replace the whole assignment list. Add, remove, undo, and a patch reload all
+ * arrive as one replacement so the session table and the engine's always
+ * describe the same routing — the engine table is replaced wholesale by the
+ * same gesture's push.
+ */
+export function setBacteriaModAssignments(deviceId: string, assignments: BacteriaModAssignment[]): void {
+    const instances = bacteriaStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
+    bacteriaStore.set({
+        ...instances,
+        [deviceId]: { ...state, patch: { ...state.patch, modAssignments: assignments } },
+    });
+}
+
+/**
+ * Store the flattened values one morph corner holds, keeping the corner's id
+ * and name. Out-of-range corner indices are a no-op, mirroring the band
+ * setter's bounds guard.
+ */
+export function setBacteriaSnapshotValues(
+    deviceId: string,
+    cornerIndex: number,
+    paramValues: Record<string, number>
+): void {
+    const instances = bacteriaStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
+    const snapshots = [...state.patch.snapshots];
+    if (cornerIndex < 0 || cornerIndex >= snapshots.length) {
+        return;
+    }
+    snapshots[cornerIndex] = { ...snapshots[cornerIndex]!, paramValues: { ...paramValues } };
+    bacteriaStore.set({ ...instances, [deviceId]: { ...state, patch: { ...state.patch, snapshots } } });
 }
 
 export function updateBacteriaMeters(

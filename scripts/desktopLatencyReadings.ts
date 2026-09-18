@@ -66,6 +66,73 @@ export function parseArgs(argv: readonly string[]): DesktopLatencyArgs {
     };
 }
 
+export type StatusBarReading = {
+    sampleRateText: string;
+    latencyText: string;
+    latencyTitle: string;
+    engineTitle: string;
+    masterLevelText: string;
+};
+
+/**
+ * Reads the status bar by structure rather than by class name: a readout is the
+ * second of exactly two sibling spans whose first one is the label. Class names
+ * on these elements are styling and change without notice; the label beside the
+ * value is what the product means.
+ *
+ * `desktopLatencyConnect.ts`'s `readStatusBar` hands this exact function to
+ * `page.evaluate`, which serialises it by its own source text
+ * (`Function.prototype.toString()`) and runs that text inside the page — a
+ * realm carrying none of this module's imports, module-level constants, or
+ * sibling functions. This function must therefore be entirely self-contained:
+ * every identifier it touches beyond its own parameter has to be a name the
+ * target realm provides on its own — `document`, `window`, `Error` — never an
+ * import, a `const` declared elsewhere in this module, or a call to another
+ * function here. That is also why the missing-readout wording below is built
+ * inline with a template literal instead of formatted from a shared constant:
+ * there is nowhere outside this function's own body a shared value could
+ * safely live and still survive the trip into the page. One function evaluated
+ * in place cannot drift from a copy, because there is none.
+ */
+export function readStatusBarInDocument(input: { selector: string }): StatusBarReading {
+    const footer = document.querySelector(input.selector);
+    if (footer === null) {
+        throw new Error('the status bar is not in the document');
+    }
+    const valueSpan = (label: string): HTMLElement => {
+        for (const row of footer.querySelectorAll('div')) {
+            const spans = row.querySelectorAll(':scope > span');
+            const first = spans[0];
+            const second = spans[1];
+            if (spans.length === 2 && first?.textContent?.trim() === label && second instanceof HTMLElement) {
+                return second;
+            }
+        }
+        const hasMoreTrigger = footer.querySelector('button[aria-label="More application status"]') !== null;
+        throw new Error(
+            hasMoreTrigger
+                ? `the status bar is in its compact layout at ${window.innerWidth} px; the "${label}" readout sits behind "More application status"`
+                : `the status bar has no readout labelled "${label}"`
+        );
+    };
+    const engineDot = footer.querySelector('[title^="Engine: "]');
+    if (engineDot === null) {
+        throw new Error('the status bar has no engine dot');
+    }
+    const latency = valueSpan('Latency');
+    const latencyTitle = latency.querySelector('span[title]')?.getAttribute('title');
+    if (latencyTitle === undefined || latencyTitle === null) {
+        throw new Error('the Latency readout carries no title');
+    }
+    return {
+        sampleRateText: valueSpan('Rate').textContent ?? '',
+        latencyText: latency.textContent ?? '',
+        latencyTitle,
+        engineTitle: engineDot.getAttribute('title') ?? '',
+        masterLevelText: valueSpan('Out').textContent ?? '',
+    };
+}
+
 export type AppPageTarget = { url: string; title: string };
 
 /**
@@ -102,9 +169,11 @@ export function findAppPageTarget(list: unknown, urlPrefix: string): AppPageTarg
     return null;
 }
 
-/** `useStatusBarMetrics.ts:236` writes `${ms.toFixed(1)}ms`. */
+/** `useStatusBarMetrics.ts`'s `describeOutputLatency` tick writes `${ms.toFixed(1)}ms`. Shared with `isAudibleLatencyReading`. */
+const LATENCY_MS_PATTERN = /^(-?\d+(?:\.\d+)?)ms$/;
+
 export function parseLatencyMs(text: string): number {
-    const match = /^(-?\d+(?:\.\d+)?)ms$/.exec(text.trim());
+    const match = LATENCY_MS_PATTERN.exec(text.trim());
     if (match === null) {
         throw new Error(`the Latency readout said "${text}", which is not a "<n>ms" reading`);
     }
@@ -138,6 +207,54 @@ export function parseEngineTitle(title: string): EngineTitleReading {
         missedRenderDeadlines: missed === null ? null : { count: Number(missed[1]), ms: Number(missed[2]) },
         engineDetectedDropouts: dropouts === null ? null : Number(dropouts[1]),
     };
+}
+
+/**
+ * Whether an engine-dot title describes a carrier that is running and
+ * fault-free — the "running meter" the measurement gate waits for.
+ *
+ * The dot names the engine it describes (`Engine: native running …` while the
+ * native session is the audible output, `Engine: Web Audio running …` while
+ * Web Audio carries it), so both healthy titles count whichever side is
+ * audible. A running native carrier can still carry an
+ * `· native output stream fault: …` segment — running but degraded, which is
+ * not a meter to measure against — and `stopped` and `(no reading yet)` say
+ * so in their own text. The pre-#3706 single `Engine: running` prefix no
+ * longer exists on any build this harness can face.
+ */
+export const isRunningEngineTitle = (title: string): boolean =>
+    (title.startsWith('Engine: native running') || title.startsWith('Engine: Web Audio running')) &&
+    !title.includes('output stream fault');
+
+/**
+ * Whether a status-bar reading's Latency figure is one this harness may
+ * sample — not merely present, but describing the engine that is actually
+ * audible.
+ *
+ * `useStatusBarMetrics.ts`'s `describeOutputLatency` follows the audible
+ * carrier: while the native engine is audible it reports `n/a` until the
+ * native session has published its own figure, refusing to substitute Web
+ * Audio's context latency for a path nobody hears; once published, its
+ * tooltip is built by `outputLatencyTitle('native engine buffer', …)`, so
+ * `latencyTitle` contains "native engine buffer" only for that figure. A
+ * `latencyText` that is not a `<n>ms` reading (`n/a` among them) is refused
+ * outright. Under a native engine, a `<n>ms` reading is accepted only when
+ * its title carries that "native engine buffer" marker — a Web Audio figure
+ * describes the wrong engine even though it parses as a number, and sampling
+ * it is exactly the #4275 defect this predicate exists to close. Under a Web
+ * Audio engine, `describeOutputLatency`'s other branch is the only source of
+ * a `<n>ms` reading, so any such reading is accepted.
+ */
+export function isAudibleLatencyReading(
+    reading: Pick<StatusBarReading, 'latencyText' | 'latencyTitle' | 'engineTitle'>
+): boolean {
+    if (!LATENCY_MS_PATTERN.test(reading.latencyText.trim())) {
+        return false;
+    }
+    if (reading.engineTitle.startsWith('Engine: native')) {
+        return reading.latencyTitle.includes('native engine buffer');
+    }
+    return true;
 }
 
 /**

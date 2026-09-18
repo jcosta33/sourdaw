@@ -1,3 +1,5 @@
+import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
+
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 import { sanitizeTrackSnapshot, type Track } from '../stores/trackStore';
@@ -153,7 +155,7 @@ export function restoreTrackAtIndexWithDeferredAddedEvent(
         afterCommit: publish,
         afterAmbiguousCommit: async () => {
             const durableTrack = getTrackById(restoredTrack.id);
-            if (durableTrack && JSON.stringify(durableTrack) === input.trackJson) {
+            if (durableTrack && matchesJsonFingerprint(durableTrack, input.trackJson)) {
                 await publish();
             }
         },

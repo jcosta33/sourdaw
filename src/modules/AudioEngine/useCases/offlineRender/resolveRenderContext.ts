@@ -1,6 +1,7 @@
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
+    DEFAULT_TEMPO_BPM,
     tempoMapStore,
     transportStore,
     type TempoMapStoreState,
@@ -71,7 +72,7 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
     const tracks = trackStore.value;
     const midi = midiStore.value;
     const tempoMap = tempoMapStore.value;
-    const defaultTempo = transport?.tempo ?? 120;
+    const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
     const changes = tempoMap?.changes ?? [];
 
     const projectPpqEndpoints = offlinePpqEndpointProjectorState.project;

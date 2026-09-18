@@ -1,10 +1,11 @@
-import { type addTrack, type getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { type Track } from '#/modules/Arrangement/stores';
+import { type addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 
 import { type ChordVoicing } from '../../models/GenerationStyles';
 import { CHORD_PROGRESSION_STYLES } from '../../useCases/generateChordProgression/algorithm';
 import { DRUM_PATTERN_STYLES } from '../../useCases/generateDrumPattern/algorithm';
-import { MELODY_STYLES, SCALE_TYPES } from '../../useCases/generateMelody/algorithm';
+import { MELODY_SCALE_TYPES, MELODY_STYLES } from '../../useCases/generateMelody/algorithm';
 
 // Derive the accepted-style sets from the algorithm rosters (their single
 // source of truth) rather than re-listing them here. Hand-maintained copies
@@ -16,7 +17,7 @@ export const VALID_DRUM_STYLES: ReadonlySet<string> = new Set(DRUM_PATTERN_STYLE
 
 export const VALID_MELODY_STYLES: ReadonlySet<string> = new Set(MELODY_STYLES);
 
-export const VALID_SCALES: ReadonlySet<string> = new Set(SCALE_TYPES);
+export const VALID_SCALES: ReadonlySet<string> = new Set(MELODY_SCALE_TYPES);
 
 export const VALID_CHORD_STYLES: ReadonlySet<string> = new Set(CHORD_PROGRESSION_STYLES);
 
@@ -66,4 +67,27 @@ export function resolveOrCreateMidiTrack(
 export function getPlayheadBeat(): number {
     const transport = getTransportState();
     return transport?.playheadPosition ?? 0;
+}
+
+/**
+ * Read-only "drum track" resolution for fill material. The project model has no
+ * drum-track flag, so a drum track is identified by name (a MIDI track whose
+ * name mentions drums), falling back to the selection, then any MIDI track.
+ * Returning `null` lets the caller decide to create a dedicated track.
+ */
+export function findDrumMidiTrack(): Track | null {
+    const state = getTrackStoreState();
+    const tracks = state?.tracks ?? [];
+
+    const namedDrum = tracks.find((track) => track.kind === 'midi' && /drum/i.test(track.name));
+    if (namedDrum) {
+        return namedDrum;
+    }
+
+    const selected = state?.selectedTrackId ? tracks.find((track) => track.id === state.selectedTrackId) : undefined;
+    if (selected?.kind === 'midi') {
+        return selected;
+    }
+
+    return tracks.find((track) => track.kind === 'midi') ?? null;
 }

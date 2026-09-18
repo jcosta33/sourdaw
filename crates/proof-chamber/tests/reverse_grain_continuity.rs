@@ -3,10 +3,18 @@
 //!
 //! `reverse_engine_character.rs` measures the two things that make Reverse a
 //! distinct engine — a late onset and a rising envelope — on a single decaying
-//! burst that is over long before the second grain begins. Nothing in this
-//! crate has ever looked at what happens *between* grains, and that is where
-//! this engine spends most of its life: fed sustained material it swaps buffers
-//! every reverse time, forever.
+//! burst that is over long before the second grain begins. The impulse tests
+//! beside the engine cover different phases: `phase_sweep_over_a_small_window_loses_no_impulse`
+//! sweeps every phase of a 512-sample window, boundary included, and
+//! `production_rate_window_survives_boundary_phases` probes the boundary cases
+//! on a shortened 0.2 s test window that still carries the shipped 15 ms
+//! crossfade; `phase_sweep_interior_achieves_near_full_amplitude`
+//! deliberately excludes the ramps to check the flat middle. `steady_tone_produces_continuous_output`
+//! checks a sustained tone never gates the wet path. None of them compares the
+//! running output level across the boundary — the property a listener hears as
+//! a stutter. That is where this engine spends most of its life: fed sustained
+//! material it re-arms its two alternating grain readers every
+//! `reverse_len − crossfade_len` samples, forever.
 //!
 //! The property under test is the one every windowed-grain engine has to
 //! satisfy and the one a listener notices immediately: **the output level does
@@ -19,22 +27,6 @@
 //! compared against the mean of the same measure. A ratio, not an absolute
 //! level, so it says nothing about how loud the engine is and everything about
 //! whether it is continuous.
-//!
-//! # Why this test is `#[ignore]`d
-//!
-//! It is red against the shipped engine. `ReverseReverb::process`
-//! (`src/reverse.rs:108`-`:120`) applies a Hann fade-out over the last
-//! `crossfade_len` samples of a grain and a Hann fade-in over the first
-//! `crossfade_len` samples of the next, but the two are **sequential rather
-//! than overlapped**: `read_pos` is reset to 0 in the same step that swaps the
-//! buffers (`:133`-`:137`), so the envelope reaches exactly 0 at the boundary
-//! and the two half-windows sum to a notch instead of to unity. At the shipped
-//! 15 ms crossfade the output falls to roughly a tenth of its running level
-//! across a 10 ms window, once every reverse time.
-//!
-//! Un-ignore this when the grains overlap. The bound below is loose on purpose
-//! — a quarter of the running level is already a 12 dB hole — so a repair that
-//! cannot clear it has not made the engine continuous.
 
 use proof_chamber::ProofChamberInstance;
 
@@ -48,8 +40,11 @@ const REVERSE: f32 = 6.0;
 const SIZE: f32 = 0.0;
 const REVERSE_SECONDS: f32 = 0.5;
 
-/// Four reverse times: two to fill and settle, two measured.
+/// Four seconds at 48 kHz, which is eight reverse times at the 0.5 s reverse
+/// time below.
 const RENDER_FRAMES: usize = (SAMPLE_RATE * 4.0) as usize;
+/// Two reverse times in, so six of the eight are measured: the first two fill
+/// and settle the capture, the rest carry the analysis.
 const ANALYSIS_START: usize = (SAMPLE_RATE * REVERSE_SECONDS * 2.0) as usize;
 
 /// A sustained tone rather than a burst: a grain boundary is only observable
@@ -113,7 +108,6 @@ fn render() -> Vec<f32> {
 }
 
 #[test]
-#[ignore = "pins the Reverse engine's grain-boundary dropout — sequential rather than overlapped Hann half-windows in src/reverse.rs:108-120, with read_pos reset alongside the buffer swap at :133-137. Red until the reverse grain-overlap lane lands."]
 fn reverse_does_not_drop_out_at_a_grain_boundary() {
     let output = render();
 

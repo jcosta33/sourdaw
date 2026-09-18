@@ -13,6 +13,10 @@ use super::params::SmoothedParam;
 use super::sidechain::SidechainChain;
 use super::stereo::{decode_ms, encode_ms, parallel_mix, StereoMode};
 use super::vca::VcaCompressor;
+use super::DEFAULT_THRESHOLD_DB;
+use crate::params::{MIX, THRESHOLD};
+use crate::primitives::LINEAR_TO_DB_FLOOR;
+use crate::proof::metering::SILENCE_DB;
 
 /// Compressor topology selector.
 #[derive(Clone, Copy, PartialEq)]
@@ -150,8 +154,8 @@ impl GlutenEngine {
             loudness_coeff: (-1.0 / (0.4 * sample_rate)).exp(), // ~400ms window
 
             meter_gr_db: 0.0,
-            meter_input_db: -100.0,
-            meter_output_db: -100.0,
+            meter_input_db: SILENCE_DB,
+            meter_output_db: SILENCE_DB,
             meter_input_peak: 0.0,
             meter_output_peak: 0.0,
             gr_history: [0.0; 256],
@@ -234,7 +238,7 @@ impl GlutenEngine {
                     _ => CompStyle::Glue,
                 });
             }
-            "mix" => self.mix.set_target(value.clamp(0.0, 1.0)),
+            MIX => self.mix.set_target(value.clamp(0.0, 1.0)),
             "makeup" => self.makeup_gain.set_target(value.clamp(-12.0, 24.0)),
             "auto_makeup" => self.auto_makeup = value > 0.5,
             "bypass" => self.bypassed = value > 0.5,
@@ -245,10 +249,10 @@ impl GlutenEngine {
                 let threshold = -5.0 - 35.0 * pct; // -5 to -40
                 let ratio = 2.0 + 6.0 * pct; // 2:1 to 8:1
                                              // Forward to active topology
-                self.vca.set_param("threshold", threshold);
-                self.opto.set_param("threshold", threshold);
-                self.fet.set_param("threshold", threshold);
-                self.diode.set_param("threshold", threshold);
+                self.vca.set_param(THRESHOLD, threshold);
+                self.opto.set_param(THRESHOLD, threshold);
+                self.fet.set_param(THRESHOLD, threshold);
+                self.diode.set_param(THRESHOLD, threshold);
                 self.vca.set_param("ratio", ratio);
                 self.fet.set_param("ratio", ratio);
                 self.diode.set_param("ratio", ratio.min(6.0));
@@ -350,7 +354,7 @@ impl GlutenEngine {
         match style {
             CompStyle::Glue => {
                 self.active_topology = Topology::Vca;
-                self.vca.set_param("threshold", -18.0);
+                self.vca.set_param(THRESHOLD, DEFAULT_THRESHOLD_DB);
                 self.vca.set_param("ratio", 4.0);
                 self.vca.set_param("attack", 10.0);
                 self.vca.set_param("auto_release", 1.0);
@@ -360,7 +364,7 @@ impl GlutenEngine {
             }
             CompStyle::Punch => {
                 self.active_topology = Topology::Fet;
-                self.fet.set_param("threshold", -20.0);
+                self.fet.set_param(THRESHOLD, -20.0);
                 self.fet.set_param("ratio", 8.0);
                 self.fet.set_param("attack", 0.2);
                 self.fet.set_param("release", 250.0);
@@ -368,12 +372,12 @@ impl GlutenEngine {
             }
             CompStyle::Smooth => {
                 self.active_topology = Topology::Opto;
-                self.opto.set_param("threshold", -25.0);
+                self.opto.set_param(THRESHOLD, -25.0);
                 self.mix.set_target(1.0);
             }
             CompStyle::Pump => {
                 self.active_topology = Topology::Vca;
-                self.vca.set_param("threshold", -15.0);
+                self.vca.set_param(THRESHOLD, -15.0);
                 self.vca.set_param("ratio", 4.0);
                 self.vca.set_param("attack", 0.5);
                 self.vca.set_param("release", 800.0);
@@ -518,10 +522,18 @@ impl GlutenEngine {
                 _ => (mixed_l, mixed_r),
             };
 
+            // Time-aligned dry reference for delta listen:
+            // delayed_l and delayed_r are in the processed domain (M/S encoded if Mid or Side mode).
+            // Decode them back to stereo so they match out_l and out_r's domain and lookahead latency.
+            let (dry_delayed_l, dry_delayed_r) = match self.stereo_mode {
+                StereoMode::Mid | StereoMode::Side => decode_ms(delayed_l, delayed_r),
+                _ => (delayed_l, delayed_r),
+            };
+
             // Delta listen: output only the difference (what compression removed)
             if self.delta_listen {
-                left[i] = dry_l - out_l;
-                right[i] = dry_r - out_r;
+                left[i] = dry_delayed_l - out_l;
+                right[i] = dry_delayed_r - out_r;
             } else {
                 left[i] = out_l;
                 right[i] = out_r;
@@ -554,7 +566,7 @@ impl GlutenEngine {
 
             // Crest factor: peak / RMS in dB
             let rms = (self.rms_accum / n).sqrt();
-            if rms > 1e-10 {
+            if rms > LINEAR_TO_DB_FLOOR {
                 self.meter_crest = 20.0 * (output_peak / rms).log10();
             }
 
@@ -572,15 +584,15 @@ impl GlutenEngine {
         }
         self.meter_input_peak = input_peak;
         self.meter_output_peak = output_peak;
-        self.meter_input_db = if input_peak > 1e-10 {
+        self.meter_input_db = if input_peak > LINEAR_TO_DB_FLOOR {
             20.0 * input_peak.log10()
         } else {
-            -100.0
+            SILENCE_DB
         };
-        self.meter_output_db = if output_peak > 1e-10 {
+        self.meter_output_db = if output_peak > LINEAR_TO_DB_FLOOR {
             20.0 * output_peak.log10()
         } else {
-            -100.0
+            SILENCE_DB
         };
     }
 

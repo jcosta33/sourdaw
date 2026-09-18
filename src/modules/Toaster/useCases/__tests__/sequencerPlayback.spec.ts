@@ -16,7 +16,9 @@ import { stopSequencer } from '../stopSequencer';
 import { TOASTER_ENGINE_MAP } from '../toasterEngineMap';
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     getAudioTime: vi.fn(() => 0),
     applyNoteExpression: vi.fn(),
     audioEngine: {},
@@ -24,6 +26,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDefaultBendRangeSemitones: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 

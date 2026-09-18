@@ -2,7 +2,13 @@
 //! Supports one-shot, looping, and ping-pong modes.
 //! Start/end points and crossfade for seamless loops.
 
+/// The buffer's authored length in frames, and the source rate it was rendered
+/// at: one second of material at 44.1 kHz. Playback owes its pitch and duration
+/// to that pair, not to the engine's output rate, so `tick` converts — a fixed
+/// 44,100-frame source answered one frame per output sample plays ~8.8% sharp
+/// and short at 48 kHz, nearly an octave at 96 kHz (issue #3710).
 pub const SAMPLE_BUFFER_SIZE: usize = 44100; // 1 second at 44.1kHz
+pub const SOURCE_SAMPLE_RATE: f32 = SAMPLE_BUFFER_SIZE as f32;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum PlaybackMode {
@@ -78,6 +84,13 @@ impl SamplerEngine {
         self.active = true;
     }
 
+    /// Retune the playback rate while sounding. `trigger` only seeds the rate;
+    /// the voice refreshes it every sample so the computed pitch — coarse and
+    /// fine offsets, MPE bend, glide, pitch modulation — reaches the engine.
+    pub fn set_rate(&mut self, rate: f32) {
+        self.rate = rate;
+    }
+
     pub fn stop(&mut self) {
         self.active = false;
     }
@@ -103,8 +116,13 @@ impl SamplerEngine {
     }
 
     /// Process one sample. Returns the sample value.
+    ///
+    /// `sample_rate` is the engine's output rate. The source advances by
+    /// `rate · direction · SOURCE_SAMPLE_RATE / sample_rate` frames per tick,
+    /// so `rate` stays a pure musical ratio: 1.0 reproduces the source's
+    /// authored pitch and duration at any output rate.
     #[inline]
-    pub fn tick(&mut self, _sample_rate: f32) -> f32 {
+    pub fn tick(&mut self, sample_rate: f32) -> f32 {
         if !self.active {
             return 0.0;
         }
@@ -139,12 +157,31 @@ impl SamplerEngine {
             }
         }
 
-        // Advance position
-        self.position += self.rate * self.direction;
+        // De-click the one-shot endpoint: the cursor stops dead at
+        // `end_sample`, so the last `crossfade` samples approaching it fade
+        // the output towards zero. Without this, stopping on a non-zero
+        // source frame is a hard cut — the same click the loop crossfade
+        // above exists to remove. Same knob, same bounded cost — RT-safe.
+        if self.mode == PlaybackMode::OneShot && self.crossfade > 0 {
+            let dist_to_end = end_sample - pos_f;
+            if dist_to_end < self.crossfade as f32 {
+                sample *= (dist_to_end / self.crossfade as f32).max(0.0);
+            }
+        }
+
+        // Advance position: the musical ratio times the source-to-output rate
+        // conversion. A degenerate output rate cannot be multiplied through —
+        // treat it as if the source were already at rate 1:1.
+        let rate_step = if sample_rate > 0.0 {
+            SOURCE_SAMPLE_RATE / sample_rate
+        } else {
+            1.0
+        };
+        self.position += self.rate * self.direction * rate_step;
 
         match self.mode {
             PlaybackMode::OneShot => {
-                if self.position >= buf_len as f32 {
+                if self.position >= end_sample {
                     self.active = false;
                 }
             }
@@ -270,5 +307,204 @@ mod tests {
         );
         // Sanity: that first read was indeed outside the fade region.
         assert!(end - 0.0 >= xf as f32);
+    }
+
+    /// Regression (one-shot ignored the End control): a one-shot with
+    /// End = 0.25 must terminate at the selected endpoint — 11,025 source
+    /// frames of the 1-second buffer — not run to the buffer end. Everything
+    /// past the endpoint carries a sentinel amplitude, so any source content
+    /// read beyond it is loud and obvious.
+    #[test]
+    fn one_shot_terminates_at_the_end_point_and_emits_nothing_past_it() {
+        let mut s = SamplerEngine::new();
+        let n = s.buffer.len();
+        let end_frame = n / 4; // 0.25 × 44_100 = 11_025
+        for (i, v) in s.buffer.iter_mut().enumerate() {
+            *v = if i < end_frame { 1.0 } else { 7.0 };
+        }
+        s.set_mode(0); // OneShot
+        s.set_loop_points(0.0, 0.25);
+        s.trigger(1.0);
+
+        let mut outputs = Vec::new();
+        while s.is_active() {
+            outputs.push(s.tick(44_100.0));
+        }
+        assert_eq!(
+            outputs.len(),
+            end_frame,
+            "one-shot with End=0.25 must emit one frame per source frame up to the endpoint"
+        );
+        let loudest = outputs.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!(
+            loudest <= 1.0 + 1e-4,
+            "source content past the endpoint leaked: max |sample| {loudest} against a 7.0 sentinel"
+        );
+        for _ in 0..16 {
+            assert_eq!(
+                s.tick(44_100.0),
+                0.0,
+                "one-shot kept sounding after the endpoint"
+            );
+        }
+    }
+
+    /// The stop at the endpoint must be de-clicked: on a constant full-scale
+    /// source the final samples fade to zero instead of jumping from the
+    /// endpoint amplitude straight to silence.
+    #[test]
+    fn one_shot_declicks_at_the_end_point() {
+        let mut s = SamplerEngine::new();
+        for v in s.buffer.iter_mut() {
+            *v = 1.0;
+        }
+        s.set_mode(0); // OneShot
+        s.set_loop_points(0.0, 0.25);
+        s.trigger(1.0);
+
+        let mut outputs = Vec::new();
+        while s.is_active() {
+            outputs.push(s.tick(44_100.0));
+        }
+        let worst_jump = outputs
+            .windows(2)
+            .map(|w| (w[0] - w[1]).abs())
+            .fold(0.0f32, f32::max);
+        let final_sample = outputs[outputs.len() - 1].abs();
+        assert!(
+            worst_jump < 0.05 && final_sample < 0.05,
+            "one-shot stopped with a discontinuity: largest in-stream jump \
+             {worst_jump}, final sample {final_sample} against a full-scale source"
+        );
+    }
+
+    /// Loop modes keep their existing endpoint semantics: Loop still wraps at
+    /// the loop end and PingPong still bounces, and neither stops there — the
+    /// one-shot endpoint fix must not leak into them.
+    #[test]
+    fn loop_modes_keep_playing_at_the_loop_end() {
+        let region_ticks = 2 * SAMPLE_BUFFER_SIZE;
+
+        let mut looper = stepped_sampler(1.0, -1.0, 0);
+        looper.set_loop_points(0.0, 0.5);
+        looper.trigger(1.0);
+        let loop_end = 0.5 * looper.buffer.len() as f32;
+        let mut furthest = 0.0f32;
+        for _ in 0..region_ticks {
+            looper.tick(44_100.0);
+            furthest = furthest.max(looper.position);
+        }
+        assert!(looper.is_active(), "loop mode stopped at the loop end");
+        assert!(
+            furthest < loop_end + 1.0,
+            "loop cursor escaped the loop region: {furthest} past {loop_end}"
+        );
+
+        let mut pinger = stepped_sampler(1.0, -1.0, 0);
+        pinger.set_mode(2); // PingPong
+        pinger.set_loop_points(0.0, 0.5);
+        pinger.trigger(1.0);
+        for _ in 0..region_ticks {
+            pinger.tick(44_100.0);
+        }
+        assert!(pinger.is_active(), "ping-pong stopped at a region bound");
+    }
+
+    // ── Source rate vs output rate (issue #3710) ──────────────────────────
+
+    /// Rising crossings per output second between the first and last crossing
+    /// above 25% of peak — the default buffer is a *decaying* 440 Hz burst, so
+    /// a whole-render crossing count would dilute the pitch with its quiet
+    /// tail.
+    fn measured_hz(rendered: &[f32], output_rate: f32) -> f32 {
+        let peak = rendered.iter().fold(0.0_f32, |acc, s| acc.max(s.abs()));
+        assert!(
+            peak > 0.05,
+            "render was near-silent (peak {peak}); nothing to measure"
+        );
+        let floor = peak * 0.25;
+        let mut first: Option<usize> = None;
+        let mut last = 0;
+        let mut crossings = 0;
+        let mut armed = false;
+        for (index, &sample) in rendered.iter().enumerate() {
+            if sample < -floor {
+                armed = true;
+            } else if sample > floor && armed {
+                crossings += 1;
+                armed = false;
+                if first.is_none() {
+                    first = Some(index);
+                }
+                last = index;
+            }
+        }
+        let span_secs =
+            (last - first.expect("at least one crossing above the floor")) as f32 / output_rate;
+        (crossings as f32 - 1.0) / span_secs
+    }
+
+    /// The issue's own oracle: `new()`, One-Shot, Start 0, End 1, trigger(1.0),
+    /// count ticks until inactive and measure the fundamental. The buffer is
+    /// one second of 440 Hz at 44.1 kHz, so every output rate must terminate
+    /// after `sample_rate` ticks — 44,100 at 44.1 kHz, 48,000 at 48 kHz,
+    /// 96,000 at 96 kHz — with the fundamental unchanged. Pre-fix, all three
+    /// rates terminated after 44,100 ticks at 440 · rate/44100 Hz.
+    #[test]
+    fn one_second_of_source_lasts_one_second_of_output_at_every_rate() {
+        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
+            let mut s = SamplerEngine::new();
+            s.set_mode(0); // OneShot, Start 0, End 1
+            s.trigger(1.0);
+
+            let mut rendered = Vec::with_capacity(sample_rate as usize + 64);
+            while s.is_active() {
+                rendered.push(s.tick(sample_rate));
+            }
+
+            let expected = sample_rate as usize; // 1.000 s of output
+                                                 // 0.2% slack: the f32 playhead loses a few frames of drift per
+                                                 // ~50k accumulated adds (measured 23 at 48 kHz — 0.8 cents, far
+                                                 // under audibility). The pre-fix bug misses by 8.8% at 48 kHz and
+                                                 // 50% at 96 kHz.
+            assert!(
+                (rendered.len() as f64 - expected as f64).abs() <= expected as f64 * 0.002,
+                "at {sample_rate} Hz the one-second source must spend ~{expected} output frames, spent {}",
+                rendered.len()
+            );
+            let hz = measured_hz(&rendered, sample_rate);
+            assert!(
+                (hz - 440.0).abs() < 440.0 * 0.05,
+                "at {sample_rate} Hz the trigger-1.0 render measured {hz:.1} Hz, not 440"
+            );
+        }
+    }
+
+    /// `rate` stays a pure musical ratio: at 2.0 the render lasts half as long
+    /// at every output rate and measures an octave up.
+    #[test]
+    fn pitch_ratio_scales_duration_and_pitch_alone() {
+        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
+            let mut s = SamplerEngine::new();
+            s.set_mode(0);
+            s.trigger(2.0);
+
+            let mut rendered = Vec::with_capacity(sample_rate as usize + 64);
+            while s.is_active() {
+                rendered.push(s.tick(sample_rate));
+            }
+
+            let expected = sample_rate as usize / 2; // 0.5 s of output
+            assert!(
+                (rendered.len() as f64 - expected as f64).abs() <= expected as f64 * 0.002,
+                "at {sample_rate} Hz a 2.0 ratio must spend ~{expected} output frames, spent {}",
+                rendered.len()
+            );
+            let hz = measured_hz(&rendered, sample_rate);
+            assert!(
+                (hz - 880.0).abs() < 880.0 * 0.05,
+                "at {sample_rate} Hz the 2.0 render measured {hz:.1} Hz, not 880"
+            );
+        }
     }
 }

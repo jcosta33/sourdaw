@@ -39,6 +39,16 @@ describe('applyChorusParams', () => {
         device.dispose?.();
     });
 
+    it('routes chorus-feedback onto the recirculation loop gain', () => {
+        const context = createMockAudioContext();
+        const device = createChorus(asBaseAudioContext(context));
+
+        applyChorusParams(device, { 'chorus-feedback': 0.55 });
+
+        expect(getAudioParam(device, 'feedback', 'gain').value).toBe(0.55);
+        device.dispose?.();
+    });
+
     // A device reconstructed without namedNodes (e.g. a legacy or external-node
     // chain) must still route params through the positional `nodes[]` fallback.
     // This covers every `?? dn.nodes[N]` arm.
@@ -53,13 +63,14 @@ describe('applyChorusParams', () => {
             return { gain: param() } as unknown as GainNode;
         }
         // Indices mirror createChorus: 1=dry, 2=wet, 5=lfo1, 6=lfo2,
-        // 7=lfoGain1, 8=lfoGain2.
+        // 7=lfoGain1, 8=lfoGain2, 10=feedback.
         const dry = gain();
         const wet = gain();
         const lfo1 = osc();
         const lfo2 = osc();
         const lfoGain1 = gain();
         const lfoGain2 = gain();
+        const feedback = gain();
         const device = {
             nodes: [
                 undefined, // 0 splitter
@@ -72,16 +83,18 @@ describe('applyChorusParams', () => {
                 lfoGain1, // 7
                 lfoGain2, // 8
                 undefined, // 9 merger
+                feedback, // 10
             ],
             namedNodes: undefined,
         } as unknown as OfflineDeviceNode;
 
-        applyChorusParams(device, { 'chorus-rate': 5, 'chorus-depth': 20, 'chorus-mix': 0.5 });
+        applyChorusParams(device, { 'chorus-rate': 5, 'chorus-depth': 20, 'chorus-feedback': 0.4, 'chorus-mix': 0.5 });
 
         expect(lfo1.frequency.value).toBe(5);
         expect(lfo2.frequency.value).toBe(6);
         expect(lfoGain1.gain.value).toBe(0.02);
         expect(lfoGain2.gain.value).toBe(0.02);
+        expect(feedback.gain.value).toBe(0.4);
         expect(wet.gain.value).toBe(0.5);
         expect(dry.gain.value).toBe(0.5);
     });

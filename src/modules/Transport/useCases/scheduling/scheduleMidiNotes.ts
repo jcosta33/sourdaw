@@ -26,6 +26,7 @@ import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
@@ -433,9 +434,9 @@ function resolveScheduledMpeParams(note: ScheduledMpeParams): ScheduledMpeParams
     }
 
     const params: ScheduledMpeParams = {
-        pressure: clampOptional(note.pressure, 0, 127),
-        slide: clampOptional(note.slide, 0, 127),
-        pitchBend: clampOptional(note.pitchBend, -8192, 8191),
+        pressure: clampOptional(note.pressure, 0, MAX_MIDI_DATA_7BIT),
+        slide: clampOptional(note.slide, 0, MAX_MIDI_DATA_7BIT),
+        pitchBend: clampOptional(note.pitchBend, PITCH_BEND_MIN, PITCH_BEND_MAX),
     };
     if (note.pitchBend !== undefined) {
         params.pitchBendRangeSemitones = clampOptional(

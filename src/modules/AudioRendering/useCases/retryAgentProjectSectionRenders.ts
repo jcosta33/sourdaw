@@ -1,3 +1,4 @@
+import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from '#/utils/agentRenderReceipt';
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { renderAgentProjectSections } from './renderAgentProjectSections';
@@ -8,6 +9,8 @@ type RetryAgentProjectSectionRendersInput = {
     sourceRevision: string;
     validateArtifactAttachment?: () => string | null;
     onRenderAttempt?: (job: RenderProjectSectionJobSnapshot) => void;
+    owner?: AgentWorkOwnerIdentity | null;
+    onReceipt?: (receipt: AgentRenderReceipt) => void;
 };
 
 export async function retryAgentProjectSectionRenders(input: RetryAgentProjectSectionRendersInput): Promise<void> {
@@ -21,5 +24,7 @@ export async function retryAgentProjectSectionRenders(input: RetryAgentProjectSe
         sourceRevision: input.sourceRevision,
         validateArtifactAttachment: input.validateArtifactAttachment,
         onRenderAttempt: input.onRenderAttempt,
+        owner: input.owner,
+        onReceipt: input.onReceipt,
     });
 }

@@ -1,6 +1,7 @@
 import { type resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { type DeviceRef } from '#/utils/createFindDeviceRef';
 
+import { grinderNeuralProfileParams } from '../../models/GrinderNeuralProfileParams';
 import { type GrinderPatch, type GrinderPedal } from '../../models/GrinderPatch';
 import { GRINDER_PROJECT_PARAM_KEYS } from '../../models/GrinderProjectParameterMap';
 
@@ -284,6 +285,14 @@ export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): vo
     }
 
     const importedModel = patch.neuralModelSource === 'imported' && patch.neuralModelProfile;
+    // The numeric writes below are what the native door and the persisted
+    // record carry; the structured patch further down is the worklet's own
+    // protocol for the same profile.
+    if (importedModel) {
+        for (const [key, value] of grinderNeuralProfileParams(importedModel)) {
+            sendNumericParamToDevice(input, key, value);
+        }
+    }
     sendNumericParamToDevice(input, 'neuralModelMode', importedModel ? 1 : 0);
     if (importedModel) {
         sendPatchToDevice(input, {

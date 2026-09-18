@@ -27,7 +27,9 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
     return { ...actual, persistCrdtProject: mocks.persistCrdtProject };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     analyzePitchForClip: vi.fn(),
     applyNoteExpression: vi.fn(),
     audioEngine: {},
@@ -43,6 +45,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     unwireSidechainRoute: vi.fn(),
     wireSidechainRoute: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 

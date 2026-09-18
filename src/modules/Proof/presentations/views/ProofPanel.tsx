@@ -14,6 +14,7 @@ import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
+import { GAIN_TRIM_DB } from '#/utils/audioLevelLaw';
 
 import { getLinkedBandValues } from '../../models/LinkedBandValues';
 import { getProofLoudnessAlert } from '../../models/ProofLoudnessAlert';
@@ -1282,8 +1283,8 @@ const Level4Route = ({
                         aria-label="Input gain"
                         onChange={(value, isTransient) => onPatchChange({ key: 'inputGain', value, isTransient })}
                         gestureOwner={gestureOwner}
-                        min={-24}
-                        max={24}
+                        min={GAIN_TRIM_DB.min}
+                        max={GAIN_TRIM_DB.max}
                         step={0.5}
                         defaultValue={0}
                         size="md"
@@ -1302,8 +1303,8 @@ const Level4Route = ({
                         aria-label="Output gain"
                         onChange={(value, isTransient) => onPatchChange({ key: 'outputGain', value, isTransient })}
                         gestureOwner={gestureOwner}
-                        min={-24}
-                        max={24}
+                        min={GAIN_TRIM_DB.min}
+                        max={GAIN_TRIM_DB.max}
                         step={0.5}
                         defaultValue={0}
                         size="md"
@@ -1337,7 +1338,7 @@ const ProofLatencyReadout = ({ deviceId }: { deviceId: string }): ReactElement =
 
 const Level5Lab = ({ patch, deviceId }: { patch: ProofPatch; deviceId: string }): ReactElement => {
     const targetLufs = patch.targetLufs;
-    const { status, fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser();
+    const { status, fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser(deviceId);
 
     // Same contract as Level3Build: the desk window owns all scrolling, so
     // the fixed-width gain comparison can never crush the metering column.

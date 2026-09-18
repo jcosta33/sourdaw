@@ -1,4 +1,5 @@
 // Workspace/presentations/views — public contract surface for cross-module views.
+export { AgentWorkspace } from './AgentWorkspace';
 export { AppShell } from './AppShell';
 export { WorkspaceAppBoundary } from './WorkspaceAppBoundary';
 export { WorkspaceMobileGate } from './WorkspaceMobileGate';

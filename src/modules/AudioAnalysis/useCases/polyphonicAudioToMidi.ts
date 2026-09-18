@@ -21,6 +21,13 @@ import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
+/**
+ * The Basic Pitch neural network was trained on exactly 22 050 Hz input; any
+ * other rate must be resampled to this before inference or the model's frame
+ * grid (and therefore every detected note's timing) is wrong.
+ */
+const BASIC_PITCH_SAMPLE_RATE = 22_050;
+
 // ── Types ───────────────────────────────────────────────────────────────
 
 export type PolyphonicAudioToMidiOptions = {
@@ -119,14 +126,13 @@ export async function polyphonicAudioToMidi(
 
     let evaluationBuffer = buffer;
 
-    // Basic Pitch requires exactly 22050Hz sample rate.
     // If our DAW engine is running at 44.1kHz or 48kHz, we must downsample first.
-    if (buffer.sampleRate !== 22050) {
-        logger.info(`[Basic Pitch] Resampling input from ${buffer.sampleRate}Hz to 22050Hz`);
+    if (buffer.sampleRate !== BASIC_PITCH_SAMPLE_RATE) {
+        logger.info(`[Basic Pitch] Resampling input from ${buffer.sampleRate}Hz to ${BASIC_PITCH_SAMPLE_RATE}Hz`);
 
         // Calculate the exact number of frames needed at 22050Hz
-        const targetLength = Math.ceil((buffer.length * 22050) / buffer.sampleRate);
-        const offlineCtx = new OfflineAudioContext(1, targetLength, 22050);
+        const targetLength = Math.ceil((buffer.length * BASIC_PITCH_SAMPLE_RATE) / buffer.sampleRate);
+        const offlineCtx = new OfflineAudioContext(1, targetLength, BASIC_PITCH_SAMPLE_RATE);
 
         const source = offlineCtx.createBufferSource();
         source.buffer = buffer;

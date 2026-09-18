@@ -3,14 +3,21 @@ import { logger } from '#/infra/logger/appLogger';
 import { markerStore } from '#/modules/Arrangement/stores';
 import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
+import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
+import {
+    CREATIVE_INTERPRETATION_TOOL_NAME,
+    createCreativeInterpretationToolSchema,
+    type CreativeRequestAuthority,
+} from '../models/CreativeInterpretation';
 import { type IntentResult, type PlannedIntentResult } from '../models/IntentResult';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
+import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import {
@@ -30,6 +37,7 @@ import {
 } from '../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
+import { admitCreativeInterpretation } from './admitCreativeInterpretation';
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
 import { composeVerifiedProviderProposalScope } from './agentReference/composeVerifiedProviderProposalScope';
@@ -64,6 +72,7 @@ import {
     type ProviderAttemptAdmissionResult,
 } from './llmOrchestration/inference';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
+import { prepareCreativeInterpretationCatalog } from './prepareCreativeInterpretationCatalog';
 import { validateActions } from './validateActions';
 
 type CreateFastPathResultInput = {
@@ -74,6 +83,22 @@ type CreateFastPathResultInput = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The rejected fragment a correction attempt gets to see. Provider-authored
+ * content stays bounded here; the context labels it untrusted where it is
+ * serialized.
+ */
+const MAX_REJECTED_FRAGMENT_LENGTH = 512;
+
+function boundedProviderFragment(value: unknown): string | undefined {
+    try {
+        const serialized = JSON.stringify(value);
+        return serialized === undefined ? undefined : serialized.slice(0, MAX_REJECTED_FRAGMENT_LENGTH);
+    } catch {
+        return undefined;
+    }
 }
 
 function expandCatalogProposals(calls: readonly ToolCallResult[]) {
@@ -201,6 +226,41 @@ function classifyPlannedIntentResult(result: IntentResult): PlanningOutcome {
         : { kind: 'denied', reason: result.rejectionReason };
 }
 
+/** The fields that say what the request was admitted to mean; `authorityId` is identity, not meaning. */
+function creativeAuthorityMeaning(authority: CreativeRequestAuthority): string {
+    return canonicalJson({
+        catalogId: authority.catalogId,
+        requestDigest: authority.requestDigest,
+        revision: authority.revision,
+        mode: authority.mode,
+        targets: authority.targets,
+        editDimensions: authority.editDimensions,
+        prohibitions: authority.prohibitions,
+        creationSlots: authority.creationSlots,
+        uncertainty: authority.uncertainty,
+    });
+}
+
+/**
+ * A bounded correction re-runs the same request; it may not come back having decided that request
+ * meant something else. The original record is reused unchanged, so downstream evidence stays bound
+ * to the one authority the first attempt minted.
+ */
+function reconcileCorrectionCreativeAuthority(
+    original: CreativeRequestAuthority | null,
+    admitted: CreativeRequestAuthority | undefined
+):
+    | { status: 'reused'; creativeAuthority: CreativeRequestAuthority | undefined }
+    | { status: 'rejected'; reason: string } {
+    if (admitted === undefined) {
+        return { status: 'reused', creativeAuthority: original ?? undefined };
+    }
+    if (original === null || creativeAuthorityMeaning(original) !== creativeAuthorityMeaning(admitted)) {
+        return { status: 'rejected', reason: 'Provider correction changed the admitted creative authority.' };
+    }
+    return { status: 'reused', creativeAuthority: { ...admitted, authorityId: original.authorityId } };
+}
+
 function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
     const validated = validateActions(input.actions);
     if (validated.length !== input.actions.length) {
@@ -259,7 +319,11 @@ const planPromptIntent = inject({ logger })(
             stemImportScope?: StemImportPromptScope,
             onProviderResult?: (result: ModelProviderResult) => void,
             streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>,
-            onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult
+            onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult,
+            correction?: {
+                creativeAuthority: CreativeRequestAuthority | null;
+                rejectionEvidence?: PlanningRejectionEvidence;
+            }
         ): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
             const trimmedPrompt = prompt.trim();
@@ -330,12 +394,16 @@ const planPromptIntent = inject({ logger })(
                 const syncopatedArpeggioScope = getSyncopatedArpeggioPromptScope(context, projectRevision);
                 const syncopatedArpeggioCapability =
                     syncopatedArpeggioScope.status === 'request' ? syncopatedArpeggioScope.capability : undefined;
-                const wholeProjectVibeMixCapability = getWholeProjectVibeMixScope(
+                const wholeProjectVibeMixCapability = getWholeProjectVibeMixScope(context, projectRevision)?.capability;
+                const creativeCatalog = prepareCreativeInterpretationCatalog({
                     prompt,
                     context,
-                    projectRevision
-                )?.capability;
-                const providerToolSchemas = getPlanningProviderToolSchemas();
+                    projectRevision: projectRevision ?? '',
+                });
+                const providerToolSchemas = [
+                    ...getPlanningProviderToolSchemas(),
+                    createCreativeInterpretationToolSchema(creativeCatalog),
+                ];
                 const terminalToolNames = new Set([
                     WORKFLOW_CAPABILITY_TOOL_NAME,
                     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
@@ -344,7 +412,7 @@ const planPromptIntent = inject({ logger })(
                     ANALYSIS_REQUEST_TOOL_NAME,
                     ...WORKFLOW_ACTION_TOOL_NAMES,
                 ]);
-                const systemPrompt = `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests. Use project.query only when current project evidence is insufficient. Return query calls alone in a turn, wait for the application-owned receipts, then return the complete ordered action plan.`;
+                const systemPrompt = `${buildLlmActionSystemPrompt()}\nWhen a supplied specialized workflow semantically covers the complete request, call selectWorkflowCapability once before returning its ordered action plan. Match meaning rather than wording. Do not select a workflow for generic, partial, unrelated, or ambiguous requests. Use project.query only when current project evidence is insufficient. Return query calls alone in a turn, wait for the application-owned receipts, then return the complete ordered action plan.\nWhen the request delegates a musical or artistic outcome rather than naming exact edits, call ${CREATIVE_INTERPRETATION_TOOL_NAME} alone in one turn, choosing only the published candidates, then wait for its receipt before proposing ordinary commands. Do not call it for explicit literal edits or when a specialized workflow covers the request.`;
                 const getPlanningSystemPrompt = () => {
                     const resume = streamIdentity
                         ? (agentRunLifecycle.get(streamIdentity.runId)?.resume ?? null)
@@ -380,8 +448,10 @@ const planPromptIntent = inject({ logger })(
                             stemImportCapability: stemImportScope?.capability,
                             syncopatedArpeggioCapability,
                             wholeProjectVibeMixCapability,
+                            creativeInterpretationCatalog: creativeCatalog,
                         },
                         validationFailures: agentRun?.errors.map((error) => ({ code: error.code })),
+                        rejectionEvidence: correction?.rejectionEvidence,
                         priorEvidence: agentRun?.contextEvidence,
                     });
                     if (agentRun) {
@@ -402,6 +472,9 @@ const planPromptIntent = inject({ logger })(
                             'Provider planning rejected: relevant production authority exceeds the bounded context limit.',
                     };
                 }
+                // The loop is told only whether a call was admitted. The record itself stays here, so a
+                // provider turn that echoes receipt text back cannot restate it as its own authority.
+                let creativeAuthority: CreativeRequestAuthority | undefined;
                 const planningOutcome = await runApplicationOwnedToolLoop({
                     loopId: `planning-${crypto.randomUUID()}`,
                     limits: {
@@ -410,6 +483,34 @@ const planPromptIntent = inject({ logger })(
                     },
                     terminalToolNames,
                     signal,
+                    interpretation: {
+                        toolName: CREATIVE_INTERPRETATION_TOOL_NAME,
+                        admit: (call) => {
+                            const admission = admitCreativeInterpretation({
+                                catalog: creativeCatalog,
+                                call,
+                                projectRevision: projectRevision ?? '',
+                            });
+                            if (admission.status !== 'admitted') {
+                                return admission;
+                            }
+                            creativeAuthority = admission.authority;
+                            return {
+                                status: 'admitted',
+                                receipt: {
+                                    data: {
+                                        authorityId: admission.authority.authorityId,
+                                        mode: admission.authority.mode,
+                                        targets: admission.authority.targets,
+                                        editDimensions: admission.authority.editDimensions,
+                                        prohibitions: admission.authority.prohibitions,
+                                        creationSlots: admission.authority.creationSlots,
+                                    },
+                                    summary: 'Creative interpretation admitted.',
+                                },
+                            };
+                        },
+                    },
                     requestTurn: async ({ receiptContext }) => {
                         const planningContext =
                             receiptContext === null ? initialPlanningContext : buildPlanningContext(receiptContext);
@@ -442,12 +543,37 @@ const planPromptIntent = inject({ logger })(
                     };
                 }
 
+                // What the run was admitted to mean travels with every outcome below, so a refusal
+                // states the same authority the proposal it replaced would have carried.
+                let creativeAuthorityFields = creativeAuthority === undefined ? {} : { creativeAuthority };
+
+                if (correction !== undefined) {
+                    const reused = reconcileCorrectionCreativeAuthority(
+                        correction.creativeAuthority,
+                        creativeAuthority
+                    );
+                    // The disputed record is the reason this run refused, so no outcome carries it.
+                    if (reused.status === 'rejected') {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
+                            rejectionReason: reused.reason,
+                        };
+                    }
+                    creativeAuthority = reused.creativeAuthority;
+                    creativeAuthorityFields = creativeAuthority === undefined ? {} : { creativeAuthority };
+                }
+                // Reconciliation decides which record this run is operating under, so a loop refusal
+                // reported before it would name a freshly minted authority the run never adopted.
                 if (planningOutcome.status === 'rejected') {
                     return {
                         actions: [],
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         rejectionReason: `Provider planning rejected: ${planningOutcome.reason}`,
                     };
                 }
@@ -462,6 +588,7 @@ const planPromptIntent = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         ...(outcome.kind === 'denied' ? { rejectionReason: outcome.reason } : {}),
                         planningOutcome: outcome,
                     };
@@ -472,6 +599,7 @@ const planPromptIntent = inject({ logger })(
                     calls: planningOutcome.toolCalls,
                     context,
                     revision: projectRevision ?? '',
+                    ...creativeAuthorityFields,
                 });
                 if (compiledList.status === 'rejected') {
                     return {
@@ -479,7 +607,23 @@ const planPromptIntent = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         rejectionReason: `Provider action rejected: ${compiledList.reason}`,
+                        rejectionEvidence: {
+                            kind: compiledList.detail?.kind ?? 'schema',
+                            reason: compiledList.reason,
+                            ...(compiledList.detail
+                                ? {
+                                      itemId: compiledList.detail.itemId,
+                                      candidateIds: compiledList.detail.candidateIds,
+                                      resolution: {
+                                          resolvedCount: compiledList.detail.resolvedCount,
+                                          expectedCount: compiledList.detail.expectedCount,
+                                      },
+                                  }
+                                : {}),
+                            rejectedFragment: boundedProviderFragment(planningOutcome.toolCalls),
+                        },
                     };
                 }
                 const expandedProposal = expandCatalogProposals(compiledList.calls);
@@ -489,7 +633,13 @@ const planPromptIntent = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         rejectionReason: `Provider action rejected: ${expandedProposal.reason}`,
+                        rejectionEvidence: {
+                            kind: 'schema',
+                            reason: expandedProposal.reason,
+                            rejectedFragment: boundedProviderFragment(providerProposal),
+                        },
                     };
                 }
                 const providerToolCalls = expandedProposal.calls;
@@ -502,6 +652,7 @@ const planPromptIntent = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         rejectionReason: 'Provider selected more than one specialized workflow.',
                     };
                 }
@@ -514,6 +665,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason:
                                 'Provider must select a specialized workflow before proposing its actions.',
                         };
@@ -526,6 +678,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: 'Provider selected an unavailable specialized workflow.',
                         };
                     }
@@ -539,6 +692,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: 'Stem files must be selected before the provider can plan their import.',
                         };
                     }
@@ -547,6 +701,7 @@ const planPromptIntent = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         preparationRequest: 'stem-import',
                     };
                 }
@@ -558,6 +713,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: `Provider action rejected: importStemSet: ${stemImport.reason}`,
                         };
                     }
@@ -567,6 +723,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: 'Provider action failed runtime validation: importStemSet',
                         };
                     }
@@ -576,6 +733,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: 'Provider action conflicts with locked production intent.',
                         };
                     }
@@ -584,6 +742,7 @@ const planPromptIntent = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: true,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         executionMode: 'atomic',
                         workflowCapabilityId,
                         ...(providerProposal === null ? {} : { providerProposal }),
@@ -610,6 +769,7 @@ const planPromptIntent = inject({ logger })(
                     compilerEvidence: compiledList.compilerEvidence,
                     projectRevision,
                     workflowCapabilityId,
+                    ...creativeAuthorityFields,
                 });
                 for (const rejected of bridged.rejections) {
                     logger.warn(
@@ -621,12 +781,26 @@ const planPromptIntent = inject({ logger })(
                     const reason = bridged.rejections
                         .map((rejection) => `${rejection.name}: ${rejection.reason}`)
                         .join('; ');
+                    // The correction gets one bounded, structured diagnostic for
+                    // the first failing item: which command, what the app
+                    // expects, and the provider's own rejected arguments.
+                    const firstRejection = bridged.rejections[0]!;
+                    const rejectedCall = toolCalls[firstRejection.index];
                     return {
                         actions: [],
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         rejectionReason: `Provider action rejected: ${reason}`,
+                        rejectionEvidence: {
+                            kind: 'constraint',
+                            command: { index: firstRejection.index, name: firstRejection.name },
+                            reason: firstRejection.reason,
+                            ...(rejectedCall
+                                ? { rejectedFragment: boundedProviderFragment(rejectedCall.arguments) }
+                                : {}),
+                        },
                     };
                 }
 
@@ -643,6 +817,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: `Provider action failed runtime validation: ${rejectedTypes}`,
                         };
                     }
@@ -658,6 +833,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: `Provider action identity rejected: ${materialized.reason}`,
                         };
                     }
@@ -676,6 +852,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: `Provider action state binding rejected: ${guarded.reason}`,
                         };
                     }
@@ -685,6 +862,7 @@ const planPromptIntent = inject({ logger })(
                             rawText: prompt,
                             requiresConfirmation: false,
                             ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
                             rejectionReason: 'Provider action conflicts with locked production intent.',
                         };
                     }
@@ -738,6 +916,7 @@ const planPromptIntent = inject({ logger })(
                             ? {}
                             : { providerKnownTargetIds: [...compiledList.compilerEvidence.providerKnownTargetIds] }),
                         ...(effectiveProviderProposal === null ? {} : { providerProposal: effectiveProviderProposal }),
+                        ...creativeAuthorityFields,
                     };
                 }
 
@@ -749,9 +928,19 @@ const planPromptIntent = inject({ logger })(
                         rawText: prompt,
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
                         rejectionReason: reason,
                     };
                 }
+
+                // An empty provider plan is a no-op; there is no alternate mutation path.
+                return {
+                    actions: [],
+                    rawText: prompt,
+                    requiresConfirmation: false,
+                    ...applicationToolReceiptFields,
+                    ...creativeAuthorityFields,
+                };
             } catch (error) {
                 if (error instanceof ApplicationOwnedToolLoopRequestError && error.receipts.length > 0) {
                     applicationToolReceiptFields = { applicationToolReceipts: [...error.receipts] };
@@ -777,10 +966,6 @@ const planPromptIntent = inject({ logger })(
                     rejectionReason: `Provider planning failed: ${reason}`,
                 };
             }
-
-            // An empty provider plan is a no-op; there is no alternate mutation path.
-
-            return { actions: [], rawText: prompt, requiresConfirmation: false, ...applicationToolReceiptFields };
         }
 );
 
@@ -796,7 +981,11 @@ export async function parsePromptToActions(
     stemImportScope?: StemImportPromptScope,
     onProviderResult?: (result: ModelProviderResult) => void,
     streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>,
-    onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult
+    onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult,
+    correction?: {
+        creativeAuthority: CreativeRequestAuthority | null;
+        rejectionEvidence?: PlanningRejectionEvidence;
+    }
 ): Promise<PlannedIntentResult> {
     const result = await planPromptIntent(
         prompt,
@@ -806,7 +995,8 @@ export async function parsePromptToActions(
         stemImportScope,
         onProviderResult,
         streamIdentity,
-        onProviderAttempt
+        onProviderAttempt,
+        correction
     );
     return { ...result, planningOutcome: classifyPlannedIntentResult(result) };
 }

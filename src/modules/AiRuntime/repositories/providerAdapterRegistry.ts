@@ -2,7 +2,68 @@ import { type ModelProviderCapabilities } from '../models/ModelProviderProtocol'
 
 export const PROVIDER_ADAPTER_SCHEMA_VERSION = 1 as const;
 
-export type ProviderProtocolFamily = 'openai-chat-completions';
+export const OPENAI_CHAT_COMPLETIONS_ADAPTER_ID = 'builtin.openai-compatible.chat-completions.v1';
+export const OPENAI_RESPONSES_ADAPTER_ID = 'builtin.openai.responses.v1';
+
+export type ProviderAdapterId = typeof OPENAI_CHAT_COMPLETIONS_ADAPTER_ID | typeof OPENAI_RESPONSES_ADAPTER_ID;
+
+export type ProviderProtocolFamily = 'openai-chat-completions' | 'openai-responses';
+
+export type ProviderRequestPath = '/v1/chat/completions' | '/v1/responses';
+
+/**
+ * `generateOpenAiCompatibleToolCalls.ts` targets arbitrary third-party servers and sends no
+ * `parallel_tool_calls` field, so parallel tool-call support is unknown and refused.
+ */
+const OPENAI_COMPATIBLE_CAPABILITIES: ModelProviderCapabilities = Object.freeze({
+    text: true,
+    tools: true,
+    structuredOutput: false,
+    parallelToolCalls: false,
+    streaming: true,
+    contextWindowTokens: null,
+    maxOutputTokens: null,
+    cacheControls: ['provider-default'] as const,
+    reasoningControls: ['provider-default'] as const,
+    dataPolicies: ['remote-allowed'] as const,
+    media: { audio: 'unavailable', image: 'unavailable', video: 'unavailable' } as const,
+});
+
+/**
+ * `generateOpenAiResponsesToolCalls.ts` sends `parallel_tool_calls: true` on the wire, so this
+ * first-party adapter reports the capability the compatible adapter above cannot promise.
+ */
+const OPENAI_RESPONSES_CAPABILITIES: ModelProviderCapabilities = Object.freeze({
+    ...OPENAI_COMPATIBLE_CAPABILITIES,
+    parallelToolCalls: true,
+});
+
+/**
+ * The release-owned adapter contracts. A protocol family, its request path, and its
+ * capabilities are compiled together here so no caller can pair one family with another's
+ * endpoint or borrow another adapter's wire capabilities.
+ */
+const COMPILED_ADAPTERS: Readonly<
+    Record<
+        ProviderAdapterId,
+        Readonly<{
+            protocolFamily: ProviderProtocolFamily;
+            requestPath: ProviderRequestPath;
+            capabilities: ModelProviderCapabilities;
+        }>
+    >
+> = Object.freeze({
+    [OPENAI_CHAT_COMPLETIONS_ADAPTER_ID]: Object.freeze({
+        protocolFamily: 'openai-chat-completions' as const,
+        requestPath: '/v1/chat/completions' as const,
+        capabilities: OPENAI_COMPATIBLE_CAPABILITIES,
+    }),
+    [OPENAI_RESPONSES_ADAPTER_ID]: Object.freeze({
+        protocolFamily: 'openai-responses' as const,
+        requestPath: '/v1/responses' as const,
+        capabilities: OPENAI_RESPONSES_CAPABILITIES,
+    }),
+});
 
 export type ProviderAdapterInstallationInput = {
     adapterId: string;
@@ -14,12 +75,12 @@ export type ProviderAdapterInstallationInput = {
 
 export type CompiledProviderAdapter = Readonly<{
     schemaVersion: typeof PROVIDER_ADAPTER_SCHEMA_VERSION;
-    adapterId: 'builtin.openai-compatible.chat-completions.v1';
+    adapterId: ProviderAdapterId;
     providerId: string;
     modelId: string;
-    protocolFamily: 'openai-chat-completions';
+    protocolFamily: ProviderProtocolFamily;
     origin: string;
-    requestPath: '/v1/chat/completions';
+    requestPath: ProviderRequestPath;
     probePath: '/v1/models';
     transport: Readonly<{
         kind: 'privileged-origin';
@@ -39,20 +100,6 @@ export type CompiledProviderAdapter = Readonly<{
 const INSTALLATION_KEYS = new Set(['adapterId', 'providerId', 'modelId', 'protocolFamily', 'origin']);
 const STABLE_PROVIDER_ID = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/u;
 const STABLE_MODEL_ID = /^[A-Za-z0-9](?:[A-Za-z0-9._:/-]{0,254}[A-Za-z0-9])?$/u;
-
-const OPENAI_COMPATIBLE_CAPABILITIES: ModelProviderCapabilities = Object.freeze({
-    text: true,
-    tools: true,
-    structuredOutput: false,
-    parallelToolCalls: false,
-    streaming: true,
-    contextWindowTokens: null,
-    maxOutputTokens: null,
-    cacheControls: ['provider-default'] as const,
-    reasoningControls: ['provider-default'] as const,
-    dataPolicies: ['remote-allowed'] as const,
-    media: { audio: 'unavailable', image: 'unavailable', video: 'unavailable' } as const,
-});
 
 function assertExactInstallationShape(input: ProviderAdapterInstallationInput): void {
     for (const key of Object.keys(input)) {
@@ -149,12 +196,17 @@ function compileCanonicalPublicOrigin(value: string): string {
     return parsed.origin;
 }
 
+function isCompiledAdapterId(adapterId: string): adapterId is ProviderAdapterId {
+    return Object.hasOwn(COMPILED_ADAPTERS, adapterId);
+}
+
 export function compileProviderAdapterInstallation(input: ProviderAdapterInstallationInput): CompiledProviderAdapter {
     assertExactInstallationShape(input);
-    if (input.adapterId !== 'builtin.openai-compatible.chat-completions.v1') {
+    if (!isCompiledAdapterId(input.adapterId)) {
         throw new Error('Provider adapter is not compiled into this release or explicitly installed');
     }
-    if (input.protocolFamily !== 'openai-chat-completions') {
+    const contract = COMPILED_ADAPTERS[input.adapterId];
+    if (input.protocolFamily !== contract.protocolFamily) {
         throw new Error('Provider adapter protocol family does not match its compiled contract');
     }
 
@@ -163,9 +215,9 @@ export function compileProviderAdapterInstallation(input: ProviderAdapterInstall
         adapterId: input.adapterId,
         providerId: assertStableId('Provider ID', input.providerId, STABLE_PROVIDER_ID),
         modelId: assertStableId('Model ID', input.modelId, STABLE_MODEL_ID),
-        protocolFamily: input.protocolFamily,
+        protocolFamily: contract.protocolFamily,
         origin: compileCanonicalPublicOrigin(input.origin),
-        requestPath: '/v1/chat/completions',
+        requestPath: contract.requestPath,
         probePath: '/v1/models',
         transport: Object.freeze({
             kind: 'privileged-origin' as const,
@@ -173,7 +225,7 @@ export function compileProviderAdapterInstallation(input: ProviderAdapterInstall
             redirects: 'disabled' as const,
             proxy: 'disabled' as const,
         }),
-        capabilities: OPENAI_COMPATIBLE_CAPABILITIES,
+        capabilities: contract.capabilities,
         retry: Object.freeze({
             maxAttempts: 1 as const,
             retryableStatuses: [408, 429, 500, 502, 503, 504] as const,

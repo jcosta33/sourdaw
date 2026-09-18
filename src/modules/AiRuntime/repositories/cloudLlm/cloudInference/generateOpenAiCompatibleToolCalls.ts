@@ -6,8 +6,11 @@ import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
 
 import { buildWireToolNameCodec } from './buildWireToolNameCodec';
-import { isGpt56FamilyModel } from './openAiModelFamilies';
-import { requestOpenAiCompatibleProvider } from './requestOpenAiCompatibleProvider';
+import { type HostedToolPlan } from './hostedToolPlan';
+import { parseToolCallArguments } from './parseToolCallArguments';
+import { readProviderRequestId } from './readProviderRequestId';
+import { rejectedBatchMessage } from './rejectedBatchMessage';
+import { requestHostedOpenAiProvider } from './requestOpenAiProvider';
 
 type GenerateOpenAiCompatibleToolCallsInput = {
     runtime: OpenAiCompatibleCloudRuntime;
@@ -45,21 +48,6 @@ function inspectAssistantContent(value: unknown): AssistantContentState {
         }
     }
     return { valid: true, hasContent };
-}
-
-function parseArguments(value: unknown): Record<string, unknown> | null {
-    if (isRecord(value)) {
-        return value;
-    }
-    if (typeof value !== 'string') {
-        return null;
-    }
-    try {
-        const parsed = JSON.parse(value) as unknown;
-        return isRecord(parsed) ? parsed : null;
-    } catch {
-        return null;
-    }
 }
 
 function parseToolCalls(response: unknown, decodeWireName: (wireName: string) => string): ToolCallResult[] {
@@ -111,7 +99,7 @@ function parseToolCalls(response: unknown, decodeWireName: (wireName: string) =>
             throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-call batch');
         }
         const name = rawCall.function.name;
-        const arguments_ = parseArguments(rawCall.function.arguments);
+        const arguments_ = parseToolCallArguments(rawCall.function.arguments);
         const id = rawCall.id;
         if (
             typeof name !== 'string' ||
@@ -119,7 +107,7 @@ function parseToolCalls(response: unknown, decodeWireName: (wireName: string) =>
             !arguments_ ||
             (id !== undefined && (typeof id !== 'string' || id.length === 0))
         ) {
-            throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-call batch');
+            throw new ToolPlanningRejectedError(rejectedBatchMessage(id));
         }
         results.push({
             ...(typeof id === 'string' ? { id } : {}),
@@ -140,7 +128,7 @@ export async function generateOpenAiCompatibleToolCalls({
     toolSchemas,
     maxOutputTokens,
     signal,
-}: GenerateOpenAiCompatibleToolCallsInput): Promise<ToolCallResult[]> {
+}: GenerateOpenAiCompatibleToolCallsInput): Promise<HostedToolPlan> {
     const codec = buildWireToolNameCodec(toolSchemas);
     const body = JSON.stringify({
         model: runtime.model,
@@ -158,13 +146,10 @@ export async function generateOpenAiCompatibleToolCalls({
         tool_choice: 'auto',
         n: 1,
         stream: false,
-        ...(runtime.provider === 'openai'
-            ? { max_completion_tokens: maxOutputTokens }
-            : { max_tokens: maxOutputTokens }),
-        ...(runtime.provider === 'openai' && isGpt56FamilyModel(runtime.model) ? { reasoning_effort: 'none' } : {}),
+        max_tokens: maxOutputTokens,
     });
     const chunks: Uint8Array[] = [];
-    const response = await requestOpenAiCompatibleProvider({
+    const response = await requestHostedOpenAiProvider({
         runtime,
         body,
         signal: signal ?? new AbortController().signal,
@@ -192,7 +177,10 @@ export async function generateOpenAiCompatibleToolCalls({
         }
         throw error;
     }
-    return parseToolCalls(payload, codec.decode);
+    return {
+        providerRequestId: isRecord(payload) ? readProviderRequestId(payload.id) : null,
+        calls: parseToolCalls(payload, codec.decode),
+    };
 }
 
 function hasErrorName(value: unknown, name: string): boolean {

@@ -23,6 +23,8 @@
  * prevent.
  */
 
+import { PITCH_BEND_CENTER, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
+
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 
 /** Per-note expression exactly as stored on a MIDI note or a live note record. */
@@ -119,7 +121,8 @@ export function normalizeNoteExpression(
     bendRangeSemitones: number = MPE_MEMBER_BEND_RANGE_SEMITONES
 ): NoteExpressionEngineValues {
     const rawBend = values.pitchBend ?? 0;
-    const bendSemitones = (Math.max(-8192, Math.min(8191, rawBend)) / 8192) * bendRangeSemitones;
+    const bendSemitones =
+        (Math.max(PITCH_BEND_MIN, Math.min(PITCH_BEND_MAX, rawBend)) / PITCH_BEND_CENTER) * bendRangeSemitones;
     const pressure = Math.max(0, Math.min(127, values.pressure ?? 0)) / 127;
     // CC74 is unipolar 0..127 with 64 as the neutral rest position, so the
     // engine's bipolar timbre axis is centred there.

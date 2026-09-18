@@ -1,4 +1,4 @@
-import { type ScaleType } from '../../useCases/generateMelody/algorithm';
+import { type MelodyScaleType } from '../../useCases/generateMelody/algorithm';
 import { applyMelodyToTrack } from '../../useCases/generateMelody/applyToTrack';
 
 import { createGenerationHandler } from './createGenerationHandler';
@@ -10,8 +10,8 @@ export const handleGenerateMelody = createGenerationHandler<'generateMelody'>({
     labelSuffix: 'melody',
     trackNamePrefix: 'Melody',
     applyToTrack: (trackId, action, style, playheadBeat) => {
-        const scale: ScaleType = VALID_SCALES.has(action.payload.scale ?? '')
-            ? (action.payload.scale as ScaleType)
+        const scale: MelodyScaleType = VALID_SCALES.has(action.payload.scale ?? '')
+            ? (action.payload.scale as MelodyScaleType)
             : 'major';
         const key = typeof action.payload.key === 'number' ? Math.max(0, Math.min(11, action.payload.key)) : 0;
 

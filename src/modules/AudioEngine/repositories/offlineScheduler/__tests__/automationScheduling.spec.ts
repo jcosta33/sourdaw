@@ -742,15 +742,16 @@ describe('scheduleTrackAutomation', () => {
         const deviceNode = {
             inputNode: {} as AudioNode,
             outputNode: {} as AudioNode,
-            nodes: [{ gain: deviceParam } as unknown as AudioNode],
+            namedNodes: { lfoDepth: { gain: deviceParam } as unknown as AudioNode },
+            nodes: [],
         };
-        // A stepped 0 -> 1 device lane. Live low-passes the step through its
+        // A stepped 0 -> 1 device lane on a linear parameter. Live low-passes the step through its
         // exponential slew (alpha 0.4 at 100Hz); offline must reproduce the glide
         // rather than the instantaneous step it emitted before AU-2.
         scheduleTrackAutomationFixture({
             lanes: [
                 makeLane({
-                    parameterId: 'device-1:gain-level',
+                    parameterId: 'device-1:trem-depth',
                     points: [
                         { beat: 128, value: 0, curve: 'step', tension: 0 },
                         { beat: 130, value: 1, curve: 'step', tension: 0 },
@@ -760,7 +761,7 @@ describe('scheduleTrackAutomation', () => {
             trackId: 'track-1',
             trackGainNode: { gain: makeParam() } as unknown as GainNode,
             trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
-            deviceEntries: [webAudioEntry('device-1', 'builtin-gain', deviceNode)],
+            deviceEntries: [webAudioEntry('device-1', 'builtin-tremolo', deviceNode)],
             durationSeconds: 10,
             defaultTempo: 120,
             changes: [],
@@ -768,6 +769,8 @@ describe('scheduleTrackAutomation', () => {
         });
 
         const ramps = deviceParam.linearRampToValueAtTime.mock.calls.map((call) => call[0] as number);
+        // `trem-depth` binds to `lfoDepth.gain` with an identity device→AudioParam
+        // law (no `convert`), so the emitted values ARE the device-space recurrence.
         const postStep = ramps.filter((value) => value > 0);
         // The slew produces the exact IIR sequence y[n]=y[n-1]+0.4*(1-y[n-1]):
         // 0.4, 0.64, 0.784, ... and settles exactly on the target.
@@ -783,7 +786,8 @@ describe('scheduleTrackAutomation', () => {
         const deviceNode = {
             inputNode: {} as AudioNode,
             outputNode: {} as AudioNode,
-            nodes: [{ gain: deviceParam } as unknown as AudioNode],
+            namedNodes: { lfoDepth: { gain: deviceParam } as unknown as AudioNode },
+            nodes: [],
         };
         // Live order is `slewStep` → `clampDeviceParameterValue` →
         // `laneSlew.set(clamped)`: the clamp lands on the smoothed value and is
@@ -796,7 +800,7 @@ describe('scheduleTrackAutomation', () => {
         scheduleTrackAutomationFixture({
             lanes: [
                 makeLane({
-                    parameterId: 'device-1:gain-level',
+                    parameterId: 'device-1:trem-depth',
                     minValue: 0,
                     maxValue: 2,
                     points: [
@@ -808,7 +812,7 @@ describe('scheduleTrackAutomation', () => {
             trackId: 'track-1',
             trackGainNode: { gain: makeParam() } as unknown as GainNode,
             trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
-            deviceEntries: [webAudioEntry('device-1', 'builtin-gain', deviceNode)],
+            deviceEntries: [webAudioEntry('device-1', 'builtin-tremolo', deviceNode)],
             deviceParameterLaw: {
                 acceptsAutomation: () => true,
                 clampValue: ({ value }) => Math.min(1, Math.max(0, value)),
@@ -823,6 +827,9 @@ describe('scheduleTrackAutomation', () => {
             regionStartSeconds: 64,
         });
 
+        // `trem-depth` binds with an identity device→AudioParam law (no
+        // `convert`), so the emitted values are already device space, where the
+        // clamp and the recurrence this case observes run.
         const postStep = deviceParam.linearRampToValueAtTime.mock.calls
             .map((call) => call[0] as number)
             .filter((value) => value > 0);

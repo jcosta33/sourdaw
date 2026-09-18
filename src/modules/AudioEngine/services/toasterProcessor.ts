@@ -18,10 +18,19 @@
  */
 
 import { TOASTER_AUTOMATION_PARAM_IDS } from '../models/ToasterAutomationParams';
+import { mapToasterKitParamToDspParam } from '../models/ToasterKitParamNames';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
+
+/**
+ * Port message discriminant, restated from the app-side owner
+ * `src/infra/audioWorklet/workletPortMessages.ts` because this processor runs
+ * in the isolated worklet realm and must not import app-side code; pinned
+ * equal by `__tests__/workletPortMessageParity.spec.ts`.
+ */
+export const INIT_SAB_MESSAGE_TYPE = 'init-sab';
 
 /** Pad count the ToasterInstance is created with; the allNotesOff release loop spans 0..PAD_COUNT-1. */
 const TOASTER_PAD_COUNT = 16;
@@ -120,20 +129,6 @@ const PAD_PARAM_MAP: Record<string, string> = {
     engineType: 'engine_type',
 };
 
-/** Map camelCase kit param names to snake_case. */
-const KIT_PARAM_MAP: Record<string, string> = {
-    masterGain: 'master_gain',
-    reverbMix: 'reverb_mix',
-    reverbDecay: 'reverb_decay',
-    delayTime: 'delay_time',
-    delayFeedback: 'delay_feedback',
-    delayMix: 'delay_mix',
-    swing: 'swing',
-    lofiBits: 'lofi_bits',
-    lofiRate: 'lofi_rate',
-    lofiMix: 'lofi_mix',
-};
-
 function toEngineKitParamValue(name: string, value: number): number {
     // ToasterKit persists delayTime in milliseconds; StereoDelay::set_param
     // consumes seconds and multiplies by sample rate. Both the live camelCase
@@ -146,7 +141,7 @@ function toEngineKitParamValue(name: string, value: number): number {
 
 type ToasterMsg =
     | { type: 'init' }
-    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
+    | { type: typeof INIT_SAB_MESSAGE_TYPE; sab: SharedArrayBuffer; byteOffset: number }
     | { type: 'dispose' }
     | { type: 'noteOn'; pad: number; velocity: number; note?: number; sampleFrame?: number }
     | { type: 'noteOff'; pad: number; sampleFrame?: number }
@@ -210,7 +205,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
                     this._telemetryView = null;
                     this._telemetrySeqView = null;
                     this.port.postMessage({ type: 'disposed' });
-                } else if (msg.type === 'init-sab') {
+                } else if (msg.type === INIT_SAB_MESSAGE_TYPE) {
                     this._telemetryView = new Float32Array(msg.sab, msg.byteOffset);
                     this._telemetrySeqView = new Int32Array(msg.sab, msg.byteOffset);
                 } else if (msg.type === 'init') {
@@ -315,7 +310,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
         }
         switch (msg.type) {
             case 'init':
-            case 'init-sab':
+            case INIT_SAB_MESSAGE_TYPE:
             case 'dispose':
                 break;
             case 'noteOn':
@@ -370,7 +365,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
                 break;
             case 'param':
                 {
-                    const name = KIT_PARAM_MAP[msg.name] ?? msg.name;
+                    const name = mapToasterKitParamToDspParam({ paramId: msg.name }) ?? msg.name;
                     inst.set_param(name, toEngineKitParamValue(name, msg.value));
                 }
                 break;

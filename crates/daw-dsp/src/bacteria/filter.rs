@@ -34,6 +34,10 @@ impl FilterMode {
 pub struct SvfFilter {
     mode: FilterMode,
     cutoff: f32,
+    /// Per-sample modulation offset on cutoff, added before the 20 Hz–20 kHz
+    /// clamp. Written once per sample by the band chain from the modulation
+    /// matrix; never accumulates into the stored `cutoff` (#2389).
+    cutoff_offset: f32,
     resonance: f32,
     sample_rate: f32,
 
@@ -58,6 +62,7 @@ impl SvfFilter {
         Self {
             mode: FilterMode::LowPass,
             cutoff: 8000.0,
+            cutoff_offset: 0.0,
             resonance: 0.3,
             sample_rate,
             ic1eq: 0.0,
@@ -95,6 +100,16 @@ impl SvfFilter {
         }
     }
 
+    /// Set this sample's modulation offset on cutoff — see `cutoff_offset`.
+    pub fn set_cutoff_offset(&mut self, offset: f32) {
+        self.cutoff_offset = offset;
+    }
+
+    /// The band's authored cutoff with the modulation matrix's offset applied.
+    fn effective_cutoff(&self) -> f32 {
+        (self.cutoff + self.cutoff_offset).clamp(20.0, 20_000.0)
+    }
+
     pub fn process_sample(&mut self, input: f32) -> f32 {
         match self.mode {
             FilterMode::Comb => self.process_comb(input),
@@ -114,8 +129,8 @@ impl SvfFilter {
         }
 
         // Modulate cutoff with envelope
-        let mod_cutoff =
-            (self.cutoff * (1.0 + self.env_amount * self.env_level * 4.0)).clamp(20.0, 20000.0);
+        let mod_cutoff = (self.effective_cutoff() * (1.0 + self.env_amount * self.env_level * 4.0))
+            .clamp(20.0, 20000.0);
 
         // SVF coefficients (Hal Chamberlin / Andrew Simper variant)
         let g = (PI * mod_cutoff / self.sample_rate).tan();
@@ -145,7 +160,7 @@ impl SvfFilter {
     }
 
     fn process_comb(&mut self, input: f32) -> f32 {
-        let delay_samples = (self.sample_rate / self.cutoff.max(20.0)) as usize;
+        let delay_samples = (self.sample_rate / self.effective_cutoff()) as usize;
         let delay_samples = delay_samples.clamp(1, self.comb_buffer.len() - 1);
 
         let read_pos = if self.comb_write_pos >= delay_samples {

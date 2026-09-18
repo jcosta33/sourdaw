@@ -845,15 +845,47 @@ const guardedPayloadContractCases = [
             { clipId: 'clip-1', clipType: 'audio', offset: 1.5, extra: true },
         ],
     }),
+    guardedPayloadCase({
+        actionType: 'selectTake',
+        validPayload: { trackId: 'track-1', takeId: 'take-1' },
+        invalidPayloads: [
+            { trackId: '', takeId: 'take-1' },
+            { trackId: 'track-1', takeId: '' },
+            { trackId: 'track-1', takeId: null },
+            { trackId: 'track-1' },
+            // Owner and selection guards are internal replay metadata, rejected for providers.
+            { trackId: 'track-1', takeId: 'take-1', expectedLaneId: 'lane-1' },
+            { trackId: 'track-1', takeId: 'take-1', expectedSelectedTakeId: 'take-2' },
+            {
+                trackId: 'track-1',
+                takeId: null,
+                expectedLaneId: 'lane-1',
+                expectedSelectedTakeId: 'take-2',
+            },
+        ],
+    }),
 ] as const;
 
 describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
     it('backs every executable app-action tool with a strict payload validator', () => {
-        const uncheckedActionTypes = getExecutableAppActionToolSchemas()
-            .map((schema) => schema.function.name)
-            .filter((actionType) => PAYLOAD_VALIDATORS[actionType] === 'unchecked');
+        for (const schema of getExecutableAppActionToolSchemas()) {
+            const validatorEntry = Object.entries(PAYLOAD_VALIDATORS).find(
+                ([actionName]) => actionName === schema.function.name
+            );
 
-        expect(uncheckedActionTypes).toEqual([]);
+            expect(validatorEntry).toBeDefined();
+            expect(validatorEntry?.[1]).toBeTypeOf('function');
+        }
+    });
+
+    it('keeps internal take-selection replay fields out of the provider schema', () => {
+        const schema = getExecutableAppActionToolSchemas().find((candidate) => candidate.function.name === 'selectTake')
+            ?.function.parameters;
+
+        expect(schema).toBeDefined();
+        expect(Object.keys(schema?.properties ?? {})).toEqual(['trackId', 'takeId']);
+        expect(schema?.required).toEqual(['trackId', 'takeId']);
+        expect(schema?.additionalProperties).toBe(false);
     });
 
     describe('declared RuntimeAction payload contracts', () => {
@@ -882,6 +914,37 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                 }
             }
         );
+    });
+
+    it('admits only complete valid loop restore triples', () => {
+        const guard = PAYLOAD_VALIDATORS.restoreLoopRegion;
+        expect(guard).not.toBe('unchecked');
+        if (guard === 'unchecked') {
+            return;
+        }
+
+        const enabledRegion = { loopStart: 0, loopEnd: 4, isLooping: true };
+        const disabledRegion = { loopStart: 0, loopEnd: 0, isLooping: false };
+        expect(guard({ expected: enabledRegion, replacement: disabledRegion })).toBe(true);
+
+        const invalidRegions: readonly [string, unknown][] = [
+            ['enabled equal bounds', { loopStart: 0, loopEnd: 0, isLooping: true }],
+            ['nonfinite endpoint', { loopStart: 0, loopEnd: Number.POSITIVE_INFINITY, isLooping: true }],
+            ['negative endpoint', { loopStart: -1, loopEnd: 4, isLooping: true }],
+            ['reversed endpoints', { loopStart: 4, loopEnd: 0, isLooping: false }],
+            ['missing key', { loopStart: 0, loopEnd: 4 }],
+            ['extra key', { loopStart: 0, loopEnd: 4, isLooping: true, unexpected: true }],
+            ['wrong boolean', { loopStart: 0, loopEnd: 4, isLooping: 'true' }],
+        ];
+        for (const [label, invalidRegion] of invalidRegions) {
+            expect(guard({ expected: invalidRegion, replacement: disabledRegion }), `invalid expected: ${label}`).toBe(
+                false
+            );
+            expect(
+                guard({ expected: enabledRegion, replacement: invalidRegion }),
+                `invalid replacement: ${label}`
+            ).toBe(false);
+        }
     });
 
     it.each([

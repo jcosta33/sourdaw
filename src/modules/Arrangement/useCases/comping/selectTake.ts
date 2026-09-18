@@ -1,41 +1,11 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
-import { takeLaneStore, type TakeLaneStoreState } from '../../stores/takeLaneStore';
-
-export function selectTake(trackId: string, takeId: string): void {
-    const state = takeLaneStore.value;
-    if (!state) {
-        return;
-    }
-
-    const lane = state.lanes.find((l) => l.trackId === trackId);
-    if (!lane) {
-        return;
-    }
-    const alreadySelected = lane.takes.find((t) => t.selected);
-    if (alreadySelected?.id === takeId) {
-        return;
-    }
-
-    const previous: TakeLaneStoreState = state;
-    const next: TakeLaneStoreState = {
-        lanes: state.lanes.map((l) =>
-            l.trackId === trackId
-                ? {
-                      ...l,
-                      takes: l.takes.map((t) => ({
-                          ...t,
-                          selected: t.id === takeId,
-                      })),
-                  }
-                : l
-        ),
-    };
-    takeLaneStore.set(next);
-
-    pushUndoEntry(
-        'Select take',
-        () => takeLaneStore.set(previous),
-        () => takeLaneStore.set(next)
-    );
+/**
+ * User intent to promote one take to its lane's active selection. Dispatches
+ * the guarded `selectTake` action: undo restores only that lane's selection
+ * and refuses when the lane state diverged (#4072). Conflicts surface to the
+ * user as notifications.
+ */
+export async function selectTake(trackId: string, takeId: string): Promise<void> {
+    await executeUserAppAction({ type: 'selectTake', payload: { trackId, takeId } });
 }

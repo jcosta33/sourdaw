@@ -48,6 +48,8 @@ const confirmation = {
     executedActions: [],
     status: 'proposed',
     error: null,
+    supersedes: null,
+    supersededBy: null,
     followUpProjectRevision: null,
     followUpStatus: null,
     createdAt: 0,

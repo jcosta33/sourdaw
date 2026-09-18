@@ -75,7 +75,7 @@ impl NativeSingletons {
         &self,
         windows: Option<&dyn host::plugin_window::PluginWindowHost>,
     ) -> shutdown::ShutdownReport {
-        shutdown::shutdown(&self.collab, &self.app_state, windows)
+        shutdown::shutdown(&self.collab, &self.midi, &self.app_state, windows)
     }
 }
 

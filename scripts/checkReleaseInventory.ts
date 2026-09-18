@@ -1053,7 +1053,6 @@ export function assertGrandBouleRustWasmBoundary(root: string): void {
 }
 
 export const GRAND_BOULE_RUST_SOURCE_ADMISSION = {
-    'attack_sampler.rs': 'owner-admitted project implementation',
     'coupled_strings.rs':
         'owner-admitted aftersound implementation retaining Weinreich inputs BRIDGE_COUPLING_GAIN=30 and HORIZONTAL_MIX=0.7',
     'duplex.rs': 'owner-admitted implementation using standard duplex-string acoustics',
@@ -1441,16 +1440,26 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
  * there claims provenance over bytes the narrowed census no longer pins.
  */
 export function assertWholeEngineQuantumCapability(root: string): void {
+    const trustedWholeEngineQuantumBudgetMs = (128 / 48_000) * 1000;
     const data = JSON.parse(readFileSync(resolve(root, 'crates/daw-dsp/benches/quantum-cost-table.json'), 'utf8')) as {
         budgetMs?: number;
         referenceProject?: { audioWorstQuantumUpperMs?: number; workerMedianMs?: number };
     };
+    const budgetMs = data.budgetMs;
+    const audioWorstQuantumUpperMs = data.referenceProject?.audioWorstQuantumUpperMs;
+    const workerMedianMs = data.referenceProject?.workerMedianMs;
     if (
-        typeof data.budgetMs !== 'number' ||
-        typeof data.referenceProject?.audioWorstQuantumUpperMs !== 'number' ||
-        typeof data.referenceProject.workerMedianMs !== 'number' ||
-        data.referenceProject.audioWorstQuantumUpperMs >= data.budgetMs ||
-        data.referenceProject.workerMedianMs >= data.budgetMs
+        typeof budgetMs !== 'number' ||
+        !Number.isFinite(budgetMs) ||
+        budgetMs !== trustedWholeEngineQuantumBudgetMs ||
+        typeof audioWorstQuantumUpperMs !== 'number' ||
+        !Number.isFinite(audioWorstQuantumUpperMs) ||
+        audioWorstQuantumUpperMs < 0 ||
+        audioWorstQuantumUpperMs >= trustedWholeEngineQuantumBudgetMs ||
+        typeof workerMedianMs !== 'number' ||
+        !Number.isFinite(workerMedianMs) ||
+        workerMedianMs < 0 ||
+        workerMedianMs >= trustedWholeEngineQuantumBudgetMs
     ) {
         throw new Error('Whole-engine measured reference project exceeds its render budget');
     }
@@ -1703,6 +1712,7 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'crates/daw-dsp/benches/wasm/deviceRecipes.js',
                 'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
                 'crates/daw-dsp/benches/wasm/run.mjs',
+                'scripts/quantumMeasurementCalibration.ts',
                 'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
                 'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
                 'crates/daw-dsp/benches/wasm/renderTable.mjs',
@@ -1717,6 +1727,7 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'crates/daw-dsp/benches/wasm/deviceRecipes.js',
                 'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
                 'crates/daw-dsp/benches/wasm/run.mjs',
+                'scripts/quantumMeasurementCalibration.ts',
                 'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
                 'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
                 'crates/daw-dsp/benches/wasm/renderTable.mjs',

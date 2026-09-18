@@ -101,10 +101,6 @@ const BACTERIA_PARAMS: readonly PluginParamDef[] = [
     { id: 'macro7', label: 'Macro 7', min: 0, max: 1, default: 0.5, unit: '', step: 0.01 },
     { id: 'macro8', label: 'Macro 8', min: 0, max: 1, default: 0.5, unit: '', step: 0.01 },
 
-    // XY Morph
-    { id: 'morphX', label: 'Morph X', min: 0, max: 1, default: 0.5, unit: '', step: 0.01 },
-    { id: 'morphY', label: 'Morph Y', min: 0, max: 1, default: 0.5, unit: '', step: 0.01 },
-
     // Global modulation
     { id: 'lfo1Rate', label: 'LFO 1 Rate', min: 0.01, max: 40, default: 2, unit: 'Hz', scaling: 'log' },
     { id: 'lfo1Shape', label: 'LFO 1 Shape', min: 0, max: 4, default: 0, unit: '', step: 1 },

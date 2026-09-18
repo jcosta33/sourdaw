@@ -1,11 +1,17 @@
-import { parse, stringify } from 'superjson';
-import { describe, expect, it, vi } from 'vitest';
+import { stringify } from 'superjson';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MAX_CRDT_ROOT_LINEAGE_LENGTH } from '../../models/CrdtRootLineage';
-import { MAIN_BRANCH_DOC_ID, MAIN_BRANCH_ID, type BranchRecord, type BranchStoreState } from '../branchStore';
+import {
+    MAIN_BRANCH_DOC_ID,
+    MAIN_BRANCH_ID,
+    validateStoredBranchStoreState,
+    type BranchRecord,
+    type BranchStoreState,
+} from '../branchStore';
 
-const BRANCH_STORAGE_KEY = 'sourdaw-branches';
-const BRANCH_SESSION_BACKUP_STORAGE_KEY = 'sourdaw-branch-session-backup';
+const LEGACY_BRANCH_STORAGE_KEY = 'sourdaw-branches';
+const BRANCH_STATE_STORAGE_KEY = 'sourdaw-branch-state';
 
 const validMainBranch = {
     branchId: MAIN_BRANCH_ID,
@@ -27,22 +33,13 @@ const validFeatureBranch = {
     note: 'Useful branch',
 } satisfies BranchRecord;
 
-async function loadBranchStateFromStoredValue(storedValue: unknown): Promise<BranchStoreState | null> {
-    vi.resetModules();
-    window.localStorage.clear();
-    window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(storedValue));
-
-    const module = await import('../branchStore');
-    return module.branchStore.value;
-}
-
-async function loadBranchStateFromRawStoredValue(storedValue: string): Promise<BranchStoreState | null> {
-    vi.resetModules();
-    window.localStorage.clear();
-    window.localStorage.setItem(BRANCH_STORAGE_KEY, storedValue);
-
-    const module = await import('../branchStore');
-    return module.branchStore.value;
+/**
+ * The sanitiser is called directly: nothing hydrates this store from storage
+ * any more, so a stored value only reaches it as an argument — from the
+ * authority's legacy seed, or from a collaboration peer's projection.
+ */
+function sanitizeStoredValue(storedValue: unknown): BranchStoreState {
+    return validateStoredBranchStoreState(storedValue);
 }
 
 function expectCanonicalSingleMainBranchState(state: BranchStoreState | null): void {
@@ -67,13 +64,44 @@ function expectCanonicalSingleMainBranchState(state: BranchStoreState | null): v
 }
 
 describe('branchStore', () => {
+    afterEach(() => {
+        window.localStorage.clear();
+    });
+
     it('should use a stable id for the main branch', () => {
         expect(MAIN_BRANCH_ID).toBe('main');
     });
 
-    describe('persisted hydration', () => {
+    it('is a memory projection: importing it neither reads nor writes durable branch state', async () => {
+        const storedList = {
+            branches: [validMainBranch, validFeatureBranch],
+            activeBranchId: validFeatureBranch.branchId,
+        } satisfies BranchStoreState;
+        window.localStorage.setItem(LEGACY_BRANCH_STORAGE_KEY, stringify(storedList));
+        window.localStorage.setItem(
+            BRANCH_STATE_STORAGE_KEY,
+            JSON.stringify({ version: 1, revision: 4, current: storedList, session: null })
+        );
+        vi.resetModules();
+
+        const module = await import('../branchStore');
+
+        // Hydration belongs to the branch-state authority: a store that read
+        // storage on import would race the authority's boot recovery and could
+        // resurrect a list a later instance already replaced.
+        expectCanonicalSingleMainBranchState(module.branchStore.value);
+        expect(window.localStorage.getItem(LEGACY_BRANCH_STORAGE_KEY)).toBe(stringify(storedList));
+        expect(JSON.parse(window.localStorage.getItem(BRANCH_STATE_STORAGE_KEY) ?? 'null')).toEqual({
+            version: 1,
+            revision: 4,
+            current: storedList,
+            session: null,
+        });
+    });
+
+    describe('stored value sanitisation', () => {
         it('should default corrupt stored state instead of hydrating raw invalid shape', async () => {
-            const state = await loadBranchStateFromStoredValue({
+            const state = sanitizeStoredValue({
                 branches: 'not-branches',
                 activeBranchId: {},
             });
@@ -87,7 +115,7 @@ describe('branchStore', () => {
                 activeBranchId: validFeatureBranch.branchId,
             } satisfies BranchStoreState;
 
-            await expect(loadBranchStateFromStoredValue(validState)).resolves.toEqual(validState);
+            expect(sanitizeStoredValue(validState)).toEqual(validState);
         });
 
         it('should preserve a main branch migrated to its independent backing document', async () => {
@@ -96,11 +124,11 @@ describe('branchStore', () => {
                 activeBranchId: validFeatureBranch.branchId,
             } satisfies BranchStoreState;
 
-            await expect(loadBranchStateFromStoredValue(migratedState)).resolves.toEqual(migratedState);
+            expect(sanitizeStoredValue(migratedState)).toEqual(migratedState);
         });
 
         it('should drop invalid branch records while preserving valid branch metadata', async () => {
-            const state = await loadBranchStateFromStoredValue({
+            const state = sanitizeStoredValue({
                 branches: [
                     validMainBranch,
                     {
@@ -138,7 +166,7 @@ describe('branchStore', () => {
                 rootDocId: 'branch_duplicate_feature',
             } satisfies BranchRecord;
 
-            const state = await loadBranchStateFromStoredValue({
+            const state = sanitizeStoredValue({
                 branches: [validMainBranch, validFeatureBranch, duplicateFeatureBranch],
                 activeBranchId: validFeatureBranch.branchId,
             });
@@ -164,12 +192,12 @@ describe('branchStore', () => {
                 sourceBranchId: 'main/unsafe',
             };
 
-            await expect(
-                loadBranchStateFromStoredValue({
+            expect(
+                sanitizeStoredValue({
                     branches: [validMainBranch, invalidCharacters, oversized, invalidSource, validFeatureBranch],
                     activeBranchId: validFeatureBranch.branchId,
                 })
-            ).resolves.toEqual({
+            ).toEqual({
                 branches: [validMainBranch, validFeatureBranch],
                 activeBranchId: validFeatureBranch.branchId,
             });
@@ -182,7 +210,7 @@ describe('branchStore', () => {
                 sourceBranchId: validFeatureBranch.branchId,
             } satisfies BranchRecord;
 
-            const state = await loadBranchStateFromStoredValue({
+            const state = sanitizeStoredValue({
                 branches: [nonCanonicalMainBranch, validFeatureBranch],
                 activeBranchId: validFeatureBranch.branchId,
             });
@@ -191,7 +219,7 @@ describe('branchStore', () => {
         });
 
         it('should fall back to canonical main state when no valid main branch remains', async () => {
-            const state = await loadBranchStateFromStoredValue({
+            const state = sanitizeStoredValue({
                 branches: [validFeatureBranch],
                 activeBranchId: validFeatureBranch.branchId,
             });
@@ -200,71 +228,39 @@ describe('branchStore', () => {
         });
 
         it('should fall back to main when active branch id is missing invalid or absent from branches', async () => {
-            await expect(
-                loadBranchStateFromStoredValue({
+            expect(
+                sanitizeStoredValue({
                     branches: [validMainBranch, validFeatureBranch],
                     activeBranchId: 'missing',
                 })
-            ).resolves.toEqual({
+            ).toEqual({
                 branches: [validMainBranch, validFeatureBranch],
                 activeBranchId: MAIN_BRANCH_ID,
             });
 
-            await expect(
-                loadBranchStateFromStoredValue({
+            expect(
+                sanitizeStoredValue({
                     branches: [validMainBranch, validFeatureBranch],
                     activeBranchId: 123,
                 })
-            ).resolves.toEqual({
+            ).toEqual({
                 branches: [validMainBranch, validFeatureBranch],
                 activeBranchId: MAIN_BRANCH_ID,
             });
 
-            await expect(
-                loadBranchStateFromStoredValue({
+            expect(
+                sanitizeStoredValue({
                     branches: [validMainBranch, validFeatureBranch],
                 })
-            ).resolves.toEqual({
+            ).toEqual({
                 branches: [validMainBranch, validFeatureBranch],
                 activeBranchId: MAIN_BRANCH_ID,
             });
         });
 
-        it('should default malformed raw local storage text', async () => {
-            const state = await loadBranchStateFromRawStoredValue('{not-json');
-
-            expectCanonicalSingleMainBranchState(state);
-        });
-
-        it('should recover the durable pre-session branch state when the composition root asks for it', async () => {
-            const remoteState = {
-                branches: [validMainBranch, validFeatureBranch],
-                activeBranchId: validFeatureBranch.branchId,
-            } satisfies BranchStoreState;
-            const localState = {
-                branches: [validMainBranch],
-                activeBranchId: MAIN_BRANCH_ID,
-            } satisfies BranchStoreState;
-
-            vi.resetModules();
-            window.localStorage.clear();
-            window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
-            window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
-
-            const module = await import('../branchStore');
-
-            // The restore is no longer a module-evaluation side effect: importing
-            // the module leaves the persisted (host-projected) state in place.
-            expect(module.branchStore.value).toEqual(remoteState);
-
-            expect(module.restoreBranchStateFromSessionBackup()).toBe('restored');
-            expect(module.branchStore.value).toEqual(localState);
-            expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBeNull();
-            const persistedState = window.localStorage.getItem(BRANCH_STORAGE_KEY);
-            if (persistedState === null) {
-                throw new Error('Expected recovered branch state to persist');
-            }
-            expect(parse(persistedState)).toEqual(localState);
+        it('should default a stored value that is not a branch-state record', () => {
+            expectCanonicalSingleMainBranchState(sanitizeStoredValue('{not-json'));
+            expectCanonicalSingleMainBranchState(sanitizeStoredValue(null));
         });
     });
 });

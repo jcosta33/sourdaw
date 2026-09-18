@@ -42,7 +42,11 @@ export function reconcileScannedRoot(rootId: string, scanned: Map<string, Sample
         const freshMtime = fresh.sync.mtimeMs;
         const storedMtime = stored.sync.mtimeMs;
         if (freshMtime !== undefined && storedMtime !== undefined && freshMtime !== storedMtime) {
-            changed.push(fresh);
+            changed.push({
+                ...fresh,
+                favorite: stored.favorite,
+                tags: stored.tags,
+            });
         }
     }
 

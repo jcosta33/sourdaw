@@ -79,6 +79,7 @@ fn note_on(note: u8, channel: i16) -> MidiNoteEvent {
         event_id_hash: 0,
         absolute_occurrence_index: 0,
         frame_offset: 0,
+        articulation_id: None,
     }
 }
 

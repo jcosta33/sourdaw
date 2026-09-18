@@ -10,11 +10,19 @@ export type OfflineAutomationSegment = {
     endValue: number;
 };
 
-/** A single AudioParam an offline automation lane drives, with its unit scaling. */
+/**
+ * A single AudioParam an offline automation lane drives, with its unit scaling
+ * — or, for laws an affine pair cannot express (dB→linear gain, a delay
+ * floor), the device→AudioParam conversion the parameter's static applier
+ * applies. The scheduler slews, clamps and quantises in device units and runs
+ * `convert` once per emitted sample, exactly where live's `updateDeviceParam`
+ * converts (#3738).
+ */
 export type OfflineAutomationTarget = {
     readonly audioParam: AudioParam;
     readonly scale: number;
     readonly offset: number;
+    readonly convert?: (deviceValue: number) => number;
 };
 
 /**

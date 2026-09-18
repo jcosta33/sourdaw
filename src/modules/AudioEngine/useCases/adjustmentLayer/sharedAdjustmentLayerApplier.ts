@@ -1,4 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
+import { PAN_SCALE_MAX } from '#/utils/audioLevelLaw';
 
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { adjustmentApplicationStore } from '../../stores/adjustmentApplicationStore';
@@ -106,7 +107,7 @@ function buildSingleton(): ApplierSingleton {
                 sum += p;
             }
         }
-        return Math.max(-50, Math.min(50, rememberUserPan(trackId) + sum * 50));
+        return Math.max(-PAN_SCALE_MAX, Math.min(PAN_SCALE_MAX, rememberUserPan(trackId) + sum * PAN_SCALE_MAX));
     };
 
     const gainPanApplier: TrackGainPanApplier = {

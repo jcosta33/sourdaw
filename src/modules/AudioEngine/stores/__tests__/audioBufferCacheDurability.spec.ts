@@ -4,6 +4,9 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 
 import {
     BUFFER_STORE,
+    CHECKPOINT_AUDIO_VERSION_META_STORE,
+    CHECKPOINT_AUDIO_VERSION_STORE,
+    CHECKPOINT_RETENTION_STORE,
     flushIndexedDbTasks,
     installFakeAudioIndexedDb,
     META_STORE,
@@ -20,11 +23,19 @@ import {
 } from './preparedAudioBufferTestSupport';
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+let garbageCollectCachedAudioBuffersBySize: typeof import('../../useCases/garbageCollectCachedAudioBuffersBySize').garbageCollectCachedAudioBuffersBySize;
 let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
 let setDurableAudioBufferOwnershipProvider: typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
 let withProjectAudioStorageLock: typeof import('#/infra/storage/withProjectAudioStorageLock').withProjectAudioStorageLock;
 
-const CURRENT_STORES = [BUFFER_STORE, META_STORE, RECOVERY_STORE] as const;
+const CURRENT_STORES = [
+    BUFFER_STORE,
+    META_STORE,
+    RECOVERY_STORE,
+    CHECKPOINT_RETENTION_STORE,
+    CHECKPOINT_AUDIO_VERSION_STORE,
+    CHECKPOINT_AUDIO_VERSION_META_STORE,
+] as const;
 
 function makeBuffer(values: readonly number[]): AudioBuffer {
     const buffer = createAudioBuffer({ length: values.length, sampleRate: 48_000 });
@@ -60,7 +71,10 @@ function seedOrdinaryBuffer(
     freezeProjectId?: number
 ): void {
     controls.committed.set(id, makeStoredBuffer(values));
-    controls.committedMeta.set(id, makeMetadata(values, freezeProjectId));
+    controls.committedMeta.set(id, {
+        ...makeMetadata(values, freezeProjectId),
+        persistenceRevision: `${id}-persistence`,
+    });
 }
 
 function makeRecovery(id: string, revision: string, values: readonly number[]): StoredRecoveryRecord {
@@ -143,6 +157,8 @@ beforeEach(async () => {
         import('../durableAudioBufferOwnership'),
         import('#/infra/storage/withProjectAudioStorageLock'),
     ]);
+    ({ garbageCollectCachedAudioBuffersBySize } =
+        await import('../../useCases/garbageCollectCachedAudioBuffersBySize'));
     setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
 });
 
@@ -194,7 +210,7 @@ describe('audio buffer save durability', () => {
         const durability = audioBufferCache.ensureDurable(['inactive-arrangement-buffer', 'pending-buffer']);
         await waitForPendingWrite(controls);
 
-        const collection = audioBufferCache.garbageCollectBySize(0);
+        const collection = garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
         let collectionSettled = false;
         void collection.then(() => {
             collectionSettled = true;
@@ -225,7 +241,7 @@ describe('audio buffer save durability', () => {
         const durability = audioBufferCache.ensureDurable([recoveryId, pendingId]);
         await waitForPendingWrite(controls);
 
-        const collection = audioBufferCache.garbageCollectBySize(0);
+        const collection = garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
         let collectionSettled = false;
         void collection.then(() => {
             collectionSettled = true;
@@ -264,7 +280,10 @@ describe('audio buffer save durability', () => {
         });
         expect(controls.writeTransactionCount()).toBe(1);
 
-        const collectedAfterFailure = await settlePromiseWithWrites(audioBufferCache.garbageCollectBySize(0), controls);
+        const collectedAfterFailure = await settlePromiseWithWrites(
+            garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 }),
+            controls
+        );
         expect(collectedAfterFailure).toBe(1);
         expect(controls.committed.has('released-after-failure')).toBe(false);
 
@@ -479,7 +498,7 @@ describe('audio buffer save durability', () => {
         expect(audioBufferCache.get('accepted-persistence')?.getChannelData(0)[0]).toBeCloseTo(0.6);
     });
 
-    it('invalidates an ordinary failed source when its prepared owner is accepted for discard', async () => {
+    it('refuses to discard an older prepared row over a retained ordinary source candidate', async () => {
         const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
         await audioBufferCache.persistPreparedBuffer({
             id: 'accepted-discard',
@@ -497,17 +516,31 @@ describe('audio buffer save durability', () => {
         await vi.waitFor(() => expect(controls.committed.size).toBe(65));
         expect(audioBufferCache.has('accepted-discard')).toBe(false);
 
+        const retainedPreparedPcm = controls.committed.get('accepted-discard');
+        const retainedPreparedMetadata = controls.committedMeta.get('accepted-discard');
+        const retainedRecovery = [...controls.committedRecovery];
+        controls.resetByteCounters();
+
         await expect(
             audioBufferCache.releasePreparedBuffer({
                 id: 'accepted-discard',
                 leaseId: 'accepted-discard-lease',
                 disposition: 'discard',
             })
-        ).resolves.toEqual({ status: 'released', disposition: 'discarded' });
-        await expect(audioBufferCache.ensureDurable(['accepted-discard'])).resolves.toEqual({
-            status: 'failed',
-            failedIds: ['accepted-discard'],
-        });
+        ).resolves.toEqual({ status: 'mismatched' });
+        expect(controls.bytesWritten()).toBe(0);
+        expect(controls.committed.get('accepted-discard')).toEqual(retainedPreparedPcm);
+        expect(controls.committedMeta.get('accepted-discard')).toEqual(retainedPreparedMetadata);
+        expect([...controls.committedRecovery]).toEqual(retainedRecovery);
+
+        const receipt = await expectDurableReceipt(['accepted-discard']);
+        expect(controls.committed.get('accepted-discard')?.channelData[0]?.[0]).toBeCloseTo(0.8);
+        expect(controls.committedMeta.get('accepted-discard')?.preparedOwner).toBeUndefined();
+        receipt.release();
+
+        clearRuntimeAudioBufferCache();
+        await audioBufferCache.restoreFromIdb({ context: testContext(), ids: ['accepted-discard'] });
+        expect(audioBufferCache.get('accepted-discard')?.getChannelData(0)[0]).toBeCloseTo(0.8);
     });
 
     it('accepts a valid current-format durable row when its decoded runtime buffer is absent', async () => {
@@ -519,6 +552,77 @@ describe('audio buffer save durability', () => {
         expect(audioBufferCache.has('runtime-absent')).toBe(false);
         expect(controls.writeTransactionCount()).toBe(0);
         receipt.release();
+    });
+
+    it.each(['missing', 'malformed', 'dual'] as const)(
+        'rejects a structurally valid PCM pair with %s persistent identity',
+        async (invalidity) => {
+            const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+            seedOrdinaryBuffer(controls, 'invalid-persistent-identity', [0.4]);
+            const metadata = controls.committedMeta.get('invalid-persistent-identity')!;
+            if (invalidity === 'missing') {
+                delete metadata.persistenceRevision;
+            } else if (invalidity === 'malformed') {
+                metadata.persistenceRevision = '   ';
+            } else {
+                metadata.preparedOwner = {
+                    schemaVersion: 1,
+                    leaseId: 'invalid-persistent-identity-lease',
+                    persistenceRevision: 'prepared-revision',
+                    status: 'project-owned',
+                };
+            }
+
+            await expect(audioBufferCache.ensureDurable(['invalid-persistent-identity'])).resolves.toEqual({
+                status: 'failed',
+                failedIds: ['invalid-persistent-identity'],
+            });
+        }
+    );
+
+    it('keeps hydrated unversioned PCM unauthenticated', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'hydrated-unversioned', [0.4]);
+        delete controls.committedMeta.get('hydrated-unversioned')?.persistenceRevision;
+
+        await expect(
+            audioBufferCache.restoreFromIdb({ context: testContext(), ids: ['hydrated-unversioned'] })
+        ).resolves.toBe(1);
+        expect(audioBufferCache.get('hydrated-unversioned')?.getChannelData(0)[0]).toBeCloseTo(0.4);
+        await expect(audioBufferCache.ensureDurable(['hydrated-unversioned'])).resolves.toEqual({
+            status: 'failed',
+            failedIds: ['hydrated-unversioned'],
+        });
+    });
+
+    it('commits distinct persistent identities for ordinary and imported sources', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        audioBufferCache.set('ordinary-identity-a', makeBuffer([0.1]));
+        audioBufferCache.set('ordinary-identity-b', makeBuffer([0.2]));
+        await vi.waitFor(() => expect(controls.committedMeta.size).toBe(2));
+
+        const imported = audioBufferCache.importBuffers({
+            buffers: {},
+            decodedBuffers: {
+                'imported-identity-a': makeBuffer([0.3]),
+                'imported-identity-b': makeBuffer([0.4]),
+            },
+            context: testContext(),
+        });
+        if (!imported) {
+            throw new Error('Expected a valid imported audio candidate');
+        }
+        expect(imported.publish()).toBe(2);
+        await expect(imported.persist()).resolves.toBe(true);
+
+        const revisions = [
+            'ordinary-identity-a',
+            'ordinary-identity-b',
+            'imported-identity-a',
+            'imported-identity-b',
+        ].map((id) => controls.committedMeta.get(id)?.persistenceRevision);
+        expect(revisions).toEqual(revisions.map(() => expect.any(String)));
+        expect(new Set(revisions).size).toBe(revisions.length);
     });
 
     it.each(['missing PCM', 'malformed PCM', 'invalid ownership'] as const)(
@@ -807,7 +911,7 @@ describe('audio buffer save durability', () => {
             if (collector === 'age') {
                 await audioBufferCache.garbageCollectByAge(0);
             } else if (collector === 'size') {
-                await audioBufferCache.garbageCollectBySize(0);
+                await garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
             } else {
                 await audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set(), projectId });
             }
@@ -1135,7 +1239,10 @@ describe('audio buffer save durability', () => {
             failedIds: ['prepared-in-flight-failure'],
         });
 
-        const deleted = await settlePromiseWithWrites(audioBufferCache.garbageCollectBySize(0), controls);
+        const deleted = await settlePromiseWithWrites(
+            garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 }),
+            controls
+        );
         expect(deleted).toBe(1);
         expect(controls.committed.has('released-after-prepared-failure')).toBe(false);
     });

@@ -8,6 +8,9 @@
 //! only when it gets too loud, without affecting quiet passages.
 
 use super::biquad::{BiquadCoeffs, BiquadState, SmoothedBiquadCoeffs};
+use super::metering::SILENCE_DB;
+use crate::params::{ATTACK, RELEASE, THRESHOLD, THRESHOLD_MAX_DB, THRESHOLD_MIN_DB};
+use crate::primitives::LINEAR_TO_DB_FLOOR;
 
 const MAX_DYN_BANDS: usize = 4;
 
@@ -73,7 +76,7 @@ impl DynEqBand {
             eq_r: BiquadState::new(),
             eq_coeffs: SmoothedBiquadCoeffs::new(BiquadCoeffs::unity(), sr),
             designed_gr_db: 0.0,
-            envelope: -100.0,
+            envelope: SILENCE_DB,
             sample_rate: sr,
         }
     }
@@ -105,10 +108,10 @@ impl DynEqBand {
         let level = sc_l.abs().max(sc_r.abs());
 
         // 2. Envelope follower
-        let level_db = if level > 1e-10 {
+        let level_db = if level > LINEAR_TO_DB_FLOOR {
             20.0 * level.log10()
         } else {
-            -100.0
+            SILENCE_DB
         };
         let coeff = if level_db > self.envelope {
             self.attack_coeff
@@ -201,10 +204,10 @@ impl DynamicEq {
                 band.q = (value as f64).clamp(0.1, 10.0);
                 band.recompute_sc();
             }
-            "threshold" => band.threshold_db = value.clamp(-60.0, 0.0),
+            THRESHOLD => band.threshold_db = value.clamp(THRESHOLD_MIN_DB, THRESHOLD_MAX_DB),
             "ratio" => band.ratio = value.clamp(1.0, 20.0),
-            "attack" => band.set_attack(value.clamp(1.0, 200.0)),
-            "release" => band.set_release(value.clamp(10.0, 2000.0)),
+            ATTACK => band.set_attack(value.clamp(1.0, 200.0)),
+            RELEASE => band.set_release(value.clamp(10.0, 2000.0)),
             "range" => band.max_gain_db = value.clamp(0.0, 24.0),
             "mode" => {
                 band.mode = if value > 0.5 {

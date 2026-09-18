@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => {
         discardDecodedAudioFile: vi.fn(),
         getCachedAudioBuffer: vi.fn(),
         resolveDroppedSampleFile: vi.fn(),
+        stageClipAudioAsset: vi.fn(),
         addClip: vi.fn(),
         executeAddDeviceAction: vi.fn(),
         executeAppAction: vi.fn(),
@@ -105,6 +106,10 @@ vi.mock('../../../useCases/clip/addClip', () => ({
     addClip: mocks.addClip,
 }));
 
+vi.mock('../../../useCases/clip/stageClipAudioAsset', () => ({
+    stageClipAudioAsset: mocks.stageClipAudioAsset,
+}));
+
 vi.mock('../../../useCases/device/executeAddDeviceAction', () => ({
     executeAddDeviceAction: mocks.executeAddDeviceAction,
 }));
@@ -143,6 +148,9 @@ describe('useTimelineFileDrop', () => {
         mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null };
         // Default: nothing in the buffer cache → drops take the file-read/decode path.
         mocks.getCachedAudioBuffer.mockReturnValue(null);
+        // Default: no stager registered → cached drops place clips without an
+        // assetHash, exactly as an unregistered composition root would.
+        mocks.stageClipAudioAsset.mockResolvedValue(null);
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'unresolved' });
         mocks.executeAddDeviceAction.mockResolvedValue({ status: 'applied', deviceId: 'device-1' });
         mocks.executeAppAction.mockResolvedValue(undefined);
@@ -294,6 +302,192 @@ describe('useTimelineFileDrop', () => {
         });
         expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'factory-kick' });
         // The cache short-circuit must skip the file decode path entirely.
+        expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+    });
+
+    // #3759 — a cached sample has no file to stage, so the drop must register
+    // the cached PCM itself: the clip carries the staged hash a peer requests
+    // the bytes with, and the lease is promoted once the clip commits.
+    it('stages a cached sample and binds the staged hash before placing the clip', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        mocks.getCachedAudioBuffer.mockReturnValue({ duration: 2 });
+        mocks.stageClipAudioAsset.mockResolvedValue({ hash: 'staged-hash', leaseId: 'staged-lease' });
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample' ? JSON.stringify({ name: 'Kick', id: 'factory-kick' }) : '',
+                files: [],
+            },
+        };
+
+        mocks.hitTestTrack.mockReturnValue('t1');
+        mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' };
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.addClip).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    name: 'Kick',
+                    type: 'audio',
+                    audioBufferId: 'factory-kick',
+                    assetHash: 'staged-hash',
+                })
+            );
+        });
+        expect(mocks.stageClipAudioAsset).toHaveBeenCalledWith(expect.objectContaining({ duration: 2 }), 'Kick');
+        expect(mocks.getAssetTransfer().promoteStagedAsset).toHaveBeenCalledWith('staged-lease');
+    });
+
+    it('releases a cached sample staging lease when the clip is rejected', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        mocks.getCachedAudioBuffer.mockReturnValue({ duration: 2 });
+        mocks.stageClipAudioAsset.mockResolvedValue({ hash: 'staged-hash', leaseId: 'staged-lease' });
+        mocks.addClip.mockReturnValue(null);
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample' ? JSON.stringify({ name: 'Kick', id: 'factory-kick' }) : '',
+                files: [],
+            },
+        };
+
+        mocks.hitTestTrack.mockReturnValue('t1');
+        mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' };
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.getAssetTransfer().releaseStagedAsset).toHaveBeenCalledWith('staged-lease');
+        });
+        expect(mocks.getAssetTransfer().promoteStagedAsset).not.toHaveBeenCalled();
+    });
+
+    it('refuses a cached sample drop whose staged registration fails instead of publishing an unhashed clip', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        mocks.getCachedAudioBuffer.mockReturnValue({ duration: 2 });
+        mocks.stageClipAudioAsset.mockRejectedValue(new Error('stage failed'));
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample' ? JSON.stringify({ name: 'Kick', id: 'factory-kick' }) : '',
+                files: [],
+            },
+        };
+
+        mocks.hitTestTrack.mockReturnValue('t1');
+        mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' };
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                expect.stringContaining('asset registration failed'),
+                'error'
+            );
+        });
+    });
+
+    it('resolves an imported sample clip from the buffer cache using audioBufferId and scales duration to project tempo', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        mocks.getCachedAudioBuffer.mockReturnValue({ duration: 4.0 });
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample'
+                        ? JSON.stringify({
+                              name: 'Four seconds',
+                              id: 'user-audio-1',
+                              duration: '4.0s',
+                              audioBufferId: 'audio-1',
+                              durationSeconds: 4.0,
+                          })
+                        : '',
+                files: [],
+            },
+        };
+
+        mocks.hitTestTrack.mockReturnValue(null);
+        mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.addClip).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    trackId: 'new-track-id',
+                    name: 'Four seconds',
+                    type: 'audio',
+                    audioBufferId: 'audio-1',
+                    startBeat: 10,
+                    endBeat: 18,
+                })
+            );
+        });
+        expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'audio-1' });
+        expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+    });
+
+    it('notifies user with error and creates no clip when dropped sample has no cached buffer and missing file path', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample'
+                        ? JSON.stringify({
+                              name: 'Missing Buffer',
+                              id: 'user-audio-missing',
+                              duration: '4.0s',
+                              audioBufferId: 'audio-missing',
+                              durationSeconds: 4.0,
+                          })
+                        : '',
+                files: [],
+            },
+        };
+
+        mocks.hitTestTrack.mockReturnValue(null);
+        mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Could not access "Missing Buffer" — audio buffer is not available.',
+                'error'
+            );
+        });
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.addTrack).not.toHaveBeenCalled();
         expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
     });
@@ -898,6 +1092,79 @@ describe('useTimelineFileDrop', () => {
             );
         });
         expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    // #3759 round 7 — generated DDSP/Kokoro PCM exists only in this peer's
+    // cache, so the AI-render drop must stage it and bind the hash before the
+    // clip publishes; otherwise a receiving peer cannot request the bytes.
+    it('stages the generated buffer of an AI-render drop and binds the staged hash', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        mocks.getCachedAudioBuffer.mockReturnValue({ duration: 4 });
+        mocks.stageClipAudioAsset.mockResolvedValue({ hash: 'ai-staged-hash', leaseId: 'ai-staged-lease' });
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) => {
+                    if (type === 'application/x-sourdaw-ai-render') {
+                        return JSON.stringify({ name: 'Pad', bufferId: 'buf-ai', durationSeconds: 4 });
+                    }
+                    return '';
+                },
+                files: [],
+            },
+        };
+
+        mocks.hitTestTrack.mockReturnValue('t1');
+        mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' };
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.addClip).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    trackId: 't1',
+                    name: 'Pad',
+                    audioBufferId: 'buf-ai',
+                    assetHash: 'ai-staged-hash',
+                })
+            );
+        });
+        expect(mocks.stageClipAudioAsset).toHaveBeenCalledWith(expect.objectContaining({ duration: 4 }), 'Pad');
+        expect(mocks.getAssetTransfer().promoteStagedAsset).toHaveBeenCalledWith('ai-staged-lease');
+    });
+
+    it('refuses an AI-render drop whose staged registration fails instead of publishing an unhashed clip', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        mocks.getCachedAudioBuffer.mockReturnValue({ duration: 4 });
+        mocks.stageClipAudioAsset.mockRejectedValue(new Error('stage failed'));
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) => {
+                    if (type === 'application/x-sourdaw-ai-render') {
+                        return JSON.stringify({ name: 'Pad', bufferId: 'buf-ai', durationSeconds: 4 });
+                    }
+                    return '';
+                },
+                files: [],
+            },
+        };
+
+        mocks.hitTestTrack.mockReturnValue('t1');
+        mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' };
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('registered for sharing'), 'error');
     });
 
     it('handles external file drop (Audio)', async () => {

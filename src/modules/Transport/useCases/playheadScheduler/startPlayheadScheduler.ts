@@ -1,6 +1,13 @@
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore, takeLaneStore, activeRecordingRef } from '#/modules/Arrangement/stores';
-import { startRecording, stopRecording, addTakeLane, addTake, updateClip } from '#/modules/Arrangement/useCases';
+import {
+    startRecording,
+    stopRecording,
+    addTakeLane,
+    addTake,
+    updateClip,
+    removeClip,
+} from '#/modules/Arrangement/useCases';
 import {
     stopAllScheduled,
     startAudioRecording,
@@ -13,9 +20,11 @@ import {
     refreshSidechainAlignment,
 } from '#/modules/AudioEngine/useCases';
 import { startAutomationRecording, applyModulation, applyModulationToEngine } from '#/modules/Automation/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
@@ -150,6 +159,8 @@ export function startPlayheadScheduler(): void {
 
     schedulerSession.lastTickTime = ctx.currentTime;
     schedulerSession.accumulatedPosition = state.playheadPosition;
+    playheadClockRef.beat = state.playheadPosition;
+    playheadClockRef.audioTimeSeconds = ctx.currentTime;
     playheadPositionRef.current = state.playheadPosition;
     schedulerSession.lastScheduledBeat = state.playheadPosition - 0.0001;
     schedulerSession.lastTempoMapChanges = tempoMapStore.value?.changes ?? null;
@@ -258,7 +269,16 @@ export function startPlayheadScheduler(): void {
         let tickStartPosition = schedulerSession.accumulatedPosition;
         let rackDiscontinuity = false;
 
-        if (current.isLooping && current.loopEnd > current.loopStart && newPosition >= current.loopEnd) {
+        // Only wrap when crossing loopEnd from inside (or before) the region. A
+        // playhead already at or past loopEnd plays straight through untouched:
+        // that is the native engine's stated meaning of a locate past loopEnd
+        // (scheduler.rs frames_until_loop_end) and projectRollPosition (#4117).
+        if (
+            current.isLooping &&
+            current.loopEnd > current.loopStart &&
+            schedulerSession.accumulatedPosition < current.loopEnd &&
+            newPosition >= current.loopEnd
+        ) {
             if (current.isRecording) {
                 const recordingClipIds = new Set(activeRecordingRef.current);
                 const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
@@ -277,10 +297,45 @@ export function startPlayheadScheduler(): void {
                     if (!laneState?.lanes.some((length) => length.trackId === track.id)) {
                         addTakeLane(track.id);
                     }
-                    const takeNum =
-                        (takeLaneStore.value?.lanes.find((length) => length.trackId === track.id)?.takes.length ?? 0) +
-                        1;
-                    addTake(track.id, recordingClip.id, `Take ${takeNum}`, current.loopStart, current.loopEnd);
+                    const lane = takeLaneStore.value?.lanes.find((length) => length.trackId === track.id);
+                    const takeNum = (lane?.takes.length ?? 0) + 1;
+                    // Each pass needs its own identity inside the one
+                    // continuously recorded clip: every wrap take names the
+                    // same clipId and bounds, so without a per-take source
+                    // offset comp resolution would read the first pass's PCM
+                    // for every take. The initial take (from `startRecording`)
+                    // is pass 1 at the clip origin; each take already minted
+                    // for THIS recording marks one more completed pass.
+                    //
+                    // Pass 1's media span depends on where recording began:
+                    // started before the loop, the run-up precedes it, so pass 1
+                    // begins `loopStart - clip.startBeat` into the buffer and
+                    // spans a full loop length; started inside the loop, there
+                    // is no run-up and the first pass is short — it ends when
+                    // the playhead wraps at loopEnd, so its media length is
+                    // `loopEnd - clip.startBeat` and pass 2 begins right after
+                    // it. Later passes always span the full loop length. The
+                    // offset stays relative to the clip's media origin, which
+                    // is why the finalization-time latency shift of
+                    // `clip.startBeat` cannot invalidate it.
+                    const priorPassTakes = lane?.takes.filter((take) => recordingClipIds.has(take.clipId)).length ?? 0;
+                    const passIndex = Math.max(0, priorPassTakes - 1);
+                    const loopLength = current.loopEnd - current.loopStart;
+                    const runUpBeats = Math.max(0, current.loopStart - recordingClip.startBeat);
+                    const startedInsideLoop =
+                        recordingClip.startBeat > current.loopStart && recordingClip.startBeat < current.loopEnd;
+                    const firstPassStart = runUpBeats;
+                    const firstPassLength = startedInsideLoop ? current.loopEnd - recordingClip.startBeat : loopLength;
+                    const sourceOffsetBeats =
+                        firstPassStart + (passIndex === 0 ? 0 : firstPassLength + (passIndex - 1) * loopLength);
+                    addTake(
+                        track.id,
+                        recordingClip.id,
+                        `Take ${takeNum}`,
+                        current.loopStart,
+                        current.loopEnd,
+                        sourceOffsetBeats
+                    );
                 }
             }
 
@@ -344,6 +399,13 @@ export function startPlayheadScheduler(): void {
         }
 
         schedulerSession.accumulatedPosition = newPosition;
+        // The audio-clock instant `newPosition` is the position for — sampled at
+        // this tick's start, so the anchor stays exact even though the commit
+        // lands after the awaits above. `captureGestureBeat` projects from this
+        // pair, which is why it must be published with the position and never
+        // on its own.
+        playheadClockRef.beat = newPosition;
+        playheadClockRef.audioTimeSeconds = now;
         // The cursor follows the transport that is producing the sound. While
         // the native engine is that transport it reports where it actually
         // rendered to — loop wraps included — and this integration is only the
@@ -440,6 +502,14 @@ export function startPlayheadScheduler(): void {
                     Promise.resolve(
                         startAudioRecording(track.id, (result) => {
                             if (result.kind === 'failed') {
+                                // A capture that dies mid-punch (ring overrun,
+                                // worker crash, a WAV that never decoded) must
+                                // not strand an empty provisional clip on the
+                                // arrangement or stay silent about it (#4265).
+                                notifyUser('Punch-in recording failed — the partial take was discarded.', 'error');
+                                if (recClip) {
+                                    removeClip(recClip.id);
+                                }
                                 return;
                             }
                             const { buffer } = result;

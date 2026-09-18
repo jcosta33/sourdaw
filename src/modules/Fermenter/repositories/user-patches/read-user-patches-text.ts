@@ -1,4 +1,4 @@
-const USER_PATCHES_STORAGE_KEY = 'fermenter-user-patches';
+import { USER_PATCHES_STORAGE_KEY } from './userPatchesStorageKey';
 
 export function readUserPatchesText(): string | null {
     if (typeof window === 'undefined') {

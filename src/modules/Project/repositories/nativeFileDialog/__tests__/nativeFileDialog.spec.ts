@@ -68,6 +68,7 @@ describe('nativeFileDialog', () => {
             };
             const createElementSpy = vi
                 .spyOn(document, 'createElement')
+                // @ts-expect-error the Electron DOM augmentation adds a createElement("webview") overload that returns WebviewTag
                 .mockReturnValue(mockInput as unknown as HTMLInputElement);
 
             try {

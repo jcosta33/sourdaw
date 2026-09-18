@@ -3,7 +3,23 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 
-export function crossfadeClips(clipAId: string, clipBId: string, durationBeats = 0.5): boolean {
+import { consumedStretchFactor } from './consumedStretchFactor';
+
+function computeMaxTimelinePreRoll(clipB: Clip, stretchFactor: number): number {
+    if (clipB.type === 'midi') {
+        return Math.max(0, clipB.midiOffsetBeats ?? 0);
+    }
+    return Math.max(0, clipB.audioOffsetBeats ?? 0) / stretchFactor;
+}
+
+/**
+ * Crossfade length used when a caller does not name one — a quarter-note
+ * equal-power overlap reads as a musical edit at any tempo. The handler's
+ * `?? ` fallback reads this same constant.
+ */
+export const DEFAULT_CROSSFADE_BEATS = 0.5;
+
+export function crossfadeClips(clipAId: string, clipBId: string, durationBeats = DEFAULT_CROSSFADE_BEATS): boolean {
     if (clipAId === clipBId || !Number.isFinite(durationBeats) || durationBeats < 0) {
         return false;
     }
@@ -37,20 +53,39 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
     const halfLen = durationBeats / 2;
     const newClipAEnd = clipA.endBeat + halfLen;
     const unclampedClipBStart = clipB.startBeat - halfLen;
-    const newClipBStart = Math.max(0, unclampedClipBStart);
+
+    const stretchFactor = consumedStretchFactor(clipB);
+    const maxTimelinePreRoll = computeMaxTimelinePreRoll(clipB, stretchFactor);
+
+    const boundedClipBStart = Math.max(0, clipB.startBeat - maxTimelinePreRoll);
+    const newClipBStart = Math.max(unclampedClipBStart, boundedClipBStart);
     const actualOverlap = newClipAEnd - newClipBStart;
+
+    const clipBDelta = newClipBStart - clipB.startBeat;
+    const contentDelta = clipBDelta * stretchFactor;
+    const newAudioOffsetBeats =
+        clipB.audioOffsetBeats !== undefined ? Math.max(0, clipB.audioOffsetBeats + contentDelta) : undefined;
+    const newMidiOffsetBeats =
+        clipB.midiOffsetBeats !== undefined ? Math.max(0, clipB.midiOffsetBeats + clipBDelta) : undefined;
+
     if (
         !Number.isFinite(halfLen) ||
         !Number.isFinite(newClipAEnd) ||
         !Number.isFinite(unclampedClipBStart) ||
         !Number.isFinite(newClipBStart) ||
         !Number.isFinite(actualOverlap) ||
+        (newAudioOffsetBeats !== undefined && !Number.isFinite(newAudioOffsetBeats)) ||
+        (newMidiOffsetBeats !== undefined && !Number.isFinite(newMidiOffsetBeats)) ||
         actualOverlap < 0
     ) {
         return false;
     }
     const didChangeClipA = clipA.endBeat !== newClipAEnd || clipA.fadeOutBeats !== actualOverlap;
-    const didChangeClipB = clipB.startBeat !== newClipBStart || clipB.fadeInBeats !== actualOverlap;
+    const didChangeClipB =
+        clipB.startBeat !== newClipBStart ||
+        clipB.fadeInBeats !== actualOverlap ||
+        (newAudioOffsetBeats !== undefined && clipB.audioOffsetBeats !== newAudioOffsetBeats) ||
+        (newMidiOffsetBeats !== undefined && clipB.midiOffsetBeats !== newMidiOffsetBeats);
     if (!didChangeClipA && !didChangeClipB) {
         return false;
     }
@@ -62,7 +97,18 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
                 return { ...context, endBeat: newClipAEnd, fadeOutBeats: actualOverlap };
             }
             if (context.id === clipBId) {
-                return { ...context, startBeat: newClipBStart, fadeInBeats: actualOverlap };
+                const updated: Clip = {
+                    ...context,
+                    startBeat: newClipBStart,
+                    fadeInBeats: actualOverlap,
+                };
+                if (newAudioOffsetBeats !== undefined) {
+                    updated.audioOffsetBeats = newAudioOffsetBeats;
+                }
+                if (newMidiOffsetBeats !== undefined) {
+                    updated.midiOffsetBeats = newMidiOffsetBeats;
+                }
+                return updated;
             }
             return context;
         }),

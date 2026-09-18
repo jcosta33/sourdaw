@@ -6,6 +6,7 @@ import {
     createCrdtPersistenceMembershipConflictError,
     type CrdtPersistenceMembershipConflictError,
 } from '../errors/CrdtPersistenceMembershipConflictError';
+import { createCrdtPersistenceReplacementConflictError } from '../errors/CrdtPersistenceReplacementConflictError';
 import {
     createCrdtPersistenceRootLineageConflictError,
     type CrdtPersistenceRootLineageConflictError,
@@ -44,11 +45,19 @@ type PendingFullSnapshot = {
 };
 
 const CRDT_PERSISTENCE_QUEUE_STATE_KEY = 'crdtDocument.persistenceQueue';
-const CRDT_PERSISTENCE_QUEUE_STATE_VERSION = 5;
+const CRDT_PERSISTENCE_QUEUE_STATE_VERSION = 7;
 
 type CrdtPersistenceQueueState = {
     version: number;
     persistenceGeneration: number;
+    /**
+     * How many times the live project has been replaced by another one.
+     *
+     * Separate from the generation, which a load, a lineage transition or an
+     * HMR migration also bumps: a caller that has to tell "my project is gone"
+     * from "my queue moved on" can only read this.
+     */
+    replacementCount: number;
     persistenceAbortController: AbortController;
     operationTail: Promise<void>;
     pendingChunks: PendingIncrementalChunk[];
@@ -60,6 +69,13 @@ type CrdtPersistenceQueueState = {
     rootLineageTransitionFrom: string | null;
     rootLineageConflict: CrdtPersistenceRootLineageConflictError | null;
     replacementEpoch: string | null;
+    /**
+     * The authority the last committed save wrote, with the generation it
+     * belonged to. A project replacement has to know the exact authority its
+     * own bundle reached storage with, and the generation is what keeps a
+     * commit from a superseded generation out of that answer.
+     */
+    lastCommittedSave: { generation: number; authority: CrdtPersistenceAuthority } | null;
     migrationReconciliationRequired: boolean;
     migrationMembershipConflict: CrdtPersistenceMembershipConflictError | null;
 };
@@ -68,6 +84,7 @@ function createInitialPersistenceQueueState(): CrdtPersistenceQueueState {
     return {
         version: CRDT_PERSISTENCE_QUEUE_STATE_VERSION,
         persistenceGeneration: 0,
+        replacementCount: 0,
         persistenceAbortController: new AbortController(),
         operationTail: Promise.resolve(),
         pendingChunks: [],
@@ -79,6 +96,7 @@ function createInitialPersistenceQueueState(): CrdtPersistenceQueueState {
         rootLineageTransitionFrom: null,
         rootLineageConflict: null,
         replacementEpoch: null,
+        lastCommittedSave: null,
         migrationReconciliationRequired: false,
         migrationMembershipConflict: null,
     };
@@ -93,8 +111,13 @@ if (persistenceState.version !== CRDT_PERSISTENCE_QUEUE_STATE_VERSION) {
     const previousOperationTail = getPreviousOperationTail(persistenceState);
     const previousGeneration =
         typeof persistenceState.persistenceGeneration === 'number' ? persistenceState.persistenceGeneration : 0;
+    const previousReplacementCount =
+        typeof persistenceState.replacementCount === 'number' ? persistenceState.replacementCount : 0;
     persistenceState.version = CRDT_PERSISTENCE_QUEUE_STATE_VERSION;
     persistenceState.persistenceGeneration = previousGeneration + 1;
+    // A reload replaces no project: the count carries over unchanged so a
+    // transition spanning the migration still sees its own project.
+    persistenceState.replacementCount = previousReplacementCount;
     persistenceState.persistenceAbortController = new AbortController();
     persistenceState.pendingChunks = [];
     persistenceState.pendingFullSnapshot = null;
@@ -105,13 +128,14 @@ if (persistenceState.version !== CRDT_PERSISTENCE_QUEUE_STATE_VERSION) {
     persistenceState.rootLineageTransitionFrom = null;
     persistenceState.rootLineageConflict = null;
     persistenceState.replacementEpoch = null;
+    persistenceState.lastCommittedSave = null;
     persistenceState.migrationReconciliationRequired = true;
     persistenceState.migrationMembershipConflict = null;
 
     const migrationGeneration = persistenceState.persistenceGeneration;
     const migrationRecovery = previousOperationTail.then(async () => {
         await reconcileMigrationPersistenceSnapshot(migrationGeneration);
-        return compactCrdtProject(migrationGeneration, true);
+        return compactCrdtProject(migrationGeneration, true, createPersistenceAttempt());
     });
     // Keep the tail usable after recovery failure. Snapshot reconciliation
     // remains required, while a failed full write retains its captured bytes.
@@ -127,7 +151,7 @@ type RootLineageTransitionOperation = {
     to: string;
 };
 
-export type CrdtPersistenceOperation = 'incremental' | 'compact' | 'reset' | RootLineageTransitionOperation;
+export type CrdtPersistenceOperation = 'incremental' | 'compact' | RootLineageTransitionOperation;
 
 type LoadCrdtPersistenceOperationResult = {
     loaded: boolean;
@@ -138,40 +162,134 @@ export type LoadCrdtPersistenceOperation = (input: {
     shouldCommit: () => boolean;
 }) => Promise<LoadCrdtPersistenceOperationResult>;
 
+type CrdtPersistenceDurableDisposition =
+    | { write: 'none' }
+    | { write: 'noop'; authority: CrdtPersistenceAuthority }
+    | { write: 'committed'; authority: CrdtPersistenceAuthority };
+
+export type CrdtPersistenceBarrierResult =
+    | {
+          status: 'settled';
+          mode: 'ordinary';
+          durable: Exclude<CrdtPersistenceDurableDisposition, { write: 'none' }>;
+      }
+    | {
+          status: 'settled';
+          mode: 'exact';
+          expectedRootHeads: readonly string[];
+          durable: Exclude<CrdtPersistenceDurableDisposition, { write: 'none' }>;
+      }
+    | { status: 'skipped'; reason: 'operation-declined'; durable: { write: 'none' } }
+    | { status: 'superseded'; durable: CrdtPersistenceDurableDisposition }
+    | { status: 'failed'; durable: CrdtPersistenceDurableDisposition; error: unknown };
+
 export type CrdtPersistenceBarrierOperation = (input: {
-    persistCurrentProject: (expectedRootHeads?: readonly string[]) => Promise<void>;
+    persistCurrentProject: (expectedRootHeads?: readonly string[]) => Promise<CrdtPersistenceBarrierResult>;
 }) => Promise<void>;
+
+type PersistenceAttempt = {
+    durable: CrdtPersistenceDurableDisposition;
+};
+
+function createPersistenceAttempt(): PersistenceAttempt {
+    return { durable: { write: 'none' } };
+}
+
+function recordPersistenceNoop(attempt: PersistenceAttempt, authority: CrdtPersistenceAuthority): void {
+    if (attempt.durable.write === 'none') {
+        attempt.durable = { write: 'noop', authority };
+    }
+}
+
+function recordPersistenceCommit(
+    attempt: PersistenceAttempt,
+    authority: CrdtPersistenceAuthority,
+    generation: number
+): void {
+    attempt.durable = { write: 'committed', authority };
+    persistenceState.lastCommittedSave = { generation, authority };
+}
+
+function getSuccessfulBarrierResult(
+    attempt: PersistenceAttempt,
+    expectedRootHeads?: readonly string[]
+): CrdtPersistenceBarrierResult {
+    let durable: Exclude<CrdtPersistenceDurableDisposition, { write: 'none' }>;
+    if (attempt.durable.write === 'none') {
+        durable = { write: 'noop', authority: persistenceState.authority ?? EMPTY_PERSISTENCE_AUTHORITY };
+    } else {
+        durable = attempt.durable;
+    }
+    if (expectedRootHeads) {
+        return {
+            status: 'settled',
+            mode: 'exact',
+            expectedRootHeads: [...expectedRootHeads],
+            durable,
+        };
+    }
+    return { status: 'settled', mode: 'ordinary', durable };
+}
 
 /**
  * Run a cross-store lifecycle on the same tail as autosave and explicit CRDT
  * persistence. The caller may publish one exact repository revision and then
  * persist it without an autosave entering between those two steps.
  */
-function runCrdtPersistenceBarrier(operation: CrdtPersistenceBarrierOperation): Promise<void> {
+function runCrdtPersistenceBarrier(operation: CrdtPersistenceBarrierOperation): Promise<CrdtPersistenceBarrierResult> {
     const generation = persistenceState.persistenceGeneration;
-    const run = persistenceState.operationTail.then(async () => {
-        if (generation !== persistenceState.persistenceGeneration) {
-            return;
-        }
-        await operation({
-            persistCurrentProject: async (expectedRootHeads) => {
-                if (!expectedRootHeads) {
-                    await persistIncrementalCrdtProject(generation, true);
-                    return;
-                }
-                await automergeRepository.transactSnapshot(async (snapshotTransaction) => {
-                    automergeRepository.reserveSnapshotTransactionDocuments(snapshotTransaction, [DOC_PREFIX_ROOT]);
-                    assertExpectedRootHeads(expectedRootHeads);
-                    // The caller demands the root's exact heads survive this
-                    // persist unmoved, so this call must not force this
-                    // generation's own deferred writes to land: doing so could
-                    // move the root heads the assert below re-checks.
-                    await persistIncrementalCrdtProject(generation, false);
-                    assertExpectedRootHeads(expectedRootHeads);
-                });
-            },
+    const attempt = createPersistenceAttempt();
+    const run = persistenceState.operationTail
+        .then(async () => {
+            if (generation !== persistenceState.persistenceGeneration) {
+                return { status: 'superseded', durable: attempt.durable } satisfies CrdtPersistenceBarrierResult;
+            }
+            let invoked = false;
+            let result: CrdtPersistenceBarrierResult | null = null;
+            await operation({
+                persistCurrentProject: async (expectedRootHeads) => {
+                    invoked = true;
+                    try {
+                        if (!expectedRootHeads) {
+                            await persistIncrementalCrdtProject(generation, true, attempt);
+                        } else {
+                            await automergeRepository.transactSnapshot(async (snapshotTransaction) => {
+                                automergeRepository.reserveSnapshotTransactionDocuments(snapshotTransaction, [
+                                    DOC_PREFIX_ROOT,
+                                ]);
+                                assertExpectedRootHeads(expectedRootHeads);
+                                // The caller demands the root's exact heads survive this
+                                // persist unmoved, so this call must not force this
+                                // generation's own deferred writes to land: doing so could
+                                // move the root heads the assert below re-checks.
+                                await persistIncrementalCrdtProject(generation, false, attempt);
+                                assertExpectedRootHeads(expectedRootHeads);
+                            });
+                        }
+                    } catch (error) {
+                        result = { status: 'failed', durable: attempt.durable, error };
+                        return result;
+                    }
+                    if (generation === persistenceState.persistenceGeneration) {
+                        result = getSuccessfulBarrierResult(attempt, expectedRootHeads);
+                    } else {
+                        result = { status: 'superseded', durable: attempt.durable };
+                    }
+                    return result;
+                },
+            });
+            if (!invoked) {
+                return {
+                    status: 'skipped',
+                    reason: 'operation-declined',
+                    durable: { write: 'none' },
+                } satisfies CrdtPersistenceBarrierResult;
+            }
+            return result ?? getSuccessfulBarrierResult(attempt);
+        })
+        .catch((error: unknown) => {
+            return { status: 'failed', durable: attempt.durable, error } satisfies CrdtPersistenceBarrierResult;
         });
-    });
     persistenceState.operationTail = run.then(
         () => undefined,
         () => undefined
@@ -188,12 +306,8 @@ function runCrdtPersistenceOperation(
         beginRootLineageTransition(operation);
         return Promise.resolve();
     }
-    if (operation === 'reset') {
-        resetQueueState();
-        return Promise.resolve();
-    }
-
     const generation = persistenceState.persistenceGeneration;
+    const attempt = createPersistenceAttempt();
     const run = persistenceState.operationTail.then(async () => {
         if (generation !== persistenceState.persistenceGeneration) {
             await noOpPersistenceOperation();
@@ -205,9 +319,9 @@ function runCrdtPersistenceOperation(
         // heads the assert below re-checks.
         const settlePendingWrites = expectedRootHeads === undefined;
         if (operation === 'compact') {
-            await compactCrdtProject(generation, settlePendingWrites);
+            await compactCrdtProject(generation, settlePendingWrites, attempt);
         } else {
-            await persistIncrementalCrdtProject(generation, settlePendingWrites);
+            await persistIncrementalCrdtProject(generation, settlePendingWrites, attempt);
         }
         assertExpectedRootHeads(expectedRootHeads);
     });
@@ -277,15 +391,58 @@ function setCrdtPersistenceAuthority(authority: CrdtPersistenceAuthority): void 
     persistenceState.migrationMembershipConflict = null;
 }
 
-function resetQueueState(): void {
+/**
+ * Point the queue at a replacement project.
+ *
+ * `old` is the authority the replacement's first full save compare-and-swaps
+ * against, adopted here so the CAS claims exactly the revision the caller read
+ * durably. `null` leaves the authority to be read lazily on first save, which
+ * is what a caller that has no durable reading of its own gets.
+ *
+ * The epoch is the caller's: the same value has to reach the durable reset
+ * marker, and an epoch minted in here would be invisible to it.
+ */
+function beginPersistenceReplacement({ epoch, old }: { epoch: string; old: CrdtPersistenceAuthority | null }): void {
     beginPersistenceGeneration();
+    persistenceState.replacementCount += 1;
     persistenceState.persistedBaseDocIds.add(DOC_PREFIX_ROOT);
     persistenceState.activeRootLineage = DEFAULT_CRDT_ROOT_LINEAGE;
     persistenceState.nextRootLineage = DEFAULT_CRDT_ROOT_LINEAGE;
     // A project reset intentionally publishes a new epoch, but it still reads
     // and claims the current durable revision before replacing the bundle. A
     // concurrent realm can therefore never be cleared by an unseen reset.
-    persistenceState.replacementEpoch = crypto.randomUUID();
+    persistenceState.replacementEpoch = epoch;
+    persistenceState.authority = old;
+}
+
+/**
+ * The durable authority as storage holds it right now, read behind the queue.
+ *
+ * Queued on `operationTail` so a save still in flight cannot land between the
+ * read and the caller acting on it, and never the cached `authority`: the point
+ * of the read is to learn what another realm may have written.
+ */
+function readDurablePersistenceAuthority(): Promise<CrdtPersistenceAuthority> {
+    const run = persistenceState.operationTail.then(async () => {
+        settlePendingWritesBestEffort();
+        const snapshot = await loadPersistenceSnapshotFromIdb();
+        return snapshot?.authority ?? EMPTY_PERSISTENCE_AUTHORITY;
+    });
+    persistenceState.operationTail = run.then(
+        () => undefined,
+        () => undefined
+    );
+    return run;
+}
+
+/** The authority the newest committed save of the live generation wrote. */
+function committedPersistenceAuthority(): CrdtPersistenceAuthority | null {
+    const record = persistenceState.lastCommittedSave;
+    return record?.generation === persistenceState.persistenceGeneration ? record.authority : null;
+}
+
+function currentPersistenceReplacement(): number {
+    return persistenceState.replacementCount;
 }
 
 function beginLoadQueueState(): number {
@@ -580,10 +737,28 @@ function settlePendingWritesBestEffort(): void {
  * re-checks once this call returns, so it accepts whatever is already settled
  * instead.
  */
-async function persistIncrementalCrdtProject(generation: number, settlePendingWrites: boolean): Promise<void> {
-    await flushPendingFullSnapshot(generation);
+async function persistIncrementalCrdtProject(
+    generation: number,
+    settlePendingWrites: boolean,
+    attempt: PersistenceAttempt
+): Promise<void> {
+    if (persistenceState.replacementEpoch !== null) {
+        // A replacement has no incremental to write: its documents share no
+        // base record with the durable project, and `beginPersistenceReplacement`
+        // seeds the root as persisted, so a root-only replacement would pass the
+        // shape check below and commit a chunk under the OUTGOING epoch. That
+        // commit adopts the outgoing authority, clears this epoch, and leaves
+        // the reset unable to recognise its own target — the marker then
+        // answers `authority-mismatch` and the next boot rolls the replaced
+        // project's branch list back over a record holding both projects.
+        await compactCrdtProject(generation, settlePendingWrites, attempt);
+        return;
+    }
+
+    await flushPendingFullSnapshot(generation, attempt);
     const expectedAuthority = await ensurePersistenceAuthority(generation);
-    await flushPendingChunks(generation);
+    recordPersistenceNoop(attempt, expectedAuthority);
+    await flushPendingChunks(generation, attempt);
     if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
@@ -592,14 +767,14 @@ async function persistIncrementalCrdtProject(generation: number, settlePendingWr
         persistenceState.nextRootLineage !== null &&
         persistenceState.nextRootLineage !== expectedAuthority.rootLineage
     ) {
-        await compactCrdtProject(generation, settlePendingWrites);
+        await compactCrdtProject(generation, settlePendingWrites, attempt);
         return;
     }
 
     const activeDocIds = getActiveDocIds();
     if (activeDocIds.length === 0) {
         if (persistenceState.persistedBaseDocIds.size > 0) {
-            await compactCrdtProject(generation, settlePendingWrites);
+            await compactCrdtProject(generation, settlePendingWrites, attempt);
         }
         return;
     }
@@ -608,7 +783,7 @@ async function persistIncrementalCrdtProject(generation: number, settlePendingWr
     // newly created or removed document changes the persisted shape, so write
     // one current full bundle before advancing any new incremental cursor.
     if (hasPersistedDocumentShapeChanged(activeDocIds)) {
-        await compactCrdtProject(generation, settlePendingWrites);
+        await compactCrdtProject(generation, settlePendingWrites, attempt);
         return;
     }
 
@@ -634,22 +809,26 @@ async function persistIncrementalCrdtProject(generation: number, settlePendingWr
         });
     }
 
-    await flushPendingChunks(generation);
+    await flushPendingChunks(generation, attempt);
     if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
 
     if (crdtProjectCompactionState.incrementalSaveCount >= CRDT_PROJECT_COMPACTION_THRESHOLD) {
-        await compactCrdtProject(generation, settlePendingWrites);
+        await compactCrdtProject(generation, settlePendingWrites, attempt);
     }
 }
 
 /** See `persistIncrementalCrdtProject`'s `settlePendingWrites` doc. */
-async function compactCrdtProject(generation: number, settlePendingWrites: boolean): Promise<void> {
+async function compactCrdtProject(
+    generation: number,
+    settlePendingWrites: boolean,
+    attempt: PersistenceAttempt
+): Promise<void> {
     if (settlePendingWrites) {
         settlePendingWritesBestEffort();
     }
-    await flushPendingChunks(generation);
+    await flushPendingChunks(generation, attempt);
     if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
@@ -658,7 +837,7 @@ async function compactCrdtProject(generation: number, settlePendingWrites: boole
     // retry its captured bytes before any later incremental serialization.
     const failedSnapshot =
         persistenceState.pendingFullSnapshot?.generation === generation ? persistenceState.pendingFullSnapshot : null;
-    await flushPendingFullSnapshot(generation);
+    await flushPendingFullSnapshot(generation, attempt);
     if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
@@ -679,10 +858,13 @@ async function compactCrdtProject(generation: number, settlePendingWrites: boole
             return;
         }
 
-        await persistFullSnapshot({
-            generation,
-            bundle: currentBundle,
-        });
+        await persistFullSnapshot(
+            {
+                generation,
+                bundle: currentBundle,
+            },
+            attempt
+        );
         return;
     }
 
@@ -691,13 +873,16 @@ async function compactCrdtProject(generation: number, settlePendingWrites: boole
         return;
     }
 
-    await persistFullSnapshot({
-        generation,
-        bundle,
-    });
+    await persistFullSnapshot(
+        {
+            generation,
+            bundle,
+        },
+        attempt
+    );
 }
 
-async function flushPendingFullSnapshot(generation: number): Promise<void> {
+async function flushPendingFullSnapshot(generation: number, attempt: PersistenceAttempt): Promise<void> {
     const pending = persistenceState.pendingFullSnapshot;
     if (!pending || pending.generation !== generation) {
         return;
@@ -711,11 +896,11 @@ async function flushPendingFullSnapshot(generation: number): Promise<void> {
         return;
     }
 
-    await persistFullSnapshot(pending);
+    await persistFullSnapshot(pending, attempt);
 }
 
 /** Keep a serialized full bundle pending until its replace transaction commits. */
-async function persistFullSnapshot(pending: PendingFullSnapshot): Promise<void> {
+async function persistFullSnapshot(pending: PendingFullSnapshot, attempt: PersistenceAttempt): Promise<void> {
     if (pending.generation !== persistenceState.persistenceGeneration) {
         return;
     }
@@ -736,6 +921,9 @@ async function persistFullSnapshot(pending: PendingFullSnapshot): Promise<void> 
                 nextRootLineage: persistenceState.nextRootLineage ?? expectedAuthority.rootLineage,
                 signal: generationSignal,
             });
+            if (result.status === 'committed') {
+                recordPersistenceCommit(attempt, result.authority, currentPending.generation);
+            }
             if (currentPending.generation !== persistenceState.persistenceGeneration) {
                 observeSupersededPersistenceCommit(result);
                 return;
@@ -744,6 +932,18 @@ async function persistFullSnapshot(pending: PendingFullSnapshot): Promise<void> 
             if (result.status === 'committed') {
                 setCrdtPersistenceAuthority(result.authority);
                 break;
+            }
+
+            if (persistenceState.replacementEpoch !== null) {
+                // This generation is replacing the project, not editing it: the
+                // bundle in hand is a different document set from the durable
+                // one, so merging would fold the project being replaced into
+                // the replacement. The serialized bundle stays pending, and the
+                // caller learns its replacement never became durable.
+                throw createCrdtPersistenceReplacementConflictError({
+                    expected: expectedAuthority,
+                    actual: result.authority,
+                });
             }
 
             assertPersistenceConflictCanMerge(expectedAuthority, result.authority);
@@ -806,7 +1006,7 @@ function areDocumentBundlesEqual(left: DocumentBundle, right: DocumentBundle): b
     return true;
 }
 
-async function flushPendingChunks(generation: number): Promise<void> {
+async function flushPendingChunks(generation: number, attempt: PersistenceAttempt): Promise<void> {
     prunePendingChunks(generation);
     const chunks = persistenceState.pendingChunks.filter(
         (pending) => pending.generation === generation && !pending.inFlight
@@ -836,6 +1036,9 @@ async function flushPendingChunks(generation: number): Promise<void> {
                     signal: generationSignal,
                 }
             );
+            if (result.status === 'committed') {
+                recordPersistenceCommit(attempt, result.authority, generation);
+            }
             if (generation !== persistenceState.persistenceGeneration) {
                 observeSupersededPersistenceCommit(result);
                 return;
@@ -950,4 +1153,8 @@ export const crdtPersistenceQueueCoordinator = Object.freeze({
     runBarrier: runCrdtPersistenceBarrier,
     runOperation: runCrdtPersistenceOperation,
     runLoad: runCrdtPersistenceLoad,
+    readDurableAuthority: readDurablePersistenceAuthority,
+    beginReplacement: beginPersistenceReplacement,
+    committedAuthority: committedPersistenceAuthority,
+    currentReplacement: currentPersistenceReplacement,
 });

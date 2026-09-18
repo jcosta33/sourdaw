@@ -3,16 +3,22 @@ import { embeddingStore } from '../stores/embeddingStore';
 /**
  * Find samples similar to a target sample based on embedding distance.
  * R-G2: Semantic similarity search.
+ *
+ * The result separates "no embedding exists for the target, so similarity
+ * cannot run" from actual (possibly empty) matches, letting callers give
+ * truthful feedback instead of reading both as an empty result list.
  */
-export function findSimilarSamples(sampleId: string, limit = 10): string[] {
+export type FindSimilarSamplesResult = { status: 'unavailable' } | { status: 'matches'; sampleIds: string[] };
+
+export function findSimilarSamples(sampleId: string, limit = 10): FindSimilarSamplesResult {
     const state = embeddingStore.value;
     if (!state) {
-        return [];
+        return { status: 'unavailable' };
     }
 
     const target = state.embeddings.get(sampleId);
     if (!target) {
-        return [];
+        return { status: 'unavailable' };
     }
 
     const scores: { id: string; distance: number }[] = [];
@@ -25,10 +31,13 @@ export function findSimilarSamples(sampleId: string, limit = 10): string[] {
         scores.push({ id, distance: dist });
     }
 
-    return scores
-        .sort((a, b) => a.distance - b.distance)
-        .slice(0, limit)
-        .map((s) => s.id);
+    return {
+        status: 'matches',
+        sampleIds: scores
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, limit)
+            .map((s) => s.id),
+    };
 }
 
 function cosineDistance(a: Float32Array, b: Float32Array): number {

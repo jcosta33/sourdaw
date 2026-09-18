@@ -1,4 +1,5 @@
 /// Core types and constants for the Unified Crumbs Suite.
+use crate::params::{ATTACK, DECAY, RELEASE, TUNE};
 
 // ── DSP Constants ──────────────────────────────────────────────────────
 
@@ -333,11 +334,11 @@ pub enum CrumbsParam {
 pub fn parse_crumbs_param(name: &str) -> Option<CrumbsParam> {
     match name {
         "masterGain" => Some(CrumbsParam::MasterGain),
-        "attack" => Some(CrumbsParam::Attack),
+        ATTACK => Some(CrumbsParam::Attack),
         "hold" => Some(CrumbsParam::Hold),
-        "decay" => Some(CrumbsParam::Decay),
+        DECAY => Some(CrumbsParam::Decay),
         "sustain" => Some(CrumbsParam::Sustain),
-        "release" => Some(CrumbsParam::Release),
+        RELEASE => Some(CrumbsParam::Release),
         "filterCutoff" => Some(CrumbsParam::FilterCutoff),
         "filterResonance" => Some(CrumbsParam::FilterResonance),
         "filterType" => Some(CrumbsParam::FilterType),
@@ -347,7 +348,7 @@ pub fn parse_crumbs_param(name: &str) -> Option<CrumbsParam> {
         "loopCrossfade" => Some(CrumbsParam::LoopCrossfade),
         "playbackMode" => Some(CrumbsParam::PlaybackMode),
         "rootNote" => Some(CrumbsParam::RootNote),
-        "tune" => Some(CrumbsParam::Tune),
+        TUNE => Some(CrumbsParam::Tune),
         "pan" => Some(CrumbsParam::Pan),
         "stackCount" => Some(CrumbsParam::StackCount),
         "detuneSpread" => Some(CrumbsParam::DetuneSpread),
@@ -370,132 +371,5 @@ pub fn parse_crumbs_mode(name: &str) -> Option<CrumbsMode> {
     }
 }
 
-/// LFO wave shape for modulation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LfoShape {
-    Sine,
-    Triangle,
-    Saw,
-    Square,
-    SampleAndHold,
-}
-
-impl Default for LfoShape {
-    fn default() -> Self {
-        Self::Sine
-    }
-}
-
-/// Per-pad/slice articulator group — independent modulation per voice source.
-/// FL Studio-style: each pad gets its own envelope, filter, and LFO settings.
-#[derive(Debug, Clone)]
-pub struct ArticulatorGroup {
-    /// Envelope overrides (None = use global defaults).
-    pub attack: Option<f32>,
-    pub hold: Option<f32>,
-    pub decay: Option<f32>,
-    pub sustain: Option<f32>,
-    pub release: Option<f32>,
-    /// Filter overrides.
-    pub filter_cutoff: Option<f32>,
-    pub filter_resonance: Option<f32>,
-    pub filter_type: Option<FilterType>,
-    /// LFO parameters.
-    pub lfo_rate: f32,
-    pub lfo_depth: f32,
-    pub lfo_shape: LfoShape,
-    /// LFO target (which parameter the LFO modulates).
-    pub lfo_target: LfoTarget,
-}
-
-/// What parameter an LFO modulates.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LfoTarget {
-    None,
-    Pitch,
-    FilterCutoff,
-    Pan,
-    Volume,
-}
-
-impl Default for LfoTarget {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
-impl Default for ArticulatorGroup {
-    fn default() -> Self {
-        Self {
-            attack: None,
-            hold: None,
-            decay: None,
-            sustain: None,
-            release: None,
-            filter_cutoff: None,
-            filter_resonance: None,
-            filter_type: None,
-            lfo_rate: 1.0,
-            lfo_depth: 0.0,
-            lfo_shape: LfoShape::Sine,
-            lfo_target: LfoTarget::None,
-        }
-    }
-}
-
-/// Maximum number of articulator groups (one per pad in drum mode).
-pub const MAX_ARTICULATOR_GROUPS: usize = 8;
-
 /// Maximum number of stacked unison voices.
 pub const MAX_STACK_VOICES: u8 = 8;
-
-/// Mod X/Y crossfade state — dual-deck morphing between sample states.
-#[derive(Debug, Clone)]
-pub struct ModXYState {
-    /// Sample ID for deck A.
-    pub deck_a_sample: Option<SampleId>,
-    /// Sample ID for deck B.
-    pub deck_b_sample: Option<SampleId>,
-    /// Crossfade position (0.0 = deck A, 1.0 = deck B).
-    pub crossfade: f32,
-}
-
-impl Default for ModXYState {
-    fn default() -> Self {
-        Self {
-            deck_a_sample: None,
-            deck_b_sample: None,
-            crossfade: 0.0,
-        }
-    }
-}
-
-/// Per-pad channel strip configuration (Drum Rack-style nesting).
-#[derive(Debug, Clone)]
-pub struct PadChannelStrip {
-    /// Gain (0.0 – 2.0).
-    pub gain: f32,
-    /// Pan (-1.0 to 1.0).
-    pub pan: f32,
-    /// Mute state.
-    pub muted: bool,
-    /// Solo state.
-    pub solo: bool,
-    /// Send levels (reverb, delay, etc.).
-    pub sends: [f32; 4],
-    /// Per-pad articulator group.
-    pub articulator: ArticulatorGroup,
-}
-
-impl Default for PadChannelStrip {
-    fn default() -> Self {
-        Self {
-            gain: 1.0,
-            pan: 0.0,
-            muted: false,
-            solo: false,
-            sends: [0.0; 4],
-            articulator: ArticulatorGroup::default(),
-        }
-    }
-}

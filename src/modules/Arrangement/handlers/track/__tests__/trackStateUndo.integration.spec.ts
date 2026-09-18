@@ -37,8 +37,11 @@ import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers
 // stubbed AudioContext cannot build. The subject here is what project truth holds after
 // undo, so the engine seam is stubbed rather than exercised.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
+    writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    projectsToDifferentNativeBank: vi.fn(() => false),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     analyzePitchForClip: vi.fn(),
     applyNoteExpression: vi.fn(),
@@ -56,7 +59,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDeviceChainTailSeconds: vi.fn(),
     getEngineState: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
-    getLiveEngineSampleRate: vi.fn(),
     getMasterAnalyser: vi.fn(() => null),
     getRuntimeGraphRevision: vi.fn(),
     getTrackAnalyser: vi.fn(() => null),
@@ -82,6 +84,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 
@@ -443,8 +446,8 @@ describe('track-state guarded undo integration', () => {
         it('flatten: gives back the device chain, the track kind and the frozen take', async () => {
             const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 4 });
             const devices = [
-                { id: 'device-1', type: 'instrument', name: 'Synth', params: {}, bypassed: false },
-                { id: 'device-2', type: 'effect', name: 'Reverb', params: {}, bypassed: false },
+                { id: 'device-1', type: 'instrument', name: 'Synth', parameterValues: {}, bypassed: false },
+                { id: 'device-2', type: 'effect', name: 'Reverb', parameterValues: {}, bypassed: false },
             ];
             const freezeState = { status: 'frozen' as const, freezeId: 'freeze-1', frozenBufferId: 'buffer-1' };
             divergeTrack('track-1', {

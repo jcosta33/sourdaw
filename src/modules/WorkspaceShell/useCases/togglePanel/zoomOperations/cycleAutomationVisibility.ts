@@ -5,6 +5,6 @@ import { WorkspaceEventBus } from '../../workspaceEventBus';
 export const cycleAutomationVisibility = inject({ eventBus: WorkspaceEventBus })(
     ({ eventBus }) =>
         function cycleAutomationVisibility(): void {
-            void eventBus.emit('panel.showAutomation', undefined);
+            void eventBus.emit('panel.showDevice', { deviceType: 'automation', deviceId: null });
         }
 );

@@ -1,7 +1,9 @@
 export { compileToasterTrackStackActions } from './compileToasterTrackStackActions';
 export { getDefaultPadNames } from './getDefaultPadNames';
 export { getToasterPresetDeviceState } from './getToasterPresetDeviceState';
+export { listToasterPatternsOutsideArrangement } from './listToasterPatternsOutsideArrangement';
 export { prepareOfflineToaster } from './prepareOfflineToaster';
+export { projectToasterKitToNativePatch } from './projectToasterKitToNativePatch';
 export { setToasterEventBus } from './toasterEventBus';
 export { initToasterSubscribers } from './toasterSubscriber';
 export { initToasterKitPersistence } from './initToasterKitPersistence';

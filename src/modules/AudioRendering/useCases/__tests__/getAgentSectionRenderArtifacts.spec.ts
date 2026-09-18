@@ -29,6 +29,7 @@ describe('getAgentSectionRenderArtifacts', () => {
             frameCount: 176_400,
             channelCount: 2,
             byteSize: 1_411_200,
+            contentAddress: 'content-address-fixture',
             warnings: [],
             buffer: {} as AudioBuffer,
         };

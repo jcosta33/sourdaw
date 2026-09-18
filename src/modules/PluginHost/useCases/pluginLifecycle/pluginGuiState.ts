@@ -9,8 +9,9 @@ import { defaultPluginGuiState, pluginGuiStore, type PluginGuiStatus } from '../
  * control starts disagreeing with the screen.
  *
  * The status is stated by the caller rather than inferred, because the two parts
- * come apart: a close that was refused leaves the editor open *and* carries an
- * error, and a failed open leaves it closed.
+ * come apart: a close that was refused and an open refused as already open
+ * leave the editor open *and* carry an error, and a failed open that destroyed
+ * its own window leaves it closed.
  */
 export function recordPluginGuiState(instanceId: string, status: PluginGuiStatus): void {
     pluginGuiStore.update((state) => {

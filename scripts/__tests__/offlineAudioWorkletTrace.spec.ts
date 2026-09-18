@@ -1,0 +1,324 @@
+import { describe, expect, it } from 'vitest';
+
+import { admitOfflineAudioWorkletTrace, type OfflineTraceExpectation } from '../offlineAudioWorkletTrace';
+
+const OUTER = 'AudioWorkletProcessor::Process';
+const HANDLER = 'AudioHandler::ProcessIfNecessary';
+const AUTHOR = 'AudioWorkletProcessor::Process (author script execution)';
+const SMALL_PHASES: OfflineTraceExpectation = { warmupCallbacks: 1, measuredCallbacks: 2 };
+
+type FixtureEvent = {
+    name: string;
+    ph: string;
+    ts: number;
+    dur: number;
+    pid: number;
+    tid: number;
+    args: Record<string, unknown>;
+};
+
+function callback(ts: number, outerDuration: number, pid = 1, tid = 2, handlerThis = '0x1'): FixtureEvent[] {
+    return [
+        {
+            name: HANDLER,
+            ph: 'X',
+            ts,
+            dur: outerDuration + 4,
+            pid,
+            tid,
+            args: { 'node type': 'AudioWorkletNode', this: handlerThis },
+        },
+        { name: OUTER, ph: 'X', ts: ts + 1, dur: outerDuration + 2, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ts: ts + 2, dur: outerDuration, pid, tid, args: {} },
+    ];
+}
+
+function validTrace(): FixtureEvent[] {
+    return [
+        { name: 'metadata', ph: 'M', ts: 0, dur: 0, pid: 0, tid: 0, args: {} },
+        ...callback(10, 2),
+        ...callback(30, 3),
+        ...callback(50, 8),
+        ...callback(80, 12),
+        {
+            name: HANDLER,
+            ph: 'X',
+            ts: 110,
+            dur: 2,
+            pid: 1,
+            tid: 2,
+            args: { 'node type': 'AudioWorkletNode', this: '0x1' },
+        },
+    ];
+}
+
+function admission(events: readonly unknown[] = validTrace(), dataLossOccurred: unknown = false) {
+    return admitOfflineAudioWorkletTrace({ events, dataLossOccurred, expectation: SMALL_PHASES });
+}
+
+function withoutName(events: readonly FixtureEvent[], name: string, timestamp: number): FixtureEvent[] {
+    return events.filter((event) => event.name !== name || event.ts !== timestamp);
+}
+
+function observedEqualEndpointTrace(authorDuration = 10): FixtureEvent[] {
+    const pid = 4024;
+    const tid = 4032;
+    const handlerThis = '0x123c006da700';
+    return [
+        {
+            name: HANDLER,
+            ph: 'X',
+            ts: 425_593_194,
+            dur: 19,
+            pid,
+            tid,
+            args: { 'node type': 'AudioWorkletNode', this: handlerThis },
+        },
+        { name: OUTER, ph: 'X', ts: 425_593_196, dur: 15, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ts: 425_593_201, dur: authorDuration, pid, tid, args: {} },
+        ...callback(425_593_230, 3, pid, tid, handlerThis),
+        ...callback(425_593_250, 8, pid, tid, handlerThis),
+        ...callback(425_593_280, 12, pid, tid, handlerThis),
+    ];
+}
+
+function observedEqualHandlerEndpointTrace(handlerDuration = 12): FixtureEvent[] {
+    const pid = 3940;
+    const tid = 3948;
+    const handlerThis = '0x27b400722580';
+    return [
+        {
+            name: HANDLER,
+            ph: 'X',
+            ts: 651_633_637,
+            dur: handlerDuration,
+            pid,
+            tid,
+            args: { 'node type': 'AudioWorkletNode', this: handlerThis },
+        },
+        { name: OUTER, ph: 'X', ts: 651_633_638, dur: 11, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ts: 651_633_641, dur: 7, pid, tid, args: {} },
+        ...callback(651_633_670, 3, pid, tid, handlerThis),
+        ...callback(651_633_690, 8, pid, tid, handlerThis),
+        ...callback(651_633_720, 12, pid, tid, handlerThis),
+    ];
+}
+
+function observedEqualHandlerStartTrace(handlerStart = 416_895_108): FixtureEvent[] {
+    const pid = 3941;
+    const tid = 3949;
+    const handlerThis = '0x31fc0070a880';
+    return [
+        {
+            name: HANDLER,
+            ph: 'X',
+            ts: handlerStart,
+            dur: 9,
+            pid,
+            tid,
+            args: { 'node type': 'AudioWorkletNode', this: handlerThis },
+        },
+        { name: OUTER, ph: 'X', ts: 416_895_108, dur: 8, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ts: 416_895_110, dur: 6, pid, tid, args: {} },
+        ...callback(416_895_140, 3, pid, tid, handlerThis),
+        ...callback(416_895_160, 8, pid, tid, handlerThis),
+        ...callback(416_895_190, 12, pid, tid, handlerThis),
+    ];
+}
+
+// Principle-derived, not observed: equal author start with unique enclosure.
+function equalAuthorStartTrace(authorStart = 101): FixtureEvent[] {
+    const pid = 1;
+    const tid = 2;
+    const handlerThis = '0x1';
+    return [
+        {
+            name: HANDLER,
+            ph: 'X',
+            ts: 100,
+            dur: 20,
+            pid,
+            tid,
+            args: { 'node type': 'AudioWorkletNode', this: handlerThis },
+        },
+        { name: OUTER, ph: 'X', ts: 101, dur: 15, pid, tid, args: {} },
+        { name: AUTHOR, ph: 'X', ts: authorStart, dur: 10, pid, tid, args: {} },
+        ...callback(130, 3, pid, tid, handlerThis),
+        ...callback(150, 8, pid, tid, handlerThis),
+        ...callback(180, 12, pid, tid, handlerThis),
+    ];
+}
+
+describe('offline AudioWorklet trace admission', () => {
+    it('admits a complete nested trace and binds the explicit phase population', () => {
+        expect(admission()).toEqual({
+            status: 'admitted',
+            outerCallbacks: 4,
+            pid: 1,
+            tid: 2,
+            handlerThis: '0x1',
+            warmupDurationsUs: [4],
+            measuredDurationsUs: [5, 10],
+            terminalDurationUs: 14,
+            bareHandlers: 1,
+        });
+    });
+
+    it('admits the observed equal author/outer endpoint and refuses a one-microsecond overrun', () => {
+        expect(admission(observedEqualEndpointTrace())).toEqual({
+            status: 'admitted',
+            outerCallbacks: 4,
+            pid: 4024,
+            tid: 4032,
+            handlerThis: '0x123c006da700',
+            warmupDurationsUs: [15],
+            measuredDurationsUs: [5, 10],
+            terminalDurationUs: 14,
+            bareHandlers: 0,
+        });
+        expect(admission(observedEqualEndpointTrace(11))).toEqual({
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous contained author execution',
+        });
+    });
+
+    it('admits the observed equal handler/outer endpoint and refuses a one-microsecond overrun', () => {
+        expect(admission(observedEqualHandlerEndpointTrace())).toEqual({
+            status: 'admitted',
+            outerCallbacks: 4,
+            pid: 3940,
+            tid: 3948,
+            handlerThis: '0x27b400722580',
+            warmupDurationsUs: [11],
+            measuredDurationsUs: [5, 10],
+            terminalDurationUs: 14,
+            bareHandlers: 0,
+        });
+        expect(admission(observedEqualHandlerEndpointTrace(11))).toEqual({
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler',
+        });
+    });
+
+    it('admits the observed equal handler/outer start and refuses a handler starting one microsecond late', () => {
+        expect(admission(observedEqualHandlerStartTrace())).toEqual({
+            status: 'admitted',
+            outerCallbacks: 4,
+            pid: 3941,
+            tid: 3949,
+            handlerThis: '0x31fc0070a880',
+            warmupDurationsUs: [8],
+            measuredDurationsUs: [5, 10],
+            terminalDurationUs: 14,
+            bareHandlers: 0,
+        });
+        expect(admission(observedEqualHandlerStartTrace(416_895_109))).toEqual({
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous enclosing AudioWorkletNode handler',
+        });
+    });
+
+    it('admits an author execution starting in the callback microsecond and refuses one starting a microsecond early', () => {
+        expect(admission(equalAuthorStartTrace())).toEqual({
+            status: 'admitted',
+            outerCallbacks: 4,
+            pid: 1,
+            tid: 2,
+            handlerThis: '0x1',
+            warmupDurationsUs: [15],
+            measuredDurationsUs: [5, 10],
+            terminalDurationUs: 14,
+            bareHandlers: 0,
+        });
+        expect(admission(equalAuthorStartTrace(100))).toEqual({
+            status: 'refused',
+            reason: 'outer callback lacks one unambiguous contained author execution',
+        });
+    });
+
+    it('refuses data loss even when the interval population is otherwise complete', () => {
+        expect(admission(validTrace(), true)).toEqual({
+            status: 'refused',
+            reason: 'trace did not explicitly report dataLossOccurred false',
+        });
+        expect(
+            admitOfflineAudioWorkletTrace({
+                events: validTrace(),
+                dataLossOccurred: undefined,
+                expectation: SMALL_PHASES,
+            }).status
+        ).toBe('refused');
+    });
+
+    it('refuses missing and extra outer callbacks', () => {
+        expect(admission(withoutName(validTrace(), OUTER, 51)).status).toBe('refused');
+        expect(admission([...validTrace(), ...callback(130, 1)]).status).toBe('refused');
+    });
+
+    it('refuses removal of the final slow measured callback', () => {
+        const withoutLastMeasured = validTrace().filter((event) => event.ts < 50 || event.ts >= 80);
+        expect(admission(withoutLastMeasured)).toEqual({
+            status: 'refused',
+            reason: 'expected 4 outer callbacks, received 3',
+        });
+    });
+
+    it('refuses a missing, wrong-thread or wrong-node enclosing handler', () => {
+        expect(admission(withoutName(validTrace(), HANDLER, 30)).status).toBe('refused');
+        expect(
+            admission(
+                validTrace().map((event) => (event.name === HANDLER && event.ts === 30 ? { ...event, tid: 9 } : event))
+            ).status
+        ).toBe('refused');
+        expect(
+            admission(
+                validTrace().map((event) =>
+                    event.name === HANDLER && event.ts === 30
+                        ? { ...event, args: { ...event.args, 'node type': 'GainNode' } }
+                        : event
+                )
+            ).status
+        ).toBe('refused');
+    });
+
+    it('refuses callbacks bound to different AudioWorkletNode instances', () => {
+        const mixedPointers = validTrace().map((event) =>
+            event.name === HANDLER && event.ts === 50 ? { ...event, args: { ...event.args, this: '0x2' } } : event
+        );
+
+        expect(admission(mixedPointers)).toEqual({
+            status: 'refused',
+            reason: 'outer callbacks do not share one AudioWorkletNode trace pointer',
+        });
+    });
+
+    it('refuses a missing or wrong-thread author execution', () => {
+        expect(admission(withoutName(validTrace(), AUTHOR, 32)).status).toBe('refused');
+        expect(
+            admission(
+                validTrace().map((event) => (event.name === AUTHOR && event.ts === 32 ? { ...event, tid: 9 } : event))
+            ).status
+        ).toBe('refused');
+    });
+
+    it('refuses overlapping outer callbacks and ambiguous handler nesting', () => {
+        expect(
+            admission(
+                validTrace().map((event) => (event.name === OUTER && event.ts === 31 ? { ...event, ts: 15 } : event))
+            ).status
+        ).toBe('refused');
+        expect(admission([...validTrace(), { ...validTrace()[1]!, dur: 30 }]).status).toBe('refused');
+    });
+
+    it('refuses malformed relevant intervals while ignoring unrelated metadata shapes', () => {
+        expect(
+            admission(
+                validTrace().map((event) =>
+                    event.name === OUTER && event.ts === 31 ? { ...event, ts: Number.NaN } : event
+                )
+            ).status
+        ).toBe('refused');
+        expect(admission([{ name: OUTER, ph: 'B' }, ...validTrace()]).status).toBe('refused');
+        expect(admission([null, 1, { name: 'metadata', ph: 'M' }, ...validTrace()]).status).toBe('admitted');
+    });
+});

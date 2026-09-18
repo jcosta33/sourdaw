@@ -60,6 +60,7 @@ import { getEngineTransportPosition } from '../../repositories/engineTransport/g
 
 import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 import { nativeLiveMidiWriter } from './nativeLiveMidiWriterState';
+import { publishNativeTunerTelemetry } from './publishNativeTunerTelemetry';
 import { pumpNativeLiveAutomationWriter } from './pumpNativeLiveAutomationWriter';
 import { pumpNativeLiveMidiWriter } from './pumpNativeLiveMidiWriter';
 import { rearmNativeLiveAutomationWriterInPlace } from './rearmNativeLiveAutomationWriterInPlace';
@@ -152,6 +153,13 @@ export function pollNativeEnginePlayheadOnce(): void {
                 return;
             }
             nativeEnginePlayheadFeed.reading = reading;
+            // Before the stopped-transport return below, deliberately. A tuner
+            // on a native strip goes on analysing whatever reaches its input
+            // with the transport parked — a player checking a string against
+            // the generator is doing exactly that — and a stopped strip that
+            // has gone quiet reads inactive, which is the frame the needle has
+            // to fall back on rather than the last pitch it saw.
+            publishNativeTunerTelemetry(reading);
             if (!reading.playing) {
                 return;
             }

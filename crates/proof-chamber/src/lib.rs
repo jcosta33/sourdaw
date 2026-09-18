@@ -57,6 +57,26 @@ fn init_panic_hook() {
 // Algorithm enum
 // ---------------------------------------------------------------------------
 
+// Wire values of the `algorithm` parameter. This dispatch is a wire format —
+// the value is written into project files and replayed verbatim, and the
+// TypeScript side holds the same ids in `ALGORITHM_MAP` in
+// `src/modules/ProofChamber/models/ProofChamberState.ts` (TS↔Rust lockstep
+// pair: neither side can import the other). 4 and 5 stay assigned to the
+// reserved convolution/hybrid engines, so the selectable ids are 0, 1, 2, 3,
+// and 6.
+
+/// Wire id selecting the Dattorro plate.
+const ALGORITHM_PLATE: u8 = 0;
+/// Wire id selecting the 8-delay FDN.
+const ALGORITHM_FDN8: u8 = 1;
+/// Wire id selecting the 16-delay FDN.
+const ALGORITHM_FDN16: u8 = 2;
+/// Wire id selecting the spring model.
+const ALGORITHM_SPRING: u8 = 3;
+// 4 = Convolution and 5 = Hybrid: reserved, not free — see the match arm.
+/// Wire id selecting the reverse-envelope engine.
+const ALGORITHM_REVERSE: u8 = 6;
+
 /// Which engine renders.
 ///
 /// The five a wire value selects carry nothing: their engines are built once in
@@ -299,6 +319,14 @@ impl ParameterCache {
 // WASM instance — unified interface
 // ---------------------------------------------------------------------------
 
+/// Frames one `ProofChamberInstance::process` call can render.
+///
+/// The instance's two output buffers are allocated at this length and `process`
+/// clamps its frame count to it, so this is the number of samples the pointers
+/// it returns are valid for. Exported so a host binds its run length to the
+/// capacity the instance really has instead of mirroring the number.
+pub const PROOF_CHAMBER_BLOCK_FRAMES: usize = 1024;
+
 #[wasm_bindgen]
 pub struct ProofChamberInstance {
     engines: ExposedEngines,
@@ -368,7 +396,7 @@ impl ProofChamberInstance {
 impl ProofChamberInstance {
     #[wasm_bindgen(constructor)]
     pub fn new(sample_rate: f32) -> Self {
-        let max_block = 1024;
+        let max_block = PROOF_CHAMBER_BLOCK_FRAMES;
         Self {
             engines: ExposedEngines {
                 plate: ProofChamber::new(sample_rate),
@@ -406,11 +434,11 @@ impl ProofChamberInstance {
             }
             "algorithm" => {
                 self.active = match value as u8 {
-                    0 => ReverbEngine::Plate,
-                    1 => ReverbEngine::Fdn8,
-                    2 => ReverbEngine::Fdn16,
-                    3 => ReverbEngine::Spring,
-                    6 => ReverbEngine::Reverse,
+                    ALGORITHM_PLATE => ReverbEngine::Plate,
+                    ALGORITHM_FDN8 => ReverbEngine::Fdn8,
+                    ALGORITHM_FDN16 => ReverbEngine::Fdn16,
+                    ALGORITHM_SPRING => ReverbEngine::Spring,
+                    ALGORITHM_REVERSE => ReverbEngine::Reverse,
                     // 4 (Convolution) and 5 (Hybrid) are reserved, not free.
                     // Both are built and both render, but both need an impulse
                     // response and nothing can deliver one: `load_ir` has no
@@ -463,6 +491,9 @@ impl ProofChamberInstance {
     }
 
     pub fn set_param_by_id(&mut self, param_id: u32, value: f32) {
+        // Wire names here restate the vocabulary daw-dsp owns in
+        // `crates/daw-dsp/src/params.rs` (this crate cannot depend on that
+        // one); keep the names in step with it.
         let name = match param_id {
             0 => "mix",
             1 => "decay",
@@ -482,7 +513,7 @@ impl ProofChamberInstance {
 
     #[wasm_bindgen(js_name = process)]
     pub fn process_in_place(&mut self, frames: u32) -> *const f32 {
-        let size = (frames as usize).min(1024);
+        let size = (frames as usize).min(PROOF_CHAMBER_BLOCK_FRAMES);
         self.process_outputs(size)
     }
 
@@ -680,11 +711,35 @@ impl ProofChamberInstance {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProofChamberInstance, ReverbEngine, UnexposedEngine};
+    use super::{ProofChamberInstance, ReverbEngine, UnexposedEngine, PROOF_CHAMBER_BLOCK_FRAMES};
     use assert_no_alloc::{assert_no_alloc, AllocDisabler};
 
     #[global_allocator]
     static ALLOCATOR: AllocDisabler = AllocDisabler;
+
+    /// `PROOF_CHAMBER_BLOCK_FRAMES` tells a host how many samples the pointers
+    /// `process` returns are valid for, so it has to be the length of the
+    /// buffers those pointers address rather than a number kept alongside them.
+    ///
+    /// This lives inside the crate because the two output buffers are private
+    /// and giving them a public length accessor would add the surface the
+    /// constant exists to avoid. Rendering cannot stand in for it: a constant
+    /// smaller than the allocation clamps consistently and sounds correct while
+    /// quietly under-running the buffers it claims to describe.
+    #[test]
+    fn the_exported_block_capacity_is_the_output_buffers_own_length() {
+        let instance = ProofChamberInstance::new(48_000.0);
+        assert_eq!(
+            instance.out_left.len(),
+            PROOF_CHAMBER_BLOCK_FRAMES,
+            "the left output buffer is not the capacity the crate exports"
+        );
+        assert_eq!(
+            instance.out_right.len(),
+            PROOF_CHAMBER_BLOCK_FRAMES,
+            "the right output buffer is not the capacity the crate exports"
+        );
+    }
 
     #[test]
     fn convolution_latency_matches_global_alignment_reference() {

@@ -242,14 +242,19 @@ describe('ProcessorParams', () => {
         fireEvent.pointerDown(amountSlider, { button: 0, pointerId: 1, clientY: 100 });
         fireEvent.pointerMove(amountSlider, { pointerId: 1, clientY: 80 });
 
-        // Every move commits: K drops the transient flag so the controlled
-        // knob tracks the drag through the store (transient writes only
-        // apply an audio projection and would leave the knob frozen).
-        expect(onSetParam).toHaveBeenCalledWith('groove-1', 'amount', expect.any(Number));
+        // Transient moves preview through the assignment route with the
+        // transient flag; the gesture's settled value is the single commit
+        // (#2111). The amount knob never reaches onSetParam — that action
+        // refuses the groove amount so the gesture cannot record twice.
+        expect(onSetParam).not.toHaveBeenCalled();
 
         fireEvent.pointerUp(amountSlider, { pointerId: 1 });
 
-        expect(onSetParam).toHaveBeenLastCalledWith('groove-1', 'amount', expect.any(Number));
+        // The knob settles against the template the CONTROLLED prop still
+        // names — the select's mock above recorded the choice but did not
+        // re-render the component with a new selectedGrooveTemplateId.
+        expect(onSetGrooveTemplate).toHaveBeenCalledWith('groove-1', 'groove-straight', expect.any(Number), true);
+        expect(onSetGrooveTemplate).toHaveBeenLastCalledWith('groove-1', 'groove-straight', expect.any(Number), false);
         expect(onSetGrooveTemplate).toHaveBeenCalledWith('groove-1', 'pocket-1');
         expect(onSetParam).not.toHaveBeenCalledWith('groove-1', 'template', expect.any(Number));
     });
@@ -278,12 +283,13 @@ describe('ProcessorParams', () => {
 
     it('drives a knob via keyboard and routes the changed value through onSetParam', () => {
         // The real RotaryKnob is role=slider, keyboard-driven. ArrowUp changes
-        // the value and forwards it through onChange, which the ProcessorParams
-        // K component routes to onSetParam as a committed (store-bound) write.
+        // the value and forwards it through onChange as a settled (isTransient
+        // false) write, which the ProcessorParams K component routes to
+        // onSetParam for the single guarded dispatch (#2111).
         const { onSetParam } = renderFor('transposer');
         const slider = screen.getByRole('slider', { name: 'Semi' });
         fireEvent.keyDown(slider, { key: 'ArrowUp' });
-        expect(onSetParam).toHaveBeenCalledWith('p1', 'semitones', expect.any(Number));
+        expect(onSetParam).toHaveBeenCalledWith('p1', 'semitones', expect.any(Number), false);
         expect(onSetParam.mock.calls[0]?.[1]).toBe('semitones');
     });
 });

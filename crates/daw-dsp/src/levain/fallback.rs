@@ -14,6 +14,18 @@ use std::f32::consts::TAU;
 /// Maximum fallback voices.
 const MAX_FALLBACK_VOICES: usize = 16;
 
+// 12-TET anchor, restated per the TS↔Rust lockstep rule (daw-dsp has no edge
+// to the owners): `daw_core::tuning::STANDARD_A4_HZ`/`A4_MIDI_NOTE`/
+// `SEMITONES_PER_OCTAVE` own the Rust figures and `src/utils/pitch.ts` owns
+// the TypeScript ones; every copy must stay equal.
+
+/// Concert-A reference frequency the 12-TET grid is anchored to.
+const STANDARD_A4_HZ: f32 = 440.0;
+/// MIDI note number of concert A on that grid.
+const A4_MIDI_NOTE: f32 = 69.0;
+/// Semitones per octave in twelve-tone equal temperament.
+const SEMITONES_PER_OCTAVE: f32 = 12.0;
+
 #[derive(Clone, Copy)]
 struct FallbackVoice {
     active: bool,
@@ -45,7 +57,8 @@ impl FallbackVoice {
         self.active = true;
         self.note = note;
         self.phase = 0.0;
-        self.freq = 440.0 * (2.0_f32).powf((note as f32 - 69.0) / 12.0);
+        self.freq =
+            STANDARD_A4_HZ * (2.0_f32).powf((note as f32 - A4_MIDI_NOTE) / SEMITONES_PER_OCTAVE);
         self.amp_target = velocity * 0.6; // audible through the gain chain
         self.amp = 0.0;
         self.releasing = false;

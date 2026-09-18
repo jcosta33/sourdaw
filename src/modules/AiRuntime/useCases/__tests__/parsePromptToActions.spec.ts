@@ -448,7 +448,15 @@ describe('parsePromptToActions', () => {
 
         expect(result.actions).toEqual([
             { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
-            { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.6, expectedGain: 0.8 } },
+            {
+                type: 'setTrackGain',
+                payload: {
+                    trackId: 'track-guitar',
+                    gain: 0.6,
+                    expectedGain: 0.8,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            },
         ]);
         expect(result.requiresConfirmation).toBe(true);
     });
@@ -2189,7 +2197,15 @@ describe('parsePromptToActions', () => {
 
         expect(result.actions).toEqual([
             { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
-            { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.6, expectedGain: 0.8 } },
+            {
+                type: 'setTrackGain',
+                payload: {
+                    trackId: 'track-guitar',
+                    gain: 0.6,
+                    expectedGain: 0.8,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            },
         ]);
         expect(result.requiresConfirmation).toBe(true);
         expect(result.executionMode).toBe('atomic');
@@ -2215,7 +2231,15 @@ describe('parsePromptToActions', () => {
 
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([
-            { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 1.5, expectedGain: 0.8 } },
+            {
+                type: 'setTrackGain',
+                payload: {
+                    trackId: 'track-guitar',
+                    gain: 1.5,
+                    expectedGain: 0.8,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            },
         ]);
     });
 
@@ -2378,7 +2402,10 @@ describe('parsePromptToActions', () => {
 
         expect(result.actions).toEqual([
             { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
-            { type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: -20, expectedPan: 0 } },
+            {
+                type: 'setTrackPan',
+                payload: { trackId: 'track-guitar', pan: -20, expectedPan: 0, automationRecordingPolicy: 'suppressed' },
+            },
         ]);
         expect(result.executionMode).toBe('atomic');
     });

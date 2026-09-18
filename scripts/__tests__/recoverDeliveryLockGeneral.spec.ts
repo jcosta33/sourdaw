@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { runDeliverCli } from '../deliverPullRequest.ts';
-import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
+import { ORCHESTRATOR_USER_NODE_ID, AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { composeDeliveryReceipt } from '../prContract.ts';
 import {
     runRecoverDeliveryLockCli,
@@ -176,30 +176,33 @@ describe('deliver --recover-lock on a journaled delivery owner', () => {
         }
     });
 
-    it('records an author-App merge that landed while the delivery was attempting remote writes', async () => {
-        const root = temporaryRoot();
-        const ownerOid = initialize(root, journaledOwner('remote-mutation-attempted', 1));
-        const state = mergedRemoteState(AUTHOR_BOT_NODE_ID);
-        const { dependencies } = harness(root, [state, state]);
-        const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    it.each([AUTHOR_BOT_NODE_ID, ORCHESTRATOR_USER_NODE_ID])(
+        'records a historical authorized merger %s after remote writes',
+        async (actor) => {
+            const root = temporaryRoot();
+            const ownerOid = initialize(root, journaledOwner('remote-mutation-attempted', 1));
+            const state = mergedRemoteState(actor);
+            const { dependencies } = harness(root, [state, state]);
+            const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
-        try {
-            await expect(runRecoverDeliveryLockCli([String(NUMBER), '--owner', ownerOid], dependencies)).resolves.toBe(
-                0
-            );
-            expect(log).toHaveBeenCalledWith(`delivery-lock-recovered:${NUMBER}:${ownerOid}:MERGED`);
-            expect(() => git(root, ['rev-parse', '--verify', REF])).toThrow();
-            expect(recoveryReceipt(root, ownerOid)).toMatchObject({
-                ownerPhase: 'remote-mutation-attempted',
-                state: 'MERGED',
-                mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
-                receiptIds: [9000000001],
-            });
-        } finally {
-            log.mockRestore();
-            removeTemporaryRoot(root);
+            try {
+                await expect(
+                    runRecoverDeliveryLockCli([String(NUMBER), '--owner', ownerOid], dependencies)
+                ).resolves.toBe(0);
+                expect(log).toHaveBeenCalledWith(`delivery-lock-recovered:${NUMBER}:${ownerOid}:MERGED`);
+                expect(() => git(root, ['rev-parse', '--verify', REF])).toThrow();
+                expect(recoveryReceipt(root, ownerOid)).toMatchObject({
+                    ownerPhase: 'remote-mutation-attempted',
+                    state: 'MERGED',
+                    mergedByActorNodeId: actor,
+                    receiptIds: [9000000001],
+                });
+            } finally {
+                log.mockRestore();
+                removeTemporaryRoot(root);
+            }
         }
-    });
+    );
 
     it.each<[string, () => JournaledRecoveryRemoteState[], RegExp]>([
         [

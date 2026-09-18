@@ -73,6 +73,10 @@ vi.mock('electron', () => {
         utilityProcess: { fork: vi.fn() },
         protocol: { handle: vi.fn(), registerSchemesAsPrivileged: vi.fn() },
         net: { fetch: vi.fn() },
+        // `main.ts` builds the power-save controller (#2165) at import time from
+        // this surface; nothing here drives it, but the import needs the three
+        // reads `PowerSaveBlockerLike` names.
+        powerSaveBlocker: { start: vi.fn(() => 0), stop: vi.fn(), isStarted: vi.fn(() => false) },
     };
 });
 

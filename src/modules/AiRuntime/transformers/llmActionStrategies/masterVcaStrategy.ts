@@ -6,6 +6,7 @@ import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectN
 import { type LlmActionRejection } from '../llmActionBridgeContracts';
 import { type ToolCallResult } from '../toolCallParser';
 
+import { hasExactKeys, isFiniteNumber, rejection } from './bridgeArgumentGuards';
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
 
 export const masterVcaActionNames = [
@@ -34,19 +35,6 @@ type MasterVcaStrategyDefinition<Name extends MasterVcaCallName> = {
         transform: MasterVcaStrategy<StrategyName>;
     };
 }[Name];
-
-function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
-    const actualKeys = Object.keys(value);
-    return actualKeys.length === expectedKeys.length && expectedKeys.every((key) => Object.hasOwn(value, key));
-}
-
-function isFiniteNumber(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value);
-}
-
-function rejection(index: number, name: string, reason: string): LlmActionRejection {
-    return { index, name, reason };
-}
 
 function findVcaGroup(context: ProjectContext, vcaGroupId: unknown) {
     if (typeof vcaGroupId !== 'string') {

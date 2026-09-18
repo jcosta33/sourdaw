@@ -17,6 +17,7 @@ import { applyDeEsserParams } from './devices/toneShaping/applyDeEsserParams';
 import { applyDistortionParams } from './devices/toneShaping/applyDistortionParams';
 import { applyFilterParams } from './devices/toneShaping/applyFilterParams';
 import { applyGainParams } from './devices/toneShaping/applyGainParams';
+import { applyLufsMeterParams } from './devices/toneShaping/applyLufsMeterParams';
 
 const PARAM_APPLIERS: Record<string, (dn: OfflineDeviceNode, params: Record<string, number>) => void> = {
     'builtin-eq': applyEqParams,
@@ -31,7 +32,7 @@ const PARAM_APPLIERS: Record<string, (dn: OfflineDeviceNode, params: Record<stri
     'builtin-distortion': applyDistortionParams,
     'builtin-bitcrusher': applyBitcrusherParams,
     'builtin-deesser': applyDeEsserParams,
-    // builtin-lufs-meter intentionally omitted — pass-through analyser, no audio params
+    'builtin-lufs-meter': applyLufsMeterParams,
     'builtin-chorus': applyChorusParams,
     'builtin-phaser': applyPhaserParams,
     'builtin-flanger': applyFlangerParams,

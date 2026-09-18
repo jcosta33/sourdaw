@@ -16,7 +16,7 @@ export { createFindDeviceRef };
 export type { DeviceRef, GetAllTracksFn };
 
 // §33.2 — Shared rAF-batch primitive.
-export type CrustBatchEntry = { deviceId: string; key: string; value: number };
+export type CrustBatchEntry = { deviceId: string; key: string; value: number; derivedAlgorithm?: number };
 export const paramBatcher: RafBatcher<CrustBatchEntry> = createRafBatcher<CrustBatchEntry>();
 
 export type BridgeDeps = {

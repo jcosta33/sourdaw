@@ -1,5 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
+import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
+import { DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 
 import { createWebMidiNoteKey } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
@@ -169,6 +171,12 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             }
         }
 
+        if (noteData.faustRelease) {
+            // The closure is bound to the Faust device instance its note-on
+            // started on, so the gate-off cannot drift to another device.
+            noteData.faustRelease();
+        }
+
         if (noteData.osc) {
             const now = dispatchFrame / audioEngine.context.sampleRate;
             const synthParams = deps.getSynthParamsForTrack(targetTrackId);
@@ -196,7 +204,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 return;
             }
 
-            const tempo = transport?.tempo ?? 120;
+            const tempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
             const durationSeconds = eventTime - noteData.startTime;
             const durationBeats = secondsToBeats(durationSeconds, tempo);
 
@@ -216,7 +224,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 note,
                 compensatedStartBeat,
                 Math.max(durationBeats, 0.0625),
-                noteData.velocity ?? 100
+                noteData.velocity ?? DEFAULT_NOTE_VELOCITY
             );
 
             if (getMpeEnabled()) {

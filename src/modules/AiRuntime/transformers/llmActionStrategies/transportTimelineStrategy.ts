@@ -2,6 +2,7 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { type ToolCallResult } from '../toolCallParser';
 
+import { hasExactKeys, isFiniteNumber, rejection } from './bridgeArgumentGuards';
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
 
 export const transportTimelineActionNames = [
@@ -51,24 +52,8 @@ type LlmActionStrategyDefinition<Name extends TransportTimelineCallName> = {
     };
 }[Name];
 
-function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
-    const actualKeys = Object.keys(value);
-    if (actualKeys.length !== expectedKeys.length) {
-        return false;
-    }
-    return expectedKeys.every((key) => Object.hasOwn(value, key));
-}
-
-function isFiniteNumber(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value);
-}
-
 function isValidTimeSignatureDenominator(value: unknown): value is 2 | 4 | 8 | 16 {
     return value === 2 || value === 4 || value === 8 || value === 16;
-}
-
-function rejection(index: number, name: string, reason: string): LlmActionRejection {
-    return { index, name, reason };
 }
 
 const transportTimelineStrategyDefinitions = [

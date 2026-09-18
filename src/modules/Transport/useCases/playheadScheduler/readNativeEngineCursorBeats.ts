@@ -18,7 +18,7 @@ import { readNativeEnginePlayheadSeconds } from '#/modules/AudioEngine/useCases'
 
 import { samplesToBeat } from '../../models/TempoMap';
 import { tempoMapStore } from '../../stores/tempoMapStore';
-import { transportStore } from '../../stores/transportStore';
+import { DEFAULT_TEMPO_BPM, transportStore } from '../../stores/transportStore';
 
 /**
  * Where the engine stands in beats, or `null` when the cursor must keep
@@ -34,5 +34,10 @@ export function readNativeEngineCursorBeats(): number | null {
     // performs, in whatever unit its rate names; one sample per second makes
     // its sample coordinate a seconds coordinate, so the round trip cannot
     // drift against the forward direction.
-    return samplesToBeat(tempoMapStore.value?.changes ?? [], seconds, transportStore.value?.tempo ?? 120, 1);
+    return samplesToBeat(
+        tempoMapStore.value?.changes ?? [],
+        seconds,
+        transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM,
+        1
+    );
 }

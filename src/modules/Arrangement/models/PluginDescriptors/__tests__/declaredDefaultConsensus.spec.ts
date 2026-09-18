@@ -1,5 +1,5 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -82,11 +82,20 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  *
  * ## What the third leg can and cannot read
  *
- * The panel reset value is a literal JSX prop, not a derived value, so it is
- * only machine-readable where the same element also names its parameter. Three
- * element shapes do, and all three are scanned:
+ * The panel reset value is only machine-readable where the same element also
+ * names its parameter, and since the constants-extraction campaign both the
+ * value and the name may arrive as an **imported reference** rather than a
+ * literal: a cutoff's reset is `defaultValue={MAX_AUDIBLE_FREQ_HZ}`
+ * (`#/utils/audioSpectrum`) and Gluten names every id through
+ * `param={GLUTEN_PARAM_IDS.threshold}`-style members into
+ * `Gluten/models/GlutenParamIds.ts`. Dropping the reference would drop the
+ * knob from attribution — `readable` would fall while nothing disagreed — so
+ * the reader follows the reference into the imported file and reads the value
+ * there, as text and never through an import (Arrangement specs may not import
+ * device models). Three element shapes name a parameter, and all three are
+ * scanned:
  *
- * - `param="gateAttack"` — Grinder, Gluten
+ * - `param="gateAttack"` or `param={GLUTEN_PARAM_IDS.threshold}` — Grinder, Gluten
  * - `paramId="oscLevel"` — Fermenter's sections
  * - an `onChange` arrow whose call takes the id as its **first** argument,
  *   `onChange={(value) => setParam('damping', value)}` — Dutch Oven, Crumbs
@@ -323,20 +332,170 @@ function readElements(source: string): string[] {
     return elements;
 }
 
+// ── Following a panel's imported references ─────────────────────────────────
+
+/**
+ * A numeric literal as a constants file authors it, where `20_000`-style digit
+ * separators are legal TypeScript.
+ */
+const SEPARATED_NUMBER = String.raw`-?\d[\d_]*(?:\.[\d_]+)?(?:e-?\d+)?`;
+
+type ImportedReferences = {
+    /** The id a `TABLE.member` reference names, when TABLE is an imported object of quoted ids. */
+    readonly tableMember: (base: string, member: string) => string | null;
+    /** The number an imported constant — or one member of an imported constant object — resolves to. */
+    readonly number: (expression: string) => number | null;
+};
+
+/**
+ * Follows one panel's imported references to the values their files author.
+ *
+ * Resolves only literal authoring: an `export const` whose value is a numeric
+ * literal, or an object literal whose member is a numeric or single-quoted
+ * string literal. A re-export chain (`DEFAULT_A4_REFERENCE_HZ = STANDARD_A4_HZ`)
+ * deliberately stays unresolved — the number this census compares must be one
+ * some file actually writes down, not a name this spec chases across hops.
+ */
+function readImportedReferences(panelPath: string): ImportedReferences {
+    const panelSource = readSource(panelPath);
+
+    // Local name → import specifier. `A as B` binds `B`; plain `A` binds `A`.
+    const specifier = new Map<string, string>();
+    for (const statement of panelSource.matchAll(/^import\s+\{([^}]*)\}\s+from\s+['"]([^'"]+)['"]/gm)) {
+        for (const clause of statement[1]!.split(',')) {
+            const name = /\bas\s+([\w$]+)\s*$/.exec(clause)?.[1] ?? clause.trim();
+            if (name !== '') {
+                specifier.set(name, statement[2]!);
+            }
+        }
+    }
+
+    /** The `#/…` alias and relative import forms the panels use, as a repo-relative path. */
+    const importedPath = (name: string): string | null => {
+        const from = specifier.get(name);
+        if (from === undefined) {
+            return null;
+        }
+        let rooted: string;
+        if (from.startsWith('#/')) {
+            rooted = join('src', from.slice(2));
+        } else {
+            rooted = join(dirname(panelPath), from.replaceAll('\\', '/'));
+        }
+        return [`${rooted}.ts`, `${rooted}.tsx`].find((candidate) => existsSync(join(REPO_ROOT, candidate))) ?? null;
+    };
+
+    const literals = new Map<string, { scalar: string } | { objectBody: string } | null>();
+    const exportedLiteral = (name: string): { scalar: string } | { objectBody: string } | null => {
+        if (!literals.has(name)) {
+            const path = importedPath(name);
+            if (path === null) {
+                // Not imported at all — a local name this census must not speak for.
+                literals.set(name, null);
+            } else {
+                const source = readSource(path);
+                const body = readExportBody(source, name);
+                // An empty scalar means the export exists but its value is not a
+                // literal (a re-export, a computed constant), which resolves nothing.
+                literals.set(
+                    name,
+                    body === null ? { scalar: readExportedScalar(source, name) ?? '' } : { objectBody: body }
+                );
+            }
+        }
+        return literals.get(name) ?? null;
+    };
+
+    const tableMember = (base: string, member: string): string | null => {
+        const literal = exportedLiteral(base);
+        if (literal === null || !('objectBody' in literal)) {
+            return null;
+        }
+        return new RegExp(String.raw`\b${member}\s*:\s*'([\w$]+)'`).exec(literal.objectBody)?.[1] ?? null;
+    };
+
+    const number = (expression: string): number | null => {
+        const bare = /^[A-Za-z_$][\w$]*$/.test(expression);
+        const member = /^([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)$/.exec(expression);
+        if (!bare && member === null) {
+            return null;
+        }
+        const literal = exportedLiteral(bare ? expression : member![1]!);
+        if (literal === null) {
+            return null;
+        }
+        if ('scalar' in literal) {
+            if (!new RegExp(`^${SEPARATED_NUMBER}$`).test(literal.scalar)) {
+                return null;
+            }
+            return Number(literal.scalar.replaceAll('_', ''));
+        }
+        if (member === null) {
+            // A bare name bound to an object names no number on its own.
+            return null;
+        }
+        const hit = new RegExp(String.raw`\b${member[2]}\s*:\s*(${SEPARATED_NUMBER})\b`).exec(literal.objectBody);
+        return hit === null ? null : Number(hit[1]!.replaceAll('_', ''));
+    };
+
+    return { tableMember, number };
+}
+
+/** The literal text of an `export const` whose value is a scalar, or null. */
+function readExportedScalar(source: string, exportName: string): string | null {
+    const anchor = new RegExp(String.raw`export const ${exportName}\s*=`).exec(source);
+    if (anchor === null) {
+        return null;
+    }
+    const rest = source.slice(anchor.index + anchor[0].length).trimStart();
+    if (rest.startsWith('{') || rest.startsWith('[')) {
+        return null;
+    }
+    const end = rest.search(/[;\n]/);
+    const scalar = (end === -1 ? rest : rest.slice(0, end)).trim();
+    return scalar === '' ? null : scalar;
+}
+
+/** The id a `param`/`paramId` attribute names: a quoted literal or an imported table member. */
+function readParamAttributeId(element: string, references: ImportedReferences): string | undefined {
+    const quoted = /\bparam(?:Id)?="([\w$]+)"/.exec(element)?.[1];
+    if (quoted !== undefined) {
+        return quoted;
+    }
+    const member = /\bparam(?:Id)?=\{\s*([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\s*\}/.exec(element);
+    if (member !== null) {
+        return references.tableMember(member[1]!, member[2]!) ?? undefined;
+    }
+    return undefined;
+}
+
+/** The numeric value a reset expression names, directly or through an imported constant. */
+function readResetValue(expression: string, references: ImportedReferences): number | null {
+    if (/^-?\d+(?:\.\d+)?$/.test(expression)) {
+        return Number(expression);
+    }
+    return references.number(expression);
+}
+
 /** Knob elements that name both their parameter and their reset literal. */
 function readPanelResetValues(relativePath: string): Map<string, number> {
     const resets = new Map<string, number>();
+    const references = readImportedReferences(relativePath);
 
     for (const element of readElements(readSource(relativePath))) {
-        const reset = /\bdefaultValue=\{(-?\d+(?:\.\d+)?)\}/.exec(element);
+        const reset = /\bdefaultValue=\{([^}]*)\}/.exec(element);
         if (reset === null) {
             continue;
         }
+        const resetValue = readResetValue(reset[1]!.trim(), references);
+        if (resetValue === null) {
+            continue;
+        }
         const paramId =
-            /\bparam(?:Id)?="([\w$]+)"/.exec(element)?.[1] ??
+            readParamAttributeId(element, references) ??
             /\bonChange=\{\([\w, ]*\)\s*=>\s*[\w.]+\(\s*'([\w$]+)'\s*,/.exec(element)?.[1];
         if (paramId !== undefined) {
-            resets.set(paramId, Number(reset[1]!));
+            resets.set(paramId, resetValue);
         }
     }
 
@@ -518,7 +677,7 @@ const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
                 file: 'src/modules/Bacteria/models/BacteriaPatch.ts',
                 exportName: 'DEFAULT_PATCH',
                 shape: 'object',
-                resolved: 28,
+                resolved: 26,
                 unresolved: [
                     'crossoverMode',
                     'distortionMode',
@@ -587,8 +746,6 @@ const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
                     'macro6',
                     'macro7',
                     'macro8',
-                    'morphX',
-                    'morphY',
                     'lfo1Rate',
                     'lfo1Shape',
                     'lfo1Amount',
@@ -726,6 +883,15 @@ const NON_DEFAULT_MODEL_DECLARATIONS: readonly {
             "none of its keys is one of GrandBoule's three descriptor parameters.",
     },
     {
+        file: 'src/modules/GrandBoule/models/GrandBouleCalibrationDspParamNames.ts',
+        exportName: 'GRAND_BOULE_CALIBRATION_DSP_PARAM_NAMES',
+        reason:
+            'The two DSP wire names (sustain_threshold, cc_smoothing_ms) the engine-consumed half of the MIDI ' +
+            'calibration travels under, keyed by the store field that carries each (#4302). A string-to-string ' +
+            'name table in the same shape as `GRAND_BOULE_DSP_PARAM_NAMES`, so the scanner surfaces it, but it ' +
+            'declares no numeric default and neither key is a descriptor parameter id.',
+    },
+    {
         file: 'src/modules/GrandBoule/models/GrandBoulePerNoteParams.ts',
         exportName: 'PER_NOTE_PARAM_DESCRIPTORS',
         reason:
@@ -839,6 +1005,31 @@ const NON_DEFAULT_MODEL_DECLARATIONS: readonly {
             'that compared them would report a disagreement between two numbers that answer different questions. ' +
             'Welded to the engine by `proofChamberDecayEqHeadroom.spec.ts`, which reads the value out of the Rust ' +
             'guard that measures it.',
+    },
+    {
+        file: 'src/modules/Gluten/models/GlutenParamIds.ts',
+        exportName: 'GLUTEN_PARAM_IDS',
+        reason:
+            'The project-facing id spelling for every Gluten parameter — a name map whose every value is a ' +
+            'string, so it declares no default at all. The panel leg follows it to attribute knobs that name ' +
+            'their id through a member reference (`param={GLUTEN_PARAM_IDS.threshold}`); it is named here so ' +
+            'that following never looks like a defaults declaration joining the census.',
+    },
+    {
+        file: 'src/modules/Gluten/models/GlutenPatch.ts',
+        exportName: 'SC_LPF_FREQ_RANGE',
+        reason:
+            'The sidechain LPF Hz bounds (`{ min: 1000, max: 20_000 }`) that the panel display clamp and the ' +
+            'hydration normalizer share. A range, not a default, and its keys (`min`, `max`) are not parameter ' +
+            'ids — the same class of exclusion as `PROOF_PATCH_RANGES`, which belongs to the range census.',
+    },
+    {
+        file: 'src/modules/Crust/models/CrustParamIds.ts',
+        exportName: 'CRUST_PARAM_IDS',
+        reason:
+            'The project-facing id spelling for every Crust parameter, in the same shape as Gluten’s ' +
+            '`GLUTEN_PARAM_IDS` above: string values only, no defaults declared, read by the panel leg only to ' +
+            'resolve `CRUST_PARAM_IDS.member` references.',
     },
     {
         file: 'src/modules/Tuner/models/TunerState.ts',

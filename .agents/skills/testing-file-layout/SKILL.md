@@ -43,6 +43,32 @@ pnpm test:run path/to/__tests__/file.spec.ts
 
 An unrun test is not a test.
 
+### 7. MIDI note-correlation regressions prove the rack boundary
+
+When a MIDI transform or filter stores a Note On decision for a later Note Off,
+test supplied `noteInstanceId` values through `MidiRack`. Attack one equal-pitch
+note, change the deciding parameter while it remains held, then attack and
+release a second identity before the first. Assert the emitted identity and
+transformed pitch or suppression, and make the fixture fail if instance
+correlation is replaced by channel/pitch FIFO. Keep identityless FIFO coverage
+separate.
+
+### 8. Prefix-dependent inverses need real grouped replay
+
+PR #4071's forward comp-then-remove case proved that the removed lane stayed absent, but it did not inspect the
+removal inverse's intermediate snapshot or run grouped undo and redo. When one batch member snapshots state produced
+by an earlier member, inspect the real history entry and replay the group against both raw CRDT authority and its store
+projection; a correct forward final state alone cannot prove the inverse was composed from the batch prefix.
+
+### 9. Worker-ready recording admission needs the real first-frame seam
+
+Commit `c9fd03bfb9b13d939c20998ff6b3307fc7b5d755` made recording capture start from a worker-ready
+continuation while the command still returned success before the worklet captured input. For any recording-admission
+change, hold worker readiness through the real recorder-to-transport route and drive the first nonempty processor block
+at a known `AudioWorkletGlobalScope.currentFrame`. Prove that no successful-start observable or uncaptured transport
+interval exists before the actual sample-zero receipt, then prove exactly one start after it. A returned boolean, worker
+ready message, main-thread callback time, or pre-resolved recorder mock cannot establish capture-clock alignment.
+
 ## References
 
 - [docs/06-testing.md](../../../docs/06-testing.md) — Vitest layout, mocks, DI in tests.

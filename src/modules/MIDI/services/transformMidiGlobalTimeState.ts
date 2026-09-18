@@ -1,3 +1,5 @@
+import { clampMidiData7, clampVelocity, DEFAULT_NOTE_PROBABILITY, DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
+
 import type { MidiCC, MidiNote, MidiPitchBend } from '../models/MidiNote';
 
 export type MidiGlobalTimeState = {
@@ -275,23 +277,38 @@ function takeTargetNoteId(cursor: IdentityCursor, request: MidiGeneratedNoteIden
 }
 
 function createSplitRightHalf(note: MidiNote, duration: number, id: string): MidiNote {
-    return {
+    const rightHalf: MidiNote = {
         id,
         pitch: note.pitch,
         startBeat: 0,
         duration,
         velocity: note.velocity,
-        probability: note.probability ?? 100,
-        pressure: note.pressure,
-        slide: note.slide,
-        pitchBend: note.pitchBend,
-        // Per-note expression that the field-by-field rebuild used to drop:
-        // the MPE channel carries voice routing, and the bend range is what
-        // makes a recorded pitchBend mean anything.
-        pitchBendRangeSemitones: note.pitchBendRangeSemitones,
-        channel: note.channel,
-        articulation: note.articulation,
+        probability: note.probability ?? DEFAULT_NOTE_PROBABILITY,
     };
+
+    if (note.pressure !== undefined) {
+        rightHalf.pressure = note.pressure;
+    }
+    if (note.slide !== undefined) {
+        rightHalf.slide = note.slide;
+    }
+    if (note.pitchBend !== undefined) {
+        rightHalf.pitchBend = note.pitchBend;
+    }
+    // Per-note expression that the field-by-field rebuild used to drop:
+    // the MPE channel carries voice routing, and the bend range is what
+    // makes a recorded pitchBend mean anything.
+    if (note.pitchBendRangeSemitones !== undefined) {
+        rightHalf.pitchBendRangeSemitones = note.pitchBendRangeSemitones;
+    }
+    if (note.channel !== undefined) {
+        rightHalf.channel = note.channel;
+    }
+    if (note.articulation !== undefined) {
+        rightHalf.articulation = note.articulation;
+    }
+
+    return rightHalf;
 }
 
 function transformSplit(
@@ -432,11 +449,11 @@ function createDuplicateClone(note: MidiNote, id: string): MidiNote {
     const velocity = readDuplicateVelocity(note);
     const clone: MidiNote = {
         id,
-        pitch: Math.round(Math.max(0, Math.min(127, note.pitch))),
+        pitch: Math.round(clampMidiData7(note.pitch)),
         startBeat: note.startBeat,
         duration: Math.max(0.0625, note.duration),
-        velocity: Math.round(Math.max(1, Math.min(127, velocity))),
-        probability: note.probability ?? 100,
+        velocity: Math.round(clampVelocity(velocity)),
+        probability: note.probability ?? DEFAULT_NOTE_PROBABILITY,
     };
 
     if (note.pressure !== undefined) {
@@ -462,7 +479,7 @@ function createDuplicateClone(note: MidiNote, id: string): MidiNote {
 }
 
 function readDuplicateVelocity(note: { velocity?: number }): number {
-    return note.velocity ?? 100;
+    return note.velocity ?? DEFAULT_NOTE_VELOCITY;
 }
 
 function transformCopy(

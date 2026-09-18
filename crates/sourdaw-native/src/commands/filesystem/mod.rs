@@ -366,7 +366,7 @@ fn resolve_renderer_path(path: &str) -> Result<PathBuf, String> {
     Ok(ipc_temp_dir().join(input))
 }
 
-fn ensure_file_ipc_size(size: u64, command: &str) -> Result<(), String> {
+pub(crate) fn ensure_file_ipc_size(size: u64, command: &str) -> Result<(), String> {
     if size > MAX_FILE_IPC_BYTES {
         return Err(format!(
             "{command} payload exceeds {MAX_FILE_IPC_BYTES}-byte IPC limit"
@@ -375,7 +375,7 @@ fn ensure_file_ipc_size(size: u64, command: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn ipc_temp_dir() -> PathBuf {
+pub(crate) fn ipc_temp_dir() -> PathBuf {
     std::env::temp_dir().join(IPC_TEMP_DIR_NAME)
 }
 

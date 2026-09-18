@@ -1,14 +1,18 @@
 /**
- * Where the native transport has to roll from, given how long its start took
- * (#3577).
+ * Where a session that joins an already-rolling transport has to roll from,
+ * given how long its start took (#3577).
  *
- * A session start is not instant: the probe, the topology batch, the plugin
- * re-bind, the transport maps and the MIDI arm are each an awaited bridge round
- * trip, and Web Audio's own transport has been rolling since the gesture that
- * began them. Rolling the engine at the gesture position would therefore start
+ * This is the `rolling` join's arithmetic, not every start's. A session start
+ * is not instant: the probe, the topology batch, the plugin re-bind, the
+ * transport maps and the MIDI arm are each an awaited bridge round trip. A
+ * caller that held the Web Audio transport for the session's answer has left
+ * nothing to catch up to, and its engine rolls at the position it parked at. A
+ * caller that could not hold — the mid-play re-arm, whose transport has been
+ * sounding throughout — left Web Audio rolling across every one of those round
+ * trips. Rolling its engine at the position the start was asked for would put
  * it behind what the listener is already hearing, and the position feed would
  * pull the cursor back with it the moment the session took the carried strips
- * over. So the roll is aimed at where Web Audio has reached by the time the
+ * over. So that roll is aimed at where Web Audio has reached by the time the
  * command is sent, and the elapsed time is what this computes.
  *
  * ── The clock is the audio context's ──────────────────────────────────────
@@ -48,7 +52,7 @@
 import { type EngineLoopRegion } from '../../models/EngineTransportPosition';
 
 export type RollProjectionInput = Readonly<{
-    /** Where the gesture asked playback to begin, on the engine's clock. */
+    /** Where the transport stood when this session was asked for, on the engine's clock. */
     positionSeconds: number;
     /** The context clock reading taken with {@link positionSeconds}. */
     anchoredAtContextSeconds: number;

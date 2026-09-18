@@ -72,6 +72,17 @@ export const INSTRUMENT_IDS = [
 
 export type InstrumentId = (typeof INSTRUMENT_IDS)[number];
 
+/**
+ * The instrument a Levain device sounds until someone points it elsewhere.
+ *
+ * Named rather than spelled at each default site because both carriers have to
+ * agree on it: the Web Audio worklet plays this instrument for a device nobody
+ * has edited, and the native mapper has to be handed the same one's bank
+ * (`levainNativeBankKey.ts`) or the two engines sound different instruments for
+ * one strip.
+ */
+export const DEFAULT_LEVAIN_INSTRUMENT_ID: InstrumentId = 'violin-1';
+
 export function isInstrumentId(value: unknown): value is InstrumentId {
     return typeof value === 'string' && INSTRUMENT_IDS.some((id) => id === value);
 }
@@ -332,7 +343,7 @@ export const DEFAULT_MIC_POSITIONS: MicPositionState[] = [
     },
 ];
 
-export function createDefaultPatch(instrumentId: InstrumentId = 'violin-1'): LevainPatch {
+export function createDefaultPatch(instrumentId: InstrumentId = DEFAULT_LEVAIN_INSTRUMENT_ID): LevainPatch {
     const family = getInstrumentFamily(instrumentId);
 
     return {

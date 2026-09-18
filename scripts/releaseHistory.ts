@@ -1,5 +1,5 @@
 import { REQUIRED_BASE_BRANCH, REQUIRED_REPOSITORY, parseGraphqlResponse, parseJson } from './githubAppIdentity.ts';
-import { fail } from './prContract.ts';
+import { fail, PR_STATE } from './prContract.ts';
 import { latestReleaseTagOf, squashedPullRequestNumbers, type MergedPullRequest } from './releaseVersion.ts';
 
 /** A captured command. Both readers are supplied by the caller, which owns cwd and credentials. */
@@ -126,7 +126,7 @@ function mergedPullRequestFrom(value: unknown, expected: number): MergedPullRequ
     if (node.number !== expected || typeof node.title !== 'string' || typeof node.state !== 'string') {
         fail(`pull request #${String(expected)} query returned an invalid result`);
     }
-    return node.state === 'MERGED' ? { number: expected, title: node.title } : undefined;
+    return node.state === PR_STATE.MERGED ? { number: expected, title: node.title } : undefined;
 }
 
 /** The titles GitHub holds for a set of pull requests, read straight from the pull requests. */

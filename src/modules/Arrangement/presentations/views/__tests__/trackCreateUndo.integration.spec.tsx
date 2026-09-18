@@ -110,6 +110,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         mergeImportedMidiClipNotes: actual.mergeImportedMidiClipNotes,
         midiClipGlueStateMatches: actual.midiClipGlueStateMatches,
         midiClipSplitStateMatches: actual.midiClipSplitStateMatches,
+        prepareMidiClipFanOutState: actual.prepareMidiClipFanOutState,
         prepareMidiClipGlueState: actual.prepareMidiClipGlueState,
         prepareMidiClipSplit: actual.prepareMidiClipSplit,
         projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
@@ -155,7 +156,12 @@ vi.mock('#/modules/Project/useCases', () => ({
     saveProjectBeforeReplacement: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
+
+    startFaustNote: vi.fn(),
+    writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    projectsToDifferentNativeBank: vi.fn(() => false),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     applyRuntimeGraphDelta: vi.fn(),
     cacheAudioBuffer: vi.fn(),
@@ -168,7 +174,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCachedAudioBuffer: vi.fn(),
     getCompensationDelay: vi.fn(() => 0),
     getDeviceChainTailSeconds: vi.fn(() => 0),
-    getLiveEngineSampleRate: vi.fn(() => 48000),
     getMasterAnalyser: vi.fn(() => null),
     getRuntimeGraphRevision: vi.fn(() => 0),
     getTrackAnalyser: vi.fn(() => null),
@@ -202,6 +207,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxBypass: vi.fn(),
     updateMidiFxParam: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
     soundsNativeNotes: () => false,
 }));

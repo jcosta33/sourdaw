@@ -18,8 +18,16 @@ const { cancelPreparedBuffers, prepareCachedAudioBuffersFromIdb, publishPrepared
 // switchArrangement imports getAudioContext and prepareCachedAudioBuffersFromIdb;
 // runProjectLoadTransaction.activate imports cancelPendingAudioBufferImport.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
+
+    startFaustNote: vi.fn(),
+    writeNativeBuiltinParameters: vi.fn(),
     claimNativeSessionRearm: vi.fn(() => null),
     nativeSessionRearmClaimHolds: vi.fn(() => false),
+    // Present only because the barrel-mock census requires every export of
+    // `#/modules/AudioEngine/useCases`; nothing this suite exercises reads it,
+    // so `false` is the value with no behaviour behind it.
+    nativeLiveGraphSessionOffered: vi.fn(() => false),
     soundsNativeNotes: vi.fn(() => false),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
@@ -48,7 +56,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDrumKitByIndex: vi.fn(),
     getEngineState: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
-    getLiveEngineSampleRate: vi.fn(),
     getRuntimeGraphRevision: vi.fn(),
     getTrackStrip: vi.fn(),
     hasLiveNativeGraphSession: vi.fn(),
@@ -57,6 +64,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     isDeviceCarriedByNativeSession: vi.fn(),
     matchesRuntimeDeviceChainTopology: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(),
+    projectsToDifferentNativeBank: vi.fn(() => false),
     nativeLiveGraphSessionSplice: vi.fn(),
     prepareCachedAudioBuffersFromIdb,
     readNativeEnginePlayheadSeconds: vi.fn(),
@@ -100,6 +108,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxParam: vi.fn(),
     updateNativeLiveGraphSessionTransportMaps: vi.fn(),
     wireSidechainRoute: vi.fn(),
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 
@@ -109,6 +118,8 @@ vi.mock('#/modules/Transport/useCases', async () => {
     return {
         stopPlayback: vi.fn(),
         restoreTimelineMapSnapshot: actual.restoreTimelineMapSnapshot,
+        stopTrackInputMonitoring: vi.fn(),
+        removeClip: vi.fn(),
     };
 });
 vi.mock('../projectPersistence/saveProject/markDirty', () => ({ markDirty: vi.fn() }));
@@ -134,6 +145,9 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
     );
     return {
         acceptsExternalPluginAutomationParameter: vi.fn(),
+        removeClip: vi.fn(),
+        setClipAudioAssetStager: vi.fn(),
+        stageAudioBufferAsset: vi.fn(),
         addTake: vi.fn(),
         addTakeLane: vi.fn(),
         applySoloLogic: vi.fn(),
@@ -141,6 +155,7 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         clampExternalPluginAutomationValue: vi.fn(),
         getEffectiveGain: vi.fn(),
         getGainAtBeat: vi.fn(),
+        getLastClipEndBeat: vi.fn(() => 0),
         getSynthParamsForTrack: vi.fn(),
         getTrackStoreState: vi.fn(),
         isDeviceParameterAutomatable: vi.fn(),
@@ -211,6 +226,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         midiClipGlueStateMatches: vi.fn(),
         midiClipSplitStateMatches: vi.fn(),
         panicLiveNotes: vi.fn(),
+        prepareMidiClipFanOutState: vi.fn(),
         prepareMidiClipGlueState: vi.fn(),
         prepareMidiClipSplit: vi.fn(),
         projectClipMidiEvents: vi.fn(),

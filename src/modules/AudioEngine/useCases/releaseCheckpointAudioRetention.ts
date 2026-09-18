@@ -1,4 +1,7 @@
-import { audioBufferCache } from '../stores/audioBufferCache';
+import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
+
+import { createCheckpointAudioRetentionRepository } from '../repositories/checkpointAudioRetention';
+import { openAudioBufferCacheDatabase } from '../stores/audioBufferCache';
 
 type ReleaseCheckpointAudioRetentionInput = {
     checkpointId: string;
@@ -6,10 +9,8 @@ type ReleaseCheckpointAudioRetentionInput = {
     ownershipToken: string;
 };
 
-export function releaseCheckpointAudioRetention({
-    checkpointId,
-    projectOwnerId,
-    ownershipToken,
-}: ReleaseCheckpointAudioRetentionInput): Promise<boolean> {
-    return audioBufferCache.releaseCheckpointRetention({ checkpointId, projectOwnerId, ownershipToken });
+export function releaseCheckpointAudioRetention(input: ReleaseCheckpointAudioRetentionInput): Promise<boolean> {
+    return withProjectAudioStorageLock(() =>
+        createCheckpointAudioRetentionRepository({ openDatabase: openAudioBufferCacheDatabase }).release(input)
+    );
 }

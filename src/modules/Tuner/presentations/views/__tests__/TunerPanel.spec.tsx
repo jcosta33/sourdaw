@@ -23,6 +23,7 @@ const { TUNER_STORE_SENTINEL, TRACK_STORE_SENTINEL, fixtureInstances, fixtureSta
             mode: 'needle' | 'strobe' | 'poly';
             frequency: number;
             scaleName?: string;
+            polyStrings: { active: boolean; cents: number; confidence: number }[];
         } = {
             noteName: 'A',
             octave: 4,
@@ -31,6 +32,7 @@ const { TUNER_STORE_SENTINEL, TRACK_STORE_SENTINEL, fixtureInstances, fixtureSta
             active: true,
             mode: 'needle',
             frequency: 440,
+            polyStrings: [],
         };
         // Fixture record the tunerStore subscription resolves against. The
         // component selects `instances[deviceId]`, so the mock runs the real

@@ -7,9 +7,13 @@ import {
     clampFaderGain,
     dbToGain,
     formatGainDb,
+    fromStereoPan,
     gainToDb,
     levelToSendPosition,
+    METER_FLOOR_DB,
+    PAN_SCALE_MAX,
     sendPositionToLevel,
+    toStereoPan,
 } from '../audioLevelLaw';
 
 describe('dbToGain', () => {
@@ -141,5 +145,52 @@ describe('levelToSendPosition', () => {
     it('pins a level below the floor at the bottom instead of going negative', () => {
         // -80 dB is past SEND_MIN_DB, so it has no position on the control.
         expect(levelToSendPosition(dbToGain(SEND_MIN_DB - 20))).toBe(0);
+    });
+});
+
+describe('toStereoPan', () => {
+    it('maps the stored pan scale onto the node scale at its extremes and centre', () => {
+        expect(toStereoPan(-PAN_SCALE_MAX)).toBe(-1);
+        expect(toStereoPan(0)).toBe(0);
+        expect(toStereoPan(PAN_SCALE_MAX)).toBe(1);
+    });
+
+    it('divides by 50, the exact arithmetic the strips previously restated', () => {
+        expect(toStereoPan(25)).toBe(0.5);
+        expect(toStereoPan(-25)).toBe(-0.5);
+        expect(toStereoPan(10)).toBeCloseTo(0.2, 12);
+    });
+
+    it('clamps a stored pan past the scale rather than overdriving the node', () => {
+        expect(toStereoPan(80)).toBe(1);
+        expect(toStereoPan(-80)).toBe(-1);
+    });
+});
+
+describe('fromStereoPan', () => {
+    it('round-trips every node pan value back to its stored position and home', () => {
+        for (let nodePan = -1; nodePan <= 1; nodePan += 0.05) {
+            expect(toStereoPan(fromStereoPan(nodePan))).toBeCloseTo(nodePan, 10);
+        }
+    });
+
+    it('multiplies by 50, the inverse of the strip conversion', () => {
+        expect(fromStereoPan(0.5)).toBe(25);
+        expect(fromStereoPan(-0.5)).toBe(-25);
+    });
+
+    it('clamps a node pan past ±1 to the stored scale', () => {
+        expect(fromStereoPan(1.5)).toBe(PAN_SCALE_MAX);
+        expect(fromStereoPan(-1.5)).toBe(-PAN_SCALE_MAX);
+    });
+});
+
+describe('METER_FLOOR_DB', () => {
+    it('is the display floor, numerically equal to but contractually distinct from SEND_MIN_DB', () => {
+        // Same number, two contracts: how far down a meter draws vs where a
+        // send control's travel bottoms out. The equality is asserted so a
+        // deliberate future divergence is a conscious edit, not drift.
+        expect(METER_FLOOR_DB).toBe(-60);
+        expect(METER_FLOOR_DB).toBe(SEND_MIN_DB);
     });
 });

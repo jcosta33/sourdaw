@@ -86,7 +86,7 @@ describe('setCrustParamWithAudio', () => {
     it('should write the store and skip the engine for a store-only string key', () => {
         setCrustParamWithAudio(DEVICE_ID, 'streamingPreset', 'ebu_r128');
 
-        expect(mocks.setCrustParam).toHaveBeenCalledWith('streamingPreset', 'ebu_r128');
+        expect(mocks.setCrustParam).toHaveBeenCalledWith(DEVICE_ID, 'streamingPreset', 'ebu_r128');
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
         expect(mocks.persistDeviceParam).not.toHaveBeenCalled();
         expect(paramBatcher.pendingSize).toBe(0);
@@ -94,8 +94,8 @@ describe('setCrustParamWithAudio', () => {
 
     it('should write the store and engine for an encoded numeric value', () => {
         const calls: string[] = [];
-        mocks.setCrustParam.mockImplementation((key: string, value: unknown) => {
-            calls.push(`store:${key}:${String(value)}`);
+        mocks.setCrustParam.mockImplementation((deviceId: string, key: string, value: unknown) => {
+            calls.push(`store:${deviceId}:${key}:${String(value)}`);
         });
         mocks.updateDeviceParam.mockImplementation((trackId: string, deviceId: string, key: string, value: number) => {
             calls.push(`update:${trackId}:${deviceId}:${key}:${value}`);
@@ -106,7 +106,7 @@ describe('setCrustParamWithAudio', () => {
 
         setCrustParamWithAudio(DEVICE_ID, 'gain', 5);
 
-        expect(mocks.setCrustParam).toHaveBeenCalledWith('gain', 5);
+        expect(mocks.setCrustParam).toHaveBeenCalledWith(DEVICE_ID, 'gain', 5);
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
         expect(paramBatcher.pendingSize).toBe(1);
 
@@ -114,7 +114,11 @@ describe('setCrustParamWithAudio', () => {
 
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, 'gain', 5);
         expect(mocks.persistDeviceParam).toHaveBeenCalledWith(DEVICE_ID, 'gain', 5);
-        expect(calls).toEqual(['store:gain:5', 'update:track-1:device-1:gain:5', 'persist:device-1:gain:5']);
+        expect(calls).toEqual([
+            `store:${DEVICE_ID}:gain:5`,
+            'update:track-1:device-1:gain:5',
+            'persist:device-1:gain:5',
+        ]);
     });
 
     it.each(['missing', 'ineligible'] as const)('rejects a %s owner before store or queue effects', (status) => {

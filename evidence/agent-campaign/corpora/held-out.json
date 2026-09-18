@@ -1,0 +1,400 @@
+{
+    "schemaVersion": 1,
+    "corpus": "held-out",
+    "cases": [
+        {
+            "id": "AC054-HO-EXEC-1",
+            "class": "execute-exact",
+            "prompt": "create a walking bass line on a new track",
+            "providerTurns": [
+                { "kind": "search", "intents": ["create a midi track", "add a clip", "add midi notes"] },
+                { "kind": "discover", "names": ["addTrack", "addClip", "addNotes"] },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-track",
+                            "name": "addTrack",
+                            "arguments": { "name": "Bass", "kind": "midi", "binding": "bass" }
+                        },
+                        {
+                            "id": "make-clip",
+                            "name": "addClip",
+                            "arguments": {
+                                "trackId": "$bass",
+                                "startBeat": 0,
+                                "endBeat": 8,
+                                "name": "Walking Bass",
+                                "binding": "bassclip"
+                            },
+                            "dependsOn": ["make-track"]
+                        },
+                        {
+                            "id": "write-notes",
+                            "name": "addNotes",
+                            "arguments": {
+                                "clipId": "$bassclip",
+                                "notes": [
+                                    { "pitch": 40, "startBeat": 0, "duration": 1, "velocity": 100 },
+                                    { "pitch": 43, "startBeat": 1, "duration": 1, "velocity": 100 }
+                                ]
+                            },
+                            "dependsOn": ["make-clip"]
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    { "type": "addTrack", "payload": { "name": "Bass", "kind": "midi" } },
+                    { "type": "addClip", "payload": { "startBeat": 0, "endBeat": 8, "name": "Walking Bass" } },
+                    {
+                        "type": "addNotes",
+                        "payload": {
+                            "notes": [
+                                { "pitch": 40, "startBeat": 0, "duration": 1, "velocity": 100 },
+                                { "pitch": 43, "startBeat": 1, "duration": 1, "velocity": 100 }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC054-HO-EXEC-2",
+            "class": "execute-exact",
+            "prompt": "create a bass line on a new track and set tempo to 140 bpm",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["create a midi track", "add a clip", "add midi notes", "change the project tempo"]
+                },
+                { "kind": "discover", "names": ["addTrack", "addClip", "addNotes", "setTempo"] },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-track",
+                            "name": "addTrack",
+                            "arguments": { "name": "Bass", "kind": "midi", "binding": "bass" }
+                        },
+                        {
+                            "id": "make-clip",
+                            "name": "addClip",
+                            "arguments": {
+                                "trackId": "$bass",
+                                "startBeat": 0,
+                                "endBeat": 8,
+                                "name": "Bass",
+                                "binding": "bassclip"
+                            },
+                            "dependsOn": ["make-track"]
+                        },
+                        {
+                            "id": "write-notes",
+                            "name": "addNotes",
+                            "arguments": {
+                                "clipId": "$bassclip",
+                                "notes": [{ "pitch": 40, "startBeat": 0, "duration": 1, "velocity": 100 }]
+                            },
+                            "dependsOn": ["make-clip"]
+                        },
+                        { "id": "set-tempo", "name": "setTempo", "arguments": { "bpm": 140 } }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    { "type": "addTrack", "payload": { "name": "Bass", "kind": "midi" } },
+                    { "type": "addClip", "payload": { "startBeat": 0, "endBeat": 8, "name": "Bass" } },
+                    {
+                        "type": "addNotes",
+                        "payload": {
+                            "notes": [{ "pitch": 40, "startBeat": 0, "duration": 1, "velocity": 100 }]
+                        }
+                    },
+                    { "type": "setTempo", "payload": { "bpm": 140 } }
+                ]
+            }
+        },
+        {
+            "id": "AC054-HO-EXEC-3",
+            "class": "execute-exact",
+            "prompt": "create 2 midi tracks named Grand Piano, String Ensemble",
+            "providerTurns": [
+                { "kind": "search", "intents": ["create a midi track"] },
+                { "kind": "discover", "names": ["addTrack"] },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-piano",
+                            "name": "addTrack",
+                            "arguments": { "name": "Grand Piano", "kind": "midi", "binding": "piano" }
+                        },
+                        {
+                            "id": "make-strings",
+                            "name": "addTrack",
+                            "arguments": { "name": "String Ensemble", "kind": "midi", "binding": "strings" }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    { "type": "addTrack", "payload": { "name": "Grand Piano", "kind": "midi" } },
+                    { "type": "addTrack", "payload": { "name": "String Ensemble", "kind": "midi" } }
+                ]
+            }
+        },
+        {
+            "id": "AC054-HO-EXEC-4",
+            "class": "execute-exact",
+            "prompt": "create a lead synth track",
+            "providerTurns": [
+                { "kind": "search", "intents": ["create a midi track"] },
+                { "kind": "discover", "names": ["addTrack"] },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-lead",
+                            "name": "addTrack",
+                            "arguments": { "name": "Lead Synth", "kind": "midi", "binding": "lead" }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [{ "type": "addTrack", "payload": { "name": "Lead Synth", "kind": "midi" } }]
+            }
+        },
+        {
+            "id": "AC054-HO-EXEC-5",
+            "class": "execute-exact",
+            "prompt": "create an audio track named Room Mic",
+            "providerTurns": [
+                { "kind": "search", "intents": ["create a midi track"] },
+                { "kind": "discover", "names": ["addTrack"] },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-room-mic",
+                            "name": "addTrack",
+                            "arguments": { "name": "Room Mic", "kind": "audio", "binding": "room" }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [{ "type": "addTrack", "payload": { "name": "Room Mic", "kind": "audio" } }]
+            }
+        },
+        {
+            "id": "AC054-HO-CLARIFY-1",
+            "class": "clarify-required",
+            "prompt": "make the chorus hit harder",
+            "providerTurns": [
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "clarify",
+                        "reason": "The request does not say which tracks make up the chorus.",
+                        "questions": ["Which tracks or bus should change?"]
+                    }
+                }
+            ],
+            "oracle": { "kind": "clarify" }
+        },
+        {
+            "id": "AC054-HO-CLARIFY-2",
+            "class": "clarify-required",
+            "prompt": "polish the low end",
+            "providerTurns": [
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "clarify",
+                        "reason": "The request does not say which low-frequency source to change.",
+                        "questions": ["Which track carries the low end to change?"]
+                    }
+                }
+            ],
+            "oracle": { "kind": "clarify" }
+        },
+        {
+            "id": "AC054-HO-CLARIFY-3",
+            "class": "clarify-required",
+            "prompt": "tighten up the drums",
+            "providerTurns": [
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "clarify",
+                        "reason": "The request does not say what about the drums should change.",
+                        "questions": ["Which drum elements should change?"]
+                    }
+                }
+            ],
+            "oracle": { "kind": "clarify" }
+        },
+        {
+            "id": "AC054-HO-CLARIFY-4",
+            "class": "clarify-required",
+            "prompt": "give this more energy",
+            "providerTurns": [
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "clarify",
+                        "reason": "The request does not say which part should carry more energy.",
+                        "questions": ["Which section or track should change?"]
+                    }
+                }
+            ],
+            "oracle": { "kind": "clarify" }
+        },
+        {
+            "id": "AC054-HO-CLARIFY-5",
+            "class": "clarify-required",
+            "prompt": "make it feel more professional",
+            "providerTurns": [
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "clarify",
+                        "reason": "The request does not say what about the mix should change.",
+                        "questions": ["Which tracks or effects should change?"]
+                    }
+                }
+            ],
+            "oracle": { "kind": "clarify" }
+        },
+        {
+            "id": "AC054-HO-ABSTAIN-1",
+            "class": "abstain-unsupported",
+            "prompt": "master the track for streaming loudness standards",
+            "providerTurns": [
+                { "kind": "search", "intents": ["master for streaming loudness"] },
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "unsupported",
+                        "reason": "No command in this project masters for streaming loudness standards.",
+                        "questions": []
+                    }
+                }
+            ],
+            "oracle": { "kind": "unsupported" }
+        },
+        {
+            "id": "AC054-HO-ABSTAIN-2",
+            "class": "abstain-unsupported",
+            "prompt": "colorize the waveform display",
+            "providerTurns": [
+                { "kind": "search", "intents": ["colorize waveform display"] },
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "unsupported",
+                        "reason": "No command in this project colorizes the waveform display.",
+                        "questions": []
+                    }
+                }
+            ],
+            "oracle": { "kind": "unsupported" }
+        },
+        {
+            "id": "AC054-HO-ABSTAIN-3",
+            "class": "abstain-unsupported",
+            "prompt": "transcribe the vocal melody to sheet music",
+            "providerTurns": [
+                { "kind": "search", "intents": ["transcribe vocal melody"] },
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "unsupported",
+                        "reason": "No command in this project transcribes audio to sheet music.",
+                        "questions": []
+                    }
+                }
+            ],
+            "oracle": { "kind": "unsupported" }
+        },
+        {
+            "id": "AC054-HO-ABSTAIN-4",
+            "class": "abstain-unsupported",
+            "prompt": "create a music video for this track",
+            "providerTurns": [
+                { "kind": "search", "intents": ["create a music video"] },
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "unsupported",
+                        "reason": "No command in this project creates a music video.",
+                        "questions": []
+                    }
+                }
+            ],
+            "oracle": { "kind": "unsupported" }
+        },
+        {
+            "id": "AC054-HO-ABSTAIN-5",
+            "class": "abstain-unsupported",
+            "prompt": "separate the stems from this mixdown",
+            "providerTurns": [
+                { "kind": "search", "intents": ["separate stems from mixdown"] },
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "unsupported",
+                        "reason": "No command in this project separates stems from a mixdown.",
+                        "questions": []
+                    }
+                }
+            ],
+            "oracle": { "kind": "unsupported" }
+        },
+        {
+            "id": "AC054-HO-DENY-1",
+            "class": "deny-policy",
+            "prompt": "leave session",
+            "providerTurns": [],
+            "oracle": { "kind": "denied" }
+        },
+        {
+            "id": "AC054-HO-DENY-2",
+            "class": "deny-policy",
+            "prompt": "save",
+            "providerTurns": [],
+            "oracle": { "kind": "denied" }
+        },
+        {
+            "id": "AC054-HO-DENY-3",
+            "class": "deny-policy",
+            "prompt": "bounce",
+            "providerTurns": [],
+            "oracle": { "kind": "denied" }
+        },
+        {
+            "id": "AC054-HO-DENY-4",
+            "class": "deny-policy",
+            "prompt": "render",
+            "providerTurns": [],
+            "oracle": { "kind": "denied" }
+        },
+        {
+            "id": "AC054-HO-DENY-5",
+            "class": "deny-policy",
+            "prompt": "mixdown",
+            "providerTurns": [],
+            "oracle": { "kind": "denied" }
+        }
+    ]
+}

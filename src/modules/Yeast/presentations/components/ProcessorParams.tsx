@@ -16,6 +16,12 @@ import type { ChordMemoryCommand } from '../../models/YeastProcessorCommand';
 type OnSetParam = (id: string, name: string, value: number, isTransient?: boolean) => void;
 type OnCommand = (id: string, command: ChordMemoryCommand) => Promise<unknown> | void;
 type GrooveTemplateOption = { id: string; name: string };
+type OnSetGrooveTemplate = (
+    processorId: string,
+    templateId: string,
+    amount?: number,
+    isTransient?: boolean
+) => Promise<unknown> | void;
 
 type Props = {
     processorId: string;
@@ -27,7 +33,7 @@ type Props = {
     grooveTemplates?: readonly GrooveTemplateOption[];
     selectedGrooveTemplateId?: string;
     grooveAmount?: number;
-    onSetGrooveTemplate?: (processorId: string, templateId: string) => Promise<unknown> | void;
+    onSetGrooveTemplate?: OnSetGrooveTemplate;
 };
 
 const K = ({
@@ -41,6 +47,7 @@ const K = ({
     unit,
     defaultValue,
     onSetParam,
+    onKnobChange,
 }: {
     id: string;
     name: string;
@@ -53,16 +60,25 @@ const K = ({
     /** Compiled default for this param — alt-click/double-click resets here, not to the live value. */
     defaultValue: number;
     onSetParam: OnSetParam;
+    /** Overrides the default param route — the groove amount's knob, which
+     *  must never reach the param action (see the groove case below). */
+    onKnobChange?: (value: number, isTransient?: boolean) => void;
 }): ReactElement => (
     <Stack align="center">
         <RotaryKnob
             value={value}
-            // Every move commits through the store (like YeastPanel's own
-            // YeastKnob sites): the transient branch of setYeastProcessorParam
-            // applies only an audio projection, so forwarding the flag would
-            // leave this controlled knob frozen for the whole drag and jump
-            // at release.
-            onChange={(nextValue) => onSetParam(id, name, nextValue)}
+            // The strip contract: transient samples drive the preview path of
+            // onSetParam only (the panel's gesture overlay keeps this
+            // controlled knob live under the thumb), and the SETTLED value is
+            // the gesture's single guarded dispatch — one write, one undo
+            // entry per drag (#2111).
+            onChange={(nextValue, isTransient) => {
+                if (onKnobChange) {
+                    onKnobChange(nextValue, isTransient);
+                    return;
+                }
+                onSetParam(id, name, nextValue, isTransient);
+            }}
             min={min}
             max={max}
             step={step}
@@ -718,6 +734,14 @@ export const ProcessorParams = ({
                         step={0.01}
                         defaultValue={PROCESSOR_PARAM_DEFAULTS.groove.amount!}
                         onSetParam={onSetParam}
+                        // EXCLUSION (#2111): the groove amount is owned by the
+                        // groove assignment, so the knob settles through
+                        // `setYeastGrooveTemplate` (whose assignGrooveTemplate
+                        // action is the gesture's single undo entry) instead
+                        // of the param action, which refuses this parameter.
+                        onKnobChange={(value, isTransient) =>
+                            onSetGrooveTemplate?.(pid, selectedGrooveTemplateId, value, isTransient)
+                        }
                     />
                 </Row>
             );

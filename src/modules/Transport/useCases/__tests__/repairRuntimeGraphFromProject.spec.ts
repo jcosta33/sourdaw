@@ -5,6 +5,7 @@ import { repairRuntimeGraphFromProject } from '../repairRuntimeGraphFromProject'
 
 const mocks = vi.hoisted(() => ({
     ensureTrackStrips: vi.fn(),
+    forgetProjectLatchedPedals: vi.fn(),
     getTransportState: vi.fn(),
     panicYeastRuntime: vi.fn(() => Promise.resolve()),
     resetAudioGraph: vi.fn(),
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    forgetProjectLatchedPedals: mocks.forgetProjectLatchedPedals,
     resetAudioGraph: mocks.resetAudioGraph,
     stopAllScheduled: mocks.stopAllScheduled,
 }));
@@ -85,6 +87,17 @@ describe('repairRuntimeGraphFromProject', () => {
         });
         expect(mocks.startPlayheadScheduler).toHaveBeenCalledOnce();
         expect(playheadPositionRef.current).toBe(8.5);
+    });
+
+    it('keeps the latched pedals, because a repair rebuilds the same project around the same foot', async () => {
+        const repair = repairRuntimeGraphFromProject();
+        await repair;
+
+        // The pedal latch is forgotten only where a project is left. A repair
+        // resets the graph mid-session and resumes playback in the same
+        // project, so a damper still held has to reach the rebuilt bodies.
+        expect(mocks.resetAudioGraph).toHaveBeenCalledOnce();
+        expect(mocks.forgetProjectLatchedPedals).not.toHaveBeenCalled();
     });
 
     it('leaves playback coherently paused when a required plugin reattachment fails', async () => {

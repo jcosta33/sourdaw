@@ -8,10 +8,15 @@ import { describe, expect, it } from 'vitest';
 
 import {
     AUTHOR_BOT_NODE_ID,
-    AUTHOR_WORKFLOW_MINT_PERMISSIONS,
+    ORCHESTRATOR_USER_NODE_ID,
+    authenticateOrchestrator,
+    isHistoricalMergerActor,
+    isOrchestratorUserNodeId,
     TRACKER_AUTHOR_MINT_PERMISSIONS,
     isAuthorBotNodeId,
     AUTHOR_MINT_PERMISSIONS,
+    PUBLISH_AUTHOR_MINT_PERMISSIONS,
+    PUBLISH_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
     GITHUB_HTTPS_REMOTE,
     REVIEWER_BOT_NODE_ID,
     REVIEWER_MINT_PERMISSIONS,
@@ -35,6 +40,7 @@ import {
     authorWorkflowWriteRequired,
     type FileReader,
     type GitHubJsonClient,
+    spawnRun,
 } from '../githubAppIdentity.ts';
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -43,6 +49,98 @@ const PUBLISHING_HEAD = 'a'.repeat(40);
 const PUBLISHING_BASE = 'b'.repeat(40);
 const RENAMED_AUTHOR_LOGIN = 'hplovecraft208[bot]';
 const RENAMED_REVIEWER_LOGIN = 'tmckenna1611[bot]';
+
+describe('orchestrator authentication', () => {
+    it('uses stored github.com authentication and verifies the user in an isolated session', async () => {
+        const parent = {
+            PATH: '/usr/bin',
+            GH_TOKEN: 'hostile',
+            GH_HOST: 'evil.test',
+            GH_CONFIG_DIR: '/evil',
+            GITHUB_TOKEN: 'hostile',
+            GIT_CONFIG_COUNT: '1',
+            NODE_OPTIONS: '--require evil',
+        };
+        let verifiedConfigDir = '';
+        const authentication = await authenticateOrchestrator({
+            env: parent,
+            capture: (command, args, options) => {
+                expect(command).toBe('gh');
+                if (args[0] === 'auth') {
+                    expect(args).toEqual(['auth', 'token', '--hostname', 'github.com', '--user', 'jcosta33']);
+                    for (const key of Object.keys(parent).filter((key) => key !== 'PATH')) {
+                        expect(options.env[key]).toBeUndefined();
+                    }
+                    return 'stored-token';
+                }
+                expect(args).toEqual(['api', '--hostname', 'github.com', 'user']);
+                expect(options.env.GH_TOKEN).toBe('stored-token');
+                expect(options.env.GH_CONFIG_DIR).not.toBe('/evil');
+                verifiedConfigDir = options.env.GH_CONFIG_DIR ?? '';
+                expect(existsSync(verifiedConfigDir)).toBe(true);
+                return JSON.stringify({ type: 'User', node_id: ORCHESTRATOR_USER_NODE_ID, login: 'renamed-user' });
+            },
+        });
+        expect(authentication.minted.actorNodeId).toBe(ORCHESTRATOR_USER_NODE_ID);
+        authentication.session.dispose();
+        expect(existsSync(verifiedConfigDir)).toBe(false);
+        expect(parent.GH_TOKEN).toBe('hostile');
+    });
+
+    it.each([
+        { type: 'User', node_id: 'foreign-user' },
+        { type: 'Bot', node_id: ORCHESTRATOR_USER_NODE_ID },
+    ])('rejects wrong identity or actor type and disposes its session: %j', async (actor) => {
+        let configDir = '';
+        await expect(
+            authenticateOrchestrator({
+                capture: (_command, args, options) => {
+                    if (args[0] === 'auth') {
+                        return 'stored-token';
+                    }
+                    configDir = options.env.GH_CONFIG_DIR ?? '';
+                    return JSON.stringify(actor);
+                },
+            })
+        ).rejects.toThrow(/orchestrator/);
+        expect(configDir).not.toBe('');
+        expect(existsSync(configDir)).toBe(false);
+    });
+
+    it('disposes the session and hides credential-provider errors', async () => {
+        let configDir = '';
+        await expect(
+            authenticateOrchestrator({
+                capture: (_command, args, options) => {
+                    if (args[0] === 'auth') {
+                        return 'stored-token';
+                    }
+                    configDir = options.env.GH_CONFIG_DIR ?? '';
+                    throw new Error('stored-token');
+                },
+            })
+        ).rejects.toThrow('cannot verify orchestrator authentication');
+        expect(existsSync(configDir)).toBe(false);
+        await expect(
+            authenticateOrchestrator({
+                capture: () => {
+                    throw new Error('secret-token');
+                },
+            })
+        ).rejects.toThrow('cannot read stored orchestrator authentication');
+    });
+
+    it('pins user identity and historical merger identity together with actor type', () => {
+        expect(isOrchestratorUserNodeId(ORCHESTRATOR_USER_NODE_ID)).toBe(true);
+        expect(isOrchestratorUserNodeId(AUTHOR_BOT_NODE_ID)).toBe(false);
+        expect(isHistoricalMergerActor(AUTHOR_BOT_NODE_ID, 'Bot')).toBe(true);
+        expect(isHistoricalMergerActor(ORCHESTRATOR_USER_NODE_ID, 'User')).toBe(true);
+        expect(isHistoricalMergerActor(AUTHOR_BOT_NODE_ID, 'User')).toBe(false);
+        expect(isHistoricalMergerActor(ORCHESTRATOR_USER_NODE_ID, 'Bot')).toBe(false);
+        expect(isHistoricalMergerActor(REVIEWER_BOT_NODE_ID, 'Bot')).toBe(false);
+        expect(isHistoricalMergerActor(undefined, undefined)).toBe(false);
+    });
+});
 
 const authorFile = `SOURDAW_GITHUB_APP_ID=4650613
 SOURDAW_GITHUB_APP_INSTALLATION_ID=154969409
@@ -282,7 +380,7 @@ describe('installation mint', () => {
             repository(hostile, '.github/workflows/hostile.yml');
             const { requests, request } = mintClient({
                 login: RENAMED_AUTHOR_LOGIN,
-                permissions: { contents: 'write', pull_requests: 'write' },
+                permissions: { contents: 'write', pull_requests: 'write', issues: 'write' },
             });
             const auth = await authenticatePublishingAuthor({
                 primaryRoot: '/repo',
@@ -298,7 +396,9 @@ describe('installation mint', () => {
             });
 
             try {
-                expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: AUTHOR_MINT_PERMISSIONS });
+                expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({
+                    permissions: PUBLISH_AUTHOR_MINT_PERMISSIONS,
+                });
                 expect(requests[0]?.body).not.toContain('workflows');
             } finally {
                 auth.session.dispose();
@@ -408,7 +508,7 @@ describe('installation mint', () => {
         const order: string[] = [];
         const { requests, request } = mintClient({
             login: RENAMED_AUTHOR_LOGIN,
-            permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
+            permissions: { contents: 'write', pull_requests: 'write', issues: 'write', workflows: 'write' },
         });
         const auth = await authenticatePublishingAuthor({
             primaryRoot: '/repo',
@@ -425,17 +525,17 @@ describe('installation mint', () => {
         try {
             expect(order[0]).toBe('diff');
             expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({
-                permissions: AUTHOR_WORKFLOW_MINT_PERMISSIONS,
+                permissions: PUBLISH_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
             });
         } finally {
             auth.session.dispose();
         }
     });
 
-    it('keeps ordinary publishing lanes on the existing least-privilege author mint', async () => {
+    it('keeps ordinary publishing lanes on the least-privilege publish mint', async () => {
         const { requests, request } = mintClient({
             login: RENAMED_AUTHOR_LOGIN,
-            permissions: { contents: 'write', pull_requests: 'write' },
+            permissions: { contents: 'write', pull_requests: 'write', issues: 'write' },
         });
         const auth = await authenticatePublishingAuthor({
             primaryRoot: '/repo',
@@ -447,17 +547,43 @@ describe('installation mint', () => {
             capture: publishingCapture('scripts/publishLane.ts\0'),
         });
         try {
-            expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: AUTHOR_MINT_PERMISSIONS });
+            expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({
+                permissions: PUBLISH_AUTHOR_MINT_PERMISSIONS,
+            });
             expect(requests[0]?.body).not.toContain('workflows');
         } finally {
             auth.session.dispose();
         }
     });
 
+    it('scopes the publish mint to the author set plus issues write only', async () => {
+        const { requests, request } = mintClient({
+            login: RENAMED_AUTHOR_LOGIN,
+            permissions: { contents: 'write', pull_requests: 'write', issues: 'write' },
+        });
+        await mintInstallationToken({
+            appId: '4650613',
+            installationId: '1',
+            privateKey: pem,
+            permissions: PUBLISH_AUTHOR_MINT_PERMISSIONS,
+            expectedActorNodeId: AUTHOR_BOT_NODE_ID,
+            request,
+        });
+        expect(PUBLISH_AUTHOR_MINT_PERMISSIONS).toEqual({
+            ...AUTHOR_MINT_PERMISSIONS,
+            issues: 'write',
+        });
+        expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({
+            permissions: PUBLISH_AUTHOR_MINT_PERMISSIONS,
+        });
+        expect(requests[0]?.body).not.toContain('administration');
+        expect(requests[0]?.body).not.toContain('workflows');
+    });
+
     it('refuses workflow write returned for an ordinary publishing lane', async () => {
         const { requests, request } = mintClient({
             login: RENAMED_AUTHOR_LOGIN,
-            permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
+            permissions: { contents: 'write', pull_requests: 'write', issues: 'write', workflows: 'write' },
         });
 
         await expect(
@@ -477,7 +603,7 @@ describe('installation mint', () => {
     it('refuses a workflow publishing token that omits workflow write', async () => {
         const { requests, request } = mintClient({
             login: RENAMED_AUTHOR_LOGIN,
-            permissions: { contents: 'write', pull_requests: 'write' },
+            permissions: { contents: 'write', pull_requests: 'write', issues: 'write' },
         });
 
         await expect(
@@ -1029,5 +1155,15 @@ describe('spawnCapture output capacity', () => {
             `process.stdout.write("--capture-start--\\n" + "x".repeat(4 * 1024 * 1024) + "\\n--capture-end--")`,
         ]);
         expect(captured).toBe(payload);
+    });
+});
+
+describe('spawnRun stderr capture', () => {
+    it("names the failing child's own words in the thrown error", () => {
+        expect(() =>
+            spawnRun(process.execPath, ['-e', "console.error('identity-child-boom'); process.exit(1)"], {
+                env: { ...process.env },
+            })
+        ).toThrow(/identity-child-boom/);
     });
 });

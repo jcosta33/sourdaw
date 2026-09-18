@@ -8,7 +8,10 @@
 //! is honoured even where the 4x reconstruction reads marginally low.
 
 use super::clamped_param;
+use super::metering::SILENCE_DB;
 use super::true_peak::TruePeakUpsampler;
+use crate::params::LIM_LOOKAHEAD;
+use crate::primitives::LINEAR_TO_DB_FLOOR;
 use std::collections::VecDeque;
 
 struct MonotonicPeakWindow {
@@ -108,8 +111,10 @@ const TRANSIENT_DEADBAND: f32 = 0.05;
 /// Time constant of the running gain average. Long enough that a 2 ms
 /// transient barely moves it, short enough that genuinely sustained limiting
 /// pulls it down within a syllable — which is what collapses the gap and hands
-/// the release back to the nominal setting.
-const GAIN_AVERAGE_MS: f32 = 250.0;
+/// the release back to the nominal setting. Shared with crust's safety
+/// limiter, whose gain average separates "isolated transient" from "sustained
+/// limiting" on the same time scale.
+pub(crate) const GAIN_AVERAGE_MS: f32 = 250.0;
 
 /// Declared look-ahead range, in milliseconds. `MAX_LOOKAHEAD_MS` also sizes
 /// every buffer at construction: `lim_lookahead` is a live control that lands
@@ -117,7 +122,7 @@ const GAIN_AVERAGE_MS: f32 = 250.0;
 /// to ask the allocator for room. Mirrored at the worklet wire boundary in
 /// `proofProcessor.ts`.
 const MIN_LOOKAHEAD_MS: f32 = 0.5;
-const MAX_LOOKAHEAD_MS: f32 = 10.0;
+pub(super) const MAX_LOOKAHEAD_MS: f32 = 10.0;
 const DEFAULT_LOOKAHEAD_MS: f32 = 5.0;
 
 /// Declared ceiling range, in dBTP, and the release range in milliseconds.
@@ -130,7 +135,7 @@ const MIN_RELEASE_MS: f32 = 10.0;
 const MAX_RELEASE_MS: f32 = 500.0;
 const DEFAULT_RELEASE_MS: f32 = 100.0;
 
-fn lookahead_samples_for(ms: f32, sr: f32) -> usize {
+pub(super) fn lookahead_samples_for(ms: f32, sr: f32) -> usize {
     (ms * 0.001 * sr) as usize
 }
 
@@ -200,6 +205,16 @@ impl LookaheadLimiter {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
+            // Takes the gain off the signal, not the look-ahead delay out
+            // of the path. `latency_samples()` is fed to host PDC, so a bypass
+            // that shortened the path would leave the strip playing one
+            // look-ahead early against the rest of the mix. `process`
+            // therefore keeps running the delay lines, the true-peak
+            // upsamplers and the peak window while bypassed -- bypass saves
+            // none of the analysis cost -- and an un-bypass mid-roll resumes
+            // with a window that already covers the delayed samples about to
+            // be emitted, instead of letting up to one look-ahead of hot
+            // material through above the ceiling.
             "lim_bypass" => self.bypassed = value > 0.5,
             "lim_ceiling" => {
                 // A NaN ceiling makes `future_peak > self.ceiling` false for
@@ -220,7 +235,7 @@ impl LookaheadLimiter {
                 self.release_coeff = release_coeff(ms, self.sample_rate);
                 self.release_coeff_fast = release_coeff(fast_release_ms(ms), self.sample_rate);
             }
-            "lim_lookahead" => {
+            LIM_LOOKAHEAD => {
                 // Live control: this runs on the AudioWorklet render thread.
                 // Every buffer was built at construction with room for
                 // `max_lookahead_samples`, so `resize` only moves the logical
@@ -249,11 +264,56 @@ impl LookaheadLimiter {
         }
     }
 
-    pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
-        if self.bypassed {
-            return;
-        }
+    /// Move the applied gain one sample forward from the peak the look-ahead
+    /// window currently holds.
+    ///
+    /// Smooth: instant attack (look-ahead handles it), program-dependent
+    /// release.
+    ///
+    /// `gain_avg` trails the applied gain by GAIN_AVERAGE_MS. Right after an
+    /// isolated transient the applied gain sits far below it, so `transient`
+    /// is large and the release blends toward the fast branch — the sustained
+    /// material underneath, which was never over the ceiling, gets its level
+    /// back instead of being held down. Under sustained limiting the average
+    /// descends to meet the applied gain, `transient` collapses to ~0, and the
+    /// release is the nominal one, so the envelope is not tracked into
+    /// distortion.
+    ///
+    /// This cannot breach the ceiling: the attack branch is still instant, and
+    /// the release branch is a convex combination of `current_gain` and
+    /// `required_gain`, so it can never exceed the gain the look-ahead window
+    /// already sanctioned.
+    #[inline]
+    fn advance_gain(&mut self) {
+        let future_peak = self.max_peaks.max();
 
+        // Required gain to bring peak to ceiling
+        let required_gain = if future_peak > self.ceiling {
+            self.ceiling / future_peak
+        } else {
+            1.0
+        };
+
+        let transient = if self.gain_avg > 1e-6 {
+            let gap = ((self.gain_avg - self.current_gain) / self.gain_avg).clamp(0.0, 1.0);
+            ((gap - TRANSIENT_DEADBAND) / (1.0 - TRANSIENT_DEADBAND))
+                .clamp(0.0, 1.0)
+                .sqrt()
+        } else {
+            0.0
+        };
+        let release =
+            self.release_coeff + (self.release_coeff_fast - self.release_coeff) * transient;
+        self.current_gain = if required_gain < self.current_gain {
+            required_gain
+        } else {
+            release * self.current_gain + (1.0 - release) * required_gain
+        };
+        self.gain_avg =
+            self.gain_avg_coeff * self.gain_avg + (1.0 - self.gain_avg_coeff) * self.current_gain;
+    }
+
+    pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
         let mut peak_out = 0.0_f32;
         let mut max_gr = 0.0_f32;
 
@@ -273,48 +333,17 @@ impl LookaheadLimiter {
                 .max(self.true_peak_r.push_max_abs(right[i]));
             let peak = sample_peak.max(reconstructed_peak);
             self.max_peaks.push(peak);
-            let future_peak = self.max_peaks.max();
 
-            // Required gain to bring peak to ceiling
-            let required_gain = if future_peak > self.ceiling {
-                self.ceiling / future_peak
+            if self.bypassed {
+                // Unity, held. The delay line and the analysis above still
+                // run — see the `lim_bypass` arm of `set_param` — so the
+                // reported latency stays true and the window is coherent the
+                // moment the bypass is lifted.
+                self.current_gain = 1.0;
+                self.gain_avg = 1.0;
             } else {
-                1.0
-            };
-
-            // Smooth: instant attack (look-ahead handles it), program-
-            // dependent release.
-            //
-            // `gain_avg` trails the applied gain by GAIN_AVERAGE_MS. Right
-            // after an isolated transient the applied gain sits far below it,
-            // so `transient` is large and the release blends toward the fast
-            // branch — the sustained material underneath, which was never over
-            // the ceiling, gets its level back instead of being held down.
-            // Under sustained limiting the average descends to meet the
-            // applied gain, `transient` collapses to ~0, and the release is
-            // the nominal one, so the envelope is not tracked into distortion.
-            //
-            // This cannot breach the ceiling: the attack branch is still
-            // instant, and the release branch is a convex combination of
-            // `current_gain` and `required_gain`, so it can never exceed the
-            // gain the look-ahead window already sanctioned.
-            let transient = if self.gain_avg > 1e-6 {
-                let gap = ((self.gain_avg - self.current_gain) / self.gain_avg).clamp(0.0, 1.0);
-                ((gap - TRANSIENT_DEADBAND) / (1.0 - TRANSIENT_DEADBAND))
-                    .clamp(0.0, 1.0)
-                    .sqrt()
-            } else {
-                0.0
-            };
-            let release =
-                self.release_coeff + (self.release_coeff_fast - self.release_coeff) * transient;
-            self.current_gain = if required_gain < self.current_gain {
-                required_gain
-            } else {
-                release * self.current_gain + (1.0 - release) * required_gain
-            };
-            self.gain_avg = self.gain_avg_coeff * self.gain_avg
-                + (1.0 - self.gain_avg_coeff) * self.current_gain;
+                self.advance_gain();
+            }
 
             // Apply gain to delayed sample
             let dl = self.delay_l.pop_front().unwrap_or(0.0);
@@ -336,10 +365,10 @@ impl LookaheadLimiter {
         }
 
         self.meter_gr_db = max_gr;
-        self.meter_output_peak = if peak_out > 1e-10 {
+        self.meter_output_peak = if peak_out > LINEAR_TO_DB_FLOOR {
             20.0 * peak_out.log10()
         } else {
-            -100.0
+            SILENCE_DB
         };
     }
 

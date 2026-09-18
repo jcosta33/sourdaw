@@ -29,7 +29,7 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         vi.stubGlobal('fetch', fetchMock);
         const onToken = vi.fn();
 
-        const finishReason = await streamOpenAiCompatibleChatCompletion({
+        const result = await streamOpenAiCompatibleChatCompletion({
             runtime,
             messages: [
                 { role: 'system', content: 'system' },
@@ -41,7 +41,7 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         });
 
         expect(onToken.mock.calls).toEqual([['Lower'], [' the vocals']]);
-        expect(finishReason).toBe('stop');
+        expect(result.finishReason).toBe('stop');
         const request = fetchMock.mock.calls[0]?.[1];
         if (!request || typeof request.body !== 'string') {
             throw new Error('Expected a JSON request body');
@@ -51,54 +51,7 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         expect(body).not.toHaveProperty('max_completion_tokens');
     });
 
-    it.each(['gpt-5.6-luna', 'gpt-4-turbo'])(
-        'sends max_completion_tokens instead of max_tokens for first-party OpenAI (%s)',
-        async (model) => {
-            const openaiRuntime: OpenAiCompatibleCloudRuntime = {
-                provider: 'openai',
-                authentication: 'api-key',
-                session_id: 'provider-session-00000000000000000000000000000000',
-                model,
-                base_url: 'https://api.openai.com/v1',
-            };
-            const sse = [
-                'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
-                'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
-                'data: [DONE]\n\n',
-            ].join('');
-            const fetchMock = vi
-                .fn<typeof fetch>()
-                .mockResolvedValue(
-                    new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
-                );
-            vi.stubGlobal('fetch', fetchMock);
-
-            await streamOpenAiCompatibleChatCompletion({
-                runtime: openaiRuntime,
-                messages: [{ role: 'user', content: 'help' }],
-                onToken: vi.fn(),
-                signal: new AbortController().signal,
-                maxTokens: 100,
-            });
-
-            const request = fetchMock.mock.calls[0]?.[1];
-            if (!request || typeof request.body !== 'string') {
-                throw new Error('Expected a JSON request body');
-            }
-            const body = JSON.parse(request.body) as Record<string, unknown>;
-            expect(body).toMatchObject({ model, stream: true, max_completion_tokens: 100 });
-            expect(body).not.toHaveProperty('max_tokens');
-        }
-    );
-
-    it('defaults first-party max_completion_tokens to 2048 when maxTokens is omitted', async () => {
-        const openaiRuntime: OpenAiCompatibleCloudRuntime = {
-            provider: 'openai',
-            authentication: 'api-key',
-            session_id: 'provider-session-00000000000000000000000000000000',
-            model: 'gpt-4-turbo',
-            base_url: 'https://api.openai.com/v1',
-        };
+    it('defaults max_tokens to 2048 when maxTokens is omitted', async () => {
         const sse = [
             'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
             'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
@@ -110,7 +63,7 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         vi.stubGlobal('fetch', fetchMock);
 
         await streamOpenAiCompatibleChatCompletion({
-            runtime: openaiRuntime,
+            runtime,
             messages: [{ role: 'user', content: 'help' }],
             onToken: vi.fn(),
             signal: new AbortController().signal,
@@ -121,8 +74,8 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
             throw new Error('Expected a JSON request body');
         }
         const body = JSON.parse(request.body) as Record<string, unknown>;
-        expect(body).toMatchObject({ max_completion_tokens: 2048 });
-        expect(body).not.toHaveProperty('max_tokens');
+        expect(body).toMatchObject({ max_tokens: 2048 });
+        expect(body).not.toHaveProperty('max_completion_tokens');
     });
 
     it('normalizes the usage-only terminal event without double-emitting text', async () => {
@@ -235,7 +188,7 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
                 onUnknownEvent,
                 signal: new AbortController().signal,
             })
-        ).resolves.toBe('stop');
+        ).resolves.toMatchObject({ finishReason: 'stop' });
         expect(onUnknownEvent).toHaveBeenCalledWith('openai-compatible:response.telemetry');
     });
 
@@ -301,14 +254,14 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(truncated, { status: 200 })));
 
         const onToken = vi.fn();
-        const finishReason = await streamOpenAiCompatibleChatCompletion({
+        const result = await streamOpenAiCompatibleChatCompletion({
             runtime,
             messages: [{ role: 'user', content: 'help' }],
             onToken,
             signal: new AbortController().signal,
         });
 
-        expect(finishReason).toBe('length');
+        expect(result.finishReason).toBe('length');
         expect(onToken).toHaveBeenCalledWith('partial');
     });
 
@@ -330,22 +283,24 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         ).rejects.toThrow('Hosted AI chat stream ended before normal completion');
     });
 
-    it('rejects streamed provider refusals without exposing refusal content', async () => {
+    it('finishes streamed provider refusals without exposing refusal content', async () => {
         const refusal = [
             'data: {"choices":[{"delta":{"refusal":"secret refusal detail"}}]}\n\n',
             'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
             'data: [DONE]\n\n',
         ].join('');
         vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(refusal, { status: 200 })));
+        const onToken = vi.fn();
 
-        await expect(
-            streamOpenAiCompatibleChatCompletion({
-                runtime,
-                messages: [{ role: 'user', content: 'help' }],
-                onToken: vi.fn(),
-                signal: new AbortController().signal,
-            })
-        ).rejects.toThrow('Hosted AI refused the chat request');
+        const result = await streamOpenAiCompatibleChatCompletion({
+            runtime,
+            messages: [{ role: 'user', content: 'help' }],
+            onToken,
+            signal: new AbortController().signal,
+        });
+
+        expect(result.finishReason).toBe('refusal');
+        expect(onToken).not.toHaveBeenCalled();
     });
 
     it('omits authorization for an auth-free compatible endpoint', async () => {

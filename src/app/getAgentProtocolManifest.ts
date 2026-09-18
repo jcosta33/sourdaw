@@ -30,6 +30,7 @@ export function getAgentProtocolManifest(): readonly AgentProtocolContract[] {
     return [
         command.command,
         project.query,
+        project.discovery,
         command.receipt,
         aiRuntime.providerProtocol,
         getDeviceManifestProtocolContract(),

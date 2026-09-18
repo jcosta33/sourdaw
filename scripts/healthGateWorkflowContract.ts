@@ -36,6 +36,7 @@ export const HEALTH_GATE_WORKFLOW_FILES = [
     'heavy-gates.yml',
     'validation.yml',
     'nightly.yml',
+    'quantum-measurements.yml',
     'wasm-artifacts.yml',
 ] as const;
 
@@ -61,15 +62,58 @@ export const SHARD_MATRIX_JOBS: ReadonlyArray<readonly [string, string, readonly
 // leg would hand every pull request a token that can push. The heavy and
 // nightly files keep their own exact job-level pins (CodeQL, the nightly
 // reporter); these two files must grant nothing at job level.
-export const JOB_LEVEL_PERMISSION_FREE_FILES = ['health-gates.yml', 'validation.yml', 'wasm-artifacts.yml'] as const;
+export const JOB_LEVEL_PERMISSION_FREE_FILES = [
+    'health-gates.yml',
+    'validation.yml',
+    'quantum-measurements.yml',
+    'wasm-artifacts.yml',
+] as const;
+
+const SETUP_NODE = ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
+const SETUP_PNPM_NODE = ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
+const STATIC_SUITE_STEPS = [
+    'Artifact freshness',
+    'App types',
+    'Test types',
+    'Script types',
+    'End-to-end types',
+    'Desktop shell types',
+    'Format',
+    'Command argument schemas',
+    'Release inventory',
+    'Test collection scope',
+    'Barrel mock coverage',
+    'Device write boundary census',
+    'Release proof',
+    'Agent delivery scripts',
+    'Health gate infrastructure',
+] as const;
 
 // Every job in every gate workflow, pinned to its exact ordered step names —
 // or `null` for a reusable-workflow caller that must never grow steps. A
 // deleted proof step leaves its job green while the proof never runs, and an
 // added one runs unpinned; both directions refuse the drift.
 export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, readonly string[] | null>>>> = {
+    'quantum-measurements.yml': {
+        measure: [
+            'Checkout source head',
+            'Set up pnpm',
+            'Set up Node',
+            'Install dependencies',
+            'Install Google Chrome',
+            'Verify committed WASM artifacts',
+            'Verify exact clean source',
+            'Run full browser measurement',
+            'Render measurement table',
+            'Verify generated table',
+            'Verify measurement admission',
+            'Assemble qualified artifact',
+            'Upload qualified artifact',
+        ],
+    },
     'wasm-artifacts.yml': {
         'build-artifacts': [
+            'Checkout workflow control',
             'Checkout source head',
             'Set up pnpm',
             'Set up Node',
@@ -85,56 +129,21 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         gate: ['Require every job to have succeeded or been skipped'],
     },
     'validation.yml': {
-        decide: ['Checkout', 'Filter changed paths', 'Resolve scope'],
-        static: [
+        decide: [
             'Checkout',
-            'Enable Corepack',
-            'Set up Node',
-            'Install dependencies',
-            'Artifact freshness',
-            'App types',
-            'Test types',
-            'Script types',
-            'End-to-end types',
-            'Desktop shell types',
-            'Format',
-            'Command argument schemas',
-            'Release inventory',
-            'Test collection scope',
-            'Barrel mock coverage',
-            'Device write boundary census',
-            'Release proof',
-            'Agent delivery scripts',
-            'Health gate infrastructure',
+            'Filter changed paths',
+            'Retry changed-paths filter after a transient API failure',
+            'Resolve scope',
         ],
-        lint: ['Checkout', 'Enable Corepack', 'Set up Node', 'Install dependencies', 'Lint'],
-        boundaries: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up Node',
-            'Install dependencies',
-            'Validate the dependency graph',
-        ],
-        unit: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up Node',
-            'Install dependencies',
-            'Run shard',
-            'Report shard failure',
-        ],
-        smoke: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up Node',
-            'Install dependencies',
-            'Install Playwright browsers',
-            'Run offline smoke set',
-        ],
-        build: ['Checkout', 'Enable Corepack', 'Set up Node', 'Install dependencies', 'Build'],
+        static: [...SETUP_NODE, ...STATIC_SUITE_STEPS],
+        lint: [...SETUP_NODE, 'Lint'],
+        boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
+        unit: [...SETUP_NODE, 'Run shard', 'Report shard failure'],
+        smoke: [...SETUP_NODE, 'Install Playwright browsers', 'Run offline smoke set'],
+        build: [...SETUP_NODE, 'Build'],
         rust: [
             'Checkout',
-            'Enable Corepack',
+            'Set up pnpm',
             'Set up Node',
             'Install ALSA development headers',
             'Install the pinned Rust toolchain',
@@ -159,7 +168,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Checkout',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
-            'Enable Corepack',
+            'Set up pnpm',
             'Set up Node',
             'Install dependencies',
             'Build the native addon',
@@ -179,35 +188,14 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     'heavy-gates.yml': {
         validation: null,
         e2e: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
+            ...SETUP_PNPM_NODE,
             'Install Playwright browsers',
             'Run shard',
             'Report shard failure',
             'Upload blob report',
         ],
-        'e2e-report': [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Download blob reports',
-            'Merge into one report',
-            'Upload report',
-        ],
-        'browser-ai-webgpu': [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Install Chromium',
-            'Run Browser AI WebGPU admission',
-        ],
+        'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
+        'browser-ai-webgpu': [...SETUP_PNPM_NODE, 'Install Chromium', 'Run Browser AI WebGPU admission'],
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
         secrets: [
             'Checkout trusted scanner',
@@ -219,56 +207,23 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     },
     'nightly.yml': {
         decide: ['Resolve scope'],
-        static: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Artifact freshness',
-            'App types',
-            'Test types',
-            'Script types',
-            'End-to-end types',
-            'Desktop shell types',
-            'Format',
-            'Command argument schemas',
-            'Release inventory',
-            'Test collection scope',
-            'Barrel mock coverage',
-            'Device write boundary census',
-            'Release proof',
-            'Agent delivery scripts',
-            'Health gate infrastructure',
-        ],
-        lint: ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies', 'Lint'],
-        boundaries: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Validate the dependency graph',
-        ],
-        unit: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Run shard',
-            'Report shard failure',
-        ],
-        build: ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies', 'Build'],
+        static: [...SETUP_PNPM_NODE, ...STATIC_SUITE_STEPS],
+        lint: [...SETUP_PNPM_NODE, 'Lint'],
+        boundaries: [...SETUP_PNPM_NODE, 'Validate the dependency graph'],
+        unit: [...SETUP_PNPM_NODE, 'Run shard', 'Report shard failure'],
+        build: [...SETUP_PNPM_NODE, 'Build'],
         rust: [
             'Checkout',
-            'Enable Corepack',
-            'Set up Node',
             'Install ALSA development headers',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
+            'Rust workspace health gates',
+        ],
+        'collab-server': [
+            'Checkout',
+            'Set up Node',
             'Install server dependencies',
-            'Server and Rust workspace health gates',
+            'Collaboration server health gates',
         ],
         'native-macos': [
             'Checkout',
@@ -284,25 +239,13 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Test the audio crates',
         ],
         e2e: [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
+            ...SETUP_PNPM_NODE,
             'Install Playwright browsers',
             'Run shard',
             'Report shard failure',
             'Upload blob report',
         ],
-        'browser-ai-webgpu': [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Install Chromium',
-            'Run Browser AI WebGPU admission',
-        ],
+        'browser-ai-webgpu': [...SETUP_PNPM_NODE, 'Install Chromium', 'Run Browser AI WebGPU admission'],
         'desktop-measure': [
             'Checkout',
             'Enable Corepack',
@@ -316,18 +259,11 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Install the harness plugin',
             'Build the packaged desktop app',
             'Measure the packaged app',
+            'Prove the agent workspace in the packaged app',
             'Upload the measurement record',
+            'Upload the agent workspace proof record',
         ],
-        'e2e-report': [
-            'Checkout',
-            'Enable Corepack',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Download blob reports',
-            'Merge into one report',
-            'Upload report',
-        ],
+        'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
         secrets: [
             'Checkout trusted scanner',
@@ -354,6 +290,78 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         'nightly-report': ['Checkout', 'Open or update the nightly failure issue'],
     },
 };
+
+// Every step condition in the registered workflows, keyed by file, job, and step
+// name. A step condition is legitimate only when it is one of these exact,
+// individually pinned exceptions — the shard-failure reporters, the blob
+// uploads that must outlive their shard, and the deploy legs already pinned
+// beside the job that owns them. An `if` anywhere else retires a proof by
+// flipping the condition while every other pin stays green.
+export type ConditionalStepPin = Readonly<{
+    workflow: string;
+    job: string;
+    step: string;
+    condition: string;
+}>;
+
+const SHARD_FAIL = "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}";
+const BLOB_UPLOAD = '${{ !cancelled() }}';
+const ALWAYS = 'always()';
+const WASM_SELECT = "steps.plan.outputs.selected == 'true'";
+const DEPLOY_CRED = "env.DEPLOY_CREDENTIAL_PRESENT == 'true'";
+const DEPLOY_RUN = `${DEPLOY_CRED} && steps.production.outputs.deploy == 'true'`;
+const DEPLOY_SKIP = `${DEPLOY_CRED} && steps.production.outputs.deploy != 'true'`;
+const DEPLOY_NO_CRED = "env.DEPLOY_CREDENTIAL_PRESENT != 'true'";
+
+const pin = (workflow: string, job: string, step: string, condition: string): ConditionalStepPin => ({
+    workflow,
+    job,
+    step,
+    condition,
+});
+
+export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
+    ...['Install pinned generation toolchain', 'Build and qualify complete artifact', 'Upload qualified artifact'].map(
+        (step) => pin('wasm-artifacts.yml', 'build-artifacts', step, WASM_SELECT)
+    ),
+    pin(
+        'validation.yml',
+        'decide',
+        'Retry changed-paths filter after a transient API failure',
+        "steps.filter.outcome == 'failure'"
+    ),
+    pin('validation.yml', 'unit', 'Report shard failure', SHARD_FAIL),
+    pin('heavy-gates.yml', 'e2e', 'Report shard failure', SHARD_FAIL),
+    pin('heavy-gates.yml', 'e2e', 'Upload blob report', BLOB_UPLOAD),
+    pin('nightly.yml', 'unit', 'Report shard failure', SHARD_FAIL),
+    pin('nightly.yml', 'desktop-measure', 'Upload the measurement record', ALWAYS),
+    pin(
+        'nightly.yml',
+        'desktop-measure',
+        'Prove the agent workspace in the packaged app',
+        "always() && steps.build-packaged-app.outcome == 'success'"
+    ),
+    pin('nightly.yml', 'desktop-measure', 'Upload the agent workspace proof record', ALWAYS),
+    pin('nightly.yml', 'e2e', 'Report shard failure', SHARD_FAIL),
+    pin('nightly.yml', 'e2e', 'Upload blob report', BLOB_UPLOAD),
+    pin('nightly.yml', 'deploy-web', 'Report the missing deployment credential', DEPLOY_NO_CRED),
+    ...[
+        'Checkout the validated revision',
+        'Enable Corepack',
+        'Set up pnpm',
+        'Set up Node',
+        'Resolve the current production revision',
+    ].map((step) => pin('nightly.yml', 'deploy-web', step, DEPLOY_CRED)),
+    pin('nightly.yml', 'deploy-web', 'Report why nothing was deployed', DEPLOY_SKIP),
+    ...[
+        'Install dependencies',
+        'Link the Vercel CLI to the production project',
+        'Build the validated revision',
+        'Deploy the prebuilt revision',
+        'Resolve the aliases of the deployment',
+        'Assert cross-origin isolation on the deployment',
+    ].map((step) => pin('nightly.yml', 'deploy-web', step, DEPLOY_RUN)),
+];
 
 export type WorkflowSnapshot = Record<string, unknown>;
 
@@ -467,38 +475,71 @@ function readHostedWasmWorkflowMapping(candidate: unknown): Record<string, unkno
     return Object.fromEntries(Object.keys(candidate).map((key) => [key, Reflect.get(candidate, key)]));
 }
 
-export function assertHostedWasmWorkflow(value: unknown): void {
-    function requireEqual(actual: unknown, expected: unknown, label: string): void {
-        if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-            throw new Error(`Hosted WASM workflow must retain ${label}`);
-        }
+function requireHostedWasmEqual(actual: unknown, expected: unknown, label: string): void {
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        throw new Error(`Hosted WASM workflow must retain ${label}`);
     }
+}
+
+function assertHostedCheckout(
+    named: (name: string) => Record<string, unknown>,
+    name: string,
+    ref: string,
+    path: string,
+    label: string
+): void {
+    requireHostedWasmEqual(
+        named(name).with,
+        { ref, 'fetch-depth': 0, 'persist-credentials': false, path },
+        `${label} checkout without persisted credentials`
+    );
+}
+
+function assertHostedArtifactUpload(named: (name: string) => Record<string, unknown>): void {
+    requireHostedWasmEqual(
+        named('Upload qualified artifact').uses,
+        'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+        'the pinned artifact uploader'
+    );
+    requireHostedWasmEqual(
+        named('Upload qualified artifact').with,
+        {
+            name: 'wasm-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}-${{ github.run_attempt }}',
+            path: '${{ runner.temp }}/qualified-wasm-artifacts',
+            'if-no-files-found': 'error',
+            'retention-days': 1,
+        },
+        'only qualified output with bounded retention'
+    );
+}
+
+export function assertHostedWasmWorkflow(value: unknown): void {
     const workflow = readHostedWasmWorkflowMapping(value);
-    requireEqual(
+    requireHostedWasmEqual(
         workflow.on,
         { pull_request: { branches: ['main'], types: ['opened', 'synchronize', 'reopened'] } },
         'the unprivileged PR trigger'
     );
-    requireEqual(workflow.permissions, { contents: 'read' }, 'read-only contents permission');
-    requireEqual(
+    requireHostedWasmEqual(workflow.permissions, { contents: 'read' }, 'read-only contents permission');
+    requireHostedWasmEqual(
         workflow.concurrency,
         { group: 'wasm-artifacts-${{ github.event.pull_request.number }}', 'cancel-in-progress': true },
         'bounded PR concurrency'
     );
     const jobs = readHostedWasmWorkflowMapping(workflow.jobs);
-    requireEqual(Object.keys(jobs), ['build-artifacts'], 'the standalone job');
+    requireHostedWasmEqual(Object.keys(jobs), ['build-artifacts'], 'the standalone job');
     const job = readHostedWasmWorkflowMapping(jobs['build-artifacts']);
-    requireEqual(job.name, 'Build WASM artifacts', 'its distinct check name');
-    requireEqual(job['runs-on'], 'ubuntu-latest', 'a standard hosted runner');
-    requireEqual(job['timeout-minutes'], 45, 'its timeout');
+    requireHostedWasmEqual(job.name, 'Build WASM artifacts', 'its distinct check name');
+    requireHostedWasmEqual(job['runs-on'], 'ubuntu-latest', 'a standard hosted runner');
+    requireHostedWasmEqual(job['timeout-minutes'], 45, 'its timeout');
     for (const forbidden of ['permissions', 'if', 'continue-on-error', 'environment', 'uses', 'secrets']) {
-        requireEqual(job[forbidden], undefined, `no job ${forbidden}`);
+        requireHostedWasmEqual(job[forbidden], undefined, `no job ${forbidden}`);
     }
     if (!Array.isArray(job.steps)) {
         throw new TypeError('Hosted WASM workflow has no steps');
     }
     const steps = job.steps.map(readHostedWasmWorkflowMapping);
-    requireEqual(
+    requireHostedWasmEqual(
         steps.map((step) => step.name),
         STEP_INVENTORY['wasm-artifacts.yml']?.['build-artifacts'],
         'complete ordered build steps'
@@ -510,58 +551,58 @@ export function assertHostedWasmWorkflow(value: unknown): void {
         }
         return step;
     };
-    requireEqual(
-        named('Checkout source head').with,
-        { ref: '${{ github.event.pull_request.head.sha }}', 'fetch-depth': 0, 'persist-credentials': false },
-        'exact head checkout without persisted credentials'
+    assertHostedCheckout(
+        named,
+        'Checkout workflow control',
+        '${{ github.workflow_sha }}',
+        'control',
+        'workflow control'
     );
-    requireEqual(
+    assertHostedCheckout(
+        named,
+        'Checkout source head',
+        '${{ github.event.pull_request.head.sha }}',
+        'source',
+        'exact head'
+    );
+    requireHostedWasmEqual(
         named('Select affected packages').run,
-        'node scripts/hostedWasmArtifacts.ts plan',
+        'node control/scripts/hostedWasmArtifacts.ts plan "$GITHUB_WORKSPACE/source"',
         'the package selection helper'
     );
-    requireEqual(named('Select affected packages').id, 'plan', 'the selection output ID');
-    requireEqual(
+    requireHostedWasmEqual(
+        named('Install helper dependencies')['working-directory'],
+        'source',
+        'source dependency installation'
+    );
+    requireHostedWasmEqual(named('Select affected packages').id, 'plan', 'the selection output ID');
+    requireHostedWasmEqual(
         named('Build and qualify complete artifact').run,
-        'node scripts/hostedWasmArtifacts.ts build',
+        'node control/scripts/hostedWasmArtifacts.ts build "$GITHUB_WORKSPACE/source"',
         'complete build and provenance qualification'
     );
-    requireEqual(
+    requireHostedWasmEqual(
         named('Build and qualify complete artifact').env,
         { BUILD_OUTPUT_DIRECTORY: '${{ runner.temp }}/qualified-wasm-artifacts' },
         'the private qualified directory in the runner-bound build step'
     );
-    requireEqual(
-        named('Upload qualified artifact').uses,
-        'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
-        'the pinned artifact uploader'
-    );
-    requireEqual(
-        named('Upload qualified artifact').with,
-        {
-            name: 'wasm-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}-${{ github.run_attempt }}',
-            path: '${{ runner.temp }}/qualified-wasm-artifacts',
-            'if-no-files-found': 'error',
-            'retention-days': 1,
-        },
-        'only qualified output with bounded retention'
-    );
+    assertHostedArtifactUpload(named);
     for (const step of steps) {
-        requireEqual(step['continue-on-error'], undefined, 'failure propagation');
+        requireHostedWasmEqual(step['continue-on-error'], undefined, 'failure propagation');
         const conditional = [
             'Install pinned generation toolchain',
             'Build and qualify complete artifact',
             'Upload qualified artifact',
         ].includes(String(step.name));
-        requireEqual(
+        requireHostedWasmEqual(
             step.if,
             conditional ? "steps.plan.outputs.selected == 'true'" : undefined,
             'selection-only build conditions'
         );
     }
     const env = readHostedWasmWorkflowMapping(job.env);
-    requireEqual(env.BUILD_HEAD_SHA, '${{ github.event.pull_request.head.sha }}', 'head-bound provenance');
-    requireEqual(env.BUILD_OUTPUT_DIRECTORY, undefined, 'no job-level output directory');
+    requireHostedWasmEqual(env.BUILD_HEAD_SHA, '${{ github.event.pull_request.head.sha }}', 'head-bound provenance');
+    requireHostedWasmEqual(env.BUILD_OUTPUT_DIRECTORY, undefined, 'no job-level output directory');
     if (JSON.stringify(workflow).includes('secrets.')) {
         throw new Error('Hosted WASM workflow must not consume secrets');
     }

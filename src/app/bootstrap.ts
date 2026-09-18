@@ -2,11 +2,13 @@
 // instances into module-owned dependency ports before runtime subscribers start.
 import { setRuntimeLogger } from '#/infra/logger/runtimeLogger';
 import { flushDeferredStorageNotice } from '#/infra/store/storage/storageFullNotice';
+import { externalClientManifestPort } from '#/modules/AgentAdapters/useCases';
 import { MIDI_TRANSFORM_IMPLEMENTATIONS } from '#/modules/AiGeneration/useCases';
 import {
     beginMixAnalysis,
     assertCanonicalLlmActionStrategies,
     completeMixAnalysis,
+    getAgentCapabilityCatalog,
     failMixAnalysis,
     initializeVoiceInputAvailability,
     recoverInterruptedAgentRuns,
@@ -31,6 +33,7 @@ import {
     setDeviceParameter,
     initStalenessDetection,
     setArrangementEventBus,
+    setClipAudioAssetStager,
     setOfflineRenderDependencies,
     setTimeOperationDependencies,
     setVcaRuntimeProjectionDependencies,
@@ -54,8 +57,11 @@ import {
     configureRuntimeGraphTopologyValidator,
     recordNativeChainReleases,
     configureDurableAudioBufferOwnership,
+    isTunerTelemetryNativelyOwned,
+    startMainThreadLongTaskObservation,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
+import { stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
 import {
     getAutomationValueAtBeat,
     prepareAutomationTimeOperation,
@@ -112,8 +118,12 @@ import {
     registerCrdtStorageRuntime,
     sessionUndoWitnessStampPort,
 } from '#/modules/CrdtDocument/useCases';
-import { initCrumbsDeviceStatePersistence, prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
-import { updateCrustMeters, resetCrustMeters } from '#/modules/Crust/stores';
+import {
+    initCrumbsDeviceStatePersistence,
+    prepareCrumbsEngine,
+    syncCrumbsNativeInstances,
+} from '#/modules/Crumbs/useCases';
+import { updateCrustMeters, deleteCrustMeters } from '#/modules/Crust/stores';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
@@ -132,6 +142,7 @@ import {
     createGrooveMidiEventProjector,
     resolveMidiNoteArticulationId,
     shouldPlayMidiEvent,
+    destroyWebMidi,
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
@@ -140,6 +151,7 @@ import {
     registerReleasedStripReportSink,
 } from '#/modules/PluginHost/useCases';
 import {
+    agentCapabilityDiscoveryPort,
     collectDurableOwnedAudioBufferIds,
     getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
@@ -157,6 +169,7 @@ import {
     setToasterEventBus,
     setToasterGrooveAssignmentExecutor,
 } from '#/modules/Toaster/useCases';
+import { setGestureClockSource } from '#/modules/Transport/stores';
 import {
     getTransportState,
     createMusicalPositionProjector,
@@ -164,6 +177,7 @@ import {
     projectPpqEndpoints,
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
+    readNativeEngineCursorBeats,
     resolveTempoAtBeat,
     setStopPlaybackCallback,
     reconcileVcaRuntimeGain,
@@ -187,8 +201,12 @@ import {
     captureCommandBatchPreflightState,
 } from './captureCommandBatchPreflightState';
 import { composeGrandBoule } from './composeGrandBoule';
+import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
+import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
+import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
 import { prepareOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
+import { projectNativeDeviceState } from './projectNativeDeviceState';
 import { eventBus, logger } from './registerDependencies';
 import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
 
@@ -219,6 +237,12 @@ configureRuntimeGraphProjectRevisionValidator(
 );
 configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
 commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+// AiRuntime publishes the capability catalog and imports Project, so capability
+// discovery reaches it through the port the composition root registers.
+agentCapabilityDiscoveryPort.setProvider(() => getAgentCapabilityCatalog(getAgentProtocolManifest()));
+// The same manifest, so an external client is offered the operations this
+// build actually publishes and hears the rest as deferred.
+externalClientManifestPort.setProvider(getAgentProtocolManifest);
 agentProjectInspectionPort.setProvider(captureAgentProjectInspectionState);
 commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
 commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
@@ -281,6 +305,11 @@ setVcaRuntimeProjectionDependencies({ reconcileVcaRuntimeGain });
 setToasterGrooveAssignmentExecutor({ execute: executeUserAppAction });
 setArrangementEventBus(eventBus);
 setWorkspaceEventBus(eventBus);
+// Timeline drops of cached samples and generated AI renders must register
+// shareable bytes for their clips (#3759). The WAV encoder lives behind
+// AudioRendering's barrel, which Arrangement cannot import without a module
+// cycle, so the composition root supplies the stager.
+setClipAudioAssetStager(stageAudioBufferAsset);
 // An unload changes native strip state with no batch of its own to report it,
 // so PluginHost forwards the strips its own release touched here, the one
 // place that may cross from PluginHost's contract into AudioEngine's.
@@ -350,6 +379,9 @@ function disposeYeastRealtimeBridge(): void {
 }
 
 function handleBeforeUnload(): void {
+    // Before the Yeast teardown: the release events destroyWebMidi emits route
+    // through runtimes the bridge disposal is about to retire.
+    destroyWebMidi();
     disposeYeastRealtimeBridge();
     // Attempt GC on window close. `cleanupUnusedFreezeFiles` stands down on its
     // own when the track store is not authoritative — see the guard there.
@@ -388,6 +420,15 @@ setAutomationParameterRangeResolver(getAutomationParameterRange);
 setAutomationRecordingDependencies({
     getAudioContext,
     getCompensationDelay,
+});
+
+// Gesture timestamping reads the audio clock at the event's own instant and
+// follows the native engine's cursor while that engine is the audible
+// transport; Transport's stores stay leaf modules, so the reads are injected
+// here (see `gestureClockSource.ts`).
+setGestureClockSource({
+    getAudioTimeSeconds: () => getAudioContext().currentTime,
+    readNativeCursorBeats: () => readNativeEngineCursorBeats(),
 });
 
 setPitchEditDependencies({
@@ -442,6 +483,24 @@ configureAudioDeviceRuntimeSink({
     // silence. Dispatch stays in the composition root; each module owns what its
     // own device needs. See `prepareOfflineDeviceSetup`.
     prepareOfflineInstrument: prepareOfflineDeviceSetup,
+    // The live/offline-via-native mirror of the row above: a device's
+    // `deviceState` never crosses the wire to the native engine, so this is
+    // where its kit (or any state a `parameterValues` table cannot carry)
+    // gets folded into the record `projectDeviceForNativeBody` sends. See
+    // `projectNativeDeviceState`.
+    projectNativeDeviceState,
+    // The bank door beside the row above. One body is built from staged
+    // material rather than from its record, so the same opaque state that is
+    // projected into `parameterValues` also names the bank the engine must
+    // already hold; the graph backends stage it before the batch that maps the
+    // device. See `nativeSampleBanks`.
+    nativeSampleBankKey,
+    acquireNativeSampleBank,
+    // And the vocabulary that staged body answers to. A module writing to the
+    // engine directly imports AudioEngine, so AudioEngine asks here for its
+    // parameter names rather than importing it back. See
+    // `nativeBuiltinParameterNames`.
+    nativeBuiltinParameterName,
     // The live registry's Crumbs descriptor calls this, and the offline chain
     // reaches the same use case through the `builtin-crumbs` row of
     // `OFFLINE_DEVICE_HYDRATION`. One shared call is what stops the two
@@ -452,12 +511,12 @@ configureAudioDeviceRuntimeSink({
     },
     updateGlutenMeters,
     deleteGlutenMeters,
-    // Crust's meter store is a single slot rather than a per-device map, which
-    // is the shape its panel was built against: one loudness desk on screen at
-    // a time. The device id is therefore dropped here, and a second Crust
-    // instance would tick the same readout.
-    updateCrustMeters: (_deviceId, meters) => {
-        updateCrustMeters({
+    // Crust's patch and meter stores are per-device maps (#3672): the engine
+    // registry emits each frame with its device id, and a second Crust instance
+    // ticking must not move the first one's readout. The device id travels
+    // through; the store scopes every write to that slice.
+    updateCrustMeters: (deviceId, meters) => {
+        updateCrustMeters(deviceId, {
             grDb: meters.grDb,
             inputDb: meters.inputDb,
             outputDb: meters.outputDb,
@@ -469,8 +528,8 @@ configureAudioDeviceRuntimeSink({
             truepeakExceeded: meters.truepeakExceeded,
         });
     },
-    deleteCrustMeters: () => {
-        resetCrustMeters();
+    deleteCrustMeters: (deviceId) => {
+        deleteCrustMeters(deviceId);
     },
     updateBacteriaMeters: (deviceId, meters) => {
         updateBacteriaMeters(deviceId, meters.inputDb, meters.outputDb, meters.bandLevels, meters.latency);
@@ -481,7 +540,26 @@ configureAudioDeviceRuntimeSink({
     syncProofPatch: syncFullPatch,
     updateProofMeters,
     clearProofMeters,
-    updateTunerTelemetry,
+    // The Tuner is the one device two analysers can report for at once: the
+    // native body publishes on the transport poll and the Web Audio twin's
+    // worklet posts from a graph that goes on running behind a shadowed
+    // carrier. Both reach one store, so the arbitration belongs here, where
+    // both producers are visible — neither can see the other.
+    //
+    // The native reading wins for a device the session is carrying and
+    // sounding, and only there: everywhere else the web twin is what the
+    // musician hears, so its reading is the true one and the native map's
+    // entry for that device is stale or silent.
+    updateTunerTelemetry: (deviceId, telemetry) => {
+        if (isTunerTelemetryNativelyOwned(deviceId)) {
+            return;
+        }
+        updateTunerTelemetry(deviceId, telemetry);
+    },
+    // No predicate on this side: `publishNativeTunerTelemetry` already
+    // filtered the poll's map by that same answer, so a reading reaching here
+    // is one this session owns.
+    updateNativeTunerTelemetry: updateTunerTelemetry,
 });
 
 assertCanonicalLlmActionStrategies(getExecutableAppActionGroundingCatalog());
@@ -499,8 +577,18 @@ initToasterKitPersistence();
 initLevainDeviceStatePersistence();
 composeGrandBoule({ eventBus, logger });
 initCrumbsDeviceStatePersistence();
+// The native Crumbs instance follows the device's presence on the project, not
+// the panel's mount: the mapper splices a Crumbs device onto its strip by the
+// instance the engine holds, so a sampler whose window is shut would otherwise
+// leave its strip with no native body. Registered after the persistence
+// subscriber so a device's first appearance already carries the saved sample
+// this restores.
+syncCrumbsNativeInstances();
 initStalenessDetection();
 
+// Registered for the life of the process, so deadline-evidence reading has
+// main-thread long-task coverage from startup regardless of what is mounted.
+startMainThreadLongTaskObservation();
 initProjectDirtyTracking();
 initGrooveTemplateDirtyTracking();
 // Edits made inside a hosted plugin's own editor never pass through this app,

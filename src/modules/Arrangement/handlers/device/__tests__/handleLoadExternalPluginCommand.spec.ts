@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => ({
     activateExternalPlugin: vi.fn(),
     applyDeviceChainRuntimeDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     findSupportedPlugin: vi.fn(),
-    getLiveEngineSampleRate: vi.fn<() => number | undefined>(() => 96_000),
     reportLatency: vi.fn(),
 }));
 
@@ -27,7 +26,6 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
-    getLiveEngineSampleRate: mocks.getLiveEngineSampleRate,
     reportLatency: mocks.reportLatency,
 }));
 
@@ -204,9 +202,6 @@ describe('handleLoadExternalPlugin command path', () => {
             expect.objectContaining({
                 pluginId: 'plugin-1',
                 instanceId: device?.externalInstanceId,
-                // Read off the live engine at activation, not assumed: the
-                // plugin processes the audio this engine renders.
-                engineSampleRate: 96_000,
             })
         );
         const activation = mocks.activateExternalPlugin.mock.calls[0]?.[0];
