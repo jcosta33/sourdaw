@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
         setUnaCorda: vi.fn(),
         setSostenuto: vi.fn(),
         setTemperament: vi.fn(),
-        loadAttackClip: vi.fn(),
         allNotesOff: vi.fn(),
     },
 }));

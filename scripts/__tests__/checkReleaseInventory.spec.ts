@@ -871,7 +871,6 @@ impl GrandBouleEngine {
     }
 }`,
         ],
-        ['crates/daw-dsp/src/grand_boule/attack_sampler.rs', 'project source'],
         ['crates/daw-dsp/src/grand_boule/duplex.rs', 'project source'],
         ['crates/daw-dsp/src/grand_boule/hammer.rs', 'project source'],
         ['crates/daw-dsp/src/grand_boule/longitudinal.rs', 'project source'],

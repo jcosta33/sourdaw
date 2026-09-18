@@ -11791,6 +11791,10 @@ describe('delivery shell boundary', () => {
 
         expect(runs).toEqual([
             {
+                command: 'git',
+                args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', '+main'],
+            },
+            {
                 command: 'git-ai',
                 args: [
                     'ci',
@@ -11841,8 +11845,12 @@ describe('delivery shell boundary', () => {
             }
         }
 
-        expect(runs[0]?.command).toBe('/trusted/bin/git-ai');
-        expect(runs[0]?.args).toContain('--merge-commit-sha');
+        expect(runs[0]).toEqual({
+            command: 'git',
+            args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', '+main'],
+        });
+        expect(runs[1]?.command).toBe('/trusted/bin/git-ai');
+        expect(runs[1]?.args).toContain('--merge-commit-sha');
     });
 
     it('syncs authorship notes authenticated using credential helper', () => {
@@ -11866,8 +11874,12 @@ describe('delivery shell boundary', () => {
                 baseRef: 'main',
             });
 
-            expect(runs).toHaveLength(2);
+            expect(runs).toHaveLength(3);
             expect(runs[0]).toEqual({
+                command: 'git',
+                args: ['fetch', '--no-tags', 'https://github.com/jcosta33/sourdaw.git', '+main'],
+            });
+            expect(runs[1]).toEqual({
                 command: 'git-ai',
                 args: [
                     'ci',
@@ -11887,8 +11899,8 @@ describe('delivery shell boundary', () => {
                     '--skip-push',
                 ],
             });
-            expect(runs[1]?.command).toBe('git');
-            const pushArgs = runs[1]?.args ?? [];
+            expect(runs[2]?.command).toBe('git');
+            const pushArgs = runs[2]?.args ?? [];
             expect(pushArgs.slice(4)).toEqual(['push', GITHUB_HTTPS_REMOTE, 'refs/notes/ai:refs/notes/ai']);
             expect(pushArgs.join('\0')).not.toContain('ghs_notes_token');
         } finally {

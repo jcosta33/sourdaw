@@ -10,7 +10,6 @@
 //! project-authored product voicings; standard MIDI, temperament, and piano
 //! construction conventions are used only as general engineering inputs.
 
-pub mod attack_sampler;
 pub mod coupled_strings;
 pub mod duplex;
 pub mod engine;
@@ -275,11 +274,6 @@ impl GrandBouleInstance {
             velocity_16bit.min(0xFFFF) as u16,
             pitch_offset_q24,
         );
-    }
-
-    /// Load an attack-sample clip into the hybrid sampled-attack set.
-    pub fn load_attack_clip(&mut self, key: u32, samples: &[f32]) {
-        self.engine.attack_samples_mut().set_clip(key, samples);
     }
 
     /// Set the historical temperament (0 = Equal, 1 = Werckmeister III,

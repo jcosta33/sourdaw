@@ -34,7 +34,6 @@ vi.mock('../../../useCases/resolveGrandBouleEngine', () => ({
         setUnaCorda: noop,
         setSostenuto: noop,
         setTemperament: noop,
-        loadAttackClip: noop,
         allNotesOff: noop,
         isReady: () => engineIsReady,
         getAnalyserNode: () => null,

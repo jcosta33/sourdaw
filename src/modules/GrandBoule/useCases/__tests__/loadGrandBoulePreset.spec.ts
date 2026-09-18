@@ -28,7 +28,6 @@ function fakeEngine(): { handle: GrandBouleEngineHandle; setParam: Mock<GrandBou
             setUnaCorda: vi.fn(),
             setSostenuto: vi.fn(),
             setTemperament: vi.fn(),
-            loadAttackClip: vi.fn(),
             allNotesOff: vi.fn(),
             isReady: () => true,
             getAnalyserNode: () => null,

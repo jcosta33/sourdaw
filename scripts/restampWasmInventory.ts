@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { fileSha256, wasmReleaseInventoryContract } from './checkReleaseInventory.ts';
 import { fail } from './prContract.ts';
@@ -81,11 +82,24 @@ export function assertCommittedArtifactsAreFresh(manifest: WasmManifest): void {
     for (const [id, entry] of Object.entries(manifest.packages)) {
         if (hashCrateClosure(entry.crate) !== entry.crateSourceHash) {
             fail(
-                `crate sources of ${id} (${entry.crate}) moved without a rebuild; run its wasm:* script and ` +
-                    'pnpm wasm:manifest before restamping the inventory'
+                `crate sources of ${id} (${entry.crate}) moved without a rebuild; run ` +
+                    `${wasmRebuildCommand(id)} before restamping the inventory`
             );
         }
     }
+}
+
+/**
+ * The exact rebuild command for a package id. The build script cannot be derived from the id
+ * (`daw-dsp` builds via `wasm:dsp`, `daw-wasm-decoder` via `wasm:decoder`), so it comes from the
+ * package spec rather than a guessed `wasm:*` wildcard.
+ */
+function wasmRebuildCommand(id: string): string {
+    const spec = wasmArtifacts.packages.find((candidate) => candidate.id === id);
+    if (spec === undefined) {
+        throw new Error(`No wasm package spec declares the build script for ${id}`);
+    }
+    return `\`pnpm ${spec.buildScript} && pnpm wasm:manifest\``;
 }
 
 /**
@@ -109,12 +123,21 @@ export function applyWasmRestamp(
     return `${JSON.stringify(inventory, null, 4)}\n`;
 }
 
-function run(): void {
-    const manifest = readManifest();
+export type WasmRestampOptions = {
+    /** The committed manifest to judge and restamp against; defaults to the repository's own. */
+    manifest?: WasmManifest;
+};
+
+/**
+ * Restamp the project-wasm surface and the manifest snapshot in `root`'s release inventory, after
+ * refusing any tree whose committed artifacts are not fresh. `root` is injectable so a spec can
+ * exercise the drift and refusal paths against a fixture without touching the release file.
+ */
+export function restampWasmInventory(root: string, options: WasmRestampOptions = {}): void {
+    const manifest = options.manifest ?? readManifest();
     assertCommittedArtifactsAreFresh(manifest);
-    const root = process.cwd();
     const expected = wasmReleaseInventoryContract(root, manifest);
-    const inventoryPath = `${root}/${RELEASE_INVENTORY_PATH}`;
+    const inventoryPath = resolve(root, RELEASE_INVENTORY_PATH);
     const inventory = parseJsonWithUniqueKeys<ReleaseInventory>(readFileSync(inventoryPath, 'utf8'), inventoryPath);
     const recordedSurface = inventory.surfaces.find((surface) => surface.id === WASM_SURFACE_ID);
     if (recordedSurface === undefined) {
@@ -128,7 +151,7 @@ function run(): void {
         recordedSurface,
         expected,
         recordedSnapshot,
-        fileSha256(`${root}/${MANIFEST_SNAPSHOT_PATH}`)
+        fileSha256(resolve(root, MANIFEST_SNAPSHOT_PATH))
     );
     if (plan === undefined) {
         console.log('release inventory already current for the wasm surface');
@@ -148,4 +171,11 @@ function run(): void {
     console.log(`restamped ${RELEASE_INVENTORY_PATH}; verify with pnpm test:release-inventory`);
 }
 
-run();
+function run(root: string): void {
+    restampWasmInventory(root);
+}
+
+const entry = process.argv[1];
+if (entry !== undefined && import.meta.url === new URL(`file://${resolve(entry)}`).href) {
+    run(process.cwd());
+}

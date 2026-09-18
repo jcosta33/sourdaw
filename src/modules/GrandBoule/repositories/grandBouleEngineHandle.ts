@@ -35,8 +35,6 @@ export type GrandBouleEngineHandle = {
     setSostenuto: (input: { engaged: boolean }) => void;
     /** Set historical temperament (0=Equal, 1=Werckmeister III, 2=Kirnberger III, 3=Vallotti, 4=Young II, 5=Meantone ¼-comma). */
     setTemperament: (input: { index: number }) => void;
-    /** Load an attack-transient clip for the hybrid pathway. */
-    loadAttackClip: (input: { key: number; samples: Float32Array }) => void;
     /** Panic: silence every voice immediately. */
     allNotesOff: () => void;
     /** Whether this handle is connected to a live engine instance. */
@@ -44,9 +42,7 @@ export type GrandBouleEngineHandle = {
     /** The track's AnalyserNode for visualization (FFT, metering). */
     getAnalyserNode: () => AnalyserNode | null;
     /**
-     * The engine AudioContext sample rate (Hz). Attack clips authored at a
-     * different rate must be resampled to this before being forwarded so they
-     * play back at the correct pitch. Defaults to 44.1 kHz on the
+     * The engine AudioContext sample rate (Hz). Defaults to 44.1 kHz on the
      * disconnected handle, which never forwards anything.
      */
     sampleRate: () => number;
@@ -67,7 +63,6 @@ export function createDisconnectedGrandBouleEngineHandle(): GrandBouleEngineHand
         setUnaCorda: () => {},
         setSostenuto: () => {},
         setTemperament: () => {},
-        loadAttackClip: () => {},
         allNotesOff: () => {},
         isReady: () => false,
         getAnalyserNode: () => null,

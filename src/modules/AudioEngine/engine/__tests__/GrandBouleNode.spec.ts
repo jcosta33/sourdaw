@@ -923,20 +923,6 @@ describe('createGrandBouleNode', () => {
         expect(workerPostMessage).not.toHaveBeenCalled();
     });
 
-    it('should post a defensive copy of the attack-clip samples', async () => {
-        const node = await createGrandBouleNode(ctx);
-        workerPostMessage.mockClear();
-        const samples = new Float32Array([0.1, 0.2, 0.3]);
-
-        node.loadAttackClip(21, samples);
-
-        const call = workerPostMessage.mock.calls[0]![0] as { type: string; key: number; samples: Float32Array };
-        expect(call.type).toBe('loadAttackClip');
-        expect(call.key).toBe(21);
-        expect(call.samples).toEqual(samples);
-        expect(call.samples).not.toBe(samples);
-    });
-
     it('should connect to the destination and log a swallowed disconnect error', async () => {
         const node = await createGrandBouleNode(ctx);
         const dest = {} as AudioNode;

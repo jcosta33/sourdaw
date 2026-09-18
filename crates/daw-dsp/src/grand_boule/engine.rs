@@ -1,10 +1,8 @@
 //! Top-level Grand Boule piano engine.
 //!
 //! Owns the voice pool plus every shared DSP block (pedals, soundboard,
-//! sympathetic bank, mechanical noise, attack samples) and drives the
-//! per-block render loop.
+//! sympathetic bank, mechanical noise) and drives the per-block render loop.
 
-use super::attack_sampler::AttackSampleSet;
 use super::mechanical_noise::{MechanicalNoise, NoiseEvent};
 use super::parameters::{
     key_fundamental_hz, midi_to_key, railsback_smooth_cents, temperament_offset_cents, Temperament,
@@ -68,7 +66,6 @@ pub struct GrandBouleEngine {
     radiation: RadiationModel,
     sympathetic: Sympathetic,
     noise: MechanicalNoise,
-    attack_samples: AttackSampleSet,
     master_gain: f32,
     /// Send amount into the soundboard (0..1).
     soundboard_send: f32,
@@ -136,7 +133,6 @@ impl GrandBouleEngine {
             radiation: RadiationModel::new(sample_rate),
             sympathetic: Sympathetic::new(sample_rate),
             noise: MechanicalNoise::new(sample_rate),
-            attack_samples: AttackSampleSet::new(),
             master_gain: 0.1,
             soundboard_send: 0.6,
             sympathetic_send: 0.25,
@@ -208,10 +204,6 @@ impl GrandBouleEngine {
         &self.pedals
     }
 
-    pub fn attack_samples_mut(&mut self) -> &mut AttackSampleSet {
-        &mut self.attack_samples
-    }
-
     /// Trigger a note-on. Notes outside A0..C8 are ignored silently.
     pub fn note_on(&mut self, midi_note: u8, velocity: f32) {
         self.note_on_with_pitch(midi_note, velocity, 1.0);
@@ -274,7 +266,6 @@ impl GrandBouleEngine {
             pitch_ratio: combined_ratio,
             stiffness_scale,
             mass_scale,
-            attack_length: self.attack_samples.length_for_key(key),
         };
 
         // Retrigger only the same MIDI identity. Distinct MPE member channels
@@ -696,38 +687,16 @@ impl GrandBouleEngine {
         }
 
         for frame in 0..frames {
-            // 1. Sum voice outputs into the bridge bus, blending sampled
-            //    attack if armed.
+            // 1. Sum voice outputs into the bridge bus.
             let mut bridge = 0.0_f32;
             for voice in self.voices.iter_mut() {
-                let modelled = voice.tick();
-                let mixed = if let Some((key, pos, length)) = voice.attack_playhead() {
-                    let sample = self.attack_samples.sample(key, pos as usize);
-                    let s_gain = AttackSampleSet::sample_gain(pos as usize, length as usize);
-                    let m_gain = AttackSampleSet::model_gain(pos as usize, length as usize);
-                    voice.advance_attack();
-                    modelled * m_gain + sample * s_gain
-                } else {
-                    modelled
-                };
-                bridge += mixed;
+                bridge += voice.tick();
             }
             let mut tail_position = 0;
             while tail_position < self.active_steal_tails.len() {
                 let tail_index = self.active_steal_tails[tail_position];
                 let tail = &mut self.steal_tails[tail_index];
-                let fade_gain = tail.amplitude();
-                let modelled = tail.tick();
-                let mixed = if let Some((key, pos, length)) = tail.attack_playhead() {
-                    let sample = self.attack_samples.sample(key, pos as usize);
-                    let s_gain = AttackSampleSet::sample_gain(pos as usize, length as usize);
-                    let m_gain = AttackSampleSet::model_gain(pos as usize, length as usize);
-                    tail.advance_attack();
-                    modelled * m_gain + sample * s_gain * fade_gain
-                } else {
-                    modelled
-                };
-                bridge += mixed;
+                bridge += tail.tick();
                 if tail.is_idle() {
                     self.active_steal_tails.swap_remove(tail_position);
                 } else {
@@ -1332,10 +1301,6 @@ mod tests {
     #[test]
     fn voice_steal_starts_replacement_immediately_and_fades_outgoing_tail() {
         let mut engine = GrandBouleEngine::new(48_000.0, 3);
-        let victim_key = midi_to_key(62).expect("D4 is in the piano range");
-        engine
-            .attack_samples_mut()
-            .set_clip(victim_key, &vec![1.0; 2_400]);
         for midi_note in [60, 62, 64] {
             engine.note_on(midi_note, 0.8);
         }
@@ -1359,7 +1324,7 @@ mod tests {
         assert_eq!(stealing.stage(), super::super::voice::VoiceStage::Stealing);
         let gain_before = stealing.amplitude();
 
-        // Isolate the outgoing tail so the sampled transient's fade is proven,
+        // Isolate the outgoing tail so its modelled fade is proven,
         // not hidden beneath the replacement note or shared resonators.
         for voice in engine.voices.iter_mut() {
             voice.kill();
@@ -1396,60 +1361,6 @@ mod tests {
         engine.process_block(&mut handoff_left, &mut handoff_right);
         assert!(engine.steal_tails.iter().all(PianoVoice::is_idle));
         assert!(engine.active_steal_tails.is_empty());
-        assert!(engine
-            .steal_tails
-            .iter()
-            .all(|tail| tail.attack_playhead().is_none()));
-    }
-
-    #[test]
-    fn sampled_and_modelled_steal_tail_use_the_same_pre_tick_fade_gain() {
-        let mut engine = GrandBouleEngine::new(48_000.0, 3);
-        let victim_key = midi_to_key(62).expect("D4 is in the piano range");
-        engine
-            .attack_samples_mut()
-            .set_clip(victim_key, &vec![1.0; 2_400]);
-        for midi_note in [60, 62, 64] {
-            engine.note_on(midi_note, 0.8);
-        }
-        engine.note_on(63, 0.8);
-
-        for voice in engine.voices.iter_mut() {
-            voice.kill();
-        }
-        engine.soundboard.reset();
-        engine.sympathetic.reset();
-        engine.noise.reset();
-        engine.soundboard_send = 0.0;
-        engine.sympathetic_send = 0.0;
-        engine.master_gain = 1.0;
-
-        let tail = engine
-            .steal_tails
-            .iter()
-            .find(|voice| voice.midi_note() == 62 && !voice.is_idle())
-            .expect("the outgoing voice moves to a preallocated tail");
-        let mut expected_tail = tail.clone();
-        let fade_gain = expected_tail.amplitude();
-        let modelled = expected_tail.tick();
-        let (key, position, length) = expected_tail
-            .attack_playhead()
-            .expect("the stolen sampled attack remains armed");
-        let sample = engine.attack_samples.sample(key, position as usize);
-        let sample_gain = AttackSampleSet::sample_gain(position as usize, length as usize);
-        let model_gain = AttackSampleSet::model_gain(position as usize, length as usize);
-        let dry_gain = (0.4 + engine.tone_tilt * 0.2).clamp(0.2, 0.6);
-        let expected = (modelled * model_gain + sample * sample_gain * fade_gain) * dry_gain;
-
-        let mut left = [0.0; 1];
-        let mut right = [0.0; 1];
-        engine.process_block(&mut left, &mut right);
-
-        assert!(
-            (left[0] - expected).abs() < 1.0e-6,
-            "sampled and modelled components used different fade gains: expected {expected}, got {}",
-            left[0]
-        );
     }
 
     #[test]

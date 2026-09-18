@@ -60,7 +60,7 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
     const strip = ensureTrackStrip(track.id);
     // Scope to the addressed piano. `input.deviceId` located the owning track
     // above and was then discarded here, so on a track hosting two GrandBoules
-    // the whole returned handle — noteOn, setParam, setSustain, loadAttackClip
+    // the whole returned handle — noteOn, setParam, setSustain
     // — drove the first instance.
     const deviceNode = strip.deviceNodes.find(
         (candidateNode) => candidateNode.deviceId === input.deviceId && candidateNode.grandBouleControls?.ready
@@ -110,7 +110,6 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
             sendPedalToNativeBody(track.id, input.deviceId, CC_SOSTENUTO_PEDAL, wireSwitch(pedalInput.engaged));
         },
         setTemperament: (temperamentInput) => controls.setTemperament(temperamentInput.index),
-        loadAttackClip: (clipInput) => controls.loadAttackClip(clipInput.key, clipInput.samples),
         allNotesOff: () => controls.allNotesOff(),
         isReady: () => true,
         getAnalyserNode: () => strip.analyserNode,
