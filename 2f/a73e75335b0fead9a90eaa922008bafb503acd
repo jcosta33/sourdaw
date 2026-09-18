@@ -1,0 +1,106 @@
+src/modules/Arrangement/handlers/clip/handleSetClipGain.ts
+  s_9e15f5b7ec3308::t_af16091d6df3ce 1,3,10-27,31-35,37-39,42-45,52,54-55,57,60-61,66-78
+  s_9e15f5b7ec3308::t_6c27baa56bfa29 46-51,53
+src/modules/Transport/handlers/transport/handleSetMasterGain.ts
+  s_9e15f5b7ec3308::t_9fffa52cdaf53e 1,3,10-27,40-43,45,50-53,56-65,78
+  s_9e15f5b7ec3308::t_b3125625890d19 79
+src/modules/Automation/handlers/automation/handleAddAutomationPoint.ts
+  s_9e15f5b7ec3308::t_9b2bd9018d9fe8 1,3,6-8,11-12,22-75,78-80
+  s_9e15f5b7ec3308::t_e90a4534e005c8 81,85,92,95
+src/modules/Arrangement/handlers/track/handleSetTrackGain.ts
+  s_9e15f5b7ec3308::t_b33e06caf9a2c6 4
+  s_9e15f5b7ec3308::t_08728d6749d0f4 2,12-34,48-50,61-65,75-76,79-83,90-94,97-104,112
+  s_9e15f5b7ec3308::t_4a5cccda8789ad 113-114
+src/modules/AiRuntime/__tests__/projectContextLevelUnits.spec.ts
+  s_9e15f5b7ec3308::t_4b92a8543c3aff 1-145
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_9e15f5b7ec3308::t_892cc648ab0054 1-2,18-34,50-78,194-198,226-227,278-279,293-294
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_9e15f5b7ec3308::t_b7d96a25565555 273,275,284,316-327,358,360,369,392
+src/modules/AiRuntime/models/Tools/ClipAndDevice.ts
+  s_9e15f5b7ec3308::t_626548fc75f589 1-2,160,163-171,173
+src/modules/AiRuntime/models/Tools/MidiAutomationRouting.ts
+  s_9e15f5b7ec3308::t_96f444041ffd31 1-2,85,89-102,109,188,192-201,203,207,211-220,222
+src/modules/AiRuntime/models/Tools/Track.ts
+  s_9e15f5b7ec3308::t_1b5fe1dc3ba4e9 1-6,66,69-77,79
+src/modules/AiRuntime/models/Tools/Transport.ts
+  s_9e15f5b7ec3308::t_1f17ca9aa209cf 1,46,48-57
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_9e15f5b7ec3308::t_48b3ef90f12c07 1,620-628,639-644
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_9e15f5b7ec3308::t_067d61418a9dce 444-445,475-477,552,560,574,578
+src/modules/AiRuntime/useCases/__tests__/validateActions.spec.ts
+  s_9e15f5b7ec3308::t_0aa299f851d39b 39-47
+src/modules/AiRuntime/useCases/agentReference/__tests__/projectBatchLocalCreation.spec.ts
+  s_9e15f5b7ec3308::t_f3cbd972356438 85
+src/modules/AiRuntime/useCases/agentReference/projectBatchLocalCreation.ts
+  s_9e15f5b7ec3308::t_5c3b8ab67ea455 1-2,64
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_9e15f5b7ec3308::t_00e2a8b018aa89 1,7,79-81,87,98-102,209-212
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_9e15f5b7ec3308::t_9ced6ab7e6890d 3-9,67-84,235-239,246-257
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_9e15f5b7ec3308::t_1c276959531a8a 5,17-49,102
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_9e15f5b7ec3308::t_bf9faedccc6185 10,17,21,24-43,156-157,178,232,247,280
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_9e15f5b7ec3308::t_2786185001296d 2,37,71,543-549,554-555
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_9e15f5b7ec3308::t_901714b7649c45 30-37,117-137,470-477,538-541,544-555,560-565,767,769-774,869,871-876,981,987-992,997,1003-1008
+src/modules/AiRuntime/useCases/validateActions.ts
+  s_9e15f5b7ec3308::t_a2359c880d89fd 4-5,44-62,144-148
+src/modules/Arrangement/handlers/device/handleAddSend.ts
+  s_9e15f5b7ec3308::t_2b7e3ab0f90113 1,3,10-22,34-37,56-59,63,83-85,88-98
+src/modules/Arrangement/handlers/device/handleSetSend.ts
+  s_9e15f5b7ec3308::t_a5ab1c3604831f 1,3,9-16,41-47,70-71,90-97,106
+src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts
+  s_9e15f5b7ec3308::t_6f99004a2bf295 1,44-58,72-89
+src/modules/Arrangement/transformers/clampClipGain.ts
+  s_9e15f5b7ec3308::t_88c7b53033b140 1-2,5
+src/modules/AudioAnalysis/handlers/analysis/__tests__/handleAutoFixMix.spec.ts
+  s_9e15f5b7ec3308::t_99d5f58bb4c38a 9-20,223-224,226-227,532
+src/modules/Automation/handlers/automation/handleAutomateSendRanges.ts
+  s_9e15f5b7ec3308::t_60e2102718dc26 3,59-65,68-71
+src/modules/Automation/useCases/automation/isLinearGainAutomationLane.ts
+  s_9e15f5b7ec3308::t_f656b416514b20 1-15
+src/modules/Automation/useCases/index.ts
+  s_9e15f5b7ec3308::t_8fcbe3f4030f7d 70
+src/modules/Command/errors/AppActionExecutionError.ts
+  s_9e15f5b7ec3308::t_5b0be11367d2fc 16-21
+src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts
+  s_9e15f5b7ec3308::t_df0f2490634635 20-32,795,815
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  s_9e15f5b7ec3308::t_fada7f64793244 154-156,159-161
+src/modules/Command/useCases/__tests__/decibelCommandArguments.spec.ts
+  s_9e15f5b7ec3308::t_e8a3834bff7c0f 1-312
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_9e15f5b7ec3308::t_ab8ee0a4017f35 40-52,498,513
+src/modules/Command/useCases/executeAppAction.ts
+  s_9e15f5b7ec3308::t_b07c2ba3e0b0ef 117,256,259
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_9e15f5b7ec3308::t_e5ad851f60d47e 408
+src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts
+  s_9e15f5b7ec3308::t_6e15cd3411a017 40-52,146,161
+src/modules/CrdtDocument/useCases/__tests__/previewCommandBatch.spec.ts
+  s_9e15f5b7ec3308::t_aa68848945cbd3 41-53,518,522,534
+src/utils/audioLevelLaw.ts
+  s_9e15f5b7ec3308::t_b70bb161660c5b 78-86,153-376
+src/utils/handlerContract.ts
+  s_9e15f5b7ec3308::t_b974194c3ad206 1189-1193,1200-1208,1472-1478,1482-1487,1664-1674,1685-1690,1790-1800,1803-1808,1947-1953,1956-1961,2003-2021,2787-2791
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2fa73e75335b0fead9a90eaa922008bafb503acd",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
