@@ -19,6 +19,15 @@ project delta, receipt fields, or a byte-equivalent no-effect. The scorer is det
 model-independent — the same corpus entry and the same outcome always score the same, whichever
 model produced the outcome.
 
+`evidence/agent-campaign/corpora/source-examples.json` is a third register, distinct from the
+scored corpora above: it tracks the normative EX/MF source examples (AC-056) by disposition —
+`recovered`, `deferred`, or `unrecovered` — rather than scoring outcomes. A `recovered` entry binds
+its example to the spec that still exercises its action types, and binds each action type to a
+registered executable command at that command's execution-policy risk. A `deferred` entry binds to
+the spec that proves the capability unreachable. An `unrecovered` entry carries no spec, no action
+types, and the fixed reason no source definition could be found in the repository, artifacts, or
+tracker.
+
 ## Frozen thresholds
 
 | Metric                                                                        | Development                       | Held-out  |
@@ -97,7 +106,9 @@ readiness. Every mode requires `--manifest <path>`.
 - `--release` — validate, then require, for every suite, a record whose integrated commit is the
   current `HEAD`, whose recorded fixture digests match the manifest, whose recorded environment
   digests match the live tree, and whose outcome is `passed`. It never runs a suite. It prints one
-  blocker line per unmet suite and exits 1 when any blocker exists.
+  blocker line per unmet suite and exits 1 when any blocker exists. It also reads the source-examples
+  register and prints `source examples corpus missing` when the file is absent, or
+  `source-example <id>: unrecovered` for every example still carrying that disposition.
 - `--write` — regenerate the manifest from the live tree, to refresh digests after a legitimate
   fixture change. It is the only mode that writes the manifest.
   `--capability-digest` and `--census-digest` supply the two application-evaluated digests; without

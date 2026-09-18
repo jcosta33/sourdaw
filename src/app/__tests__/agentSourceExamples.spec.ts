@@ -2,10 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { getAgentCapabilityCatalog, parsePromptToActions } from '#/modules/AiRuntime/useCases';
-import { executableAppActionDescriptors, getAgentCommandLedger } from '#/modules/Command/useCases';
+import { getAgentCapabilityCatalog } from '#/modules/AiRuntime/useCases';
+import { getAgentCommandLedger, getAppActionExecutionPolicy } from '#/modules/Command/useCases';
 
 import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
 
@@ -61,7 +61,7 @@ const EXPECTED_UNRECOVERED_IDS = ['EX-09', 'MF-02', 'MF-04', 'MF-05'];
 const UNRECOVERED_REASON = 'no source definition found in the repository, artifacts or tracker';
 
 const DEFERRED_RECONSTRUCTION_CAPABILITY = 'agent.project.reconstruct';
-const DEFERRED_RECONSTRUCTION_PROMPT = 'rebuild this song from these stems as a project';
+const RECONSTRUCTION_BOUNDARY_SPEC = 'src/modules/AiRuntime/useCases/__tests__/agentReconstructionBoundary.spec.ts';
 
 function specSource(specPath: string): string {
     return readFileSync(resolve(REPOSITORY_ROOT, specPath), 'utf8');
@@ -99,9 +99,6 @@ describe('agent source examples corpus (AC-056)', () => {
     it('binds every recovered action type to a registered executable command at its descriptor risk', () => {
         const ledger = getAgentCommandLedger();
         const registeredOperationIds = new Set(ledger.entries.map((entry) => entry.operationId));
-        const riskByActionType = new Map<string, string>(
-            executableAppActionDescriptors.map((descriptor) => [descriptor.actionType, descriptor.risk])
-        );
 
         for (const example of corpus.examples) {
             if (example.disposition !== 'recovered') {
@@ -117,7 +114,7 @@ describe('agent source examples corpus (AC-056)', () => {
                     `${example.id}: ${actionType} is not a registered executable command`
                 ).toBe(true);
                 expect(
-                    riskByActionType.get(actionType),
+                    getAppActionExecutionPolicy(actionType).risk,
                     `${example.id}: ${actionType} carries no descriptor risk`
                 ).toBe(example.risk[index]);
             }
@@ -140,35 +137,20 @@ describe('agent source examples corpus (AC-056)', () => {
 /**
  * EX-10 is the deferred `agent.project.reconstruct` capability (AC-048): no application tool
  * accepts reference media, so rebuilding a project from stems stays unreachable. The reconstruction
- * boundary's own zero-egress proof (`src/modules/AiRuntime/useCases/__tests__/agentReconstructionBoundary.spec.ts`)
- * reaches that behaviour by mocking AiRuntime-internal modules by relative path — paths `src/app`
- * may not import even for a mock, since it crosses modules only through `useCases` barrels. This
- * spec instead pins the same fact through the public surface: the capability catalog reports the
- * operation unreachable, and a live planning call for the same prompt this module's own boundary
- * spec uses never reaches the network, because no AI backend is configured or available in this
- * test environment (no hosted provider, no WebGPU) and the planner refuses before any provider
- * request is built.
+ * boundary spec drives a live provider turn for that capability and pins the exact rejection and
+ * the media-free provider request; this spec only binds the corpus entry to that spec and confirms
+ * the spec still names the capability it claims to cover.
  */
 describe('EX-10 deferred reconstruction capability (AC-056)', () => {
-    const fetchSpy = vi.fn<typeof fetch>();
-
-    beforeEach(() => {
-        fetchSpy.mockReset();
-        vi.stubGlobal('fetch', fetchSpy);
-    });
-
-    afterEach(() => {
-        vi.unstubAllGlobals();
-    });
-
     it('reports agent.project.reconstruct as unreachable in the public capability catalog', () => {
         const example = corpus.examples.find((entry) => entry.id === 'EX-10');
         if (example === undefined) {
             throw new Error('Expected an EX-10 entry in the source examples corpus');
         }
         expect(example.disposition).toBe('deferred');
-        expect(example.spec).toBe('src/app/__tests__/agentSourceExamples.spec.ts');
+        expect(example.spec).toBe(RECONSTRUCTION_BOUNDARY_SPEC);
         expect(example.capability).toBe(DEFERRED_RECONSTRUCTION_CAPABILITY);
+        expect(specSource(RECONSTRUCTION_BOUNDARY_SPEC)).toContain(DEFERRED_RECONSTRUCTION_CAPABILITY);
 
         const catalog = getAgentCapabilityCatalog(getAgentProtocolManifest());
         const entry = catalog.entries.find((candidate) => candidate.name === DEFERRED_RECONSTRUCTION_CAPABILITY);
@@ -177,35 +159,5 @@ describe('EX-10 deferred reconstruction capability (AC-056)', () => {
         }
         expect(entry.availability).toBe('unavailable');
         expect(entry.evidence).toMatchObject({ callable: false });
-    });
-
-    it('yields a non-proposal planning outcome for a rebuild-from-stems prompt without any fetch call', async () => {
-        const context = {
-            tempo: 120,
-            timeSignature: [4, 4] as [number, number],
-            isPlaying: false,
-            isRecording: false,
-            isLooping: false,
-            loopStart: 0,
-            loopEnd: 0,
-            punchInEnabled: false,
-            punchInBeat: 0,
-            punchOutBeat: 16,
-            metronomeEnabled: false,
-            metronomeVolume: 0.5,
-            masterGain: 0.8,
-            tracks: [],
-            selectedTrackId: null,
-            selectedClipId: null,
-            selectedClipIds: [],
-            activeView: 'arrange' as const,
-            playheadPosition: 0,
-        };
-
-        const result = await parsePromptToActions(DEFERRED_RECONSTRUCTION_PROMPT, context);
-
-        expect(result.actions).toEqual([]);
-        expect(result.planningOutcome.kind).not.toBe('proposal');
-        expect(fetchSpy).not.toHaveBeenCalled();
     });
 });

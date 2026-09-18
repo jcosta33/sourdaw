@@ -50,7 +50,7 @@ export { getExecutableAppActionGroundingCatalog } from './getExecutableAppAction
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';
 export { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
 export { getExecutableAppActionEffect } from './executableAppActionEffects';
-export { executableAppActionDescriptors, isExecutableAppActionType } from './executableAppActionRegistry';
+export { isExecutableAppActionType } from './executableAppActionRegistry';
 export { registerProductionCommandHandlers } from './registerProductionCommandHandlers';
 export { getVersionedCommandSemanticFingerprint } from './getVersionedCommandSemanticFingerprint';
 export { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';

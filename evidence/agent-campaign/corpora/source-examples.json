@@ -91,7 +91,7 @@
         {
             "id": "EX-10",
             "disposition": "deferred",
-            "spec": "src/app/__tests__/agentSourceExamples.spec.ts",
+            "spec": "src/modules/AiRuntime/useCases/__tests__/agentReconstructionBoundary.spec.ts",
             "actionTypes": [],
             "risk": [],
             "capability": "agent.project.reconstruct"
