@@ -1,0 +1,73 @@
+electron/__tests__/commands.spec.ts
+  s_9b530f08172a54::t_4d15c6133a803a 452-453
+  s_9b530f08172a54::t_65e884d1d9022d 313-317
+electron/router.ts
+  s_9b530f08172a54::t_560e799d3be5a5 118-123
+electron/nativeMenuProjectState.ts
+  s_9b530f08172a54::t_6a0176b44872cc 38-40,44
+electron/appIpc.ts
+  s_9b530f08172a54::t_a587f6846da558 144
+  s_9b530f08172a54::t_dcedaee4e178be 162-167
+  s_9b530f08172a54::t_ea6ac20548bf09 236-239
+  s_9b530f08172a54::t_5f952ef616b5ba 244
+electron/__tests__/scanWorker.spec.ts
+  s_9b530f08172a54::t_5049ab28fdf05e 47,49
+scripts/runLint.ts
+  s_9b530f08172a54::t_d804879b939fbd 144
+  s_9b530f08172a54::t_a2defacc1dbe90 145-146
+electron/pluginEditorWindow.ts
+  s_9b530f08172a54::t_25448ff98369b6 14-15,22-27
+  s_9b530f08172a54::t_caf8812c4f9423 4
+electron/shellComposition.ts
+  s_9b530f08172a54::t_81e1d6e8dffeb3 138,140-151,169
+  s_9b530f08172a54::t_d8301d15d25144 139,166
+electron/__tests__/bridge.spec.ts
+  s_9b530f08172a54::t_f69ebb40722d05 55-56
+  s_9b530f08172a54::t_7ba5986331f4f9 64-67
+electron/main.ts
+  s_9b530f08172a54::t_1097fd19ab046c 680-683
+  s_9b530f08172a54::t_3d8f82a468121a 362
+  s_9b530f08172a54::t_dab3310ec4d778 394-398
+  s_9b530f08172a54::t_f0eef54f3b7e6c 816-821
+  s_9b530f08172a54::t_cd1615bb0b562f 335
+  s_9b530f08172a54::t_4a5f79c000b5c8 145-151
+  s_9b530f08172a54::t_a5b1d24ac50006 836,842
+  s_9b530f08172a54::t_7e9ccc633c2c1f 827
+  s_9b530f08172a54::t_8d8b2a10d2c838 314-320
+  s_9b530f08172a54::t_470564a30d3d24 92
+electron/applicationMenu.ts
+  s_9b530f08172a54::t_b6512111094a6b 210-219
+electron/pluginGui.ts
+  s_9b530f08172a54::t_bdfb649009e010 1039-1045,1048
+  s_9b530f08172a54::t_5fb65102056559 597-598
+electron/bridge.ts
+  s_9b530f08172a54::t_f1effd008ea9b1 236-239
+  s_9b530f08172a54::t_2e5dbc7362af68 240
+electron/security.ts
+  s_914af328b3988f::t_dfa1cdfe7e94a3 18
+  s_9b530f08172a54::t_337a91dc7c58f8 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9f220711719393dfdd13595b09c1892b8b6854f2",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
