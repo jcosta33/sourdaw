@@ -1,0 +1,29 @@
+scripts/__tests__/runLint.spec.ts
+  s_9b530f08172a54::t_0692bfb62af4e0 31-42
+  s_9b530f08172a54::t_6eae9d06bc9e2b 52
+  s_9b530f08172a54::t_0f6109c0a66204 7-8
+eslint.config.mjs
+  s_9b530f08172a54::t_983e980ec09f67 2346
+scripts/runLint.ts
+  s_9b530f08172a54::t_422b870bb609de 141-143,147-148
+electron/shellComposition.ts
+  s_9b530f08172a54::t_bb56149615355d 140
+  s_9b530f08172a54::t_ceaa738826ba84 47-49,52
+  s_9b530f08172a54::t_7639e4c57ac72e 80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "83b34d4cbaf892b3df5af6ccada8f3f4f3f7265a",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
