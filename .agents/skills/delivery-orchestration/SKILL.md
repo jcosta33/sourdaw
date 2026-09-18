@@ -145,11 +145,13 @@ is expected behavior from the request or contract, `verification` is the exact
 command, check URL, or source comparison, and `observed` is the decisive result
 or excerpt. Keep the body to a short conclusion. Publication posts only that
 reviewer-written body; the structured evidence stays unpublished in
-`review.json`/`acceptance.json`, where `review:accept` and the orchestrator
-consume it, bound to the head by `headSha`. The posted body must fit 600
-Unicode code points; reject excess and report the actual and allowed lengths,
-never truncate. Record completeness and head binding do not prove truthful
-execution; the orchestrator remains responsible for verifying the claims.
+`review.json`/`acceptance.json`, bound to the head by `headSha`.
+`review:accept` validates only `acceptance.json`'s own head-bound evidence;
+`review.json`'s evidence is read by the orchestrator, not by any script. The
+posted body must fit 600 Unicode code points; reject excess and report the
+actual and allowed lengths, never truncate. Record completeness and head
+binding do not prove truthful execution; the orchestrator remains responsible
+for verifying the claims.
 REQUEST_CHANGES must not carry approval evidence.
 Unknown fresh formats fail closed. Historical unversioned documents remain
 readable only for exact reconstruction and recovery; never rewrite old bundles

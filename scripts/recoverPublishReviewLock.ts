@@ -362,7 +362,7 @@ async function reconcileRecoveredOwner(
             auth.session,
             primaryRoot
         );
-        assertNoUnauthorizedLandedEvidence(first, document, attestation.expectedHead);
+        assertNoUnauthorizedLandedEvidence(first, document, attestation.expectedHead, attestation.expectedActorNodeId);
         assertSingleExactLandedReview(first, document, attestation.expectedHead, attestation.expectedActorNodeId);
         const adoptedOwner = adoptedRecoveryOwner(number, ownerOid, attestation, expectedDigest, dependencies);
         const adoptedOid = replacePullRequestMutationLockOwner(primaryRoot, number, ownerOid, adoptedOwner);
@@ -442,14 +442,30 @@ function requireMatchingRecoveryDigest(
     return expectedDigest;
 }
 
+/**
+ * The other sanctioned publication identity for a recovery: recovering the orchestrator's
+ * acceptance treats a landed reviewer approval as authorized, and recovering the reviewer's
+ * approval treats a landed orchestrator acceptance as authorized. Compact-v1 documents carry no
+ * evidence footer, so the acceptance body (review body minus `reviewerModel`) and the reviewer's
+ * approval body are routinely identical at one head — that overlap is expected, not evidence of
+ * an unauthorized third party.
+ */
+function sanctionedOtherPublicationActorNodeId(expectedActorNodeId: string): string {
+    return expectedActorNodeId === ORCHESTRATOR_USER_NODE_ID ? REVIEWER_BOT_NODE_ID : ORCHESTRATOR_USER_NODE_ID;
+}
+
 function assertNoUnauthorizedLandedEvidence(
     inspection: RecoveryInspection,
     document: ReviewDocument,
-    expectedHead: string
+    expectedHead: string,
+    expectedActorNodeId: string
 ): void {
+    const sanctionedOtherActorNodeId = sanctionedOtherPublicationActorNodeId(expectedActorNodeId);
     if (
-        (inspection.otherActorReviews ?? []).some((review) =>
-            exactPublishedReview(review, document, expectedHead, review.actorNodeId)
+        (inspection.otherActorReviews ?? []).some(
+            (review) =>
+                review.actorNodeId !== sanctionedOtherActorNodeId &&
+                exactPublishedReview(review, document, expectedHead, review.actorNodeId)
         )
     ) {
         fail('review-publication recovery found unauthorized landed review evidence');
@@ -531,7 +547,7 @@ function releaseAdoptedOwnerWithRecoveryReceipt(
         session,
         primaryRoot
     );
-    assertNoUnauthorizedLandedEvidence(second, document, attestation.expectedHead);
+    assertNoUnauthorizedLandedEvidence(second, document, attestation.expectedHead, attestation.expectedActorNodeId);
     assertReconciliationStable(first, second, document, attestation.expectedHead, attestation.expectedActorNodeId);
     const outcome = second.reviews.length === 1 ? 'landed' : 'absent';
     const absentReleaseIsAttested =

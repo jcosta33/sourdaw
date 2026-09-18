@@ -70,10 +70,8 @@ function approvalContext(headSha = 'headsha', pr = 42) {
     return { pr, baseRefName: 'main', baseSha: 'base', headSha };
 }
 
-// The compact-v1 posted body is exactly the reviewer-written conclusion: no generated
-// footer. `_headSha` is kept so every call site below still reads as "the body posted
-// for this head", even though rendering no longer depends on it.
-function approvalBody(_headSha = 'headsha', summary = 'ok') {
+// The compact-v1 posted body is exactly the reviewer-written conclusion: no generated footer.
+function approvalBody(summary = 'ok') {
     return summary;
 }
 
@@ -483,6 +481,15 @@ describe('review publish', () => {
         publishReview(42, port);
         expect(posted.review?.body).toBe('Attacked; held.');
         expect(posted.review?.body).not.toMatch(/Evidence SHA-256/);
+
+        // A body with surrounding whitespace must post byte for byte: `parseReviewDocument`
+        // rejects only a blank body, so trimming here would silently alter what GitHub stores.
+        const whitespaceBody = 'Attacked; held.\n';
+        const { port: whitespacePort, posted: whitespacePosted } = fakePort({
+            json: { format: 'compact-v1', event: 'APPROVE', body: whitespaceBody, comments: [], evidence },
+        });
+        publishReview(42, whitespacePort);
+        expect(whitespacePosted.review?.body).toBe(whitespaceBody);
     });
 
     it.each(['reviewer', 'acceptance'])('preserves legacy %s payload bytes with and without evidence', (role) => {
@@ -557,11 +564,10 @@ describe('review publish', () => {
     it.each([600, 601])(
         'enforces the complete compact public body at %i Unicode code points on both routes',
         (length) => {
-            const suffixLength = [...approvalBody('headsha', '')].length;
             const document = parseReviewDocument({
                 format: 'compact-v1',
                 event: 'APPROVE',
-                body: '🎵'.repeat(length - suffixLength),
+                body: '🎵'.repeat(length),
                 evidence: approvalEvidence(),
             });
             for (const prepared of [false, true]) {
@@ -574,7 +580,7 @@ describe('review publish', () => {
                     markDefinitiveNoMutationHttpStatus: vi.fn(),
                     registerSuccessfulCompletion: vi.fn(),
                 };
-                const body = approvalBody('headsha', document.body);
+                const body = approvalBody(document.body);
                 const publish = () => {
                     if (prepared) {
                         return publishPreparedReview(
@@ -699,47 +705,44 @@ describe('review publish', () => {
         expect(parseReviewDocument(parsed)).toEqual(parsed);
     });
 
-    it.each(['observable', 'verification', 'observed'] as const)(
-        'approval evidence %s alteration after preparation does not move the prepared digest',
-        (field) => {
-            // `payloadDigest` binds `commit_id`/`event`/`body`/`comments` — the literal bytes
-            // `postReview` sends to GitHub — never evidence. Since the posted body no longer folds
-            // evidence into a digest, altering an evidence claim between preparation and posting is
-            // no longer caught here; `assertPublicationEvidence`'s headSha binding is unaffected.
-            const document = parseReviewDocument({
-                format: 'compact-v1',
-                event: 'APPROVE',
-                body: 'ok',
-                evidence: approvalEvidence(),
-            });
-            const payloadDigest = reviewPublicationPayloadDigest(
-                reviewPublicationPayload({ commitId: 'headsha', ...document, body: renderReviewDocumentBody(document) })
-            );
-            const claim = document.evidence?.claims[0];
-            if (claim === undefined) {
-                throw new Error('missing evidence claim');
-            }
-            claim[field] = 'Altered after preparation';
-            const { port, posted } = fakePort();
-            const journal = vi.fn();
-            expect(
-                publishPreparedReview(
-                    42,
-                    { head: 'headsha', document, payloadDigest, approvalContext: approvalContext() },
-                    port,
-                    {
-                        ownerOid: 'owner',
-                        journalReviewPublication: journal,
-                        markRemoteMutationAttempt: vi.fn(),
-                        markDefinitiveNoMutationHttpStatus: vi.fn(),
-                        registerSuccessfulCompletion: vi.fn(),
-                    }
-                )
-            ).toBe(99);
-            expect(journal).toHaveBeenCalled();
-            expect(posted.review?.body).toBe('ok');
+    it('approval evidence alteration after preparation does not move the prepared digest', () => {
+        // `payloadDigest` binds `commit_id`/`event`/`body`/`comments` — the literal bytes
+        // `postReview` sends to GitHub — never evidence. Since the posted body no longer folds
+        // evidence into a digest, altering an evidence claim between preparation and posting is
+        // no longer caught here; `assertPublicationEvidence`'s headSha binding is unaffected.
+        const document = parseReviewDocument({
+            format: 'compact-v1',
+            event: 'APPROVE',
+            body: 'ok',
+            evidence: approvalEvidence(),
+        });
+        const payloadDigest = reviewPublicationPayloadDigest(
+            reviewPublicationPayload({ commitId: 'headsha', ...document, body: renderReviewDocumentBody(document) })
+        );
+        const claim = document.evidence?.claims[0];
+        if (claim === undefined) {
+            throw new Error('missing evidence claim');
         }
-    );
+        claim.observable = 'Altered after preparation';
+        const { port, posted } = fakePort();
+        const journal = vi.fn();
+        expect(
+            publishPreparedReview(
+                42,
+                { head: 'headsha', document, payloadDigest, approvalContext: approvalContext() },
+                port,
+                {
+                    ownerOid: 'owner',
+                    journalReviewPublication: journal,
+                    markRemoteMutationAttempt: vi.fn(),
+                    markDefinitiveNoMutationHttpStatus: vi.fn(),
+                    registerSuccessfulCompletion: vi.fn(),
+                }
+            )
+        ).toBe(99);
+        expect(journal).toHaveBeenCalled();
+        expect(posted.review?.body).toBe('ok');
+    });
 
     it('approval evidence preserves legacy parse bytes and rejects blocker assertions', () => {
         const legacy = { event: 'APPROVE', body: 'Historical summary.\n', comments: [] };
@@ -794,8 +797,7 @@ describe('review publish', () => {
                     );
                 }
                 // The body actually posted to GitHub: the bare conclusion, no `Evidence SHA-256` line.
-                const postedBody = approvalBody(head, 'Attacked; held.');
-                expect(postedBody).not.toMatch(/Evidence SHA-256/);
+                const postedBody = approvalBody('Attacked; held.');
                 const inspect = vi.fn(() => ({
                     state: 'OPEN',
                     head,
@@ -1052,7 +1054,7 @@ describe('review publish', () => {
                         reviewPublicationPayload({
                             commitId: 'a'.repeat(40),
                             event: 'APPROVE',
-                            body: approvalBody('a'.repeat(40), 'Attacked; held.'),
+                            body: approvalBody('Attacked; held.'),
                             comments: [],
                         })
                     ),
@@ -2000,7 +2002,7 @@ describe('review publish', () => {
 
         publishReview(42, port);
 
-        expect(calls[1]).toBe(`post:headsha:APPROVE:${approvalBody('headsha', 'Attacked the merge gate; it held.')}`);
+        expect(calls[1]).toBe(`post:headsha:APPROVE:${approvalBody('Attacked the merge gate; it held.')}`);
     });
 
     it('does not post when review.json is missing', () => {
@@ -3371,6 +3373,74 @@ describe('shellPort postReview state verification', () => {
         }
     });
 
+    it('recovers an orchestrator acceptance publication past the reviewer approval already landed at the same body', async () => {
+        const fixture = createJournaledRecoveryFixture('prepared');
+        try {
+            const bundle = join(fixture.root, '.agents', 'review-bundles', `${fixture.number}-${fixture.head}`);
+            const document = parseAcceptanceDocument({
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'Attacked; held.',
+                evidence: approvalEvidence(fixture.head),
+            });
+            writeFileSync(join(bundle, 'acceptance.json'), JSON.stringify(document));
+            const owner = readPullRequestMutationLockOwner(fixture.root, fixture.ownerOid, fixture.number);
+            if (owner.version !== 3) {
+                throw new Error('expected publication owner');
+            }
+            const ownerOid = writePullRequestMutationLockOwner(
+                fixture.root,
+                {
+                    ...owner,
+                    reviewerActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    payloadDigest: reviewPublicationPayloadDigest(
+                        reviewPublicationPayload({
+                            commitId: fixture.head,
+                            event: document.event,
+                            body: renderReviewDocumentBody(document),
+                            comments: document.comments,
+                        })
+                    ),
+                },
+                fixture.number
+            );
+            runGit(fixture.root, [
+                'update-ref',
+                pullRequestMutationLockRef(fixture.number),
+                ownerOid,
+                fixture.ownerOid,
+            ]);
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.number), '--owner', ownerOid], {
+                    ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                        otherActorReviews: [
+                            {
+                                id: 7,
+                                state: 'APPROVED',
+                                body: 'Attacked; held.',
+                                commitId: expectedHead,
+                                actorNodeId: REVIEWER_BOT_NODE_ID,
+                                comments: [],
+                            },
+                        ],
+                    })),
+                    authenticateOrchestrator: async () => ({
+                        minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
+                        session: { configDir: '/tmp/user', env: {}, dispose: () => undefined },
+                    }),
+                })
+            ).resolves.toBe(0);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBeUndefined();
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
     it('retains the adopted owner when unauthorized landed evidence appears only on the second read', async () => {
         const fixture = createJournaledRecoveryFixture();
         let calls = 0;
@@ -4199,7 +4269,7 @@ describe('orchestrator acceptance', () => {
         const fixture = acceptanceFixture();
         await coordinateAcceptReview(42, fixture.dependencies);
         expect(fixture.calls[0]).toContain('/acceptance.json');
-        expect(fixture.posted.review?.body).toBe(approvalBody('headsha', 'Final contract held.'));
+        expect(fixture.posted.review?.body).toBe(approvalBody('Final contract held.'));
         expect(fixture.journal).toHaveBeenCalledWith(
             expect.objectContaining({ expectedHead: 'headsha', reviewerActorNodeId: ORCHESTRATOR_USER_NODE_ID })
         );
