@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:7a62b22c4f4dccb8fa44c6936fc7dd071b0dfcdfcd395fbf4380434bc60e5047
+// @wasm-bindgen-dts crate-source: sha256:66d73952d504d58b5843fa0cf96be7368a249c63f57a99d93d1de4371db1293f
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -7,6 +7,7 @@ export const init_panic_hook: () => void;
 export const scoringinstance_get_cents: (a: number) => number;
 export const scoringinstance_get_confidence: (a: number) => number;
 export const scoringinstance_get_frequency: (a: number) => number;
+export const scoringinstance_get_left_ptr: (a: number) => number;
 export const scoringinstance_get_midi_note: (a: number) => number;
 export const scoringinstance_get_nan_flush_count: (a: number) => number;
 export const scoringinstance_get_note_index: (a: number) => number;
@@ -20,7 +21,7 @@ export const scoringinstance_import_tun: (a: number, b: number, c: number) => nu
 export const scoringinstance_is_active: (a: number) => number;
 export const scoringinstance_is_poly_string_active: (a: number, b: number) => number;
 export const scoringinstance_new: (a: number) => number;
-export const scoringinstance_process: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+export const scoringinstance_process: (a: number, b: number) => number;
 export const scoringinstance_scale_description: (a: number) => [number, number];
 export const scoringinstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;

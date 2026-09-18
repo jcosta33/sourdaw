@@ -1203,7 +1203,7 @@
                 "tracked-set-sha256:8891ee4b3cdeee4ccc119ea720db966d655e432290c91cdaad8b4d15bcd4ac12:grand-boule-live-runtime",
                 "tracked-set-sha256:20060e9f5b6717e11d5d5594757367a4044522e7d1fd421eec57ae926e7c3cf0:grand-boule-project-state",
                 "tracked-set-sha256:f477b8a0fb088965c5e5529a215874567d525d71d3e6d24a786f4278c76c4f36:grand-boule-offline-composition",
-                "tracked-set-sha256:29534ab1d660b456498245547d8f57853aafef18b2b88fee9ed8adc684584665:grand-boule-release-proof"
+                "tracked-set-sha256:1b79d96abed9d01f5f7fa8e39fc62af11d0d8421c1498d2d5f279d40c3af9c26:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1336,11 +1336,11 @@
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
                 "daw-dsp sha256:9b0b1ba21e3141b7681337f502c9e593740b0bf0d6b0d5bfd7c7458fb2d8d1b9",
                 "daw-wasm-decoder sha256:216f742f3bba1ebd053748f16f9c269468cdfe3c5d22f854107e4b7992931daa",
-                "proof-chamber sha256:93a7bef9db12dc107b1920ceb6e351f273d049049ec98a6e38fe93555a559aad",
-                "scoring sha256:7a62b22c4f4dccb8fa44c6936fc7dd071b0dfcdfcd395fbf4380434bc60e5047"
+                "proof-chamber sha256:a4e98fddd1f16067dc390645933ffdd129c95a7526bc770ba354627ef665a78a",
+                "scoring sha256:66d73952d504d58b5843fa0cf96be7368a249c63f57a99d93d1de4371db1293f"
             ],
             "digests": [
-                "sha256:eaba397450e67f7f23d69d6d09832e469f78fbfb3e4124db3bdcf9d05553dc0f:public/wasm/manifest.json"
+                "sha256:b1109f5df511b214a512c2afedfb50400387a9948e50078344b925ea1aa39322:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1721,7 +1721,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "eaba397450e67f7f23d69d6d09832e469f78fbfb3e4124db3bdcf9d05553dc0f"
+            "sha256": "b1109f5df511b214a512c2afedfb50400387a9948e50078344b925ea1aa39322"
         }
     ],
     "externalReferences": [

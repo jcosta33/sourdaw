@@ -35,6 +35,13 @@ export class ScoringInstance {
     /**
      * @returns {number}
      */
+    get_left_ptr() {
+        const ret = wasm.scoringinstance_get_left_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
     get_midi_note() {
         const ret = wasm.scoringinstance_get_midi_note(this.__wbg_ptr);
         return ret;
@@ -155,17 +162,11 @@ export class ScoringInstance {
         return this;
     }
     /**
-     * @param {Float32Array} left_in
-     * @param {Float32Array} right_in
      * @param {number} frames
      * @returns {number}
      */
-    process(left_in, right_in, frames) {
-        const ptr0 = passArrayF32ToWasm0(left_in, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passArrayF32ToWasm0(right_in, wasm.__wbindgen_malloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.scoringinstance_process(this.__wbg_ptr, ptr0, len0, ptr1, len1, frames);
+    process(frames) {
+        const ret = wasm.scoringinstance_process(this.__wbg_ptr, frames);
         return ret >>> 0;
     }
     /**
@@ -260,14 +261,6 @@ function getDataViewMemory0() {
     return cachedDataViewMemory0;
 }
 
-let cachedFloat32ArrayMemory0 = null;
-function getFloat32ArrayMemory0() {
-    if (cachedFloat32ArrayMemory0 === null || cachedFloat32ArrayMemory0.byteLength === 0) {
-        cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
-    }
-    return cachedFloat32ArrayMemory0;
-}
-
 function getStringFromWasm0(ptr, len) {
     return decodeText(ptr >>> 0, len);
 }
@@ -278,13 +271,6 @@ function getUint8ArrayMemory0() {
         cachedUint8ArrayMemory0 = new Uint8Array(wasm.memory.buffer);
     }
     return cachedUint8ArrayMemory0;
-}
-
-function passArrayF32ToWasm0(arg, malloc) {
-    const ptr = malloc(arg.length * 4, 4) >>> 0;
-    getFloat32ArrayMemory0().set(arg, ptr / 4);
-    WASM_VECTOR_LEN = arg.length;
-    return ptr;
 }
 
 function passStringToWasm0(arg, malloc, realloc) {
@@ -359,7 +345,6 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedDataViewMemory0 = null;
-    cachedFloat32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;
