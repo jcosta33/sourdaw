@@ -93,13 +93,38 @@ function isUnknownArray(value: unknown): value is unknown[] {
  * Drops `null`-valued arguments for properties the advertised (unprojected) tool
  * schema leaves optional, before a tool-call event reaches `admitEvent`'s
  * `matchesJsonSchema` check. OpenAI's strict projection (`projectOpenAiStrictToolSchema.ts`)
- * forces every optional property into `required` and nullable, so a conforming
- * strict reply carries an explicit `null` for an argument the caller never meant to
- * set — but `admitEvent` validates against the source schema's `type: 'string'` (or
- * other single, non-nullable type), which rejects `null`. Only an optional
- * property's `null` is dropped here; a `null` on a property the source schema
- * already requires is left in place so the existing validator still rejects it.
+ * forces every optional property into `required` and nullable AT EVERY NESTING DEPTH, so a
+ * conforming strict reply carries an explicit `null` for an argument the caller never meant
+ * to set — including inside array-of-object properties like `command.batch.propose`'s
+ * `items` — but `admitEvent` validates against the source schema's non-nullable type, which
+ * rejects `null`. This walk mirrors `matchesJsonSchema`'s own recursion into `properties` and
+ * `items` so the drop happens everywhere that validator will look. Only an optional
+ * property's `null` is dropped; a `null` on a property the enclosing source object requires
+ * is left in place so the existing validator still rejects it, and values the schema does not
+ * describe (no matching `properties` or `items` entry) are returned unchanged.
  */
+function admissibleSchemaValue(value: unknown, schema: unknown): unknown {
+    if (!isRecord(schema)) {
+        return value;
+    }
+    if (isUnknownArray(value) && schema.items !== undefined) {
+        return value.map((item) => admissibleSchemaValue(item, schema.items));
+    }
+    if (isRecord(value) && isRecord(schema.properties)) {
+        const requiredProperties = new Set(Array.isArray(schema.required) ? schema.required : []);
+        const admissible: Record<string, unknown> = {};
+        for (const [key, item] of Object.entries(value)) {
+            if (item === null && !requiredProperties.has(key)) {
+                continue;
+            }
+            const propertySchema = schema.properties[key];
+            admissible[key] = propertySchema === undefined ? item : admissibleSchemaValue(item, propertySchema);
+        }
+        return admissible;
+    }
+    return value;
+}
+
 function admissibleToolCallArguments(
     args: Record<string, unknown>,
     advertisedTool: ToolSchema | undefined
@@ -107,15 +132,8 @@ function admissibleToolCallArguments(
     if (advertisedTool === undefined) {
         return args;
     }
-    const requiredProperties = new Set(advertisedTool.function.parameters.required);
-    const admissible: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(args)) {
-        if (value === null && !requiredProperties.has(key)) {
-            continue;
-        }
-        admissible[key] = value;
-    }
-    return admissible;
+    const admissible = admissibleSchemaValue(args, advertisedTool.function.parameters);
+    return isRecord(admissible) ? admissible : args;
 }
 
 function normalizeGeneratedToolPlanningOutcome(value: unknown): ToolPlanningOutcome {

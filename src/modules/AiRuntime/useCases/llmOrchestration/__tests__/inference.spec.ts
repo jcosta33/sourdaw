@@ -285,6 +285,104 @@ describe('generateToolPlanningOutcome', () => {
         );
     });
 
+    it('admits a tool-call reply carrying null for an argument a nested items object leaves optional', async () => {
+        mocks.backendChain.value = ['cloud'];
+        const batchProposeToolSchema: ToolSchema = {
+            type: 'function',
+            function: {
+                name: 'command.batch.propose',
+                description: 'Propose a batch of commands.',
+                parameters: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                        items: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                additionalProperties: false,
+                                properties: {
+                                    id: { type: 'string' },
+                                    dependsOn: { type: 'array', items: { type: 'string' } },
+                                },
+                                required: ['id'],
+                            },
+                        },
+                    },
+                    required: ['items'],
+                },
+            },
+        };
+        // OpenAI's strict projection applies at every nesting depth: `dependsOn` inside each
+        // `items` object comes back forced into that object's `required` list and nullable,
+        // even though the source item schema leaves it optional.
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'provider-call',
+                    name: 'command.batch.propose',
+                    arguments: { items: [{ id: 'a', dependsOn: null }] },
+                },
+            ],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        const outcome = await generateToolPlanningOutcome('system', 'propose a batch', [batchProposeToolSchema]);
+
+        expect(outcome).toMatchObject({ status: 'complete' });
+        expect(outcome.status === 'complete' ? outcome.toolCalls : []).toEqual([
+            { id: 'provider-call', name: 'command.batch.propose', arguments: { items: [{ id: 'a' }] } },
+        ]);
+    });
+
+    it('still rejects a null value on a nested items property the item schema requires', async () => {
+        mocks.backendChain.value = ['cloud'];
+        const batchProposeToolSchema: ToolSchema = {
+            type: 'function',
+            function: {
+                name: 'command.batch.propose',
+                description: 'Propose a batch of commands.',
+                parameters: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                        items: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                additionalProperties: false,
+                                properties: {
+                                    id: { type: 'string' },
+                                    dependsOn: { type: 'array', items: { type: 'string' } },
+                                },
+                                required: ['id', 'dependsOn'],
+                            },
+                        },
+                    },
+                    required: ['items'],
+                },
+            },
+        };
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'provider-call',
+                    name: 'command.batch.propose',
+                    arguments: { items: [{ id: 'a', dependsOn: null }] },
+                },
+            ],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        await expect(
+            generateToolPlanningOutcome('system', 'propose a batch', [batchProposeToolSchema])
+        ).rejects.toThrow('The model provider request failed.');
+    });
+
     it('admits the compiled request with the single-sourced output budget and wires it to the provider call', async () => {
         mocks.backendChain.value = ['cloud'];
         mocks.generateCloudToolCalls.mockResolvedValue({
