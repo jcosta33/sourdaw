@@ -380,6 +380,27 @@ describe('replaceProjectData', () => {
         expect(mockCancelPreparedStoredBuffers).toHaveBeenCalledOnce();
         expect(mockResetCrdtProject).not.toHaveBeenCalled();
     });
+    /**
+     * The marker is settled on every path past the authority switch, this one
+     * included: the loaded project never became durable, and finalization is
+     * what records that where the next boot reads it.
+     */
+    it('settles the reset when a step throws past the authority switch', async () => {
+        mockProjectActionHistoryToStore.mockImplementationOnce(() => {
+            throw new Error('action history projection failed');
+        });
+
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+        });
+
+        expect(result.status).toBe('failed');
+        expect(mockFinalizeReset).toHaveBeenCalledOnce();
+        expect(mockStartCrdtAutoSave).not.toHaveBeenCalled();
+    });
+
     it('returns degraded=true when a committed step fails', async () => {
         mockHydrateArrangement.mockImplementation(() => {
             throw new Error('hydrate failed');

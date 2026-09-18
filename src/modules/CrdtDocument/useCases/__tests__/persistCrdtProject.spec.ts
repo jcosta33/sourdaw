@@ -16,6 +16,7 @@ import { persistCrdtProject } from '../persistCrdtProject';
 type VersionedQueueState = {
     version: number;
     persistenceGeneration: number;
+    replacementCount: number;
     pendingChunks: unknown;
     pendingFullSnapshot: unknown;
     persistedBaseDocIds: Set<unknown>;
@@ -30,6 +31,7 @@ function isVersionedQueueState(value: unknown): value is VersionedQueueState {
     if (
         !('version' in value) ||
         !('persistenceGeneration' in value) ||
+        !('replacementCount' in value) ||
         !('pendingChunks' in value) ||
         !('pendingFullSnapshot' in value) ||
         !('persistedBaseDocIds' in value)
@@ -39,6 +41,7 @@ function isVersionedQueueState(value: unknown): value is VersionedQueueState {
     return (
         typeof value.version === 'number' &&
         typeof value.persistenceGeneration === 'number' &&
+        typeof value.replacementCount === 'number' &&
         Array.isArray(value.pendingChunks) &&
         value.persistedBaseDocIds instanceof Set
     );
@@ -1411,6 +1414,7 @@ describe('persistCrdtProject', () => {
             state.pendingChunks = { stale: true };
             state.pendingFullSnapshot = { stale: true };
             const previousGeneration = state.persistenceGeneration;
+            const previousReplacementCount = state.replacementCount;
             state.version = 0;
 
             vi.resetModules();
@@ -1420,8 +1424,11 @@ describe('persistCrdtProject', () => {
             recoverySave.complete();
             await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-            expect(state.version).toBe(6);
+            expect(state.version).toBe(7);
             expect(state.persistenceGeneration).toBe(previousGeneration + 1);
+            // A reload replaces no project, so a transition spanning it still
+            // recognises the project it started on.
+            expect(state.replacementCount).toBe(previousReplacementCount);
             expect(state.pendingChunks).toEqual([]);
             expect(state.pendingFullSnapshot).toBeNull();
             expect(state.persistedBaseDocIds).toEqual(new Set());

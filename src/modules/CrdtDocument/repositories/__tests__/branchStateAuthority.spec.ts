@@ -78,6 +78,12 @@ const replacementAuthority: StoredPersistenceAuthority = {
     revision: 5,
     rootLineage: 'main',
 };
+/** The authority a second replacement in the same session writes. */
+const nextReplacementAuthority: StoredPersistenceAuthority = {
+    epoch: 'epoch-replacement-next',
+    revision: 6,
+    rootLineage: 'main',
+};
 
 describe('branchStateAuthority', () => {
     let manager: ControlledLockManager;
@@ -779,6 +785,130 @@ describe('branchStateAuthority', () => {
             expect(instance.store.value).toEqual(settledElsewhere);
             await settleBranchStateLocks();
             await expect(isBranchStateLockFree(manager, resetLockName(begun.owner))).resolves.toBe(true);
+        });
+
+        /**
+         * C6 — the first reset never finalized and nothing re-classifies its
+         * marker while the session runs, so refusing here would wedge every
+         * later New Project until a reload. The outgoing project is still the
+         * durable one, so the rollback list the new marker inherits is the one
+         * the abandoned reset recorded.
+         */
+        it('supersedes its own pending reset, inheriting the rollback list, when the outgoing project is durable', async () => {
+            const current = branchList(feature);
+            const instance = await bootAt(5, current);
+            const abandoned = await beginReset(instance, branchList(guest));
+
+            const begun = await instance.authority.beginReset({
+                old: outgoingAuthority,
+                target: nextReplacementAuthority,
+                intended: branchList(),
+            });
+
+            expect(begun.status).toBe('begun');
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 7,
+                current,
+                session: null,
+                reset: {
+                    owner: begun.status === 'begun' ? begun.handle.owner : '',
+                    old: outgoingAuthority,
+                    target: nextReplacementAuthority,
+                    previous: current,
+                    intended: branchList(),
+                },
+            });
+            // The superseded marker has left the envelope, so its holder can
+            // no longer publish anything and its lifetime lock describes
+            // nothing a boot has to wait for.
+            await expect(instance.authority.finalizeReset(abandoned, replacementAuthority)).resolves.toBe('superseded');
+            await settleBranchStateLocks();
+            await expect(isBranchStateLockFree(manager, resetLockName(abandoned.owner))).resolves.toBe(true);
+            // The retry is a whole reset: it finalizes on its own target and
+            // leaves the envelope clean, so the session is no longer wedged.
+            if (begun.status !== 'begun') {
+                throw new Error(`Expected a reset, got ${begun.reason}`);
+            }
+            await expect(instance.authority.finalizeReset(begun.handle, nextReplacementAuthority)).resolves.toBe(
+                'finalized'
+            );
+            expect(readStoredEnvelope()).toEqual({
+                version: 1,
+                revision: 8,
+                current: branchList(),
+                session: null,
+                reset: null,
+            });
+        });
+
+        /**
+         * C6b — the abandoned replacement did reach storage, it only failed to
+         * finalize. Its list is the durable project's, so that is the list the
+         * new reset has to restore if it rolls back.
+         */
+        it('supersedes its own pending reset, inheriting its intended list, when the replacement is durable', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const firstIntended = branchList(guest);
+            await beginReset(instance, firstIntended);
+
+            const begun = await instance.authority.beginReset({
+                old: replacementAuthority,
+                target: nextReplacementAuthority,
+                intended: branchList(),
+            });
+
+            expect(begun.status).toBe('begun');
+            expect(readStoredEnvelope()?.reset).toEqual({
+                owner: begun.status === 'begun' ? begun.handle.owner : '',
+                old: replacementAuthority,
+                target: nextReplacementAuthority,
+                previous: firstIntended,
+                intended: branchList(),
+            });
+        });
+
+        /**
+         * C6c — the durable authority names neither side of the abandoned
+         * reset, so no list it carries describes the durable project and only a
+         * boot can say what that reset left.
+         */
+        it('refuses a second reset when the durable authority settles neither side of its own marker', async () => {
+            const current = branchList(feature);
+            const instance = await bootAt(5, current);
+            const abandoned = await beginReset(instance, branchList(guest));
+            const before = readStoredEnvelope();
+
+            const refused = await instance.authority.beginReset({
+                old: { epoch: 'epoch-elsewhere', revision: 9, rootLineage: 'main' },
+                target: nextReplacementAuthority,
+                intended: branchList(),
+            });
+
+            expect(refused).toEqual({ status: 'refused', reason: 'reset-active' });
+            expect(readStoredEnvelope()).toEqual(before);
+            // The abandoned reset is still the live one, lock included.
+            await expect(isBranchStateLockFree(manager, resetLockName(abandoned.owner))).resolves.toBe(false);
+        });
+
+        /**
+         * C7 — while this instance's reset is pending, `current` is still the
+         * outgoing project's list. A refused branch write must not put it back
+         * over the replacement's root: every later branch action would write
+         * the replaced project's branches there.
+         */
+        it('leaves the replacement list in memory when a branch write is refused during its own reset', async () => {
+            const instance = await bootAt(5, branchList(feature));
+            const intended = branchList();
+            await beginReset(instance, intended);
+            // The reset publishes the replacement's list, as
+            // `resetCrdtProjectAuthority` does once the marker is durable.
+            instance.store.set(intended);
+
+            const refused = await instance.authority.commit({ expectedRevision: 6, next: branchList(hotfix) });
+
+            expect(refused).toEqual({ status: 'refused', reason: 'reset-pending' });
+            expect(instance.store.value).toEqual(intended);
         });
 
         it('keeps the reset pending when its finalization cannot be written, and finishes on retry', async () => {

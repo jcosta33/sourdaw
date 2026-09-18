@@ -72,6 +72,28 @@ function failNewProjectAfterAuthorityReplaced(name: string): void {
     }
 }
 
+/**
+ * Settle the reset marker for an activation that failed past the switch.
+ *
+ * The marker is settled on every path past the switch, as the other project
+ * replacements do it: the new project never became durable, and finalization is
+ * what records that where the next boot reads it. Autosave stays stopped either
+ * way — there is no project here worth compacting.
+ */
+async function settleAbandonedNewProjectReset(replaced: ReplacedProject | null): Promise<void> {
+    if (replaced === null) {
+        return;
+    }
+    try {
+        const outcome = await replaced.finalize();
+        if (outcome !== 'finalized') {
+            logger.warn(`[newProject] Abandoned project reset did not finalize (${outcome}).`);
+        }
+    } catch (error) {
+        logger.warn('[newProject] Abandoned project reset finalization failed:', error);
+    }
+}
+
 function restorePreviousProjectRuntime(): void {
     try {
         ensureTrackStrips();
@@ -100,6 +122,9 @@ async function switchToNewProject({
     let graphTeardownStarted = false;
     let previousPersistenceStopped = false;
     let authorityReplaced = false;
+    // Hoisted out of the try: a throw past the switch has to be able to settle
+    // the reset this activation began.
+    let replaced: ReplacedProject | null = null;
     try {
         if (!(await transaction.prepare()) || !transaction.activate()) {
             failNewProjectActivation({ previousTransientState, transaction });
@@ -134,6 +159,7 @@ async function switchToNewProject({
                 failNewProjectActivation({ previousTransientState, transaction });
                 return null;
             }
+            replaced = reset;
             // Point of no return: the fresh project owns the document now, so
             // the old project's latched pedals can no longer be replayed.
             forgetProjectLatchedPedals();
@@ -144,6 +170,7 @@ async function switchToNewProject({
     } catch (error) {
         logger.warn('[newProject] Failed to activate project:', error);
         if (authorityReplaced) {
+            await settleAbandonedNewProjectReset(replaced);
             failNewProjectAfterAuthorityReplaced(name);
             return null;
         }

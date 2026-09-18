@@ -265,6 +265,30 @@ export async function replaceProjectData({
     let authorityReplaced = false;
     let replaced: ReplacedProject | null = null;
 
+    /**
+     * Settle the reset marker, reporting whether the loaded project is durable.
+     *
+     * Called on every path past the authority switch, the failing ones
+     * included: an unsettled marker is what a later boot would have to
+     * classify, and a finalization that cannot answer leaves the project
+     * pending rather than throwing over the failure being recovered.
+     */
+    async function finalizeProjectReset(): Promise<boolean> {
+        if (replaced === null) {
+            return false;
+        }
+        try {
+            const outcome = await replaced.finalize();
+            if (outcome === 'finalized') {
+                return true;
+            }
+            logger.error(new Error(`[${context}] Project reset did not finalize (${outcome})`));
+        } catch (error) {
+            logger.error(new Error(`[${context}] Project reset finalization failed`, { cause: error }));
+        }
+        return false;
+    }
+
     function restartPreviousProjectPersistence(): void {
         if (!previousPersistenceStopped) {
             return;
@@ -302,6 +326,10 @@ export async function replaceProjectData({
     } catch (error) {
         logPreparationFailure(context, error);
         if (authorityReplaced) {
+            // The marker is settled on every path past the switch: the loaded
+            // project never became durable, and finalization is what records
+            // that where the next boot reads it.
+            await finalizeProjectReset();
             return failProjectReplacement();
         }
         restorePreviousAudioGraph(context);
@@ -417,18 +445,6 @@ export async function replaceProjectData({
                 projectStore.set({ ...project, identityPersistencePending: true });
             }
         });
-    }
-
-    async function finalizeProjectReset(): Promise<boolean> {
-        if (replaced === null) {
-            return false;
-        }
-        const outcome = await replaced.finalize();
-        if (outcome === 'finalized') {
-            return true;
-        }
-        logger.error(new Error(`[${context}] Project reset did not finalize (${outcome})`));
-        return false;
     }
 
     let durable = true;

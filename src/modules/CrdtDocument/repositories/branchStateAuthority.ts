@@ -145,9 +145,20 @@ function resetLockName(owner: string): string {
     return `${BRANCH_RESET_LOCK_PREFIX}${owner}`;
 }
 
+/**
+ * Project a durable envelope into memory.
+ *
+ * While this instance's own reset is pending, `current` is still the outgoing
+ * project's list and the intended one is what the reset already published, so
+ * the marker's `intended` is projected instead: hydrating `current` would put
+ * the replaced project's branches over the replacement's root, and every later
+ * branch action would write them there.
+ */
 function hydrate(envelope: BranchStateEnvelope, project: BranchStateProjectionScope = projectDirectly): void {
     liveRevision = envelope.revision;
-    project(() => branchStore.set(envelope.current));
+    const own = ownReset;
+    const current = own !== null && envelope.reset?.owner === own.owner ? own.intended : envelope.current;
+    project(() => branchStore.set(current));
 }
 
 /**
@@ -670,6 +681,14 @@ function releaseOwnReset(owner: string): void {
  * `target` is durable — passed in rather than derived here because the caller's
  * default list carries a creation timestamp, and a second call to the factory
  * would publish a list the caller never saw.
+ *
+ * A marker this instance owns does not block a second reset: nothing
+ * re-classifies it while the session runs, so refusing would wedge every later
+ * New Project until a reload. It is settled here against the fresh durable
+ * authority the caller read, and the new marker inherits the list that rollback
+ * has to restore — the abandoned reset's `previous` when the outgoing project is
+ * still durable, its `intended` when the replacement reached storage. A marker
+ * another instance owns still refuses: only its own holder can settle it.
  */
 async function beginReset({
     old,
@@ -695,7 +714,25 @@ async function beginReset({
             // describes the project this reset is about to destroy.
             return { kind: 'refuse', reason: 'session-active' };
         }
-        if (envelope.reset !== null) {
+        const superseded = envelope.reset;
+        if (superseded === null) {
+            return {
+                kind: 'write',
+                next: advance(envelope, {
+                    current: envelope.current,
+                    session: null,
+                    reset: { owner, old, target, previous: envelope.current, intended },
+                }),
+            };
+        }
+        if (superseded.owner !== ownReset?.owner) {
+            return { kind: 'refuse', reason: 'reset-active' };
+        }
+        const settlement = getResetSettlement(superseded, old);
+        if (settlement === null) {
+            // The durable authority names neither side of the abandoned reset,
+            // so no list it carries describes the durable project and only a
+            // boot can say what it left.
             return { kind: 'refuse', reason: 'reset-active' };
         }
         return {
@@ -703,7 +740,7 @@ async function beginReset({
             next: advance(envelope, {
                 current: envelope.current,
                 session: null,
-                reset: { owner, old, target, previous: envelope.current, intended },
+                reset: { owner, old, target, previous: settlement.current, intended },
             }),
         };
     });
@@ -712,6 +749,10 @@ async function beginReset({
         return { status: 'refused', reason: result.reason };
     }
 
+    // The superseded marker has left the envelope, so its lifetime lock no
+    // longer describes anything a booting instance has to wait for. Its handle
+    // answers `superseded` from here on, as a foreign supersession does.
+    ownReset?.release();
     ownReset = { owner, target, intended, release: lifetime.release };
     return { status: 'begun', handle: { owner } };
 }

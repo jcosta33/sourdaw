@@ -13,7 +13,7 @@ import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStateAuthority } from '../../repositories/branchStateAuthority';
 import { branchStore, type BranchStoreState } from '../../stores/branchStore';
 import { compactProject } from '../compactProject';
-import { currentPersistenceGeneration } from '../currentPersistenceGeneration';
+import { currentPersistenceReplacement } from '../currentPersistenceReplacement';
 import { loadCrdtProject } from '../loadCrdtProject';
 import { projectCrdtToStores } from '../projection/projectProjection';
 
@@ -78,16 +78,16 @@ async function recoverFailedTransition({
     capturedRootIdentity,
     snapshots,
     committedRevision,
-    capturedGeneration,
+    capturedReplacement,
 }: {
     error: unknown;
     previousState: BranchStoreState;
     capturedRootIdentity: number;
     snapshots: DocumentSnapshot[];
     committedRevision: number | null;
-    capturedGeneration: number;
+    capturedReplacement: number;
 }): Promise<void> {
-    if (currentPersistenceGeneration() !== capturedGeneration) {
+    if (currentPersistenceReplacement() !== capturedReplacement) {
         // The project was replaced under this transition. The documents these
         // snapshots describe belong to a repository that no longer exists, and
         // the branch list the rollback would restore describes that repository
@@ -159,7 +159,7 @@ export async function runBranchTransition<TResult>({
     // subscribers make count as an outside writer, and a batch that detects one
     // revokes its own execution authority (Audit CC-10).
     const projectionScope = captureAutomergeStorageTransactionScope();
-    const capturedGeneration = currentPersistenceGeneration();
+    const capturedReplacement = currentPersistenceReplacement();
     const snapshots = [...new Set(affectedDocIds)].map(createDocumentSnapshot);
     branchTransitionInProgress = true;
 
@@ -198,7 +198,7 @@ export async function runBranchTransition<TResult>({
             capturedRootIdentity,
             snapshots,
             committedRevision,
-            capturedGeneration,
+            capturedReplacement,
         });
         throw error;
     } finally {

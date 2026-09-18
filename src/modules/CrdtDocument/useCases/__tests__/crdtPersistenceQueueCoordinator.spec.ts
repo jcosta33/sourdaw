@@ -72,14 +72,14 @@ describe('crdtPersistenceQueueCoordinator', () => {
         expect(typeof crdtPersistenceQueueCoordinator.runLoad).toBe('function');
     });
 
-    // K5 — the replacement is a new persistence generation, so every write the
-    // outgoing project still has in flight is revoked rather than retried.
-    it('advances the persistence generation when a replacement begins', () => {
-        const before = crdtPersistenceQueueCoordinator.currentGeneration();
+    // K5 — a replacement is the one event that means the project a caller was
+    // working on is gone, and the count it advances is how that caller learns.
+    it('advances the replacement count when a replacement begins', () => {
+        const before = crdtPersistenceQueueCoordinator.currentReplacement();
 
         crdtPersistenceQueueCoordinator.beginReplacement({ epoch: 'epoch-generation', old: null });
 
-        expect(crdtPersistenceQueueCoordinator.currentGeneration()).toBeGreaterThan(before);
+        expect(crdtPersistenceQueueCoordinator.currentReplacement()).toBe(before + 1);
     });
 
     it('holds autosave behind a cross-store persistence barrier until publication commits', async () => {

@@ -13,7 +13,7 @@ const {
     mockLoadCrdtProject,
     mockProjectCrdtToStores,
     mockRunPersistenceOp,
-    mockCurrentPersistenceGeneration,
+    mockCurrentPersistenceReplacement,
 } = vi.hoisted(() => ({
     mockCloneDoc: vi.fn((doc: unknown) => doc),
     mockIsAppError: vi.fn(() => false),
@@ -47,7 +47,7 @@ const {
     mockLoadCrdtProject: vi.fn(() => Promise.resolve(true)),
     mockProjectCrdtToStores: vi.fn(),
     mockRunPersistenceOp: vi.fn(() => Promise.resolve()),
-    mockCurrentPersistenceGeneration: vi.fn(() => 7),
+    mockCurrentPersistenceReplacement: vi.fn(() => 3),
 }));
 
 vi.mock('@automerge/automerge', () => ({ clone: mockCloneDoc }));
@@ -68,11 +68,19 @@ vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mock
 vi.mock('../../runCrdtPersistenceOperation', () => ({
     runCrdtPersistenceOperation: mockRunPersistenceOp,
 }));
-vi.mock('../../currentPersistenceGeneration', () => ({
-    currentPersistenceGeneration: mockCurrentPersistenceGeneration,
+vi.mock('../../currentPersistenceReplacement', () => ({
+    currentPersistenceReplacement: mockCurrentPersistenceReplacement,
 }));
 
 import { runBranchLineageTransition } from '../runBranchLineageTransition';
+
+/**
+ * The coordinator's persistence generation, which the mocked lineage operation
+ * advances the way `beginRootLineageTransition` does. Nothing under test reads
+ * it: a transition is about the project it started on, and a generation change
+ * does not mean that project is gone.
+ */
+let persistenceGeneration = 7;
 
 const previousState = {
     activeBranchId: 'branch-a',
@@ -97,7 +105,8 @@ describe('runBranchLineageTransition', () => {
         mockRunPersistenceOp.mockResolvedValue(undefined);
         mockBranchStateAuthority.captureRevision.mockReturnValue(4);
         mockBranchStateAuthority.commit.mockResolvedValue({ status: 'committed', revision: 5 });
-        mockCurrentPersistenceGeneration.mockReturnValue(7);
+        mockCurrentPersistenceReplacement.mockReturnValue(3);
+        persistenceGeneration = 7;
     });
 
     it('applies the transition, commits next state, and returns the result', async () => {
@@ -233,7 +242,7 @@ describe('runBranchLineageTransition', () => {
      */
     it('skips the rollback when the project was replaced mid-transition', async () => {
         (mockAutomergeRepo.getDoc as ReturnType<typeof vi.fn>).mockReturnValue({ data: 'doc-1-content' });
-        mockCurrentPersistenceGeneration.mockReturnValueOnce(7).mockReturnValue(8);
+        mockCurrentPersistenceReplacement.mockReturnValueOnce(3).mockReturnValue(4);
 
         await expect(
             runBranchLineageTransition({
@@ -254,6 +263,41 @@ describe('runBranchLineageTransition', () => {
         expect(mockProjectCrdtToStores).not.toHaveBeenCalled();
         expect(mockBranchStateAuthority.commit).not.toHaveBeenCalled();
         expect(mockBranchStore.set).not.toHaveBeenCalled();
+    });
+
+    /**
+     * T1b — the lineage operation this transition starts begins a new
+     * persistence generation before the commit is decided, and replaces no
+     * project. A refused commit therefore still has to unwind: the documents
+     * these snapshots describe are the live ones, and the branch list the
+     * rollback restores is the list this project still has.
+     */
+    it('rolls back a refused commit whose lineage operation began a new persistence generation', async () => {
+        (mockAutomergeRepo.getDoc as ReturnType<typeof vi.fn>).mockReturnValue({ data: 'doc-1-content' });
+        mockRunPersistenceOp.mockImplementation(() => {
+            // Faithful to the coordinator: `root-lineage-transition` runs
+            // `beginRootLineageTransition` synchronously, so the generation has
+            // already moved by the time the commit is refused.
+            persistenceGeneration += 1;
+            return Promise.resolve();
+        });
+        mockBranchStateAuthority.commit.mockResolvedValueOnce({ status: 'refused', reason: 'conflict' });
+        const nextState = { ...previousState, activeBranchId: 'branch-b' };
+
+        await expect(
+            runBranchLineageTransition({
+                affectedDocIds: ['doc-1'],
+                apply: () => ({ nextState, result: 'success' }),
+                from: 'branch-a',
+                previousState,
+                to: 'branch-b',
+            })
+        ).rejects.toThrow(/Branch state could not be persisted \(conflict\)/);
+
+        expect(persistenceGeneration).toBe(8);
+        expect(mockAutomergeRepo.insertDoc).toHaveBeenCalledWith('doc-1', { data: 'doc-1-content' });
+        expect(mockLoadCrdtProject).toHaveBeenCalled();
+        expect(mockProjectCrdtToStores).toHaveBeenCalled();
     });
 
     it('deduplicates affectedDocIds when creating snapshots', async () => {

@@ -45,11 +45,19 @@ type PendingFullSnapshot = {
 };
 
 const CRDT_PERSISTENCE_QUEUE_STATE_KEY = 'crdtDocument.persistenceQueue';
-const CRDT_PERSISTENCE_QUEUE_STATE_VERSION = 6;
+const CRDT_PERSISTENCE_QUEUE_STATE_VERSION = 7;
 
 type CrdtPersistenceQueueState = {
     version: number;
     persistenceGeneration: number;
+    /**
+     * How many times the live project has been replaced by another one.
+     *
+     * Separate from the generation, which a load, a lineage transition or an
+     * HMR migration also bumps: a caller that has to tell "my project is gone"
+     * from "my queue moved on" can only read this.
+     */
+    replacementCount: number;
     persistenceAbortController: AbortController;
     operationTail: Promise<void>;
     pendingChunks: PendingIncrementalChunk[];
@@ -76,6 +84,7 @@ function createInitialPersistenceQueueState(): CrdtPersistenceQueueState {
     return {
         version: CRDT_PERSISTENCE_QUEUE_STATE_VERSION,
         persistenceGeneration: 0,
+        replacementCount: 0,
         persistenceAbortController: new AbortController(),
         operationTail: Promise.resolve(),
         pendingChunks: [],
@@ -102,8 +111,13 @@ if (persistenceState.version !== CRDT_PERSISTENCE_QUEUE_STATE_VERSION) {
     const previousOperationTail = getPreviousOperationTail(persistenceState);
     const previousGeneration =
         typeof persistenceState.persistenceGeneration === 'number' ? persistenceState.persistenceGeneration : 0;
+    const previousReplacementCount =
+        typeof persistenceState.replacementCount === 'number' ? persistenceState.replacementCount : 0;
     persistenceState.version = CRDT_PERSISTENCE_QUEUE_STATE_VERSION;
     persistenceState.persistenceGeneration = previousGeneration + 1;
+    // A reload replaces no project: the count carries over unchanged so a
+    // transition spanning the migration still sees its own project.
+    persistenceState.replacementCount = previousReplacementCount;
     persistenceState.persistenceAbortController = new AbortController();
     persistenceState.pendingChunks = [];
     persistenceState.pendingFullSnapshot = null;
@@ -390,6 +404,7 @@ function setCrdtPersistenceAuthority(authority: CrdtPersistenceAuthority): void 
  */
 function beginPersistenceReplacement({ epoch, old }: { epoch: string; old: CrdtPersistenceAuthority | null }): void {
     beginPersistenceGeneration();
+    persistenceState.replacementCount += 1;
     persistenceState.persistedBaseDocIds.add(DOC_PREFIX_ROOT);
     persistenceState.activeRootLineage = DEFAULT_CRDT_ROOT_LINEAGE;
     persistenceState.nextRootLineage = DEFAULT_CRDT_ROOT_LINEAGE;
@@ -426,8 +441,8 @@ function committedPersistenceAuthority(): CrdtPersistenceAuthority | null {
     return record?.generation === persistenceState.persistenceGeneration ? record.authority : null;
 }
 
-function currentPersistenceGeneration(): number {
-    return persistenceState.persistenceGeneration;
+function currentPersistenceReplacement(): number {
+    return persistenceState.replacementCount;
 }
 
 function beginLoadQueueState(): number {
@@ -1128,5 +1143,5 @@ export const crdtPersistenceQueueCoordinator = Object.freeze({
     readDurableAuthority: readDurablePersistenceAuthority,
     beginReplacement: beginPersistenceReplacement,
     committedAuthority: committedPersistenceAuthority,
-    currentGeneration: currentPersistenceGeneration,
+    currentReplacement: currentPersistenceReplacement,
 });

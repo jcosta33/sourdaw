@@ -317,6 +317,28 @@ describe('newProject injectable', () => {
         expect(ensureTrackStrips).not.toHaveBeenCalled();
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
         expect(projectStore.value).toMatchObject({ loading: true, initialized: false });
+        // The marker is settled on every path past the switch, this one
+        // included: an unsettled marker is what the next boot would have to
+        // classify, and what would refuse the session's next reset.
+        expect(resetMocks.finalize).toHaveBeenCalledOnce();
+    });
+
+    /**
+     * C6 — the first activation left the reset unfinalized. A second New
+     * Project in the same session is an ordinary reset: it runs the whole
+     * sequence again and finalizes, rather than being turned away.
+     */
+    it('activates a second project in the same session after the first reset could not finalize', async () => {
+        vi.mocked(compactProject).mockRejectedValueOnce(new Error('initial compaction failed'));
+        resetMocks.finalize.mockResolvedValueOnce('authority-mismatch');
+
+        await expect(newProject('Unpersisted Project')).resolves.toBe(true);
+        await expect(newProject('Second Project')).resolves.toBe(true);
+
+        expect(resetCrdtProject).toHaveBeenCalledTimes(2);
+        expect(resetMocks.finalize).toHaveBeenCalledTimes(2);
+        expect(projectStore.value).toMatchObject({ name: 'Second Project', identityPersistencePending: false });
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 
     // C2 — a failed initial snapshot means nothing of the replacement reached
