@@ -454,10 +454,10 @@ function sanctionedOtherPublicationActorNodeId(expectedActorNodeId: string): str
     if (expectedActorNodeId === ORCHESTRATOR_USER_NODE_ID) {
         return REVIEWER_BOT_NODE_ID;
     }
-    if (expectedActorNodeId === REVIEWER_BOT_NODE_ID) {
-        return ORCHESTRATOR_USER_NODE_ID;
+    if (expectedActorNodeId !== REVIEWER_BOT_NODE_ID) {
+        fail(`review-publication recovery attested an unexpected actor: ${expectedActorNodeId}`);
     }
-    fail(`review-publication recovery attested an unexpected actor: ${expectedActorNodeId}`);
+    return ORCHESTRATOR_USER_NODE_ID;
 }
 
 function assertNoUnauthorizedLandedEvidence(
