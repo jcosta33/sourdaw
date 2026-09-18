@@ -52,9 +52,10 @@ export type ResolvePrintReachabilityInput = Readonly<{
  *   - its own post-fader output, through unmuted hops, to a strip this render
  *     prints, or along a route that leaves the strips this render builds (which
  *     cannot be proved silent, and so is read as printing);
- *   - a pre-fader send it actually renders, into a strip that itself
- *     contributes. The pre-fader tap sits upstream of the mute node, so this is
- *     the route that survives the strip's own mute;
+ *   - a send it actually renders, into a strip that itself contributes. The two
+ *     taps differ in where they sit relative to the mute node: a pre-fader tap
+ *     survives the strip's own mute, while a post-fader send taps the post-mute
+ *     output and is therefore live only while that output is;
  *   - its output feeding a detector whose compressor's printed output it
  *     changes. Live taps a key after the mute, so that feed dies with the key's
  *     own honoured mute.
@@ -111,8 +112,13 @@ export function resolvePrintReachability({
         if (tapClosed.has(track.id) || !sendsRendered(track.id)) {
             return false;
         }
+        // A post-fader send taps the strip's post-mute `outputNode`, so it is
+        // live exactly while the strip's own output is — a track whose main
+        // route dies downstream can still print through one.
+        const postFaderTapLive = !silentOutput.has(track.id);
         for (const send of track.sends) {
-            if (send.preFader && reachesPrint.has(send.busId)) {
+            const tapSurvivesMute = send.preFader || postFaderTapLive;
+            if (tapSurvivesMute && reachesPrint.has(send.busId)) {
                 return true;
             }
         }

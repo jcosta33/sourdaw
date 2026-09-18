@@ -657,6 +657,28 @@ describe('renderOffline effective audibility (OE-4)', () => {
             expect(contributes('fx')).toBe(false);
         });
 
+        it('keeps an unmuted strip contributing when a live post-fader send still prints past a cut main route', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    audioTrack({
+                        id: 'plugin-track',
+                        outputId: 'muted-bus',
+                        sends: [{ busId: 'fx-bus', level: 1, preFader: false }],
+                    }),
+                    audioTrack({ id: 'muted-bus', kind: 'bus', muted: true }),
+                    audioTrack({ id: 'fx-bus', kind: 'bus' }),
+                ])
+            );
+            primeRender();
+
+            await renderOffline(4);
+
+            // The post-fader tap sits downstream of the mute, and this strip's
+            // own mute is not the one that cut its main route.
+            expect(contributes('fx-bus')).toBe(true);
+            expect(contributes('plugin-track')).toBe(true);
+        });
+
         it('keeps a key contributing whose detector feed changes a printed compressor, though its own route is cut', async () => {
             offlineRenderMocks.resolveRenderContext.mockReturnValue(
                 renderContext([

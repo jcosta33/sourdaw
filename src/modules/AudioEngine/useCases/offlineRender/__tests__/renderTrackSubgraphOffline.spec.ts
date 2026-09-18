@@ -1994,6 +1994,38 @@ describe('renderTrackSubgraphOffline', () => {
                 expect(pluginWarningFor(onWarning, 'Kick Key')).toBe(true);
             });
 
+            it('refuses a plugin on an unmuted contributor whose live post-fader send still prints', async () => {
+                const target = audio('comp-target', 'Comp Target', { devices: [COMPRESSOR_DEVICE] });
+                const keyBus = TrackDummy.create({
+                    id: 'key-bus',
+                    name: 'Key Bus',
+                    kind: 'bus',
+                    muted: true,
+                    outputId: 'master',
+                });
+                const fxBus = TrackDummy.create({ id: 'fx-bus', name: 'FX Bus', kind: 'bus', outputId: 'master' });
+                // Its main route dies at the muted key source. The post-fader send
+                // taps this strip's post-mute output, which is open precisely
+                // because this strip is not the muted one.
+                const source = audio('source', 'Source', {
+                    outputId: 'key-bus',
+                    devices: [pluginDevice('plugin-1')],
+                    sends: [{ busId: 'fx-bus', level: 1, preFader: false }],
+                });
+                trackStore.set({ tracks: [target, keyBus, fxBus, source], selectedTrackId: null, ghostClips: [] });
+                await seedSidechainRoutes([{ source: 'key-bus', target: 'comp-target' }]);
+
+                await expect(
+                    renderTrackSubgraphOffline({
+                        targetTrackId: 'comp-target',
+                        renderTracks: [source, keyBus, fxBus, target],
+                        startBeat: 0,
+                        endBeat: 4,
+                        onWarning: vi.fn(),
+                    })
+                ).rejects.toThrow('Bypass or remove the plugin');
+            });
+
             it('refuses a plugin on a key whose detector feed changes a printed compressor, though its own route is cut', async () => {
                 const target = audio('comp-target', 'Comp Target', { devices: [COMPRESSOR_DEVICE] });
                 const mutedKeyBus = TrackDummy.create({
