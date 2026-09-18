@@ -1,0 +1,35 @@
+crates/proof-chamber/src/spring.rs
+  s_9b530f08172a54::t_83feac7b92205f 59-67,102,119-123,138-140,155-157,186-189,252-265,293,324-332
+crates/proof-chamber/tests/algorithm_render_character.rs
+  s_9b530f08172a54::t_f5666f83c263b1 108-115,148-149
+crates/proof-chamber/tests/wet_onset_follows_predelay.rs
+  s_9b530f08172a54::t_f954a429b278c3 28-32,147-152
+public/wasm/manifest.json
+  s_9b530f08172a54::t_bdd9e1a9a59aef 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_9b530f08172a54::t_71d97d3c172793 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_9b530f08172a54::t_fbb31ceb8a9e2a 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_9b530f08172a54::t_e14b50e914bbbe 1
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberAlgorithmGating.spec.tsx
+  s_9b530f08172a54::t_db498b5c879a4e 274
+src/utils/nativeDspEngineGaps.ts
+  s_9b530f08172a54::t_bd4ee7a577232c 128-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5c198fd52e435669e49329cebf786c6fec8dfa79",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
