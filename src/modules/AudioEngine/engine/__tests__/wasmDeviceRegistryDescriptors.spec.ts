@@ -1536,7 +1536,6 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setSostenuto: vi.fn(),
                 noteOnMidi2: vi.fn(),
                 setTemperament: vi.fn(),
-                loadAttackClip: vi.fn(),
                 allNotesOff: vi.fn(),
                 setBypass: vi.fn(),
                 connect: vi.fn(),

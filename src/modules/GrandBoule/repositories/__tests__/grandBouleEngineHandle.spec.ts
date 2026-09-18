@@ -29,7 +29,6 @@ describe('createDisconnectedGrandBouleEngineHandle', () => {
         expect(() => handle.setUnaCorda({ engaged: true })).not.toThrow();
         expect(() => handle.setSostenuto({ engaged: false })).not.toThrow();
         expect(() => handle.setTemperament({ index: 1 })).not.toThrow();
-        expect(() => handle.loadAttackClip({ key: 60, samples: new Float32Array(128) })).not.toThrow();
         expect(() => handle.allNotesOff()).not.toThrow();
     });
 });

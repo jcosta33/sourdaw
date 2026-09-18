@@ -98,9 +98,6 @@ class GrandBouleInstanceMock {
     set_temperament(index: number): void {
         this.record('set_temperament', [index]);
     }
-    load_attack_clip(key: number, samples: Float32Array): void {
-        this.record('load_attack_clip', [key, Array.from(samples)]);
-    }
     all_notes_off(): void {
         this.record('all_notes_off', []);
     }
@@ -191,7 +188,6 @@ const PARITY_MESSAGES: readonly GrandBouleDispatchMsg[] = [
     { type: 'sostenuto', engaged: false },
     { type: 'noteOnMidi2', midiNote: 72, velocity16bit: 32_000, pitchOffsetQ24: 1_024 },
     { type: 'temperament', index: 4 },
-    { type: 'loadAttackClip', key: 21, samples: new Float32Array([0.25, 0.5]) },
     // Panic. Both hosts must forward it. That it also drops the two queued notes
     // is not observable at frame 0 and is guarded in `grandBouleEngineCore.spec`
     // instead, on the shared implementation both hosts route through.
@@ -315,7 +311,6 @@ describe('the worker and the offline processor dispatch identically', () => {
             { method: 'set_sostenuto', args: [false] },
             { method: 'note_on_midi2', args: [72, 32_000, 1_024] },
             { method: 'set_temperament', args: [4] },
-            { method: 'load_attack_clip', args: [21, [0.25, 0.5]] },
             { method: 'all_notes_off', args: [] },
         ]);
     });

@@ -79,7 +79,6 @@ export type GrandBouleNodeResult = {
     setSostenuto: (engaged: boolean) => void;
     noteOnMidi2: (midiNote: number, velocity16bit: number, pitchOffsetQ24: number) => void;
     setTemperament: (index: number) => void;
-    loadAttackClip: (key: number, samples: Float32Array) => void;
     allNotesOff: () => void;
     setBypass: (bypassed: boolean) => void;
     connect: (dest: AudioNode) => void;
@@ -675,10 +674,6 @@ export async function createGrandBouleNode(
         },
         setTemperament(index: number) {
             post({ type: 'temperament', index });
-        },
-        loadAttackClip(key: number, samples: Float32Array) {
-            const buf = new Float32Array(samples);
-            post({ type: 'loadAttackClip', key, samples: buf });
         },
         allNotesOff() {
             post({ type: 'allNotesOff' });

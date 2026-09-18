@@ -1867,10 +1867,8 @@ const GRAND_BOULE_DAMPER_ENGAGED_POSITION: f32 = 0.5;
 /// pool and its two channel buffers would set the size of every command the
 /// engine sends.
 ///
-/// This hosts the model and the three pedals. The instrument's attack clips
-/// (`GrandBouleInstance::load_attack_clip`) are optional, and with none loaded
-/// it renders from the modal engine unaided; clip transport is a follow-up on
-/// the native-body work rather than part of this body. The pedals arrive as
+/// This hosts the model and the three pedals. The instrument renders from its
+/// modal engine unaided. The pedals arrive as
 /// controller messages over [`GraphCommand::SendMidiControl`] and are applied
 /// by [`Self::control_change`], so a hosted piano sustains what a pedal was
 /// meant to hold.

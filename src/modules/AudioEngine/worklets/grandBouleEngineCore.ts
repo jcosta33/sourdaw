@@ -111,7 +111,6 @@ export type GrandBouleDispatchMsg =
     | { type: 'sostenuto'; engaged: boolean }
     | { type: 'noteOnMidi2'; midiNote: number; velocity16bit: number; pitchOffsetQ24: number }
     | { type: 'temperament'; index: number }
-    | { type: 'loadAttackClip'; key: number; samples: Float32Array }
     | { type: 'allNotesOff' };
 
 export type CreateGrandBouleInstanceInput = {
@@ -292,9 +291,6 @@ export function dispatch(instance: GrandBouleInstance, msg: GrandBouleDispatchMs
             break;
         case 'temperament':
             instance.set_temperament(msg.index);
-            break;
-        case 'loadAttackClip':
-            instance.load_attack_clip(msg.key, msg.samples);
             break;
         case 'allNotesOff':
             instance.all_notes_off();

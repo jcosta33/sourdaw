@@ -34,7 +34,6 @@ vi.mock('../../../useCases/resolveGrandBouleEngine', () => ({
         setUnaCorda: pedalWrites.setUnaCorda,
         setSostenuto: pedalWrites.setSostenuto,
         setTemperament: () => {},
-        loadAttackClip: () => {},
         allNotesOff: () => {},
         isReady: () => false,
         getAnalyserNode: () => null,
