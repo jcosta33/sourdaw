@@ -13,8 +13,12 @@ export class AppActionCommittedError extends Error {
 }
 
 export class AppActionConflictError extends Error {
-    constructor(action_type: string) {
-        super(`Action conflicts with current project state: ${action_type}`);
+    constructor(action_type: string, reason?: string) {
+        super(
+            reason === undefined
+                ? `Action conflicts with current project state: ${action_type}`
+                : `Action conflicts with current project state: ${action_type}: ${reason}`
+        );
         this.name = 'AppActionConflictError';
     }
 }

@@ -1,9 +1,10 @@
+import { toLevelDb } from '#/utils/audioLevelLaw';
 import { digest } from '#/utils/canonicalDigest';
 
 import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../models/AgentContext';
 import { type AgentRunBudgets, type AgentRunGrants } from '../models/AgentRun';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
-import { type ProjectContext } from '../models/ProjectContext';
+import { PROJECT_CONTEXT_LEVEL_LAW, type ProjectContext } from '../models/ProjectContext';
 import { buildLlmActionUserMessage, type LlmActionCapabilityData } from '../transformers/llmActionBridge';
 
 const MAX_CONTEXT_TARGETS = 64;
@@ -75,11 +76,15 @@ function boundedString(value: string): { value: string; truncated: boolean } {
 
 function buildProjectData(context: ProjectContext) {
     const selectedTrack = context.tracks.find((track) => track.id === context.selectedTrackId) ?? null;
+    // The level travels as decibels rather than as the stored amplitude: the
+    // commands that move it take decibels, and a planner handed `0.8` would have
+    // to rediscover that it means −1.9 dB before it could ask for −3 dB.
     const selectableTargets = context.tracks.slice(0, MAX_CONTEXT_TARGETS).map((track) => ({
         id: track.id,
         name: { trust: 'untrusted_imported_string' as const, ...boundedString(track.name) },
         kind: track.kind,
         frozen: track.frozen ?? false,
+        gainDb: toLevelDb(track.gain),
     }));
     const sections = (context.sections ?? []).slice(0, MAX_CONTEXT_TARGETS).map((section) => ({
         id: section.id,
@@ -90,6 +95,11 @@ function buildProjectData(context: ProjectContext) {
     return {
         tempo: context.tempo,
         timeSignature: context.timeSignature,
+        // Stated once for the whole payload: every decibel figure below is read
+        // against this window, and a reader that cannot see the window cannot
+        // tell a level near the ceiling from one with room left.
+        levelLaw: PROJECT_CONTEXT_LEVEL_LAW,
+        masterGainDb: toLevelDb(context.masterGain),
         selectedTrack: selectedTrack
             ? {
                   id: selectedTrack.id,
@@ -196,6 +206,10 @@ function buildRevisionPayload(input: {
             currentRevision: input.revision,
         },
         projectPayload: {
+            // The law is a constant, not project state: a delta that omitted it
+            // would leave a correction round reading levels with no window.
+            levelLaw: input.projectData.levelLaw,
+            masterGainDb: input.projectData.masterGainDb,
             ...(priorSnapshot.tempo === input.snapshot.tempo ? {} : { tempo: input.projectData.tempo }),
             ...(stableJson(priorSnapshot.timeSignature) === stableJson(input.snapshot.timeSignature)
                 ? {}

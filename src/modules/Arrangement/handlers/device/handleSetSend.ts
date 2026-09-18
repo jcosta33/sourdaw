@@ -1,8 +1,18 @@
+import { type LevelResolution, resolveSendLevelFields } from '#/utils/audioLevelLaw';
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { setSend } from '../../useCases/device/sendManagement/setSend';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+
+type SetSendAction = Extract<AppAction, { type: 'setSend' }>;
+
+/** The linear amplitude this action asks for, whichever way it asked; the
+ *  decibel forms resolve against the send's live level. */
+function requestedLevel(action: SetSendAction, currentLevel: number): LevelResolution {
+    return resolveSendLevelFields(action.payload, currentLevel);
+}
 
 export const handleSetSend = createHandler<'setSend'>({
     execute: (alpha) => {
@@ -28,13 +38,13 @@ export const handleSetSend = createHandler<'setSend'>({
         ) {
             return { status: 'conflict' };
         }
-        const runtimeEffect = setSend(
-            alpha.payload.trackId,
-            alpha.payload.busId,
-            alpha.payload.level,
-            existing.preFader,
-            { deferRuntimeEffect: true }
-        );
+        const requested = requestedLevel(alpha, existing.level);
+        if (!requested.ok) {
+            return { status: 'conflict', reason: requested.reason };
+        }
+        const runtimeEffect = setSend(alpha.payload.trackId, alpha.payload.busId, requested.linear, existing.preFader, {
+            deferRuntimeEffect: true,
+        });
         if (!runtimeEffect) {
             return { status: 'conflict' };
         }
@@ -57,7 +67,8 @@ export const handleSetSend = createHandler<'setSend'>({
         ) {
             return false;
         }
-        return existing.level === action.payload.level;
+        const requested = requestedLevel(action, existing.level);
+        return requested.ok && existing.level === requested.linear;
     },
     describe: (alpha) => {
         const label = 'Set send level';
@@ -76,6 +87,14 @@ export const handleSetSend = createHandler<'setSend'>({
         if (!existing) {
             return { label, inverseAction: null };
         }
+        // The inverse puts back the stored amplitude and expects the one this
+        // action is about to write, so it refuses rather than clobbering a level
+        // something else moved. Both are stated linearly whatever form the
+        // forward action used.
+        const requested = requestedLevel(alpha, existing.level);
+        if (!requested.ok) {
+            return { label, inverseAction: null };
+        }
         return {
             label,
             inverseAction: {
@@ -84,7 +103,7 @@ export const handleSetSend = createHandler<'setSend'>({
                     trackId: alpha.payload.trackId,
                     busId: alpha.payload.busId,
                     level: existing.level,
-                    expectedLevel: alpha.payload.level,
+                    expectedLevel: requested.linear,
                     expectedPreFader: existing.preFader,
                 },
             },

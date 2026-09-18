@@ -1,9 +1,24 @@
+import { type LevelResolution, resolveSendLevelFields, SEND_LEVEL_LAW } from '#/utils/audioLevelLaw';
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { setSend } from '../../useCases/device/sendManagement/setSend';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { getPlannedTrackState } from '../getPlannedTrackState';
+
+type AddSendAction = Extract<AppAction, { type: 'addSend' }>;
+
+/**
+ * The linear amplitude this action asks for, whichever way it asked.
+ *
+ * The send does not exist yet, so a relative request has nothing on the track to
+ * measure from and is measured from unity instead — "6 dB down" on a send being
+ * created means 6 dB below the full copy of the signal it taps.
+ */
+function requestedLevel(action: AddSendAction): LevelResolution {
+    return resolveSendLevelFields(action.payload, SEND_LEVEL_LAW.unity);
+}
 
 export const handleAddSend = createHandler<'addSend'>({
     canReapplyAfterDivergence: (action) => action.payload.expectedAbsent === true,
@@ -16,7 +31,10 @@ export const handleAddSend = createHandler<'addSend'>({
         if (!getTrackEligibility(track.kind).acceptsSend || !getTrackEligibility(target.kind).acceptsRoutingEndpoint) {
             return false;
         }
-        return !track.sends.some((send) => send.busId === action.payload.busId);
+        if (track.sends.some((send) => send.busId === action.payload.busId)) {
+            return false;
+        }
+        return requestedLevel(action).ok;
     },
     execute: (alpha) => {
         const state = getTrackStoreState();
@@ -35,10 +53,14 @@ export const handleAddSend = createHandler<'addSend'>({
         if (existing) {
             return { status: 'conflict' };
         }
+        const requested = requestedLevel(alpha);
+        if (!requested.ok) {
+            return { status: 'conflict', reason: requested.reason };
+        }
         const runtimeEffect = setSend(
             alpha.payload.trackId,
             alpha.payload.busId,
-            alpha.payload.level,
+            requested.linear,
             alpha.payload.preFader ?? false,
             { deferRuntimeEffect: true }
         );
@@ -58,19 +80,23 @@ export const handleAddSend = createHandler<'addSend'>({
             return { label, inverseAction: null };
         }
         const existing = track?.sends.find((state) => state.busId === alpha.payload.busId);
+        // The inverse expects the level this action is about to write, stated
+        // linearly whatever form the forward action used.
+        const requested = requestedLevel(alpha);
         return {
             label,
-            inverseAction: existing
-                ? null
-                : {
-                      type: 'removeSend',
-                      payload: {
-                          trackId: alpha.payload.trackId,
-                          busId: alpha.payload.busId,
-                          expectedLevel: alpha.payload.level,
-                          expectedPreFader: alpha.payload.preFader ?? false,
+            inverseAction:
+                existing || !requested.ok
+                    ? null
+                    : {
+                          type: 'removeSend',
+                          payload: {
+                              trackId: alpha.payload.trackId,
+                              busId: alpha.payload.busId,
+                              expectedLevel: requested.linear,
+                              expectedPreFader: alpha.payload.preFader ?? false,
+                          },
                       },
-                  },
         };
     },
     previewExecution: 'isolated-project',

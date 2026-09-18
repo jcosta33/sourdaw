@@ -1,4 +1,6 @@
+import { CLIP_MAX_GAIN } from '#/utils/audioLevelLaw';
+
 /** The gain a clip gain write actually lands on, which is what a replay guard must expect. */
 export function clampClipGain(gain: number): number {
-    return Math.max(0, Math.min(2, gain));
+    return Math.max(0, Math.min(CLIP_MAX_GAIN, gain));
 }

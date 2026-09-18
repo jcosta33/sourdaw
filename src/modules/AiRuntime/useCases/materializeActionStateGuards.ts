@@ -1,5 +1,5 @@
 import { getNotesForClip, projectDrumPreviewCandidateNotes } from '#/modules/MIDI/useCases';
-import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+import { FADER_MAX_GAIN, resolveSendLevelFields, SEND_LEVEL_LAW, toLevelDb } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type MaterializableRuntimeAction } from '../models/ExecutableRuntimeAction';
@@ -34,6 +34,7 @@ function createProjectedBus(busId: string, name: string): ProjectContextTrack {
         armed: false,
         frozen: false,
         gain: 1,
+        gainDb: toLevelDb(1),
         pan: 0,
         automationMode: 'read',
         vcaGroupId: null,
@@ -67,6 +68,7 @@ function createProjectedTrack(
         armed: false,
         frozen: false,
         gain: 0.8,
+        gainDb: toLevelDb(0.8),
         pan: 0,
         automationMode: 'read',
         vcaGroupId: null,
@@ -538,11 +540,19 @@ export function materializeActionStateGuards(
                     reason: `Send already exists: ${action.payload.trackId} -> ${action.payload.busId}`,
                 };
             }
+            // The guard has to record the level the send will actually hold,
+            // not the form the request stated it in: a later action in the same
+            // batch reads this projection to decide what it is changing.
+            const level = resolveSendLevelFields(action.payload, SEND_LEVEL_LAW.unity);
+            if (!level.ok) {
+                return { status: 'rejected', reason: level.reason };
+            }
             const projectedSends = [
                 ...(sourceTrack.sends ?? []),
                 {
                     busId: action.payload.busId,
-                    level: action.payload.level,
+                    level: level.linear,
+                    levelDb: toLevelDb(level.linear),
                     preFader: action.payload.preFader ?? false,
                 },
             ];

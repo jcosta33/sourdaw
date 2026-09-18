@@ -75,8 +75,16 @@ export type GainDbFormat = {
  * look at is worse than no sentence.
  */
 export function formatGainDb(gain: number, format: GainDbFormat = {}): string {
+    return formatDecibels(gainToDb(gain), format);
+}
+
+/**
+ * The same readout for a figure that is already in decibels — a relative
+ * change a command asked for, say, which has no linear amplitude behind it to
+ * convert.
+ */
+export function formatDecibels(db: number, format: GainDbFormat = {}): string {
     const { fractionDigits = 1, trimTrailingZeros = false } = format;
-    const db = gainToDb(gain);
     if (!Number.isFinite(db)) {
         return '-∞';
     }
@@ -140,6 +148,230 @@ export function clampFaderGain(gain: number): number {
         return 0;
     }
     return Math.min(FADER_MAX_GAIN, gain);
+}
+
+/**
+ * Ceiling of a clip's own gain trim, as a linear amplitude multiplier: `+6 dB`
+ * of make-up on the clip before the track fader sees it. `clampClipGain` and
+ * every acceptor that advertises the clip ceiling read this one constant — a
+ * schema that promised a ceiling the writer clamps below would hand the caller
+ * a confirmation for a level it never stored.
+ */
+export const CLIP_MAX_GAIN = 2;
+
+/**
+ * The window one level control admits, stated in decibels.
+ *
+ * Levels are *stored* as linear amplitude, but a musician — and a planner
+ * speaking for one — thinks in decibels: "bring the vocal down 2 dB", not
+ * "multiply its amplitude by 0.794". A law is the bridge. It is deliberately
+ * the same shape for every control so a caller states which control it is
+ * writing rather than restating that control's arithmetic.
+ *
+ * `unity` is pinned at `1` rather than derived: every level in this app
+ * references unity gain, and a law that could claim another reference would let
+ * "0 dB" mean two things.
+ */
+export type LevelLaw = {
+    /** Quietest level the control admits, in decibels. */
+    floorDb: number;
+    /** Loudest level the control admits, in decibels. */
+    ceilingDb: number;
+    /** The linear amplitude `0 dB` names. */
+    unity: 1;
+};
+
+/**
+ * Track and master faders. The ceiling is the fader's own headroom; the floor
+ * is {@link SEND_MIN_DB}, because the fader control itself has no dB floor —
+ * its travel is linear from a hard `0` (true silence), so there is no taper
+ * constant to reuse. Below −60 dB a fader is inaudible under any programme
+ * material, so a dB request past it is a mistake worth reporting rather than a
+ * level worth storing; asking for silence stays available through the linear
+ * form, which is what a fader dragged to the bottom writes.
+ */
+export const TRACK_FADER_LAW: LevelLaw = { floorDb: SEND_MIN_DB, ceilingDb: FADER_HEADROOM_DB, unity: 1 };
+
+/** Clip gain trim: the same floor as a fader, {@link CLIP_MAX_GAIN} as its ceiling. */
+export const CLIP_GAIN_LAW: LevelLaw = { floorDb: SEND_MIN_DB, ceilingDb: gainToDb(CLIP_MAX_GAIN), unity: 1 };
+
+/**
+ * Send levels. A send stops at unity — it taps a copy of the signal, it does
+ * not amplify it — and bottoms out at {@link SEND_MIN_DB}, the bottom of the
+ * send control's own travel.
+ */
+export const SEND_LEVEL_LAW: LevelLaw = { floorDb: SEND_MIN_DB, ceilingDb: 0, unity: 1 };
+
+/**
+ * How a caller asked for a level: as the stored linear amplitude, as an
+ * absolute level in decibels, or as a change relative to where the level is now.
+ */
+export type LevelArgument = { linear: number } | { absoluteDb: number } | { deltaDb: number };
+
+/** Either the linear amplitude to store, or why the request cannot be honoured. */
+export type LevelResolution = { ok: true; linear: number } | { ok: false; reason: string };
+
+function describeDb(db: number): string {
+    return `${db.toFixed(1)} dB`;
+}
+
+function admitDb(db: number, law: LevelLaw): LevelResolution {
+    if (!Number.isFinite(db)) {
+        return { ok: false, reason: 'A level in decibels must be a finite number.' };
+    }
+    if (db < law.floorDb) {
+        return { ok: false, reason: `${describeDb(db)} is below this control's floor of ${describeDb(law.floorDb)}.` };
+    }
+    if (db > law.ceilingDb) {
+        return {
+            ok: false,
+            reason: `${describeDb(db)} is above this control's ceiling of ${describeDb(law.ceilingDb)}.`,
+        };
+    }
+    return { ok: true, linear: dbToGain(db) };
+}
+
+/**
+ * The linear amplitude a level request resolves to under one control's law.
+ *
+ * The linear form passes through untouched: it is already the stored
+ * representation, and the writer that receives it applies the same clamp it has
+ * always applied, so routing an existing linear caller through here cannot move
+ * what it stores. Only the decibel forms are judged against the law, because
+ * only they are new — and a rejected request must leave the store alone rather
+ * than land on the nearest legal value, since a planner that asked for +12 dB
+ * on a fader needs to learn the ceiling, not to silently get +6 dB.
+ *
+ * A relative change needs somewhere to start. A level already at silence has no
+ * finite decibel value, so `deltaDb` against it is not a small edit but an
+ * unanswerable question, and it is refused by name rather than treated as a
+ * change from the floor.
+ */
+export function resolveLevelArgument(argument: LevelArgument, current: number, law: LevelLaw): LevelResolution {
+    if ('linear' in argument) {
+        if (!Number.isFinite(argument.linear)) {
+            return { ok: false, reason: 'A linear level must be a finite number.' };
+        }
+        return { ok: true, linear: argument.linear };
+    }
+    if ('absoluteDb' in argument) {
+        return admitDb(argument.absoluteDb, law);
+    }
+    if (!Number.isFinite(argument.deltaDb)) {
+        return { ok: false, reason: 'A relative level change must be a finite number of decibels.' };
+    }
+    const currentDb = gainToDb(current);
+    if (!Number.isFinite(currentDb)) {
+        return {
+            ok: false,
+            reason: 'The current level is silent, so there is no level to change relative to; ask for an absolute level in decibels instead.',
+        };
+    }
+    const resolved = admitDb(currentDb + argument.deltaDb, law);
+    if (!resolved.ok) {
+        return {
+            ok: false,
+            reason: `A change of ${describeDb(argument.deltaDb)} from ${describeDb(currentDb)} lands out of range: ${resolved.reason}`,
+        };
+    }
+    return resolved;
+}
+
+/**
+ * The law a linear-amplitude gain automation lane draws under.
+ *
+ * A lane carries its own bounds, and a gain lane written before the fader
+ * widened carries narrower ones than a lane written after, so the window is
+ * read off the lane rather than assumed. A bound at or below zero has no finite
+ * decibel value; it reports the shared floor, because a lane that reaches true
+ * silence is unbounded below in decibels and a caller needs a number it can act
+ * on.
+ */
+export function gainLaneLevelLaw(bounds: { minValue: number; maxValue: number }): LevelLaw {
+    return {
+        floorDb: bounds.minValue > 0 ? gainToDb(bounds.minValue) : SEND_MIN_DB,
+        ceilingDb: bounds.maxValue > 0 ? gainToDb(bounds.maxValue) : SEND_MIN_DB,
+        unity: 1,
+    };
+}
+
+/**
+ * How a caller-facing schema states one control's decibel window.
+ *
+ * A tool description that names a bound is a contract with the model, and the
+ * model will not ask for a value it has been told is out of range — so the
+ * sentence is derived from the law rather than typed beside it, where the two
+ * could drift.
+ */
+export function describeLevelLawDb(law: LevelLaw): string {
+    const round = (db: number): string => String(Number(db.toFixed(1)));
+    return `${round(law.floorDb)} dB (floor) to ${round(law.ceilingDb)} dB (ceiling); 0 dB is unity`;
+}
+
+/**
+ * The linear amplitude one command payload's level fields resolve to.
+ *
+ * A payload states its level exactly once. Stating it twice is a contradiction
+ * rather than a preference between two numbers, so it is refused instead of
+ * settled by a precedence rule the caller cannot see; stating it not at all
+ * leaves nothing to write.
+ */
+export function resolveLevelFields(
+    fields: { linear?: number; absoluteDb?: number; deltaDb?: number },
+    current: number,
+    law: LevelLaw
+): LevelResolution {
+    const stated: LevelArgument[] = [];
+    if (fields.linear !== undefined) {
+        stated.push({ linear: fields.linear });
+    }
+    if (fields.absoluteDb !== undefined) {
+        stated.push({ absoluteDb: fields.absoluteDb });
+    }
+    if (fields.deltaDb !== undefined) {
+        stated.push({ deltaDb: fields.deltaDb });
+    }
+    const [argument] = stated;
+    if (argument === undefined || stated.length > 1) {
+        return {
+            ok: false,
+            reason: 'State the level exactly once: a linear amplitude, an absolute level in decibels, or a relative change in decibels.',
+        };
+    }
+    return resolveLevelArgument(argument, current, law);
+}
+
+/**
+ * The decibel figure a stored linear level reads as, or `null` when it has
+ * none.
+ *
+ * Silence is the reason for the `null`: {@link gainToDb} answers `-Infinity`
+ * for a level of zero, which is a real answer about the level but not a
+ * number a reader can print, compare, or send over a wire. Reporting it as a
+ * very low decibel figure instead would claim the level is audible.
+ */
+export function toLevelDb(linear: number): number | null {
+    const db = gainToDb(linear);
+    return Number.isFinite(db) ? db : null;
+}
+
+/**
+ * The linear level a send payload asks for, whichever form it used.
+ *
+ * Every send level — on the command, in a planner projection, in a state
+ * guard — answers to one law, so the conversion lives in one place rather
+ * than being restated at each site that has to predict what a send write
+ * lands on.
+ */
+export function resolveSendLevelFields(
+    fields: { level?: number; levelDb?: number; deltaDb?: number },
+    current: number
+): LevelResolution {
+    return resolveLevelFields(
+        { linear: fields.level, absoluteDb: fields.levelDb, deltaDb: fields.deltaDb },
+        current,
+        SEND_LEVEL_LAW
+    );
 }
 
 /**

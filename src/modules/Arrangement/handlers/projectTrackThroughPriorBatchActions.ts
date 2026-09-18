@@ -1,3 +1,4 @@
+import { resolveLevelFields, SEND_LEVEL_LAW, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { type Track } from '../stores/trackStore';
@@ -40,7 +41,21 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
             continue;
         }
         if (action.type === 'setTrackGain') {
-            projected.gain = action.payload.gain;
+            // A batch that lowers the same fader twice has to compound: the second
+            // action's `deltaDb` is relative to what the first one left behind, not
+            // to what the store held before the batch began.
+            const resolved = resolveLevelFields(
+                {
+                    linear: action.payload.gain,
+                    absoluteDb: action.payload.gainDb,
+                    deltaDb: action.payload.deltaDb,
+                },
+                projected.gain,
+                TRACK_FADER_LAW
+            );
+            if (resolved.ok) {
+                projected.gain = resolved.linear;
+            }
         } else if (action.type === 'renameTrack') {
             projected.name = action.payload.name;
         } else if (action.type === 'setTrackColor') {
@@ -54,11 +69,24 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
         } else if (action.type === 'setTrackOutput') {
             projected.outputId = action.payload.outputId;
         } else if (action.type === 'addSend') {
-            projected.sends.push({
-                busId: action.payload.busId,
-                level: action.payload.level,
-                preFader: action.payload.preFader ?? false,
-            });
+            // The send does not exist yet, so a relative request measures from
+            // unity — the same reference `handleAddSend` writes against.
+            const resolved = resolveLevelFields(
+                {
+                    linear: action.payload.level,
+                    absoluteDb: action.payload.levelDb,
+                    deltaDb: action.payload.deltaDb,
+                },
+                SEND_LEVEL_LAW.unity,
+                SEND_LEVEL_LAW
+            );
+            if (resolved.ok) {
+                projected.sends.push({
+                    busId: action.payload.busId,
+                    level: resolved.linear,
+                    preFader: action.payload.preFader ?? false,
+                });
+            }
         } else if (action.type === 'removeSend') {
             projected.sends = projected.sends.filter((send) => send.busId !== action.payload.busId);
         } else if (action.type === 'removeDevice') {

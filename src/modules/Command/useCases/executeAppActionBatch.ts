@@ -405,7 +405,7 @@ async function executePreparedBatch(
         );
         if (result?.status === 'no-write' || result?.status === 'conflict') {
             attemptedActions.pop();
-            throw new AppActionConflictError(prepared.action.type);
+            throw new AppActionConflictError(prepared.action.type, result.reason);
         }
         prepared.afterCommit = result?.afterCommit ?? null;
         prepared.afterAmbiguousCommit = result?.afterAmbiguousCommit ?? null;

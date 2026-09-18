@@ -82,6 +82,7 @@ describe('projectBatchLocalCreation', () => {
                 armed: false,
                 frozen: false,
                 gain: 0.8,
+                gainDb: -1.938200260161128,
                 pan: 0,
                 automationMode: 'read',
                 outputId: 'master',
