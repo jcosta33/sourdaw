@@ -30,6 +30,8 @@ export type PruneRemoteBranchesPort = {
     baseDependentsFor: (branches: string[]) => Map<string, PullRequestListing>;
     branchTip: (name: string) => string | undefined;
     deleteBranch: (name: string) => DeleteOutcome;
+    recordedMeasurementRevisions: () => string[];
+    branchHoldsRevision: (branch: RemoteBranch, revision: string) => boolean;
 };
 
 export type PruneRemoteBranchesArgs = { apply: boolean; limit?: number; help: boolean };
@@ -37,6 +39,16 @@ export type PruneRemoteBranchesArgs = { apply: boolean; limit?: number; help: bo
 const usage = 'usage: pnpm branch:prune [--apply] [--limit <n>]';
 const BATCH_SIZE = 50;
 const [REQUIRED_OWNER, REQUIRED_NAME] = REQUIRED_REPOSITORY.split('/') as [string, string];
+
+/**
+ * The tracked tables that record the source revision their measured digests were taken
+ * against. `assertGrandBouleMeasurementAdmission` resolves each recorded `sourceRevision` by
+ * SHA, so the revision has to stay reachable from some remote branch (#4364, ADR 0038). The
+ * revisions themselves are read from these tables at run time, so a re-measurement protects
+ * its own revision without editing this guard.
+ */
+const RECORDED_MEASUREMENT_TABLES = ['crates/daw-dsp/benches/quantum-cost-table.json'] as const;
+const FULL_HEXADECIMAL_GIT_REVISION = /^[0-9a-f]{40}$/u;
 
 export function parsePruneRemoteBranchesArgs(args: string[]): PruneRemoteBranchesArgs {
     if (args.length === 1 && args[0] === '--help') {
@@ -145,6 +157,35 @@ function dependentBlockReason(listing: PullRequestListing): string | undefined {
     }
     const dependent = listing.pullRequests.find((pullRequest) => pullRequest.state === PR_STATE.OPEN);
     return dependent === undefined ? undefined : `open base-dependent pull request #${dependent.number}`;
+}
+
+/**
+ * Retains a spent branch when deleting it would make a recorded measurement source revision
+ * unreachable. `assertGrandBouleMeasurementAdmission` resolves that revision by SHA, and a
+ * squash merge never makes a measured lane head an ancestor of `main`, so its lane branch is
+ * often the only remote holder; pruning it breaks the required Gate on `main` for every later
+ * pull request with no source change to blame (#4364).
+ *
+ * A revision some surviving branch still holds pins nothing, and one no branch holds at all is
+ * already unresolvable, so both cases prune as before. A retained branch is reclassified as
+ * `open` (kept) exactly like the base-dependent guard above, leaving the plan's shape intact.
+ */
+function retainMeasurementRevisionHolders(
+    branches: RemoteBranch[],
+    classes: Map<string, BranchClass>,
+    port: PruneRemoteBranchesPort,
+    log: (message: string) => void
+): void {
+    for (const revision of port.recordedMeasurementRevisions()) {
+        const holders = branches.filter((branch) => port.branchHoldsRevision(branch, revision));
+        if (holders.some((branch) => classes.get(branch.name) !== 'spent')) {
+            continue;
+        }
+        for (const branch of holders) {
+            classes.set(branch.name, 'open');
+            log(`kept ${branch.name}: last remote holder of recorded measurement revision ${revision}`);
+        }
+    }
 }
 
 function requireListing(prMap: Map<string, PullRequestListing>, name: string): PullRequestListing {
@@ -346,6 +387,7 @@ export function pruneRemoteBranches(
             log(`kept ${branch.name}: ${reason}`);
         }
     }
+    retainMeasurementRevisionHolders(branches, classes, port, log);
     printPlan(branches, classes, prMap, log);
     const spent = branches
         .filter((branch) => classes.get(branch.name) === 'spent')
@@ -366,6 +408,44 @@ export function pruneRemoteBranches(
 }
 
 type Gh = (args: string[]) => string;
+
+/**
+ * Every full-hexadecimal `sourceRevision` the supplied table contents record, deduplicated.
+ * Deriving the revisions from what the tracked tables say at run time is what lets a future
+ * re-measurement protect its own revision without editing the guard (#4364).
+ */
+export function recordedRevisionsInTables(tables: string[]): string[] {
+    const recorded = tables
+        .map((table) => (JSON.parse(table) as { sourceRevision?: unknown }).sourceRevision)
+        .filter(
+            (revision): revision is string =>
+                typeof revision === 'string' && FULL_HEXADECIMAL_GIT_REVISION.test(revision)
+        );
+    return [...new Set(recorded)].sort();
+}
+
+function fetchRecordedMeasurementRevisions(gh: Gh): string[] {
+    const tables = RECORDED_MEASUREMENT_TABLES.map((path) =>
+        gh([
+            'api',
+            '-H',
+            'Accept: application/vnd.github.raw',
+            `repos/${REQUIRED_REPOSITORY}/contents/${path}?ref=${REQUIRED_BASE_BRANCH}`,
+        ])
+    );
+    return recordedRevisionsInTables(tables);
+}
+
+/**
+ * Whether the revision is an ancestor of (or equal to) the branch tip. GitHub answers it,
+ * not the local checkout: `origin/*` tracking refs can be stale or absent, and remote
+ * reachability is the property the admission depends on. A comparison that cannot be
+ * answered throws rather than guessing about an irreversible delete.
+ */
+export function branchHoldsRevision(branch: RemoteBranch, revision: string, gh: Gh): boolean {
+    const status = gh(['api', `repos/${REQUIRED_REPOSITORY}/compare/${revision}...${branch.tip}`, '--jq', '.status']);
+    return status === 'ahead' || status === 'identical';
+}
 
 function graphql(gh: Gh, query: string, fields: string[], label: string): unknown {
     return parseGraphqlResponse(gh(['api', 'graphql', '-f', `query=${query}`, ...fields]), label);
@@ -545,6 +625,8 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prun
         baseDependentsFor: (names) => queryBaseDependents(names, gh),
         branchTip: (name) => fetchBranchTip(name, gh),
         deleteBranch: (name) => deleteRemoteBranch(name, gh),
+        recordedMeasurementRevisions: () => fetchRecordedMeasurementRevisions(gh),
+        branchHoldsRevision: (branch, revision) => branchHoldsRevision(branch, revision, gh),
     };
 }
 
