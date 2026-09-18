@@ -1,0 +1,50 @@
+scripts/agent-campaign/evidenceGateContract.ts
+  s_914af328b3988f::t_d3e7b3fbafc027 94-101
+evidence/agent-campaign/corpora/development.json
+  s_914af328b3988f::t_1f0c12e42deb68 1-365
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_914af328b3988f::t_9c7deaf578cbcc 168
+  s_914af328b3988f::t_fa9958616b780f 176
+  s_914af328b3988f::t_90e6514670a6b1 1-31,33-66,68-127,132-156,161-167,169-175,177-181,183-330
+  s_914af328b3988f::t_35b639a6ffe0ac 67
+  s_914af328b3988f::t_3c71f46dc90533 128-131
+  s_914af328b3988f::t_940bb24adf8469 157-160
+  s_914af328b3988f::t_bf66659e77a516 182
+  s_914af328b3988f::t_2ccfd188a8083c 32
+src/modules/AiRuntime/services/agentAcceptanceScorer.ts
+  s_914af328b3988f::t_7153ee896437f9 34-37
+  s_914af328b3988f::t_17337f2a848447 1-10,12-33,38-40,47-49,52,54-91,106-150
+  s_914af328b3988f::t_4bc870bb0481b2 41-46,50-51,53
+  s_914af328b3988f::t_928007bc673de5 11
+  s_914af328b3988f::t_132d915de5480a 92-105
+scripts/agent-campaign/run-evidence-gate.ts
+  s_914af328b3988f::t_2872ea0fa1d959 90-94,97-98
+  s_914af328b3988f::t_0cc2304787294b 159
+  s_914af328b3988f::t_5853d46882ad5e 95-96
+  s_914af328b3988f::t_e081bba5eb98d2 18
+  s_914af328b3988f::t_e1c075797b93b8 89
+src/modules/AiRuntime/models/AgentAcceptanceOutcome.ts
+  s_914af328b3988f::t_6486250b768276 1-90
+evidence/agent-campaign/corpora/held-out.json
+  s_914af328b3988f::t_c4e9f14e0032eb 1-360
+scripts/__tests__/runEvidenceGate.spec.ts
+  s_914af328b3988f::t_6b102b4644bafd 148-163
+evidence/agent-campaign/manifest.json
+  s_914af328b3988f::t_b3f6119bf33b1d 190,798-805,808,812,824,891
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "18237422dbb1c14bf80dea2cb80e548d3b9c900b",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
