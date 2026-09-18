@@ -253,7 +253,8 @@ same primary repository, and the command records the exact parent lineage under
 boundary; role locks alone do not prove it. Slugs cannot be purely numeric: bare numbers mean issues.
 Supply the ticket number for `agent/<issue>/<slug>`; otherwise use `agent/<slug>`. PRs close their
 issue by default; campaign slices use `lane:publish --relates` to keep the umbrella open. Touch only
-your lane.
+your lane. Claim the work when you open the lane — the issue-bound and issueless procedures are in
+[delivery-orchestration].
 
 A lane records its authoring model when opened: `--model <model>`, the lowercase public name of
 the model itself, keeping every qualifier that distinguishes capability or edition within the
