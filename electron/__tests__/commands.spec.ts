@@ -310,10 +310,11 @@ const addonSignatures = (): ReadonlyMap<string, AddonSignature> => {
         }
         declared.push(current);
 
-        const named = declared
-            .map((parameter) => parameter.trim())
-            .filter((parameter) => parameter !== '' && parameter !== '&self' && parameter !== 'self')
-            .map((parameter) => parameter.slice(0, parameter.indexOf(':')).trim());
+        const trimmed = declared.map((parameter) => parameter.trim());
+        const withoutSelf = trimmed.filter(
+            (parameter) => parameter !== '' && parameter !== '&self' && parameter !== 'self'
+        );
+        const named = withoutSelf.map((parameter) => parameter.slice(0, parameter.indexOf(':')).trim());
 
         signatures.set(name, {
             // The router appends the emitter itself; it is never sent by a caller.
@@ -448,7 +449,8 @@ describe('positional argument contract', () => {
         // The router appends `stream.emit` as the final argument, so a command
         // that grew an emitter without the renderer calling `stream()` would be
         // invoked one argument short.
-        const streaming = [...addonSignatures()]
+        const signatures = Array.from(addonSignatures());
+        const streaming = signatures
             .filter(([name, signature]) => signature.streamEmitter && isExposedCommand(name))
             .map(([name]) => name);
 

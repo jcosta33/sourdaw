@@ -4,6 +4,8 @@ import {
     buildEslintArgv,
     ensureServerDependencies,
     eslintEnvironment,
+    FULL_ESLINT_TARGETS,
+    FULL_OXLINT_TARGETS,
     lintConcurrency,
     lintThreads,
     parseArgs,
@@ -26,6 +28,18 @@ describe('runLint arguments', () => {
     });
 });
 
+describe('full-run lint targets', () => {
+    it('includes electron alongside src and scripts', () => {
+        expect(FULL_OXLINT_TARGETS).toContain('src');
+        expect(FULL_OXLINT_TARGETS).toContain('scripts');
+        expect(FULL_OXLINT_TARGETS).toContain('electron');
+
+        expect(FULL_ESLINT_TARGETS).toContain('src/**/*.{ts,tsx}');
+        expect(FULL_ESLINT_TARGETS).toContain('scripts/**/*.ts');
+        expect(FULL_ESLINT_TARGETS).toContain('electron/**/*.ts');
+    });
+});
+
 describe('eslint cache argv', () => {
     it('keys cache on file content for focused runs', () => {
         const argv = buildEslintArgv({ fix: false, full: false }, ['src/a.ts']);
@@ -35,7 +49,7 @@ describe('eslint cache argv', () => {
     });
 
     it('keys cache on file content for full runs', () => {
-        const argv = buildEslintArgv({ fix: false, full: true }, ['src/**/*.{ts,tsx}', 'scripts/**/*.ts']);
+        const argv = buildEslintArgv({ fix: false, full: true }, [...FULL_ESLINT_TARGETS]);
 
         expect(argv).toContain('--cache');
         expect(cacheStrategy(argv)).toBe('content');

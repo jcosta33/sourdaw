@@ -89,7 +89,7 @@ import { getWindowChromeOptions } from './windowChrome.js';
 import { createWindowCloseCoordinator } from './windowCloseCoordinator.js';
 import { askToSaveBeforeClose } from './windowCloseDialog.js';
 
-import type { WebContents } from 'electron';
+import type { BrowserWindowConstructorOptions, WebContents } from 'electron';
 
 // Logging must never crash the shell. When stdout or stderr is a closed pipe
 // — a packaged app whose parent went away — every console write raises EPIPE,
@@ -141,6 +141,13 @@ const allowedOrigins = (): readonly string[] => {
 const isAllowedNavigation = (url: string): boolean => isNavigationAllowed(allowedOrigins(), url);
 
 const isAllowedFrameUrl = trustedFrameGuard(allowedOrigins);
+
+const windowOfSender = (sender: unknown): BrowserWindow | null => {
+    if (typeof sender === 'object' && sender !== null) {
+        return BrowserWindow.fromWebContents(sender as WebContents);
+    }
+    return null;
+};
 
 let mainWindow: BrowserWindow | undefined;
 let pluginWindowHost: PluginWindowHost | undefined;
@@ -304,6 +311,13 @@ const quiesceApprovedMainWindow = async (): Promise<QuitPreparationOutcome> => {
     }
 };
 
+const legalDocumentsRoot = (): string => {
+    if (app.isPackaged) {
+        return join(process.resourcesPath, 'legal');
+    }
+    return resolve(dirname(import.meta.dirname), '..', 'public', 'legal');
+};
+
 const attachWebContentsPolicy = (window: BrowserWindow): void => {
     window.webContents.on('will-navigate', (event, url) => {
         if (!isAllowedNavigation(url)) {
@@ -318,9 +332,7 @@ const attachWebContentsPolicy = (window: BrowserWindow): void => {
     window.webContents.setWindowOpenHandler(({ url }) => {
         const decision = decideWindowOpen(url);
         if (decision.legalDocument !== undefined) {
-            const legalRoot = app.isPackaged
-                ? join(process.resourcesPath, 'legal')
-                : resolve(dirname(import.meta.dirname), '..', 'public', 'legal');
+            const legalRoot = legalDocumentsRoot();
             void shell.openPath(join(legalRoot, decision.legalDocument)).then((error) => {
                 if (error !== '') {
                     console.warn(`[shell] failed to open legal document: ${error}`);
@@ -347,7 +359,7 @@ const attachWebContentsPolicy = (window: BrowserWindow): void => {
 const createWindow = (): BrowserWindow => {
     windowCloseCoordinator.resetForWindow();
     const contentRoots = resolveContentRoots();
-    const window = new BrowserWindow({
+    const windowOptions: BrowserWindowConstructorOptions = {
         width: 1440,
         height: 900,
         minWidth: 1024,
@@ -355,7 +367,6 @@ const createWindow = (): BrowserWindow => {
         title: APP_TITLE,
         backgroundColor: '#0a0a0a',
         show: false,
-        ...(process.platform === 'linux' ? { icon: join(contentRoots.distDir, 'icon-transparent.png') } : {}),
         ...getWindowChromeOptions(process.platform),
         webPreferences: {
             // Stated rather than inherited: these three are Electron's defaults
@@ -380,7 +391,11 @@ const createWindow = (): BrowserWindow => {
             // as one self-contained file.
             preload: join(import.meta.dirname, 'preload.cjs'),
         },
-    });
+    };
+    if (process.platform === 'linux') {
+        windowOptions.icon = join(contentRoots.distDir, 'icon-transparent.png');
+    }
+    const window = new BrowserWindow(windowOptions);
 
     window.once('ready-to-show', () => window.show());
     window.once('closed', () => rendererSessionQuiescer.finalize(window));
@@ -662,9 +677,10 @@ const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor =>
 const editorWindowScaleFactor = (editor?: EditorWindow): number => {
     const daw = mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined;
     const bounds = editor?.getBounds() ?? daw?.getBounds();
-    return bounds === undefined
-        ? screen.getPrimaryDisplay().scaleFactor
-        : screen.getDisplayMatching(bounds).scaleFactor;
+    if (bounds === undefined) {
+        return screen.getPrimaryDisplay().scaleFactor;
+    }
+    return screen.getDisplayMatching(bounds).scaleFactor;
 };
 
 /**
@@ -797,19 +813,18 @@ if (isPrimaryApplicationInstance) {
             // The router keeps IPC events structurally untyped so it stays
             // Electron-free; an invoke event's sender is always a WebContents.
             // Anything else has no window to drive.
-            windowForSender: (sender) =>
-                typeof sender === 'object' && sender !== null && 'id' in sender
-                    ? BrowserWindow.fromWebContents(sender as WebContents)
-                    : null,
+            windowForSender: (sender) => {
+                if (typeof sender === 'object' && sender !== null && 'id' in sender) {
+                    return BrowserWindow.fromWebContents(sender as WebContents);
+                }
+                return null;
+            },
         });
         registerNativeMenuChannels({
             ipcMain,
             isTrustedFrameUrl: isAllowedFrameUrl,
             onProjectState: (state, sender) => {
-                const senderWindow =
-                    typeof sender === 'object' && sender !== null
-                        ? BrowserWindow.fromWebContents(sender as WebContents)
-                        : null;
+                const senderWindow = windowOfSender(sender);
                 if (senderWindow !== mainWindow) {
                     return;
                 }
@@ -818,19 +833,13 @@ if (isPrimaryApplicationInstance) {
             },
             onSaveResult: (result) => windowCloseCoordinator.resolveSave(result),
             onSessionQuiesced: (result, sender) => {
-                const senderWindow =
-                    typeof sender === 'object' && sender !== null
-                        ? BrowserWindow.fromWebContents(sender as WebContents)
-                        : null;
+                const senderWindow = windowOfSender(sender);
                 if (senderWindow !== null) {
                     rendererSessionQuiescer.resolve(senderWindow, result);
                 }
             },
             onSessionQuiesceStarted: (requestId, sender) => {
-                const senderWindow =
-                    typeof sender === 'object' && sender !== null
-                        ? BrowserWindow.fromWebContents(sender as WebContents)
-                        : null;
+                const senderWindow = windowOfSender(sender);
                 return senderWindow !== null && rendererSessionQuiescer.start(senderWindow, requestId);
             },
         });

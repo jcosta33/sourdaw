@@ -233,7 +233,11 @@ export const createSourdawBridge = (
         ) {
             return;
         }
-        for (const listener of [...(voiceTerminalListeners.get(payload.session_id) ?? [])]) {
+        const listeners = voiceTerminalListeners.get(payload.session_id);
+        if (listeners === undefined) {
+            return;
+        }
+        for (const listener of [...listeners]) {
             listener(event, payload);
         }
     });

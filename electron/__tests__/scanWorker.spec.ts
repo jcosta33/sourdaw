@@ -44,8 +44,9 @@ describe('the launch contract with the Rust policy', () => {
     it('declares the fields the policy deserializes', () => {
         // `program`, `args` and `env` are the `ScanWorkerCommand` struct's serde
         // field names; a mismatch is a parse error at scan time, per plugin.
+        // The parse reads the exact string the policy receives.
         const declared: unknown = JSON.parse(
-            JSON.stringify(scanWorkerCommand('/resources/sourdaw-plugin-scan-helper'))
+            scanWorkerLaunchEnvironment('/resources/sourdaw-plugin-scan-helper')[SCAN_WORKER_COMMAND_ENV]
         );
 
         expect(declared).toEqual({

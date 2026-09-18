@@ -12,9 +12,9 @@
  * embedded frame, a page reached through a navigation bug — is denied even when
  * it asks for a permission the app itself is allowed.
  */
-import type { Session, WebContents } from 'electron';
-
 import { APP_HOST } from './protocol.js';
+
+import type { Session, WebContents } from 'electron';
 
 /**
  * The permissions the renderer is allowed to hold, on the app's origin only.

@@ -52,7 +52,8 @@ const fakeIpc = (answer: (channel: string, args: readonly unknown[]) => unknown 
         ipc: {
             invoke,
             on: (channel, listener) => {
-                listeners.set(channel, [...(listeners.get(channel) ?? []), listener]);
+                const existing = listeners.get(channel) ?? [];
+                listeners.set(channel, [...existing, listener]);
             },
         },
         push: (channel, ...args) => {
@@ -60,7 +61,10 @@ const fakeIpc = (answer: (channel: string, args: readonly unknown[]) => unknown 
                 listener({}, ...args);
             }
         },
-        channelListeners: () => new Map([...listeners].map(([channel, list]) => [channel, list.length])),
+        channelListeners: () => {
+            const entries = Array.from(listeners);
+            return new Map(entries.map(([channel, list]) => [channel, list.length]));
+        },
     };
 };
 
