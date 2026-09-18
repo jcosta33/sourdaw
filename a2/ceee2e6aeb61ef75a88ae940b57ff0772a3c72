@@ -1,0 +1,20 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  h_1228e573df1f42 32,12635-12642
+scripts/__tests__/githubAppIdentity.spec.ts
+  h_1228e573df1f42 43,1160-1169
+scripts/deliverPullRequest.ts
+  h_1228e573df1f42 2990,2993-2995,3003-3007
+scripts/githubAppIdentity.ts
+  h_1228e573df1f42 640-641,648-652
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a2ceee2e6aeb61ef75a88ae940b57ff0772a3c72",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
