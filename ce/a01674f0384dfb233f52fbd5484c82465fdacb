@@ -1,0 +1,26 @@
+.agents/specs/unified-sampler-suite/spec.md
+  h_1228e573df1f42 268-270,272,379-380
+crates/daw-dsp/benches/quantum-cost-table.md
+  h_1228e573df1f42 103-105
+crates/daw-dsp/src/grand_boule/engine.rs
+  h_1228e573df1f42 1327
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_1228e573df1f42 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_1228e573df1f42 1
+public/wasm/manifest.json
+  h_1228e573df1f42 12,17-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_1228e573df1f42 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cea01674f0384dfb233f52fbd5484c82465fdacb",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
