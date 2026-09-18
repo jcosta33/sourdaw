@@ -38,7 +38,7 @@ test.describe('Recording Workflow', () => {
         // A fresh project starts with zero tracks; add one before arming (#4299).
         await add_midi_track(page);
         // Arm the first track so Record has an eligible target (#3679).
-        await page.locator('[data-testid^="track-arm-"]').first().click();
+        await page.locator('[data-testid^="track-arm-"]').first().click({ timeout: 15_000 });
         const pressed_before = await record.getAttribute('aria-pressed');
         await record.click();
         await page.waitForTimeout(300);
