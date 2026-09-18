@@ -1,0 +1,37 @@
+docs/architecture/agent-release-gates.md
+  s_914af328b3988f::t_75510927362eaf 22-30,109-111
+evidence/agent-campaign/corpora/source-examples.json
+  s_914af328b3988f::t_b76eeb91e91c79 1-166
+scripts/__tests__/runEvidenceGate.spec.ts
+  s_914af328b3988f::t_048e51a05fbb2d 13,22,320-394
+scripts/agent-campaign/run-evidence-gate.ts
+  s_914af328b3988f::t_1b7742b4b66740 320-377,533
+src/app/__tests__/agentSourceExamples.spec.ts
+  s_914af328b3988f::t_8ff6f157b05ab1 1-163
+evidence/agent-campaign/manifest.json
+  s_8b2c82bc006c01::t_770d816746c9c4 6,808,836,890
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "07174dca1b23a42fcc0c95eb0bbc81a1603d8d7e",
+  "prompts": {},
+  "sessions": {
+    "s_8b2c82bc006c01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a566a86e5d63ba20d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
