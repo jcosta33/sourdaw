@@ -553,7 +553,11 @@ describe('playhead scheduler tick', () => {
             harness.clock = 0.05;
             await fireTick();
 
-            expect(harness.start_audio_recording).toHaveBeenCalledWith('track-audio-1', expect.any(Function));
+            expect(harness.start_audio_recording).toHaveBeenCalledWith(
+                'track-audio-1',
+                expect.any(Function),
+                undefined
+            );
 
             const complete_recording = harness.start_audio_recording.mock.calls[0]![1];
             const buffer = create_test_audio_buffer();
@@ -597,7 +601,7 @@ describe('playhead scheduler tick', () => {
         harness.clock = 0.05;
         await fireTick();
 
-        expect(harness.start_audio_recording).toHaveBeenCalledWith('track-audio-1', expect.any(Function));
+        expect(harness.start_audio_recording).toHaveBeenCalledWith('track-audio-1', expect.any(Function), undefined);
 
         // The `.catch` on startAudioRecording must surface the rejection as an
         // Error whose message names the punch-in path and whose cause is the
