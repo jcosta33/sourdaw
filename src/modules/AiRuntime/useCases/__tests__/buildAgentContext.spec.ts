@@ -351,4 +351,60 @@ describe('buildAgentContext', () => {
         expect(parsed.receipts.every((receipt) => receipt.summary.truncated)).toBe(true);
         expect(parsed.receipts.reduce((total, receipt) => total + receipt.summary.value.length, 0)).toBe(8_192);
     });
+
+    it('serializes the correction rejection evidence with bounded, trust-labeled provider output', () => {
+        const built = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'pan the drums left',
+            context,
+            projectRevision: 'revision-1',
+            validationFailures: [{ code: 'agent.resolution' }],
+            rejectionEvidence: {
+                kind: 'constraint',
+                command: { index: 1, name: 'setTrackPan' },
+                reason: 'Expected an available trackId and finite pan from -50 through 50',
+                candidateIds: ['track-1'],
+                resolution: { resolvedCount: 2, expectedCount: 1 },
+                rejectedFragment: JSON.stringify({ trackId: 'track-nope', pan: 20 }).repeat(40),
+            },
+        });
+
+        const validationFailures = parseMessageSection(built.message, 'validation_failures') as {
+            items: Array<{ code: string }>;
+            correction: {
+                kind: string;
+                command: { index: number; name: string };
+                reason: string;
+                candidateIds: string[];
+                resolution: { resolvedCount: number; expectedCount: number };
+                rejectedFragment: { trust: string; value: string; truncated: boolean };
+            };
+        };
+
+        expect(validationFailures.items).toEqual([{ code: { value: 'agent.resolution', truncated: false } }]);
+        expect(validationFailures.correction).toMatchObject({
+            kind: 'constraint',
+            command: { index: 1, name: 'setTrackPan' },
+            resolution: { resolvedCount: 2, expectedCount: 1 },
+            candidateIds: ['track-1'],
+        });
+        // The provider-authored fragment is labeled untrusted and bounded, so a
+        // rejection can inform the retry without importing unbounded prose.
+        expect(validationFailures.correction.rejectedFragment.trust).toBe('untrusted_provider_output');
+        expect(validationFailures.correction.rejectedFragment.truncated).toBe(true);
+        expect(validationFailures.correction.rejectedFragment.value).toHaveLength(512);
+    });
+
+    it('omits the correction section when there is no rejection evidence', () => {
+        const built = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'adjust',
+            context,
+            projectRevision: 'revision-1',
+            validationFailures: [{ code: 'agent.schema' }],
+        });
+
+        const validationFailures = parseMessageSection(built.message, 'validation_failures') as Record<string, unknown>;
+        expect(validationFailures.correction).toBeUndefined();
+    });
 });

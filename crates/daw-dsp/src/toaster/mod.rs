@@ -22,6 +22,10 @@ use crate::primitives::sanitize_block;
 use engine::ToasterEngine;
 use wasm_bindgen::prelude::*;
 
+// Restatement of the engine's callback ceiling
+// (`daw_engine::audio_thread::MAX_CALLBACK_FRAMES`): daw-dsp cannot depend
+// on the engine, so the figure is restated here and every copy must move
+// with the ceiling.
 const MAX_BLOCK_SIZE: usize = 4096;
 
 /// WASM-exported Toaster instance for AudioWorklet.

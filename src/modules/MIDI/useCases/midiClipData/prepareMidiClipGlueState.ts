@@ -1,7 +1,10 @@
 import { type MidiClipDataActionSnapshot, type MidiClipGlueActionSnapshot } from '#/utils/handlerContract';
+import { DEFAULT_NOTE_PROBABILITY } from '#/utils/midiData';
 
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
+
+import { snapshotMidiClipData } from './snapshotMidiClipData';
 
 type MidiGlueSource = {
     beatOffset: number;
@@ -15,26 +18,9 @@ type PrepareMidiClipGlueStateInput = {
     targetClipId: string;
 };
 
-function snapshotClipData(state: MidiStoreState, clipId: string): MidiClipDataActionSnapshot {
-    return {
-        notes: {
-            present: Object.hasOwn(state.notesByClipId, clipId),
-            value: structuredClone(state.notesByClipId[clipId] ?? []),
-        },
-        controlChanges: {
-            present: Object.hasOwn(state.ccByClipId, clipId),
-            value: structuredClone(state.ccByClipId[clipId] ?? []),
-        },
-        pitchBends: {
-            present: Object.hasOwn(state.pitchBendByClipId, clipId),
-            value: structuredClone(state.pitchBendByClipId[clipId] ?? []),
-        },
-    };
-}
-
 function snapshotState(state: MidiStoreState, clipIds: readonly string[]): MidiClipGlueActionSnapshot {
     return {
-        clips: clipIds.map((clipId) => ({ clipId, data: snapshotClipData(state, clipId) })),
+        clips: clipIds.map((clipId) => ({ clipId, data: snapshotMidiClipData(state, clipId) })),
         migratedAbsoluteNoteClipIds: {
             present: state.migratedAbsoluteNoteClipIds !== undefined,
             value: structuredClone(state.migratedAbsoluteNoteClipIds ?? []),
@@ -80,7 +66,7 @@ function compareCodeUnits(left: string, right: string): number {
 }
 
 function hasIdentityDependentProbability(note: MidiNote): boolean {
-    const probability = note.probability ?? 100;
+    const probability = note.probability ?? DEFAULT_NOTE_PROBABILITY;
     return probability > 0 && probability < 100;
 }
 

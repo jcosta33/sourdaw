@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import {
     installTransactionalIndexedDb,
     type TransactionalIndexedDbInstallation,
@@ -190,6 +191,9 @@ describe('semantic project queries', () => {
     let indexedDb: TransactionalIndexedDbInstallation | null = null;
 
     beforeEach(async () => {
+        // jsdom ships no Web Locks API, and the durable reset the project
+        // bootstrap performs sequences on it.
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         indexedDb = installTransactionalIndexedDb();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
@@ -200,6 +204,7 @@ describe('semantic project queries', () => {
     afterEach(async () => {
         await indexedDb?.dispose();
         indexedDb = null;
+        vi.unstubAllGlobals();
     });
 
     it('returns schema-versioned revision receipts with bounded stale-safe pagination', async () => {

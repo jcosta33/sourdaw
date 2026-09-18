@@ -108,6 +108,13 @@ export type LiveGraphTopologyInput = Readonly<{
     /** Every track and bus the live engine builds a strip for, in project order. */
     stripTracks: readonly Track[];
     /**
+     * Every track in the project, in project order, including tracks with no
+     * live strip. Fed straight through to the carrier law, which reads the
+     * Toaster pad-ordinal binding over this list rather than `stripTracks`
+     * because routing binds pads over the same full list.
+     */
+    projectTracks: readonly Track[];
+    /**
      * The strips the solo law is currently silencing. Distinct from `muted`
      * because the gates sit on opposite sides of the pre-fader send tap, which
      * is the whole reason the contract carries two.
@@ -116,7 +123,7 @@ export type LiveGraphTopologyInput = Readonly<{
     /** A track's VCA group master as a plain multiplier; absent means `1`. */
     vcaMultiplierByTrackId: ReadonlyMap<string, number>;
     /**
-     * The external plugin instances the native engine currently owns.
+     * The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}.
      *
      * The only thing that gives an `external-plugin` device a native body: the
      * mapper splices in an engine-owned instance and has nothing to splice for
@@ -265,6 +272,7 @@ function routingCommands(input: {
 export function projectLiveGraphTopology(input: LiveGraphTopologyInput): readonly AudioGraphCommand[] {
     const {
         stripTracks,
+        projectTracks,
         soloGatedTrackIds,
         vcaMultiplierByTrackId,
         attachedInstanceIds,
@@ -279,6 +287,7 @@ export function projectLiveGraphTopology(input: LiveGraphTopologyInput): readonl
     const trackStripIds = new Set(stripTracks.filter((track) => track.kind !== 'bus').map((track) => track.id));
     const carriers = projectStripCarriers({
         stripTracks,
+        projectTracks,
         attachedInstanceIds,
         programme,
         inputMonitoredTrackIds,

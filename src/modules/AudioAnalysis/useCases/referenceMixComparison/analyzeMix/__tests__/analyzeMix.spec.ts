@@ -1,74 +1,59 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { analyzeMix } from '../analyzeMix';
 
-const mocks = vi.hoisted(() => ({
-    trackStore: { value: null as { tracks: unknown[] } | null },
-}));
-
-vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: mocks.trackStore,
-}));
-
-function track(overrides: Record<string, unknown> = {}) {
-    return { kind: 'audio', muted: false, gain: 0.8, pan: 0, ...overrides };
+function toneBuffer(frequencyHz: number, amplitude = 0.5, sampleRate = 48_000): AudioBuffer {
+    const length = sampleRate;
+    const data = new Float32Array(length);
+    for (let position = 0; position < length; position++) {
+        data[position] = amplitude * Math.sin((2 * Math.PI * frequencyHz * position) / sampleRate);
+    }
+    return {
+        sampleRate,
+        length,
+        numberOfChannels: 1,
+        getChannelData: () => data,
+        duration: length / sampleRate,
+    } as unknown as AudioBuffer;
 }
 
-describe('analyzeMix (track-layout heuristic)', () => {
-    beforeEach(() => {
-        mocks.trackStore.value = null;
-    });
-
+describe('analyzeMix (program-audio measurement)', () => {
     it('should export analyzeMix', () => {
         expect(analyzeMix).toBeDefined();
         expect(typeof analyzeMix).toBe('function');
     });
 
-    it('should treat track.gain as a linear amplitude and report rmsDb/peakDb in dBFS', () => {
-        // One track at unity fader (gain 1.0 -> 0 dBFS). The dBFS contract means
-        // peakDb must sit 1 dB below 0 (the -1 headroom offset) and rmsDb 6 dB
-        // below. The old code subtracted the offsets from the *linear* gain
-        // (1.0 - 1 = 0, 1.0 - 6 = -5), so this pins the linear->dB conversion.
-        mocks.trackStore.value = { tracks: [track({ gain: 1.0 })] };
-
-        const analysis = analyzeMix();
-
-        // 20*log10(1.0) = 0 dBFS, minus the -1 / -6 offsets.
-        expect(analysis.peakDb).toBeCloseTo(-1, 5);
-        expect(analysis.rmsDb).toBeCloseTo(-6, 5);
+    it('should refuse to produce numbers when it was given no program audio', () => {
+        // The layout heuristic this test file once pinned derived dBFS values
+        // from fader positions; issue #3841 removed that fabrication. Without
+        // audio there is no measurement, whatever the track layout says.
+        expect(analyzeMix()).toEqual({ status: 'unavailable', reason: 'no-program-audio' });
     });
 
-    it('should map a sub-unity fader to a negative dBFS level, not the raw linear value', () => {
-        // Default fader 0.8 -> 20*log10(0.8) = -1.938 dBFS. The old code would
-        // have produced peakDb = 0.8 - 1 = -0.2 (a linear value masquerading as
-        // dB). After the fix, peakDb is well below that.
-        mocks.trackStore.value = { tracks: [track({ gain: 0.8 })] };
+    it('should convert actual samples to dBFS — the conversion contract this file guards', () => {
+        // A 0.5-amplitude sine measures 20·log10(0.5) ≈ -6.02 dBFS peak and
+        // 20·log10(0.5/√2) ≈ -9.03 dBFS RMS. The linear→dB conversion the
+        // earlier repair introduced is now driven by samples, not faders.
+        const result = analyzeMix([toneBuffer(220)]);
 
-        const analysis = analyzeMix();
-
-        const expectedPeak = 20 * Math.log10(0.8) - 1;
-        expect(analysis.peakDb).toBeCloseTo(expectedPeak, 5);
-        // Guards against the linear-as-dB regression (old peakDb would be -0.2).
-        expect(analysis.peakDb).toBeLessThan(-2);
+        if (result.status !== 'measured') {
+            throw new Error('Expected a measured result');
+        }
+        expect(result.analysis.peakDb).toBeCloseTo(-6.0206, 3);
+        expect(result.analysis.rmsDb).toBeCloseTo(-9.0309, 3);
+        expect(result.analysis.peakDb).toBeGreaterThan(result.analysis.rmsDb);
     });
 
-    it('should keep peak above rms and clamp silent mixes to the -60 dBFS floor', () => {
-        // A muted-equivalent silent fader (gain 0) must not produce -Infinity:
-        // it floors at -60 dBFS for both fields.
-        mocks.trackStore.value = { tracks: [track({ gain: 0 })] };
+    it('should report silence as unavailable instead of a floored measurement', () => {
+        const silence = new Float32Array(48_000);
+        const buffer = {
+            sampleRate: 48_000,
+            length: silence.length,
+            numberOfChannels: 1,
+            getChannelData: () => silence,
+            duration: 1,
+        } as unknown as AudioBuffer;
 
-        const analysis = analyzeMix();
-
-        expect(Number.isFinite(analysis.peakDb)).toBe(true);
-        expect(analysis.rmsDb).toBe(-60);
-        expect(analysis.peakDb).toBe(-60);
-    });
-
-    it('should keep peak strictly above rms for an audible mix', () => {
-        mocks.trackStore.value = { tracks: [track({ gain: 0.9 })] };
-
-        const analysis = analyzeMix();
-
-        expect(analysis.peakDb).toBeGreaterThan(analysis.rmsDb);
+        expect(analyzeMix([buffer])).toEqual({ status: 'unavailable', reason: 'silent-program-audio' });
     });
 });

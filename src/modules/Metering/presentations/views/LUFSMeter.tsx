@@ -14,6 +14,7 @@ import {
     ShortTermLUFS,
     IntegratedLUFS,
 } from '#/modules/AudioEngine/useCases';
+import { METER_FLOOR_DB, R128_TARGET_LUFS } from '#/utils/audioLevelLaw';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type LUFSMeterProps = {
@@ -22,7 +23,7 @@ type LUFSMeterProps = {
     target?: number;
 };
 
-export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterProps): ReactElement => {
+export const LUFSMeter = ({ height = 160, width = 48, target = R128_TARGET_LUFS }: LUFSMeterProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const shortTermRef = useRef(new ShortTermLUFS());
     const integratedRef = useRef(new IntegratedLUFS());
@@ -85,7 +86,7 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
             // Draw
             ctx.clearRect(0, 0, width, height);
 
-            const minLUFS = -60;
+            const minLUFS = METER_FLOOR_DB;
             const maxLUFS = 0;
             const range = maxLUFS - minLUFS;
             const lufsToY = (lufs: number): number =>
@@ -133,7 +134,7 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
                 if (mom > -3) {
                     return meterClip;
                 }
-                if (mom > -14) {
+                if (mom > target) {
                     return meterHot;
                 }
                 return meterSafe;
@@ -146,7 +147,7 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
                 if (st > -3) {
                     return `${meterClip}99`;
                 }
-                if (st > -14) {
+                if (st > target) {
                     return `${meterHot}99`;
                 }
                 return `${meterSafe}99`;

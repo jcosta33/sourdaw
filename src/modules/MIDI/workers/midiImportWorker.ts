@@ -5,7 +5,13 @@
  *
  * Port protocol (self.onmessage):
  *   ← { type: 'parse', buffer: ArrayBuffer }                        (transferable)
- *   → { type: 'parsed', tracks: ParsedTrack[], ticksPerBeat, tempo } | { type: 'error', message }
+ *   → { type: 'parsed', tracks, ticksPerBeat, tempo, declaredTrackCount, truncated }
+ *   | { type: 'error', message }
+ *
+ * `declaredTrackCount` is the track count the header claimed; `truncated` is
+ * true when the parse gave up before reading everything it declared. The pair
+ * lets the importer tell the user how much of the file arrived instead of
+ * reporting a silently smaller import as full success.
  */
 
 type ParsedNote = {
@@ -141,7 +147,13 @@ function systemCommonDataByteCount(statusByte: number): number {
     return 0;
 }
 
-function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBeat: number; tempo: number } {
+function parseMidiFile(buffer: ArrayBuffer): {
+    declaredTrackCount: number;
+    tracks: ParsedTrack[];
+    ticksPerBeat: number;
+    tempo: number;
+    truncated: boolean;
+} {
     const reader = new MidiReader(buffer);
 
     const headerChunk = reader.readString(4);
@@ -181,9 +193,13 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
     // appear last in the map.
     let tempoResolved = false;
     const parsedTracks: ParsedTrack[] = [];
-    // Set whenever the file gave up less than it declared. It decides only
-    // whether an empty result is an empty file or an unreadable one; a partial
-    // result is still the notes the file asked for and is imported as-is.
+    // Set whenever the file gave up less than it declared. It decides whether
+    // an empty result is an empty file or an unreadable one, and travels to the
+    // importer as `truncated` so a partial recovery can be reported — a smaller
+    // import that presents itself as complete hides the data loss from the
+    // user. A count comparison alone cannot say this: a valid file may declare
+    // more tracks than it yields, because an empty track or a skipped non-MTrk
+    // chunk yields nothing without anything being lost.
     let lostTrackData = false;
 
     for (let time = 0; time < numTracks; time++) {
@@ -221,6 +237,11 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
 
                 let statusByte = reader.readUint8();
 
+                // The status bytes and meta-event ids below (0xff, 0x03, 0x51,
+                // 0x90, 0x80, 0xb0) are restated from their owner in
+                // `models/SmfConstants.ts` because this worker is a separately
+                // bundled realm; smfConstantsParity.spec pins the two spellings
+                // equal.
                 if (statusByte === 0xff) {
                     const metaType = reader.readUint8();
                     const metaLen = reader.readVarLen();
@@ -362,7 +383,13 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
         throw new Error('Invalid MIDI file: no readable track data');
     }
 
-    return { tracks: parsedTracks, ticksPerBeat, tempo: globalTempo };
+    return {
+        declaredTrackCount: numTracks,
+        tracks: parsedTracks,
+        ticksPerBeat,
+        tempo: globalTempo,
+        truncated: lostTrackData,
+    };
 }
 
 self.onmessage = (event: MessageEvent) => {

@@ -31,7 +31,8 @@ import {
     RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
     type RendererSessionQuiesceResult,
 } from './channels.js';
-import { commandChannel } from './commands.js';
+import { commandChannel, SCAN_PLUGINS } from './commands.js';
+import { APP_TITLE } from './protocol.js';
 import { asPositionalArguments, withTrustedSender, withTrustedSenderEvent, type IpcMainLike } from './router.js';
 
 import type { NativeHost } from './native.js';
@@ -44,9 +45,6 @@ import type {
     SaveDialogOptions,
     SaveDialogReturnValue,
 } from 'electron';
-
-/** The one exposed command the addon in this process does not serve. */
-export const SCAN_COMMAND = 'scan_plugins';
 
 export type TrustGuard = (url: string | undefined) => boolean;
 
@@ -67,17 +65,17 @@ export const registerScanCommand = ({
     acceptsCommand,
 }: RegisterScanCommandInput): void => {
     ipcMain.handle(
-        commandChannel(SCAN_COMMAND),
-        withTrustedSender(SCAN_COMMAND, isTrustedFrameUrl, async (args) => {
-            if (acceptsCommand !== undefined && !acceptsCommand(SCAN_COMMAND)) {
-                throw new Error(`${SCAN_COMMAND} rejected: the application is shutting down`);
+        commandChannel(SCAN_PLUGINS),
+        withTrustedSender(SCAN_PLUGINS, isTrustedFrameUrl, async (args) => {
+            if (acceptsCommand !== undefined && !acceptsCommand(SCAN_PLUGINS)) {
+                throw new Error(`${SCAN_PLUGINS} rejected: the application is shutting down`);
             }
             const [paths, retryQuarantined] = asPositionalArguments(args);
             if (!isStringList(paths)) {
-                throw new TypeError('scan_plugins expects a list of paths');
+                throw new TypeError(`${SCAN_PLUGINS} expects a list of paths`);
             }
             if (retryQuarantined !== undefined && typeof retryQuarantined !== 'boolean') {
-                throw new TypeError('scan_plugins expects retry_quarantined to be a boolean');
+                throw new TypeError(`${SCAN_PLUGINS} expects retry_quarantined to be a boolean`);
             }
             // Omitted rather than sent as `false`/`undefined`: keeps the ordinary
             // scan call's request shape identical to before this flag existed.
@@ -143,7 +141,7 @@ const grantPickedPaths = async (
 };
 
 const asRecord = (value: unknown): Record<string, unknown> =>
-    typeof value === 'object' && value !== null ? { ...value } : {};
+    typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 
 const optionalString = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
 
@@ -161,9 +159,12 @@ const optionalFilters = (value: unknown): FileFilter[] | undefined => {
     const filters = value.flatMap((entry): FileFilter[] => {
         const filter = asRecord(entry);
         const name = optionalString(filter.name);
-        const extensions = Array.isArray(filter.extensions)
-            ? filter.extensions.filter((extension): extension is string => typeof extension === 'string')
-            : [];
+        let extensions: string[];
+        if (Array.isArray(filter.extensions)) {
+            extensions = filter.extensions.filter((extension): extension is string => typeof extension === 'string');
+        } else {
+            extensions = [];
+        }
         return name !== undefined && extensions.length > 0 ? [{ name, extensions }] : [];
     });
     return filters.length > 0 ? filters : undefined;
@@ -232,14 +233,15 @@ export const registerDialogChannels = ({
             const request = asRecord(options);
             const multiple = request.multiple === true;
             const directory = request.directory === true;
+            const properties: NonNullable<OpenDialogOptions['properties']> = [directory ? 'openDirectory' : 'openFile'];
+            if (multiple) {
+                properties.push('multiSelections');
+            }
             const result = await dialogs.showOpenDialog({
                 title: optionalString(request.title),
                 defaultPath: optionalString(request.defaultPath),
                 filters: optionalFilters(request.filters),
-                properties: [
-                    directory ? 'openDirectory' : 'openFile',
-                    ...(multiple ? (['multiSelections'] as const) : []),
-                ],
+                properties,
             });
             if (result.canceled || result.filePaths.length === 0) {
                 return null;
@@ -285,7 +287,7 @@ export const registerDialogChannels = ({
             const request = asRecord(options);
             await dialogs.showMessageBox({
                 type: messageKind(request.kind),
-                title: optionalString(request.title) ?? 'Sourdaw',
+                title: optionalString(request.title) ?? APP_TITLE,
                 message: optionalString(request.message) ?? '',
             });
             return undefined;

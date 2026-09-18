@@ -44,7 +44,7 @@ const mocks = vi.hoisted(() => ({
         vi.fn<() => Promise<{ persist: () => Promise<boolean>; publish: () => undefined } | null>>(),
     loadCrdtProject: vi.fn<() => Promise<boolean>>(),
     projectCrdtToStores: vi.fn<() => void>(),
-    resetCrdtProjectAuthority: vi.fn<(name: string, onAuthorityReplaced?: () => void) => void>(),
+    resetCrdtProject: vi.fn(),
     getCrdtDoc: vi.fn(),
 }));
 
@@ -62,7 +62,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     persistCrdtProject: mocks.persistCrdtProject,
     projectActionHistoryToStore: vi.fn(),
     projectCrdtToStores: mocks.projectCrdtToStores,
-    resetCrdtProjectAuthority: mocks.resetCrdtProjectAuthority,
+    resetCrdtProject: mocks.resetCrdtProject,
     startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
 
@@ -333,8 +333,9 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
         });
         mocks.loadCrdtProject.mockResolvedValue(true);
         mocks.getCrdtDoc.mockReturnValue({ tracks: { tracks: [] } });
-        mocks.resetCrdtProjectAuthority.mockImplementation((_name, onAuthorityReplaced) => {
+        mocks.resetCrdtProject.mockImplementation((_name: string, onAuthorityReplaced?: () => void) => {
             onAuthorityReplaced?.();
+            return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
         });
         resetLiveStoresToBlank();
     });

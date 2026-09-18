@@ -169,9 +169,11 @@ export function findAppPageTarget(list: unknown, urlPrefix: string): AppPageTarg
     return null;
 }
 
-/** `useStatusBarMetrics.ts:236` writes `${ms.toFixed(1)}ms`. */
+/** `useStatusBarMetrics.ts`'s `describeOutputLatency` tick writes `${ms.toFixed(1)}ms`. Shared with `isAudibleLatencyReading`. */
+const LATENCY_MS_PATTERN = /^(-?\d+(?:\.\d+)?)ms$/;
+
 export function parseLatencyMs(text: string): number {
-    const match = /^(-?\d+(?:\.\d+)?)ms$/.exec(text.trim());
+    const match = LATENCY_MS_PATTERN.exec(text.trim());
     if (match === null) {
         throw new Error(`the Latency readout said "${text}", which is not a "<n>ms" reading`);
     }
@@ -205,6 +207,54 @@ export function parseEngineTitle(title: string): EngineTitleReading {
         missedRenderDeadlines: missed === null ? null : { count: Number(missed[1]), ms: Number(missed[2]) },
         engineDetectedDropouts: dropouts === null ? null : Number(dropouts[1]),
     };
+}
+
+/**
+ * Whether an engine-dot title describes a carrier that is running and
+ * fault-free — the "running meter" the measurement gate waits for.
+ *
+ * The dot names the engine it describes (`Engine: native running …` while the
+ * native session is the audible output, `Engine: Web Audio running …` while
+ * Web Audio carries it), so both healthy titles count whichever side is
+ * audible. A running native carrier can still carry an
+ * `· native output stream fault: …` segment — running but degraded, which is
+ * not a meter to measure against — and `stopped` and `(no reading yet)` say
+ * so in their own text. The pre-#3706 single `Engine: running` prefix no
+ * longer exists on any build this harness can face.
+ */
+export const isRunningEngineTitle = (title: string): boolean =>
+    (title.startsWith('Engine: native running') || title.startsWith('Engine: Web Audio running')) &&
+    !title.includes('output stream fault');
+
+/**
+ * Whether a status-bar reading's Latency figure is one this harness may
+ * sample — not merely present, but describing the engine that is actually
+ * audible.
+ *
+ * `useStatusBarMetrics.ts`'s `describeOutputLatency` follows the audible
+ * carrier: while the native engine is audible it reports `n/a` until the
+ * native session has published its own figure, refusing to substitute Web
+ * Audio's context latency for a path nobody hears; once published, its
+ * tooltip is built by `outputLatencyTitle('native engine buffer', …)`, so
+ * `latencyTitle` contains "native engine buffer" only for that figure. A
+ * `latencyText` that is not a `<n>ms` reading (`n/a` among them) is refused
+ * outright. Under a native engine, a `<n>ms` reading is accepted only when
+ * its title carries that "native engine buffer" marker — a Web Audio figure
+ * describes the wrong engine even though it parses as a number, and sampling
+ * it is exactly the #4275 defect this predicate exists to close. Under a Web
+ * Audio engine, `describeOutputLatency`'s other branch is the only source of
+ * a `<n>ms` reading, so any such reading is accepted.
+ */
+export function isAudibleLatencyReading(
+    reading: Pick<StatusBarReading, 'latencyText' | 'latencyTitle' | 'engineTitle'>
+): boolean {
+    if (!LATENCY_MS_PATTERN.test(reading.latencyText.trim())) {
+        return false;
+    }
+    if (reading.engineTitle.startsWith('Engine: native')) {
+        return reading.latencyTitle.includes('native engine buffer');
+    }
+    return true;
 }
 
 /**

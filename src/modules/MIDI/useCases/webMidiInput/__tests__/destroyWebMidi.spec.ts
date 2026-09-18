@@ -9,6 +9,7 @@ vi.mock('../../../repositories/webMidi/lifecycle/destroyWebMidi', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    sendNativeLiveMidiControl: vi.fn(async () => true),
     sendNativeLiveMidiNote: vi.fn(async () => true),
     audioEngine: {
         context: { currentTime: 0 },

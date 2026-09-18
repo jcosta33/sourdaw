@@ -2,7 +2,8 @@ import { detectTempo } from '#/modules/AudioAnalysis/useCases';
 import { decodeAudioFile, releasePreviewAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { pickFiles } from '#/modules/Project/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
+import { AUDIO_EXTENSION_ROSTER } from '#/utils/audioFileExtensions';
 import { type StemImportRole } from '#/utils/handlerContract';
 
 import { preparedStemImportCleanup } from './discardPreparedStemImportResources';
@@ -50,7 +51,7 @@ export async function prepareStemImport(
 ) {
     const files = await pickFiles({
         multiple: true,
-        filters: [{ name: 'Audio stems', extensions: ['wav', 'aif', 'aiff', 'flac', 'mp3', 'ogg', 'm4a'] }],
+        filters: [{ name: 'Audio stems', extensions: [...AUDIO_EXTENSION_ROSTER] }],
     });
     if (!files) {
         return { status: 'cancelled' as const };
@@ -74,7 +75,11 @@ export async function prepareStemImport(
         throw new Error('The selected stem preparation exceeds the user budget.');
     }
 
-    const projectTempo = transportStore.value?.tempo ?? 120;
+    const projectTempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
+    // 20/999 are Transport's tempo-map bounds, owned by `MIN_TEMPO_MAP_TEMPO` /
+    // `MAX_TEMPO_MAP_TEMPO` in `src/modules/Transport/models/TempoMap.ts`. They are
+    // inlined rather than imported because models constants never cross module
+    // boundaries (docs/architecture/03-typescript-module.md §4.1).
     if (!Number.isFinite(projectTempo) || projectTempo < 20 || projectTempo > 999) {
         throw new Error('The current project tempo is unavailable for stem alignment.');
     }
@@ -122,6 +127,11 @@ export async function prepareStemImport(
                 releasePreviewAudioBuffer(decoded.id);
                 throw error;
             }
+            // Same inlined tempo-map bounds as the project-tempo check above —
+            // owner `src/modules/Transport/models/TempoMap.ts`
+            // (`MIN_TEMPO_MAP_TEMPO`/`MAX_TEMPO_MAP_TEMPO`); models constants
+            // stay inlined across module boundaries
+            // (docs/architecture/03-typescript-module.md §4.1).
             if (sourceTempo === null || !Number.isFinite(sourceTempo) || sourceTempo < 20 || sourceTempo > 999) {
                 releasePreviewAudioBuffer(decoded.id);
                 throw new Error(`Could not determine a safe source tempo for "${file.name}".`);

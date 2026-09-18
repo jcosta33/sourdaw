@@ -22,18 +22,21 @@ export type NativeOutputLatency = Readonly<{
  * hearing, and showing them beside Web Audio's own reading would put two
  * unrelated numbers in one readout.
  *
- * `null` beyond that carries no distinction a caller needs to react to
- * differently: a stopped engine, a diagnostics poll that has not landed yet,
- * a running engine whose stream has not yet rendered a callback (so
+ * `null` beyond that carries no distinction this read needs to react to: a
+ * stopped engine, a diagnostics poll that has not landed yet, a running
+ * engine whose stream has not yet rendered a callback (so
  * `outputBufferFrames` still reads its start-up zero), and a backend that
  * publishes no output-path figure at all (WASAPI, today) are all "no native
- * figure to show," and every one of them falls back to Web Audio's own
- * `baseLatency + outputLatency` computation exactly as an engine that was
- * never the carrier does. A zero `outputPathFrames` is read the same way
- * rather than as a measured zero-latency path, because this build cannot
- * tell "the backend has nothing to say" from "the backend measured
- * nothing" — and showing a device term nobody measured would be worse than
- * falling back.
+ * figure to show." A zero `outputPathFrames` is read the same way rather
+ * than as a measured zero-latency path, because this build cannot tell "the
+ * backend has nothing to say" from "the backend measured nothing" — and
+ * showing a device term nobody measured would be worse than nothing.
+ *
+ * What a caller does with that null is the caller's provenance decision, not
+ * this read's: the status bar pairs this with `readNativeEngineStatus` and
+ * shows n/a while the native session is the audible carrier without a
+ * figure, because Web Audio's own latency would describe a path nobody
+ * hears (#3706).
  */
 export function readNativeOutputLatency(): NativeOutputLatency | null {
     if (!nativeLiveGraphSession.audibleCarrier) {

@@ -25,7 +25,8 @@ import { type PendingExpressionWorkletEvent, type PendingNoteWorkletEvent } from
 // Nothing here asserts a call *shape*: a message that carries a `sampleFrame`
 // field and ignores it passes a shape assertion. What is measured is *when* the
 // engine is told to voice, expressed as the render block the processor was
-// producing at the moment `note_on_with_channel` ran.
+// producing at the moment `push_note_on` ran, together with the sample offset
+// it carried into that block.
 
 const BLOCK_FRAMES = 128;
 
@@ -42,7 +43,7 @@ function currentBlock(): number {
     return harnessFrame / BLOCK_FRAMES;
 }
 
-type Dispatch = { note: number; velocity: number; channel: number; block: number };
+type Dispatch = { note: number; velocity: number; channel: number; block: number; offset: number };
 const dispatches: Dispatch[] = [];
 type ParamDispatch = { name: string; value: number; block: number };
 const paramDispatches: ParamDispatch[] = [];
@@ -53,6 +54,7 @@ type ExpressionDispatch = {
     pressure: number;
     slide: number;
     block: number;
+    offset: number;
 };
 const expressionDispatches: ExpressionDispatch[] = [];
 const engineEvents: string[] = [];
@@ -63,16 +65,28 @@ const wasmStub = vi.hoisted(() => {
 });
 
 class GrandBouleInstanceMock {
-    note_on_with_channel(note: number, velocity: number, channel: number): void {
-        dispatches.push({ note, velocity, channel, block: currentBlock() });
+    push_note_on(note: number, velocity: number, channel: number, offset: number): boolean {
+        dispatches.push({ note, velocity, channel, block: currentBlock(), offset });
         engineEvents.push(`note:${String(note)}`);
+        return true;
     }
-    note_on(_note: number, _velocity: number): void {}
-    note_off(_note: number): void {}
-    note_off_on_channel(_note: number, _channel: number): void {}
-    note_expression(note: number, channel: number, bendSemitones: number, pressure: number, slide: number): void {
-        expressionDispatches.push({ note, channel, bendSemitones, pressure, slide, block: currentBlock() });
+    push_note_off(_note: number, _offset: number): boolean {
+        return true;
+    }
+    push_note_off_on_channel(_note: number, _channel: number, _offset: number): boolean {
+        return true;
+    }
+    push_note_expression(
+        note: number,
+        channel: number,
+        bendSemitones: number,
+        pressure: number,
+        slide: number,
+        offset: number
+    ): boolean {
+        expressionDispatches.push({ note, channel, bendSemitones, pressure, slide, block: currentBlock(), offset });
         engineEvents.push(`expr:${String(note)}`);
+        return true;
     }
     set_param(name: string, value: number): void {
         paramDispatches.push({ name, value, block: currentBlock() });
@@ -308,10 +322,11 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
         // Block b carries frames b*128 .. b*128+127. Frame 200 sits inside
         // block 1 (128..255) and frame 500 inside block 3 (384..511). Both are
         // strictly interior, so this does not depend on how the drain treats a
-        // frame landing exactly on a block boundary.
-        expect(dispatches.map(({ note, block }) => ({ note, block }))).toEqual([
-            { note: 60, block: 1 },
-            { note: 64, block: 3 },
+        // frame landing exactly on a block boundary — and each note reaches the
+        // engine with the offset that puts it back on its own frame.
+        expect(dispatches.map(({ note, block, offset }) => ({ note, block, offset }))).toEqual([
+            { note: 60, block: 1, offset: 72 },
+            { note: 64, block: 3, offset: 116 },
         ]);
     });
 
@@ -325,10 +340,10 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
         }
 
         // An offline part carries no per-note expression, so every voice belongs
-        // on the base channel. `note_on_with_channel` takes a `u8`, so a frame
+        // on the base channel. `push_note_on` takes a `u8` channel, so a frame
         // number here is truncated into a real member channel and the voice
         // becomes unreachable to channel-addressed release and expression.
-        expect(dispatches).toEqual([{ note: 60, velocity: 90, channel: 0, block: 1 }]);
+        expect(dispatches).toEqual([{ note: 60, velocity: 90, channel: 0, block: 1, offset: 72 }]);
     });
 
     it('bends a note in the render block that carries the note itself, after the voice exists', async () => {
@@ -358,7 +373,9 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
         // reach the engine in that block and in this order.
         expect({ engineEvents, expressionDispatches }).toEqual({
             engineEvents: ['note:60', 'expr:60'],
-            expressionDispatches: [{ note: 60, channel: 0, bendSemitones: 2, pressure: 0.5, slide: -0.25, block: 1 }],
+            expressionDispatches: [
+                { note: 60, channel: 0, bendSemitones: 2, pressure: 0.5, slide: -0.25, block: 1, offset: 72 },
+            ],
         });
     });
 

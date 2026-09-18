@@ -14,7 +14,9 @@ use crate::midi_fx::{
     VelocityScaler,
 };
 use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
-use crate::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, TransportState};
+use crate::plugin_slot::{
+    CaptureInputBlock, MidiControlEvent, MidiNoteEvent, NativePlugin, TransportState,
+};
 use crate::timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, BuiltinParamName,
     ChainEntry, ClipPlacement, ClipPlayback, CompensationDevices, DeviceChain, DeviceParam,
@@ -520,6 +522,26 @@ pub enum GraphCommand {
     /// reaches the base member channel, and only a note-off naming that
     /// channel lifts it.
     SendMidiNote(usize, MidiNoteEvent),
+    /// Apply one live controller message to this plugin.
+    ///
+    /// The live path for a pedal, and the only one: a MIDI clip carries no
+    /// controller lanes, so nothing addresses a controller to the timeline.
+    ///
+    /// Nothing is queued. A controller is a state write on the instance rather
+    /// than a sounded event, so it applies at the head of the block that drains
+    /// this command — ahead of every note that block renders, which is what
+    /// makes a damper pressed before a key sustain the note that key sounds.
+    ///
+    /// A stop or a locate is answered where its release is paid
+    /// ([`AudioScheduler::pay_owed_releases`]), which calls each body's
+    /// [`PluginCore::silence_pedal_held_voices`]: that kills the voices of a
+    /// Grand Boule whose damper or sostenuto is engaged and otherwise leaves
+    /// the release to the note-offs already queued. Read there rather than at
+    /// the edge precisely because this command reaches a body receiving no
+    /// block, so a pedal can move between the two. Pedals keep the positions
+    /// the player's foot holds — only Reset All Controllers (CC121, sent by
+    /// the renderer's panic) lifts them.
+    SendMidiControl(usize, MidiControlEvent),
     /// Write a batch of timeline-addressed notes into a plugin's note store.
     ///
     /// The batch is built control-side and lands whole or not at all: a plugin
@@ -906,6 +928,7 @@ impl GraphCommand {
             | Self::SetBypass(..)
             | Self::SetEffectLatency { .. }
             | Self::SendMidiNote(..)
+            | Self::SendMidiControl(..)
             | Self::ScheduleMidiNotes { .. }
             | Self::ClearMidiNotes { .. }
             | Self::AddMidiFx(..)
@@ -1000,6 +1023,7 @@ impl GraphCommand {
             | Self::SetParam(..)
             | Self::SetBypass(..)
             | Self::SendMidiNote(..)
+            | Self::SendMidiControl(..)
             | Self::ScheduleMidiNotes { .. }
             | Self::ClearMidiNotes { .. }
             | Self::AddMidiFx(..)
@@ -1350,6 +1374,95 @@ impl PluginCore {
             .is_some_and(BuiltinEffectType::sounds_notes)
     }
 
+    /// Apply one live controller message to this instance.
+    ///
+    /// No wildcard: a body that grows a controller surface and is not given an
+    /// arm here would take the message silently, and a pedal that does nothing
+    /// reads to a player as a broken instrument rather than as missing code.
+    fn control_change(&mut self, event: MidiControlEvent) {
+        match self {
+            Self::GrandBoule(body) => body.control_change(event),
+            Self::Levain(body) => body.control_change(event),
+            // No controller surface: an effect body takes its parameters by
+            // name ([`GraphCommand::SetParam`]), and the instruments here take
+            // notes alone.
+            Self::Knead(_)
+            | Self::Fermenter(_)
+            | Self::Gluten(_)
+            | Self::Crust(_)
+            | Self::Grinder(_)
+            | Self::Bacteria(_)
+            | Self::Proof(_)
+            | Self::DutchOven(_)
+            | Self::Toaster(_)
+            | Self::Scoring(_)
+            // A hosted plugin's controllers are the plugin's own and travel on
+            // its own control path, never through this instance-side match.
+            | Self::Native(_) => {}
+        }
+    }
+
+    /// Silence whatever a held controller is keeping alive on this instance,
+    /// leaving the controller itself where it stands.
+    ///
+    /// The stop and locate answer. A note-off cannot reach a voice a pedal is
+    /// holding, so a body with one down is silenced outright
+    /// ([`GrandBouleBody::silence_pedal_held_voices`]); a body with nothing
+    /// held is left to the soft release the note-offs give it.
+    ///
+    /// Exhaustive for the reason [`Self::control_change`] is: a body that grows
+    /// a held controller and is not given an arm here is one a stop leaves
+    /// sounding.
+    ///
+    /// Answers whether this instance was silenced outright, which is what
+    /// decides whether the slot pays the note-offs it owes
+    /// ([`AudioScheduler::pay_owed_releases`]).
+    fn silence_pedal_held_voices(&mut self) -> bool {
+        match self {
+            Self::GrandBoule(body) => body.silence_pedal_held_voices(),
+            Self::Levain(body) => body.silence_pedal_held_voices(),
+            // The bodies that take no controller in [`Self::control_change`]
+            // hold nothing a note-off cannot release.
+            Self::Knead(_)
+            | Self::Fermenter(_)
+            | Self::Gluten(_)
+            | Self::Crust(_)
+            | Self::Grinder(_)
+            | Self::Bacteria(_)
+            | Self::Proof(_)
+            | Self::DutchOven(_)
+            | Self::Toaster(_)
+            | Self::Scoring(_)
+            | Self::Native(_) => false,
+        }
+    }
+
+    /// Whether this body must be handed a block every callback even while no
+    /// chain runs it ([`NativePlugin::runs_while_detached`]).
+    ///
+    /// Only a native body can answer `true`. A built-in's writes arrive on the
+    /// command drain and land on the instance itself, so one nothing renders is
+    /// still current; a native body whose only command drain is its process call
+    /// is not.
+    #[inline]
+    fn runs_while_detached(&self) -> bool {
+        match self {
+            Self::Native(plugin) => plugin.runs_while_detached(),
+            Self::Knead(_)
+            | Self::Fermenter(_)
+            | Self::GrandBoule(_)
+            | Self::Gluten(_)
+            | Self::Crust(_)
+            | Self::Grinder(_)
+            | Self::Bacteria(_)
+            | Self::Proof(_)
+            | Self::DutchOven(_)
+            | Self::Toaster(_)
+            | Self::Levain(_)
+            | Self::Scoring(_) => false,
+        }
+    }
+
     /// The latency this body reports for the patch it was built with, or `None`
     /// for a core that declares none.
     ///
@@ -1665,28 +1778,25 @@ fn member_channel(channel: i16) -> Option<u8> {
 
 /// Frames one hosted Grand Boule run renders.
 ///
-/// The web runtime's render quantum: the offline processor drives the
-/// instrument 128 frames at a time, and `receiveGrandBouleMessage` voices a
-/// framed message as soon as the block about to render is the one holding its
-/// frame — so a scheduled note sounds there from the start of the 128-frame
-/// block that holds it, counted from the timeline's absolute frame 0. The
-/// instrument takes no per-note sample offset, so the run length *is* the
-/// timing resolution, and the host splits a callback into runs this long to
-/// land a note on the same run the worklet lands it on.
+/// The web runtime's block-rate control quantum, and no longer the timing
+/// resolution of a note: the instrument takes a per-note sample offset, so a
+/// scheduled note sounds on its own frame inside whatever run holds it, on
+/// every span. What the run still fixes is everything the instrument does once
+/// per `process` call — the CC smoother's advance, the damper rebuild it feeds,
+/// and the parameter writes a host makes between calls — and the offline
+/// processor drives the instrument 128 frames at a time, so matching that here
+/// is what keeps a hosted render and a worklet render bit-identical.
 ///
-/// That parity holds exactly only when the span being split itself starts on
-/// the absolute 128-frame grid the worklet grids from — the host counts its
-/// own runs from the span's own frame 0, not from that absolute origin. A
-/// span starting off it, after a loop seam or under a device callback whose
-/// period is not a multiple of 128 (`GRAND_BOULE_RUN_FRAMES` does not divide
-/// it), voices a note up to
-/// `GRAND_BOULE_RUN_FRAMES - 1` frames away from where the worklet lands it,
-/// because the instrument has no offset-aware note API to close the gap.
-/// Tracked as #3997.
+/// The honest residual is that a span starting off the absolute 128-frame grid
+/// the worklet grids from — after a loop seam, or under a device callback whose
+/// period is not a multiple of 128 — advances that pedal smoothing and damper
+/// rebuild on a phase 0..`GRAND_BOULE_RUN_FRAMES - 1` frames from the worklet's,
+/// because the host counts its runs from the span's own frame 0. Notes are
+/// unaffected. It is audible only while a pedal is actually moving, and only as
+/// that pedal's travel landing a fraction of a block early or late.
 ///
 /// Well inside [`GRAND_BOULE_BLOCK_FRAMES`], the ceiling the instrument's own
-/// channel buffers impose: the run is the finer of the two figures, and the
-/// only one note timing depends on.
+/// channel buffers impose: the run is the finer of the two figures.
 const GRAND_BOULE_RUN_FRAMES: usize = 128;
 
 /// The bound `GrandBouleBody::render_run` reads the instrument's channel
@@ -1712,6 +1822,44 @@ const GRAND_BOULE_MAX_VOICES: u32 = 64;
 /// at one dynamic on both runtimes.
 const MIDI_VELOCITY_FULL_SCALE: f32 = 127.0;
 
+/// The full-scale 7-bit controller value, the divisor that turns a continuous
+/// controller's byte into the `0..1` position an instrument takes.
+///
+/// The same divisor the web runtime applies to CC64 before it reaches the
+/// Grand Boule node (`controlChange.normalized` in `handleWebMidiCC.ts`), so
+/// one pedal sweep lands on one damper curve on both runtimes.
+const MIDI_CONTROLLER_FULL_SCALE: f32 = 127.0;
+
+/// Where a MIDI switch controller reads as engaged, per the specification's
+/// 0..=63 off / 64..=127 on split.
+const MIDI_SWITCH_THRESHOLD: u8 = 64;
+
+/// The damper pedal's controller number.
+const CC_SUSTAIN_PEDAL: u8 = 64;
+
+/// The sostenuto pedal's controller number.
+const CC_SOSTENUTO_PEDAL: u8 = 66;
+
+/// The una corda (soft) pedal's controller number.
+const CC_UNA_CORDA_PEDAL: u8 = 67;
+
+/// The All Sound Off channel-mode message's controller number.
+const CC_ALL_SOUND_OFF: u8 = 120;
+
+/// The Reset All Controllers channel-mode message's controller number.
+const CC_RESET_ALL_CONTROLLERS: u8 = 121;
+
+/// The All Notes Off channel-mode message's controller number.
+const CC_ALL_NOTES_OFF: u8 = 123;
+
+/// Where the Grand Boule's damper starts holding a released key.
+///
+/// The instrument's own threshold, spelled here because it exposes no reading
+/// of its pedals: `GrandBouleEngine::set_sustain` and its `note_off` both split
+/// engaged from not at this position, so a body deciding whether a stop can
+/// still release a key softly has to split it at the same place.
+const GRAND_BOULE_DAMPER_ENGAGED_POSITION: f32 = 0.5;
+
 /// The Grand Boule piano, hosted as a built-in instrument body.
 ///
 /// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
@@ -1719,14 +1867,26 @@ const MIDI_VELOCITY_FULL_SCALE: f32 = 127.0;
 /// pool and its two channel buffers would set the size of every command the
 /// engine sends.
 ///
-/// This hosts the model alone. The instrument's attack clips
+/// This hosts the model and the three pedals. The instrument's attack clips
 /// (`GrandBouleInstance::load_attack_clip`) are optional, and with none loaded
-/// it renders from the modal engine unaided; clip transport and the three
-/// pedals (`set_sustain`, `set_una_corda`, `set_sostenuto`, reached over
-/// CC64/66/67) are follow-ups on the native-body work rather than part of this
-/// body, so a hosted piano sustains nothing a pedal was meant to hold.
+/// it renders from the modal engine unaided; clip transport is a follow-up on
+/// the native-body work rather than part of this body. The pedals arrive as
+/// controller messages over [`GraphCommand::SendMidiControl`] and are applied
+/// by [`Self::control_change`], so a hosted piano sustains what a pedal was
+/// meant to hold.
 pub struct GrandBouleBody {
     instance: GrandBouleInstance,
+    /// The damper position this body last took, as the instrument holds it.
+    ///
+    /// Kept here because the instrument exposes no reading of it, and
+    /// [`Self::silence_pedal_held_voices`] has to know whether a pedal is
+    /// holding the strings before it decides how a stop silences them. Written
+    /// by every route that moves the pedal, so the two cannot drift.
+    damper_position: f32,
+    /// Whether this body's sostenuto pedal is engaged, kept for the reason
+    /// above: a capture standing holds a released key exactly as the damper
+    /// does.
+    sostenuto_engaged: bool,
 }
 
 impl GrandBouleBody {
@@ -1736,42 +1896,40 @@ impl GrandBouleBody {
     fn new(sample_rate: f32) -> Self {
         Self {
             instance: GrandBouleInstance::new(sample_rate, GRAND_BOULE_MAX_VOICES),
+            damper_position: 0.0,
+            sostenuto_engaged: false,
         }
     }
 
     /// Render this instrument's material for the block and sum it into the
-    /// pair, sounding each queued note in the run that holds its frame.
+    /// pair, delivering each queued note on the sample it was stamped for.
     ///
     /// Summed rather than written because an instrument is a generator: what
     /// it produces joins whatever already stands at its place in the chain.
     ///
     /// The block is split into runs of at most [`GRAND_BOULE_RUN_FRAMES`],
-    /// each one a whole `process` call, and every event whose frame falls
-    /// inside a run is delivered before that run renders. The instrument has
-    /// no note API carrying a sample offset, so the run boundary is the whole
-    /// of the timing resolution available — and it is exactly the resolution
-    /// the web runtime has, which is why the run is that runtime's quantum
-    /// rather than the far longer block the instrument's buffers would allow.
+    /// each one a whole `process` call with its own events rebased onto the
+    /// run's first frame. The run is kept although the instrument now takes a
+    /// sample offset because it is the web runtime's block-rate control
+    /// quantum — the CC smoother's advance and the damper rebuild it feeds —
+    /// and matching it keeps a hosted render and a worklet render
+    /// bit-identical for a span on the absolute grid.
     ///
-    /// This block is one span, and the runs above are counted from that
-    /// span's own frame 0 — not from the timeline's absolute frame 0 the
-    /// worklet grids its own runs from. Parity with the worklet is exact only
-    /// when the span itself starts on the absolute 128-frame grid; a span
-    /// starting off it, after a loop seam or under a device callback whose
-    /// period is not a multiple of 128 (`GRAND_BOULE_RUN_FRAMES` does not
-    /// divide it), sounds a note up to
-    /// `GRAND_BOULE_RUN_FRAMES - 1` frames away from where the worklet lands
-    /// it, because the instrument has no offset-aware note API to close the
-    /// gap (#3997).
+    /// The residual is the one [`GRAND_BOULE_RUN_FRAMES`] states: this block is
+    /// one span, and the runs are counted from that span's own frame 0, so a
+    /// span starting off the absolute grid advances that block-rate control on
+    /// a phase of its own. Note timing is unaffected — a stamped note sounds on
+    /// its own frame on every span.
     ///
     /// Nothing here allocates: the runs write into buffers the instrument
-    /// already owns, and a note is a call rather than a queued message.
+    /// already owns, and the events are pushed into its fixed block list.
     fn process(
         &mut self,
         left: &mut [f32],
         right: &mut [f32],
         frames: usize,
         events: &[MidiNoteEvent],
+        diagnostics: &mut ActiveMidiRtDiagnostics,
     ) {
         let mut next_event = 0;
         let mut rendered = 0;
@@ -1785,7 +1943,11 @@ impl GrandBouleBody {
                 if at >= run_end {
                     break;
                 }
-                self.deliver(event);
+                // Non-decreasing by the block's own contract; saturating so a
+                // producer that broke it lands its event on the first frame of
+                // the run that reaches it — late by up to one run — rather
+                // than panicking on the callback.
+                self.push_event(event, at.saturating_sub(rendered) as u32, diagnostics);
                 next_event += 1;
             }
             self.render_run(&mut left[rendered..run_end], &mut right[rendered..run_end]);
@@ -1793,8 +1955,8 @@ impl GrandBouleBody {
         }
     }
 
-    /// Sound one note on the instrument, at the head of the run about to
-    /// render.
+    /// Queue one note on the instrument at `offset` samples into the run about
+    /// to render.
     ///
     /// A note-off narrows to the member channel its note-on sounded on, so
     /// releasing one key cannot silence a different note holding the same
@@ -1802,20 +1964,145 @@ impl GrandBouleBody {
     /// nothing, and the note-off then releases every voice at that pitch, for
     /// the reason given on [`FermenterBody::push_event`]: a key nothing can
     /// ever lift is the one outcome worse than releasing more than was asked.
-    fn deliver(&mut self, event: &MidiNoteEvent) {
+    fn push_event(
+        &mut self,
+        event: &MidiNoteEvent,
+        offset: u32,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) {
         let channel = member_channel(event.channel);
-        match (event.is_note_on, channel) {
+        let queued = match (event.is_note_on, channel) {
             // An unaddressable channel still sounds: the key went down, and
             // the base member channel is where a note with no channel of its
             // own belongs.
-            (true, channel) => self.instance.note_on_with_channel(
+            (true, channel) => self.instance.push_note_on(
                 event.note,
                 f32::from(event.velocity) / MIDI_VELOCITY_FULL_SCALE,
                 channel.unwrap_or(0),
+                offset,
             ),
-            (false, Some(channel)) => self.instance.note_off_on_channel(event.note, channel),
-            (false, None) => self.instance.note_off(event.note),
+            (false, Some(channel)) => self
+                .instance
+                .push_note_off_on_channel(event.note, channel, offset),
+            (false, None) => self.instance.push_note_off(event.note, offset),
+        };
+        // Unreachable as the two capacities stand: a block carries at most
+        // `MIDI_EVENT_BUFFER_CAPACITY` events and the instrument's own list
+        // takes twice that per run, emptying on every `process`. The count is
+        // kept as a guard against either capacity moving, not because a
+        // refusal can happen today.
+        if !queued {
+            diagnostics.record_scheduler_event_buffer_overflow(1);
         }
+    }
+
+    /// Apply one controller message to the instrument's pedals.
+    ///
+    /// CC64 is continuous, not a switch: the position travels as the `0..1`
+    /// fraction of full scale, so half pedalling reaches the damper curve the
+    /// way a pianist plays it. A latch at 64 would flatten every intermediate
+    /// position a continuous controller sends into fully down. CC66 and CC67
+    /// are switches, which is what those two pedals physically are, and they
+    /// engage from the 64 the MIDI specification sets for a switch controller.
+    /// Any other controller is ignored: this body advertises exactly the three
+    /// pedals it has.
+    ///
+    /// The channel is not consulted. The body is one piano, and a pedal belongs
+    /// to the instrument rather than to a voice, so a damper pressed on any
+    /// channel holds every string the instrument is sounding — which is what
+    /// the mechanism physically does.
+    ///
+    /// The three channel-mode messages a panic is made of are answered too. A
+    /// note-off cannot discharge them here: with the damper down or a sostenuto
+    /// capture standing, the instrument's `note_off` routes to `release_key`
+    /// and the voice goes on ringing, so a panic built out of note-offs alone
+    /// leaves a pedalled piano sounding. All Sound Off and All Notes Off
+    /// therefore kill every voice outright — the instrument offers nothing
+    /// gentler that a held pedal cannot veto, and silence is what a panic is
+    /// asking for. Reset All Controllers lifts the pedals, which is the state
+    /// that made the kill necessary.
+    fn control_change(&mut self, event: MidiControlEvent) {
+        match event.controller {
+            CC_SUSTAIN_PEDAL => {
+                self.set_sustain(f32::from(event.value) / MIDI_CONTROLLER_FULL_SCALE)
+            }
+            CC_SOSTENUTO_PEDAL => self.set_sostenuto(event.value >= MIDI_SWITCH_THRESHOLD),
+            CC_UNA_CORDA_PEDAL => self
+                .instance
+                .set_una_corda(event.value >= MIDI_SWITCH_THRESHOLD),
+            CC_ALL_SOUND_OFF | CC_ALL_NOTES_OFF => self.instance.all_notes_off(),
+            CC_RESET_ALL_CONTROLLERS => self.reset_controllers(),
+            _ => {}
+        }
+    }
+
+    /// Lift all three pedals.
+    ///
+    /// Reset All Controllers alone (CC121). A pedal is a held state with no
+    /// message coming to end it, and CC121 is the one message that says every
+    /// held controller is now released — which is why the panic sequence sends
+    /// it behind All Sound Off, and why nothing else in this engine lifts a
+    /// pedal the player is standing on
+    /// ([`AudioScheduler::release_sounding_notes`]).
+    fn reset_controllers(&mut self) {
+        self.set_sustain(0.0);
+        self.set_sostenuto(false);
+        self.instance.set_una_corda(false);
+    }
+
+    /// Move the damper, remembering where it now stands.
+    fn set_sustain(&mut self, position: f32) {
+        self.damper_position = position;
+        self.instance.set_sustain(position);
+    }
+
+    /// Move the sostenuto pedal, remembering whether it now holds.
+    fn set_sostenuto(&mut self, engaged: bool) {
+        self.sostenuto_engaged = engaged;
+        self.instance.set_sostenuto(engaged);
+    }
+
+    /// Whether a pedal is holding the strings up, so a key going down keeps
+    /// sounding after the player lets it go.
+    ///
+    /// The threshold is the instrument's own reading of the damper
+    /// (`GrandBouleEngine::set_sustain`): a half-pedalled damper below it is
+    /// not engaged, and the una corda pedal never holds a key at all — it
+    /// re-aims the hammers.
+    fn holds_released_keys(&self) -> bool {
+        self.damper_position > GRAND_BOULE_DAMPER_ENGAGED_POSITION || self.sostenuto_engaged
+    }
+
+    /// Silence the instrument at a stop or a locate without touching the
+    /// pedals.
+    ///
+    /// A pedalled piano has no soft release available: with the damper down or
+    /// a sostenuto capture standing, the instrument's `note_off` routes to
+    /// `release_key` and the strings go on ringing, so the note-offs the stop
+    /// queues cannot discharge it. The voices are therefore killed outright,
+    /// which is exactly what the Web Audio carrier's own stop does
+    /// (`stopAllScheduled`) — parity, not a new artefact.
+    ///
+    /// The pedals are deliberately left where they are, and lifting them here
+    /// would be worse than leaving them: the player's foot has not moved, and
+    /// an upward damper crossing fires the instrument's pedal-down thump on the
+    /// next press it would otherwise have swallowed.
+    ///
+    /// Nothing happens on an unpedalled body: its queued note-offs damp the
+    /// strings the way the player's own hands would, and that soft release is
+    /// the better sound.
+    ///
+    /// Answers whether the kill ran. A killed instrument is left holding
+    /// nothing, so the caller spends the note-offs it owes only when it did
+    /// not — see [`AudioScheduler::pay_owed_releases`], which asks this at the
+    /// payment rather than at the edge because a pedal can move between the
+    /// two.
+    fn silence_pedal_held_voices(&mut self) -> bool {
+        if !self.holds_released_keys() {
+            return false;
+        }
+        self.instance.all_notes_off();
+        true
     }
 
     /// Render one run into the instrument's own buffers and sum them out.
@@ -3186,12 +3473,12 @@ const TOASTER_PAD_COUNT: u32 = 16;
 
 /// Frames one hosted Toaster run renders.
 ///
-/// The web runtime's render quantum, on the reason given at
-/// [`GRAND_BOULE_RUN_FRAMES`]: the worklet drives the instrument 128 frames at
-/// a time and voices a framed message as soon as the block about to render is
-/// the one holding its frame. The instrument takes no per-hit sample offset, so
-/// the run length *is* the timing resolution, and the host splits a callback
-/// into runs this long to land a hit on the run the worklet lands it on.
+/// The web runtime's render quantum: the worklet drives the instrument 128
+/// frames at a time and voices a framed message as soon as the block about to
+/// render is the one holding its frame. The instrument takes no per-hit sample
+/// offset — unlike Grand Boule's, which gained one — so the run length *is* the
+/// timing resolution, and the host splits a callback into runs this long to
+/// land a hit on the run the worklet lands it on.
 ///
 /// Unlike [`GRAND_BOULE_RUN_FRAMES`] this figure cannot be refused against the
 /// instrument's own ceiling at compile time: `ToasterInstance` keeps its
@@ -3355,18 +3642,19 @@ impl ToasterBody {
     ///
     /// The block is split into runs of at most [`TOASTER_RUN_FRAMES`], each one
     /// a whole `process` call, and every event whose frame falls inside a run is
-    /// delivered before that run renders — the split
-    /// [`GrandBouleBody::process`] takes, for the same reason: the instrument
-    /// has no note API carrying a sample offset, so the run boundary is the
-    /// whole of the timing resolution available, and it is exactly the
-    /// resolution the web runtime has.
+    /// delivered before that run renders. The instrument has no note API
+    /// carrying a sample offset, so the run boundary is the whole of the timing
+    /// resolution available, and it is exactly the resolution the web runtime
+    /// has.
     ///
     /// This block is one span, and the runs are counted from that span's own
     /// frame 0 rather than from the timeline's absolute frame 0 the worklet
     /// grids its own runs from, so parity with the worklet is exact only when
     /// the span itself starts on the absolute 128-frame grid; a span starting
     /// off it sounds a hit up to `TOASTER_RUN_FRAMES - 1` frames from where the
-    /// worklet lands it (#3997).
+    /// worklet lands it. [`GrandBouleBody::process`] takes the same split but no
+    /// longer pays that cost on its notes: its instrument gained an offset-aware
+    /// note API, and this one has none.
     ///
     /// Nothing here allocates: the runs write into buffers the instrument
     /// already owns, and a hit is a call rather than a queued message.
@@ -3544,21 +3832,23 @@ const LEVAIN_MAX_VOICES: u32 = 64;
 
 /// Frames one hosted Levain run renders.
 ///
-/// The web runtime's render quantum, on the reason given at
-/// [`GRAND_BOULE_RUN_FRAMES`]: the worklet drains every message stamped inside
-/// the block about to render and then makes one `process` call for that block
-/// (`LevainProcessor.process`, `levainProcessor.ts`), so a scheduled note
-/// sounds from the head of the 128-frame block holding its frame. The
-/// instrument takes no per-note sample offset — `note_on_with_channel` carries
-/// a note, a velocity and a channel and nothing else — so the run length *is*
-/// the timing resolution, and the host splits a callback into runs this long to
-/// land a note on the run the worklet lands it on.
+/// The web runtime's render quantum: the worklet drains every message stamped
+/// inside the block about to render and then makes one `process` call for
+/// that block (`LevainProcessor.process`, `levainProcessor.ts`), so a
+/// scheduled note sounds from the head of the 128-frame block holding its
+/// frame. The instrument takes no per-note sample offset —
+/// `note_on_with_channel` carries a note, a velocity and a channel and
+/// nothing else — so the run length *is* the timing resolution, and the host
+/// splits a callback into runs this long to land a note on the run the
+/// worklet lands it on.
 ///
-/// The #3997 caveat on [`GRAND_BOULE_RUN_FRAMES`] applies here for the same
-/// reason: the runs are counted from the span's own frame 0 rather than from
-/// the absolute origin the worklet grids from, so a span starting off that grid
-/// sounds a note up to `LEVAIN_RUN_FRAMES - 1` frames from where the worklet
-/// lands it.
+/// The runs are counted from the span's own frame 0 rather than from the
+/// absolute origin the worklet grids from, so a span starting off that grid —
+/// after a loop seam, or under a device callback whose period is not a multiple
+/// of 128 — sounds a note up to `LEVAIN_RUN_FRAMES - 1` frames from where the
+/// worklet lands it. Grand Boule closed that gap by gaining an offset-aware
+/// note API; this instrument still has none, so the run boundary remains the
+/// whole of its timing resolution.
 ///
 /// Well inside [`LEVAIN_BLOCK_FRAMES`], the ceiling the instrument's own
 /// channel buffers impose: the run is the finer of the two figures, and the
@@ -3630,6 +3920,14 @@ const LEVAIN_PATCH_PRECEDENCE: &[&str] = &[];
 /// instance's own state, reached through the two doors below.
 pub struct LevainBody {
     instance: LevainInstance,
+    /// Whether this instrument's sustain pedal is down.
+    ///
+    /// Mirrored here because the instrument publishes no reader for it and
+    /// [`Self::silence_pedal_held_voices`] has to know: a Levain holding the
+    /// pedal routes every `note_off` into its deferred queue
+    /// (`LevainEngine::note_off`), so the note-offs a stop pays would leave the
+    /// voices ringing with nothing coming to release them.
+    sustain_held: bool,
 }
 
 impl LevainBody {
@@ -3640,7 +3938,10 @@ impl LevainBody {
     /// signature carries nothing a bank could be read from; see
     /// [`PluginCore::levain_with_patch`], the only caller.
     fn new(instance: LevainInstance) -> Self {
-        Self { instance }
+        Self {
+            instance,
+            sustain_held: false,
+        }
     }
 
     /// Render this instrument's material for the block and sum it into the
@@ -3710,20 +4011,86 @@ impl LevainBody {
     /// a release everywhere else in this file, so folding the MIDI running-
     /// status convention in here alone would make the native strip diverge
     /// from the web strip on the same event.
+    ///
+    /// A note-on carrying an articulation takes the articulated door, which is
+    /// the same door the worklet's `noteOn` arm calls for a note whose clip
+    /// states one (`levainProcessor.ts`); one carrying none takes the plain
+    /// door and sounds on the articulation the device already stands on. A
+    /// release addresses a key rather than selecting a sound, so it has no
+    /// articulated form to take.
     fn deliver(&mut self, event: &MidiNoteEvent) {
         let channel = member_channel(event.channel);
         if event.is_note_on {
             // An unaddressable channel still sounds: the key went down, and the
             // base member channel is where a note with no channel of its own
             // belongs.
-            self.instance
-                .note_on_with_channel(event.note, event.velocity, channel.unwrap_or(0));
+            let channel = channel.unwrap_or(0);
+            match event.articulation_id {
+                Some(articulation) => self.instance.note_on_with_channel_and_articulation(
+                    event.note,
+                    event.velocity,
+                    channel,
+                    articulation,
+                ),
+                None => self
+                    .instance
+                    .note_on_with_channel(event.note, event.velocity, channel),
+            }
             return;
         }
         match channel {
             Some(channel) => self.instance.note_off_on_channel(event.note, channel),
             None => self.instance.note_off(event.note),
         }
+    }
+
+    /// Apply one live controller message to this instrument.
+    ///
+    /// Every controller reaches the instrument verbatim, through the same
+    /// `handle_cc` door the browser worklet posts to (`levainProcessor.ts`):
+    /// the engine owns which numbers it understands — expression, dynamics,
+    /// vibrato, the sustain pedal, the articulation switch its bank
+    /// configured — so this body owns no vocabulary of its own to filter by,
+    /// and one it filtered would be a controller the two carriers disagreed
+    /// about.
+    ///
+    /// The value crosses as the raw 7-bit byte the wire carries, because that
+    /// is what `LevainEngine::handle_cc` reads: it divides by full scale and
+    /// compares against the switch threshold itself.
+    ///
+    /// No channel: the instrument's controller surface is per-instrument rather
+    /// than per-member-channel, so there is nothing here for one to address.
+    ///
+    /// Real-time safe: every arm the instrument takes stores or recomputes over
+    /// state its constructor already sized.
+    fn control_change(&mut self, event: MidiControlEvent) {
+        if event.controller == CC_SUSTAIN_PEDAL {
+            self.sustain_held = event.value >= MIDI_SWITCH_THRESHOLD;
+        }
+        self.instance.handle_cc(event.controller, event.value);
+    }
+
+    /// Silence the instrument at a stop or a locate without lifting its pedal.
+    ///
+    /// The same law [`GrandBouleBody::silence_pedal_held_voices`] is held to,
+    /// for the same reason: with the sustain pedal down this instrument's
+    /// `note_off` defers rather than releases, so the note-offs a stop queues
+    /// cannot discharge the voices and the instrument would ring on. The kill
+    /// is what the Web Audio carrier's own stop does, and it clears the
+    /// deferred queue with it, so a later pedal-up fires nothing at a voice
+    /// that is already gone.
+    ///
+    /// The pedal itself is left where it stands: the player's foot has not
+    /// moved.
+    ///
+    /// Nothing happens on an unpedalled body — its queued note-offs release the
+    /// voices on their own envelopes, which is the better sound.
+    fn silence_pedal_held_voices(&mut self) -> bool {
+        if !self.sustain_held {
+            return false;
+        }
+        self.instance.all_notes_off();
+        true
     }
 
     /// Render one run into the instrument's own buffers and sum them out.
@@ -4193,6 +4560,46 @@ struct ActiveEffect {
     /// [`Self::settle_stripped_note_offs`], which answers that against the
     /// store the whole drain left behind.
     stripped: NoteAddressSet,
+    /// The keys this device owes releases for, at the head of the first block
+    /// it is actually handed.
+    ///
+    /// One record carries every release trigger at once, because the triggers
+    /// share one answer. A stop, a locate, an un-bypass and a re-placement all
+    /// strand sounding notes whose note-off nothing is going to render, and
+    /// each of them records the keys this device held instead of spending the
+    /// note-offs straight away; [`AudioScheduler::pay_owed_releases`] pays the
+    /// record at the end of the first drain the device comes out of holding a
+    /// placement a block can reach. Paying at the trigger instead would push
+    /// note-offs into `pending_midi` that a later command in the same drain
+    /// can still take the device away from — the bypassed arms discard
+    /// `pending_midi` unread, and sounding bits drained at the trigger could
+    /// never re-owe the lost note-offs, so the key would stay held for the
+    /// life of the device. The record is a snapshot rather than the live sets
+    /// for the same reason read the other way: a live key pressed after the
+    /// trigger in the same drain is not swept out with the notes the trigger
+    /// found sounding. A device handed no block keeps record and bits alike,
+    /// which is why the two travel together everywhere a release is owed.
+    owed_releases: Option<NoteAddressSet>,
+    /// Whether a stop or a locate is what this record is owed for.
+    ///
+    /// The kill a pedalled body needs cannot be decided where the record is
+    /// made. A pedal is a state write that lands on a body receiving no block,
+    /// so the foot can move between the edge and the payment — bypass a
+    /// sounding body, stop, press the damper, un-bypass — and a kill-or-owe
+    /// choice made at the edge would then pay note-offs into a damper that
+    /// routes them to `release_key`, leaving the strings ringing under a
+    /// stopped transport. This marks the trigger instead, and
+    /// [`AudioScheduler::pay_owed_releases`] asks the instance about its
+    /// pedals where the note-offs are actually spent.
+    ///
+    /// An un-bypass on its own never sets it ([`AudioScheduler::owe_releases_on_resume`]):
+    /// a resumed body that is not answering a transport edge pays its releases
+    /// and a held damper sustains them, exactly as a real piano's would.
+    ///
+    /// Cleared by [`Self::forget_sounding`] and by a payment that spends the
+    /// whole record. A partial payment keeps it, because the keys the full
+    /// buffer refused are still owed for that same edge.
+    owed_by_transport_edge: bool,
     /// Frames of latency this device declares, as its host last read them.
     ///
     /// The figure the graph's compensation is computed from, kept exactly as
@@ -4808,6 +5215,8 @@ impl ActiveEffect {
             sounding: NoteAddressSet::default(),
             live_sounding: NoteAddressSet::default(),
             stripped: NoteAddressSet::default(),
+            owed_releases: None,
+            owed_by_transport_edge: false,
             placement,
             home,
             pending_params: DeviceParamQueue::new(),
@@ -4954,13 +5363,43 @@ impl ActiveEffect {
         self.placement == EffectPlacement::Detached
     }
 
+    /// Whether the callback hands this effect a block that nothing will hear —
+    /// a body that must render every callback to drain its own command surface
+    /// ([`NativePlugin::runs_while_detached`]), into scratch
+    /// [`AudioScheduler::process_block`] discards.
+    ///
+    /// Two states put such a body there, and the drain is owed in both: no
+    /// chain runs it at all, or a chain holds it with its bypass on, which
+    /// makes every chain skip its pass exactly as a detachment does. The
+    /// answer is therefore the negation of "some chain will run this device
+    /// this callback", which is what keeps the two passes exclusive: a body
+    /// this returns true for is run here and nowhere else, and one it returns
+    /// false for is run by its chain and not here.
+    #[inline]
+    fn runs_discarded(&self) -> bool {
+        (self.runs_nowhere() || self.bypassed) && self.instance.runs_while_detached()
+    }
+
     /// Whether nothing will hand this effect a block on this callback.
     ///
     /// Either it runs nowhere, or it is bypassed — every chain skips a
     /// bypassed device rather than processing it. Work queued for a body no
     /// block reaches has no drain, so it is discarded rather than banked.
+    ///
+    /// A body that [`Self::runs_discarded`] is the one exception, and it is one
+    /// because the premise above is false for it: the discard pass hands it
+    /// this callback's block, so its queued MIDI is read rather than stranded
+    /// and every law stated on this gate — the paired queue-and-track of
+    /// [`Self::enqueue_midi`], the releases [`Self::release_sounding_notes`]
+    /// spends, the stamps [`AudioScheduler::apply_due_device_params`] lands —
+    /// holds for it on the same terms as for a device on a chain. Discarding
+    /// its work instead would strand the note-offs against the keys its own
+    /// ring has already sounded.
     #[inline]
     fn receives_no_block(&self) -> bool {
+        if self.runs_discarded() {
+            return false;
+        }
         self.bypassed || self.runs_nowhere()
     }
 
@@ -5024,8 +5463,9 @@ impl ActiveEffect {
     /// falls due here is simply dropped rather than banked — this device will
     /// never be handed the buffer it would have landed in — so a bit already
     /// held for an earlier delivery stays held, and its note-off stays owed to
-    /// [`AudioScheduler::release_notes_owed_on_resume`] rather than being spent
-    /// on a device that will never read it.
+    /// the device's `owed_releases` record, which
+    /// [`AudioScheduler::pay_owed_releases`] settles at the head of the first
+    /// block the device runs again.
     #[inline]
     fn enqueue_due_midi_notes(
         &mut self,
@@ -5114,9 +5554,10 @@ impl ActiveEffect {
     /// that will be handed the buffer it is pushed into. A bypassed or
     /// detached device has `pending_midi` discarded unread, so draining here
     /// would spend a live key's only release on nobody and leave the key down
-    /// for good. The release stays owed, and
-    /// [`AudioScheduler::release_notes_owed_on_resume`] pays it at the head of
-    /// the first block the device is handed again.
+    /// for good. The release stays owed, and the trigger records it on the
+    /// device's `owed_releases` set for
+    /// [`AudioScheduler::pay_owed_releases`] to pay at the head of the first
+    /// block the device is handed again.
     ///
     /// A note-off the full buffer refuses leaves its note held, so the next
     /// trigger owes it again. Counting the overflow and forgetting the note
@@ -5152,6 +5593,129 @@ impl ActiveEffect {
             live_sounding.drain(&mut queue_release);
         }
         released
+    }
+
+    /// Record that this device owes the releases its sounding bits name, at
+    /// the head of the first block it is actually handed.
+    ///
+    /// Every trigger that strands a sounding note's note-off while owing a
+    /// release at the head of whatever renders next — a stop, a locate, the
+    /// device's own un-bypass, a placement back onto a chain — lands here
+    /// rather than in [`Self::release_sounding_notes`], because a payment made
+    /// the moment the trigger runs can still be taken away: the drain that
+    /// carries the trigger can carry a bypass or a detachment after it, and
+    /// the arms that skip such a device discard `pending_midi` unread. The
+    /// bits are the debt's only ledger, so draining them at the trigger would
+    /// lose the note-offs for good. What is recorded instead is a snapshot of
+    /// both sets, merged into any record already standing, and the bits stay
+    /// exactly as they are until [`Self::pay_owed_releases`] spends it.
+    #[inline]
+    fn owe_releases(&mut self) {
+        let mut owed = self.owed_releases.take().unwrap_or_default();
+        let Self {
+            sounding,
+            live_sounding,
+            ..
+        } = self;
+        // `drain` drops only the bits the closure accepts, so refusing each
+        // one copies the set without clearing it.
+        sounding.drain(|channel, note| {
+            owed.hold(channel, note);
+            false
+        });
+        live_sounding.drain(|channel, note| {
+            owed.hold(channel, note);
+            false
+        });
+        self.owed_releases = Some(owed);
+    }
+
+    /// Drop every key this device holds, and any release standing for it,
+    /// queueing nothing.
+    ///
+    /// The counterpart of [`Self::owe_releases`] for a body the trigger
+    /// silenced outright ([`PluginCore::silence_pedal_held_voices`]). A killed
+    /// instrument holds no voice a note-off could release, and on a Grand
+    /// Boule a note-off into that silence is worse than redundant: with the
+    /// damper up and no capture standing, the instrument's `note_off` finds no
+    /// voice to release and fires its damper-lift noise instead, so paying the
+    /// record would print one felt thud per key under a stopped transport.
+    ///
+    /// Both sets, because the kill silenced the voices of both, and any record
+    /// an earlier trigger left standing, whose keys this kill has silenced
+    /// too. `drain` accepting every entry clears the bits in place — no
+    /// allocation, no lock, and a walk of the same fixed sets
+    /// [`Self::owe_releases`] walks.
+    #[inline]
+    fn forget_sounding(&mut self) {
+        self.sounding.drain(|_, _| true);
+        self.live_sounding.drain(|_, _| true);
+        self.owed_releases = None;
+        self.owed_by_transport_edge = false;
+    }
+
+    /// Pay the releases the owed record names, into `pending_midi` at the
+    /// head of this block.
+    ///
+    /// Runs once per callback, at the end of the command drain, for a device
+    /// the drain has left receiving a block: that block is the first one the
+    /// device is handed since the trigger, so the note-offs land ahead of
+    /// anything the block itself enqueues. A key the clear settlement has
+    /// already answered this drain is skipped, so a key is released once
+    /// however many triggers named it, exactly as the immediate path's
+    /// `is_held` gate answers.
+    ///
+    /// A note-off the full buffer refuses stays owed: the bit stays held and
+    /// the record keeps the key, so the next block pays it. This is the same
+    /// law [`Self::release_sounding_notes`] states for the immediate path —
+    /// counting the overflow and forgetting the note would turn one dropped
+    /// event into a key held for the rest of the session — retried at the
+    /// next block rather than the next trigger, because between blocks
+    /// nothing new owes the release.
+    ///
+    /// Returns whether anything was queued, so the caller marks the slot as
+    /// holding block-local MIDI exactly as every other enqueue does.
+    #[inline]
+    fn pay_owed_releases(&mut self, diagnostics: &mut ActiveMidiRtDiagnostics) -> bool {
+        let Some(mut owed) = self.owed_releases.take() else {
+            return false;
+        };
+        let Self {
+            sounding,
+            live_sounding,
+            pending_midi,
+            ..
+        } = self;
+        let mut delivered = false;
+        let mut refused = false;
+        let mut pay = |channel: i16, note: u8| {
+            if !sounding.is_held(channel, note) && !live_sounding.is_held(channel, note) {
+                // Answered already this drain — the clear settlement releases
+                // its candidates before this runs, and a key it lifted is not
+                // released a second time.
+                return true;
+            }
+            if !pending_midi.try_push(release_note(channel, note, 0)) {
+                diagnostics.record_scheduler_event_buffer_overflow(1);
+                refused = true;
+                return false;
+            }
+            sounding.release(channel, note);
+            live_sounding.release(channel, note);
+            delivered = true;
+            true
+        };
+        owed.drain(&mut pay);
+        if refused {
+            self.owed_releases = Some(owed);
+        } else {
+            // The whole record is spent, so the edge it was owed for is
+            // answered. A refused note-off keeps the mark: the keys still in
+            // the record are owed for that same stop or locate, and the next
+            // block has to make the same pedal read.
+            self.owed_by_transport_edge = false;
+        }
+        delivered
     }
 
     /// Clear a window of this device's store, recording every sounding note
@@ -5208,6 +5772,16 @@ impl ActiveEffect {
     /// A release the full buffer refuses leaves the note both sounding and a
     /// candidate, so it is owed again rather than lost.
     ///
+    /// Nothing is decided while the device [`Self::receives_no_block`]: the
+    /// release a settlement queues would sit in `pending_midi` unread and the
+    /// sounding bit recording the debt would already be spent. The candidates
+    /// stay put — both sets, bit and candidate — and the caller keeps the slot
+    /// flagged, so the answer is taken against the store of the first drain
+    /// whose block reaches the device. A note-on owed nothing is dropped at
+    /// that point instead: a candidate a later rewrite covered is answered by
+    /// the note-off that covers it, which is the same answer a fresh clear
+    /// against that store would take.
+    ///
     /// Returns whether anything was queued, so the caller marks the slot as
     /// holding block-local MIDI exactly as every other enqueue does.
     #[inline]
@@ -5216,6 +5790,9 @@ impl ActiveEffect {
         playhead_frames: u64,
         diagnostics: &mut ActiveMidiRtDiagnostics,
     ) -> bool {
+        if self.receives_no_block() {
+            return false;
+        }
         let Self {
             midi_notes,
             pending_midi,
@@ -5298,6 +5875,8 @@ fn release_note(channel: i16, note: u8, frame_offset: u32) -> MidiNoteEvent {
         clip_id_hash: 0,
         event_id_hash: 0,
         absolute_occurrence_index: 0,
+        // A release addresses a key; nothing about it selects a sound.
+        articulation_id: None,
     }
 }
 
@@ -5317,6 +5896,21 @@ pub struct AudioScheduler {
     stripped_note_work: SlotWorkSet,
     /// The explicit, deterministic order of master insert processing.
     master_work: MasterWorkList,
+    /// Slots holding a body that must render every callback although no chain
+    /// will run it ([`ActiveEffect::runs_discarded`]) — detached, or held by a
+    /// chain with its bypass on. Kept as a set for the same reason the sets
+    /// above are: the pass costs nothing on the overwhelming majority of
+    /// graphs, which hold no such body at all.
+    discard_run_work: SlotWorkSet,
+    /// The pair the discard pass renders those bodies into.
+    ///
+    /// Reserved once at construction at [`MAX_CALLBACK_FRAMES`], which is what
+    /// the callback clamps its ask to, so the pass slices rather than grows
+    /// inside the deadline. It is its own pair rather than a borrow of the
+    /// timeline's generator scratch because that scratch belongs to the render
+    /// already in flight when this pass runs.
+    discard_scratch_left: Vec<f32>,
+    discard_scratch_right: Vec<f32>,
     /// Effect ids the render callback hands captured device audio to.
     ///
     /// Reserved once at [`CRUMBS_CAPTURE_RESERVE`] and never grown: it is
@@ -5447,6 +6041,9 @@ impl AudioScheduler {
             pending_midi_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
             stripped_note_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
             master_work: MasterWorkList::reserved(EFFECT_TABLE_CAPACITY),
+            discard_run_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
+            discard_scratch_left: vec![0.0; MAX_CALLBACK_FRAMES],
+            discard_scratch_right: vec![0.0; MAX_CALLBACK_FRAMES],
             capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
             pdc_dirty: false,
             timeline: TimelineGraph::new(),
@@ -5637,6 +6234,14 @@ impl AudioScheduler {
         // together, so only the store the whole drain leaves behind can tell a
         // release that was deleted from one that merely moved.
         self.settle_stripped_note_offs();
+        // After the settlement, for the same after-the-drain reason: every
+        // release trigger this drain carried is answered here, for exactly the
+        // devices the drain has left receiving a block. A trigger that paid at
+        // its own command instead could have its note-offs taken away by any
+        // later command in the same drain — a bypass, a teardown — whose arm
+        // discards `pending_midi` unread with the sounding bits already
+        // spent. See [`Self::pay_owed_releases`].
+        self.pay_owed_releases();
         // After the drain rather than inside it: a batch that adds a bus, its
         // devices and every send into it passes through states no mix should
         // ever be aligned against, and re-aiming per command would also make a
@@ -5782,9 +6387,29 @@ impl AudioScheduler {
                         self.pdc_dirty |= moved_latency;
                         // Un-bypassing is where the device starts reading its
                         // queued MIDI again, so it is where the releases it
-                        // banked while nothing handed it a block are paid.
-                        if was_bypassed && !bypassed {
-                            self.release_notes_owed_on_resume(slot);
+                        // banked while nothing handed it a block are recorded
+                        // for payment. The record is paid at the end of this
+                        // drain — unless a later command in it bypasses the
+                        // device again, which leaves both record and bits
+                        // standing for the next un-bypass.
+                        // Bypass is the other half of what the discard pass
+                        // answers: a body it must run is skipped by its chain
+                        // under bypass exactly as a detached one is skipped by
+                        // every chain, and taking the bypass off hands it back
+                        // to the chain. Both edges re-decide the membership, so
+                        // the two passes never run one body twice on a block
+                        // and never leave its ring undrained.
+                        self.refresh_discard_membership(slot);
+                        // A body the callback always runs is owed no release on
+                        // any resume: neither its bypass nor its detachment
+                        // ever stopped it reading, so the keys it holds are the
+                        // keys it is really holding and a payment here would
+                        // cut the note under the player's finger.
+                        if was_bypassed
+                            && !bypassed
+                            && !self.effects[slot].instance.runs_while_detached()
+                        {
+                            self.owe_releases_on_resume(slot);
                         }
                     }
                     None
@@ -5882,6 +6507,35 @@ impl AudioScheduler {
                     }
                     None
                 }
+                GraphCommand::SendMidiControl(id, event) => {
+                    // Nothing is queued: a controller is a state write on the
+                    // instance, not a frame-stamped event, so it applies here,
+                    // at the head of this block. A controller and a note sent
+                    // in the same callback therefore have no frame order
+                    // between them — the controller lands at the block head
+                    // whichever was pushed first. A note-off sent ahead of a
+                    // pedal press in one callback is consequently held rather
+                    // than released, which is the tie-break this placement
+                    // buys and the cost it charges.
+                    //
+                    // A body nothing will hand a block to takes the write all
+                    // the same, on the state-write law the `Builtin` stamp
+                    // states below: a built-in holds its controllers in its own
+                    // body and needs no process call to receive them, so the
+                    // value has to be current the moment the device is
+                    // un-bypassed or placed on a chain again. The discard law
+                    // [`ActiveEffect::enqueue_midi`] follows is about queued
+                    // events, which are read out of a buffer nobody hands a
+                    // skipped device; a controller is not queued. Dropping it
+                    // here would resume a body on a pedal the player has since
+                    // let go of, with no message left anywhere to lift it.
+                    if let Some(slot) = self.effect_index.lookup(id) {
+                        if let Some(effect) = self.effects.get_mut(slot) {
+                            effect.instance.control_change(event);
+                        }
+                    }
+                    None
+                }
                 GraphCommand::ScheduleMidiNotes { plugin_id, notes } => {
                     self.schedule_midi_notes(plugin_id, &notes);
                     // The batch was copied into the store; the box itself is a
@@ -5909,8 +6563,10 @@ impl AudioScheduler {
                         // sounding note's note-off was written for, so the
                         // note is released here or it is held for good. A live
                         // key goes with it: a stop is where a player expects
-                        // the instrument to fall silent.
-                        self.release_sounding_notes(0, ReleaseScope::All);
+                        // the instrument to fall silent. The release is
+                        // recorded here and paid at the end of the drain —
+                        // see `Self::owe_all_releases`.
+                        self.owe_all_releases();
                     }
                     self.transport = state;
                     None
@@ -5929,7 +6585,7 @@ impl AudioScheduler {
                     // (seconds, beats) pair.
                     if self.transport.is_playing && !is_playing {
                         self.timeline.hold_automation(self.playhead_frames);
-                        self.release_sounding_notes(0, ReleaseScope::All);
+                        self.owe_all_releases();
                     }
                     self.transport.is_playing = is_playing;
                     self.transport.song_pos_seconds = song_pos_seconds;
@@ -6155,7 +6811,11 @@ impl AudioScheduler {
                     // player's own frames are behind the playhead too. A
                     // stopped transport sounded nothing to release.
                     if self.transport.is_playing {
-                        self.release_sounding_notes(0, ReleaseScope::All);
+                        // Same law as the stop above, and the same record-now,
+                        // pay-at-the-end-of-the-drain route: a command later
+                        // in this drain can still take the device away before
+                        // its block.
+                        self.owe_all_releases();
                     }
                     self.timeline.seek(frame);
                     self.playhead_frames = frame;
@@ -6333,6 +6993,9 @@ impl AudioScheduler {
         if placement == EffectPlacement::MasterChain {
             self.master_work.append(slot);
         }
+        if self.effects[slot].runs_discarded() {
+            self.discard_run_work.insert(slot);
+        }
     }
 
     /// Register a built-in effect — whose instance the command carried
@@ -6432,9 +7095,9 @@ impl AudioScheduler {
     /// line and [`ActiveEffect::take_input_hold`] installs it unconditionally,
     /// so the line a re-placed generator runs is the one that arrived with it.
     ///
-    /// Every route *out* of `Detached` pays what the device banked while it ran
-    /// nowhere, because leaving is where it starts reading its queued MIDI
-    /// again — see [`Self::release_notes_owed_on_resume`].
+    /// Every route *out* of `Detached` records what the device banked while it
+    /// ran nowhere, because leaving is where it starts reading its queued MIDI
+    /// again — see [`Self::owe_releases_on_resume`].
     fn place_effect(&mut self, effect_id: usize, placement: EffectPlacement) {
         let Some(slot) = self.effect_index.lookup(effect_id) else {
             return;
@@ -6450,13 +7113,36 @@ impl AudioScheduler {
         if placement == EffectPlacement::MasterChain {
             self.master_work.append(slot);
         }
+        // The discard pass follows the placement, both ways: a body that must
+        // render although nothing will run it joins the set here and leaves it
+        // the moment a chain takes the device over un-bypassed.
+        self.refresh_discard_membership(slot);
         if placement == EffectPlacement::Detached {
             if let Some(delay) = self.effects[slot].dry_delay.as_mut() {
                 delay.restart_from_silence();
             }
         }
-        if prior == EffectPlacement::Detached {
-            self.release_notes_owed_on_resume(slot);
+        // Except for a body the detachment never stopped: it read every
+        // trigger that arrived while it ran nowhere, so its keys are the keys
+        // it is actually holding and owing releases here would cut the note a
+        // player is still holding as the splice lands.
+        if prior == EffectPlacement::Detached && !self.effects[slot].instance.runs_while_detached()
+        {
+            self.owe_releases_on_resume(slot);
+        }
+    }
+
+    /// Re-decide whether the discard pass owes this slot a block.
+    ///
+    /// Called from every write that can move the answer — the registration,
+    /// the placement and the bypass — because the set is what the callback
+    /// walks and a stale membership is either a body run twice on one block or
+    /// one whose ring stops draining.
+    fn refresh_discard_membership(&mut self, slot: usize) {
+        if self.effects[slot].runs_discarded() {
+            self.discard_run_work.insert(slot);
+        } else {
+            self.discard_run_work.remove(slot);
         }
     }
 
@@ -6505,6 +7191,7 @@ impl AudioScheduler {
         self.pending_midi_work.remove(slot);
         self.stripped_note_work.remove(slot);
         self.master_work.remove(slot);
+        self.discard_run_work.remove(slot);
         let removed = self.effects.swap_remove(slot);
         // The swap moved the table's tail into `slot` unless the removed
         // entry was itself the tail; that entry's mapping still points at the
@@ -6515,6 +7202,7 @@ impl AudioScheduler {
             self.pending_midi_work.move_slot(old_tail, slot);
             self.stripped_note_work.move_slot(old_tail, slot);
             self.master_work.move_slot(old_tail, slot);
+            self.discard_run_work.move_slot(old_tail, slot);
         }
         Some(removed)
     }
@@ -6691,14 +7379,29 @@ impl AudioScheduler {
     /// replacement in a single drain — so the store as the drain left it is
     /// what decides, and the work set keeps the cost to the devices a clear
     /// actually touched.
+    ///
+    /// A device nothing hands a block to keeps its flag and its candidates
+    /// both: a settlement queued for it would be discarded unread with the
+    /// sounding bit already spent, so the answer waits for the first drain
+    /// whose block reaches the device.
     fn settle_stripped_note_offs(&mut self) {
-        while let Some(slot) = self.stripped_note_work.slots.last().copied() {
+        let mut index = 0;
+        while index < self.stripped_note_work.slots.len() {
+            let slot = self.stripped_note_work.slots[index];
+            if self.effects[slot].receives_no_block() {
+                // Stays flagged; the settlement is taken at the first drain
+                // whose block reaches the device.
+                index += 1;
+                continue;
+            }
             self.stripped_note_work.remove(slot);
             if self.effects[slot]
                 .settle_stripped_note_offs(self.playhead_frames, &mut self.midi_rt_diagnostics)
             {
                 self.pending_midi_work.insert(slot);
             }
+            // No index step: `remove` swapped an unvisited slot into this
+            // position.
         }
     }
 
@@ -6735,28 +7438,43 @@ impl AudioScheduler {
         }
     }
 
-    /// Release the notes `scope` names across the graph, at the head of
-    /// whatever renders next.
+    /// Release the notes `scope` names across the graph, on the seam of the
+    /// loop wrap now closing.
     ///
-    /// A stop, a locate and a loop wrap all leave the frame a stored note's
-    /// note-off was written for behind: nothing is going to render it, so the
-    /// instrument would hold that key. A stop and a locate leave the player's
-    /// own frames behind too and pass [`ReleaseScope::All`], because a live
-    /// note never had a written note-off and they are the only thing besides
-    /// the player's hands that lifts one. The loop wrap passes
-    /// [`ReleaseScope::Stored`]: the seam strands a scheduled note-off and
-    /// strands nothing a player is holding, and interrupting live input where
-    /// a region starts again is what no DAW does. Every trigger runs on the
-    /// audio thread and ahead of the next delivery, so the release reaches the
-    /// instrument before anything the new position schedules.
+    /// This is the loop wrap's payment, and the only one made at its trigger:
+    /// the wrap runs mid-callback, on the audio thread, inside a block the
+    /// device is being handed, so the note-offs it queues are delivered by
+    /// that same block and nothing can interpose a bypass between the
+    /// payment and the delivery. A device nothing hands a block to keeps what
+    /// it holds and stays owed the release — the wrap's guard refuses it, and
+    /// the next trigger to name the device records the debt on its
+    /// `owed_releases` set for [`Self::pay_owed_releases`].
     ///
-    /// A device nothing will hand a block to keeps what it holds and stays
-    /// owed the release — see [`ActiveEffect::release_sounding_notes`].
+    /// The seam takes [`ReleaseScope::Stored`]: it strands a scheduled
+    /// note-off and strands nothing a player is holding, and interrupting
+    /// live input where a region starts again is what no DAW does. The
+    /// transport triggers — a stop and a locate — owe releases too, but at
+    /// the head of a block still in the drain's future, so they record
+    /// instead of paying here; see [`Self::owe_all_releases`].
     ///
-    /// `seam_offset` is where that "next" begins inside the callback's
-    /// buffers, which is what a master insert's stamps are measured from; a
-    /// chain device is handed the span itself, so its release sits at the
-    /// span's own head.
+    /// `seam_offset` is where the seam sits inside the callback's buffers,
+    /// which is what a master insert's stamps are measured from; a chain
+    /// device is handed the span itself, so its release sits at the span's
+    /// own head.
+    ///
+    /// No trigger lifts a pedal. A stop takes the player's hands off the keys;
+    /// it does not take their foot off the pedal, and no DAW moves a pedal a
+    /// musician is standing on. Nothing in the engine may re-press one either:
+    /// an upward damper crossing fires the Grand Boule's pedal-down thump, so a
+    /// stop that lifted the damper would have the next press sound a noise the
+    /// player never made. The foot is the renderer's to remember and to replay
+    /// onto a body the engine builds again (`liveMidiControlLatch.ts`).
+    ///
+    /// The seam therefore neither lifts a pedal nor kills the voices one is
+    /// holding: a pedalled voice rings on exactly as the foot asks. Silencing
+    /// one is [`ReleaseScope::All`]'s answer and belongs to the triggers that
+    /// own it — see [`Self::owe_all_releases`], whose kill lands with the
+    /// payment it replaces ([`Self::pay_owed_releases`]).
     fn release_sounding_notes(&mut self, seam_offset: usize, scope: ReleaseScope) {
         for slot in 0..self.effects.len() {
             let frame_offset = match self.effects[slot].placement {
@@ -6773,31 +7491,124 @@ impl AudioScheduler {
         }
     }
 
-    /// Pay the releases one device banked while nothing handed it a block, at
-    /// the head of the first block it is handed again.
+    /// Record, on every device, the releases its sounding bits owe at the
+    /// head of the first block it is handed after a stop or a locate.
+    ///
+    /// A stop and a locate leave the frame a stored note's note-off was
+    /// written for behind: nothing is going to render it, so the instrument
+    /// would hold that key. They leave the player's own frames behind too,
+    /// so a live key goes with it. Every trigger runs on the audio thread and
+    /// ahead of the next delivery, so the release reaches the instrument
+    /// before anything the new position schedules — but the payment itself
+    /// does not happen here. A command later in the same drain can still
+    /// bypass or detach a device, and the arms that skip such a device
+    /// discard `pending_midi` unread; releases paid into it now, with the
+    /// sounding bits already spent, would be lost with nothing left to re-owe
+    /// them. [`Self::pay_owed_releases`] pays the record at the end of the
+    /// drain, for exactly the devices the drain has left receiving a block.
+    ///
+    /// The silencing a pedalled body needs is not decided here either, and
+    /// the pedal is the reason. A voice a pedal is holding takes no note-off
+    /// at all — the instrument routes one to `release_key` while the damper is
+    /// down — so a pedalled body has to be silenced outright rather than
+    /// released ([`PluginCore::silence_pedal_held_voices`]). But a controller
+    /// is a state write that lands on a body receiving no block, so the foot
+    /// can move between this trigger and the payment: bypass a sounding body,
+    /// stop, press the damper, un-bypass, and a kill this trigger declined
+    /// would pay note-offs straight into a damper at full travel. **The pedal
+    /// is therefore read where the release is paid**, not here — this marks
+    /// the edge on the slot (`owed_by_transport_edge`) and owes the release,
+    /// and [`Self::pay_owed_releases`] asks the instance about its pedals at
+    /// the moment it would spend the record.
+    ///
+    /// A kill leaves nothing to release, so the two answers stay exclusive
+    /// wherever the choice is made ([`ActiveEffect::forget_sounding`]):
+    /// note-offs paid into a killed Grand Boule would find no voice to release
+    /// and fire the instrument's damper-lift noise instead — one felt thud per
+    /// key, into the silence the stop just made. Only a body the kill passes
+    /// over takes the soft release its note-offs give it.
+    ///
+    /// No trigger lifts the pedal itself, here or anywhere: a stop takes the
+    /// player's hands off the keys, not their foot off the pedal, and an
+    /// upward damper crossing would fire the Grand Boule's pedal-down thump on
+    /// the next press. The foot is the renderer's to remember and to replay
+    /// onto a body the engine builds again (`liveMidiControlLatch.ts`).
+    fn owe_all_releases(&mut self) {
+        for slot in 0..self.effects.len() {
+            self.effects[slot].owed_by_transport_edge = true;
+            self.effects[slot].owe_releases();
+        }
+    }
+
+    /// Record the releases one device banked while nothing handed it a block,
+    /// for payment at the head of the first block it is handed again.
     ///
     /// A bypassed or detached device has its queued MIDI discarded unread, so
     /// every trigger that ran while it stood there left its keys down rather
     /// than spending their releases on a buffer nobody reads. Un-bypassing it,
     /// or placing it back on a chain, is where it starts reading again — and
-    /// so where those note-offs are finally handed over. Without this a
-    /// resumed instrument goes on holding a key the player let go of, with no
-    /// written note-off anywhere that could ever lift it.
+    /// the transition records what it holds so the payment follows on the
+    /// first block that reaches it. Without this a resumed instrument goes on
+    /// holding a key the player let go of, with no written note-off anywhere
+    /// that could ever lift it.
     ///
     /// Both sets, because both were kept. A note-off for a key the instance
     /// never heard pressed is a message it ignores; a key left down is one
     /// nothing can lift.
     ///
-    /// The releases go into the same fixed-capacity buffer every other
-    /// delivery uses, on the same audio thread and in the same command drain,
-    /// so an overflow is counted here exactly as it is there.
-    fn release_notes_owed_on_resume(&mut self, slot: usize) {
-        if self.effects[slot].release_sounding_notes(
-            0,
-            ReleaseScope::All,
-            &mut self.midi_rt_diagnostics,
-        ) {
-            self.pending_midi_work.insert(slot);
+    /// It never marks a transport edge. A resume is not one: nothing took the
+    /// player's hands off the keys, so the payment pays, and a damper the
+    /// player is standing on sustains those releases exactly as a piano's
+    /// would. A resume that follows a stop still carries the stop's own mark,
+    /// which is how that kill reaches a body the edge could not hand a block
+    /// to — see [`Self::pay_owed_releases`].
+    fn owe_releases_on_resume(&mut self, slot: usize) {
+        self.effects[slot].owe_releases();
+    }
+
+    /// Pay every device's owed releases that this callback's block will
+    /// reach, at the head of it.
+    ///
+    /// Runs after the command drain and the clear settlement, before anything
+    /// renders. That is the one point in the callback where the answer to
+    /// "will a block reach this device" is final for the block about to run:
+    /// every bypass and placement command the drain carried has applied, so a
+    /// device paid here reads its note-offs this very block, and a device
+    /// skipped here keeps its record and its sounding bits until the first
+    /// drain that leaves it reachable — which is the payment issue the
+    /// trigger-time payment could not answer. A device's first block after
+    /// the trigger is the one this pays into, so the release still lands at
+    /// the head of whatever renders next.
+    ///
+    /// It is also where a stop's or a locate's kill is decided, for a body
+    /// that stands on a pedal. **The pedal is read here because a pedal write
+    /// may land between the edge and this payment**: it is a state write on
+    /// the instance, so it reaches a body nothing is handing a block to, and
+    /// the position the release has to be answered against is the one standing
+    /// now rather than the one the edge found. A body a pedal is holding takes
+    /// no note-off ([`PluginCore::silence_pedal_held_voices`]), so it is
+    /// silenced outright and forgets its keys instead of being paid; anything
+    /// else pays, which is what keeps a plain un-bypass under a held damper
+    /// ringing on as the player's foot asks.
+    ///
+    /// The mark is what makes the re-ask conditional, and it has to be: an
+    /// unconditional one would kill on every un-bypass of a pedalled body,
+    /// where nothing took the player's hands off the keys.
+    fn pay_owed_releases(&mut self) {
+        for slot in 0..self.effects.len() {
+            if self.effects[slot].owed_releases.is_none() || self.effects[slot].receives_no_block()
+            {
+                continue;
+            }
+            if self.effects[slot].owed_by_transport_edge
+                && self.effects[slot].instance.silence_pedal_held_voices()
+            {
+                self.effects[slot].forget_sounding();
+                continue;
+            }
+            if self.effects[slot].pay_owed_releases(&mut self.midi_rt_diagnostics) {
+                self.pending_midi_work.insert(slot);
+            }
         }
     }
 
@@ -6857,6 +7668,12 @@ impl AudioScheduler {
                     // placed on a chain again. A hosted plugin cannot be
                     // written to at all until it is handed a block — that is
                     // the whole of the asymmetry.
+                    //
+                    // Which is also why a body the callback runs into
+                    // discarded scratch ([`ActiveEffect::runs_discarded`])
+                    // never reaches this arm: it *is* handed a block, so its
+                    // queue drains on that block exactly as a chain member's
+                    // does.
                     (PluginCore::Native(_), DeviceParamTarget::Hosted { .. })
                         if receives_no_block => {}
                     (PluginCore::Native(plugin), DeviceParamTarget::Hosted { id }) => {
@@ -7145,7 +7962,11 @@ impl AudioScheduler {
 
             if effect.bypassed {
                 run_dry_delay(effect, left, right, frames);
-                effect.pending_midi.clear();
+                // Unless the discard pass below is going to hand it this very
+                // block, in which case its queue is that pass's to drain.
+                if !effect.runs_discarded() {
+                    effect.pending_midi.clear();
+                }
                 continue;
             }
 
@@ -7158,6 +7979,53 @@ impl AudioScheduler {
                 &mut self.midi_rt_diagnostics,
                 left,
                 right,
+                frames,
+            );
+        }
+
+        // Then every body that has to render although no chain will run it,
+        // into scratch this callback throws away. Its command surface is
+        // drained by its process call and by nothing else
+        // ([`NativePlugin::runs_while_detached`]), so a callback that skipped it
+        // would bank the notes, parameters and loads its control side pushed
+        // until its ring was full and hand the whole stale backlog to the first
+        // chain that took the device. Detached or bypassed on a chain makes no
+        // difference to that: both leave the device's pass unrun, and a
+        // musician bypassing a sampler mid-roll is the commoner of the two.
+        //
+        // It runs after the chains and the master list, and ahead of the
+        // detached-MIDI cleanup below, because `process_device` is what drains
+        // `pending_midi`: cleared first, this block's events would be discarded
+        // before the body read them, with the sounding bits that record them
+        // already spent. The bypass branches on both chain paths and on the
+        // master list leave this population's queue alone for the same reason.
+        //
+        // No dry line is fed or read. A bypassed device's line takes its one
+        // pass for the block in the chain that holds it, and a detached one's
+        // is decided by the placement that takes it next — every splice ships a
+        // fresh silent line. This pass renders nothing any chain will hear.
+        let mut discard_index = 0;
+        while discard_index < self.discard_run_work.slots.len() {
+            let slot = self.discard_run_work.slots[discard_index];
+            discard_index += 1;
+            debug_assert!(
+                slot < self.effects.len(),
+                "discard run work points beyond the effect table"
+            );
+            let discard_left = &mut self.discard_scratch_left[..frames];
+            let discard_right = &mut self.discard_scratch_right[..frames];
+            // Zeroed per body, on the same law the timeline's generators run
+            // under: a body that sums into the pair it is handed would
+            // otherwise render over the previous body's discarded block.
+            discard_left.fill(0.0);
+            discard_right.fill(0.0);
+            process_device(
+                &mut self.effects[slot],
+                &self.transport,
+                self.sample_rate,
+                &mut self.midi_rt_diagnostics,
+                discard_left,
+                discard_right,
                 frames,
             );
         }
@@ -7339,7 +8207,13 @@ fn process_device(
         // On the same law as the Fermenter above: always processed, and its
         // MIDI always cleared.
         PluginCore::GrandBoule(body) => {
-            body.process(left, right, frames, effect.pending_midi.as_slice());
+            body.process(
+                left,
+                right,
+                frames,
+                effect.pending_midi.as_slice(),
+                midi_rt_diagnostics,
+            );
             effect.pending_midi.clear();
         }
         PluginCore::Gluten(body) => {
@@ -7379,18 +8253,21 @@ fn process_device(
             effect.pending_midi.clear();
         }
         PluginCore::Native(plugin) => {
-            if effect.pending_midi.is_empty() {
-                plugin.process_audio(left, right, frames);
-            } else {
-                plugin.process_with_events(
-                    left,
-                    right,
-                    frames,
-                    effect.pending_midi.as_slice(),
-                    transport,
-                );
-                effect.pending_midi.clear();
-            }
+            // Every block goes through `process_with_events`, whatever the
+            // MIDI density: an audio effect that never sees a note still needs
+            // tempo, position and play state, and a transport cached from the
+            // last note-bearing block goes stale the moment the tempo or the
+            // playhead moves. The event slice is the block's honest set —
+            // empty most blocks for an effect — so transport delivery never
+            // rides a dummy note.
+            plugin.process_with_events(
+                left,
+                right,
+                frames,
+                effect.pending_midi.as_slice(),
+                transport,
+            );
+            effect.pending_midi.clear();
         }
     }
 }
@@ -7421,8 +8298,14 @@ impl DeviceChain for TrackDeviceChain<'_> {
             // Same contract as the master chain: a bypassed device passes its
             // signal through its own latency and discards MIDI queued while
             // bypassed rather than banking it into a burst of stale note-ons.
+            //
+            // A body the callback's discard pass runs is the exception, on the
+            // same terms it is everywhere else: the block reaches it, so its
+            // queue is read there rather than dropped here.
             run_dry_delay(effect, left, right, frames);
-            effect.pending_midi.clear();
+            if !effect.runs_discarded() {
+                effect.pending_midi.clear();
+            }
             return;
         }
 
@@ -7468,8 +8351,12 @@ impl DeviceChain for TrackDeviceChain<'_> {
         if effect.bypassed {
             // The scratch stays as the chain cleared it, so the instrument
             // contributes silence. MIDI queued while bypassed is discarded
-            // rather than banked into a burst of stale note-ons.
-            effect.pending_midi.clear();
+            // rather than banked into a burst of stale note-ons — except for a
+            // body the callback's discard pass runs, whose queue that pass
+            // reads on the block it is handed.
+            if !effect.runs_discarded() {
+                effect.pending_midi.clear();
+            }
         } else {
             process_device(
                 effect,
@@ -7919,6 +8806,7 @@ mod tests {
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
                     frame_offset: 0,
+                    articulation_id: None,
                 },
             ))
             .unwrap();
@@ -8317,6 +9205,7 @@ mod tests {
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
                     frame_offset: 0,
+                    articulation_id: None,
                 },
             ))
             .unwrap();
@@ -8924,6 +9813,7 @@ mod tests {
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
                     frame_offset: 0,
+                    articulation_id: None,
                 },
             ))
             .unwrap();
@@ -8990,6 +9880,7 @@ mod tests {
                         event_id_hash: 0,
                         absolute_occurrence_index: 0,
                         frame_offset: 0,
+                        articulation_id: None,
                     },
                 ))
                 .unwrap();
@@ -9447,6 +10338,54 @@ mod tests {
         #[global_allocator]
         static ALLOCATOR: AllocDisabler = AllocDisabler;
 
+        /// A body that must be handed a block while no chain runs it, counting
+        /// the calls it takes and adding a constant to whatever it is handed:
+        /// the count says the pass ran, and the constant says where its block
+        /// went.
+        struct DetachedDrainProbe {
+            calls: Arc<AtomicUsize>,
+            midi_events: Arc<AtomicUsize>,
+        }
+
+        impl NativePlugin for DetachedDrainProbe {
+            fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+                self.calls.fetch_add(1, Ordering::Relaxed);
+                for index in 0..num_samples {
+                    left[index] += 1.0;
+                    right[index] += 1.0;
+                }
+            }
+
+            fn process_with_events(
+                &mut self,
+                left: &mut [f32],
+                right: &mut [f32],
+                num_samples: usize,
+                midi_events: &[MidiNoteEvent],
+                _transport: &TransportState,
+            ) {
+                self.midi_events
+                    .fetch_add(midi_events.len(), Ordering::Relaxed);
+                self.process_audio(left, right, num_samples);
+            }
+
+            fn name(&self) -> &str {
+                "detached-drain-probe"
+            }
+
+            fn runs_while_detached(&self) -> bool {
+                true
+            }
+
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+
+            fn as_any_mut(&mut self) -> &mut dyn Any {
+                self
+            }
+        }
+
         /// Every arm of the input bus, on the callback, under the guard:
         /// admission, refusal, delivery to a native consumer, the underrun
         /// count, the prune a removal performs, and the drop that follows when
@@ -9498,6 +10437,89 @@ mod tests {
             assert_eq!(diagnostics.capture_blocks_dropped, 1);
         }
 
+        /// The discard pass runs inside the deadline, so its scratch is
+        /// reserved at construction and only sliced per block: a pair
+        /// allocated per callback would be exactly the heap traffic ADR 0020
+        /// keeps off the callback. The reservation is `MAX_CALLBACK_FRAMES`,
+        /// the ceiling the callback clamps its ask to, so a full-size block
+        /// slices the same buffer and never grows it. This renders 8 frames;
+        /// what it proves is that neither the pass nor the bypass edge that
+        /// puts a slot into its work set takes the heap.
+        #[test]
+        fn the_discard_pass_hands_a_detached_then_a_bypassed_body_a_block_without_allocating() {
+            let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+            let calls = Arc::new(AtomicUsize::new(0));
+            let midi_events = Arc::new(AtomicUsize::new(0));
+            // Built, boxed and pushed control-side; the store with it.
+            command_tx
+                .push(GraphCommand::AddHostedPlugin(
+                    7,
+                    Box::new(DetachedDrainProbe {
+                        calls: Arc::clone(&calls),
+                        midi_events: Arc::clone(&midi_events),
+                    }),
+                    MidiNoteStore::new(),
+                ))
+                .unwrap();
+            let mut left = [0.0; 8];
+            let mut right = [0.0; 8];
+
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+                scheduler.process_block(&mut left, &mut right, 8);
+            });
+
+            // The guarded callback did the work: the body ran and its block
+            // never reached the pair the callback rendered into.
+            assert_eq!(calls.load(Ordering::Relaxed), 1);
+            assert_eq!(left, [0.0; 8]);
+            assert_eq!(right, [0.0; 8]);
+
+            // Spliced onto a strip, the drain is the chain's — until a bypass
+            // takes the device out of that chain's pass, which hands it back
+            // to the discard pass. Both the membership write and the block it
+            // then owes land on the callback, so both are guarded. The splice
+            // itself is control-side setup, applied outside the guard.
+            command_tx
+                .push(GraphCommand::AddTrack(TimelineTrack::new(1)))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::InsertTrackDevice {
+                    track_id: 1,
+                    entry: ChainEntry {
+                        effect_id: 7,
+                        kind: DeviceKind::Effect,
+                    },
+                    index: 0,
+                    hold: None,
+                })
+                .unwrap();
+            scheduler.update_graph();
+            scheduler.process_block(&mut left, &mut right, 8);
+            let calls_on_the_chain = calls.load(Ordering::Relaxed);
+
+            // Cleared of what the un-bypassed pass just wrote, so the pair
+            // below reports this block alone.
+            left = [0.0; 8];
+            right = [0.0; 8];
+            command_tx.push(GraphCommand::SetBypass(7, true)).unwrap();
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+                scheduler.process_block(&mut left, &mut right, 8);
+            });
+
+            assert_eq!(
+                calls.load(Ordering::Relaxed),
+                calls_on_the_chain + 1,
+                "the bypassed body is handed its block by the guarded pass"
+            );
+            assert_eq!(
+                left, [0.0; 8],
+                "a bypassed strip carrying no clip is silent"
+            );
+            assert_eq!(right, [0.0; 8]);
+        }
+
         #[test]
         fn swap_removed_tail_relocates_both_work_sets_before_they_process_without_allocating() {
             let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
@@ -9539,6 +10561,7 @@ mod tests {
                         event_id_hash: 0,
                         absolute_occurrence_index: 0,
                         frame_offset: 0,
+                        articulation_id: None,
                     },
                 ))
                 .unwrap();
@@ -10080,11 +11103,14 @@ mod tests {
                 event_id_hash: 0,
                 absolute_occurrence_index: 0,
                 frame_offset: 0,
+                articulation_id: None,
             };
             let release = MidiNoteEvent {
                 is_note_on: false,
                 ..note
             };
+
+            let mut diagnostics = ActiveMidiRtDiagnostics::new();
 
             assert_no_alloc(|| {
                 body.process(
@@ -10092,18 +11118,203 @@ mod tests {
                     &mut sounding_right,
                     FRAMES,
                     std::slice::from_ref(&note),
+                    &mut diagnostics,
                 );
                 body.process(
                     &mut released_left,
                     &mut released_right,
                     FRAMES,
                     std::slice::from_ref(&release),
+                    &mut diagnostics,
                 );
             });
 
             assert!(
                 sounding_left.iter().any(|sample| *sample != 0.0),
                 "the instrument never sounded, so the guard covered a silent path"
+            );
+        }
+
+        /// A hosted Grand Boule takes all three pedals, has them lifted, and is
+        /// silenced at a stop, without allocating.
+        ///
+        /// A controller is applied on the audio thread inside the command
+        /// drain, so it is held to ADR 0020 exactly as a render is. Every
+        /// pedal has its own route through the instrument — the damper's
+        /// upward crossing fires a noise burst, its downward one releases the
+        /// voices it was holding, sostenuto captures the sounding voices on its
+        /// rising edge and releases them on its falling one, and una corda
+        /// re-aims the sympathetic send — so all three are pressed and lifted
+        /// here rather than one standing in for the others.
+        /// `reset_controllers` and `silence_pedal_held_voices` run inside the
+        /// guard as well: CC121 and the stop both reach them from that same
+        /// drain.
+        ///
+        /// A note sounds first, outside the guard: sostenuto captures nothing
+        /// on a silent instrument and the damper releases nothing, so a guard
+        /// over an idle body would cover none of the routes above.
+        ///
+        /// Every controller is followed by a render inside the guard, because a
+        /// pedal's cost is mostly paid on the block after it: the damper's
+        /// crossings, the sostenuto capture and the una corda re-aim all leave
+        /// state the next `process` walks, and a guard holding controllers
+        /// alone would never enter those paths.
+        ///
+        /// Two bodies rather than one, driven identically apart from the damper
+        /// press. The guard has to cover `note_off`'s release-key route, which
+        /// is the one a held damper takes, and proving the release really took
+        /// it needs a pedal-free release of the same key to read against: a
+        /// body whose damper never reached it damps the string, and its window
+        /// sits decisively below the ringing one. A single `any != 0.0` read
+        /// cannot say that — a damped string is not silent either.
+        ///
+        /// The two windows are read inside the guard and compared outside it: a
+        /// failing `assert!` formats its message, and an allocation on the panic
+        /// path would abort the process instead of failing the test.
+        #[test]
+        fn a_grand_boule_control_change_allocates_nothing() {
+            const FRAMES: usize = 512;
+            const CC_SUSTAIN: u8 = 64;
+            const CC_SOSTENUTO: u8 = 66;
+            const CC_UNA_CORDA: u8 = 67;
+            /// How many blocks a release renders for before its window is read.
+            ///
+            /// The window `a_grand_boule_holds_a_released_note_while_the_damper_is_down`
+            /// relies on runs out to 4096 frames past the note-on, which is
+            /// 3584 frames past the release that spec takes at frame 512 —
+            /// seven of these blocks. Reading the last of seven closes on the
+            /// same distance, where that spec has already established a held
+            /// string and a damped one are far apart.
+            const RELEASE_BLOCKS: usize = 7;
+            /// How far above the damped window the held one has to sit.
+            ///
+            /// How far above the pedal-free window the held one has to sit.
+            ///
+            /// The two bodies decide it: at this distance past the release the
+            /// held string reads 0.0917 against the damped string's 0.0071, a
+            /// ratio of about 13. The figure below is well under that, so it is
+            /// a margin against voice detail moving rather than a tuned
+            /// threshold — and still far above the 1.0 a body that dropped the
+            /// damper would land on.
+            const DECISIVE: f32 = 4.0;
+
+            /// Let the key go under whatever pedals this body holds, render the
+            /// release out, and read the last block.
+            ///
+            /// The buffers are cleared before each block because `process` sums
+            /// into them: residue from the blocks above would read as sound
+            /// whatever the damper did.
+            fn release_and_read(
+                body: &mut GrandBouleBody,
+                left: &mut [f32],
+                right: &mut [f32],
+                release: &MidiNoteEvent,
+                diagnostics: &mut ActiveMidiRtDiagnostics,
+            ) -> f32 {
+                let frames = left.len();
+                body.process(
+                    left,
+                    right,
+                    frames,
+                    std::slice::from_ref(release),
+                    diagnostics,
+                );
+                let mut window = 0.0;
+                for _ in 0..RELEASE_BLOCKS {
+                    left.fill(0.0);
+                    right.fill(0.0);
+                    body.process(left, right, frames, &[], diagnostics);
+                    let power: f32 = left.iter().map(|sample| sample * sample).sum();
+                    window = (power / frames as f32).sqrt();
+                }
+                window
+            }
+
+            let note = MidiNoteEvent {
+                note: 60,
+                velocity: 100,
+                channel: 0,
+                is_note_on: true,
+                probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                project_probability_seed: 0,
+                clip_id_hash: 0,
+                event_id_hash: 0,
+                absolute_occurrence_index: 0,
+                frame_offset: 0,
+                articulation_id: None,
+            };
+            let release = MidiNoteEvent {
+                is_note_on: false,
+                ..note
+            };
+            let control = |controller: u8, value: u8| MidiControlEvent {
+                controller,
+                value,
+                channel: 0,
+            };
+
+            let mut left = vec![0.0_f32; FRAMES];
+            let mut right = vec![0.0_f32; FRAMES];
+            let mut held = GrandBouleBody::new(48_000.0);
+            let mut pedal_free = GrandBouleBody::new(48_000.0);
+            let mut diagnostics = ActiveMidiRtDiagnostics::new();
+            for body in [&mut held, &mut pedal_free] {
+                left.fill(0.0);
+                right.fill(0.0);
+                body.process(
+                    &mut left,
+                    &mut right,
+                    FRAMES,
+                    std::slice::from_ref(&note),
+                    &mut diagnostics,
+                );
+                assert!(
+                    left.iter().any(|sample| *sample != 0.0),
+                    "the instrument never sounded, so the guard below covers an idle body"
+                );
+            }
+
+            let mut held_window = 0.0_f32;
+            let mut pedal_free_window = 0.0_f32;
+
+            assert_no_alloc(|| {
+                held.control_change(control(CC_SUSTAIN, 127));
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
+                held_window =
+                    release_and_read(&mut held, &mut left, &mut right, &release, &mut diagnostics);
+                pedal_free_window = release_and_read(
+                    &mut pedal_free,
+                    &mut left,
+                    &mut right,
+                    &release,
+                    &mut diagnostics,
+                );
+
+                held.control_change(control(CC_SUSTAIN, 0));
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
+                for controller in [CC_SOSTENUTO, CC_UNA_CORDA] {
+                    held.control_change(control(controller, 127));
+                    held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
+                    held.control_change(control(controller, 0));
+                    held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
+                }
+                held.reset_controllers();
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
+
+                // The stop's own route on a body standing on the damper, which
+                // is the one that kills rather than releasing.
+                held.control_change(control(CC_SUSTAIN, 127));
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
+                held.silence_pedal_held_voices();
+                held.process(&mut left, &mut right, FRAMES, &[], &mut diagnostics);
+            });
+
+            assert!(
+                held_window > pedal_free_window * DECISIVE,
+                "the key let go under a held damper left {held_window} where the same key let go \
+                 with no pedal left {pedal_free_window}, so the damper never reached the \
+                 instrument and the guard covered a damping release rather than the release-key \
+                 route"
             );
         }
 
@@ -11560,6 +12771,73 @@ mod timeline_tests {
         }
     }
 
+    /// The same counted, offset-adding pass, from a body that must be run even
+    /// while no chain carries it — the Crumbs slot's answer
+    /// (`NativePlugin::runs_while_detached`). The count says whether the
+    /// scheduler ran it; the offset says whether whatever it rendered into
+    /// reached the mix.
+    struct DetachedDrainPlugin {
+        inner: CountingOffsetPlugin,
+    }
+
+    impl NativePlugin for DetachedDrainPlugin {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            self.inner.process_audio(left, right, num_samples);
+        }
+
+        fn process_with_events(
+            &mut self,
+            left: &mut [f32],
+            right: &mut [f32],
+            num_samples: usize,
+            midi_events: &[MidiNoteEvent],
+            transport: &TransportState,
+        ) {
+            self.inner
+                .process_with_events(left, right, num_samples, midi_events, transport);
+        }
+
+        fn name(&self) -> &str {
+            "detached-drain-plugin"
+        }
+
+        fn runs_while_detached(&self) -> bool {
+            true
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// A body registered exactly as `register_crumbs_slot` registers the
+    /// sampler's — `AddHostedPlugin`, no chain splice — that has to be run all
+    /// the same.
+    fn detached_body_that_must_drain(
+        harness: &mut Harness,
+        effect_id: usize,
+        offset: f32,
+    ) -> ChainBoundPlugin {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let midi_events = Arc::new(AtomicUsize::new(0));
+        harness.send(GraphCommand::AddHostedPlugin(
+            effect_id,
+            Box::new(DetachedDrainPlugin {
+                inner: CountingOffsetPlugin {
+                    offset,
+                    calls: Arc::clone(&calls),
+                    midi_events: Arc::clone(&midi_events),
+                },
+            }),
+            MidiNoteStore::new(),
+        ));
+        ChainBoundPlugin { calls, midi_events }
+    }
+
     /// One engine-owned hosted plugin and its call counters, spliced onto a
     /// track that plays a constant.
     struct ChainBoundPlugin {
@@ -11590,6 +12868,65 @@ mod timeline_tests {
             MidiNoteStore::new(),
         ));
         harness.send(insert_track_device(track_id, effect(effect_id), 0));
+
+        ChainBoundPlugin { calls, midi_events }
+    }
+
+    /// The same fixture as [`track_carrying_a_hosted_plugin`], from a body
+    /// that has to be run every callback whether or not a chain will
+    /// (`NativePlugin::runs_while_detached`) — the sampler's answer.
+    fn track_carrying_a_body_that_must_drain(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        offset: f32,
+    ) -> ChainBoundPlugin {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let midi_events = Arc::new(AtomicUsize::new(0));
+
+        track_with_constant_clip(harness, track_id, track_id + 100, 1.0, 4);
+        harness.send(GraphCommand::AddHostedPlugin(
+            effect_id,
+            Box::new(DetachedDrainPlugin {
+                inner: CountingOffsetPlugin {
+                    offset,
+                    calls: Arc::clone(&calls),
+                    midi_events: Arc::clone(&midi_events),
+                },
+            }),
+            MidiNoteStore::new(),
+        ));
+        harness.send(insert_track_device(track_id, effect(effect_id), 0));
+
+        ChainBoundPlugin { calls, midi_events }
+    }
+
+    /// The same fixture as [`track_carrying_a_body_that_must_drain`], spliced
+    /// as a generator — the shape a Crumbs device actually takes on a strip,
+    /// and a different bypass branch (`run_generator`'s) from the effect one.
+    fn track_carrying_a_generator_that_must_drain(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        offset: f32,
+    ) -> ChainBoundPlugin {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let midi_events = Arc::new(AtomicUsize::new(0));
+
+        track_with_constant_clip(harness, track_id, track_id + 100, 1.0, 4);
+        insert_track_generator(
+            harness,
+            track_id,
+            effect_id,
+            Box::new(DetachedDrainPlugin {
+                inner: CountingOffsetPlugin {
+                    offset,
+                    calls: Arc::clone(&calls),
+                    midi_events: Arc::clone(&midi_events),
+                },
+            }),
+            0,
+        );
 
         ChainBoundPlugin { calls, midi_events }
     }
@@ -11634,6 +12971,7 @@ mod timeline_tests {
             event_id_hash: 0,
             absolute_occurrence_index: 0,
             frame_offset: 0,
+            articulation_id: None,
         }
     }
 
@@ -13383,6 +14721,243 @@ mod timeline_tests {
         harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
         harness.render(4);
         assert_eq!(received.load(Ordering::Relaxed), 1);
+    }
+
+    /// A body whose own process call is the only drain of its command surface
+    /// is handed a block every callback while it runs nowhere, and what it
+    /// renders is thrown away.
+    ///
+    /// Detached, the master loop skips it and no strip chain reaches it, so
+    /// without this pass nothing calls it at all — and everything its control
+    /// side pushed banks in its ring until the ring is full, with the first
+    /// splice replaying the whole stale backlog.
+    #[test]
+    fn a_detached_body_that_must_drain_runs_every_callback_over_scratch_the_mix_never_sees() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let plugin = detached_body_that_must_drain(&mut harness, 7, 1.0);
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Detached,
+            "the sampler's registration homes the slot detached"
+        );
+
+        // The offset the body adds to every buffer it is handed is the probe:
+        // the pair the callback renders into must come back untouched.
+        let (left, right) = harness.render(4);
+        assert_eq!(plugin.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(left, vec![0.0; 4], "a detached body's block is discarded");
+        assert_eq!(right, vec![0.0; 4], "a detached body's block is discarded");
+
+        let (left, right) = harness.render(4);
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            2,
+            "the block is owed once per callback, not once per placement"
+        );
+        assert_eq!(left, vec![0.0; 4]);
+        assert_eq!(right, vec![0.0; 4]);
+    }
+
+    /// And only for a body that asks. Every other detached device — a hosted
+    /// plugin a strip released, a note sink at its home — is reached by its
+    /// host some other way and stays off the callback's clock.
+    #[test]
+    fn a_detached_body_that_needs_no_drain_is_handed_no_block_at_all() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let midi_events = Arc::new(AtomicUsize::new(0));
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddHostedPlugin(
+            7,
+            Box::new(CountingOffsetPlugin {
+                offset: 1.0,
+                calls: Arc::clone(&calls),
+                midi_events: Arc::clone(&midi_events),
+            }),
+            MidiNoteStore::new(),
+        ));
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Detached
+        );
+
+        let (left, right) = harness.render(4);
+        harness.render(4);
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            0,
+            "a body the host reaches without a block must not be run detached"
+        );
+        assert_eq!(left, vec![0.0; 4]);
+        assert_eq!(right, vec![0.0; 4]);
+    }
+
+    /// The block reaches it, so its MIDI does too: `receives_no_block` answers
+    /// `false` for such a body, and the events queued for it are read on the
+    /// discarded block rather than discarded at the door.
+    ///
+    /// And because it read them, the keys it holds are the keys it is really
+    /// holding — so the splice that finally carries it must not pay a release
+    /// for them. A body that banked its triggers unread is owed exactly that
+    /// payment ([`AudioScheduler::owe_releases_on_resume`]); one that read
+    /// them is owed none, and paying it would cut the note under a player's
+    /// finger the moment the device landed on a strip.
+    #[test]
+    fn a_detached_body_that_must_drain_reads_its_midi_and_keeps_its_keys_across_a_splice() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let plugin = detached_body_that_must_drain(&mut harness, 7, 1.0);
+
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+        harness.render(4);
+
+        assert_eq!(
+            plugin.midi_events.load(Ordering::Relaxed),
+            1,
+            "a body the callback runs must be handed the note addressed to it"
+        );
+        assert!(
+            harness.scheduler.effects[0].pending_midi.is_empty(),
+            "the body's own pass is what drains its queue"
+        );
+
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(insert_track_device(1, effect(7), 0));
+        harness.render(4);
+
+        assert_eq!(
+            plugin.midi_events.load(Ordering::Relaxed),
+            1,
+            "the splice must not pay a release for a key the body is still holding"
+        );
+    }
+
+    /// The drain is owed on the other half of "no chain runs it" too, and it is
+    /// the commoner half: a musician bypassing a spliced sampler mid-roll takes
+    /// it out of its chain's pass exactly as a detachment takes it out of every
+    /// chain's. Left unrun, the taps, loads and parameters its panel pushes
+    /// under the bypass bank in its ring — a full ring refusing every later
+    /// gesture, and one block replaying the whole backlog when the bypass comes
+    /// off.
+    ///
+    /// What the strip and the mix hear is the bypass contract, unchanged: the
+    /// clip's signal through the device's own latency, and none of the device.
+    #[test]
+    fn a_spliced_body_that_must_drain_is_run_over_discarded_scratch_while_it_is_bypassed() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let plugin = track_carrying_a_body_that_must_drain(&mut harness, 1, 7, 0.5);
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+
+        let (left, right) = harness.render(4);
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            1,
+            "a bypassed body that must drain is handed exactly one block per callback"
+        );
+        assert_eq!(
+            left,
+            vec![1.0; 4],
+            "the strip passes its clip through the bypass; the discarded block reaches no mix"
+        );
+        assert_eq!(right, vec![1.0; 4]);
+        assert_eq!(
+            plugin.midi_events.load(Ordering::Relaxed),
+            1,
+            "the block reaches it, so the note queued under the bypass does too"
+        );
+        assert!(
+            harness.scheduler.effects[0].pending_midi.is_empty(),
+            "the discard pass drains the queue the chain's bypass branch leaves alone"
+        );
+
+        harness.send(GraphCommand::SeekFrames(0));
+        let (left, right) = harness.render(4);
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            2,
+            "the block is owed once per callback, not once per bypass edge"
+        );
+        assert_eq!(left, vec![1.0; 4]);
+        assert_eq!(right, vec![1.0; 4]);
+    }
+
+    /// The same law on the instrument route, which is the one a sampler takes:
+    /// a Crumbs device joins its strip as a generator, so `run_generator`'s
+    /// bypass branch — not `run_device`'s — is what must leave this
+    /// population's queue for the discard pass to read.
+    ///
+    /// The two branches are separate code with separate clears, so an effect
+    /// spec says nothing about the instrument one: a generator that cleared
+    /// unconditionally would drop the pads a musician played into a bypassed
+    /// sampler, and their note-ons would be spent without a sound.
+    #[test]
+    fn a_bypassed_generator_that_must_drain_still_reads_the_midi_queued_for_it() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let plugin = track_carrying_a_generator_that_must_drain(&mut harness, 1, 7, 0.5);
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+
+        let (left, right) = harness.render(4);
+
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            1,
+            "a bypassed instrument that must drain is handed exactly one block per callback"
+        );
+        assert_eq!(
+            plugin.midi_events.load(Ordering::Relaxed),
+            1,
+            "the note queued under the bypass is read on that block, never dropped at the door"
+        );
+        assert!(
+            harness.scheduler.effects[0].pending_midi.is_empty(),
+            "and the queue is drained by the pass that read it"
+        );
+        assert_eq!(
+            left,
+            vec![1.0; 4],
+            "a bypassed instrument contributes none of its own material; only the strip's clip sounds"
+        );
+        assert_eq!(right, vec![1.0; 4]);
+    }
+
+    /// And taking the bypass off hands it back to its chain, exactly once. The
+    /// membership the bypass edge maintains is what keeps the two passes
+    /// exclusive: stale, it would render the body twice on one block — two
+    /// draws from one command ring, two renders of one tap.
+    #[test]
+    fn un_bypassing_a_body_that_must_drain_moves_it_from_the_discard_pass_onto_its_chain() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let plugin = track_carrying_a_body_that_must_drain(&mut harness, 1, 7, 0.5);
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.render(4);
+        assert_eq!(plugin.calls.load(Ordering::Relaxed), 1);
+
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.send(GraphCommand::SeekFrames(0));
+        let (left, right) = harness.render(4);
+
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            2,
+            "the chain runs it once; the discard pass must not run it again on the same block"
+        );
+        assert_eq!(
+            left,
+            vec![1.5; 4],
+            "un-bypassed, what the body renders is what the strip hears"
+        );
+        assert_eq!(right, vec![1.5; 4]);
+        assert!(
+            harness.scheduler.discard_run_work.slots.is_empty(),
+            "an un-bypassed device a chain runs is the chain's alone"
+        );
     }
 
     /// A hosted plugin a strip holds is run by that strip's chain, and the
@@ -17011,7 +18586,7 @@ mod timeline_tests {
     /// same check `enqueue_midi` and `release_sounding_notes` already state,
     /// so the note-off is neither delivered nor cleared from `sounding` — the
     /// bit stays held, and the release stays owed to
-    /// [`AudioScheduler::release_notes_owed_on_resume`], which pays it at the
+    /// [`AudioScheduler::pay_owed_releases`], which pays it at the
     /// head of the first block the device runs again.
     #[test]
     fn a_bypassed_device_keeps_the_stored_note_release_it_owes_until_it_runs_again() {
@@ -17052,6 +18627,305 @@ mod timeline_tests {
             "the owed release lands at the head of the first block the device runs again, exactly \
              once — the bypassed block was never processed, so the recording instrument's own \
              frame counter never advanced past it"
+        );
+    }
+
+    /// A stop's release survives a bypass landing later in the same drain.
+    ///
+    /// `update_graph` drains the whole command ring before anything renders,
+    /// so the drain that carries the stop can carry a `SetBypass` after it.
+    /// Paying the release at the stop's own command would push the note-offs
+    /// into `pending_midi` with the sounding bits already spent; the bypassed
+    /// arm then discards the buffer unread and the key stays held for the
+    /// life of the device — sounding again, with no note-on, the moment the
+    /// device comes back. The release is recorded at the trigger and paid at
+    /// the end of the drain, for exactly the devices the drain has left
+    /// receiving a block.
+    #[test]
+    fn a_stop_release_survives_a_bypass_later_in_the_same_drain() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the live note is sounding when the drain under test runs"
+        );
+
+        // One drain: the stop owes the release, the bypass takes the device
+        // away before anything renders.
+        harness.send_in_one_drain([
+            GraphCommand::SetTransport(TransportState::default()),
+            GraphCommand::SetBypass(7, true),
+        ]);
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the bypassed arm delivers nothing, and the stop's release is not spent on it"
+        );
+
+        // Un-bypassing hands the device its first block since the stop, and
+        // the release it owed is answered at the head of it.
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true), (BLOCK as u64, 60, false)],
+            "the stop's release survives the same-drain bypass and lifts the key on un-bypass"
+        );
+    }
+
+    /// A release owed on un-bypass is not spent by a re-bypass in the same
+    /// drain.
+    ///
+    /// The un-bypass and the re-bypass are both in one command ring, and the
+    /// ring drains whole before the block runs: paying the owed releases at
+    /// the un-bypass transition would push them into `pending_midi` with the
+    /// sounding bits already cleared, the bypassed arm would discard the
+    /// buffer unread, and the key would stay held for the life of the device.
+    /// The record a transition leaves pays only where the device is actually
+    /// handed a block, so a device taken away again before it renders keeps
+    /// record and bits alike.
+    #[test]
+    fn a_resume_release_survives_a_re_bypass_in_the_same_drain() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the live note is sounding when the device is bypassed"
+        );
+
+        // The device is taken away while the key is down...
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.render(BLOCK);
+        // ...and handed back, then taken away again, inside one drain.
+        harness.send_in_one_drain([
+            GraphCommand::SetBypass(7, false),
+            GraphCommand::SetBypass(7, true),
+        ]);
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the release is not spent on a drain whose block the device never received"
+        );
+
+        // The un-bypass that finally sticks pays the release exactly once.
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true), (BLOCK as u64, 60, false)],
+            "exactly one note-off reaches the instrument, at the head of the block it is \
+             finally handed"
+        );
+    }
+
+    /// A stripped note's release survives its device being bypassed when the
+    /// clear lands.
+    ///
+    /// The settlement answers its candidates once the whole drain has applied,
+    /// but a device the drain has left bypassed is handed no block, and the
+    /// bypassed arm discards `pending_midi` unread. Spending the sounding bit
+    /// at the settlement would throw the note-off away with nothing left to
+    /// re-owe it, so candidate and bit both wait for the first drain whose
+    /// block reaches the device.
+    #[test]
+    fn a_stripped_notes_release_survives_its_device_being_bypassed() {
+        const BLOCK: usize = 64;
+        const NOTE_OFF: u64 = 1_024;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(0, 60, true), (NOTE_OFF, 60, false)]));
+
+        // The note-on is delivered and sounds; the playhead is nowhere near
+        // its note-off.
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the stored note-on is delivered while the device runs"
+        );
+
+        // Bypassed, then cleared: the window takes the note-off out of the
+        // store, so the sounding note is owed a release the settlement can
+        // only pay once a block reaches the device.
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::ClearMidiNotes {
+            plugin_id: 7,
+            from_frame: NOTE_OFF - 1,
+            to_frame: NOTE_OFF + 1,
+        });
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the settlement is not spent on the bypassed block that cannot read it"
+        );
+
+        // Un-bypassing hands the device its first block since the clear, and
+        // the release is answered at its head.
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.render(BLOCK);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true), (BLOCK as u64, 60, false)],
+            "the owed release reaches the instrument after un-bypass"
+        );
+    }
+
+    /// A hosted plugin that records the transport every process call carries,
+    /// and whether any block reached it through the audio-only path.
+    struct TransportRecordingPlugin {
+        transports: Arc<Mutex<Vec<RecordedTransport>>>,
+        audio_only_calls: Arc<AtomicUsize>,
+    }
+
+    /// The transport facts the assertion reads, at a precision that compares.
+    #[derive(Clone, Copy, PartialEq, Debug)]
+    struct RecordedTransport {
+        tempo: f64,
+        is_playing: bool,
+        song_pos_beats: f64,
+    }
+
+    impl RecordedTransport {
+        fn of(state: &TransportState) -> Self {
+            Self {
+                tempo: state.tempo,
+                is_playing: state.is_playing,
+                song_pos_beats: state.song_pos_beats,
+            }
+        }
+    }
+
+    impl NativePlugin for TransportRecordingPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {
+            self.audio_only_calls.fetch_add(1, Ordering::Relaxed);
+        }
+
+        fn process_with_events(
+            &mut self,
+            _left: &mut [f32],
+            _right: &mut [f32],
+            _num_samples: usize,
+            _midi_events: &[MidiNoteEvent],
+            transport: &TransportState,
+        ) {
+            self.transports
+                .lock()
+                .expect("the transport log")
+                .push(RecordedTransport::of(transport));
+        }
+
+        fn name(&self) -> &str {
+            "transport-recording-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// Every processed block carries the current transport, whatever the MIDI
+    /// density.
+    ///
+    /// An audio effect that never sees a note is dispatched through the same
+    /// `process_with_events` seam a note-bearing block is, on both arms that
+    /// run a native body — the track chain and the master insert. A plugin
+    /// that stages transport metadata must not have to wait for a note to
+    /// arrive, or it keeps playing against the tempo and position of the last
+    /// note-bearing block.
+    #[test]
+    fn an_audio_only_block_still_carries_the_current_transport() {
+        const BLOCK: usize = 64;
+        const CHAIN_DEVICE: usize = 8;
+        const MASTER_DEVICE: usize = 9;
+
+        fn recording_plugin() -> (
+            Box<dyn NativePlugin>,
+            Arc<Mutex<Vec<RecordedTransport>>>,
+            Arc<AtomicUsize>,
+        ) {
+            let transports = Arc::new(Mutex::new(Vec::new()));
+            let audio_only_calls = Arc::new(AtomicUsize::new(0));
+            let plugin = Box::new(TransportRecordingPlugin {
+                transports: Arc::clone(&transports),
+                audio_only_calls: Arc::clone(&audio_only_calls),
+            });
+            (plugin, transports, audio_only_calls)
+        }
+
+        let playing_at = |tempo: f64, beats: f64| TransportState {
+            tempo,
+            is_playing: true,
+            song_pos_beats: beats,
+            song_pos_seconds: beats * 60.0 / tempo,
+            ..TransportState::default()
+        };
+        // The exact states the test sends, in the order it renders them: a
+        // call whose transport is not the one in force when the block ran is
+        // the staleness this exists to catch.
+        let sent = [
+            TransportState::default(),
+            playing_at(132.0, 3.5),
+            playing_at(90.0, 9.75),
+            TransportState::default(),
+        ];
+
+        let mut harness = Harness::new(32);
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 8_192);
+        let (chain_plugin, chain_transports, chain_audio_only) = recording_plugin();
+        harness.send(GraphCommand::AddPlugin(CHAIN_DEVICE, chain_plugin, None));
+        harness.send(insert_track_device(1, effect(CHAIN_DEVICE), 0));
+        let (master_plugin, master_transports, master_audio_only) = recording_plugin();
+        harness.send(GraphCommand::AddPlugin(MASTER_DEVICE, master_plugin, None));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::SetTransport(sent[1]));
+        harness.render(BLOCK);
+        harness.send(GraphCommand::SetTransport(sent[2]));
+        harness.render(BLOCK);
+        harness.send(GraphCommand::SetTransport(sent[3]));
+        harness.render(BLOCK);
+
+        let expected: Vec<RecordedTransport> = sent.iter().map(RecordedTransport::of).collect();
+        assert_eq!(
+            *chain_transports.lock().expect("the transport log"),
+            expected,
+            "every track-chain block carries the transport in force when it ran"
+        );
+        assert_eq!(
+            *master_transports.lock().expect("the transport log"),
+            expected,
+            "every master-insert block carries the transport in force when it ran"
+        );
+        assert_eq!(
+            chain_audio_only.load(Ordering::Relaxed),
+            0,
+            "no block reached the track-chain device through the transport-less path"
+        );
+        assert_eq!(
+            master_audio_only.load(Ordering::Relaxed),
+            0,
+            "no block reached the master insert through the transport-less path"
         );
     }
 
@@ -18415,6 +20289,29 @@ mod timeline_tests {
         (left, right)
     }
 
+    /// Render `callbacks` blocks of `frames`, letting `at_head` push commands
+    /// before each one.
+    ///
+    /// [`render_master`] cannot express this: a live message is drained between
+    /// callbacks, so a spec about *when* one reaches the instrument has to be
+    /// able to send it at a callback's head rather than before the whole run.
+    fn render_master_at_callback_heads(
+        harness: &mut Harness,
+        frames: usize,
+        callbacks: usize,
+        mut at_head: impl FnMut(usize, &mut Harness),
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut left = Vec::with_capacity(frames * callbacks);
+        let mut right = Vec::with_capacity(frames * callbacks);
+        for callback in 0..callbacks {
+            at_head(callback, harness);
+            let (block_left, block_right) = harness.render(frames);
+            left.extend(block_left);
+            right.extend(block_right);
+        }
+        (left, right)
+    }
+
     /// The instance buffers exactly the frames the host's slices are bounded
     /// by.
     ///
@@ -18443,11 +20340,12 @@ mod timeline_tests {
     /// The hosted body renders exactly what the worklet's own driving of
     /// [`GrandBouleInstance`] renders for the same programme.
     ///
-    /// The worklet hands the instance [`GRAND_BOULE_RUN_FRAMES`] at a time and
-    /// voices a note as soon as the block about to render holds its frame,
-    /// because the instrument takes no per-note sample offset. The scheduler
-    /// hands the body a longer callback, so the run split is the whole of what
-    /// makes the two agree.
+    /// The worklet hands the instance [`GRAND_BOULE_RUN_FRAMES`] at a time,
+    /// and the instrument takes a per-note sample offset through
+    /// `push_note_on`'s and `push_note_off_on_channel`'s last argument.
+    /// Pushing the same note-on and note-off at the same offset on the
+    /// 128-frame reference blocks and on the hosted body's own runs renders
+    /// identical samples.
     ///
     /// Two mutations red this: dividing the velocity by 100 rather than by
     /// [`MIDI_VELOCITY_FULL_SCALE`] sounds the reference note at a different
@@ -18476,10 +20374,10 @@ mod timeline_tests {
         let (worklet_left, worklet_right) =
             render_grand_boule_reference(RENDERED / GRAND_BOULE_RUN_FRAMES, |run, instance| {
                 if run == 0 {
-                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
                 }
                 if run == RELEASE_RUN {
-                    instance.note_off_on_channel(NOTE, 0);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
                 }
             });
 
@@ -18499,22 +20397,98 @@ mod timeline_tests {
         );
     }
 
-    /// A note sounds from the run that holds the frame it was stamped for, and
-    /// the runs ahead of it are silent.
+    /// A span the absolute 128-frame grid does not divide still renders the
+    /// worklet's own samples.
     ///
-    /// The instrument has no note API carrying a sample offset, so the run is
-    /// the whole of the timing resolution — and it is the resolution the web
-    /// runtime has too, which is why the note is expected at the head of its
-    /// run rather than on its own frame. A body that delivered every event at
-    /// the head of the callback would sound this note in the first run, where
-    /// the leading assertion reads silence.
+    /// The callback is 192 frames, so every span after the first starts off the
+    /// grid the worklet counts its blocks from: span 1 begins at frame 192,
+    /// and the body's own run 0 covers frames 192..320 while the worklet's
+    /// block 1 covers 128..256. Before the instrument took a sample offset the
+    /// body could only sound a note at the head of one of its own runs, which
+    /// put this note-on at frame 192 — 8 frames early, and 200 frames into a
+    /// window the equality below requires to be silent. With the offset the
+    /// body rebases the stamp onto its run and the two renders agree sample for
+    /// sample.
     #[test]
-    fn a_grand_boule_note_on_sounds_from_the_run_that_holds_its_frame() {
+    fn a_hosted_grand_boule_off_grid_span_renders_the_worklet_samples() {
+        /// Deliberately not a multiple of [`GRAND_BOULE_RUN_FRAMES`]: this is
+        /// what puts every later span off the worklet's absolute grid.
+        const CALLBACK: usize = 192;
+        const CALLBACKS: usize = 8;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const NOTE: u8 = 60;
+        const ONSET_FRAME: u64 = 200;
+        const RELEASE_FRAME: u64 = 1_000;
+        /// The worklet's own block and offset for frame 200: 200 = 1 * 128 + 72.
+        const ONSET_BLOCK: usize = 1;
+        const ONSET_OFFSET: u32 =
+            ONSET_FRAME as u32 - (ONSET_BLOCK * GRAND_BOULE_RUN_FRAMES) as u32;
+        /// And for frame 1000: 1000 = 7 * 128 + 104.
+        const RELEASE_BLOCK: usize = 7;
+        const RELEASE_OFFSET: u32 =
+            RELEASE_FRAME as u32 - (RELEASE_BLOCK * GRAND_BOULE_RUN_FRAMES) as u32;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(ONSET_FRAME, NOTE, true), (RELEASE_FRAME, NOTE, false)],
+        ));
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let (worklet_left, worklet_right) =
+            render_grand_boule_reference(RENDERED / GRAND_BOULE_RUN_FRAMES, |block, instance| {
+                if block == ONSET_BLOCK {
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, ONSET_OFFSET));
+                }
+                if block == RELEASE_BLOCK {
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, RELEASE_OFFSET));
+                }
+            });
+
+        assert!(
+            hosted_left[..ONSET_FRAME as usize]
+                .iter()
+                .all(|sample| *sample == 0.0),
+            "the hosted body sounded before the frame the note was stamped for"
+        );
+        assert!(
+            worklet_left[ONSET_FRAME as usize..]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "the reference render is silent past the onset, so an equality against it \
+             proves nothing"
+        );
+        assert_eq!(
+            hosted_left, worklet_left,
+            "the hosted body's left channel is not the signal the worklet renders across \
+             off-grid spans"
+        );
+        assert_eq!(
+            hosted_right, worklet_right,
+            "the hosted body's right channel is not the signal the worklet renders across \
+             off-grid spans"
+        );
+    }
+
+    /// A note sounds from the frame it was stamped for, and every frame ahead
+    /// of it is silent.
+    ///
+    /// The instrument takes a per-note sample offset, so the frame — not the
+    /// run holding it — is where the note is expected. Two bodies fail the
+    /// leading assertion: one delivering every event at the head of the
+    /// callback sounds this note at frame 0, and one delivering it at the head
+    /// of its own run sounds it at frame 128, both inside the window this reads
+    /// as exact silence.
+    #[test]
+    fn a_grand_boule_note_on_sounds_from_its_stamped_frame() {
         const CALLBACK: usize = 512;
         const STAMPED_FRAME: u32 = 200;
-        /// The run holding frame 200, which is where the note is expected.
+        /// The run holding frame 200, and the offset inside it the worklet
+        /// pushes the note at.
         const SOUNDING_RUN: usize = 1;
-        const ONSET: usize = SOUNDING_RUN * GRAND_BOULE_RUN_FRAMES;
+        const OFFSET_IN_RUN: u32 = STAMPED_FRAME - (SOUNDING_RUN * GRAND_BOULE_RUN_FRAMES) as u32;
 
         let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
         let mut event = note_on(60);
@@ -18522,26 +20496,37 @@ mod timeline_tests {
         event.frame_offset = STAMPED_FRAME;
         let mut hosted_left = vec![0.0_f32; CALLBACK];
         let mut hosted_right = vec![0.0_f32; CALLBACK];
+        let mut diagnostics = ActiveMidiRtDiagnostics::new();
         body.process(
             &mut hosted_left,
             &mut hosted_right,
             CALLBACK,
             std::slice::from_ref(&event),
+            &mut diagnostics,
         );
 
         let (reference_left, reference_right) =
             render_grand_boule_reference(CALLBACK / GRAND_BOULE_RUN_FRAMES, |run, instance| {
                 if run == SOUNDING_RUN {
-                    instance.note_on_with_channel(event.note, grand_boule_velocity(), 0);
+                    assert!(instance.push_note_on(
+                        event.note,
+                        grand_boule_velocity(),
+                        0,
+                        OFFSET_IN_RUN
+                    ));
                 }
             });
 
         assert!(
-            hosted_left[..ONSET].iter().all(|sample| *sample == 0.0),
-            "the body sounded before the run that holds the note's frame"
+            hosted_left[..STAMPED_FRAME as usize]
+                .iter()
+                .all(|sample| *sample == 0.0),
+            "the body sounded before the frame the note was stamped for"
         );
         assert!(
-            reference_left[ONSET..].iter().any(|sample| *sample != 0.0),
+            reference_left[STAMPED_FRAME as usize..]
+                .iter()
+                .any(|sample| *sample != 0.0),
             "the reference is silent past the onset, so the equality below proves nothing"
         );
         assert_eq!(
@@ -18578,16 +20563,19 @@ mod timeline_tests {
         event.frame_offset = STAMPED_FRAME;
         let mut hosted_left = vec![0.0_f32; FRAMES];
         let mut hosted_right = vec![0.0_f32; FRAMES];
+        let mut diagnostics = ActiveMidiRtDiagnostics::new();
         body.process(
             &mut hosted_left,
             &mut hosted_right,
             FRAMES,
             std::slice::from_ref(&event),
+            &mut diagnostics,
         );
 
         // The reference drives the instance the way the worklet would: two
-        // whole runs, with the stamped note (frame 200, inside the second
-        // run) delivered before that run renders, then the 44-frame tail.
+        // whole runs, with the stamped note (frame 200, 72 frames into the
+        // second run) pushed at that offset before the run renders, then the
+        // 44-frame tail.
         let mut instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
         let mut reference_left = Vec::with_capacity(FRAMES);
         let mut reference_right = Vec::with_capacity(FRAMES);
@@ -18596,7 +20584,12 @@ mod timeline_tests {
             .enumerate()
         {
             if run == 1 {
-                instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                assert!(instance.push_note_on(
+                    NOTE,
+                    grand_boule_velocity(),
+                    0,
+                    STAMPED_FRAME - GRAND_BOULE_RUN_FRAMES as u32
+                ));
             }
             let rendered_left = instance.process(run_frames as u32);
             let rendered_right = instance.get_right_ptr();
@@ -18651,6 +20644,7 @@ mod timeline_tests {
         let mut hosted_left = vec![0.0_f32; SPAN];
         let mut hosted_right = vec![0.0_f32; SPAN];
         let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
+        let mut diagnostics = ActiveMidiRtDiagnostics::new();
 
         let mut note_on_channel_1 = note_on(NOTE);
         note_on_channel_1.velocity = GRAND_BOULE_VELOCITY;
@@ -18663,6 +20657,7 @@ mod timeline_tests {
             &mut hosted_right[..GRAND_BOULE_RUN_FRAMES],
             GRAND_BOULE_RUN_FRAMES,
             &[note_on_channel_1, note_on_channel_2],
+            &mut diagnostics,
         );
 
         let mut note_off_channel_2 = note_on(NOTE);
@@ -18673,16 +20668,17 @@ mod timeline_tests {
             &mut hosted_right[GRAND_BOULE_RUN_FRAMES..],
             SPAN - GRAND_BOULE_RUN_FRAMES,
             std::slice::from_ref(&note_off_channel_2),
+            &mut diagnostics,
         );
 
         let mut instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
         let mut reference_left = Vec::with_capacity(SPAN);
         let mut reference_right = Vec::with_capacity(SPAN);
-        instance.note_on_with_channel(NOTE, grand_boule_velocity(), 1);
-        instance.note_on_with_channel(NOTE, grand_boule_velocity(), 2);
+        assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 1, 0));
+        assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 2, 0));
         for run in 0..4 {
             if run == 1 {
-                instance.note_off_on_channel(NOTE, 2);
+                assert!(instance.push_note_off_on_channel(NOTE, 2, 0));
             }
             let rendered_left = instance.process(GRAND_BOULE_RUN_FRAMES as u32);
             let rendered_right = instance.get_right_ptr();
@@ -18757,7 +20753,8 @@ mod timeline_tests {
 
             let mut events = held.to_vec();
             events.push(release);
-            body.process(&mut left, &mut right, RENDERED, &events);
+            let mut diagnostics = ActiveMidiRtDiagnostics::new();
+            body.process(&mut left, &mut right, RENDERED, &events, &mut diagnostics);
             left
         }
 
@@ -18774,6 +20771,1640 @@ mod timeline_tests {
              single channel ({}), so it reached at most one of the two voices",
             rms(&both_released[TAIL..]),
             rms(&one_released[TAIL..])
+        );
+    }
+
+    // ── Grand Boule pedals ─────────────────────────────────────────────────
+
+    /// The three pedal controller numbers, spelled as the MIDI literals rather
+    /// than imported from the body's own constants: an oracle reading the
+    /// production numbers would agree with the body whichever controller it
+    /// decided to answer.
+    const CC_SUSTAIN: u8 = 64;
+    const CC_SOSTENUTO: u8 = 66;
+    const CC_UNA_CORDA: u8 = 67;
+
+    /// The two channel-mode messages a panic is made of, spelled as literals
+    /// for the same reason the three pedals above are.
+    const CC_PANIC_ALL_SOUND_OFF: u8 = 120;
+    const CC_PANIC_RESET_CONTROLLERS: u8 = 121;
+
+    /// Full scale on a 7-bit controller, and the divisor that turns one into
+    /// the `0..1` position the instrument takes — spelled here for the reason
+    /// [`grand_boule_velocity`] spells its own divisor.
+    const CONTROLLER_FULL_SCALE: f32 = 127.0;
+
+    /// The plugin id [`track_with_grand_boule`] registers in these specs.
+    const GRAND_BOULE_ID: usize = 7;
+
+    /// The track id those specs place it on.
+    const GRAND_BOULE_TRACK: usize = 1;
+
+    /// One live controller message for the instrument under test.
+    ///
+    /// The channel is deliberately not the note's: a pedal belongs to the
+    /// instrument, so a body that narrowed a controller to a voice's channel
+    /// would drop these.
+    fn pedal(controller: u8, value: u8) -> GraphCommand {
+        GraphCommand::SendMidiControl(
+            GRAND_BOULE_ID,
+            MidiControlEvent {
+                controller,
+                value,
+                channel: 9,
+            },
+        )
+    }
+
+    /// The player letting a key on the instrument go, live.
+    fn grand_boule_release(note: u8) -> MidiNoteEvent {
+        MidiNoteEvent {
+            is_note_on: false,
+            ..note_on(note)
+        }
+    }
+
+    /// The command that parks the transport, which is what silences a pedalled
+    /// body.
+    fn stop_transport() -> GraphCommand {
+        GraphCommand::SetTransport(TransportState::default())
+    }
+
+    /// A damper held down while a scheduled note is released holds that note,
+    /// and the hosted render is the worklet's own for the same programme.
+    ///
+    /// The equality is the positive claim: the reference presses the pedal at
+    /// run 0 — where a live controller sent before the first callback lands —
+    /// and releases the key at the same run the store's note-off is written
+    /// for. The RMS comparison is the discriminating half: a body that dropped
+    /// the controller, or latched it to zero, renders the second reference
+    /// instead, whose strings are damped from the release onwards.
+    ///
+    /// Reverting `GrandBouleBody::control_change`'s CC64 arm to a no-op fails
+    /// the equality; so does dropping the `SendMidiControl` drain arm.
+    #[test]
+    fn a_grand_boule_holds_a_released_note_while_the_damper_is_down() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 16;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS: usize = RENDERED / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        const RELEASE_RUN: usize = 4;
+        const RELEASE_FRAME: u64 = (RELEASE_RUN * GRAND_BOULE_RUN_FRAMES) as u64;
+        /// Far enough past the release that the damper-lift transient has died
+        /// away, so the window reads strings ringing rather than the thud.
+        const TAIL: usize = RENDERED / 2;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(pedal(CC_SUSTAIN, 127));
+        harness.send(schedule_phrase(
+            GRAND_BOULE_ID,
+            &[(0, NOTE, true), (RELEASE_FRAME, NOTE, false)],
+        ));
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let reference = |damper_down: bool| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    if damper_down {
+                        instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
+                    }
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
+                }
+                if run == RELEASE_RUN {
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
+                }
+            })
+        };
+        let (held_left, held_right) = reference(true);
+        let (damped_left, _damped_right) = reference(false);
+
+        assert!(
+            rms(&damped_left[TAIL..]) < rms(&held_left[TAIL..]),
+            "the two references sound the same past the release ({} against {}), so the \
+             equality below would hold whether or not the damper reached the instrument",
+            rms(&damped_left[TAIL..]),
+            rms(&held_left[TAIL..])
+        );
+        assert_eq!(
+            hosted_left, held_left,
+            "the hosted left channel is not the signal a held damper renders"
+        );
+        assert_eq!(
+            hosted_right, held_right,
+            "the hosted right channel is not the signal a held damper renders"
+        );
+    }
+
+    /// A damper lifted before the release damps the note, and the lift is the
+    /// controller's own doing rather than the body forgetting the press.
+    ///
+    /// The lift is sent at the head of callback 1, after the press reached the
+    /// instrument and while the key is still down, so it exercises a second
+    /// controller landing on a body that already holds one. The RMS comparison
+    /// is against the render where the lift never arrives.
+    ///
+    /// Making `control_change`'s CC64 arm ignore a zero value — a latch that
+    /// only ever presses — leaves the hosted render equal to the held
+    /// reference and fails the equality here.
+    #[test]
+    fn a_grand_boule_damps_a_released_note_when_the_damper_is_up() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 16;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS: usize = RENDERED / GRAND_BOULE_RUN_FRAMES;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        const LIFT_CALLBACK: usize = 1;
+        const LIFT_RUN: usize = LIFT_CALLBACK * RUNS_PER_CALLBACK;
+        const RELEASE_RUN: usize = 4;
+        const RELEASE_FRAME: u64 = (RELEASE_RUN * GRAND_BOULE_RUN_FRAMES) as u64;
+        const TAIL: usize = RENDERED / 2;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(pedal(CC_SUSTAIN, 127));
+        harness.send(schedule_phrase(
+            GRAND_BOULE_ID,
+            &[(0, NOTE, true), (RELEASE_FRAME, NOTE, false)],
+        ));
+        let (hosted_left, hosted_right) = render_master_at_callback_heads(
+            &mut harness,
+            CALLBACK,
+            CALLBACKS,
+            |callback, harness| {
+                if callback == LIFT_CALLBACK {
+                    harness.send(pedal(CC_SUSTAIN, 0));
+                }
+            },
+        );
+
+        let reference = |lifted: bool| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
+                }
+                if lifted && run == LIFT_RUN {
+                    instance.set_sustain(0.0);
+                }
+                if run == RELEASE_RUN {
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
+                }
+            })
+        };
+        let (damped_left, damped_right) = reference(true);
+        let (held_left, _held_right) = reference(false);
+
+        assert!(
+            rms(&damped_left[TAIL..]) < rms(&held_left[TAIL..]),
+            "lifting the damper changed nothing in the reference ({} against {}), so the \
+             equality below cannot tell a delivered lift from a dropped one",
+            rms(&damped_left[TAIL..]),
+            rms(&held_left[TAIL..])
+        );
+        assert_eq!(
+            hosted_left, damped_left,
+            "the hosted left channel is not the signal a lifted damper renders"
+        );
+        assert_eq!(
+            hosted_right, damped_right,
+            "the hosted right channel is not the signal a lifted damper renders"
+        );
+    }
+
+    /// A pedal pressed on one callback is still pressed on every callback
+    /// after it.
+    ///
+    /// A controller is a state write on the instance, not a block-local event,
+    /// so nothing clears it at a block boundary. The note-off is stamped inside
+    /// callback five of twelve, so a body that cleared the pedal with its
+    /// block-local MIDI — or applied the controller for one block only — damps
+    /// the note the reference holds. That body is the second reference here,
+    /// which lifts the pedal at the head of the callback after the press.
+    #[test]
+    fn a_grand_boule_pedal_survives_the_callback_that_pressed_it() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 12;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS: usize = RENDERED / GRAND_BOULE_RUN_FRAMES;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        /// A run inside callback five, chosen off a callback boundary.
+        const RELEASE_RUN: usize = 11;
+        const RELEASE_FRAME: u64 = (RELEASE_RUN * GRAND_BOULE_RUN_FRAMES) as u64;
+        const TAIL: usize = (RELEASE_RUN + 2) * GRAND_BOULE_RUN_FRAMES;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(pedal(CC_SUSTAIN, 127));
+        harness.send(schedule_phrase(
+            GRAND_BOULE_ID,
+            &[(0, NOTE, true), (RELEASE_FRAME, NOTE, false)],
+        ));
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let reference = |survives: bool| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
+                }
+                if !survives && run == RUNS_PER_CALLBACK {
+                    instance.set_sustain(0.0);
+                }
+                if run == RELEASE_RUN {
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
+                }
+            })
+        };
+        let (held_left, held_right) = reference(true);
+        let (one_callback_left, _one_callback_right) = reference(false);
+
+        assert!(
+            rms(&one_callback_left[TAIL..]) < rms(&held_left[TAIL..]),
+            "a pedal cleared after one callback renders the same tail as one that survives \
+             ({} against {}), so the equality below proves nothing about its lifetime",
+            rms(&one_callback_left[TAIL..]),
+            rms(&held_left[TAIL..])
+        );
+        assert_eq!(
+            hosted_left, held_left,
+            "the hosted left channel is not the signal a pedal held across callbacks renders"
+        );
+        assert_eq!(
+            hosted_right, held_right,
+            "the hosted right channel is not the signal a pedal held across callbacks renders"
+        );
+    }
+
+    /// A stop and a locate silence a pedalled piano and leave its pedals
+    /// exactly where the player's foot left them.
+    ///
+    /// The programme puts all three pedals in a position where they are really
+    /// holding the note: the key is struck, sostenuto captures the sounding
+    /// voice, una corda engages, the damper goes down, and only then is the key
+    /// released. A note-off cannot discharge that state — the instrument routes
+    /// one to `release_key` while a pedal holds — so what the edge has to do is
+    /// kill the voices without moving the foot.
+    ///
+    /// Two windows say the voices died: the note is ringing before the edge and
+    /// the tail behind it is decisively below that. A second key struck and
+    /// released past the edge is what says the foot did not move — it rings on
+    /// under a damper nobody lifted, and the reference that lifted all three at
+    /// the edge damps it instead, which is what makes the equality
+    /// discriminating.
+    ///
+    /// Both edges, because both owe the graph's live keys through
+    /// `AudioScheduler::owe_all_releases` and neither may lift a pedal: adding
+    /// a `reset_controllers` call beside the kill in
+    /// `AudioScheduler::pay_owed_releases` renders the lifted reference, and
+    /// dropping that kill leaves the pedalled voice ringing through the tail
+    /// window. The kill lands at the payment, which for a device the edge's
+    /// own drain leaves receiving a block is the head of that same block —
+    /// which is why the reference still writes it at the edge's run.
+    #[test]
+    fn a_transport_stop_silences_a_pedalled_grand_boule_and_keeps_the_pedals_down() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 24;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS: usize = RENDERED / GRAND_BOULE_RUN_FRAMES;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        /// Where the three pedals go down and the key is let go.
+        const PEDAL_CALLBACK: usize = 1;
+        const PEDAL_RUN: usize = PEDAL_CALLBACK * RUNS_PER_CALLBACK;
+        /// Where the edge arrives, well after the pedals took the note.
+        const EDGE_CALLBACK: usize = 8;
+        const EDGE_RUN: usize = EDGE_CALLBACK * RUNS_PER_CALLBACK;
+        /// A second key struck past the edge, to read the pedal state it left.
+        const SECOND_NOTE_CALLBACK: usize = 12;
+        const SECOND_NOTE_RUN: usize = SECOND_NOTE_CALLBACK * RUNS_PER_CALLBACK;
+        const SECOND_RELEASE_CALLBACK: usize = 16;
+        const SECOND_RELEASE_RUN: usize = SECOND_RELEASE_CALLBACK * RUNS_PER_CALLBACK;
+        /// The frame a locate jumps to. Ahead of the playhead and off every
+        /// clip, so the locate is a real move and moves nothing but the
+        /// position.
+        const LOCATE_FRAME: u64 = 480_000;
+        /// The note ringing under the pedals, past the release transient and
+        /// before the edge.
+        const BEFORE: std::ops::Range<usize> =
+            (PEDAL_CALLBACK + 2) * CALLBACK..EDGE_CALLBACK * CALLBACK;
+        /// What the edge left, before the second key is struck.
+        const AFTER: std::ops::Range<usize> =
+            (EDGE_CALLBACK + 1) * CALLBACK..SECOND_NOTE_CALLBACK * CALLBACK;
+        /// What the second key left once it was released.
+        const SECOND_AFTER: std::ops::Range<usize> =
+            (SECOND_RELEASE_CALLBACK + 2) * CALLBACK..CALLBACKS * CALLBACK;
+        /// How far below the ringing window the silenced tail has to sit. A
+        /// kill is immediate, so this is a margin against an unrelated decay
+        /// rather than a tuned figure.
+        const DECISIVE: f32 = 100.0;
+
+        /// Which trigger takes the player's hands off the keys in one render.
+        #[derive(Clone, Copy)]
+        enum Edge {
+            /// The transport parking.
+            Stop,
+            /// A locate while it keeps playing.
+            Locate,
+        }
+
+        let render = |edge: Edge| {
+            let mut harness = Harness::new(32);
+            track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+            harness.playing();
+            harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+            render_master_at_callback_heads(
+                &mut harness,
+                CALLBACK,
+                CALLBACKS,
+                move |callback, harness| match callback {
+                    PEDAL_CALLBACK => {
+                        harness.send(pedal(CC_SOSTENUTO, 127));
+                        harness.send(pedal(CC_UNA_CORDA, 127));
+                        harness.send(pedal(CC_SUSTAIN, 127));
+                        harness.send(GraphCommand::SendMidiNote(
+                            GRAND_BOULE_ID,
+                            grand_boule_release(NOTE),
+                        ));
+                    }
+                    EDGE_CALLBACK => {
+                        harness.send(match edge {
+                            Edge::Stop => stop_transport(),
+                            Edge::Locate => GraphCommand::SeekFrames(LOCATE_FRAME),
+                        });
+                    }
+                    SECOND_NOTE_CALLBACK => {
+                        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+                    }
+                    SECOND_RELEASE_CALLBACK => {
+                        harness.send(GraphCommand::SendMidiNote(
+                            GRAND_BOULE_ID,
+                            grand_boule_release(NOTE),
+                        ));
+                    }
+                    _ => {}
+                },
+            )
+        };
+
+        let reference = |lifts_pedals: bool| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
+                }
+                if run == PEDAL_RUN {
+                    instance.set_sostenuto(true);
+                    instance.set_una_corda(true);
+                    instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
+                }
+                if run == EDGE_RUN {
+                    // The whole of what the edge does to a pedalled body: the
+                    // voices the pedals were holding are killed, and the pedals
+                    // themselves are not written at all. No note-off joins it —
+                    // the key was already let go, so the device holds no bit
+                    // the release could spend.
+                    instance.all_notes_off();
+                    if lifts_pedals {
+                        // The order `GrandBouleBody::reset_controllers` writes
+                        // them in, which is what the engine used to do here.
+                        instance.set_sustain(0.0);
+                        instance.set_sostenuto(false);
+                        instance.set_una_corda(false);
+                    }
+                }
+                if run == SECOND_NOTE_RUN {
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
+                }
+                if run == SECOND_RELEASE_RUN {
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
+                }
+            })
+        };
+        let (kept_left, kept_right) = reference(false);
+        let (lifted_left, _lifted_right) = reference(true);
+
+        assert!(
+            rms(&kept_left[SECOND_AFTER]) > 0.0,
+            "the second key left nothing ringing under the pedals the edge kept down, so the \
+             comparison below says nothing about the foot"
+        );
+        assert_ne!(
+            kept_left[SECOND_AFTER], lifted_left[SECOND_AFTER],
+            "keeping the pedals at the edge renders exactly what lifting them renders, so the \
+             equalities below say nothing about where the foot was left"
+        );
+
+        for (edge_name, edge) in [("a stop", Edge::Stop), ("a locate", Edge::Locate)] {
+            let (hosted_left, hosted_right) = render(edge);
+
+            assert!(
+                rms(&hosted_left[BEFORE]) > 0.0,
+                "the pedals were holding nothing before {edge_name}, so its tail proves nothing"
+            );
+            assert!(
+                rms(&hosted_left[AFTER]) * DECISIVE < rms(&hosted_left[BEFORE]),
+                "{edge_name} left {} against the {} the pedals were holding, so the pedalled \
+                 voice rang on through it",
+                rms(&hosted_left[AFTER]),
+                rms(&hosted_left[BEFORE])
+            );
+            assert_eq!(
+                hosted_left, kept_left,
+                "the hosted left channel is not the signal {edge_name} that kills and keeps the \
+                 pedals renders"
+            );
+            assert_eq!(
+                hosted_right, kept_right,
+                "the hosted right channel is not the signal {edge_name} that kills and keeps the \
+                 pedals renders"
+            );
+        }
+    }
+
+    /// A stop of a piano held by sostenuto alone leaves silence behind it, not
+    /// a felt thud per key.
+    ///
+    /// The state that exposes it: sostenuto engaged with the damper up. The
+    /// stop kills the voices the capture was holding, and a release paid into
+    /// that killed body afterwards finds no voice to release and no capture
+    /// standing — so the instrument reads it as felt landing back on the
+    /// string and fires its damper-lift noise, once per key, into the silence
+    /// the stop just made. With the damper down instead the same releases are
+    /// swallowed as sustained, which is why only the sostenuto-only state says
+    /// anything here.
+    ///
+    /// The key is still down at the stop, deliberately: the sounding bits are
+    /// what a release is owed against, and a key already let go leaves none —
+    /// so a programme that released it first would render the same silence
+    /// whether the engine forgot the keys or paid them.
+    ///
+    /// The second render is the discriminating half, and it asks about the
+    /// foot rather than the thud. Sostenuto captures on its rising edge alone,
+    /// so pressing it again after the stop is the only read of whether it was
+    /// already down: with the foot where the player left it that press is no
+    /// edge at all and the second key damps when it is let go, while the same
+    /// press onto a pedal something lifted captures the key and leaves it
+    /// ringing. The two renders differ in nothing but a sostenuto lift sent
+    /// right behind the stop, so an engine that lifted the pedal itself
+    /// renders them alike and fails the comparison.
+    #[test]
+    fn a_transport_stop_of_a_sostenuto_held_grand_boule_leaves_no_damper_thud() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 96;
+        const NOTE: u8 = 60;
+        /// Where sostenuto goes down, capturing the key the player is holding.
+        const PEDAL_CALLBACK: usize = 1;
+        /// Where the stop arrives, well after the capture took the note.
+        const EDGE_CALLBACK: usize = 8;
+        /// A second key struck past the stop, to read the pedal it left.
+        const SECOND_NOTE_CALLBACK: usize = 12;
+        /// Sostenuto pressed again, behind that key so a rising edge would
+        /// capture it.
+        const REPRESS_CALLBACK: usize = 14;
+        const SECOND_RELEASE_CALLBACK: usize = 16;
+        /// The note ringing under the capture, past the attack and before the
+        /// stop.
+        const BEFORE: std::ops::Range<usize> =
+            (PEDAL_CALLBACK + 2) * CALLBACK..EDGE_CALLBACK * CALLBACK;
+        /// What the stop left, from the block after it until the second key is
+        /// struck.
+        const AFTER: std::ops::Range<usize> =
+            (EDGE_CALLBACK + 1) * CALLBACK..SECOND_NOTE_CALLBACK * CALLBACK;
+        /// What the second key left long after it was let go. Late enough
+        /// that a damped string has decayed to nothing while a string the
+        /// pedal is still holding up has barely begun: read at the release the
+        /// two are within a factor of two of each other, which decides
+        /// nothing.
+        const SECOND_TAIL_CALLBACK: usize = 64;
+        const SECOND_AFTER: std::ops::Range<usize> =
+            SECOND_TAIL_CALLBACK * CALLBACK..CALLBACKS * CALLBACK;
+        /// How far below a lifted pedal's ringing tail the damped one has to
+        /// sit.
+        const DECISIVE: f32 = 20.0;
+        /// The loudest sample the stopped window may carry.
+        ///
+        /// A stop that forgets its killed keys renders exact zeros there, so
+        /// this is a token above silence rather than a tuned figure. The thud
+        /// a paid release prints instead peaks at `1.3e-6` in this window,
+        /// which is an order of magnitude above the bound — quiet in absolute
+        /// terms, and a noise the instrument had no reason to make.
+        const SILENT: f32 = 1.0e-7;
+
+        let render = |lifts_pedal: bool| {
+            let mut harness = Harness::new(32);
+            track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+            harness.playing();
+            harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+            render_master_at_callback_heads(
+                &mut harness,
+                CALLBACK,
+                CALLBACKS,
+                move |callback, harness| match callback {
+                    PEDAL_CALLBACK => {
+                        harness.send(pedal(CC_SOSTENUTO, 127));
+                    }
+                    EDGE_CALLBACK => {
+                        harness.send(stop_transport());
+                        if lifts_pedal {
+                            // Behind the stop, so both renders reach the stop
+                            // in the same state and differ only in where the
+                            // pedal stands after it.
+                            harness.send(pedal(CC_SOSTENUTO, 0));
+                        }
+                    }
+                    SECOND_NOTE_CALLBACK => {
+                        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+                    }
+                    REPRESS_CALLBACK => {
+                        harness.send(pedal(CC_SOSTENUTO, 127));
+                    }
+                    SECOND_RELEASE_CALLBACK => {
+                        harness.send(GraphCommand::SendMidiNote(
+                            GRAND_BOULE_ID,
+                            grand_boule_release(NOTE),
+                        ));
+                    }
+                    _ => {}
+                },
+            )
+        };
+
+        let (kept_left, kept_right) = render(false);
+        let (lifted_left, _lifted_right) = render(true);
+
+        assert!(
+            peak(&kept_left[BEFORE]) > 0.0,
+            "the capture was holding nothing before the stop, so the window behind it proves \
+             nothing"
+        );
+        assert!(
+            peak(&kept_left[AFTER]) < SILENT,
+            "the stop left a loudest sample of {} in the window behind it, so a release was paid \
+             into the killed body and the instrument answered it with its damper-lift noise",
+            peak(&kept_left[AFTER])
+        );
+        assert!(
+            peak(&kept_right[AFTER]) < SILENT,
+            "the stop left a loudest sample of {} in the right channel behind it",
+            peak(&kept_right[AFTER])
+        );
+        assert!(
+            peak(&lifted_left[SECOND_AFTER]) > 0.0,
+            "the second key left nothing ringing even under a pedal this render lifted, so the \
+             comparison below says nothing about the foot"
+        );
+        assert!(
+            peak(&kept_left[SECOND_AFTER]) * DECISIVE < peak(&lifted_left[SECOND_AFTER]),
+            "the second key let go left {} where the same key left {} in the render whose \
+             sostenuto was lifted behind the stop, so the stop moved the player's foot",
+            peak(&kept_left[SECOND_AFTER]),
+            peak(&lifted_left[SECOND_AFTER])
+        );
+    }
+
+    /// A stop with no pedal down releases the key softly rather than killing
+    /// it.
+    ///
+    /// The other half of the rule above, and the reason the kill is conditional
+    /// rather than unconditional: with nothing holding the strings the queued
+    /// note-off damps them the way the player's own hand does, which is a
+    /// different and better sound than a hard stop. The key is still down at
+    /// the stop, so the release the stop queues is the one that lands.
+    ///
+    /// The discriminating half is the reference that kills at the stop:
+    /// silencing every body regardless of its pedals renders that one instead.
+    #[test]
+    fn a_transport_stop_soft_releases_an_unpedalled_grand_boule() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 16;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS: usize = RENDERED / GRAND_BOULE_RUN_FRAMES;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        /// Where the transport parks, with the key still held.
+        const STOP_CALLBACK: usize = 4;
+        const STOP_RUN: usize = STOP_CALLBACK * RUNS_PER_CALLBACK;
+        /// Everything the stop left behind it.
+        const AFTER: std::ops::Range<usize> = STOP_CALLBACK * CALLBACK..CALLBACKS * CALLBACK;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+        let (hosted_left, hosted_right) = render_master_at_callback_heads(
+            &mut harness,
+            CALLBACK,
+            CALLBACKS,
+            |callback, harness| {
+                if callback == STOP_CALLBACK {
+                    harness.send(stop_transport());
+                }
+            },
+        );
+
+        let reference = |kills: bool| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
+                }
+                if run == STOP_RUN {
+                    if kills {
+                        instance.all_notes_off();
+                    } else {
+                        assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
+                    }
+                }
+            })
+        };
+        let (released_left, released_right) = reference(false);
+        let (killed_left, _killed_right) = reference(true);
+
+        assert!(
+            rms(&killed_left[AFTER]) < rms(&released_left[AFTER]),
+            "a kill and a soft release leave the same tail ({} against {}), so the equality \
+             below cannot tell one from the other",
+            rms(&killed_left[AFTER]),
+            rms(&released_left[AFTER])
+        );
+        assert_eq!(
+            hosted_left, released_left,
+            "the hosted left channel is not the signal a soft release at the stop renders"
+        );
+        assert_eq!(
+            hosted_right, released_right,
+            "the hosted right channel is not the signal a soft release at the stop renders"
+        );
+    }
+
+    /// A bypassed Grand Boule still takes a controller, so the pedal it stands
+    /// on is current the moment the device is placed back in the signal.
+    ///
+    /// A controller is a state write on the body rather than a queued event:
+    /// the body holds it with no process call, exactly as a `Builtin` parameter
+    /// stamp does, and the value therefore has to be right when the device is
+    /// un-bypassed. The discard law queued MIDI follows cannot reach it — a
+    /// write dropped at the door is a pedal left pressed on a body the player
+    /// has since let go of, with no message anywhere that could lift it.
+    ///
+    /// Two hosted renders of one programme, differing only in whether the
+    /// damper lift is sent during the bypassed callback. Un-bypassing pays the
+    /// release the device banked while nothing handed it a block, so the key
+    /// goes up at the head of the block it comes back on: with the lift taken
+    /// it damps, and without it the string rings on under a damper nothing
+    /// moved. The oracle is that pair rather than a reference render, because a
+    /// bypassed body is handed no block at all — an instance driven straight
+    /// through the gap is in a different state on the far side of it.
+    ///
+    /// Restoring the `receives_no_block` gate to the `SendMidiControl` arm
+    /// makes the two renders identical and fails the comparison below.
+    #[test]
+    fn a_bypassed_grand_boule_takes_a_controller_it_reads_on_resume() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 24;
+        const NOTE: u8 = 60;
+        /// Where the damper goes down, with the key already sounding.
+        const PEDAL_CALLBACK: usize = 1;
+        /// Where the device leaves the signal, well after the damper took it.
+        const BYPASS_CALLBACK: usize = 8;
+        /// Where it comes back, which is where the banked release is paid.
+        const RESUME_CALLBACK: usize = 12;
+        /// What that release left, past its own transient.
+        const AFTER: std::ops::Range<usize> =
+            (RESUME_CALLBACK + 2) * CALLBACK..CALLBACKS * CALLBACK;
+
+        let render = |lift_while_bypassed: bool| {
+            let mut harness = Harness::new(32);
+            track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+            harness.playing();
+            harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+            render_master_at_callback_heads(
+                &mut harness,
+                CALLBACK,
+                CALLBACKS,
+                move |callback, harness| match callback {
+                    PEDAL_CALLBACK => {
+                        harness.send(pedal(CC_SUSTAIN, 127));
+                    }
+                    BYPASS_CALLBACK => {
+                        // The bypass first, so the lift behind it is written
+                        // into a body the drain already reads as receiving no
+                        // block.
+                        harness.send(GraphCommand::SetBypass(GRAND_BOULE_ID, true));
+                        if lift_while_bypassed {
+                            harness.send(pedal(CC_SUSTAIN, 0));
+                        }
+                    }
+                    RESUME_CALLBACK => {
+                        harness.send(GraphCommand::SetBypass(GRAND_BOULE_ID, false));
+                    }
+                    _ => {}
+                },
+            )
+        };
+
+        let (lifted_left, _lifted_right) = render(true);
+        let (held_left, _held_right) = render(false);
+
+        assert!(
+            rms(&held_left[AFTER]) > 0.0,
+            "the key paid on resume left nothing ringing even with the damper still down, so the \
+             comparison below says nothing about the write"
+        );
+        assert!(
+            rms(&lifted_left[AFTER]) < rms(&held_left[AFTER]),
+            "a damper lifted while the device was bypassed left the same tail as one never \
+             lifted ({} against {}), so the controller was dropped at the door",
+            rms(&lifted_left[AFTER]),
+            rms(&held_left[AFTER])
+        );
+    }
+
+    /// A damper pressed after a stop, while nothing is handing the body a
+    /// block, does not hold the notes that stop was owed.
+    ///
+    /// The hole a kill decided at the edge leaves open. A pedal is a state
+    /// write and reaches a bypassed body, while the release the stop owes is
+    /// paid at the first block that body is handed — so the foot can land
+    /// between the two. Bypass a sounding body, park the transport, press the
+    /// damper, put the device back: the edge saw no pedal and owed note-offs,
+    /// and by the time they are spent the damper is at full travel, where
+    /// `GrandBouleEngine::note_off` routes them to `release_key` and the
+    /// strings ring on under a stopped transport.
+    ///
+    /// So the pedal is read where the release is paid. The window behind the
+    /// resume is what says so: it is silence when the payment re-asks, and it
+    /// carries the whole ringing chord when it does not.
+    ///
+    /// The second render asks the other half — that the re-ask silenced the
+    /// voices without moving the foot. The damper lift is sent behind the
+    /// resume, so both renders reach the payment standing on the same pedal
+    /// and differ only in where it stands after it: a key struck and let go
+    /// past the resume rings under the damper the payment left down, and damps
+    /// in the render that lifted it.
+    #[test]
+    fn a_damper_pressed_between_a_stop_and_its_payment_does_not_hold_the_grand_boule_notes() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 96;
+        const NOTE: u8 = 60;
+        /// Where the device leaves the signal, with the key still down.
+        const BYPASS_CALLBACK: usize = 4;
+        /// Where the transport parks, on a device nothing hands a block to.
+        const STOP_CALLBACK: usize = 5;
+        /// Where the player's foot lands, behind the stop and still on a
+        /// bypassed body.
+        const PEDAL_CALLBACK: usize = 6;
+        /// Where the device comes back, which is where the stop's record is
+        /// spent.
+        const RESUME_CALLBACK: usize = 8;
+        /// A second key struck past the resume, to read the pedal it left.
+        const SECOND_NOTE_CALLBACK: usize = 12;
+        const SECOND_RELEASE_CALLBACK: usize = 16;
+        /// The note sounding before the device left the signal, past its
+        /// attack.
+        const BEFORE: std::ops::Range<usize> = CALLBACK..BYPASS_CALLBACK * CALLBACK;
+        /// What the resume left, past its own transient and before the second
+        /// key is struck.
+        const AFTER: std::ops::Range<usize> =
+            (RESUME_CALLBACK + 2) * CALLBACK..SECOND_NOTE_CALLBACK * CALLBACK;
+        /// What the second key left long after it was let go, read the way
+        /// `a_transport_stop_of_a_sostenuto_held_grand_boule_leaves_no_damper_thud`
+        /// reads its own: late enough that a damped string has decayed to
+        /// nothing while one the damper is still holding has barely begun.
+        const SECOND_TAIL_CALLBACK: usize = 64;
+        const SECOND_AFTER: std::ops::Range<usize> =
+            SECOND_TAIL_CALLBACK * CALLBACK..CALLBACKS * CALLBACK;
+        /// How far below a lifted damper's ringing tail the damped one has to
+        /// sit.
+        const DECISIVE: f32 = 20.0;
+        /// The loudest sample the resumed window may carry.
+        ///
+        /// A payment that re-asks kills the voices, so the window is exact
+        /// zeros and this is a token above silence rather than a tuned figure.
+        /// The note a payment made under the damper leaves ringing there peaks
+        /// at `0.269` — six orders of magnitude above this bound.
+        const SILENT: f32 = 1.0e-7;
+
+        let render = |lifts_damper: bool| {
+            let mut harness = Harness::new(32);
+            track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+            harness.playing();
+            harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+            render_master_at_callback_heads(
+                &mut harness,
+                CALLBACK,
+                CALLBACKS,
+                move |callback, harness| match callback {
+                    BYPASS_CALLBACK => {
+                        harness.send(GraphCommand::SetBypass(GRAND_BOULE_ID, true));
+                    }
+                    STOP_CALLBACK => {
+                        harness.send(stop_transport());
+                    }
+                    PEDAL_CALLBACK => {
+                        harness.send(pedal(CC_SUSTAIN, 127));
+                    }
+                    RESUME_CALLBACK => {
+                        harness.send(GraphCommand::SetBypass(GRAND_BOULE_ID, false));
+                        if lifts_damper {
+                            // Behind the resume, which is its own drain, so
+                            // both renders reach the payment with the damper
+                            // down and differ only in where it stands after.
+                            harness.send(pedal(CC_SUSTAIN, 0));
+                        }
+                    }
+                    SECOND_NOTE_CALLBACK => {
+                        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+                    }
+                    SECOND_RELEASE_CALLBACK => {
+                        harness.send(GraphCommand::SendMidiNote(
+                            GRAND_BOULE_ID,
+                            grand_boule_release(NOTE),
+                        ));
+                    }
+                    _ => {}
+                },
+            )
+        };
+
+        let (kept_left, kept_right) = render(false);
+        let (lifted_left, _lifted_right) = render(true);
+
+        assert!(
+            peak(&kept_left[BEFORE]) > 0.0,
+            "the instrument sounded nothing before the bypass, so the window behind the resume \
+             proves nothing"
+        );
+        assert!(
+            peak(&kept_left[AFTER]) < SILENT,
+            "the resume left a loudest sample of {} in the window behind it, so the note-offs \
+             the stop owed were paid into a damper the player pressed after it and the strings \
+             rang on under a stopped transport",
+            peak(&kept_left[AFTER])
+        );
+        assert!(
+            peak(&kept_right[AFTER]) < SILENT,
+            "the resume left a loudest sample of {} in the right channel behind it",
+            peak(&kept_right[AFTER])
+        );
+        assert!(
+            peak(&kept_left[SECOND_AFTER]) > 0.0,
+            "the second key left nothing ringing under the damper the payment was supposed to \
+             leave down, so the comparison below says nothing about the foot"
+        );
+        assert!(
+            peak(&lifted_left[SECOND_AFTER]) * DECISIVE < peak(&kept_left[SECOND_AFTER]),
+            "the second key let go left {} where the same key left {} in the render whose damper \
+             was lifted behind the resume, so the payment moved the player's foot",
+            peak(&lifted_left[SECOND_AFTER]),
+            peak(&kept_left[SECOND_AFTER])
+        );
+    }
+
+    /// An un-bypass with no transport edge behind it still pays its releases,
+    /// and a damper the player is standing on sustains them.
+    ///
+    /// The other half of the rule above, and the reason the re-ask is
+    /// conditional. Nothing here took the player's hands off the keys: the
+    /// transport rolls throughout, and the device only left the signal and
+    /// came back. The releases it banked while nothing handed it a block are
+    /// paid on resume, and with the damper down the instrument routes them to
+    /// `release_key` — the strings ring on, which is what a real piano does
+    /// and what the player asked for with their foot.
+    ///
+    /// Two renders of one programme, differing in nothing but whether the
+    /// damper was ever pressed. A payment that re-asked the kill regardless of
+    /// the trigger would silence the pedalled render instead, so the ringing
+    /// tail is the discriminating read; the unpedalled one is the oracle for
+    /// what a damped release leaves behind.
+    #[test]
+    fn an_un_bypassed_grand_boule_with_no_transport_edge_still_pays_its_releases_under_the_damper()
+    {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 24;
+        const NOTE: u8 = 60;
+        /// Where the damper goes down, with the key already sounding.
+        const PEDAL_CALLBACK: usize = 1;
+        /// Where the device leaves the signal, with the key still down.
+        const BYPASS_CALLBACK: usize = 8;
+        /// Where it comes back, which is where the banked release is paid.
+        const RESUME_CALLBACK: usize = 12;
+        /// What that release left, past its own transient.
+        const AFTER: std::ops::Range<usize> =
+            (RESUME_CALLBACK + 2) * CALLBACK..CALLBACKS * CALLBACK;
+        /// The loudest sample a silenced body would leave there, spelled the
+        /// way the stop specs spell it.
+        const SILENT: f32 = 1.0e-7;
+
+        let render = |damper_down: bool| {
+            let mut harness = Harness::new(32);
+            track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+            harness.playing();
+            harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+            render_master_at_callback_heads(
+                &mut harness,
+                CALLBACK,
+                CALLBACKS,
+                move |callback, harness| match callback {
+                    PEDAL_CALLBACK => {
+                        if damper_down {
+                            harness.send(pedal(CC_SUSTAIN, 127));
+                        }
+                    }
+                    BYPASS_CALLBACK => {
+                        harness.send(GraphCommand::SetBypass(GRAND_BOULE_ID, true));
+                    }
+                    RESUME_CALLBACK => {
+                        harness.send(GraphCommand::SetBypass(GRAND_BOULE_ID, false));
+                    }
+                    _ => {}
+                },
+            )
+        };
+
+        let (held_left, _held_right) = render(true);
+        let (damped_left, _damped_right) = render(false);
+
+        assert!(
+            peak(&held_left[AFTER]) > SILENT,
+            "the release paid on resume left a loudest sample of {} under a damper nothing \
+             lifted, so the resume silenced a body no transport edge had touched",
+            peak(&held_left[AFTER])
+        );
+        assert!(
+            rms(&damped_left[AFTER]) < rms(&held_left[AFTER]),
+            "the same release left the same tail with the damper up as with it down ({} against \
+             {}), so the comparison says nothing about the release being paid",
+            rms(&damped_left[AFTER]),
+            rms(&held_left[AFTER])
+        );
+    }
+
+    /// A spent edge record leaves no mark behind for a later un-bypass to be
+    /// killed by.
+    ///
+    /// The mark is per-slot and outlives the record it was set for unless
+    /// something clears it. The stop that sets it is answered by
+    /// [`ActiveEffect::pay_owed_releases`], which clears it on full payment —
+    /// and that clear is the whole of what keeps a later, unrelated un-bypass
+    /// out of the kill arm. Nothing else in a session's life clears it except
+    /// a kill that already happened.
+    ///
+    /// So the programme spends one: an unpedalled key sounding under a rolling
+    /// transport, parked, which owes ordinary note-offs and pays them in full.
+    /// Then it rolls again, sounds a second key, presses the damper, and takes
+    /// the device off the signal and back — an un-bypass with no transport
+    /// edge of its own, whose releases
+    /// [`AudioScheduler::owe_releases_on_resume`] deliberately does not mark.
+    /// With the mark spent the payment pays, and the damper the player is
+    /// standing on holds the strings. With a stale one it reads the pedal,
+    /// kills the voices and leaves the window behind the resume silent.
+    ///
+    /// Deleting the clear in [`ActiveEffect::pay_owed_releases`] fails the
+    /// second assertion here; every other `grand_boule` spec stays green,
+    /// because none of them spends an edge record before the un-bypass it
+    /// reads.
+    #[test]
+    fn a_grand_boule_un_bypassed_after_a_spent_transport_edge_still_pays_under_the_damper() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 32;
+        const NOTE: u8 = 60;
+        /// Where the transport parks with the first, unpedalled key sounding:
+        /// the edge marks the slot and the note-offs it owes are paid in full.
+        const FIRST_STOP_CALLBACK: usize = 4;
+        /// Where it rolls again.
+        const ROLL_CALLBACK: usize = 8;
+        /// Where the second key goes down.
+        const SECOND_NOTE_CALLBACK: usize = 10;
+        /// Where the damper goes down, with that key still held.
+        const PEDAL_CALLBACK: usize = 12;
+        /// Where the device leaves the signal.
+        const BYPASS_CALLBACK: usize = 16;
+        /// Where it comes back, which is where the banked release is paid —
+        /// under the damper, and with no transport edge of its own.
+        const RESUME_CALLBACK: usize = 20;
+        /// The second key ringing under the damper, past its attack and before
+        /// the bypass.
+        const BEFORE: std::ops::Range<usize> =
+            (SECOND_NOTE_CALLBACK + 2) * CALLBACK..BYPASS_CALLBACK * CALLBACK;
+        /// What the resume left, past its own transient.
+        const AFTER: std::ops::Range<usize> =
+            (RESUME_CALLBACK + 2) * CALLBACK..CALLBACKS * CALLBACK;
+        /// The loudest sample a silenced body would leave there, spelled the
+        /// way the stop specs spell it.
+        const SILENT: f32 = 1.0e-7;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+        let (left, _right) = render_master_at_callback_heads(
+            &mut harness,
+            CALLBACK,
+            CALLBACKS,
+            |callback, harness| match callback {
+                FIRST_STOP_CALLBACK => {
+                    harness.send(stop_transport());
+                }
+                ROLL_CALLBACK => {
+                    harness.playing();
+                }
+                SECOND_NOTE_CALLBACK => {
+                    harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+                }
+                PEDAL_CALLBACK => {
+                    harness.send(pedal(CC_SUSTAIN, 127));
+                }
+                BYPASS_CALLBACK => {
+                    harness.send(GraphCommand::SetBypass(GRAND_BOULE_ID, true));
+                }
+                RESUME_CALLBACK => {
+                    harness.send(GraphCommand::SetBypass(GRAND_BOULE_ID, false));
+                }
+                _ => {}
+            },
+        );
+
+        assert!(
+            peak(&left[BEFORE]) > 0.0,
+            "the second key sounded nothing before the bypass, so the window behind the resume \
+             proves nothing"
+        );
+        assert!(
+            peak(&left[AFTER]) > SILENT,
+            "the resume left a loudest sample of {} behind it, so the release it owed was \
+             answered by the kill the earlier stop's mark asks for — a mark that stop's own \
+             payment spent",
+            peak(&left[AFTER])
+        );
+    }
+
+    /// A stop that killed and forgot a live key leaves the next stop nothing
+    /// to pay for it.
+    ///
+    /// The key is *still down* at the first stop, which is what puts a bit in
+    /// the device's live set for the kill to forget: a live note-off releases
+    /// that bit itself, so a key the player let go leaves nothing behind to
+    /// observe. The pedal is sostenuto with the damper up, the one state where
+    /// a release paid into a killed body is audible — the instrument finds no
+    /// voice and no capture and fires its damper-lift noise instead.
+    ///
+    /// The programme then lifts the pedal, rolls again and parks a second
+    /// time. That second stop owes what the device still holds, and the only
+    /// reason it holds nothing is that the kill drained the live set as well
+    /// as the stored one. Deleting `ActiveEffect::forget_sounding`'s
+    /// `live_sounding` drain leaves the key down, so the second stop owes it,
+    /// pays it into an unpedalled silent body, and prints that thud into the
+    /// window this reads.
+    #[test]
+    fn a_second_stop_pays_nothing_for_a_live_grand_boule_key_the_first_stop_forgot() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 32;
+        const NOTE: u8 = 60;
+        /// Where sostenuto goes down, capturing the key the player is holding.
+        const PEDAL_CALLBACK: usize = 1;
+        /// Where the transport parks the first time, with the key still down.
+        const FIRST_STOP_CALLBACK: usize = 8;
+        /// Where the foot comes off the sostenuto pedal, so the second stop
+        /// finds an unpedalled body and pays rather than killing.
+        const LIFT_CALLBACK: usize = 12;
+        /// Where the transport rolls again.
+        const ROLL_CALLBACK: usize = 16;
+        /// Where it parks the second time.
+        const SECOND_STOP_CALLBACK: usize = 20;
+        /// The note ringing under the capture, past the attack and before the
+        /// first stop.
+        const BEFORE: std::ops::Range<usize> =
+            (PEDAL_CALLBACK + 2) * CALLBACK..FIRST_STOP_CALLBACK * CALLBACK;
+        /// What the second stop left behind it, past its own block.
+        const AFTER: std::ops::Range<usize> =
+            (SECOND_STOP_CALLBACK + 1) * CALLBACK..CALLBACKS * CALLBACK;
+        /// The loudest sample that window may carry, the same token above
+        /// silence the sostenuto stop spec uses: a stop with nothing owed
+        /// renders exact zeros there, while the damper-lift noise a wrongly
+        /// paid release prints peaks at `1.3e-6` — thirteen times this bound,
+        /// quiet in absolute terms and a noise the instrument had no reason to
+        /// make.
+        const SILENT: f32 = 1.0e-7;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+        let (hosted_left, hosted_right) = render_master_at_callback_heads(
+            &mut harness,
+            CALLBACK,
+            CALLBACKS,
+            |callback, harness| match callback {
+                PEDAL_CALLBACK => {
+                    harness.send(pedal(CC_SOSTENUTO, 127));
+                }
+                FIRST_STOP_CALLBACK => {
+                    harness.send(stop_transport());
+                }
+                LIFT_CALLBACK => {
+                    harness.send(pedal(CC_SOSTENUTO, 0));
+                }
+                ROLL_CALLBACK => {
+                    harness.playing();
+                }
+                SECOND_STOP_CALLBACK => {
+                    harness.send(stop_transport());
+                }
+                _ => {}
+            },
+        );
+
+        assert!(
+            peak(&hosted_left[BEFORE]) > 0.0,
+            "the capture was holding nothing before the first stop, so nothing was killed and \
+             the window behind the second stop proves nothing"
+        );
+        assert!(
+            peak(&hosted_left[AFTER]) < SILENT,
+            "the second stop left a loudest sample of {} behind it, so it owed a release for a \
+             key the first stop's kill was supposed to have forgotten and paid it into a silent \
+             body as a damper-lift thud",
+            peak(&hosted_left[AFTER])
+        );
+        assert!(
+            peak(&hosted_right[AFTER]) < SILENT,
+            "the second stop left a loudest sample of {} in the right channel behind it",
+            peak(&hosted_right[AFTER])
+        );
+    }
+
+    /// The renderer's panic silences the instrument even while the damper is
+    /// holding the note, and lifts the pedal on its way out.
+    ///
+    /// A panic built out of note-offs cannot reach this state: with the damper
+    /// down the instrument's `note_off` routes to `release_key`, so the key
+    /// going up leaves the strings ringing. The programme puts the body exactly
+    /// there — key struck, damper down, key let go — and then sends the two
+    /// channel-mode messages a panic is made of.
+    ///
+    /// Three renders of one programme, differing only in what arrives at the
+    /// panic callback. The first sends nothing and is the control: its tail
+    /// proves the note really was still ringing, so silence in the others is
+    /// the panic's doing rather than the note having decayed. The second sends
+    /// All Sound Off alone, which kills the voices but leaves the damper down.
+    /// The third sends All Sound Off and Reset All Controllers, which is what
+    /// `panicLiveNotes` sends.
+    ///
+    /// The second render is what makes the pedal lift observable: a note struck
+    /// and released after the panic rings on under a damper nobody lifted, and
+    /// damps under one Reset All Controllers raised. Dropping either arm from
+    /// `GrandBouleBody::control_change` therefore fails a different assertion.
+    #[test]
+    fn a_panic_sequence_silences_a_damper_held_grand_boule() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 24;
+        const NOTE: u8 = 60;
+        /// Where the damper goes down and the key is let go.
+        const PEDAL_CALLBACK: usize = 1;
+        /// Where the panic arrives, well after the damper took the note.
+        const PANIC_CALLBACK: usize = 8;
+        /// A second key struck past the panic, to read the pedal state it left.
+        const SECOND_NOTE_CALLBACK: usize = 12;
+        const SECOND_RELEASE_CALLBACK: usize = 16;
+        /// The note ringing under the damper, past the release transient and
+        /// before the panic.
+        const BEFORE: std::ops::Range<usize> =
+            (PEDAL_CALLBACK + 2) * CALLBACK..PANIC_CALLBACK * CALLBACK;
+        /// What the panic left, before the second key is struck.
+        const AFTER: std::ops::Range<usize> =
+            (PANIC_CALLBACK + 1) * CALLBACK..SECOND_NOTE_CALLBACK * CALLBACK;
+        /// What the second key left once it was released.
+        const SECOND_AFTER: std::ops::Range<usize> = (SECOND_RELEASE_CALLBACK + 2) * CALLBACK
+            ..(SECOND_RELEASE_CALLBACK + 2) * CALLBACK + 4 * CALLBACK;
+        /// How far below the ringing window the panicked tail has to sit. A
+        /// kill is immediate, so this is a margin against an unrelated decay
+        /// rather than a tuned figure.
+        const DECISIVE: f32 = 100.0;
+
+        /// What arrives at the panic callback in one render.
+        #[derive(Clone, Copy, PartialEq)]
+        enum Panic {
+            /// Nothing: the control render.
+            None,
+            /// All Sound Off alone, leaving the damper down.
+            SoundOff,
+            /// The whole sequence `panicLiveNotes` sends.
+            SoundOffAndReset,
+        }
+
+        let render = |panic: Panic| {
+            let mut harness = Harness::new(32);
+            track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+            harness.playing();
+            harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+            render_master_at_callback_heads(
+                &mut harness,
+                CALLBACK,
+                CALLBACKS,
+                move |callback, harness| match callback {
+                    PEDAL_CALLBACK => {
+                        harness.send(pedal(CC_SUSTAIN, 127));
+                        harness.send(GraphCommand::SendMidiNote(
+                            GRAND_BOULE_ID,
+                            grand_boule_release(NOTE),
+                        ));
+                    }
+                    PANIC_CALLBACK => {
+                        if panic != Panic::None {
+                            harness.send(pedal(CC_PANIC_ALL_SOUND_OFF, 0));
+                        }
+                        if panic == Panic::SoundOffAndReset {
+                            harness.send(pedal(CC_PANIC_RESET_CONTROLLERS, 0));
+                        }
+                    }
+                    SECOND_NOTE_CALLBACK => {
+                        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+                    }
+                    SECOND_RELEASE_CALLBACK => {
+                        harness.send(GraphCommand::SendMidiNote(
+                            GRAND_BOULE_ID,
+                            grand_boule_release(NOTE),
+                        ));
+                    }
+                    _ => {}
+                },
+            )
+        };
+
+        let (control_left, _control_right) = render(Panic::None);
+        let (sound_off_left, _sound_off_right) = render(Panic::SoundOff);
+        let (panicked_left, _panicked_right) = render(Panic::SoundOffAndReset);
+
+        assert!(
+            rms(&panicked_left[BEFORE]) > 0.0,
+            "the instrument was already silent before the panic, so its tail proves nothing"
+        );
+        assert!(
+            rms(&control_left[AFTER]) > 0.0,
+            "the note had decayed on its own by {}, so the silence below is not the panic's doing",
+            AFTER.start
+        );
+        assert!(
+            rms(&panicked_left[AFTER]) * DECISIVE < rms(&panicked_left[BEFORE]),
+            "the panic left {} against the {} it was holding, so the damper-held voice went on \
+             ringing through it",
+            rms(&panicked_left[AFTER]),
+            rms(&panicked_left[BEFORE])
+        );
+
+        assert!(
+            rms(&sound_off_left[SECOND_AFTER]) > 0.0,
+            "the second key left nothing ringing even with the damper still down, so the \
+             comparison below says nothing about the pedal being lifted"
+        );
+        assert!(
+            rms(&panicked_left[SECOND_AFTER]) < rms(&sound_off_left[SECOND_AFTER]),
+            "a key released after the whole panic rang as long as one released under a damper \
+             nobody lifted ({} against {}), so Reset All Controllers never reached the pedals",
+            rms(&panicked_left[SECOND_AFTER]),
+            rms(&sound_off_left[SECOND_AFTER])
+        );
+    }
+
+    /// Sostenuto on its own captures the key that is sounding, and it is CC66
+    /// that carries it.
+    ///
+    /// The reference engages exactly one pedal before the note-off, so the
+    /// equality names which pedal the body reached for. The inequality against
+    /// the una corda reference is the discriminating half: swapping the CC66
+    /// and CC67 arms in `GrandBouleBody::control_change` makes the hosted
+    /// render the other reference and fails the equality here.
+    #[test]
+    fn a_grand_boule_sostenuto_pedal_alone_captures_the_held_key() {
+        let (hosted, own, other) = render_one_grand_boule_pedal(CC_SOSTENUTO);
+
+        assert!(
+            rms(&own.0[SINGLE_PEDAL_TAIL..]) > 0.0,
+            "the sostenuto reference captured nothing, so its tail proves nothing"
+        );
+        assert_ne!(
+            own.0[SINGLE_PEDAL_TAIL..],
+            other.0[SINGLE_PEDAL_TAIL..],
+            "a captured key renders exactly what the soft pedal renders, so the equality below \
+             cannot tell one pedal from the other"
+        );
+        assert_eq!(
+            hosted.0, own.0,
+            "the hosted left channel is not the signal a sostenuto capture renders"
+        );
+        assert_eq!(
+            hosted.1, own.1,
+            "the hosted right channel is not the signal a sostenuto capture renders"
+        );
+    }
+
+    /// Una corda on its own softens the instrument, and it is CC67 that carries
+    /// it.
+    ///
+    /// The sibling of the sostenuto spec above, with the two references the
+    /// other way round. The soft pedal's coupling ratio is read on every block
+    /// rather than at the hammer, so engaging it mid-note moves the signal and
+    /// the equality below can tell a delivered CC67 from a dropped one.
+    #[test]
+    fn a_grand_boule_una_corda_pedal_alone_softens_the_hammers() {
+        let (hosted, own, other) = render_one_grand_boule_pedal(CC_UNA_CORDA);
+
+        assert_ne!(
+            own.0[SINGLE_PEDAL_TAIL..],
+            other.0[SINGLE_PEDAL_TAIL..],
+            "the soft pedal renders exactly what a sostenuto capture renders, so the equality \
+             below cannot tell one pedal from the other"
+        );
+        assert_eq!(
+            hosted.0, own.0,
+            "the hosted left channel is not the signal an engaged soft pedal renders"
+        );
+        assert_eq!(
+            hosted.1, own.1,
+            "the hosted right channel is not the signal an engaged soft pedal renders"
+        );
+    }
+
+    /// Where the two single-pedal specs above read their tails: past the run
+    /// the pedal went down on and the key was let go, so the window holds
+    /// whatever that one pedal was doing rather than the release transient.
+    const SINGLE_PEDAL_TAIL: usize = 5 * SINGLE_PEDAL_CALLBACK_FRAMES;
+
+    /// The callback length those two specs render at.
+    const SINGLE_PEDAL_CALLBACK_FRAMES: usize = 256;
+
+    /// Render one pedal pressed alone, with the two single-pedal references to
+    /// judge it against.
+    ///
+    /// Returns the hosted pair, the reference pair for `controller`'s own pedal,
+    /// and the reference pair for the other switch pedal. Both references run
+    /// the same programme and engage exactly one pedal, so the pair of them
+    /// separates CC66 from CC67 rather than a pedal from no pedal.
+    fn render_one_grand_boule_pedal(
+        controller: u8,
+    ) -> (
+        (Vec<f32>, Vec<f32>),
+        (Vec<f32>, Vec<f32>),
+        (Vec<f32>, Vec<f32>),
+    ) {
+        const CALLBACK: usize = SINGLE_PEDAL_CALLBACK_FRAMES;
+        const CALLBACKS: usize = 16;
+        const RUNS: usize = CALLBACK * CALLBACKS / GRAND_BOULE_RUN_FRAMES;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        const PEDAL_CALLBACK: usize = 1;
+        const PEDAL_RUN: usize = PEDAL_CALLBACK * RUNS_PER_CALLBACK;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+        let hosted = render_master_at_callback_heads(
+            &mut harness,
+            CALLBACK,
+            CALLBACKS,
+            move |callback, harness| {
+                if callback == PEDAL_CALLBACK {
+                    harness.send(pedal(controller, 127));
+                    harness.send(GraphCommand::SendMidiNote(
+                        GRAND_BOULE_ID,
+                        grand_boule_release(NOTE),
+                    ));
+                }
+            },
+        );
+
+        let reference = |sostenuto: bool| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
+                }
+                if run == PEDAL_RUN {
+                    if sostenuto {
+                        instance.set_sostenuto(true);
+                    } else {
+                        instance.set_una_corda(true);
+                    }
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
+                }
+            })
+        };
+
+        let sostenuto = reference(true);
+        let una_corda = reference(false);
+        if controller == CC_SOSTENUTO {
+            (hosted, sostenuto, una_corda)
+        } else {
+            (hosted, una_corda, sostenuto)
+        }
+    }
+
+    /// A loop wrap leaves the musician's foot on the damper, exactly as it
+    /// leaves their hands on the keys.
+    ///
+    /// The seam strands a scheduled note-off, which is the whole reason a
+    /// stored note is released there. A pedal is neither scheduled nor
+    /// stranded, and no DAW lifts a pedal where a region starts again, so
+    /// `release_sounding_notes` never touches a controller for either
+    /// [`ReleaseScope`] — it only queues note-offs, and the wrap's seam
+    /// takes [`ReleaseScope::Stored`].
+    ///
+    /// The key is let go under the damper before the first wrap, so the voice
+    /// is ringing on nothing but the pedal when the seam arrives. The
+    /// discriminating reference lifts the damper at the run the wrap's release
+    /// lands on, which is what a body that wrongly lifted the pedal there
+    /// would render.
+    #[test]
+    fn a_loop_wrap_leaves_the_grand_boule_damper_down() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 20;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS: usize = RENDERED / GRAND_BOULE_RUN_FRAMES;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        /// A whole number of callbacks, so the seam lands on a block boundary
+        /// and the instrument's runs stay on the 128-frame grid its reference
+        /// walks.
+        const LOOP_CALLBACKS: usize = 4;
+        const LOOP_END: u64 = (LOOP_CALLBACKS * CALLBACK) as u64;
+        /// Where the damper goes down and the key is let go, before the wrap.
+        const PEDAL_CALLBACK: usize = 1;
+        const PEDAL_RUN: usize = PEDAL_CALLBACK * RUNS_PER_CALLBACK;
+        /// The wrap falls at the end of the last callback inside the region, so
+        /// a release taken on the seam reaches the instrument from the next
+        /// callback's first run.
+        const SEAM_RUN: usize = LOOP_CALLBACKS * RUNS_PER_CALLBACK;
+        /// Far enough past the seam that the window reads the pedal state
+        /// rather than the seam's own transient.
+        const TAIL: usize = (LOOP_CALLBACKS + 4) * CALLBACK;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(GRAND_BOULE_ID, note_on(NOTE)));
+        let (hosted_left, hosted_right) = render_master_at_callback_heads(
+            &mut harness,
+            CALLBACK,
+            CALLBACKS,
+            |callback, harness| {
+                if callback == PEDAL_CALLBACK {
+                    harness.send(pedal(CC_SUSTAIN, 127));
+                    harness.send(GraphCommand::SendMidiNote(
+                        GRAND_BOULE_ID,
+                        grand_boule_release(NOTE),
+                    ));
+                }
+            },
+        );
+
+        let reference = |lifted_at_seam: bool| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
+                }
+                if run == PEDAL_RUN {
+                    instance.set_sustain(127.0 / CONTROLLER_FULL_SCALE);
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
+                }
+                if lifted_at_seam && run == SEAM_RUN {
+                    instance.set_sustain(0.0);
+                }
+            })
+        };
+        let (held_left, held_right) = reference(false);
+        let (wrap_lifted_left, _wrap_lifted_right) = reference(true);
+
+        assert!(
+            rms(&held_left[TAIL..]) > 0.0,
+            "the damper was holding nothing past the seam, so the equality below proves nothing"
+        );
+        assert!(
+            rms(&wrap_lifted_left[TAIL..]) < rms(&held_left[TAIL..]),
+            "lifting the damper on the seam renders the same tail as leaving it down ({} against \
+             {}), so the equality below cannot tell one from the other",
+            rms(&wrap_lifted_left[TAIL..]),
+            rms(&held_left[TAIL..])
+        );
+        assert_eq!(
+            hosted_left, held_left,
+            "the hosted left channel is not the signal a wrap that leaves the damper down renders"
+        );
+        assert_eq!(
+            hosted_right, held_right,
+            "the hosted right channel is not the signal a wrap that leaves the damper down renders"
+        );
+    }
+
+    /// The hosted body renders exactly what the worklet's own driving of
+    /// [`GrandBouleInstance`] renders for a programme that sweeps the damper.
+    ///
+    /// The sibling of
+    /// [`a_hosted_grand_boule_renders_the_worklet_samples_for_the_same_programme`]
+    /// for the pedal wire: the damper is pressed at one callback head mid-note,
+    /// taken to half at a second, and lifted at a third, all before the store's
+    /// note-off. The reference applies each position at
+    /// `callback * (CALLBACK / GRAND_BOULE_RUN_FRAMES)`, which is the run a
+    /// controller drained between callbacks lands on.
+    ///
+    /// The half position is what makes this a continuous controller rather than
+    /// a switch: a body that latched CC64 at 64 would write full scale where the
+    /// reference writes `64/127`, and half pedalling — a pianist's whole
+    /// vocabulary of partial damping — would be unreachable.
+    #[test]
+    fn a_hosted_grand_boule_renders_the_worklet_samples_for_a_damper_sweep() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 16;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS: usize = RENDERED / GRAND_BOULE_RUN_FRAMES;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / GRAND_BOULE_RUN_FRAMES;
+        const NOTE: u8 = 60;
+        const PRESS_CALLBACK: usize = 2;
+        const HALF_CALLBACK: usize = 4;
+        const LIFT_CALLBACK: usize = 6;
+        /// A run inside callback seven, past the lift and off a boundary.
+        const RELEASE_RUN: usize = 15;
+        const RELEASE_FRAME: u64 = (RELEASE_RUN * GRAND_BOULE_RUN_FRAMES) as u64;
+        const HALF: u8 = 64;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, GRAND_BOULE_TRACK, GRAND_BOULE_ID);
+        harness.playing();
+        harness.send(schedule_phrase(
+            GRAND_BOULE_ID,
+            &[(0, NOTE, true), (RELEASE_FRAME, NOTE, false)],
+        ));
+        let (hosted_left, hosted_right) = render_master_at_callback_heads(
+            &mut harness,
+            CALLBACK,
+            CALLBACKS,
+            |callback, harness| match callback {
+                PRESS_CALLBACK => {
+                    harness.send(pedal(CC_SUSTAIN, 127));
+                }
+                HALF_CALLBACK => {
+                    harness.send(pedal(CC_SUSTAIN, HALF));
+                }
+                LIFT_CALLBACK => {
+                    harness.send(pedal(CC_SUSTAIN, 0));
+                }
+                _ => {}
+            },
+        );
+
+        let sweep = |positions: [f32; 3]| {
+            render_grand_boule_reference(RUNS, move |run, instance| {
+                if run == 0 {
+                    assert!(instance.push_note_on(NOTE, grand_boule_velocity(), 0, 0));
+                }
+                for (callback, position) in [PRESS_CALLBACK, HALF_CALLBACK, LIFT_CALLBACK]
+                    .iter()
+                    .zip(positions)
+                {
+                    if run == callback * RUNS_PER_CALLBACK {
+                        instance.set_sustain(position);
+                    }
+                }
+                if run == RELEASE_RUN {
+                    assert!(instance.push_note_off_on_channel(NOTE, 0, 0));
+                }
+            })
+        };
+
+        let (worklet_left, worklet_right) = sweep([
+            127.0 / CONTROLLER_FULL_SCALE,
+            f32::from(HALF) / CONTROLLER_FULL_SCALE,
+            0.0,
+        ]);
+        let (latched_left, _latched_right) = sweep([
+            127.0 / CONTROLLER_FULL_SCALE,
+            127.0 / CONTROLLER_FULL_SCALE,
+            0.0,
+        ]);
+
+        assert_ne!(
+            worklet_left, latched_left,
+            "half pedalling renders exactly what a fully pressed pedal renders, so the equality \
+             below cannot tell a continuous controller from a latched one"
+        );
+        assert_eq!(
+            hosted_left, worklet_left,
+            "the hosted body's left channel is not the signal the worklet renders for this sweep"
+        );
+        assert_eq!(
+            hosted_right, worklet_right,
+            "the hosted body's right channel is not the signal the worklet renders for this sweep"
         );
     }
 
@@ -21989,23 +25620,48 @@ mod timeline_tests {
     /// lets an equality below refuse a body that read one channel twice.
     const LEVAIN_SPEC_PAN: f32 = -0.8;
 
-    /// One second of 440 Hz at [`LEVAIN_RATE`], with a 5 ms linear fade at each
-    /// end.
+    /// The pitch the fixture's unarticulated zone is authored at, and — rooted
+    /// at [`LEVAIN_SPEC_NOTE`] and played there — the pitch it comes back at.
+    const LEVAIN_SPEC_HERTZ: f32 = 440.0;
+
+    /// The pitch the fixture's articulated zone is authored at, a fifth above
+    /// the other, so a strike that resolved to the wrong zone comes back as a
+    /// different signal rather than as a scaled one.
+    const LEVAIN_SPEC_ARTICULATION_HERTZ: f32 = 660.0;
+
+    /// The articulation the fixture's second zone is tagged with, and the id
+    /// every articulated strike below carries. It is `pizzicato`'s id in the
+    /// project's own 28-name table, so the fixture numbers an articulation the
+    /// way a clip note does.
+    const LEVAIN_SPEC_ARTICULATION: u16 = 10;
+
+    /// The articulation count the fixture's zone map is built at. The tagged id
+    /// indexes that map, so a map built any shorter resolves no zone for it and
+    /// the instrument degrades the strike back to the articulation the channel
+    /// already stands on — which would make an articulated render equal to an
+    /// unarticulated one and every claim below vacuous.
+    const LEVAIN_SPEC_ARTICULATION_COUNT: u32 = LEVAIN_SPEC_ARTICULATION as u32 + 1;
+
+    /// The controller the gesture fixture moves. 11 is expression, which the
+    /// instrument carries as a gain on what it renders, so closing it is
+    /// audible in the render rather than only in state the instrument keeps to
+    /// itself.
+    const LEVAIN_SPEC_EXPRESSION_CC: u8 = 11;
+
+    /// One second of `hertz` at [`LEVAIN_RATE`], with a 5 ms linear fade at
+    /// each end.
     ///
     /// The fades are what make the sample a usable oracle: a raw sine starting
     /// at full amplitude clicks on every strike, and a click is broadband
     /// enough to survive any filtering a stage might apply, so a comparison
     /// against it would hold even for a body that lost the tone entirely.
-    fn levain_spec_sample() -> Vec<f32> {
+    fn levain_spec_sample(hertz: f32) -> Vec<f32> {
         /// 5 ms at [`LEVAIN_RATE`].
         const FADE_FRAMES: f32 = 240.0;
-        /// The pitch the sample is authored at, and — rooted at
-        /// [`LEVAIN_SPEC_NOTE`] and played there — the pitch it comes back at.
-        const HERTZ: f32 = 440.0;
 
         (0..LEVAIN_SPEC_SAMPLE_FRAMES)
             .map(|frame| {
-                let phase = std::f32::consts::TAU * HERTZ * frame as f32 / LEVAIN_RATE;
+                let phase = std::f32::consts::TAU * hertz * frame as f32 / LEVAIN_RATE;
                 let fade_in = (frame as f32 / FADE_FRAMES).min(1.0);
                 let remaining = (LEVAIN_SPEC_SAMPLE_FRAMES - frame) as f32;
                 let fade_out = (remaining / FADE_FRAMES).min(1.0);
@@ -22014,9 +25670,17 @@ mod timeline_tests {
             .collect()
     }
 
-    /// A sampler holding one committed bank: one mono zone covering the whole
+    /// A sampler holding one committed bank: two mono zones covering the whole
     /// keyboard and the whole velocity range, through one mic position panned
     /// off centre.
+    ///
+    /// The zones differ only in the articulation they are tagged with and the
+    /// pitch their sample is authored at — one untagged, one at
+    /// [`LEVAIN_SPEC_ARTICULATION`] — so which zone a strike resolved to is
+    /// readable in the render itself. A bank with one zone cannot tell an
+    /// articulated strike from a plain one: the instrument degrades an
+    /// articulation it holds no zone for back to the one the channel stands
+    /// on, and the two renders then agree whatever the body did with the id.
     ///
     /// Two calls build two independent instances that render identically. The
     /// bank is loaded into this instance alone — nothing here publishes or
@@ -22030,12 +25694,20 @@ mod timeline_tests {
         instance.begin_sample_bank("spec");
         let sample = instance
             .add_sample(
-                levain_spec_sample(),
+                levain_spec_sample(LEVAIN_SPEC_HERTZ),
                 LEVAIN_SPEC_SAMPLE_FRAMES as u32,
                 1,
                 LEVAIN_RATE,
             )
-            .expect("the staged bank takes the fixture's one sample");
+            .expect("the staged bank takes the fixture's unarticulated sample");
+        let articulated_sample = instance
+            .add_sample(
+                levain_spec_sample(LEVAIN_SPEC_ARTICULATION_HERTZ),
+                LEVAIN_SPEC_SAMPLE_FRAMES as u32,
+                1,
+                LEVAIN_RATE,
+            )
+            .expect("the staged bank takes the fixture's articulated sample");
         instance.add_zone(
             0,
             sample,
@@ -22060,9 +25732,33 @@ mod timeline_tests {
             1.0,
             0.05,
         );
+        instance.add_zone(
+            1,
+            articulated_sample,
+            LEVAIN_SPEC_ARTICULATION,
+            LEVAIN_SPEC_NOTE,
+            0.0,
+            0,
+            127,
+            0,
+            127,
+            0,
+            1,
+            0,
+            false,
+            0,
+            0,
+            0,
+            0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.05,
+        );
         assert!(
-            instance.build_zone_map(1, 1),
-            "the fixture's one zone does not build a zone map, so nothing below would sound"
+            instance.build_zone_map(LEVAIN_SPEC_ARTICULATION_COUNT, 1),
+            "the fixture's zones do not build a zone map, so nothing below would sound"
         );
         assert!(
             instance.commit_sample_bank(),
@@ -22087,6 +25783,49 @@ mod timeline_tests {
             unreachable!("levain_with_patch builds the levain variant");
         };
         body
+    }
+
+    /// The plugin id [`track_with_levain`] registers in the hosted specs
+    /// below, and the track id it places the instrument on.
+    const LEVAIN_ID: usize = 7;
+    const LEVAIN_TRACK: usize = 1;
+
+    /// Place a Levain generator on a track, the way `commands/graph.rs` places
+    /// a built-in instrument: registered detached with its own note store,
+    /// then spliced at the head of the chain.
+    ///
+    /// The instance carries the fixture's committed bank ([`levain_instance`]),
+    /// and the track holds no clip, so every non-zero sample the master
+    /// carries came out of the instrument.
+    fn track_with_levain(harness: &mut Harness, track_id: usize, effect_id: usize) {
+        for command in [
+            GraphCommand::AddTrack(TimelineTrack::new(track_id)),
+            GraphCommand::AddDetachedEffect(
+                effect_id,
+                PluginCore::levain_with_patch(levain_instance(), &[]),
+                Some(MidiNoteStore::new()),
+            ),
+            insert_track_device(track_id, generator(effect_id), 0),
+        ] {
+            harness.send(command);
+        }
+    }
+
+    /// One live controller message for the hosted Levain.
+    ///
+    /// The channel is deliberately not the note's: this instrument's
+    /// controller surface is per-instrument rather than per-channel
+    /// ([`LevainBody::control_change`]), so a body that narrowed a controller
+    /// to a voice's channel would drop this.
+    fn levain_control(controller: u8, value: u8) -> GraphCommand {
+        GraphCommand::SendMidiControl(
+            LEVAIN_ID,
+            MidiControlEvent {
+                controller,
+                value,
+                channel: 9,
+            },
+        )
     }
 
     /// A strike of `note` on `channel`, stamped for `frame`.
@@ -22227,6 +25966,335 @@ mod timeline_tests {
             body_left, body_right,
             "the two channels are identical, so the fixture's panned mic never moved and a body \
              that read one channel twice would pass"
+        );
+    }
+
+    /// A strike carrying an articulation sounds that articulation, through the
+    /// instrument's own articulated door.
+    ///
+    /// A body that dropped the id would still sound: the plain door plays
+    /// whatever articulation the channel was last left on, so the failure is an
+    /// audibly wrong sound rather than silence. That is what the inequality
+    /// against the plain render refuses — it fails if the tagged zone is
+    /// unreachable, or if both doors resolve to the same zone, and with it the
+    /// two equalities say nothing.
+    #[test]
+    fn a_levain_body_sounds_the_articulation_its_note_carries() {
+        let mut strike = levain_hit(LEVAIN_SPEC_NOTE, 0, 0);
+        strike.articulation_id = Some(LEVAIN_SPEC_ARTICULATION);
+        let mut body = levain_body(&[]);
+        let (body_left, body_right) = levain_render(&mut body, LEVAIN_PARITY_FRAMES, &[strike]);
+
+        let (articulated_left, articulated_right) =
+            render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel_and_articulation(
+                        LEVAIN_SPEC_NOTE,
+                        LEVAIN_SPEC_VELOCITY,
+                        0,
+                        LEVAIN_SPEC_ARTICULATION,
+                    );
+                }
+            });
+        let (plain_left, _) = render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+            if run == 0 {
+                instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+            }
+        });
+
+        assert_eq!(
+            body_left, articulated_left,
+            "the body's left channel is not what the instrument renders for a strike on this \
+             articulation"
+        );
+        assert_eq!(
+            body_right, articulated_right,
+            "the body's right channel is not what the instrument renders for a strike on this \
+             articulation"
+        );
+        assert_ne!(
+            articulated_left, plain_left,
+            "the articulated strike renders what a plain one does, so the equalities above would \
+             hold for a body that dropped the id"
+        );
+    }
+
+    /// A controller the instance is handed reaches the instrument before the
+    /// block it arrived on renders.
+    ///
+    /// Addressed at [`PluginCore`] rather than at the body, because the
+    /// instance-side match is where a controller is dispatched or dropped: a
+    /// Levain arm that fell back to the no-op every effect body takes would
+    /// leave the body's own handling unreachable and every gesture inaudible.
+    ///
+    /// Expression closed to zero, so the claim is readable in the render: the
+    /// instrument carries that controller as a gain on what it sounds, and the
+    /// inequality against the render that took no controller is what refuses a
+    /// dropped message. A controller is a state write with no frame, so it
+    /// applies at the head of the block that drained it — which is the run the
+    /// reference hands it to the instrument on.
+    #[test]
+    fn a_levain_body_sounds_the_controller_gestures_it_is_handed() {
+        let events = [levain_hit(LEVAIN_SPEC_NOTE, 0, 0)];
+        let mut core = PluginCore::levain_with_patch(levain_instance(), &[]);
+        core.control_change(MidiControlEvent {
+            controller: LEVAIN_SPEC_EXPRESSION_CC,
+            value: 0,
+            channel: 0,
+        });
+        let PluginCore::Levain(mut body) = core else {
+            unreachable!("levain_with_patch builds the levain variant");
+        };
+        let (body_left, body_right) = levain_render(&mut body, LEVAIN_PARITY_FRAMES, &events);
+
+        let (closed_left, closed_right) =
+            render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+                if run == 0 {
+                    instance.handle_cc(LEVAIN_SPEC_EXPRESSION_CC, 0);
+                    instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+                }
+            });
+        let (open_left, _) = render_levain_reference(LEVAIN_PARITY_FRAMES, |run, instance| {
+            if run == 0 {
+                instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+            }
+        });
+
+        assert_eq!(
+            body_left, closed_left,
+            "the body's left channel is not what the instrument renders after the same controller"
+        );
+        assert_eq!(
+            body_right, closed_right,
+            "the body's right channel is not what the instrument renders after the same controller"
+        );
+        assert_ne!(
+            closed_left, open_left,
+            "closing expression changed nothing in the render, so the equalities above would hold \
+             for a body that took the controller and dropped it"
+        );
+    }
+
+    /// A transport stop silences the voices a pedalled Levain is holding, and
+    /// leaves its pedal exactly where the player's foot left it.
+    ///
+    /// The programme puts the instrument in the one state a note-off cannot
+    /// discharge: the sustain pedal goes down, the key is struck, and the key
+    /// is let go while the pedal is still down — which the instrument defers
+    /// rather than releasing (`LevainEngine::note_off`). So the note-offs a
+    /// stop pays reach that deferred queue rather than a voice, and what the
+    /// edge has to do is kill the voices without moving the foot.
+    ///
+    /// Every door is the engine's own. The instrument is hosted on a track
+    /// ([`track_with_levain`]), the pedal arrives as
+    /// [`GraphCommand::SendMidiControl`], the key and its release as
+    /// [`GraphCommand::SendMidiNote`], and the edge is the transport parking
+    /// ([`stop_transport`]) — which owes the graph's live keys
+    /// ([`AudioScheduler::owe_all_releases`]) and then asks a pedalled slot's
+    /// instance for the kill where it would otherwise spend them
+    /// ([`AudioScheduler::pay_owed_releases`]). A Levain arm missing from
+    /// either match, and a stop that never reaches one, are both a body a stop
+    /// leaves ringing.
+    ///
+    /// The kill lands at the payment, which runs at the end of the drain that
+    /// carried the stop — before the block that drain precedes, so at the head
+    /// of the edge callback. That is why the reference writes it at that
+    /// callback's own first run.
+    ///
+    /// Three renders. The reference is the instrument driven directly, killed
+    /// at the edge's own run with its pedal never written, and it is what the
+    /// two equalities claim the hosted master renders — the whole of what the
+    /// edge does to a pedalled body. The control is the same hosted programme
+    /// with no stop at all: it rings on at full level right through the tail
+    /// window, which is what refuses a vacuous pass, because a pedalled body
+    /// nothing silenced renders no decay there to mistake for one.
+    ///
+    /// What a kill leaves behind is a decaying tail rather than a zero: it
+    /// hands every voice to its zone's release envelope, which falls
+    /// exponentially (`AdsrEnvelope::tick`). So the tail window is read far
+    /// enough past the edge for that fall to be decisive, and still inside the
+    /// fixture's one-second sample, where the control render is sounding
+    /// rather than out of recording.
+    #[test]
+    fn a_transport_stop_silences_a_pedalled_levain_body() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 176;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const RUNS_PER_CALLBACK: usize = CALLBACK / LEVAIN_RUN_FRAMES;
+        /// The pedal press, above [`MIDI_SWITCH_THRESHOLD`] and spelled here
+        /// so the fixture states the byte the wire carries.
+        const PEDAL_DOWN: u8 = 127;
+        /// Where the key is let go, into a pedal that defers the release.
+        const RELEASE_CALLBACK: usize = 2;
+        const RELEASE_RUN: usize = RELEASE_CALLBACK * RUNS_PER_CALLBACK;
+        /// Where the edge arrives, well after the pedal took the note.
+        const EDGE_CALLBACK: usize = 8;
+        const EDGE_RUN: usize = EDGE_CALLBACK * RUNS_PER_CALLBACK;
+        /// The note ringing under the pedal, past its deferred release and
+        /// before the edge.
+        const BEFORE: std::ops::Range<usize> =
+            (RELEASE_CALLBACK + 2) * CALLBACK..EDGE_CALLBACK * CALLBACK;
+        /// Where the tail window opens: far enough past the edge for the
+        /// release envelope to have fallen, and short of the 48 000 frames the
+        /// fixture's sample holds.
+        const TAIL_CALLBACK: usize = 160;
+        /// What the edge left, read out to the end of the render.
+        const AFTER: std::ops::Range<usize> = TAIL_CALLBACK * CALLBACK..CALLBACKS * CALLBACK;
+        /// How far below the pedalled ring the stopped tail has to sit. The
+        /// renders decide it: over this window the stop leaves about 0.009
+        /// where the pedal holding the same note reads about 0.34, a ratio
+        /// near 38, so this is a margin against voice detail moving rather
+        /// than a tuned figure — and still far above the 1.0 a body no stop
+        /// reached would land on.
+        const DECISIVE: f32 = 10.0;
+
+        /// The hosted programme, with the edge taken at [`EDGE_CALLBACK`] or
+        /// not taken at all.
+        fn render(stops: bool) -> (Vec<f32>, Vec<f32>) {
+            let mut harness = Harness::new(32);
+            track_with_levain(&mut harness, LEVAIN_TRACK, LEVAIN_ID);
+            harness.playing();
+            harness.send(levain_control(CC_SUSTAIN_PEDAL, PEDAL_DOWN));
+            harness.send(GraphCommand::SendMidiNote(
+                LEVAIN_ID,
+                levain_hit(LEVAIN_SPEC_NOTE, 0, 0),
+            ));
+            render_master_at_callback_heads(
+                &mut harness,
+                CALLBACK,
+                CALLBACKS,
+                |callback, harness| {
+                    if callback == RELEASE_CALLBACK {
+                        harness.send(GraphCommand::SendMidiNote(
+                            LEVAIN_ID,
+                            levain_release(LEVAIN_SPEC_NOTE, 0, 0),
+                        ));
+                    }
+                    if stops && callback == EDGE_CALLBACK {
+                        harness.send(stop_transport());
+                    }
+                },
+            )
+        }
+
+        let (killed_left, killed_right) = render_levain_reference(RENDERED, |run, instance| {
+            if run == 0 {
+                instance.handle_cc(CC_SUSTAIN_PEDAL, PEDAL_DOWN);
+                instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
+            }
+            if run == RELEASE_RUN {
+                instance.note_off_on_channel(LEVAIN_SPEC_NOTE, 0);
+            }
+            if run == EDGE_RUN {
+                // The whole of what the edge does to a pedalled body: the
+                // voices the pedal was holding are killed, and the pedal
+                // itself is not written at all.
+                instance.all_notes_off();
+            }
+        });
+        let (hosted_left, hosted_right) = render(true);
+        let (control_left, _control_right) = render(false);
+
+        assert!(
+            rms(&hosted_left[BEFORE]) > 0.0,
+            "the pedal was holding nothing before the stop, so its tail proves nothing"
+        );
+        assert!(
+            rms(&hosted_left[AFTER]) * DECISIVE < rms(&hosted_left[BEFORE]),
+            "the stop left {} against the {} the pedal was holding, so the pedalled voices rang \
+             on through the tail window",
+            rms(&hosted_left[AFTER]),
+            rms(&hosted_left[BEFORE])
+        );
+        assert!(
+            rms(&hosted_left[AFTER]) * DECISIVE < rms(&control_left[AFTER]),
+            "the same programme without the stop left {} where the stopped render left {}, so the \
+             tail window decays whether or not anything silenced the body and the equalities \
+             below say nothing",
+            rms(&control_left[AFTER]),
+            rms(&hosted_left[AFTER])
+        );
+        assert_eq!(
+            hosted_left, killed_left,
+            "the hosted left channel is not the signal a stop that kills and keeps the pedal \
+             renders"
+        );
+        assert_eq!(
+            hosted_right, killed_right,
+            "the hosted right channel is not the signal a stop that kills and keeps the pedal \
+             renders"
+        );
+    }
+
+    /// A hosted Levain takes a pedal, a strike, a deferred release, the pedal
+    /// coming up and a stop without allocating.
+    ///
+    /// A controller and a stop are both applied on the audio thread, inside the
+    /// command drain, so they are held to ADR 0020 exactly as a render is. The
+    /// pedal has two routes through the instrument — a press that makes every
+    /// later note-off defer, and a lift that fires the whole deferred queue
+    /// (`LevainEngine::handle_cc`) — and `silence_pedal_held_voices` has a
+    /// third that kills the voices and clears that queue, so all three are
+    /// driven here rather than one standing in for the others.
+    ///
+    /// Every controller is followed by a render, because a pedal's cost is
+    /// mostly paid on the block after it: the deferred releases the lift fires
+    /// and the voices the kill retires are state the next `process` walks, and
+    /// a guard holding controllers alone would never enter those paths.
+    ///
+    /// The bank is loaded outside the guard, where a sampler's samples, zone
+    /// map and mic mixer are legitimately allocated (ADR 0020); everything the
+    /// audio thread would do is inside it, first block included, because a
+    /// sampler that grew a buffer on its first tick would otherwise spend that
+    /// growth where nothing was watching.
+    ///
+    /// The sounding reading is taken inside the guard and asserted outside it:
+    /// a failing `assert!` formats its message, and an allocation on the panic
+    /// path would abort the process instead of failing the test.
+    #[test]
+    fn a_levain_control_change_allocates_nothing() {
+        const FRAMES: usize = 256;
+        /// The pedal press, above [`MIDI_SWITCH_THRESHOLD`].
+        const PEDAL_DOWN: u8 = 127;
+        /// The pedal lift.
+        const PEDAL_UP: u8 = 0;
+
+        let strike = levain_hit(LEVAIN_SPEC_NOTE, 0, 0);
+        let lift = levain_release(LEVAIN_SPEC_NOTE, 0, 0);
+        let pedal = |value: u8| MidiControlEvent {
+            controller: CC_SUSTAIN_PEDAL,
+            value,
+            channel: 0,
+        };
+
+        let mut left = vec![0.0_f32; FRAMES];
+        let mut right = vec![0.0_f32; FRAMES];
+        let mut body = levain_body(&[]);
+        let mut sounded = false;
+
+        assert_no_alloc::assert_no_alloc(|| {
+            body.control_change(pedal(PEDAL_DOWN));
+            body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&strike));
+            sounded = left.iter().any(|sample| *sample != 0.0);
+            // The release the pedal defers, and the block that renders behind
+            // it with the voice still held.
+            body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&lift));
+            body.process(&mut left, &mut right, FRAMES, &[]);
+            // The pedal coming up, which fires that deferred release.
+            body.control_change(pedal(PEDAL_UP));
+            body.process(&mut left, &mut right, FRAMES, &[]);
+            // The stop's own route, on a body standing on the pedal with a
+            // voice to kill: a body with the pedal up answers `false` and
+            // reaches nothing.
+            body.control_change(pedal(PEDAL_DOWN));
+            body.process(&mut left, &mut right, FRAMES, std::slice::from_ref(&strike));
+            body.silence_pedal_held_voices();
+            body.process(&mut left, &mut right, FRAMES, &[]);
+        });
+
+        assert!(
+            sounded,
+            "the instrument never sounded, so the guard covered a silent path"
         );
     }
 

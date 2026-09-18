@@ -216,7 +216,10 @@ describe('compRegionInterval', () => {
         };
 
         expect(compRegionInterval.patchApplies(inverse.payload, context)).toBe(true);
-        const projected = compRegionInterval.projectTakeLaneStateThroughMaterializedCompPrefix({ lanes: [] }, context);
+        const projected = compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(
+            { lanes: [] },
+            context
+        );
         expect(projected).toEqual({ lanes: [restoredLane] });
         expect(projected?.lanes[0]).not.toBe(restoredLane);
         expect(projected?.lanes[0]?.takes[0]).not.toBe(restoredLane.takes[0]);
@@ -228,7 +231,7 @@ describe('compRegionInterval', () => {
         };
         expect(compRegionInterval.patchApplies(inverse.payload, duplicateSnapshotContext)).toBe(false);
         expect(
-            compRegionInterval.projectTakeLaneStateThroughMaterializedCompPrefix(
+            compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(
                 { lanes: [] },
                 duplicateSnapshotContext
             )
@@ -263,7 +266,7 @@ describe('compRegionInterval', () => {
                 })
             ).toBe(false);
             expect(
-                compRegionInterval.projectTakeLaneStateThroughMaterializedCompPrefix(
+                compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(
                     { lanes: [] },
                     {
                         actions: [restoreTrackAction([invalidLane]), inverse],
@@ -272,5 +275,75 @@ describe('compRegionInterval', () => {
                 )
             ).toBeNull();
         }
+    });
+
+    it('projects selection, removal, and a replacement owner in exact action order', () => {
+        const initialLane = { id: 'lane-old', trackId: 'track-1', takes, activeCompRegions: [] };
+        const restoredLane = {
+            ...initialLane,
+            id: 'lane-new',
+            takes: takes.map((take) => ({ ...take, selected: take.id === 'c' })),
+        };
+        const actions = [
+            { type: 'selectTake', payload: { trackId: 'track-1', takeId: 'b' } },
+            { type: 'removeTrack', payload: { trackId: 'track-1' } },
+            restoreTrackAction([restoredLane]),
+        ] satisfies AppAction[];
+
+        expect(
+            compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(
+                { lanes: [initialLane] },
+                { actions, actionIndex: actions.length }
+            )
+        ).toEqual({ lanes: [restoredLane] });
+
+        const staleOwnerSelection = {
+            type: 'selectTake',
+            payload: {
+                trackId: 'track-1',
+                takeId: 'a',
+                expectedLaneId: initialLane.id,
+                expectedSelectedTakeId: 'c',
+            },
+        } satisfies AppAction;
+        expect(
+            compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(
+                { lanes: [initialLane] },
+                { actions: [...actions, staleOwnerSelection], actionIndex: actions.length + 1 }
+            )
+        ).toBeNull();
+    });
+
+    it('projects a guarded null selection and refuses ambiguous restored owners', () => {
+        const unselectedLane = {
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: takes.map((take) => ({ ...take, selected: false })),
+            activeCompRegions: [],
+        };
+        const select = { type: 'selectTake', payload: { trackId: 'track-1', takeId: 'b' } } satisfies AppAction;
+        const clear = {
+            type: 'selectTake',
+            payload: {
+                trackId: 'track-1',
+                takeId: null,
+                expectedLaneId: unselectedLane.id,
+                expectedSelectedTakeId: 'b',
+            },
+        } satisfies AppAction;
+        const cleared = compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(
+            { lanes: [unselectedLane] },
+            { actions: [select, clear], actionIndex: 2 }
+        );
+
+        expect(cleared?.lanes[0]?.takes.every((take) => !take.selected)).toBe(true);
+
+        const duplicateOwner = { ...unselectedLane, id: 'lane-2' };
+        expect(
+            compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(
+                { lanes: [] },
+                { actions: [restoreTrackAction([unselectedLane, duplicateOwner])], actionIndex: 1 }
+            )
+        ).toBeNull();
     });
 });

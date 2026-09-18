@@ -1,4 +1,5 @@
 import { type DdspArtifact } from '../models/DdspArtifactManifest';
+import { MODEL_STORAGE_TRANSFER_TYPE } from '../models/ModelStorageWorkerProtocol';
 
 import { type ModelStoragePort } from './modelStorageWorkerBridge';
 
@@ -94,7 +95,7 @@ export function createDdspGenerationStorageSupport({
                 }
             };
             port.onmessage = (event: MessageEvent<{ message?: string; modelData?: ArrayBuffer; type: string }>) => {
-                if (event.data.type === 'model-data' && event.data.modelData !== undefined) {
+                if (event.data.type === MODEL_STORAGE_TRANSFER_TYPE.modelData && event.data.modelData !== undefined) {
                     succeed(event.data.modelData);
                     return;
                 }

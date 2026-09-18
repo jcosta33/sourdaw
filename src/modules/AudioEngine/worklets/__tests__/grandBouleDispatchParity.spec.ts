@@ -57,20 +57,28 @@ class GrandBouleInstanceMock {
         this.calls.push({ method, args });
     }
 
-    note_on(note: number, velocity: number): void {
-        this.record('note_on', [note, velocity]);
+    push_note_on(note: number, velocity: number, channel: number, offset: number): boolean {
+        this.record('push_note_on', [note, velocity, channel, offset]);
+        return true;
     }
-    note_on_with_channel(note: number, velocity: number, channel: number): void {
-        this.record('note_on_with_channel', [note, velocity, channel]);
+    push_note_off(note: number, offset: number): boolean {
+        this.record('push_note_off', [note, offset]);
+        return true;
     }
-    note_off(note: number): void {
-        this.record('note_off', [note]);
+    push_note_off_on_channel(note: number, channel: number, offset: number): boolean {
+        this.record('push_note_off_on_channel', [note, channel, offset]);
+        return true;
     }
-    note_off_on_channel(note: number, channel: number): void {
-        this.record('note_off_on_channel', [note, channel]);
-    }
-    note_expression(note: number, channel: number, bend: number, pressure: number, slide: number): void {
-        this.record('note_expression', [note, channel, bend, pressure, slide]);
+    push_note_expression(
+        note: number,
+        channel: number,
+        bend: number,
+        pressure: number,
+        slide: number,
+        offset: number
+    ): boolean {
+        this.record('push_note_expression', [note, channel, bend, pressure, slide, offset]);
+        return true;
     }
     set_param(name: string, value: number): void {
         this.record('set_param', [name, value]);
@@ -152,7 +160,8 @@ const capturedYields: Array<() => void> = [];
 
 /** The three messages the union carries beyond the framed ones, plus every framed shape. */
 const PARITY_MESSAGES: readonly GrandBouleDispatchMsg[] = [
-    // Framed, inside the first block: both hosts must voice these immediately.
+    // Framed, inside the first block: both hosts must push these now, each at its
+    // own sample offset inside that block.
     { type: 'noteOn', midiNote: 60, velocity: 0.8, sampleFrame: 10, channel: 3 },
     {
         type: 'noteExpression',
@@ -166,7 +175,7 @@ const PARITY_MESSAGES: readonly GrandBouleDispatchMsg[] = [
     { type: 'noteOff', midiNote: 60, sampleFrame: 12, releaseVelocity: 0.5, channel: 3 },
     // Framed with no channel: releases every voice at the pitch.
     { type: 'noteOff', midiNote: 62, sampleFrame: 20 },
-    // Framed with no frame at all: voices now.
+    // Framed with no frame at all: voices now, at offset 0.
     { type: 'noteOn', midiNote: 64, velocity: 0.4 },
     // Framed beyond the first block: both hosts must queue these, so neither may
     // record a call for them.
@@ -292,11 +301,11 @@ describe('the worker and the offline processor dispatch identically', () => {
         // were queued rather than collapsed onto frame 0.
         expect(workerCalls).toEqual([
             { method: 'construct', args: [HOST_SAMPLE_RATE, 64] },
-            { method: 'note_on_with_channel', args: [60, 0.8, 3] },
-            { method: 'note_expression', args: [60, 3, 1.5, 0.2, 0.4] },
-            { method: 'note_off_on_channel', args: [60, 3] },
-            { method: 'note_off', args: [62] },
-            { method: 'note_on_with_channel', args: [64, 0.4, 0] },
+            { method: 'push_note_on', args: [60, 0.8, 3, 10] },
+            { method: 'push_note_expression', args: [60, 3, 1.5, 0.2, 0.4, 11] },
+            { method: 'push_note_off_on_channel', args: [60, 3, 12] },
+            { method: 'push_note_off', args: [62, 20] },
+            { method: 'push_note_on', args: [64, 0.4, 0, 0] },
             { method: 'set_param', args: ['master_gain', 0.7] },
             { method: 'set_param', args: ['lid_position', 0.5] },
             { method: 'set_param', args: ['mic_position', 2] },

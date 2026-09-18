@@ -331,6 +331,10 @@ export const useTempoEditorState = (): TempoEditorState => {
     const handleAddTempoChange = (): void => {
         const beat = parseFloat(newBeat);
         const tempo = parseFloat(newTempo);
+        // 20/999 are Transport's tempo-map bounds, owned by `MIN_TEMPO_MAP_TEMPO` /
+        // `MAX_TEMPO_MAP_TEMPO` in `src/modules/Transport/models/TempoMap.ts`. They are
+        // inlined rather than imported because models constants never cross module
+        // boundaries (docs/architecture/03-typescript-module.md §4.1).
         if (isNaN(beat) || beat < 0 || isNaN(tempo) || tempo < 20 || tempo > 999) {
             return;
         }

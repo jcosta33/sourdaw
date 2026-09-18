@@ -18,6 +18,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore, type Device, type Track } from '#/modules/Arrangement/stores';
+import { readAttachedCrumbsInstanceIds } from '#/modules/Crumbs/stores';
+import { markCrumbsEngineAttached, retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
 import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
 
 import {
@@ -35,6 +37,7 @@ import {
     offlinePpqEndpointProjectorState,
     type OfflinePpqEndpointProjector,
 } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import { noteLiveMidiControl } from '../../../services/liveMidiControlLatch';
 import { masterGainState } from '../../engineAccess/masterGainState';
 import { disarmNativeLiveMidiWriter } from '../disarmNativeLiveMidiWriter';
 import { nativeEnginePlayheadFeed } from '../nativeEnginePlayheadFeedState';
@@ -487,9 +490,78 @@ function scheduledMidiTargets(): { trackId: string; deviceId: string }[] {
         );
 }
 
+/**
+ * The commands the whole-topology batch actually carried, in the wire shape.
+ *
+ * The wire shape rather than the contract's because a pedal is read here the
+ * way the engine is handed it: `send-midi-control` flattens its device target
+ * into the command's own fields.
+ */
+function topologyWireCommands(): NativeGraphWireBatch['commands'] {
+    const batch = mocks.applyGraphCommands.mock.calls
+        .map(([input]) => input.batch as NativeGraphWireBatch)
+        .find((candidate) => candidate.replaceTopology === true);
+    return batch?.commands ?? [];
+}
+
 /** How one batch built the strip for `trackId`, or `undefined` if it built none. */
 function stripCreation(batch: AudioGraphCommandBatch | undefined, trackId: string) {
     return batch?.commands.find((command) => command.kind === 'create-track-strip' && command.trackId === trackId);
+}
+
+/** The instrument whose pedals the renderer has to press back onto a new body. */
+const GRAND_BOULE_DEVICE: Device = {
+    id: 'gb-1',
+    name: 'Grand Boule',
+    type: 'grand-boule',
+    bypassed: false,
+    parameterValues: {},
+};
+
+/** The damper, and the message that discharges the renderer's memory of it. */
+const CC_SUSTAIN_PEDAL = 64;
+const CC_RESET_ALL_CONTROLLERS = 121;
+
+/** Every address a case here presses a pedal on. */
+const PEDALLED_ADDRESSES = [
+    { trackId: 'midi-1', deviceId: 'gb-1' },
+    { trackId: 'midi-1', deviceId: 'gb-absent' },
+] as const;
+
+/**
+ * Presses the damper with no session open, which is what leaves it remembered
+ * and unsent — the state a session start finds the player's foot in.
+ */
+function pressRememberedDamper(address: (typeof PEDALLED_ADDRESSES)[number]): void {
+    noteLiveMidiControl({ ...address, controller: CC_SUSTAIN_PEDAL, value: 127, channel: 0 });
+}
+
+/**
+ * Forgets every pedal the cases here press. The latch is module state with no
+ * reset of its own, and Reset All Controllers is the message that discharges
+ * it — so one case's remembered foot cannot reach the next, where it would ride
+ * a batch that case never asked for.
+ */
+function forgetPressedPedals(): void {
+    for (const address of PEDALLED_ADDRESSES) {
+        noteLiveMidiControl({ ...address, controller: CC_RESET_ALL_CONTROLLERS, value: 0, channel: 0 });
+    }
+}
+
+/**
+ * A Crumbs sampler, whose engine instance carries the device's own id.
+ *
+ * No `externalInstanceId`: the renderer creates the instance under the device
+ * id, so that id is what the attach mirror holds and what the mapper splices by.
+ */
+function crumbsDevice(deviceId: string): Device {
+    return {
+        id: deviceId,
+        name: 'Crumbs',
+        type: 'builtin-crumbs',
+        bypassed: false,
+        parameterValues: {},
+    };
 }
 
 /** A device the host has resolved to an external plugin instance. */
@@ -584,6 +656,7 @@ beforeEach(() => {
     // previous one's would build strips against an engine that never took
     // those instances.
     externalPluginParameterStore.set(defaultExternalPluginParameterState);
+    retractEveryCrumbsEngineAttachment();
     // The pool memo is module state and process-wide by design, so a case that
     // inherited the previous one's belief would see no registration at all.
     registeredNativeTimelineSampleIds.clear();
@@ -627,6 +700,10 @@ beforeEach(() => {
     // would read a programme no gesture in it asked for.
     offlinePpqEndpointProjectorState.project = null;
     offlinePpqEndpointProjectorState.resolveTempoAtBeat = null;
+    // The remembered foot is module state as well, and it rides the topology
+    // batch — so a case inheriting the previous one's would read a controller
+    // no gesture in it ever sent.
+    forgetPressedPedals();
     trackStore.set({ tracks: [createTrack({ id: 'audio-1' })], selectedTrackId: null, ghostClips: [] });
 });
 
@@ -806,6 +883,58 @@ describe('startNativeLiveGraphSession', () => {
         });
 
         expect(topologyBatches()).toHaveLength(1);
+    });
+
+    // The first Play on a fresh desktop project, where the engine has not
+    // started yet (#4204). `createCrumbsInstance` answered `attached: false`,
+    // so the mirror is empty and the first projection calls the sampler's strip
+    // web-carried; the batch that maps it attaches the instance and reports it
+    // under `attachedCrumbs`, while `attachedPlugins` stays empty because no
+    // plugin is loaded. Read as a plugin report alone, the strip stayed on Web
+    // Audio for the whole take.
+    it('sends the topology again when the batch bound a Crumbs instance and no plugin', async () => {
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [crumbsDevice('d-crumbs')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [],
+            attachedCrumbs: [{ instanceId: 'd-crumbs' }],
+        });
+
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        const [first, second] = topologyBatches();
+        expect(topologyBatches()).toHaveLength(2);
+        expect(stripCreation(first, 'audio-1')).toMatchObject({ contributesAudio: false });
+        expect(stripCreation(second, 'audio-1')).toMatchObject({ contributesAudio: true });
+    });
+
+    // The re-send answers to the comparison, not to the report being non-empty:
+    // a batch names every Crumbs instance it found the engine holding, so every
+    // Play after the first reports one the projection already bound. Counting
+    // instead would send a second `replaceTopology` batch on every Play.
+    it('sends the topology once when the batch reports only instances the projection held', async () => {
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        markCrumbsEngineAttached({ instanceId: 'd-held' });
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [crumbsDevice('d-held')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedCrumbs: [{ instanceId: 'd-held' }],
+        });
+
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(topologyBatches()).toHaveLength(1);
+        // Nothing to re-project because the one batch already carried the body.
+        expect(stripCreation(topologyBatches()[0], 'audio-1')).toMatchObject({ contributesAudio: true });
     });
 
     it('never sends a third topology, however much the re-send attaches', async () => {
@@ -1794,6 +1923,38 @@ describe('startNativeLiveGraphSession', () => {
         expect(nativeLiveGraphSession.backend).toBeNull();
     });
 
+    // A refusal does not undo a Crumbs attach (#4204). The native attach pass
+    // runs before the batch is mapped, so a batch the ring or the mapper then
+    // refuses has still taken those instances — and names them. This is the
+    // only report of that attach the Play will get: dropping it would leave the
+    // sampler on Web Audio while the engine holds it, which is exactly the
+    // state a refusal makes a producer resend against.
+    it('records the Crumbs instances a refused topology batch attached anyway', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [crumbsDevice('d-crumbs')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.applyGraphCommands.mockResolvedValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'engine-not-running: no default output device',
+            attachedCrumbs: [{ instanceId: 'd-crumbs' }],
+        });
+
+        const result = await startHeldSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason: 'engine-not-running: no default output device',
+        });
+        expect([...readAttachedCrumbsInstanceIds()]).toEqual(['d-crumbs']);
+    });
+
     it('reads the project as it stands when the batch is sent, not when the gesture happened', async () => {
         mocks.onProbe.mockImplementation(() => {
             trackStore.set({
@@ -1863,6 +2024,64 @@ describe('startNativeLiveGraphSession', () => {
         await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(scheduledMidiTargets()).toEqual([]);
+    });
+
+    /**
+     * Every body this batch builds comes up with its pedals raised, and the
+     * engine never lifts one — so the damper the player is standing on has to
+     * ride the batch itself, behind the command that builds the body it names.
+     * Behind it because the mapper registers a strip's chain as it maps that
+     * command, and refuses the whole batch over a controller naming a device it
+     * does not yet hold.
+     *
+     * Sent after the batch instead, the pedal queues behind the task that
+     * installed the session and the engine renders at least one bridge round
+     * trip with the foot lifted: a clip note at the play position is struck
+     * with the hammers at full travel under a held una corda, because stiffness
+     * is baked at `note_on`, and a sostenuto edge inside that window captures
+     * nothing.
+     */
+    it('carries the remembered pedal inside the topology batch that builds its body', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'midi-1', kind: 'midi', devices: [GRAND_BOULE_DEVICE] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        pressRememberedDamper({ trackId: 'midi-1', deviceId: 'gb-1' });
+
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        const commands = topologyWireCommands();
+        expect(commands.filter((command) => command.kind === 'send-midi-control')).toEqual([
+            {
+                kind: 'send-midi-control',
+                trackId: 'midi-1',
+                deviceId: 'gb-1',
+                controller: CC_SUSTAIN_PEDAL,
+                value: 127,
+                channel: 0,
+            },
+        ]);
+        expect(commands.findIndex((command) => command.kind === 'send-midi-control')).toBeGreaterThan(
+            commands.findIndex((command) => command.kind === 'create-track-strip' && command.trackId === 'midi-1')
+        );
+    });
+
+    // A pedal is remembered whether or not the engine holds a body for it, so
+    // the record outlives the device it names. Carried anyway, the controller
+    // would name a device the registry does not hold and the mapper would
+    // refuse the whole topology — a play button that starts no engine at all.
+    it('carries no pedal for a device the topology builds no body for', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'midi-1', kind: 'midi', devices: [GRAND_BOULE_DEVICE] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        pressRememberedDamper({ trackId: 'midi-1', deviceId: 'gb-absent' });
+
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(topologyWireCommands().filter((command) => command.kind === 'send-midi-control')).toEqual([]);
     });
 
     // The note pass is armed from the batch the engine actually rebuilt

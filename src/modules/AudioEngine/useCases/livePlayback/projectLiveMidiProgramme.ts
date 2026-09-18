@@ -57,6 +57,7 @@ import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { type AudioGraphDeviceTarget, type AudioGraphMidiNoteEvent } from '../../models/AudioGraphBackend';
 import {
     type OfflineChordPitchProjector,
+    type OfflineMidiArticulationResolver,
     type OfflineMidiEventProjector,
     type OfflineMidiProbabilitySelector,
 } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
@@ -93,7 +94,7 @@ export type LiveMidiSpan = Readonly<{ startSeconds: number; endSeconds: number }
 export type LiveMidiProgrammeInput = Readonly<{
     /** Every track and bus the session builds a strip for, in project order. */
     stripTracks: readonly Track[];
-    /** The external plugin instances the native engine currently owns. */
+    /** The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}. */
     attachedInstanceIds: ReadonlySet<string>;
     /** The strips whose device chain the audio programme replaces with a bake. */
     bakedStripIds: ReadonlySet<string>;
@@ -120,6 +121,20 @@ export type LiveMidiProgrammeInput = Readonly<{
      * chord track means.
      */
     projectChordPitch: OfflineChordPitchProjector | null;
+    /**
+     * The project-articulation-name to engine-id projection, or `null` when the
+     * composition root has configured none.
+     *
+     * Taken as a value for the reason the chance roll is: the table belongs to
+     * the instrument's own module and is read through the composition root, so
+     * the engine's take, the browser's and the bounce all number an
+     * articulation the same way without this module reaching into MIDI's use
+     * cases and closing the loop those already make back into this barrel. Null
+     * resolves nothing, which is what a session with no projection configured
+     * means — every note then sounds on the device's current articulation, the
+     * answer this producer gave before it carried one at all.
+     */
+    resolveArticulationId: OfflineMidiArticulationResolver | null;
     span: LiveMidiSpan;
 }>;
 
@@ -130,6 +145,8 @@ type ProjectedNote = {
     note: number;
     channel: number;
     velocity: number;
+    /** The engine's own id, or `null` for a note carrying no articulation. */
+    articulationId: number | null;
 };
 
 function clampVelocity(velocity: number): number {
@@ -168,6 +185,28 @@ function resolveSameKeyOverlaps(notes: readonly ProjectedNote[], frameSeconds: n
     return kept;
 }
 
+/**
+ * The strike this note sounds as.
+ *
+ * The articulation is stated only when the note carries one, because absence is
+ * what the contract gives the device's own current articulation — the same law
+ * the other optional fields on the wire are written under.
+ */
+function noteOnEvent(note: ProjectedNote): AudioGraphMidiNoteEvent {
+    const strike: AudioGraphMidiNoteEvent = {
+        time: note.onSeconds,
+        note: note.note,
+        velocity: clampVelocity(note.velocity),
+        channel: note.channel,
+        isNoteOn: true,
+    };
+    if (note.articulationId === null) {
+        return strike;
+    }
+
+    return { ...strike, articulationId: note.articulationId };
+}
+
 /** A key of one instrument's sounding set: one bit per channel and note. */
 function soundingKey(note: ProjectedNote): string {
     return `${note.channel}:${note.note}`;
@@ -192,18 +231,16 @@ function groupByKey(notes: readonly ProjectedNote[]): ReadonlyMap<string, Projec
  * A note is admitted by its note-on alone, and its note-off travels with it
  * however far past the span's end it lands: a release the span dropped would
  * leave the key sounding until the engine's own stop or seam released it.
+ *
+ * The articulation rides the note-on and nothing else: it selects the sound the
+ * key is struck with, and a release addresses the key rather than choosing
+ * between sounds.
  */
 function eventsForSpan(notes: readonly ProjectedNote[], span: LiveMidiSpan): AudioGraphMidiNoteEvent[] {
     const events = notes
         .filter((note) => note.onSeconds >= span.startSeconds && note.onSeconds < span.endSeconds)
         .flatMap((note): AudioGraphMidiNoteEvent[] => [
-            {
-                time: note.onSeconds,
-                note: note.note,
-                velocity: clampVelocity(note.velocity),
-                channel: note.channel,
-                isNoteOn: true,
-            },
+            noteOnEvent(note),
             { time: note.offSeconds, note: note.note, velocity: 0, channel: note.channel, isNoteOn: false },
         ]);
     // `try_extend` refuses a batch that is not frame-ordered within itself, and
@@ -225,25 +262,27 @@ function eventsForSpan(notes: readonly ProjectedNote[], span: LiveMidiSpan): Aud
 function strikesForSpan(notes: readonly ProjectedNote[], span: LiveMidiSpan): AudioGraphMidiNoteEvent[] {
     return notes
         .filter((note) => note.onSeconds >= span.startSeconds && note.onSeconds < span.endSeconds)
-        .map((note): AudioGraphMidiNoteEvent => ({
-            time: note.onSeconds,
-            note: note.note,
-            velocity: clampVelocity(note.velocity),
-            channel: note.channel,
-            isNoteOn: true,
-        }))
+        .map(noteOnEvent)
         .sort((left, right) => left.time - right.time);
 }
 
 type ClipProjectionInput = Readonly<{
     clip: ResolvedClip;
     track: Track;
+    /** The instrument the strip's notes are addressed at, for the articulation. */
+    deviceType: string;
     input: LiveMidiProgrammeInput;
     projectBeatToSeconds: (beat: number) => number;
 }>;
 
 /** The notes one clip contributes, expanded over its loop iterations. */
-function projectClipNotes({ clip, track, input, projectBeatToSeconds }: ClipProjectionInput): ProjectedNote[] {
+function projectClipNotes({
+    clip,
+    track,
+    deviceType,
+    input,
+    projectBeatToSeconds,
+}: ClipProjectionInput): ProjectedNote[] {
     const sourceNotes = input.notesByClipId[clip.id];
     const clipVisualLength = clip.endBeat - clip.startBeat;
     if (!sourceNotes || clipVisualLength <= 0) {
@@ -297,6 +336,7 @@ function projectClipNotes({ clip, track, input, projectBeatToSeconds }: ClipProj
                 }),
                 channel: event.channel ?? 0,
                 velocity: event.velocity,
+                articulationId: input.resolveArticulationId?.({ deviceType, articulation: event.articulation }) ?? null,
             });
         }
     }
@@ -363,7 +403,9 @@ export function projectLiveMidiProgramme(input: LiveMidiProgrammeInput): LiveMid
             // Muted clips render nothing, exactly as `scheduleMidiNotes` skips
             // them on the Web Audio path.
             .filter((clip) => clip.type === 'midi' && !clip.muted)
-            .flatMap((clip) => projectClipNotes({ clip, track, input, projectBeatToSeconds }));
+            .flatMap((clip) =>
+                projectClipNotes({ clip, track, deviceType: sink.device.type, input, projectBeatToSeconds })
+            );
 
         // A hosted instrument reports no body here and always takes its
         // releases: the engine holds one key per (channel, note) for it, so the

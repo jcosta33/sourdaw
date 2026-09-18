@@ -35,6 +35,11 @@ export type MixComparisonResult = {
     currentAnalysis: MixAnalysis;
     /** Timestamp */
     analyzedAt: string;
+    /**
+     * Provenance of the reference side: a deliberately specified style target
+     * is advice against a chosen aesthetic, never a measured recording.
+     */
+    referenceKind?: 'specified-target' | 'measured-recording';
 };
 
 export type MixSuggestion = {

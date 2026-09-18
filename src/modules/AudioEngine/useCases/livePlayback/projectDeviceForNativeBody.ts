@@ -66,11 +66,14 @@ function shapedFiniteProjectedState(projected: Readonly<Record<string, number>>)
     );
 }
 
-function projectDeviceState(deviceType: string, deviceState: DeviceStateChunk | undefined) {
-    if (!deviceState) {
-        return null;
-    }
-    return getAudioDeviceRuntimeSink().projectNativeDeviceState({ deviceType, deviceState });
+/**
+ * Asked unconditionally, even when `deviceState` is `undefined`: not every
+ * arm reads `deviceState` at all — Grand Boule's calibration lives in its
+ * per-device store, keyed by `deviceId` — so the "nothing committed yet"
+ * guard belongs to the arms that actually need a chunk, not to this caller.
+ */
+function projectDeviceState(deviceId: string, deviceType: string, deviceState: DeviceStateChunk | undefined) {
+    return getAudioDeviceRuntimeSink().projectNativeDeviceState({ deviceId, deviceType, deviceState });
 }
 
 /**
@@ -80,11 +83,15 @@ function projectDeviceState(deviceType: string, deviceState: DeviceStateChunk | 
  * record: `serializeAudioGraphCommand` omits the field then, and the payload
  * stays byte-identical to what the engine took before banks existed.
  *
- * A device holding no state is asked anyway, unlike `projectDeviceState` below.
- * The two questions differ: a chunkless device has no state to project, but it
- * still *sounds* something — the owning module's default instrument — and only
- * that module can name the bank for it. Skipping the sink here would send a
+ * Both this and `projectDeviceState` below are asked unconditionally, for a
+ * device with a chunk and one without, but for different reasons: the bank
+ * question, because a chunkless device has no state to project yet still
+ * *sounds* something — the owning module's default instrument — and only
+ * that module can name the bank for it, so skipping this here would send a
  * fresh Levain naming no bank, which refuses the batch on any audible strip.
+ * The state question, because a body's runtime-only state — Grand Boule's
+ * MIDI calibration — is keyed by `deviceId`, not by a chunk, so an arm that
+ * reads it has something to answer even when `deviceState` is `undefined`.
  */
 function sampleBankKeyField(deviceType: string, deviceState: DeviceStateChunk | undefined) {
     const bankKey = getAudioDeviceRuntimeSink().nativeSampleBankKey({ deviceType, deviceState });
@@ -98,7 +105,7 @@ export function projectDeviceForNativeBody(device: Device): NativeBodyDevice {
     }
     const patch = body.projectPatch(device.parameterValues);
     const bank = sampleBankKeyField(device.type, device.deviceState);
-    const projectedState = projectDeviceState(device.type, device.deviceState);
+    const projectedState = projectDeviceState(device.id, device.type, device.deviceState);
     if (!projectedState) {
         return { ...device, ...bank, parameterValues: patch };
     }

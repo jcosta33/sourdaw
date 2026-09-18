@@ -45,12 +45,13 @@ const fn unpack_editor_size(packed: u64) -> Option<(u32, u32)> {
 ///
 /// It carries the latency-invalidation flag and the wake that turns it into a
 /// push. A plugin signals that its reported latency changed via
-/// `clap_host_latency.changed()` (main-thread) and/or
-/// `clap_host.request_restart()`; both set `latency_dirty` and then fire the
-/// notifier. The control thread reacts by re-activating the plugin and
-/// re-querying `clap_plugin_latency.get()` — CLAP forbids latency changes while
-/// active, so a re-query must follow a deactivate/reactivate cycle, which is
-/// exactly why the callback cannot do the work itself.
+/// `clap_host_latency.changed()` ([main-thread], which fires the notifier) or
+/// `clap_host.request_restart()` ([thread-safe], which raises the wait-free
+/// hint instead — see [`Self::flag_latency_requery`]); both leave
+/// `latency_dirty` set. The control thread reacts by re-activating the plugin
+/// and re-querying `clap_plugin_latency.get()` — CLAP forbids latency changes
+/// while active, so a re-query must follow a deactivate/reactivate cycle, which
+/// is exactly why the callback cannot do the work itself.
 #[derive(Default)]
 pub struct HostCallbackState {
     latency_dirty: AtomicBool,
@@ -76,12 +77,17 @@ pub struct HostCallbackState {
     /// re-read. Set from `clap_host_tail.changed`, which CLAP marks
     /// `[audio-thread]`; cleared on the control path.
     tail_dirty: AtomicBool,
-    /// The wake fired for the asks CLAP marks `[main-thread]` — state-dirty and
-    /// parameter-rescan — which a plugin raises where allocating is ordinary.
-    /// Its install also gates the `[thread-safe]` asks' acceptance: it happens
-    /// exactly when the native engine takes the instance, which is exactly the
-    /// set the drain thread serves, so an instance with no install is one whose
-    /// recorded ask nothing would ever carry.
+    /// Whether the plugin has asked the host to call `on_main_thread` on it
+    /// and no control visit has since done so. Set by `clap_host
+    /// .request_callback`; cleared by the carrier that makes the call.
+    main_thread_callback_pending: AtomicBool,
+    /// The wake fired for the asks CLAP marks `[main-thread]` — state-dirty,
+    /// parameter-rescan and the main-thread callback — which a plugin raises
+    /// where allocating is ordinary. Its install also gates the
+    /// `[thread-safe]` asks' acceptance: it happens exactly when the native
+    /// engine takes the instance, which is exactly the set the drain thread
+    /// serves, so an instance with no install is one whose recorded ask
+    /// nothing would ever carry.
     request_notifier: OnceLock<PluginHostRequestNotifier>,
 }
 
@@ -111,6 +117,10 @@ impl std::fmt::Debug for HostCallbackState {
                 "parameters_flush",
                 &self.parameters_flush.load(Ordering::Relaxed),
             )
+            .field(
+                "main_thread_callback_pending",
+                &self.main_thread_callback_pending.load(Ordering::Relaxed),
+            )
             .field("tail_dirty", &self.tail_dirty.load(Ordering::Relaxed))
             .field(
                 "has_request_notifier",
@@ -129,6 +139,12 @@ impl HostCallbackState {
 
     /// Mark that the plugin's latency may have changed and must be re-queried
     /// after a deactivate/reactivate cycle, then wake the observer.
+    ///
+    /// The notifier is a channel send that allocates, so only a callback whose
+    /// own CLAP annotation vouches for the raising thread may use this entry:
+    /// `clap_host_latency.changed` is `[main-thread]` and passes.
+    /// `request_restart` is `[thread-safe]` and must use
+    /// [`Self::flag_latency_requery`] instead.
     pub fn mark_latency_dirty(&self) {
         self.latency_dirty.store(true, Ordering::Release);
         // Wake only after the flag is visible, so an observer this call wakes
@@ -144,6 +160,24 @@ impl HostCallbackState {
     /// latency change was pending since the last call.
     pub fn take_latency_dirty(&self) -> bool {
         self.latency_dirty.swap(false, Ordering::AcqRel)
+    }
+
+    /// Record that the plugin's latency may have changed, without waking
+    /// anything that allocates.
+    ///
+    /// This is [`Self::mark_latency_dirty`]'s recording half on its own: the
+    /// flag is stored, the process-wide wait-free hint is raised, and the
+    /// channel is not touched. It is the entry for a callback CLAP marks
+    /// `[thread-safe]` — `request_restart` — which a plugin may call from
+    /// inside `process()`, where the notifier's heap-copied instance id and
+    /// channel node are a missed device period. The latency watcher services
+    /// the hint on its control thread, which makes the same re-query the
+    /// channel wake would have.
+    pub fn flag_latency_requery(&self) {
+        // Published before the hint, so a control pass the hint wakes always
+        // finds the dirt it is being woken for.
+        self.latency_dirty.store(true, Ordering::Release);
+        signal_pending_latency_requery();
     }
 
     /// Clear the flag without reporting it. Used after a completed re-query to
@@ -224,6 +258,29 @@ impl HostCallbackState {
             .store(pack_editor_size(width, height), Ordering::Release);
         signal_pending_editor_resize();
         true
+    }
+
+    /// Record that the plugin asked the host to call `on_main_thread` on it,
+    /// then wake the carrier.
+    ///
+    /// CLAP marks `request_callback` `[main-thread]`, so the raising thread may
+    /// allocate and the channel wake is ordinary. The flag is read-and-clear,
+    /// so a burst of asks before one control visit coalesces into a single
+    /// `on_main_thread` call — the same trade every ask on this type makes, and
+    /// enough for the contract: the call completes whatever the plugin parked
+    /// on it.
+    pub fn mark_main_thread_callback_requested(&self) {
+        self.main_thread_callback_pending
+            .store(true, Ordering::Release);
+        if let Some(notify) = self.request_notifier.get() {
+            notify(PluginHostRequest::MainThreadCallback);
+        }
+    }
+
+    /// Atomically read-and-clear the pending main-thread callback request.
+    pub fn take_main_thread_callback_requested(&self) -> bool {
+        self.main_thread_callback_pending
+            .swap(false, Ordering::AcqRel)
     }
 
     /// Atomically read-and-clear the size the plugin asked for, or `None` when
@@ -347,6 +404,34 @@ pub fn take_pending_editor_resize_signal() -> bool {
 #[cfg(test)]
 pub(crate) static RESIZE_SIGNAL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Serialises every test that reads or clears the restart hint, for the same
+/// reason the resize lock exists: the hint is process-wide, and its raisers
+/// live in more than one of this crate's test modules.
+#[cfg(test)]
+pub(crate) static LATENCY_REQUERY_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Process-wide hint that some plugin raised `clap_host.request_restart`.
+///
+/// A hint, never the record — each instance's own latency-dirty flag is that.
+/// A lost signal costs at most one watcher interval, because the flag stays set
+/// until a control pass takes it. The hint carries no instance id because the
+/// raising callback is `[thread-safe]`: a plugin may raise it from inside
+/// `process()`, where copying the id onto the heap is the allocation this
+/// whole path exists to keep off the callback.
+static LATENCY_REQUERY_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Raise the restart hint. **Called from the plugin's own thread — CLAP marks
+/// `request_restart` `[thread-safe]`, so this may be the audio thread — so it
+/// is one release store and nothing else.**
+pub fn signal_pending_latency_requery() {
+    LATENCY_REQUERY_PENDING.store(true, Ordering::Release);
+}
+
+/// Read and clear the restart hint.
+pub fn take_pending_latency_requery_signal() -> bool {
+    LATENCY_REQUERY_PENDING.swap(false, Ordering::AcqRel)
+}
+
 /// Borrow the host callback state pinned into a `clap_host`'s `host_data`.
 /// Returns `None` when `host` or `host_data` is null (e.g. a descriptor created
 /// without per-instance state, such as legacy test fixtures).
@@ -417,16 +502,19 @@ unsafe extern "C" fn host_get_extension(
 // ── Host callbacks ─────────────────────────────────────────────────────
 
 unsafe extern "C" fn host_request_restart(host: *const clap_host) {
-    // A restart request is how a running plugin asks to change latency (and other
-    // activation-time invariants). CLAP forbids latency changes while active, so
-    // flag the instance dirty; the control thread reacts by deactivating,
-    // reactivating, and re-querying `clap_plugin_latency.get()`.
+    // A restart request is how a running plugin asks to change latency (and
+    // other activation-time invariants). CLAP forbids latency changes while
+    // active, so the flag is recorded and the control thread reacts by
+    // deactivating, reactivating and re-querying `clap_plugin_latency.get()`.
     //
-    // Deliberately silent: CLAP marks `request_restart` [thread-safe], so a
-    // plugin may call it from its audio thread, and `eprintln!` locks stderr and
-    // makes a write syscall. The flag is the record; the control thread reads it.
+    // Deliberately silent, and the wake is the wait-free hint rather than the
+    // notifier's channel: CLAP marks `request_restart` [thread-safe], so a
+    // plugin may call it from its audio thread, where the notifier's
+    // heap-copied instance id and channel node are a missed device period.
+    // #3745 was that allocation. The flag is the record; the latency watcher
+    // services the hint and makes the same re-query the channel wake did.
     if let Some(state) = host_state(host) {
-        state.mark_latency_dirty();
+        state.flag_latency_requery();
     }
 }
 
@@ -434,9 +522,20 @@ unsafe extern "C" fn host_request_process(_host: *const clap_host) {
     // Plugin wants to be woken up. Our host always processes, so this is a no-op.
 }
 
-unsafe extern "C" fn host_request_callback(_host: *const clap_host) {
-    // TODO: Schedule a main-thread callback via app.run_on_main_thread()
-    // For now, log and skip — most plugins work without this.
+/// The plugin asks the host to call `on_main_thread` on it.
+///
+/// Recorded and woken, never answered here: the plugin call is `[main-thread]`
+/// work, and this callback — though itself `[main-thread]` — can arrive while
+/// the instance is mid-process on the audio thread, where re-entering it is
+/// exactly what the access seam exists to prevent. The flag is the record, the
+/// request-notifier channel is the wake (legal to allocate on this ask's own
+/// thread), and the request watcher makes the call through the control seam.
+/// #3746 was this being a no-op, leaving a conforming plugin's deferred worker
+/// results and editor updates forever pending.
+unsafe extern "C" fn host_request_callback(host: *const clap_host) {
+    if let Some(state) = host_state(host) {
+        state.mark_main_thread_callback_requested();
+    }
 }
 
 // ── clap_host_params extension ─────────────────────────────────────────
@@ -622,6 +721,11 @@ mod tests {
 
     #[test]
     fn request_restart_marks_latency_dirty() {
+        // The callback raises the process-wide hint as a side effect, so this
+        // test must not interleave with the tests that read that hint.
+        let _hint_guard = LATENCY_REQUERY_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let state = HostCallbackState::default();
         let host = host_with_state(&state);
 
@@ -633,10 +737,14 @@ mod tests {
     }
 
     #[test]
-    fn latency_callbacks_wake_the_installed_notifier() {
+    fn latency_changed_callback_wakes_the_installed_notifier_and_restart_does_not() {
         use std::sync::atomic::AtomicUsize;
         use std::sync::Arc;
 
+        // The restart leg of this test raises and reads the process-wide hint.
+        let _hint_guard = LATENCY_REQUERY_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let wakes = Arc::new(AtomicUsize::new(0));
         let state = HostCallbackState::default();
         let counter = Arc::clone(&wakes);
@@ -647,6 +755,7 @@ mod tests {
             "first install wins"
         );
         let host = host_with_state(&state);
+        take_pending_latency_requery_signal();
 
         assert_eq!(
             wakes.load(Ordering::Relaxed),
@@ -659,11 +768,19 @@ mod tests {
             1,
             "changed() wakes the observer"
         );
+
+        // `request_restart` is [thread-safe], so a plugin may call it from the
+        // audio thread: waking the allocating channel from there is the #3745
+        // defect, and the wait-free hint is the wake instead.
         unsafe { host_request_restart(&host as *const clap_host) };
         assert_eq!(
             wakes.load(Ordering::Relaxed),
-            2,
-            "request_restart() also wakes the observer"
+            1,
+            "request_restart() must not send on the allocating channel"
+        );
+        assert!(
+            take_pending_latency_requery_signal(),
+            "the restart's wake is the wait-free hint"
         );
 
         // A second install is refused, so the wake cannot be hijacked mid-life.
@@ -671,8 +788,114 @@ mod tests {
         unsafe { host_latency_changed(&host as *const clap_host) };
         assert_eq!(
             wakes.load(Ordering::Relaxed),
-            3,
+            2,
             "original notifier still fires"
+        );
+    }
+
+    /// The hint is a wake, never the record: a restart's re-query is owed
+    /// whether or not a control pass has seen the hint yet, so the dirty flag
+    /// the [thread-safe] callback leaves behind must be exactly the one the
+    /// re-query consumes.
+    #[test]
+    fn a_restart_request_records_the_dirty_flag_beside_its_hint() {
+        let _guard = LATENCY_REQUERY_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let state = HostCallbackState::default();
+        let host = host_with_state(&state);
+        take_pending_latency_requery_signal();
+
+        unsafe { host_request_restart(&host as *const clap_host) };
+
+        assert!(
+            state.take_latency_dirty(),
+            "the restart is recorded as a latency re-query the control path owes"
+        );
+        assert!(
+            take_pending_latency_requery_signal(),
+            "one restart raises the hint once"
+        );
+        assert!(
+            !take_pending_latency_requery_signal(),
+            "and the hint is read-and-clear"
+        );
+    }
+
+    /// Restarts are coalesced by the flag they share: several before one
+    /// control pass leave one re-query owed and one hint standing.
+    #[test]
+    fn repeated_restart_requests_coalesce_into_one_owed_requery() {
+        let _guard = LATENCY_REQUERY_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let state = HostCallbackState::default();
+        let host = host_with_state(&state);
+        take_pending_latency_requery_signal();
+
+        unsafe {
+            host_request_restart(&host as *const clap_host);
+            host_request_restart(&host as *const clap_host);
+        }
+
+        assert!(state.take_latency_dirty());
+        assert!(
+            !state.take_latency_dirty(),
+            "two restarts are one re-query, not two"
+        );
+        assert!(take_pending_latency_requery_signal());
+        assert!(!take_pending_latency_requery_signal());
+    }
+
+    /// #3746's recording half: `request_callback` used to be a no-op, so a
+    /// conforming plugin's deferred main-thread work never ran. The ask must
+    /// reach the control path as a recorded, wakeable request.
+    #[test]
+    fn a_main_thread_callback_request_is_recorded_and_wakes_the_control_path() {
+        let (state, requests) = state_with_open_editor();
+        let host = host_with_state(&state);
+
+        assert!(
+            !state.take_main_thread_callback_requested(),
+            "nothing is pending before the call"
+        );
+        unsafe { host_request_callback(&host as *const clap_host) };
+
+        assert_eq!(
+            requests.lock().expect("request log").as_slice(),
+            [PluginHostRequest::MainThreadCallback],
+            "the ask wakes the carrier so the plugin call is not left to polling"
+        );
+        assert!(
+            state.take_main_thread_callback_requested(),
+            "the ask is recorded, so a lost wake costs a delay and never the call"
+        );
+
+        unsafe { host_request_callback(&host as *const clap_host) };
+        unsafe { host_request_callback(&host as *const clap_host) };
+        assert!(
+            state.take_main_thread_callback_requested(),
+            "a fresh ask after a consumed one is recorded in its turn"
+        );
+    }
+
+    #[test]
+    fn the_restart_and_callback_callbacks_tolerate_a_null_host_state() {
+        let _guard = LATENCY_REQUERY_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let host = create_host_descriptor();
+        assert!(host.host_data.is_null());
+        take_pending_latency_requery_signal();
+
+        unsafe {
+            host_request_restart(&host as *const clap_host);
+            host_request_callback(&host as *const clap_host);
+        }
+
+        assert!(
+            !take_pending_latency_requery_signal(),
+            "a descriptor with no per-instance state records nothing"
         );
     }
 

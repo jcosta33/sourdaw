@@ -1,3 +1,4 @@
+import { DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
 
 import { type MidiNote } from '../models/MidiNote';
@@ -109,7 +110,7 @@ export function arpeggiate(
             pitch,
             startBeat: beat,
             duration: gateDuration,
-            velocity: notes[0]?.velocity ?? 100,
+            velocity: notes[0]?.velocity ?? DEFAULT_NOTE_VELOCITY,
         });
         stepIndex++;
     }

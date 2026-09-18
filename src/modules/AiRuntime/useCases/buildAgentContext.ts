@@ -2,6 +2,7 @@ import { digest } from '#/utils/canonicalDigest';
 
 import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../models/AgentContext';
 import { type AgentRunBudgets, type AgentRunGrants } from '../models/AgentRun';
+import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { type ProjectContext } from '../models/ProjectContext';
 import { buildLlmActionUserMessage, type LlmActionCapabilityData } from '../transformers/llmActionBridge';
 
@@ -20,6 +21,9 @@ const MAX_RECEIPTS = 16;
  */
 const MAX_RECEIPT_EVIDENCE_LENGTH = 8_192;
 const MAX_MEASUREMENTS = 16;
+/** The rejection fragment quotes provider output back to it; it stays small and trust-labeled. */
+const MAX_REJECTION_FRAGMENT_LENGTH = 512;
+const MAX_REJECTION_CANDIDATES = 8;
 
 function isRelevantLock(
     lock: NonNullable<ProjectContext['productionBrief']>['locks'][number],
@@ -51,6 +55,8 @@ type BuildAgentContextInput = {
     capabilitySchemas?: Array<{ name: string; schemaVersion: number }>;
     capabilityData?: LlmActionCapabilityData;
     validationFailures?: Array<{ code: string }>;
+    /** Bounded diagnostic for the rejection a correction attempt must repair. */
+    rejectionEvidence?: PlanningRejectionEvidence;
     measurements?: Array<{ name: string; value: number; unit: string }>;
     priorEvidence?: AgentContextEvidence | null;
 };
@@ -243,6 +249,46 @@ export function buildAgentContext(input: BuildAgentContextInput): {
         retained: validationFailures.length,
         omitted: Math.max(0, (input.validationFailures?.length ?? 0) - validationFailures.length),
     };
+    // The correction diagnostic: which proposal item failed, what the app
+    // expects, and — trust-labeled and bounded — the fragment that failed.
+    // Absent codes like `agent.resolution` cannot say this.
+    const rejectionEvidenceItem = input.rejectionEvidence
+        ? (() => {
+              const evidence = input.rejectionEvidence;
+              return {
+                  kind: evidence.kind,
+                  ...(evidence.itemId === undefined ? {} : { itemId: boundedString(evidence.itemId).value }),
+                  ...(evidence.command === undefined
+                      ? {}
+                      : {
+                            command: {
+                                index: evidence.command.index,
+                                name: boundedString(evidence.command.name).value,
+                            },
+                        }),
+                  ...(evidence.argumentPath === undefined
+                      ? {}
+                      : { argumentPath: boundedString(evidence.argumentPath).value }),
+                  reason: boundedString(evidence.reason).value,
+                  ...(evidence.resolution === undefined ? {} : { resolution: evidence.resolution }),
+                  ...(evidence.candidateIds === undefined
+                      ? {}
+                      : {
+                            candidateIds: evidence.candidateIds
+                                .slice(0, MAX_REJECTION_CANDIDATES)
+                                .map((candidateId) => boundedString(candidateId).value),
+                        }),
+                  ...(evidence.rejectedFragment === undefined
+                      ? {}
+                      : {
+                            rejectedFragment: {
+                                trust: 'untrusted_provider_output' as const,
+                                ...boundedTo(evidence.rejectedFragment, MAX_REJECTION_FRAGMENT_LENGTH),
+                            },
+                        }),
+              };
+          })()
+        : null;
     const evidence: AgentContextEvidence = {
         schemaVersion: AGENT_CONTEXT_SCHEMA_VERSION,
         revision,
@@ -298,6 +344,6 @@ export function buildAgentContext(input: BuildAgentContextInput): {
     return {
         authorityComplete: productionBrief?.incompleteRelevantAuthority !== true,
         evidence,
-        message: `fixed_policy:\n${input.fixedPolicy}\n\nrun_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}\n\nuser_request:\n${stableJson({ trust: 'untrusted_user_string', ...boundedString(input.prompt) })}\n\nproduction_brief_and_locks:\n${stableJson({ trust: 'untrusted_project_data', value: productionBrief })}\n\nrevision_and_selection:\n${stableJson({ revision, selection: evidence.selection, delta: evidence.delta })}\n\nrelevant_evidence:\n${stableJson({ trust: 'untrusted_project_data', receipts, omitted: Math.max(0, (input.receipts?.length ?? 0) - receipts.length) })}\n\ncapability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities: stableJson(input.capabilityData ?? null).slice(0, 8_192) })}\n\nvalidation_failures:\n${stableJson({ evidence: validationFailureEvidence, items: validationFailures.map((failure) => ({ code: boundedString(failure.code) })) })}\n\nmeasurements:\n${stableJson({ items: measurements, omitted: Math.max(0, (input.measurements?.length ?? 0) - measurements.length) })}\n\nuntrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: revisionPayload.projectPayload })}${suffix}`,
+        message: `fixed_policy:\n${input.fixedPolicy}\n\nrun_authority:\n${stableJson({ grants: evidence.grants, budgets: evidence.budgets })}\n\nuser_request:\n${stableJson({ trust: 'untrusted_user_string', ...boundedString(input.prompt) })}\n\nproduction_brief_and_locks:\n${stableJson({ trust: 'untrusted_project_data', value: productionBrief })}\n\nrevision_and_selection:\n${stableJson({ revision, selection: evidence.selection, delta: evidence.delta })}\n\nrelevant_evidence:\n${stableJson({ trust: 'untrusted_project_data', receipts, omitted: Math.max(0, (input.receipts?.length ?? 0) - receipts.length) })}\n\ncapability_schemas:\n${stableJson({ schemas: capabilitySchemas, omitted: Math.max(0, (input.capabilitySchemas?.length ?? 0) - capabilitySchemas.length), trust: 'untrusted_project_data', availableCapabilities: stableJson(input.capabilityData ?? null).slice(0, 8_192) })}\n\nvalidation_failures:\n${stableJson({ evidence: validationFailureEvidence, items: validationFailures.map((failure) => ({ code: boundedString(failure.code) })), ...(rejectionEvidenceItem === null ? {} : { correction: rejectionEvidenceItem }) })}\n\nmeasurements:\n${stableJson({ items: measurements, omitted: Math.max(0, (input.measurements?.length ?? 0) - measurements.length) })}\n\nuntrusted_project_data:\n${stableJson({ snapshotIdentity: snapshot.identity, mode: evidence.delta.mode, data: revisionPayload.projectPayload })}${suffix}`,
     };
 }

@@ -6,13 +6,13 @@
  */
 
 import { trackStore } from '#/modules/Arrangement/stores';
-import { analyzeMixFromTrackLayout } from '#/modules/AudioAnalysis/useCases';
+import { analyzeCurrentMix } from '#/modules/AudioAnalysis/useCases';
 
 import { type MentorCategory, type MentorLesson } from '../../models/MusicMentorTypes';
 
 let lessonCounter = 0;
 
-const analyzeMix = analyzeMixFromTrackLayout;
+const analyzeMix = analyzeCurrentMix;
 
 let cachedAnalysis: ReturnType<typeof analyzeMix> | null = null;
 let cachedTrackStateRef: unknown = null;
@@ -168,51 +168,55 @@ export function generateMentorLessons(): MentorLesson[] {
         );
     }
 
-    // ── Frequency Balance
-    if (analysis.frequencyProfile.bass > 0.8) {
-        lessons.push(
-            createLesson(
-                'frequency-balance',
-                'Heavy Low End',
-                'The mix has substantial energy in the bass frequencies.',
-                'Excessive low-end energy eats up headroom and can make the mix sound boomy and undefined on consumer speakers. Bass frequencies contain the most energy per octave, so small cuts here create big gains in clarity.',
-                'Apply a gentle high-pass filter (30–80 Hz) to all non-bass instruments to clean up sub-rumble. Use a reference track to calibrate your bass levels.',
-                'intermediate',
-                0.8,
-                ['high-pass filter', 'bass management', 'low-end clarity', 'headroom']
-            )
-        );
-    }
+    // ── Frequency Balance & Dynamics
+    // Sound-based lessons require a real measurement of program audio. The
+    // analyzer reports unavailable when it was given none, and a silent project
+    // must never earn loudness or EQ lessons it never sounded.
+    if (analysis.status === 'measured') {
+        if (analysis.analysis.frequencyProfile.bass > 0.8) {
+            lessons.push(
+                createLesson(
+                    'frequency-balance',
+                    'Heavy Low End',
+                    'The mix has substantial energy in the bass frequencies.',
+                    'Excessive low-end energy eats up headroom and can make the mix sound boomy and undefined on consumer speakers. Bass frequencies contain the most energy per octave, so small cuts here create big gains in clarity.',
+                    'Apply a gentle high-pass filter (30–80 Hz) to all non-bass instruments to clean up sub-rumble. Use a reference track to calibrate your bass levels.',
+                    'intermediate',
+                    0.8,
+                    ['high-pass filter', 'bass management', 'low-end clarity', 'headroom']
+                )
+            );
+        }
 
-    // ── Dynamics
-    if (analysis.dynamicRange < 5) {
-        lessons.push(
-            createLesson(
-                'dynamics',
-                'Limited Dynamic Range',
-                `Dynamic range is approximately ${analysis.dynamicRange.toFixed(1)} dB, which is quite compressed.`,
-                'Over-compression removes the natural "breathing" of music and leads to listener fatigue. The loudness war has shown that louder is not always better — streaming platforms normalize loudness anyway.',
-                'Ease off compressors and limiters. Aim for -14 LUFS integrated loudness (Spotify/YouTube target). Let transients hit and allow the music to breathe.',
-                'intermediate',
-                0.85,
-                ['loudness war', 'dynamic range', 'LUFS', 'compression', 'loudness normalization']
-            )
-        );
-    }
+        if (analysis.analysis.dynamicRange < 5) {
+            lessons.push(
+                createLesson(
+                    'dynamics',
+                    'Limited Dynamic Range',
+                    `Dynamic range is approximately ${analysis.analysis.dynamicRange.toFixed(1)} dB, which is quite compressed.`,
+                    'Over-compression removes the natural "breathing" of music and leads to listener fatigue. The loudness war has shown that louder is not always better — streaming platforms normalize loudness anyway.',
+                    'Ease off compressors and limiters. Aim for -14 LUFS integrated loudness (Spotify/YouTube target). Let transients hit and allow the music to breathe.',
+                    'intermediate',
+                    0.85,
+                    ['loudness war', 'dynamic range', 'LUFS', 'compression', 'loudness normalization']
+                )
+            );
+        }
 
-    if (analysis.dynamicRange > 16) {
-        lessons.push(
-            createLesson(
-                'dynamics',
-                'Wide Dynamic Range',
-                `Dynamic range is approximately ${analysis.dynamicRange.toFixed(1)} dB, which is quite wide.`,
-                'While dynamics are musically important, too much variation can make quiet parts inaudible and loud parts jarring, especially in casual listening environments like car stereo or earbuds.',
-                'Consider gentle bus compression (2–4 dB gain reduction, slow attack, auto release) to glue the mix together while preserving musicality.',
-                'intermediate',
-                0.7,
-                ['bus compression', 'glue compression', 'mix bus', 'parallel compression']
-            )
-        );
+        if (analysis.analysis.dynamicRange > 16) {
+            lessons.push(
+                createLesson(
+                    'dynamics',
+                    'Wide Dynamic Range',
+                    `Dynamic range is approximately ${analysis.analysis.dynamicRange.toFixed(1)} dB, which is quite wide.`,
+                    'While dynamics are musically important, too much variation can make quiet parts inaudible and loud parts jarring, especially in casual listening environments like car stereo or earbuds.',
+                    'Consider gentle bus compression (2–4 dB gain reduction, slow attack, auto release) to glue the mix together while preserving musicality.',
+                    'intermediate',
+                    0.7,
+                    ['bus compression', 'glue compression', 'mix bus', 'parallel compression']
+                )
+            );
+        }
     }
 
     return lessons.sort((alpha, b) => b.relevance - alpha.relevance);

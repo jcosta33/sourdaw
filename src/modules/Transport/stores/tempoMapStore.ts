@@ -1,6 +1,13 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 
+import { MAX_TEMPO_MAP_TEMPO, MIN_TEMPO_MAP_TEMPO } from '../models/TempoMap';
+
+// The tempo-map bounds live in `models/TempoMap.ts` — a model file cannot import
+// from a store, so a bound both layers need sits a layer down. They are
+// deliberately not re-exported: models constants never cross module boundaries
+// (docs/architecture/03-typescript-module.md §4.1).
+
 const DOC_PREFIX_ROOT = 'root';
 
 export type TempoChange = {
@@ -14,29 +21,6 @@ export type TempoMapStoreState = {
     changes: TempoChange[];
 };
 
-/**
- * Tempo range a stored *tempo-map change* must fall in.
- *
- * Deliberately its own name and not Transport's `MIN_TEMPO`/`MAX_TEMPO`, because
- * the two ranges are genuinely different: the transport's base tempo is capped
- * at 300, a tempo-map change at 999. They already disagree, so collapsing them
- * would be wrong.
- *
- * Both bounds are exported for use inside Transport: the tempo field edits a
- * tempo-map change in place whenever a map governs the playhead, so the field's
- * own clamp has to be this range and not Transport's — clamping a stored 400 BPM
- * change to 300 on the first pixel of a drag destroys it.
- *
- * The minimum is additionally one of the two floors the
- * unknown-frozen-tail derivation has to clear — a project's slowest legal tempo
- * is the slowest either validator will accept, and that derivation used to be
- * checked against Transport's copy alone. `frozenTailAnchor.spec.ts` pins it
- * against both. That cross-check is the point: a value duplicated across a
- * boundary with no test spanning it is invisible precisely while the copies
- * agree.
- */
-export const MIN_TEMPO_MAP_TEMPO = 20;
-export const MAX_TEMPO_MAP_TEMPO = 999;
 const TEMPO_MAP_KEYS = ['changes'] as const;
 const TEMPO_CHANGE_KEYS = ['id', 'beat', 'tempo', 'curve'] as const;
 

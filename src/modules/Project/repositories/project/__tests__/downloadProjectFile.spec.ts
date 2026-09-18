@@ -61,6 +61,7 @@ describe('downloadProjectFile', () => {
         vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
         const anchor = document.createElement('a');
         const clickAnchor = vi.spyOn(anchor, 'click').mockImplementation(() => undefined);
+        // @ts-expect-error the Electron DOM augmentation adds a createElement("webview") overload this mock does not satisfy
         vi.spyOn(document, 'createElement').mockImplementation(() => anchor);
         const appendChild = vi.spyOn(document.body, 'appendChild').mockImplementation((node) => node);
         const shouldWrite = vi.fn(() => false);

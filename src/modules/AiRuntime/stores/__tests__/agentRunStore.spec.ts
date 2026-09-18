@@ -228,6 +228,45 @@ describe('agentRunStore', () => {
         expect(readAgentRunState().preparedStemImportRecoveryLedger?.[0]).toEqual(admittedCapsules[0]);
     });
 
+    it('anchors a stored run without an active-since field from the phase it was persisted in', () => {
+        agentRunLifecycle.create({
+            runId: 'stored-executing-run',
+            request: 'Resume an executing run from storage.',
+            mode: 'macro',
+            createdRevision: 'revision-1',
+            budgets: { limits: {}, consumed: {} },
+            createdAt: 10,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'stored-executing-run', phase: 'planning', transitionedAt: 11 });
+        agentRunLifecycle.transitionPhase({ runId: 'stored-executing-run', phase: 'executing', transitionedAt: 12 });
+        agentRunLifecycle.create({
+            runId: 'stored-parked-run',
+            request: 'Resume a parked run from storage.',
+            mode: 'macro',
+            createdRevision: 'revision-1',
+            budgets: { limits: {}, consumed: {} },
+            createdAt: 20,
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'stored-parked-run', phase: 'planning', transitionedAt: 21 });
+        agentRunLifecycle.transitionPhase({
+            runId: 'stored-parked-run',
+            phase: 'waiting-for-approval',
+            transitionedAt: 22,
+        });
+
+        const stored = readAgentRunState();
+        const hydrated = sanitizeAgentRunState({
+            ...stored,
+            runs: stored.runs.map(({ activeSince: _absent, ...run }) => run),
+        });
+
+        expect(hydrated.runs).toEqual([
+            expect.objectContaining({ runId: 'stored-executing-run', phase: 'executing', activeSince: 10 }),
+            expect.objectContaining({ runId: 'stored-parked-run', phase: 'waiting-for-approval', activeSince: null }),
+        ]);
+        expect(hydrated.runs[0]?.activeSince).toBe(hydrated.runs[0]?.createdAt);
+    });
+
     it('hydrates legacy reconcile pending-effect recoveries as manual non-actionable guidance', () => {
         agentRunLifecycle.create({
             runId: 'legacy-run',

@@ -65,6 +65,7 @@ import {
     type AudioGraphParameterTarget,
     type AudioGraphParameterWrite,
 } from '../../models/AudioGraphBackend';
+import { STEREO_CHANNEL_COUNT } from '../../models/ChannelLaw';
 import { createNativeOfflineGraphBackend } from '../../repositories/nativeGraph/createNativeOfflineGraphBackend';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import {
@@ -411,7 +412,7 @@ export async function renderOfflineWithNativeEngine(
                 right[frame] = right[frame]! * masterGainValue;
             }
         }
-        const buffer = new AudioBuffer({ length: frameCount, numberOfChannels: 2, sampleRate });
+        const buffer = new AudioBuffer({ length: frameCount, numberOfChannels: STEREO_CHANNEL_COUNT, sampleRate });
         buffer.copyToChannel(left, 0);
         buffer.copyToChannel(right, 1);
         for (const message of bufferedWarnings) {

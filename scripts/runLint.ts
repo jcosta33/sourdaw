@@ -138,11 +138,14 @@ function runStep(label: string, args: string[], env: NodeJS.ProcessEnv = process
     }
 }
 
+export const FULL_OXLINT_TARGETS = ['src', 'scripts', 'electron'] as const;
+export const FULL_ESLINT_TARGETS = ['src/**/*.{ts,tsx}', 'scripts/**/*.ts', 'electron/**/*.ts'] as const;
+
 function main(): number {
     try {
         const options = parseArgs(process.argv.slice(2));
-        const targets = options.full ? ['src', 'scripts'] : options.files;
-        const eslintTargets = options.full ? ['src/**/*.{ts,tsx}', 'scripts/**/*.ts'] : options.files;
+        const targets = options.full ? [...FULL_OXLINT_TARGETS] : options.files;
+        const eslintTargets = options.full ? [...FULL_ESLINT_TARGETS] : options.files;
         ensureServerDependencies(targets);
         runStep('oxlint', [
             'exec',

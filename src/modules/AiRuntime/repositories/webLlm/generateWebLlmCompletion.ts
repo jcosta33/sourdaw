@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 
 import { ToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
+import { WEB_LLM_COMPLETION_TEMPERATURE } from '../../models/LlmSamplingTemperatures';
 
 import { engineState } from './engineLifecycleState';
 import { initWebLlmEngine } from './initWebLlmEngine';
@@ -32,7 +33,7 @@ export async function generateWebLlmCompletion(
     ];
     const payload: Record<string, unknown> = {
         messages,
-        temperature: options?.temperature ?? 0.3,
+        temperature: options?.temperature ?? WEB_LLM_COMPLETION_TEMPERATURE,
         max_tokens: options?.maxTokens ?? 2048,
         seed: 0,
     };

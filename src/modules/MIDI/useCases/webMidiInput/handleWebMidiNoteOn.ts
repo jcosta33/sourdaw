@@ -17,6 +17,13 @@ import { resolveInputEventTime } from './resolveInputEventTime';
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { resolveNativeNoteSink } from './resolveNativeNoteSink';
 
+/**
+ * Duration sentinel handed to `scheduleNote` when a live note must sustain
+ * until its note-off arrives: 60 seconds is far longer than any held note, and
+ * the note-off path tears the voice down regardless.
+ */
+const HOLD_UNTIL_NOTE_OFF_SECONDS = 60;
+
 export const handleWebMidiNoteOn = inject({
     ...midiMessageHandlerDependencies,
     handleWebMidiNoteOff,
@@ -314,7 +321,7 @@ export const handleWebMidiNoteOn = inject({
                         strip.gainNode,
                         note,
                         dispatchTime,
-                        60,
+                        HOLD_UNTIL_NOTE_OFF_SECONDS,
                         velocity,
                         synthParams
                     );
@@ -326,15 +333,6 @@ export const handleWebMidiNoteOn = inject({
                 return;
             }
 
-            // A Faust pro-synth instrument (electric piano, FM synth, supersaw, …) voices
-            // its notes through the same live control path the piano-roll audition
-            // uses: `startFaustNote` writes freq/gain/gate on the device and hands
-            // back the release that gates it off. Without this branch the note fell
-            // through to the default-parameter builtin synth below, so monitoring
-            // played a different instrument from playback and the offline render
-            // (issue #3726). It sits after the builtin devices so a track carrying
-            // both keeps its existing builtin voice, and only the Faust-only track
-            // is rescued from the fallback.
             // A Faust pro-synth instrument (electric piano, FM synth, supersaw, …) voices
             // its notes through the same live control path the piano-roll audition
             // uses: `startFaustNote` writes freq/gain/gate on the device and hands
@@ -356,7 +354,7 @@ export const handleWebMidiNoteOn = inject({
                 strip.gainNode,
                 note,
                 dispatchTime,
-                60,
+                HOLD_UNTIL_NOTE_OFF_SECONDS,
                 velocity,
                 synthParams
             );

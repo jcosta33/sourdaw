@@ -51,6 +51,12 @@ pub enum PluginHostRequest {
     /// plugin that no longer exists. Re-enumerating means calling the plugin
     /// back, which the callback's own thread may not do.
     ParametersRescan,
+    /// The plugin asked the host to call `on_main_thread` on it — CLAP's
+    /// `clap_host::request_callback` — so work it deferred to the main thread
+    /// (a worker result, an editor update) can complete. Recorded as a flag and
+    /// coalesced like every other ask here: one drain calls the plugin once,
+    /// which completes whatever it parked on the request.
+    MainThreadCallback,
 }
 
 /// Host-supplied wake fired when a plugin raises a [`PluginHostRequest`].
@@ -483,6 +489,17 @@ pub trait HostedPluginRuntime: AudioPlugin {
     /// Apply a latency change the plugin flagged, returning the new latency in
     /// frames, or `None` when nothing was pending. Control path only.
     fn poll_latency_change(&mut self) -> Result<Option<u32>, String>;
+
+    /// Answer the plugin's request that the host call `on_main_thread` on it,
+    /// making that call if one is pending. Control path only.
+    ///
+    /// One method rather than a take and a call, because the ask and the call
+    /// belong together: the plugin raised the request precisely so this call
+    /// would happen, and a flag drained without the call is the no-op #3746
+    /// describes wearing a flag's clothes. The default is empty because a
+    /// format with no such ask has nothing pending, which is an answer rather
+    /// than a gap.
+    fn service_main_thread_callback(&mut self) {}
 
     /// Reported latency in milliseconds, at the rate the plugin was activated
     /// with. Milliseconds because that rate is known here and nowhere upstream.

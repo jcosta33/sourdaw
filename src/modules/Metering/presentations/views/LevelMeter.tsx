@@ -3,6 +3,7 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { Stack } from '#/components/layout';
 import { getTrackPeakLevel, getMasterPeakLevel, VUMeter } from '#/modules/AudioEngine/useCases';
+import { METER_FLOOR_DB } from '#/utils/audioLevelLaw';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 import { cn } from '#/utils/Styles/cn';
 import { resolveToken } from '#/utils/UI/resolveToken';
@@ -14,7 +15,7 @@ type LevelMeterProps = {
 };
 
 const DB_MARKS = [0, -6, -12, -24, -48] as const;
-const MIN_DB = -60;
+const MIN_DB = METER_FLOOR_DB;
 const PEAK_HOLD_DURATION_MS = 1500;
 const PEAK_HOLD_FALL_RATE = 0.02;
 

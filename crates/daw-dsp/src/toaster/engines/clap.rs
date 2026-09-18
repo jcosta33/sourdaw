@@ -4,6 +4,7 @@
 //! staggered hand-clap effect, followed by a longer reverb-like tail.
 //! All noise is bandpass-filtered around 1kHz.
 
+use crate::params::{DECAY, DRIVE, TONE, TUNE};
 use std::f32::consts::TAU;
 
 /// xorshift32 noise
@@ -144,17 +145,17 @@ impl ClapEngine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "decay" => {
+            DECAY => {
                 // Normalize 0-1 to tail decay via reverb_amount 0-1
                 self.reverb_amount = value.clamp(0.0, 1.0);
             }
-            "tune" => {
+            TUNE => {
                 // Shift the noise bandpass filter center frequency by semitones
                 let ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0);
                 self.tone = (0.5 * ratio).clamp(0.0, 1.0);
             }
-            "tone" => self.tone = value.clamp(0.0, 1.0),
-            "drive" => {
+            TONE => self.tone = value.clamp(0.0, 1.0),
+            DRIVE => {
                 // 0-10 drive: map to burst count (more bursts = thicker clap)
                 let v = value.clamp(0.0, 10.0);
                 self.count = (3.0 + v * 0.4) as usize;

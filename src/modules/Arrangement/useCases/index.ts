@@ -60,6 +60,8 @@ export { duplicateClip } from './clip/duplicateClip';
 export { duplicateClipToNextBar } from './clip/duplicateClipToNextBar';
 export { acceptGhostClip } from './clip/acceptGhostClip';
 export { dismissGhostClip } from './clip/dismissGhostClip';
+export { setClipAudioAssetStager } from './clip/setClipAudioAssetStager';
+export { stageClipAudioAsset } from './clip/stageClipAudioAsset';
 export { updateClip } from './updateClip';
 export { replaceClipAudioBuffer } from './replaceClipAudioBuffer';
 export { relinkClipAudioSource } from './relinkClipAudioSource';

@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { branchStore, MAIN_BRANCH_ID } from '#/modules/CrdtDocument/stores';
-import { createCrdtDoc, hasCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+import { branchStore } from '#/modules/CrdtDocument/stores';
+import { createCrdtDoc, hasCrdtDoc, projectBranchSession } from '#/modules/CrdtDocument/useCases';
 
 import { collaborationStore } from '../../../stores/collaborationStore';
 import { createSession } from '../createSession';
@@ -65,14 +66,17 @@ vi.mock('../../assetTransfer', () => ({
 }));
 
 /**
- * Collaboration teardown runs `restoreBranchStateAfterSession` inside a
- * `try`/`finally` with no `catch`, and everything that closes the WebRTC peers
- * runs after it. A refused `localStorage` write used to unwind from there and
- * leave live peers connected to a session the user had already left.
+ * Collaboration teardown hands the durable branch list back to local writers,
+ * and everything that closes the WebRTC peers runs after it. A refused
+ * `localStorage` write used to unwind from there and leave live peers connected
+ * to a session the user had already left.
  *
- * The branch store and its `createLocalStorage` adapter are real here; only the
- * peer manager is a stub, because the assertion is about it being closed.
+ * The branch-state authority and its storage are real here; only the peer
+ * manager is a stub, because the assertion is about it being closed.
  */
+const BRANCH_STATE_STORAGE_KEY = 'sourdaw-branch-state';
+const MAIN_BRANCH_ID = 'main';
+
 const mainBranch = {
     branchId: MAIN_BRANCH_ID,
     name: 'Main',
@@ -93,6 +97,21 @@ const localOnlyBranch = {
     note: '',
 };
 
+const preSessionList = { branches: [mainBranch, localOnlyBranch], activeBranchId: MAIN_BRANCH_ID };
+const sessionProjectedList = { branches: [mainBranch], activeBranchId: MAIN_BRANCH_ID };
+
+type StoredEnvelope = {
+    version: number;
+    revision: number;
+    current: { branches: Array<{ branchId: string }>; activeBranchId: string };
+    session: { owner: string; backup: unknown; baseRevision: number; sequence: number } | null;
+};
+
+function readStoredEnvelope(): StoredEnvelope | null {
+    const raw = window.localStorage.getItem(BRANCH_STATE_STORAGE_KEY);
+    return raw === null ? null : (JSON.parse(raw) as StoredEnvelope);
+}
+
 function blockEveryDurableWrite(): void {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
         throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
@@ -103,11 +122,18 @@ function latestPeerManager(): (typeof runtimeIoMock.peerManagers)[number] {
     return runtimeIoMock.peerManagers.at(-1)!;
 }
 
-describe('collaboration teardown when localStorage refuses the write', () => {
+describe('collaboration teardown when branch storage refuses the write', () => {
     beforeEach(async () => {
         notifyUserMock.mockReset();
         runtimeIoMock.peerManagers.length = 0;
         window.localStorage.clear();
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
+        // The list the user had before joining, already durable — this is what
+        // the session claim takes as its backup.
+        window.localStorage.setItem(
+            BRANCH_STATE_STORAGE_KEY,
+            JSON.stringify({ version: 1, revision: 1, current: preSessionList, session: null })
+        );
         crdtPersistenceMock.runCrdtPersistenceBarrier.mockImplementation(
             async (
                 operation: (input: {
@@ -132,6 +158,7 @@ describe('collaboration teardown when localStorage refuses the write', () => {
                 return result;
             }
         );
+
         collaborationStore.set({
             isEnabled: true,
             sessionId: 'session-1',
@@ -144,14 +171,23 @@ describe('collaboration teardown when localStorage refuses the write', () => {
             error: null,
             quarantinedPeerIds: [],
         });
-        branchStore.set({ branches: [mainBranch, localOnlyBranch], activeBranchId: MAIN_BRANCH_ID });
         if (!hasCrdtDoc('root')) {
             createCrdtDoc('root');
         }
 
         await sessionRuntimePrimitives.initialize('project-owner-1');
-        sessionRuntimePrimitives.startBranchSync(false);
-        branchStore.set({ branches: [mainBranch], activeBranchId: MAIN_BRANCH_ID });
+        await sessionRuntimePrimitives.startBranchSync(false);
+        // What a peer's branch list looks like once it has been projected: the
+        // session owns the durable list and the local-only branch lives only in
+        // the session record's backup.
+        const claim = sessionRuntimePrimitives.state.branchSession;
+        if (!claim) {
+            throw new Error('Expected the session to claim the durable branch list');
+        }
+        const projected = await projectBranchSession(claim, sessionProjectedList);
+        if (projected.status !== 'committed') {
+            throw new Error(`Expected the session projection to commit (${projected.reason})`);
+        }
     });
 
     afterEach(async () => {
@@ -163,14 +199,14 @@ describe('collaboration teardown when localStorage refuses the write', () => {
         }
         vi.restoreAllMocks();
         await sessionRuntimePrimitives.settleRetainedTeardown().catch(() => undefined);
+        vi.unstubAllGlobals();
         window.localStorage.clear();
     });
 
     it('retires replacement resources and retries after durable reads recover', async () => {
-        const refusal = new DOMException('The operation is insecure.', 'SecurityError');
         const { closeAll } = latestPeerManager();
         const refusedRead = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-            throw refusal;
+            throw new DOMException('The operation is insecure.', 'SecurityError');
         });
         let failure: unknown;
 
@@ -188,7 +224,10 @@ describe('collaboration teardown when localStorage refuses the write', () => {
         expect(sessionRuntimePrimitives.state.cleanupProjectionBridge).toBeNull();
         expect(failure).toEqual(expect.objectContaining({ message: 'Pre-session branch state could not be read' }));
         expect(notifyUserMock.mock.calls[0]?.[0]).toContain('branch storage could not be read');
-        expect(window.localStorage.getItem('sourdaw-branch-session-backup')).not.toBeNull();
+        // The session record is the retry: the durable list still belongs to
+        // this session, so nothing else can claim it and the next attempt can
+        // still put the pre-session list back.
+        expect(readStoredEnvelope()?.session).not.toBeNull();
 
         await expect(createSession('Replacement')).resolves.toEqual(expect.any(String));
         expect(branchStore.value?.branches.map((branch) => branch.branchId)).toEqual([
@@ -198,10 +237,9 @@ describe('collaboration teardown when localStorage refuses the write', () => {
     });
 
     it('closes leave transport, clears runtime state, and retries after durable reads recover', async () => {
-        const refusal = new DOMException('The operation is insecure.', 'SecurityError');
         const { closeAll } = latestPeerManager();
         const refusedRead = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-            throw refusal;
+            throw new DOMException('The operation is insecure.', 'SecurityError');
         });
         let failure: unknown;
 
@@ -218,14 +256,14 @@ describe('collaboration teardown when localStorage refuses the write', () => {
         expect(sessionRuntimePrimitives.state.assetTransfer).toBeNull();
         expect(sessionRuntimePrimitives.state.cleanupProjectionBridge).toBeNull();
         expect(failure).toEqual(expect.objectContaining({ message: 'Pre-session branch state could not be read' }));
-        expect(window.localStorage.getItem('sourdaw-branch-session-backup')).not.toBeNull();
+        expect(readStoredEnvelope()?.session).not.toBeNull();
 
         await expect(leaveSession()).resolves.toBeUndefined();
         expect(branchStore.value?.branches.map((branch) => branch.branchId)).toEqual([
             MAIN_BRANCH_ID,
             localOnlyBranch.branchId,
         ]);
-        expect(window.localStorage.getItem('sourdaw-branch-session-backup')).toBeNull();
+        expect(readStoredEnvelope()?.session).toBeNull();
     });
 
     it('closes every peer even when the pre-session branch list cannot be persisted', async () => {
@@ -241,18 +279,22 @@ describe('collaboration teardown when localStorage refuses the write', () => {
         );
     });
 
-    it('restores the local branch list into the session even when it cannot be persisted', async () => {
+    it('keeps the session record so the next boot can still restore a refused list', async () => {
         blockEveryDurableWrite();
 
         sessionRuntimePrimitives.cleanup();
-
-        expect(branchStore.value?.branches.map((branch) => branch.branchId)).toEqual([
-            MAIN_BRANCH_ID,
-            localOnlyBranch.branchId,
-        ]);
         await expect(sessionRuntimePrimitives.settleRetainedTeardown()).rejects.toThrow(
             'Pre-session branch state could not be persisted'
         );
+
+        vi.restoreAllMocks();
+        const envelope = readStoredEnvelope();
+        expect(envelope?.session?.backup).toEqual(preSessionList);
+        // Memory still shows what the session published, and the durable list
+        // agrees with it: the pre-session list comes back with the record, not
+        // ahead of it.
+        expect(branchStore.value?.branches.map((branch) => branch.branchId)).toEqual([MAIN_BRANCH_ID]);
+        expect(envelope?.current).toEqual(sessionProjectedList);
     });
 
     /**
@@ -280,27 +322,36 @@ describe('collaboration teardown when localStorage refuses the write', () => {
             expect(collaborationStore.value?.error ?? null).toBeNull();
         });
 
-        it('tells the user a leftover backup survived, with its own message', async () => {
-            const blockedRemoval = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
-                throw new DOMException('The operation is insecure.', 'SecurityError');
-            });
-
-            await expect(leaveSession()).rejects.toThrow('Pre-session branch backup could not be cleared');
-
-            expect(notifyUserMock.mock.calls[0]?.[0]).toContain('leftover session backup');
-            expect(window.localStorage.getItem('sourdaw-branch-session-backup')).not.toBeNull();
-
-            blockedRemoval.mockRestore();
+        it('says nothing and keeps the newer list when another instance took the branch list over', async () => {
+            const envelope = readStoredEnvelope();
+            if (!envelope?.session) {
+                throw new Error('Expected a live session record');
+            }
+            const takenOver = {
+                version: 1,
+                revision: envelope.revision + 1,
+                current: sessionProjectedList,
+                session: { ...envelope.session, owner: 'another-instance' },
+            };
+            window.localStorage.setItem(BRANCH_STATE_STORAGE_KEY, JSON.stringify(takenOver));
 
             await expect(leaveSession()).resolves.toBeUndefined();
-            expect(window.localStorage.getItem('sourdaw-branch-session-backup')).toBeNull();
-            expect(notifyUserMock).toHaveBeenCalledTimes(1);
+
+            // The defect this protocol exists to prevent: restoring this
+            // session's backup over a list another instance now owns.
+            expect(notifyUserMock).not.toHaveBeenCalled();
+            expect(readStoredEnvelope()).toEqual(takenOver);
         });
 
         it('says nothing when the restore lands', async () => {
             await leaveSession();
 
             expect(notifyUserMock).not.toHaveBeenCalled();
+            expect(readStoredEnvelope()?.session).toBeNull();
+            expect(branchStore.value?.branches.map((branch) => branch.branchId)).toEqual([
+                MAIN_BRANCH_ID,
+                localOnlyBranch.branchId,
+            ]);
         });
 
         /**
@@ -329,7 +380,7 @@ describe('collaboration teardown when localStorage refuses the write', () => {
         });
     });
 
-    it('reports no error and consumes the backup when the write lands', async () => {
+    it('reports no error and hands the durable list back when the write lands', async () => {
         sessionRuntimePrimitives.cleanup();
         await expect(sessionRuntimePrimitives.settleRetainedTeardown()).resolves.toBeUndefined();
 
@@ -338,6 +389,6 @@ describe('collaboration teardown when localStorage refuses the write', () => {
             localOnlyBranch.branchId,
         ]);
         expect(collaborationStore.value?.error ?? null).toBeNull();
-        expect(window.localStorage.getItem('sourdaw-branch-session-backup')).toBeNull();
+        expect(readStoredEnvelope()?.session).toBeNull();
     });
 });

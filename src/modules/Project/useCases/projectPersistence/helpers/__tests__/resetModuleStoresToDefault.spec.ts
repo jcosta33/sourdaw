@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    removeClip: vi.fn(),
     acceptsExternalPluginAutomationParameter: vi.fn(),
     addTake: vi.fn(),
     addTakeLane: vi.fn(),

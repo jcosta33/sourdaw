@@ -12,6 +12,16 @@ export type OversamplingFactor = 1 | 2 | 4;
 export const OVERSAMPLING_FACTORS: readonly OversamplingFactor[] = [1, 2, 4];
 
 /**
+ * The sidechain LPF's Hz range. The floor sits at 1 kHz because the filter's
+ * one job is to keep HF content out of the detector — everything below it is
+ * the material being levelled, not hiss to ignore — and the ceiling is the top
+ * of hearing, where the filter is audibly out of the way. The panel's display
+ * clamp and the hydration normalizer share this so a stored value outside the
+ * range lands the same in both.
+ */
+export const SC_LPF_FREQ_RANGE = { min: 1000, max: 20_000 } as const;
+
+/**
  * Resolve an arbitrary oversampling value onto a factor the engine builds
  * (1, 2, or 4), rounding **down**. A step-1 control over 1..4 can produce 3,
  * which has no stage behind it; this floors it to 2. Values are clamped into

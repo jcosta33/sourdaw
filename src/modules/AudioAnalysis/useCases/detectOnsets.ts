@@ -4,6 +4,17 @@ export type DetectedOnset = {
     pitch?: number;
 };
 
+/**
+ * Everything onset detection reads: one channel of samples and the rate they
+ * were taken at. Stated structurally so a caller that has already summed or
+ * otherwise prepared its own channel can pass it without a decoded `AudioBuffer`
+ * to wrap it in; an `AudioBuffer` satisfies this as it stands.
+ */
+export type OnsetDetectionSource = {
+    readonly sampleRate: number;
+    getChannelData(channel: number): Float32Array;
+};
+
 const FRAME_SIZE = 1024;
 const HOP_SIZE = 512;
 
@@ -16,7 +27,11 @@ function computeRmsEnergy(data: Float32Array, start: number, length: number): nu
     return Math.sqrt(sum / (end - start));
 }
 
-export function detectOnsets(buffer: AudioBuffer, sensitivity: number, minIntervalSec: number): DetectedOnset[] {
+export function detectOnsets(
+    buffer: OnsetDetectionSource,
+    sensitivity: number,
+    minIntervalSec: number
+): DetectedOnset[] {
     const channelData = buffer.getChannelData(0);
     const sampleRate = buffer.sampleRate;
 

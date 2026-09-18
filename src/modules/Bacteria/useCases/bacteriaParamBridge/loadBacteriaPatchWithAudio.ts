@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 
+import { mapBacteriaModAssignments } from '../../models/BacteriaModulationIds';
 import { type BacteriaBand, type BacteriaPatch } from '../../models/BacteriaPatch';
 import { getBacteriaState, loadBacteriaPatch } from '../../stores/bacteriaStore';
 
@@ -21,6 +22,7 @@ function createPushParamImmediately(
 export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies)(({
     getAllTracks: getAllTracksFn,
     updateDeviceParam: updateDeviceParamFn,
+    updateDevicePatch: updateDevicePatchFn,
     persistDeviceParam: persistDeviceParamFn,
     resolveEligibleDeviceWriteTarget: resolveEligibleDeviceWriteTargetFn,
 }) => {
@@ -93,6 +95,17 @@ export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies
                 }
                 pushParamImmediately(target, prefixedKey, encodedValue);
             }
+        }
+
+        // Assignments are structured rows, not scalar params, so they leave
+        // through the patch door as one wholesale replacement — a load must
+        // also drop the assignments the previous patch had. Pushed
+        // unconditionally rather than diffed: a reloaded worklet empties its
+        // engine table without the store mirror knowing, so a matching mirror
+        // proves nothing.
+        const mappedAssignments = mapBacteriaModAssignments(patch.modAssignments);
+        if (mappedAssignments) {
+            updateDevicePatchFn(target.trackId, target.deviceId, { modAssignments: mappedAssignments });
         }
     };
 });

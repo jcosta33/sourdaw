@@ -4,7 +4,7 @@
  */
 import { createStore } from '#/infra/store/createStore';
 
-import { type BacteriaPatch, DEFAULT_PATCH } from '../models/BacteriaPatch';
+import { type BacteriaModAssignment, type BacteriaPatch, DEFAULT_PATCH } from '../models/BacteriaPatch';
 
 export type BacteriaUiLevel = 1 | 2 | 3 | 4 | 5;
 
@@ -90,6 +90,21 @@ export function loadBacteriaPatch(deviceId: string, patch: BacteriaPatch): void 
     const instances = bacteriaStore.value ?? {};
     const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
     bacteriaStore.set({ ...instances, [deviceId]: { ...state, patch } });
+}
+
+/**
+ * Replace the whole assignment list. Add, remove, undo, and a patch reload all
+ * arrive as one replacement so the session table and the engine's always
+ * describe the same routing — the engine table is replaced wholesale by the
+ * same gesture's push.
+ */
+export function setBacteriaModAssignments(deviceId: string, assignments: BacteriaModAssignment[]): void {
+    const instances = bacteriaStore.value ?? {};
+    const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
+    bacteriaStore.set({
+        ...instances,
+        [deviceId]: { ...state, patch: { ...state.patch, modAssignments: assignments } },
+    });
 }
 
 /**

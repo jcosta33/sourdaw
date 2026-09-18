@@ -5,6 +5,7 @@
 
 use super::detector::{DetectionMode, StereoDetector};
 use super::gain_computer::db_to_linear;
+use crate::params::{THRESHOLD, THRESHOLD_MAX_DB, THRESHOLD_MIN_DB};
 use crate::primitives::flush_denormal;
 
 /// One side's opto cell. The CdS memory is per-channel because it *is* the
@@ -98,8 +99,8 @@ impl OptoCompressor {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "threshold" => {
-                self.threshold = value.clamp(-60.0, 0.0);
+            THRESHOLD => {
+                self.threshold = value.clamp(THRESHOLD_MIN_DB, THRESHOLD_MAX_DB);
                 self.refresh_auto_makeup();
             }
             "limit_mode" => {

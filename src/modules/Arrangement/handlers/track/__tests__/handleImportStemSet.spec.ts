@@ -80,8 +80,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
-    getLiveEngineSampleRate: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Collaboration/useCases', () => ({

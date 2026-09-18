@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
-import { fail } from './prContract.ts';
+import { fail, TRUSTED_POWERSHELL_PATH_ENV, TRUSTED_PS_PATH_ENV } from './prContract.ts';
 
 export type PullRequestMutationLockOwnerFence =
     | {
@@ -569,7 +569,7 @@ export function currentMutationOwnerFence(): PullRequestMutationLockOwnerFence {
 }
 
 function currentProcessGroupId(pid: number): number {
-    const executable = process.env.SOURDAW_TRUSTED_PS_PATH;
+    const executable = process.env[TRUSTED_PS_PATH_ENV];
     if (typeof executable !== 'string' || executable === '') {
         fail('mutation lock requires the trusted ps executable');
     }
@@ -586,7 +586,7 @@ function currentProcessGroupId(pid: number): number {
 }
 
 function processStartedAt(pid: number): string | undefined {
-    const executable = process.env.SOURDAW_TRUSTED_PS_PATH;
+    const executable = process.env[TRUSTED_PS_PATH_ENV];
     if (typeof executable !== 'string' || executable === '') {
         fail('mutation lock requires the trusted ps executable');
     }
@@ -606,7 +606,7 @@ function processGroupIsLive(pgid: number, leaderStartedAt: string | undefined): 
     if (leaderStartedAt === undefined) {
         fail('mutation lock process-group identity is unreadable');
     }
-    const executable = process.env.SOURDAW_TRUSTED_PS_PATH;
+    const executable = process.env[TRUSTED_PS_PATH_ENV];
     if (typeof executable !== 'string' || executable === '') {
         fail('mutation lock requires the trusted ps executable');
     }
@@ -662,7 +662,7 @@ const windowsProcessCreationIdentityProperty =
     "@{Name='CreationDate';Expression={$_.CreationDate.ToUniversalTime().ToString('O',[System.Globalization.CultureInfo]::InvariantCulture)}}";
 
 function readTrustedWindowsProcessRows(): WindowsProcessRow[] {
-    const executable = process.env.SOURDAW_TRUSTED_POWERSHELL_PATH;
+    const executable = process.env[TRUSTED_POWERSHELL_PATH_ENV];
     if (typeof executable !== 'string' || executable === '') {
         fail('mutation lock requires the trusted PowerShell executable');
     }

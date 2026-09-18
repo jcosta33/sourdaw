@@ -25,6 +25,10 @@ export const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 // `/index.html` renders the router's not-found view under the shell; the
 // protocol handler serves `index.html` for `/` either way.
 export const APP_ENTRY_URL = `${APP_ORIGIN}/`;
+// The human-readable product name shown in window chrome, dialog title
+// fallbacks, and the application menu. Identity lives here with the scheme
+// and host so every shell surface that names the app to the user agrees.
+export const APP_TITLE = 'Sourdaw';
 
 /**
  * The Content-Security-Policy every `app://` response carries.

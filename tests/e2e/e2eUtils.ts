@@ -1,6 +1,8 @@
 import { expect, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
+import { DIRECT_E2E_VIEWPORT_NAME } from '../../src/app/resolveAppComposition';
+
 export const LAUNCH_SCREEN_NAME = 'Sourdaw — start a project';
 const PLAYBACK_CONTROLS_NAME = 'Playback controls';
 /**
@@ -11,6 +13,22 @@ const PLAYBACK_CONTROLS_NAME = 'Playback controls';
  * owes the same bound.
  */
 export const LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS = 45_000;
+
+/**
+ * Storage keys this realm seeds or reads to steer first-run state. Each
+ * restates a key the product owns — models constants must not cross module
+ * boundaries, so the e2e realm keeps its own spelling next to a pointer:
+ * alpha notice: `src/modules/WorkspaceShell/stores/alphaNoticeStore.ts`;
+ * preferences: `src/modules/Preferences/stores/preferencesStore.ts`;
+ * recent projects: `RECENT_PROJECTS_KEY` in
+ * `src/modules/Project/models/ProjectData.ts`. The union in
+ * `src/infra/store/storage/LocalStorageKeys.ts` inventories every key for the
+ * cookie/localStorage policy, which is why these keys carry legal-visibility
+ * weight on top of the round-trip one.
+ */
+const ALPHA_NOTICE_DISMISSED_STORAGE_KEY = 'sourdaw-alpha-notice-dismissed';
+export const PREFERENCES_STORAGE_KEY = 'sourdaw-preferences';
+export const RECENT_PROJECTS_STORAGE_KEY = 'sourdaw-recent-projects';
 
 type LaunchOverlayState = 'active' | 'exited';
 
@@ -35,13 +53,15 @@ type SetupWorkspaceOptions = {
  */
 export async function enable_direct_e2e_viewport(page: Page): Promise<void> {
     // The page-scoped script covers this Page's first and later documents; the
-    // context script covers subsequently created Pages and frames.
-    await page.addInitScript(() => {
-        window.name = 'sourdaw-e2e-direct';
-    });
-    await page.context().addInitScript(() => {
-        window.name = 'sourdaw-e2e-direct';
-    });
+    // context script covers subsequently created Pages and frames. The name
+    // rides the argument channel: an init script's free variables do not
+    // exist in the page realm, only its serialized body does.
+    await page.addInitScript((viewportName: string) => {
+        window.name = viewportName;
+    }, DIRECT_E2E_VIEWPORT_NAME);
+    await page.context().addInitScript((viewportName: string) => {
+        window.name = viewportName;
+    }, DIRECT_E2E_VIEWPORT_NAME);
 }
 
 /**
@@ -60,10 +80,10 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
 
     await enable_direct_e2e_viewport(page);
     await page.addInitScript(
-        ({ alphaDismissed, localStorage }) => {
+        ({ alphaDismissed, alphaNoticeKey, localStorage }) => {
             window.localStorage.clear();
             window.localStorage.setItem('wd:onboarding-completed', '1');
-            window.localStorage.setItem('sourdaw-alpha-notice-dismissed', alphaDismissed);
+            window.localStorage.setItem(alphaNoticeKey, alphaDismissed);
             window.localStorage.setItem('wd:first-load-hint-shown', '1');
             for (const entry of localStorage) {
                 window.localStorage.setItem(entry.name, entry.value);
@@ -71,6 +91,7 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
         },
         {
             alphaDismissed,
+            alphaNoticeKey: ALPHA_NOTICE_DISMISSED_STORAGE_KEY,
             localStorage: options.localStorage ?? [],
         }
     );
@@ -132,6 +153,33 @@ export async function launch_from_template({ page, template_name }: LaunchFromTe
     await template_button.click();
 
     await wait_for_workspace_ready(page);
+}
+
+/**
+ * Add a MIDI track from the empty arrangement's own empty-state button. A
+ * fresh project starts with zero tracks (`createArrangement.ts`), so any spec
+ * that needs a track-scoped control (e.g. the per-track arm button) must
+ * create one first through this route or the command-palette equivalent.
+ */
+/**
+ * Each wait carries its own budget so a slow boot fails loudly at the step that
+ * is slow, instead of silently consuming the whole 90s test timeout here and
+ * letting the spec's next locator (the arm button) absorb the expiry (#4299:
+ * both record-toggle specs timed out at the arm click on CI's cold server while
+ * passing locally against a warm one).
+ */
+const ADD_TRACK_STEP_TIMEOUT_MS = 15_000;
+
+export async function add_midi_track(page: Page): Promise<void> {
+    const emptyStateMidiButton = page.locator('button').filter({ hasText: 'MIDI' }).filter({ hasText: 'Keys' });
+    await emptyStateMidiButton.waitFor({ state: 'visible', timeout: ADD_TRACK_STEP_TIMEOUT_MS });
+    await emptyStateMidiButton.click({ timeout: ADD_TRACK_STEP_TIMEOUT_MS });
+    const trackList = page.getByRole('grid', { name: /Track list/i });
+    await trackList
+        .getByRole('row')
+        .filter({ hasText: /MIDI/i })
+        .first()
+        .waitFor({ timeout: ADD_TRACK_STEP_TIMEOUT_MS });
 }
 
 const PANEL_OPEN_TIMEOUT_MS = 30_000;

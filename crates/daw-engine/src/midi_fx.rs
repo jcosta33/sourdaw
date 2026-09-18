@@ -14,6 +14,7 @@ const EMPTY_MIDI_EVENT: MidiNoteEvent = MidiNoteEvent {
     event_id_hash: 0,
     absolute_occurrence_index: 0,
     frame_offset: 0,
+    articulation_id: None,
 };
 
 const FNV_OFFSET_BASIS: u32 = 2_166_136_261;
@@ -379,6 +380,9 @@ struct ActiveNote {
     note: u8,
     velocity: u8,
     channel: i16,
+    /// The articulation the key was struck with, carried so the steps this
+    /// note is arpeggiated into sound the same way the note itself would.
+    articulation_id: Option<u16>,
 }
 
 struct ActiveNoteBuffer {
@@ -393,6 +397,7 @@ impl ActiveNoteBuffer {
                 note: 0,
                 velocity: 0,
                 channel: 0,
+                articulation_id: None,
             }; ARPEGGIATOR_ACTIVE_NOTE_CAPACITY],
             len: 0,
         }
@@ -543,6 +548,9 @@ impl Arpeggiator {
                 event_id_hash: 0,
                 absolute_occurrence_index: 0,
                 frame_offset: 0,
+                // A release addresses the key the step sounded on; nothing
+                // about it selects a sound.
+                articulation_id: None,
             });
         }
     }
@@ -593,6 +601,7 @@ impl MidiFx for Arpeggiator {
                     note: event.note,
                     velocity: event.velocity,
                     channel: event.channel,
+                    articulation_id: event.articulation_id,
                 }) {
                     diagnostics.record_arpeggiator_active_note_exhaustion(1);
                 }
@@ -654,6 +663,10 @@ impl MidiFx for Arpeggiator {
                 event_id_hash: 0,
                 absolute_occurrence_index: 0,
                 frame_offset: 0,
+                // The held key's own, so a step sounds the articulation the
+                // musician played the chord with rather than falling back on
+                // whatever the instrument last stood on.
+                articulation_id: held.articulation_id,
             });
             self.sounding = Some(SoundingNote {
                 note: pitch,
@@ -754,6 +767,42 @@ fn note_on(note: u8) -> MidiNoteEvent {
         event_id_hash: 0,
         absolute_occurrence_index: 0,
         frame_offset: 0,
+        articulation_id: None,
+    }
+}
+
+#[cfg(test)]
+mod event_buffer_capacity {
+    use super::*;
+
+    /// The buffer is the one bound every downstream adapter sizes its delivery
+    /// from (the hosted bridge takes its scratch capacity from this constant),
+    /// so the accepted count and the overflow answer have to be exactly what
+    /// the constant states: everything up to it is consumed by a caller that
+    /// drains, and one past it is refused observably — `try_push` answers
+    /// `false` rather than silently overwriting or hiding the event.
+    #[test]
+    fn a_full_buffer_is_accepted_and_the_next_event_is_refused_observably() {
+        let mut events = MidiEventBuffer::new();
+        assert_eq!(events.capacity(), MIDI_EVENT_BUFFER_CAPACITY);
+
+        for index in 0..MIDI_EVENT_BUFFER_CAPACITY {
+            assert!(
+                events.try_push(note_on(index as u8)),
+                "event {index} is within capacity and must be accepted"
+            );
+        }
+        assert_eq!(events.len(), MIDI_EVENT_BUFFER_CAPACITY);
+
+        assert!(
+            !events.try_push(note_on(0)),
+            "the first event past capacity is refused, not dropped silently"
+        );
+        assert_eq!(
+            events.len(),
+            MIDI_EVENT_BUFFER_CAPACITY,
+            "a refused event does not disturb the events already held"
+        );
     }
 }
 

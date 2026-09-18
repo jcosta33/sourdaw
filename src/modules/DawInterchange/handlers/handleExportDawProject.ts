@@ -3,6 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { isDesktopRuntime } from '#/utils/desktopRuntime';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { DAWPROJECT_FILE_EXTENSION } from '../useCases/dawProjectZipLimits';
 import { exportDawProject } from '../useCases/exportDawProject';
 import { saveDawProjectNativeFile } from '../useCases/saveDawProjectNativeFile';
 
@@ -35,7 +36,7 @@ async function saveBytes(bytes: Uint8Array, suggestedName: string): Promise<void
         try {
             const handle = await saveFilePicker.call(window, {
                 suggestedName,
-                types: [{ accept: { 'application/zip': ['.dawproject'] } }],
+                types: [{ accept: { 'application/zip': [DAWPROJECT_FILE_EXTENSION] } }],
             });
             const writable = await handle.createWritable();
             await writable.write(bytes);

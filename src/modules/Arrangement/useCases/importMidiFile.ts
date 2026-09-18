@@ -92,9 +92,9 @@ export async function importMidiFile(
     file: File,
     { shouldContinue }: ImportMidiFileOptions
 ): Promise<ImportMidiFileOutput> {
-    let parsedTracks: Awaited<ReturnType<typeof readMidiFile>>;
+    let parsed: Awaited<ReturnType<typeof readMidiFile>>;
     try {
-        parsedTracks = await readMidiFile(file);
+        parsed = await readMidiFile(file);
     } catch {
         if (!shouldContinue()) {
             return 'superseded';
@@ -105,6 +105,7 @@ export async function importMidiFile(
     if (!shouldContinue()) {
         return 'superseded';
     }
+    const { declaredTrackCount, tracks: parsedTracks, truncated } = parsed;
     if (parsedTracks.length === 0) {
         return 'completed';
     }
@@ -112,6 +113,14 @@ export async function importMidiFile(
     const state = getTrackStoreState();
     if (!state) {
         return 'completed';
+    }
+
+    if (truncated) {
+        notifyUser(
+            `Imported ${parsedTracks.length} of ${declaredTrackCount} tracks from "${file.name}"` +
+                ' - the file is damaged or incomplete, so the remaining tracks were skipped',
+            'warning'
+        );
     }
 
     const newMidiData: Record<string, (typeof parsedTracks)[number]['notes']> = {};

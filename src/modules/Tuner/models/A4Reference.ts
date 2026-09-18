@@ -19,11 +19,17 @@
  * pins, and a different id would land on the engine's `_ => {}` arm.
  */
 
+import { STANDARD_A4_HZ } from '#/utils/pitch';
+
 /** Descriptor parameter id; the engine matches on this exact string. */
 export const A4_REFERENCE_PARAM_ID = 'a4_hz';
 
-/** Reading used when the device carries no stored value yet. */
-export const DEFAULT_A4_REFERENCE_HZ = 440;
+/**
+ * Reading used when the device carries no stored value yet. Derives from the
+ * shared 12-TET anchor (`#/utils/pitch`) rather than restating 440: the
+ * tuner's default is concert A by definition, not by coincidence.
+ */
+export const DEFAULT_A4_REFERENCE_HZ = STANDARD_A4_HZ;
 
 export const MIN_A4_REFERENCE_HZ = 400;
 

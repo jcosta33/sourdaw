@@ -207,11 +207,16 @@ const action = (
     accelerator: string | undefined,
     send: (intent: NativeMenuIntent) => void,
     id: NativeMenuAction
-) => ({
-    label,
-    ...(accelerator === undefined ? {} : { accelerator }),
-    click: () => send({ action: id }),
-});
+): ApplicationMenuTemplateItem => {
+    const item: ApplicationMenuTemplateItem = {
+        label,
+        click: () => send({ action: id }),
+    };
+    if (accelerator !== undefined) {
+        return { ...item, accelerator };
+    }
+    return item;
+};
 
 /**
  * macOS keeps the familiar native menu while product commands stay renderer

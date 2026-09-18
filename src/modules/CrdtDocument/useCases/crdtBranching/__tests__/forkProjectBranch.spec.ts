@@ -16,10 +16,10 @@ const mocks = vi.hoisted(() => ({
     rootIdentityEpoch: 1,
     storeValue: { branches: [{ branchId: 'main', rootDocId: 'root' }], activeBranchId: 'main' },
     storeSet: vi.fn(),
-    // The rollback path writes with trySet: it runs after the documents have
-    // been restored, where a throw would skip the projection that puts the
-    // stores back in step with them. See #1557.
-    storeTrySet: vi.fn(() => true),
+    captureRevision: vi.fn(() => 4),
+    commit: vi.fn(async (): Promise<{ status: string; revision?: number; reason?: string }> => {
+        return { status: 'committed', revision: 5 };
+    }),
     compactProject: vi.fn(),
     loadCrdtProject: vi.fn(() => Promise.resolve(true)),
     runCrdtPersistenceOperation: vi.fn(() => Promise.resolve()),
@@ -50,8 +50,11 @@ vi.mock('../../../repositories/automergeRepository', () => ({
 }));
 vi.mock('../../../stores/branchStore', () => ({
     get branchStore() {
-        return { value: mocks.storeValue, set: mocks.storeSet, trySet: mocks.storeTrySet };
+        return { value: mocks.storeValue, set: mocks.storeSet };
     },
+}));
+vi.mock('../../../repositories/branchStateAuthority', () => ({
+    branchStateAuthority: { captureRevision: mocks.captureRevision, commit: mocks.commit },
 }));
 vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject }));
 vi.mock('../../loadCrdtProject', () => ({ loadCrdtProject: mocks.loadCrdtProject }));
@@ -75,6 +78,8 @@ describe('forkProjectBranch', () => {
         });
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.loadCrdtProject.mockResolvedValue(true);
+        mocks.captureRevision.mockReturnValue(4);
+        mocks.commit.mockResolvedValue({ status: 'committed', revision: 5 });
     });
 
     it('repoints the root slot at the forked doc so post-fork edits route to the new branch', async () => {
@@ -122,7 +127,11 @@ describe('forkProjectBranch', () => {
             from: 'main',
             to: branchId,
         });
-        expect(mocks.storeSet).toHaveBeenCalledWith(expect.objectContaining({ activeBranchId: branchId }));
+        expect(mocks.commit).toHaveBeenCalledWith({
+            expectedRevision: 4,
+            next: expect.objectContaining({ activeBranchId: branchId }),
+            projectionScope: expect.any(Function),
+        });
         expect(mocks.compactProject).toHaveBeenCalledOnce();
         expect(mocks.projectCrdtToStores).toHaveBeenCalled();
     });
@@ -134,9 +143,29 @@ describe('forkProjectBranch', () => {
 
         await expect(forkProjectBranch('feature')).rejects.toBe(error);
         expect(mocks.loadCrdtProject).toHaveBeenCalledOnce();
-        expect(mocks.storeTrySet).toHaveBeenLastCalledWith(mocks.storeValue);
+        expect(mocks.storeSet).toHaveBeenLastCalledWith(mocks.storeValue);
+        // The fork's own commit is the only revision this transition may undo,
+        // so the rollback is a compare-and-swap against the one it produced.
+        expect(mocks.commit).toHaveBeenLastCalledWith({ expectedRevision: 5, next: mocks.storeValue });
         expect(mocks.removeDoc).toHaveBeenCalledTimes(2);
         expect(mocks.rootIdentityEpoch).toBeGreaterThan(rootIdentity);
+    });
+
+    it('restores the source branch when the durable commit is refused', async () => {
+        mocks.commit.mockResolvedValueOnce({ status: 'refused', reason: 'conflict' });
+
+        await expect(forkProjectBranch('feature')).rejects.toThrow(/Branch state could not be persisted \(conflict\)/);
+
+        // A refused commit unwinds like a failed persistence: the documents go
+        // back and nothing rolls back a revision this transition never wrote.
+        expect(mocks.removeDoc).toHaveBeenCalledTimes(2);
+        expect(mocks.commit).toHaveBeenCalledTimes(1);
+        expect(mocks.projectCrdtToStores).toHaveBeenCalled();
+        // Memory is left exactly where the refused transaction put it. The
+        // authority hydrates the store from the envelope it read before
+        // refusing, so writing the captured pre-fork list back here would
+        // replace a fresh durable list with a stale one.
+        expect(mocks.storeSet).not.toHaveBeenCalled();
     });
 
     it('throws when there is no root document to fork', async () => {

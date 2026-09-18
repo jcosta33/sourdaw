@@ -5,6 +5,8 @@
 
 use super::detector::{DetectionMode, StereoDetector};
 use super::gain_computer::{apply_range, db_to_linear, gain_computer};
+use super::DEFAULT_THRESHOLD_DB;
+use crate::params::{ATTACK, RELEASE, THRESHOLD, THRESHOLD_MAX_DB, THRESHOLD_MIN_DB};
 use crate::primitives::flush_denormal;
 
 /// SSL-style auto-release with dual RC networks.
@@ -106,7 +108,7 @@ impl VcaCompressor {
     pub fn new(sample_rate: f32) -> Self {
         let mut c = Self {
             sample_rate,
-            threshold: -18.0,
+            threshold: DEFAULT_THRESHOLD_DB,
             ratio: 4.0,
             attack_ms: 10.0,
             release_ms: 300.0,
@@ -143,13 +145,13 @@ impl VcaCompressor {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "threshold" => self.threshold = value.clamp(-60.0, 0.0),
+            THRESHOLD => self.threshold = value.clamp(THRESHOLD_MIN_DB, THRESHOLD_MAX_DB),
             "ratio" => self.ratio = value.clamp(1.0, 20.0),
-            "attack" => {
+            ATTACK => {
                 self.attack_ms = value.clamp(0.02, 250.0);
                 self.update_coeffs();
             }
-            "release" => {
+            RELEASE => {
                 self.release_ms = value.clamp(25.0, 5000.0);
                 self.update_coeffs();
             }

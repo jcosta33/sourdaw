@@ -1,3 +1,5 @@
+import { clampVelocity } from '#/utils/midiData';
+
 import { CHORD_TYPES, type ChordType } from '../../models/ChordTypes';
 import { createMidiNote, type MidiNote } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
@@ -40,7 +42,7 @@ export function stampChord(
 
     // Clamp velocity to the audible MIDI range [1, 127]. A velocity of 0 is a
     // silent note; values above 127 are out of range.
-    const safeVelocity = Math.round(Math.max(1, Math.min(127, velocity)));
+    const safeVelocity = Math.round(clampVelocity(velocity));
 
     for (const interval of intervals) {
         // Octave-shift each chord tone into the valid MIDI range instead of

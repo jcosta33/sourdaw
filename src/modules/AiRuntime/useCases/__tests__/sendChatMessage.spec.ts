@@ -9,6 +9,7 @@ import {
     commandTrackDefaultsPort,
 } from '#/modules/Command/useCases';
 
+import { DEFAULT_AGENT_RESOURCE_LIMITS, describeAgentRunCreationRefusal } from '../../models/AgentResourceLimits';
 import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 import { type ProjectContext } from '../../models/ProjectContext';
@@ -17,7 +18,8 @@ import {
     type streamCloudChatCompletion,
 } from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
-import { agentRunStore } from '../../stores/agentRunStore';
+import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { agentRunStore, readAgentRunState } from '../../stores/agentRunStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { getAgentPlanProposalIdentity } from '../../transformers/normalizeAgentPlanProposal';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
@@ -188,14 +190,14 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     loadCrdtProject: vi.fn(),
     mutateCrdtDoc: vi.fn(),
     persistCrdtProject: vi.fn(),
-    preserveBranchStateForSession: vi.fn(),
+    beginBranchSession: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     projectCrdtToStores: vi.fn(),
     removeCrdtDoc: vi.fn(),
-    replaceBranchState: vi.fn(),
+    projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
     resetCrdtProjectAuthority: vi.fn(),
-    restoreBranchStateAfterSession: vi.fn(),
+    endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
     setupProjectionBridge: vi.fn(),
@@ -762,7 +764,19 @@ describe('sendChatMessage retained-provider selection', () => {
         commandBatchPreflightPort.setProvider(null);
         commandTrackDefaultsPort.setTrackColorProvider(null);
         agentRunLifecycle.clear();
+        agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
         llmStatusStore.set({ state: 'idle' });
+    });
+
+    it('refuses an explain request longer than the configured request ceiling without admitting a run', async () => {
+        mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine('The mix is balanced.'));
+        agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, requestChars: 4 });
+
+        await expect(sendChatMessage('summarize this', { mode: 'explain' })).rejects.toThrow(
+            describeAgentRunCreationRefusal('requestChars')
+        );
+
+        expect(readAgentRunState().runs).toEqual([]);
     });
 
     it('fails closed when the explicitly selected hosted provider is not configured', async () => {

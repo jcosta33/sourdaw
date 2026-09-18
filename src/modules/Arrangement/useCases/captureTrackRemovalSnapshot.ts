@@ -29,16 +29,18 @@ function captureTakeLaneSnapshots(
                 (action) =>
                     action.type === 'setCompRegion' ||
                     action.type === 'restoreCompRegionInterval' ||
-                    action.type === 'restoreTrack'
+                    action.type === 'restoreTrack' ||
+                    action.type === 'removeTrack' ||
+                    action.type === 'selectTake'
             );
         if (hasProjectedPrefix) {
-            throw new Error('Could not project prior comp actions for track removal snapshot');
+            throw new Error('Could not project prior take-lane actions for track removal snapshot');
         }
         return [];
     }
-    const projected = compRegionInterval.projectTakeLaneStateThroughMaterializedCompPrefix(state, context);
+    const projected = compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(state, context);
     if (!projected) {
-        throw new Error('Could not project prior comp actions for track removal snapshot');
+        throw new Error('Could not project prior take-lane actions for track removal snapshot');
     }
     return structuredClone(projected.lanes.filter((lane) => lane.trackId === trackId));
 }

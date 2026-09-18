@@ -1,6 +1,8 @@
 import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 
+import { AI_ACTION_HISTORY_RETENTION_POLICY } from '../models/AgentRetentionPolicy';
+
 export type AiActionEntry = { kind: 'appAction'; actionType: string; label: string };
 
 export type AiActionGroup = {
@@ -114,15 +116,23 @@ function validateStoredActionGroups(values: unknown[]): AiActionGroup[] {
     return groups;
 }
 
+function retainAiActionGroups(groups: AiActionGroup[], now: number): AiActionGroup[] {
+    const { maxAgeMs, maxCount } = AI_ACTION_HISTORY_RETENTION_POLICY;
+    const retained = maxAgeMs === null ? groups : groups.filter((group) => group.timestamp >= now - maxAgeMs);
+    return retained.slice(-maxCount);
+}
+
 function validateStoredAiActionHistoryState(value: unknown): AiActionHistoryState {
     if (!isRecord(value)) {
         return createDefaultAiActionHistoryState();
     }
 
-    const groups = Array.isArray(value.groups) ? validateStoredActionGroups(value.groups) : [];
     const panelOpen = typeof value.panelOpen === 'boolean' ? value.panelOpen : false;
+    if (!Array.isArray(value.groups)) {
+        return { groups: [], panelOpen };
+    }
 
-    return { groups, panelOpen };
+    return { groups: retainAiActionGroups(validateStoredActionGroups(value.groups), Date.now()), panelOpen };
 }
 
 export const aiActionHistoryStore = createStore<AiActionHistoryState>({
@@ -131,14 +141,12 @@ export const aiActionHistoryStore = createStore<AiActionHistoryState>({
     sanitize: validateStoredAiActionHistoryState,
 });
 
-const MAX_HISTORY = 50;
-
-export function pushAiActionGroup(group: AiActionGroup): void {
+export function pushAiActionGroup(group: AiActionGroup, now: number = Date.now()): void {
     const state = aiActionHistoryStore.value;
     if (!state) {
         return;
     }
-    const groups = [...state.groups, group].slice(-MAX_HISTORY);
+    const groups = retainAiActionGroups([...state.groups, group], now);
     aiActionHistoryStore.trySet({ ...state, groups, panelOpen: true });
 }
 

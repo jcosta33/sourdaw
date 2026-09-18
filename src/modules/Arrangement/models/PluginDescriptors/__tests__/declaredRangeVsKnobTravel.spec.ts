@@ -1,8 +1,14 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
+
+import {
+    RUST_NUMBER,
+    readRustConstReferences,
+    type RustConstReferences,
+} from '#/infra/testing/__tests__/rustConstReferences';
 
 import { BUILTIN_PLUGINS } from '../../DeviceParameter';
 
@@ -27,7 +33,7 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  *     declared range  ==  knob travel  ==  engine clamp
  *
  * Two of those legs are derivable for every parameter this file compares; the
- * third is derivable for 116 of the 193. So the census is **three-way where it
+ * third is derivable for 117 of the 191. So the census is **three-way where it
  * can be and two-way where it cannot**, and it says which is which rather than
  * implying uniform coverage. A two-way row that is honest beats a three-way one
  * that fabricates a clamp from a comment.
@@ -45,12 +51,35 @@ import { BUILTIN_PLUGINS } from '../../DeviceParameter';
  * element says which parameter it drives. That variance is itself a finding and
  * is enumerated in `BINDING_ATTRIBUTES` below.
  *
+ * A bound or an id may also arrive as an **imported reference** rather than a
+ * literal: the constants-extraction campaign authored a cutoff as
+ * `min={MIN_AUDIBLE_FREQ_HZ}` / `max={MAX_AUDIBLE_FREQ_HZ}` and a gain trim as
+ * `min={GAIN_TRIM_DB.min}`, and Gluten and Crust name their ids through
+ * `param={GLUTEN_PARAM_IDS.threshold}`-style member references. Dropping the
+ * reference would drop the knob from attribution — silently, since the knob
+ * would leave `compared` without joining any other pin — so the reader follows
+ * the reference into the file it was imported from and reads the value there,
+ * as text and never through an import (Arrangement specs may not import device
+ * models; `deps:validate` forbids it). See `readImportedReferences`.
+ *
  * **Leg 3 — engine clamp.** The two-sided numeric `value.clamp(a, b)` in the
  * Rust `set_param` arm, or in an explicitly mapped one-hop setter whose matching
  * arm passes raw `value` into the clamped parameter. Sources are split per
- * exclusive alternative where a device has one. Covers 116 of 193; every shape
+ * exclusive alternative where a device has one. Covers 117 of 191; every shape
  * it cannot read is named in `ENGINE_CLAMP_COVERAGE`, at the point where the
  * derivation stops.
+ *
+ * An arm name or a bound may also arrive as an **imported const reference**
+ * rather than a literal: the shared-constants campaign rewrote Rust authoring
+ * as `"threshold" => value.clamp(THRESHOLD_MIN_DB, THRESHOLD_MAX_DB)` and
+ * `DECAY =>` in `crates/daw-dsp/src/params.rs` consts. Dropping the reference
+ * would drop the parameter from `threeWay` and the arm name from `contested`
+ * — silently, since the row would leave the census without joining any pin —
+ * so the reader follows the reference into the module the file's `use` names
+ * and reads the `pub const NAME: TYPE = VALUE;` there, as text. The same
+ * refusal discipline as the TS leg applies: only a const whose value is a
+ * literal number or string resolves; a computed, re-exported, or tuple value
+ * stays a counted gap. See `readRustConstReferences`.
  *
  * ## Coverage is part of the claim
  *
@@ -190,7 +219,12 @@ function collectTsx(dir: string, out: string[] = []): string[] {
 }
 
 const NUMBER = String.raw`-?\d+(?:\.\d+)?(?:e-?\d+)?`;
-const RUST_NUMBER = String.raw`-?\d(?:_?\d)*(?:\.\d(?:_?\d)*)?(?:e-?\d(?:_?\d)*)?`;
+/**
+ * A numeric literal in a constants file, where `20_000`-style digit separators
+ * are legal TypeScript (`MAX_AUDIBLE_FREQ_HZ = 20_000`). The panel-facing
+ * `NUMBER` needs none because a separated literal never appears inside a tag.
+ */
+const SEPARATED_NUMBER = String.raw`-?\d[\d_]*(?:\.[\d_]+)?(?:e-?\d+)?`;
 
 /** The value of JSX attribute `name`: a braced expression, or a quoted string. */
 function readAttribute(tag: string, name: string): string | null {
@@ -208,6 +242,131 @@ function readAttribute(tag: string, name: string): string | null {
         match = attribute.exec(tag);
     }
     return null;
+}
+
+// ── Imported references ─────────────────────────────────────────────────────
+
+type ImportedReferences = {
+    /** The id a `TABLE.member` reference names, when TABLE is an imported object of quoted ids. */
+    readonly tableMember: (base: string, member: string) => string | null;
+    /** The number an imported constant — or one member of an imported constant object — resolves to. */
+    readonly number: (expression: string) => number | null;
+};
+
+/**
+ * Follows one panel's imported references to the values their files author.
+ *
+ * Resolves only the campaign's authoring shapes: an `export const` whose value
+ * is a numeric literal, or an object literal whose member is a numeric or
+ * single-quoted string literal. Anything else — a computed value, a re-export,
+ * a function — stays unresolved, and the knob carrying it falls into
+ * `unboundKnobs`/`noKnob` where the gap is counted rather than guessed at. That
+ * refusal is the same discipline the Rust leg applies to named-constant bounds:
+ * a value this reader cannot see written down is not a value it claims.
+ */
+function readImportedReferences(importingFile: string): ImportedReferences {
+    const source = readFileSync(importingFile, 'utf8');
+
+    // Local name → import specifier. `A as B` binds `B`; plain `A` binds `A`.
+    const specifier = new Map<string, string>();
+    for (const statement of source.matchAll(/^import\s+\{([^}]*)\}\s+from\s+['"]([^'"]+)['"]/gm)) {
+        for (const clause of statement[1]!.split(',')) {
+            const name = /\bas\s+([\w$]+)\s*$/.exec(clause)?.[1] ?? clause.trim();
+            if (name !== '') {
+                specifier.set(name, statement[2]!);
+            }
+        }
+    }
+
+    /** The `#/…` alias and relative forms the panels use, resolved to a file on disk. */
+    const importedFilePath = (name: string): string | null => {
+        const from = specifier.get(name);
+        if (from === undefined) {
+            return null;
+        }
+        let rooted: string;
+        if (from.startsWith('#/')) {
+            rooted = join(REPO_ROOT, 'src', from.slice(2));
+        } else {
+            rooted = resolve(dirname(importingFile), from);
+        }
+        return [`${rooted}.ts`, `${rooted}.tsx`].find((candidate) => existsSync(candidate)) ?? null;
+    };
+
+    /** One `export const`'s literal: a scalar's text, or an object literal's balanced body. */
+    const readExportedLiteral = (path: string, name: string): { scalar: string } | { objectBody: string } | null => {
+        const file = readFileSync(path, 'utf8');
+        const anchor = new RegExp(String.raw`export const ${name}\s*=`).exec(file);
+        if (anchor === null) {
+            return null;
+        }
+        const rest = file.slice(anchor.index + anchor[0].length).trimStart();
+        if (rest.startsWith('{')) {
+            return { objectBody: readBraced(rest, 0) };
+        }
+        const end = rest.search(/[;\n]/);
+        const scalar = (end === -1 ? rest : rest.slice(0, end)).trim();
+        return scalar === '' ? null : { scalar };
+    };
+
+    const literals = new Map<string, { scalar: string } | { objectBody: string } | null>();
+    const exportedLiteral = (name: string): { scalar: string } | { objectBody: string } | null => {
+        if (!literals.has(name)) {
+            const path = importedFilePath(name);
+            literals.set(name, path === null ? null : readExportedLiteral(path, name));
+        }
+        return literals.get(name) ?? null;
+    };
+
+    const tableMember = (base: string, member: string): string | null => {
+        const literal = exportedLiteral(base);
+        if (literal === null || !('objectBody' in literal)) {
+            return null;
+        }
+        return new RegExp(String.raw`\b${member}\s*:\s*'([\w-]+)'`).exec(literal.objectBody)?.[1] ?? null;
+    };
+
+    const number = (expression: string): number | null => {
+        const bare = /^[A-Za-z_$][\w$]*$/.test(expression);
+        const member = /^([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)$/.exec(expression);
+        if (!bare && member === null) {
+            return null;
+        }
+        const literal = exportedLiteral(bare ? expression : member![1]!);
+        if (literal === null) {
+            return null;
+        }
+        if ('scalar' in literal) {
+            if (!new RegExp(`^${SEPARATED_NUMBER}$`).test(literal.scalar)) {
+                return null;
+            }
+            return Number(literal.scalar.replaceAll('_', ''));
+        }
+        if (member === null) {
+            // A bare name bound to an object names no number on its own.
+            return null;
+        }
+        const hit = new RegExp(String.raw`\b${member[2]}\s*:\s*(${SEPARATED_NUMBER})\b`).exec(literal.objectBody);
+        return hit === null ? null : Number(hit[1]!.replaceAll('_', ''));
+    };
+
+    return { tableMember, number };
+}
+
+/** One knob bound: a numeric literal, or an imported constant the panel references. */
+function readNumericBound(attribute: string | null, references: ImportedReferences): number | null {
+    if (attribute === null) {
+        return null;
+    }
+    const expression = /^\{([\S\s]*)\}$/.exec(attribute)?.[1]?.trim();
+    if (expression === undefined) {
+        // A quoted bound names no number this census can read.
+        return null;
+    }
+    if (new RegExp(`^${SEPARATED_NUMBER}$`).test(expression)) {
+        return Number(expression.replaceAll('_', ''));
+    }
+    return references.number(expression);
 }
 
 /**
@@ -237,14 +396,33 @@ function readAttribute(tag: string, name: string): string | null {
  * still resolves unambiguously; a call carrying two literals resolves to
  * nothing rather than to a coin flip, and lands in the unbound count where it
  * can be seen.
+ *
+ * ## The id may arrive as a table member, not a literal
+ *
+ * Gluten and Crust name their ids through imported id tables —
+ * `param={GLUTEN_PARAM_IDS.threshold}` (`GlutenPanel.tsx:910`) and
+ * `setParam(CRUST_PARAM_IDS.lookahead, v)` (`CrustControlZone.tsx:298`). The
+ * reference is followed into the table file (`GlutenParamIds.ts`,
+ * `CrustParamIds.ts`), the same way a numeric bound is followed into
+ * `#/utils/audioSpectrum`. The safety condition carries over unchanged: a call
+ * form resolves only when literals and table members together yield **exactly
+ * one** candidate id, and a member expression whose base is not an imported
+ * table (`patch.satDrive`, `preset.tpCeiling`) resolves to nothing at all, so a
+ * local field can never be misread as a parameter id.
  */
-function readBoundParamId(expression: string | null): string | null {
+function readBoundParamId(expression: string | null, references: ImportedReferences): string | null {
     if (expression === null) {
         return null;
     }
     const bare = /^["']([\w-]+)["']$/.exec(expression) ?? /^\{\s*["']([\w-]+)["']\s*\}$/.exec(expression);
     if (bare !== null) {
         return bare[1]!;
+    }
+
+    // A member reference into an imported id table, as a whole attribute value.
+    const memberAttribute = /^\{\s*([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\s*\}$/.exec(expression);
+    if (memberAttribute !== null) {
+        return references.tableMember(memberAttribute[1]!, memberAttribute[2]!);
     }
 
     // A `set…Param…(` / `update…Param…(` / `on…Param…(` call, or Crumbs'
@@ -255,8 +433,12 @@ function readBoundParamId(expression: string | null): string | null {
     if (callSite !== null) {
         const args = readParenthesised(expression, callSite.index + callSite[0].length - 1);
         const literals = [...args.matchAll(/(?<![\w$])['"]([\w-]+)['"]/g)].map((hit) => hit[1]!);
-        if (literals.length === 1) {
-            return literals[0]!;
+        const tableMembers = [...args.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)/g)]
+            .map((hit) => references.tableMember(hit[1]!, hit[2]!))
+            .filter((id): id is string => id !== null);
+        const candidates = [...literals, ...tableMembers];
+        if (candidates.length === 1) {
+            return candidates[0]!;
         }
     }
 
@@ -331,11 +513,16 @@ function readParenthesised(source: string, openIndex: number): string {
  * and no single way a control names its parameter. Four spellings are in use
  * across eleven hand-written panels, and all four are load-bearing today:
  *
- *   - `param="threshold"`                          Gluten (`GlutenPanel.tsx:653-660`)
- *   - `paramId="distMix"`                          Fermenter (`EffectsSection.tsx:127-137`)
- *   - `k="mix"`                                    Bacteria (`BacteriaPanel.tsx:548-553`)
- *   - `onChange={(v) => setParam('lookahead', v)}` Crumbs, Crust, ProofChamber
- *                                                  (`CrustControlZone.tsx:291-296`)
+ *   - `param={GLUTEN_PARAM_IDS.threshold}`          Gluten (`GlutenPanel.tsx:910`) —
+ *                                                  a table member since the constants
+ *                                                  campaign; read through
+ *                                                  `readImportedReferences`
+ *   - `paramId="distMix"`                          Fermenter (`EffectsSection.tsx:131`)
+ *   - `k="mix"`                                    Bacteria (`BacteriaPanel.tsx:552`)
+ *   - `onChange={(v) => setParam(CRUST_PARAM_IDS.lookahead, v)}`
+ *                                                  Crumbs, Crust, ProofChamber
+ *                                                  (`CrustControlZone.tsx:298`) — Crust's
+ *                                                  id is a table member too
  *
  * Recorded rather than normalised: normalising is a refactor of eleven panels,
  * and this census has to be able to run *before* that refactor rather than as
@@ -344,9 +531,9 @@ function readParenthesised(source: string, openIndex: number): string {
  * globally bound knobs to the wrong parameter.
  *
  * `onChange` is read last because a control can carry two writes. Crust's
- * `AutoKnob` has `onAutoChange={(auto) => setParam('attackAuto', auto)}`
- * alongside `onChange={(v) => setParam('attack', v)}`
- * (`CrustControlZone.tsx:302-306`); the toggle is not a knob and has no travel.
+ * `AutoKnob` has `onAutoChange={(auto) => setParam(CRUST_PARAM_IDS.attackAuto, auto)}`
+ * alongside `onChange={(v) => setParam(CRUST_PARAM_IDS.attack, v)}`
+ * (`CrustControlZone.tsx:308-310`); the toggle is not a knob and has no travel.
  */
 const BINDING_ATTRIBUTES = ['param', 'paramId', 'k', 'onChange'] as const;
 
@@ -474,6 +661,7 @@ function readKnobsFromFile(file: string): {
     unbound: number;
 } {
     const source = stripComments(readFileSync(file, 'utf8'));
+    const references = readImportedReferences(file);
     const bound: KnobTravel[] = [];
     let unbound = 0;
     const tagStart = /<([A-Z]\w*)/g;
@@ -481,12 +669,12 @@ function readKnobsFromFile(file: string): {
     while (match !== null) {
         const tag = readTag(source, match.index);
         if (tag !== null) {
-            const min = new RegExp(String.raw`\bmin=\{(${NUMBER})\}`).exec(tag);
-            const max = new RegExp(String.raw`\bmax=\{(${NUMBER})\}`).exec(tag);
+            const min = readNumericBound(readAttribute(tag, 'min'), references);
+            const max = readNumericBound(readAttribute(tag, 'max'), references);
             if (min !== null && max !== null) {
                 let paramId: string | null = null;
                 for (const attribute of BINDING_ATTRIBUTES) {
-                    paramId = readBoundParamId(readAttribute(tag, attribute));
+                    paramId = readBoundParamId(readAttribute(tag, attribute), references);
                     if (paramId !== null) {
                         break;
                     }
@@ -496,8 +684,8 @@ function readKnobsFromFile(file: string): {
                 } else {
                     bound.push({
                         paramId,
-                        min: Number(min[1]),
-                        max: Number(max[1]),
+                        min,
+                        max,
                         at: `${file.slice(REPO_ROOT.length + 1)}:${source.slice(0, match.index).split('\n').length}`,
                     });
                 }
@@ -643,15 +831,37 @@ function readParamFunctionBodies(source: string): string[] {
     return bodies;
 }
 
+/**
+ * One clamp bound: a numeric literal, or an imported numeric const. The
+ * literal branch keeps the separator-free `NUMBER` the arm reader has always
+ * used, so a separated inline literal (`crust`'s `1_000.0`) stays a gap
+ * exactly as before this reader learned about consts; a *const's* value
+ * parses with `RUST_NUMBER`, whose separators are legal there.
+ */
+function readRustBound(bound: string, references: RustConstReferences): number | null {
+    if (new RegExp(`^${NUMBER}$`).test(bound)) {
+        return Number(bound);
+    }
+    return references.number(bound);
+}
+
 type Clamp = readonly [number, number];
 
 /**
- * Two-sided numeric clamps, per string match-arm name.
+ * Two-sided numeric clamps, per match-arm name.
  *
  * The body is split at each arm header (`"a" | "b" => …`) and the segment up to
  * the next header is searched for `value.clamp(lit, lit)`, optionally preceded
  * by a cast. Segmenting rather than searching backwards from each `clamp` is
  * what stops a multi-statement arm attributing its neighbour's bound.
+ *
+ * An arm element and a bound may each be an imported const — `DECAY =>` or
+ * `value.clamp(THRESHOLD_MIN_DB, THRESHOLD_MAX_DB)` — since the
+ * shared-constants campaign; those resolve through
+ * `readRustConstReferences`, and the census claims exactly what the defining
+ * module wrote down. The campaign's consts restated the literals verbatim
+ * (`THRESHOLD_MIN_DB` is the old `-60.0`), so resolution restores the
+ * pre-campaign derivation rather than widening it.
  *
  * Shapes deliberately NOT read, because reading them would mean inventing an
  * endpoint or a domain — see `ENGINE_CLAMP_COVERAGE`:
@@ -659,40 +869,62 @@ type Clamp = readonly [number, number];
  *   - remapped `(value / 10.0).clamp(0.0, 1.0)` (`grinder/pedals.rs:36-38`) and
  *     `(value * 0.01).clamp(0.0, 1.0)` (`crust/engine.rs:389`), where the clamp
  *     bounds the *transformed* value and say nothing about the wire domain
- *   - named-constant bounds; `MAX_BANDS`, `MAX_BURSTS` and `MAX_VOICES` are each
- *     defined more than once with different values in different modules
- *     (`crust/bands.rs:19` = 5 against `bacteria/engine.rs:22` = 6), so a
- *     name-only resolver picks the wrong one
+ *   - bounds that are not one literal author: a function parameter
+ *     (`clamped_param`'s `min`/`max`), a tuple member (`WIDTH_RANGE.0`), or a
+ *     const the `use` chain does not lead to a numeric or string literal for.
+ *     The old blanket refusal of named bounds survives here for `MAX_BANDS`,
+ *     `MAX_BURSTS` and `MAX_VOICES`: each is defined more than once with
+ *     different values in different modules (`crust/bands.rs:19` = 5 against
+ *     `bacteria/engine.rs:22` = 6) and no `use` path says which one a bare
+ *     name means
  */
 function readClampsFromFiles(files: readonly string[]): {
     byName: ReadonlyMap<string, Clamp>;
     contested: readonly string[];
 } {
     const found = new Map<string, Set<string>>();
-    const armHeader = /"([\w-]+)"((?:\s*\|\s*"[\w-]+")*)\s*=>/g;
+    // One arm-name element: a string literal, or an all-caps const the campaign
+    // imported (`DECAY`). All-caps only, so a `_ =>` wildcard, an enum variant
+    // (`None =>`), and a local binding can never pose as a wire name.
+    const armElement = String.raw`(?:"[\w-]+"|[A-Z][A-Z0-9_]*)`;
+    const armHeader = new RegExp(String.raw`${armElement}(?:\s*\|\s*${armElement})*\s*=>`, 'g');
     // A cast is allowed between `value` and `.clamp`, but no arithmetic: the
     // leading `(` of `(value / 10.0)` is excluded by requiring `value` or
-    // `(value as T)` immediately before the call.
+    // `(value as T)` immediately before the call. A bound is a numeric literal
+    // or an all-caps const; an identifier that names no literal const (a
+    // helper's `min`/`max` parameters) resolves to nothing and the match is
+    // skipped in favour of a later, resolvable one in the same segment.
     const clamp = new RegExp(
-        String.raw`(?:value|\(\s*value\s+as\s+\w+\s*\))\.clamp\(\s*(${NUMBER})\s*,\s*(${NUMBER})\s*\)`
+        String.raw`(?:value|\(\s*value\s+as\s+\w+\s*\))\.clamp\(\s*(${NUMBER}|[A-Z][A-Z0-9_]*)\s*,\s*(${NUMBER}|[A-Z][A-Z0-9_]*)\s*\)`,
+        'g'
     );
 
     for (const file of files) {
+        const references = readRustConstReferences(file);
         for (const body of readParamFunctionBodies(stripComments(readFileSync(file, 'utf8')))) {
             const flattened = body.replaceAll(/\s+/g, ' ');
             const headers = [...flattened.matchAll(armHeader)];
             for (const [index, header] of headers.entries()) {
                 const start = header.index + header[0].length;
                 const end = headers[index + 1]?.index ?? flattened.length;
-                const hit = clamp.exec(flattened.slice(start, end));
-                if (hit === null) {
-                    continue;
-                }
-                const names = [header[1]!, ...[...header[2]!.matchAll(/"([\w-]+)"/g)].map((alt) => alt[1]!)];
-                for (const name of names) {
-                    const spans = found.get(name) ?? new Set<string>();
-                    spans.add(`${Number(hit[1])},${Number(hit[2])}`);
-                    found.set(name, spans);
+                const segment = flattened.slice(start, end);
+                clamp.lastIndex = 0;
+                let hit = clamp.exec(segment);
+                while (hit !== null) {
+                    const min = readRustBound(hit[1]!, references);
+                    const max = readRustBound(hit[2]!, references);
+                    if (min !== null && max !== null) {
+                        const names = [...header[0].matchAll(/"([\w-]+)"|([A-Z][A-Z0-9_]*)/g)]
+                            .map((element) => element[1] ?? references.wireName(element[2]!))
+                            .filter((name): name is string => name !== null);
+                        for (const name of names) {
+                            const spans = found.get(name) ?? new Set<string>();
+                            spans.add(`${min},${max}`);
+                            found.set(name, spans);
+                        }
+                        break;
+                    }
+                    hit = clamp.exec(segment);
                 }
             }
         }
@@ -1317,9 +1549,10 @@ const KNOWN_RANGE_DISAGREEMENTS: readonly RangeDisagreement[] = [
  * Written here, at the point the derivation stops, rather than only in a PR
  * description: a future lane reading this file will otherwise assume the third
  * leg is covered everywhere and build on it. It is **not** a population-wide
- * equality. It covers 116 of the 193 compared parameters — the ones whose arm
- * contains a two-sided numeric `value.clamp(a, b)` or whose explicitly mapped
- * one-hop provider does. The remaining 77 are not
+ * equality. It covers 117 of the 191 compared parameters — the ones whose arm
+ * contains a two-sided numeric `value.clamp(a, b)` (bounds literal or resolved
+ * through an imported const) or whose explicitly mapped
+ * one-hop provider does. The remaining 74 are not
  * skipped for effort; each shape below yields no interval to compare, and
  * inventing one is exactly the "fabricate a clamp from a comment" this census
  * must not do.
@@ -1344,10 +1577,18 @@ const KNOWN_RANGE_DISAGREEMENTS: readonly RangeDisagreement[] = [
  *     sub-processor's own `set_param` (`toaster/engines/mod.rs:409-435`,
  *     `proof-chamber/src/lib.rs:281-297`), and ~27 hand the raw value to a setter
  *     that may or may not clamp inside (`bacteria/engine.rs:815-824`).
- *  5. **Named-constant bounds.** Resolvable in principle, refused in practice:
- *     `MAX_BANDS`, `MAX_BURSTS` and `MAX_VOICES` are each defined more than once
- *     with different values in different modules (`crust/bands.rs:19` = 5 against
- *     `bacteria/engine.rs:22` = 6), so a name-only resolver picks the wrong one.
+ *  5. **Const bounds without one literal author.** The shared-constants
+ *     campaign moved bounds into imported consts, and
+ *     `readRustConstReferences` follows the file's `use` to the defining
+ *     module's literal (`THRESHOLD_MIN_DB` → −60.0), the way the knob leg
+ *     follows `min={GAIN_TRIM_DB.min}`. What stays refused is every other
+ *     const shape: a computed or re-exported value, a tuple member
+ *     (`WIDTH_RANGE.0`), a helper's own parameters (`clamped_param`'s
+ *     `min`/`max`), and a name that arrives through no `use` path —
+ *     `MAX_BANDS`, `MAX_BURSTS` and `MAX_VOICES` are each defined more than
+ *     once with different values in different modules (`crust/bands.rs:19` = 5
+ *     against `bacteria/engine.rs:22` = 6), so a bare name still picks the
+ *     wrong one.
  *  6. **Two files in one source group clamping the same name differently.**
  *     A name can then carry two intervals with nothing to attribute them to.
  *     `contested` collects these and refuses the name rather than picking a
@@ -1392,7 +1633,7 @@ const ENGINE_CLAMP_COVERAGE = {
         'one-sided (`value.max(0.0)`, `.min(n)`) — one endpoint only, the other would have to be invented',
         'clamp on a transformed value (`(value / 10.0).clamp(…)`) — bounds the result, not the wire domain',
         'unmapped clamp applied in a callee or in a sub-processor the arm delegates to',
-        'named-constant bounds — the same constant name is defined with different values in different modules',
+        'const bounds with no one literal author — computed, re-exported, or a name differing modules define without a `use` saying which',
         'contested — two files in one source group clamp the same arm name to different intervals',
         'Crumbs: enum-variant arms behind `parse_crumbs_param`, not string arms',
     ],
@@ -1427,7 +1668,7 @@ type ClampDisagreement = {
 };
 
 /**
- * Declared range and engine clamp that disagree, for the 107 parameters where
+ * Declared range and engine clamp that disagree, for the 117 parameters where
  * the clamp is derivable.
  *
  * Every row's verdict is a **claim with its evidence**, not a settled fact — the
@@ -1825,11 +2066,18 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         expect(CENSUS.ambiguous).toStrictEqual([]);
 
         // threeWay = the subset of `compared` that ALSO has a derivable engine
-        // clamp. 116 of 193 is the honest size of the three-way census; the
-        // other 77 are two-way only, for the shapes named in
+        // clamp. 117 of 191 is the honest size of the three-way census; the
+        // other 74 are two-way only, for the shapes named in
         // `ENGINE_CLAMP_COVERAGE.notDerivable`. Distribution is pinned
         // separately, by identity, in `threeWayPerDevice`.
-        expect(CENSUS.threeWay.length).toBe(116);
+        //
+        // One higher than the pre-constants-campaign 116, and the rise is
+        // named: following imported const references also resolves same-file
+        // literal consts, which made bacteria's `sampleRateReduce` derivable
+        // (`(value as u32).clamp(1, MAX_SR_DIVIDER)`, `MAX_SR_DIVIDER = 64`
+        // authored in both `distortion.rs` and `lofi.rs`). Coverage grew by
+        // resolving a real bound; no leg moved down.
+        expect(CENSUS.threeWay.length).toBe(117);
 
         // The findings themselves, **by identity**. This was a bare count, which
         // is the wrong shape for a list of named defects: one row leaving while
@@ -1925,7 +2173,12 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         expect(Object.fromEntries(CENSUS.threeWayPerDevice)).toStrictEqual({
             fermenter: 53,
             gluten: 21,
-            bacteria: 20,
+            // One higher than before const references resolved:
+            // `sampleRateReduce` clamps to a file-local literal const
+            // (`MAX_SR_DIVIDER = 64`, authored identically in
+            // `distortion.rs` and `lofi.rs`), which the literal-only reader
+            // could not see.
+            bacteria: 21,
             'dutch-oven': 12,
             // Only four of Grinder's 25 compared parameters reach leg 3: most of
             // its arms are the transformed-value shape `(value / 10.0).clamp(…)`
@@ -2407,7 +2660,14 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         expect(perDevice).toStrictEqual({
             'builtin-crumbs': 0,
             'dutch-oven': 0,
-            'native-scoring': 0,
+            // One, and it became visible rather than appearing: the A4 field's
+            // bounds are `MIN_A4_REFERENCE_HZ`/`MAX_A4_REFERENCE_HZ`
+            // (`Tuner/models/A4Reference.ts`), which leg 2 could not read at all
+            // until it learned to follow imported references — the control used
+            // to be skipped whole rather than counted. Its id lives in the
+            // function name (`setA4Reference`), the same deliberately-unread
+            // shape as GrandBoule's, so it stays unbound rather than guessed.
+            'native-scoring': 1,
             fermenter: 8,
             // Zero, not twelve: the four kit knobs now bind. The old twelve was
             // the scanner failing, not the panel.
@@ -2446,7 +2706,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             'one-sided (`value.max(0.0)`, `.min(n)`) — one endpoint only, the other would have to be invented',
             'clamp on a transformed value (`(value / 10.0).clamp(…)`) — bounds the result, not the wire domain',
             'unmapped clamp applied in a callee or in a sub-processor the arm delegates to',
-            'named-constant bounds — the same constant name is defined with different values in different modules',
+            'const bounds with no one literal author — computed, re-exported, or a name differing modules define without a `use` saying which',
             'contested — two files in one source group clamp the same arm name to different intervals',
             'Crumbs: enum-variant arms behind `parse_crumbs_param`, not string arms',
         ]);

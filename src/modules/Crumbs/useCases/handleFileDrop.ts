@@ -5,6 +5,7 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
+import { isAudioFile } from '#/utils/audioFileExtensions';
 
 import { getDroppedCrumbsFilePath } from '../repositories/get-dropped-crumbs-file-path';
 import { isCrumbsNativeAvailable } from '../repositories/is-crumbs-native-available';
@@ -14,13 +15,6 @@ import { loadSampleFromPath } from './loadSample';
 import { switchCrumbsMode } from './setCrumbsMode';
 
 import type { SampleCategory, CrumbsMode } from '../models/CrumbsTypes';
-
-const AUDIO_EXTENSIONS = new Set(['.wav', '.mp3', '.flac', '.ogg', '.aac', '.aiff', '.aif', '.m4a']);
-
-function isAudioFile(name: string): boolean {
-    const lower = name.toLowerCase();
-    return Array.from(AUDIO_EXTENSIONS).some((ext) => lower.endsWith(ext));
-}
 
 function categoryToMode(category: SampleCategory): CrumbsMode {
     switch (category) {

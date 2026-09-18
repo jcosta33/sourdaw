@@ -2,19 +2,24 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { addTrack } from '#/modules/Arrangement/useCases';
-import { clearRuntimeCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import {
+    clearRuntimeCachedAudioBuffers,
+    forgetProjectLatchedPedals,
+    resetAudioGraph,
+} from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
     compactProject,
     createCrdtProject,
     projectActionHistoryToStore,
-    resetCrdtProjectAuthority,
+    resetCrdtProject,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { isCanonicalProjectId } from '../../../models/ProjectData';
 import { removeProjectJson } from '../../../repositories/project/removeProjectJson';
+import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { getDurableProjectOwnerId } from '../../getDurableProjectOwnerId';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
@@ -28,6 +33,11 @@ type Deferred<T> = {
 
 const pluginHostMocks = vi.hoisted(() => ({
     unloadPlugin: vi.fn(() => Promise.resolve()),
+}));
+
+const resetMocks = vi.hoisted(() => ({
+    resetCrdtProject: vi.fn(),
+    finalize: vi.fn(),
 }));
 
 function createDeferred<T>(): Deferred<T> {
@@ -45,10 +55,11 @@ vi.mock('#/modules/Transport/useCases', () => ({
     stopPlayback: vi.fn(),
 }));
 
-// newProject imports clearRuntimeCachedAudioBuffers and resetAudioGraph.
+// newProject imports clearRuntimeCachedAudioBuffers, forgetProjectLatchedPedals and resetAudioGraph.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
+    forgetProjectLatchedPedals: vi.fn(),
     resetAudioGraph: vi.fn(),
 }));
 
@@ -73,13 +84,14 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     hasCrdtDoc: vi.fn(),
     mutateCrdtDoc: vi.fn(),
     persistCrdtProject: vi.fn(),
-    preserveBranchStateForSession: vi.fn(),
+    beginBranchSession: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     removeCrdtDoc: vi.fn(),
-    replaceBranchState: vi.fn(),
+    projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
+    resetCrdtProject: resetMocks.resetCrdtProject,
     resetCrdtProjectAuthority: vi.fn(),
-    restoreBranchStateAfterSession: vi.fn(),
+    endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
     setupProjectionBridge: vi.fn(),
@@ -131,6 +143,16 @@ describe('newProject injectable', () => {
         Container.clear();
         vi.clearAllMocks();
         pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+        resetMocks.finalize.mockReset();
+        resetMocks.finalize.mockResolvedValue('finalized');
+        resetMocks.resetCrdtProject.mockReset();
+        // A replacing reset always reports the point of no return, so the
+        // default has to as well: every `authorityReplaced` branch depends on it.
+        resetMocks.resetCrdtProject.mockImplementation((_name: string, onAuthorityReplaced?: () => void) => {
+            onAuthorityReplaced?.();
+            return Promise.resolve({ status: 'replaced', finalize: resetMocks.finalize });
+        });
+        projectLoadFailureStore.set(null);
         projectStore.set({
             ...structuredClone(defaultProjectStoreState),
             name: 'Existing Project',
@@ -149,7 +171,14 @@ describe('newProject injectable', () => {
         expect(pluginHostMocks.unloadPlugin).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledWith({ createNewMidiProbabilitySeed: true });
-        expect(resetCrdtProjectAuthority).toHaveBeenCalledWith('Test');
+        expect(resetCrdtProject).toHaveBeenCalledWith('Test', expect.any(Function));
+        // The fresh project owns the document from that call on, so the pedals
+        // latched under the project just left are forgotten here and not at the
+        // earlier graph reset, which an abort can still undo.
+        expect(forgetProjectLatchedPedals).toHaveBeenCalledOnce();
+        expect(vi.mocked(forgetProjectLatchedPedals).mock.invocationCallOrder[0]!).toBeGreaterThan(
+            vi.mocked(resetCrdtProject).mock.invocationCallOrder[0]!
+        );
         expect(compactProject).toHaveBeenCalledOnce();
         expect(createCrdtProject).not.toHaveBeenCalled();
         expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
@@ -158,6 +187,16 @@ describe('newProject injectable', () => {
         expect(clearRuntimeCachedAudioBuffers).toHaveBeenCalledTimes(1);
         expect(clearUndoHistory).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
+        // C3 — the replacement is not the durable project until the reset is
+        // finalized, so autosave (which compacts) must not run before then.
+        expect(resetMocks.finalize).toHaveBeenCalledOnce();
+        expect(vi.mocked(compactProject).mock.invocationCallOrder[0]!).toBeLessThan(
+            resetMocks.finalize.mock.invocationCallOrder[0]!
+        );
+        expect(resetMocks.finalize.mock.invocationCallOrder[0]!).toBeLessThan(
+            vi.mocked(startCrdtAutoSave).mock.invocationCallOrder[0]!
+        );
+        expect(projectStore.value).toMatchObject({ identityPersistencePending: false });
 
         const remove_project_json_order = vi.mocked(removeProjectJson).mock.invocationCallOrder[0];
         const clear_audio_buffers_order = vi.mocked(clearRuntimeCachedAudioBuffers).mock.invocationCallOrder[0];
@@ -207,8 +246,11 @@ describe('newProject injectable', () => {
         isCurrent = false;
         unloading.resolve(undefined);
         await expect(activation).resolves.toBe(false);
-        expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(resetCrdtProject).not.toHaveBeenCalled();
         expect(ensureTrackStrips).toHaveBeenCalledOnce();
+        // The player stays in the old project, whose graph is rebuilt above, so
+        // a damper still held must survive the abandoned activation.
+        expect(forgetProjectLatchedPedals).not.toHaveBeenCalled();
     });
 
     it('keeps previous authority and restores its graph when native plugin teardown fails', async () => {
@@ -218,7 +260,7 @@ describe('newProject injectable', () => {
     });
 
     it('restores the previous project when authority reset fails before commit', async () => {
-        vi.mocked(resetCrdtProjectAuthority).mockImplementationOnce(() => {
+        vi.mocked(resetCrdtProject).mockImplementationOnce(() => {
             throw new Error('CRDT setup failed');
         });
 
@@ -235,11 +277,80 @@ describe('newProject injectable', () => {
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 
+    // C1 — every refusal is decided before the switch, so the previous project
+    // is still the live one and this is an ordinary abort.
+    it('hands the previous project back when the reset is refused', async () => {
+        vi.mocked(resetCrdtProject).mockResolvedValueOnce({ status: 'refused', reason: 'session-active' });
+
+        await expect(newProject('Refused Project')).resolves.toBe(false);
+
+        expect(projectStore.value).toMatchObject({
+            name: 'Existing Project',
+            loading: false,
+            initialized: true,
+        });
+        expect(ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+        expect(compactProject).not.toHaveBeenCalled();
+        expect(resetMocks.finalize).not.toHaveBeenCalled();
+        expect(projectLoadFailureStore.value).toBeNull();
+    });
+
+    /**
+     * C4 — past the point of no return the previous project is out of the
+     * repository and out of the stores. Rebuilding its graph would only look
+     * like a recovery, and restarting autosave would compact the empty project
+     * over the user's own on disk, so the failure gets its own surface instead.
+     */
+    it('publishes a failure instead of a recovery when a step throws past the switch', async () => {
+        vi.mocked(resetCrdtProject).mockImplementationOnce((_name, onAuthorityReplaced) => {
+            onAuthorityReplaced?.();
+            return Promise.resolve({ status: 'replaced', finalize: resetMocks.finalize });
+        });
+        vi.mocked(forgetProjectLatchedPedals).mockImplementationOnce(() => {
+            throw new Error('latched pedal bookkeeping failed');
+        });
+
+        await expect(newProject('Lost Project')).resolves.toBe(false);
+
+        expect(projectLoadFailureStore.value).toMatchObject({ projectName: 'Lost Project' });
+        expect(ensureTrackStrips).not.toHaveBeenCalled();
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
+        expect(projectStore.value).toMatchObject({ loading: true, initialized: false });
+        // The marker is settled on every path past the switch, this one
+        // included: an unsettled marker is what the next boot would have to
+        // classify, and what would refuse the session's next reset.
+        expect(resetMocks.finalize).toHaveBeenCalledOnce();
+    });
+
+    /**
+     * C6 — the first activation left the reset unfinalized. A second New
+     * Project in the same session is an ordinary reset: it runs the whole
+     * sequence again and finalizes, rather than being turned away.
+     */
+    it('activates a second project in the same session after the first reset could not finalize', async () => {
+        vi.mocked(compactProject).mockRejectedValueOnce(new Error('initial compaction failed'));
+        resetMocks.finalize.mockResolvedValueOnce('authority-mismatch');
+
+        await expect(newProject('Unpersisted Project')).resolves.toBe(true);
+        await expect(newProject('Second Project')).resolves.toBe(true);
+
+        expect(resetCrdtProject).toHaveBeenCalledTimes(2);
+        expect(resetMocks.finalize).toHaveBeenCalledTimes(2);
+        expect(projectStore.value).toMatchObject({ name: 'Second Project', identityPersistencePending: false });
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
+    // C2 — a failed initial snapshot means nothing of the replacement reached
+    // storage, so the reset cannot finalize and autosave must stay stopped:
+    // starting it would compact this project over the user's own on disk.
     it('completes the committed project when initial compaction rejects after authority swaps', async () => {
         let activeAuthority = 'Existing Project';
-        vi.mocked(resetCrdtProjectAuthority).mockImplementationOnce((name) => {
+        vi.mocked(resetCrdtProject).mockImplementationOnce((name) => {
             activeAuthority = name;
+            return Promise.resolve({ status: 'replaced', finalize: resetMocks.finalize });
         });
+        resetMocks.finalize.mockResolvedValue('authority-mismatch');
         vi.mocked(compactProject).mockImplementationOnce(() => {
             expect(activeAuthority).toBe('Degraded Project');
             return Promise.reject(new Error('initial compaction failed'));
@@ -254,10 +365,12 @@ describe('newProject injectable', () => {
             name: 'Degraded Project',
             loading: false,
             initialized: true,
+            identityPersistencePending: true,
         });
-        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+        expect(resetMocks.finalize).toHaveBeenCalledOnce();
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
 
-        const authorityOrder = vi.mocked(resetCrdtProjectAuthority).mock.invocationCallOrder[0];
+        const authorityOrder = vi.mocked(resetCrdtProject).mock.invocationCallOrder[0];
         const compactionOrder = vi.mocked(compactProject).mock.invocationCallOrder[0];
         const storeResetOrder = vi.mocked(resetModuleStoresToDefault).mock.invocationCallOrder[0];
         if (authorityOrder === undefined || compactionOrder === undefined || storeResetOrder === undefined) {
@@ -311,7 +424,9 @@ describe('newProject injectable', () => {
         if (autosaveOrder === undefined || compactionOrder === undefined) {
             throw new Error('expected autosave and compaction calls');
         }
-        expect(autosaveOrder).toBeLessThan(compactionOrder);
+        // C3 — autosave belongs after the snapshot and its finalization, never
+        // alongside the compare-and-swap that decides the reset's fate.
+        expect(autosaveOrder).toBeGreaterThan(compactionOrder);
     });
 
     it('does not clear loading when an older activation is superseded', async () => {
@@ -364,6 +479,8 @@ describe('newProject injectable', () => {
 
     it('keeps the durable owner identity withheld when the initial compaction fails', async () => {
         vi.mocked(compactProject).mockRejectedValueOnce(new Error('initial compaction failed'));
+        // Nothing of the replacement committed, so the reset cannot finalize.
+        resetMocks.finalize.mockResolvedValue('authority-mismatch');
 
         await expect(newProject('Unpersisted Project')).resolves.toBe(true);
 

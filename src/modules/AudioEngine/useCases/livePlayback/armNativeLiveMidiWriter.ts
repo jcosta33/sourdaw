@@ -82,7 +82,7 @@ export type ArmNativeLiveMidiWriterInput = Readonly<{
     /** The strips the session's topology built — the only ones a note may address. */
     stripTracks: readonly Track[];
     /**
-     * The external plugin instances the native engine currently owns.
+     * The instances the native engine currently owns, from {@link readAttachedEngineInstanceIds}.
      *
      * The caller's, never read here, and that is the whole point: the caller
      * projected its topology against one attach state, and an instrument the

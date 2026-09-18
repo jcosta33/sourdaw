@@ -1,6 +1,7 @@
 import { BaseWindow } from 'electron';
 
 import type { EditorWindow, EditorWindowOptions } from './pluginGui.js';
+import type { BaseWindowConstructorOptions } from 'electron';
 
 /**
  * A bare native window for one plugin editor: no webcontents, hidden until the
@@ -10,13 +11,17 @@ import type { EditorWindow, EditorWindowOptions } from './pluginGui.js';
  * run. 800×600 is only the pre-lifecycle placeholder the addon immediately
  * resizes.
  */
-export const createEditorWindow = (options: EditorWindowOptions): EditorWindow =>
-    new BaseWindow({
+export const createEditorWindow = (options: EditorWindowOptions): EditorWindow => {
+    const windowOptions: BaseWindowConstructorOptions = {
         width: 800,
         height: 600,
         title: options.title,
         show: false,
         resizable: false,
         alwaysOnTop: options.alwaysOnTop,
-        ...(options.parent === undefined ? {} : { parent: options.parent }),
-    });
+    };
+    if (options.parent !== undefined) {
+        windowOptions.parent = options.parent;
+    }
+    return new BaseWindow(windowOptions);
+};

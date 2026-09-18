@@ -3,6 +3,7 @@ import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/c
 import { updateClipInStore } from '#/modules/Arrangement/stores';
 import { type PitchContourSnapshot, type PitchEditSegmentSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { basename_from_path } from '#/utils/path-basename';
 
 import { clearClipPitchAnalysis } from '../clearClipPitchAnalysis';
 
@@ -13,7 +14,36 @@ export type CommitPitchEditInput = {
     clipId: string;
     segments: PitchEditSegmentSnapshot[];
     contour: PitchContourSnapshot;
+    /** Live retune speed and formant-preserve selection the bake must carry
+     *  (#2058): after the commit the analysis is cleared, so a setting the
+     *  render drops is gone, not corrected later. */
+    retuneSpeedMs?: number;
+    formantPreserve?: boolean;
 };
+
+/**
+ * The root the native commit writes its render into, expressed as the
+ * renderer's spelling for "inside a directory the app owns": the native path
+ * guard joins a relative path onto the app's own IPC scratch root, which is
+ * writable without any user grant. An absolute output, in contrast, is checked
+ * against user grants — and a desktop open-file pick grants the picked file
+ * for reading only (#3404), so deriving `<source>_pitch.wav` beside the source
+ * was refused with `Path is outside allowed native file roots` and the WASM
+ * fallback became the only renderer that could succeed (#3406).
+ */
+const PITCH_EDIT_OUTPUT_ROOT = 'pitch-edits';
+
+/**
+ * The native output path for one commit. The clip id disambiguates sources
+ * that share a file name, so two clips' renders never overwrite each other,
+ * and the `_pitch` suffix accumulates one segment per commit so successive
+ * commits get distinct paths and an undone commit's render is never
+ * overwritten by the next one.
+ */
+function pitchEditOutputAudioPath(clipId: string, sourceFileId: string): string {
+    const sourceStem = basename_from_path(sourceFileId).replace(/\.wav$/i, '');
+    return `${PITCH_EDIT_OUTPUT_ROOT}/${clipId}/${sourceStem}_pitch.wav`;
+}
 
 /**
  * Implementation behind the `commitPitchEdit` AppAction handler. Renders the manual
@@ -26,7 +56,13 @@ export type CommitPitchEditInput = {
  * notifies the user and rethrows, which makes `executeAppAction` skip the undo entry
  * (nothing changed, so nothing to undo).
  */
-export async function commitPitchEdit({ clipId, segments, contour }: CommitPitchEditInput): Promise<void> {
+export async function commitPitchEdit({
+    clipId,
+    segments,
+    contour,
+    retuneSpeedMs = 25,
+    formantPreserve = false,
+}: CommitPitchEditInput): Promise<void> {
     const targetClip = findPitchEditClip(clipId);
 
     if (!targetClip?.fileId) {
@@ -34,11 +70,11 @@ export async function commitPitchEdit({ clipId, segments, contour }: CommitPitch
     }
 
     const originalFileId = targetClip.fileId;
-    const outputAudioPath = originalFileId.replace('.wav', '_pitch.wav');
+    const outputAudioPath = pitchEditOutputAudioPath(clipId, originalFileId);
     // Derived from the output path rather than randomly generated: this runs inside
-    // a replicated action, where a fresh uuid would differ per peer. The path gains
-    // a `_pitch` segment per commit, so successive commits get distinct ids and an
-    // undone commit's buffer is never overwritten by the next one.
+    // a replicated action, where a fresh uuid would differ per peer. The path is a
+    // pure function of the clip and its current file, so every peer replaying the
+    // action derives the same id.
     const outputAudioBufferId = `audio-pitch:${outputAudioPath}`;
 
     // Audit CC-10 — both writes below happen after `await renderPitchEdit`, by
@@ -57,6 +93,8 @@ export async function commitPitchEdit({ clipId, segments, contour }: CommitPitch
             audioBufferId: targetClip.audioBufferId,
             segments,
             contour,
+            retuneSpeedMs,
+            formantPreserve,
         });
 
         scope(() => {

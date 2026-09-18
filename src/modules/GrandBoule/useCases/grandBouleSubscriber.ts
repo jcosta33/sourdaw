@@ -1,4 +1,5 @@
 import { type Logger } from '#/infra/logger/types';
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
 import { reconcileGrandBouleDeviceStateFromProject } from './reconcileGrandBouleDeviceStateFromProject';
 
@@ -13,7 +14,7 @@ export function initGrandBouleSubscribers(input: {
     logger: Pick<Logger, 'info'>;
 }): () => void {
     return input.eventBus.on('audioDevice.loaded', (payload) => {
-        if (payload.deviceType !== 'grand-boule') {
+        if (payload.deviceType !== DEVICE_TYPE_IDS.grandBoule) {
             return;
         }
         input.logger.info('Hydrating newly loaded Grand Boule engine with project state');

@@ -10,6 +10,7 @@ import { getMidiTransform, getMidiTransformDescriptors, getMidiTransformNames } 
 import { getToasterPresetDeviceState } from '#/modules/Toaster/useCases';
 
 import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
+import { getAgentProtocolManifest } from '../getAgentProtocolManifest';
 
 import type { setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import type {
@@ -62,6 +63,7 @@ type RuntimeSinkUnderTest = {
         signal?: AbortSignal;
     }) => Promise<void>;
     projectNativeDeviceState: (input: {
+        deviceId: string;
         deviceType: string;
         deviceState: { version: number; data: Record<string, unknown> } | undefined;
     }) => Readonly<Record<string, number>> | null;
@@ -150,6 +152,7 @@ const {
     setNotificationEventBusMock,
     setProjectIdentityTransitionDependenciesMock,
     commandRuntimeRepairPortMock,
+    externalClientManifestPortMock,
     repairRuntimeGraphFromProjectMock,
     sessionUndoWitnessStampPortMock,
     stampSessionUndoWitnessMock,
@@ -250,6 +253,7 @@ const {
         },
         setNotificationEventBusMock: vi.fn<(eventBus: NotificationEventBus) => void>(),
         commandRuntimeRepairPortMock: { setProvider: vi.fn() },
+        externalClientManifestPortMock: { setProvider: vi.fn() },
         repairRuntimeGraphFromProjectMock: vi.fn(() => Promise.resolve()),
         sessionUndoWitnessStampPortMock: { setProvider: vi.fn() },
         stampSessionUndoWitnessMock: vi.fn(),
@@ -265,6 +269,10 @@ const {
 
 vi.mock('#/infra/logger/runtimeLogger', () => ({ setRuntimeLogger: noop }));
 
+vi.mock('#/modules/AgentAdapters/useCases', () => ({
+    externalClientManifestPort: externalClientManifestPortMock,
+}));
+
 vi.mock('#/modules/AiGeneration/useCases', () => ({
     getGenerationHandlers: sentinelHandlers('AiGeneration'),
     getAiMidiHandlers: sentinelHandlers('AiMidi'),
@@ -275,6 +283,8 @@ vi.mock('#/modules/AiGeneration/useCases', () => ({
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     assertCanonicalLlmActionStrategies: assertCanonicalLlmActionStrategiesMock,
+    getAgentCapabilityCatalog: noop,
+    getAiRuntimeProtocolContracts: noop,
     beginMixAnalysis: noop,
     completeMixAnalysis: noop,
     failMixAnalysis: noop,
@@ -293,6 +303,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    getDeviceManifestProtocolContract: noop,
+    setClipAudioAssetStager: noop,
+    stageAudioBufferAsset: noop,
     acceptsExternalPluginAutomationParameter: noop,
     clampDeviceParameterValue: noop,
     clampExternalPluginAutomationValue: noop,
@@ -349,6 +362,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     recordNativeChainReleases: recordNativeChainReleasesMock,
     configureDurableAudioBufferOwnership: configureDurableAudioBufferOwnershipMock,
     isTunerTelemetryNativelyOwned: isTunerTelemetryNativelyOwnedMock,
+    startMainThreadLongTaskObservation: noop,
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
@@ -356,6 +370,8 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
 }));
 
 vi.mock('#/modules/AudioRendering/useCases', () => ({
+    stageAudioBufferAsset: vi.fn(),
+
     getAudioRenderingHandlers: sentinelHandlers('AudioRendering'),
 }));
 
@@ -389,6 +405,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    getCommandProtocolContracts: noop,
     commandBatchPreflightPort: { setProvider: noop },
     commandBatchPreviewPort: { setProvider: noop, setRecoveryProvider: noop },
     configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
@@ -469,6 +486,7 @@ vi.mock('#/modules/Gluten/stores', () => ({
 vi.mock('#/modules/GrandBoule/useCases', () => ({
     getGrandBouleHandlers: sentinelHandlers('GrandBoule'),
     prepareOfflineGrandBoule: noop,
+    projectGrandBouleCalibrationToNativePatch: () => null,
 }));
 
 vi.mock('#/modules/Grinder/stores', () => ({ updateGrinderTelemetry: noop }));
@@ -492,6 +510,7 @@ vi.mock('#/modules/Levain/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    getMidiTransformProtocolContract: noop,
     getChordTrackHandlers: sentinelHandlers('ChordTrack'),
     getMidiGrooveHandlers: sentinelHandlers('MidiGroove'),
     getMidiNoteTransformHandlers: sentinelHandlers('MidiNoteTransform'),
@@ -515,6 +534,8 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
+    agentCapabilityDiscoveryPort: { setProvider: noop },
+    getProjectProtocolContracts: noop,
     collectDurableOwnedAudioBufferIds: collectDurableOwnedAudioBufferIdsMock,
     productionBriefActionBatchAdmission: { capture: () => ({ allowsCurrent: () => true }) },
     getProjectHandlers: sentinelHandlers('Project'),
@@ -590,6 +611,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     reconcileVcaRuntimeGain: reconcileVcaRuntimeGainMock,
     stopPlayback: noop,
     repairRuntimeGraphFromProject: repairRuntimeGraphFromProjectMock,
+    readNativeEngineCursorBeats: noop,
 }));
 
 vi.mock('#/modules/Tuner/stores', () => ({ updateTunerTelemetry: updateTunerTelemetryMock }));
@@ -878,6 +900,10 @@ describe('bootstrap', () => {
         );
     });
 
+    it('offers external clients the published protocol manifest, not a second list', () => {
+        expect(externalClientManifestPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(getAgentProtocolManifest);
+    });
+
     it('wires the undo session witness stamp port to the real production stamp (#3331)', () => {
         expect(sessionUndoWitnessStampPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(
             stampSessionUndoWitnessMock
@@ -1008,10 +1034,12 @@ describe('bootstrap', () => {
             }
             const chunk = { ...stored, data: { kit: { ...stored.data.kit, masterGain: 0.4 } } };
 
-            expect(getSink().projectNativeDeviceState({ deviceType: 'toaster', deviceState: chunk })).toEqual(
-                expect.objectContaining({ master_gain: 0.4 })
-            );
-            expect(getSink().projectNativeDeviceState({ deviceType: 'gluten', deviceState: chunk })).toBeNull();
+            expect(
+                getSink().projectNativeDeviceState({ deviceId: 'device-a', deviceType: 'toaster', deviceState: chunk })
+            ).toEqual(expect.objectContaining({ master_gain: 0.4 }));
+            expect(
+                getSink().projectNativeDeviceState({ deviceId: 'device-a', deviceType: 'gluten', deviceState: chunk })
+            ).toBeNull();
         });
 
         /**
@@ -1022,7 +1050,9 @@ describe('bootstrap', () => {
         it('projects a levain device’s articulation through the Levain module', () => {
             const chunk = { version: 1, data: { instrumentId: 'violin-1', currentArticulation: 'staccato' } };
 
-            expect(getSink().projectNativeDeviceState({ deviceType: 'levain', deviceState: chunk })).toEqual({
+            expect(
+                getSink().projectNativeDeviceState({ deviceId: 'device-a', deviceType: 'levain', deviceState: chunk })
+            ).toEqual({
                 current_articulation: 4,
             });
             expect(projectLevainDeviceStateToNativePatchMock).toHaveBeenCalledWith({ deviceState: chunk });

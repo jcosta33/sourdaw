@@ -43,6 +43,7 @@ import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { mapCrustParamToDspParam } from '../../models/CrustDspParamNames';
 import { mapGlutenParamToDspParam } from '../../models/GlutenDspParamNames';
 import { mapGrandBouleParamToDspParam } from '../../models/GrandBouleDspParamNames';
+import { KNEAD_ENGINE_PARAM_NAMES } from '../../models/KneadEngineParamNames';
 import { mapToasterKitParamToDspParam } from '../../models/ToasterKitParamNames';
 
 /**
@@ -154,13 +155,6 @@ function grinderNeuralSourceOnly(patch: Readonly<Record<string, unknown>>): Read
         )
     );
 }
-
-/** `DeviceParam::from_name` in `crates/daw-engine/src/timeline.rs`: the closed set of names Knead's body resolves. */
-const KNEAD_ENGINE_PARAM_NAMES: ReadonlySet<string> = new Set([
-    'shift_semitones',
-    'retune_speed_ms',
-    'formant_preserve',
-]);
 
 /**
  * The ids `FERMENTER_PARAMS` authors. Macro slots (`macro0`..`macro7`) are

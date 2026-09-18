@@ -23,6 +23,7 @@ function makeDeps(
         persistDeviceParam: vi.fn(),
         writeNativeBuiltinParameters:
             vi.fn<(trackId: string, deviceId: string, values: Record<string, number>) => void>(),
+        sendNativeLiveMidiControl: vi.fn(() => Promise.resolve(true)),
         autoLoadLevainSamples: vi.fn(autoLoad) as unknown as AutoLoad & ReturnType<typeof vi.fn>,
         resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string): DeviceWriteTargetResolution => {
             if (resolutionStatus !== 'eligible') {
@@ -505,7 +506,7 @@ describe('createLevainBridge', () => {
             });
         });
 
-        it('sends a macro’s parameter slots natively, leaving its CC gestures web-only', () => {
+        it('sends a macro’s CC gestures to both carriers', () => {
             const deps = makeDeps();
             const bridge = createLevainBridge(deps);
             const device = makeDevice();
@@ -520,8 +521,16 @@ describe('createLevainBridge', () => {
 
             expect(deps.writeNativeBuiltinParameters).toHaveBeenCalledWith('track-1', 'd1', { mic_2_volume: 0.7 });
             expect(device.handleCc).toHaveBeenCalledWith(1, 89);
-            // A continuous controller is not a device parameter, and the native
-            // session has no door that takes one.
+            expect(deps.sendNativeLiveMidiControl).toHaveBeenCalledWith({
+                trackId: 'track-1',
+                deviceId: 'd1',
+                controller: 1,
+                value: 89,
+                channel: 0,
+            });
+            // A continuous controller is still not a device parameter: it
+            // reaches the native body through the controller door above, never
+            // as a value on the parameter one.
             expect(deps.writeNativeBuiltinParameters).not.toHaveBeenCalledWith(
                 'track-1',
                 'd1',

@@ -1,3 +1,7 @@
+import { DAW_PROJECT_XML_TAGS } from './dawProjectXmlTagNames';
+
+const { ARTIST, COMMENT, META_DATA, TITLE } = DAW_PROJECT_XML_TAGS;
+
 export type SerializeMetadataInput = {
     title: string;
     artist: string;
@@ -18,9 +22,9 @@ export function serializeMetadataXml(input: SerializeMetadataInput): string {
     const artist = escapeXml(input.artist);
     const comment = escapeXml(input.comment);
     return `<?xml version="1.0" encoding="UTF-8"?>
-<MetaData>
-    <Title>${title}</Title>
-    <Artist>${artist}</Artist>
-    <Comment>${comment}</Comment>
-</MetaData>`;
+<${META_DATA}>
+    <${TITLE}>${title}</${TITLE}>
+    <${ARTIST}>${artist}</${ARTIST}>
+    <${COMMENT}>${comment}</${COMMENT}>
+</${META_DATA}>`;
 }

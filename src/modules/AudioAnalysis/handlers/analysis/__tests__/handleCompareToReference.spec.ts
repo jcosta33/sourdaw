@@ -29,7 +29,10 @@ describe('handleCompareToReference', () => {
         void handleCompareToReference.execute({ type: 'compareToReference', payload: undefined });
 
         expect(mocks.compareToReference).toHaveBeenCalledTimes(1);
-        expect(mocks.notifyUser).toHaveBeenCalledWith('Mix comparison: 84% match — 1 suggestions', 'success');
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Mix comparison vs built-in mastered target: 84% match — 1 suggestions',
+            'success'
+        );
     });
 
     it('should execute compareToReference and notify warning if score is low', () => {
@@ -40,7 +43,21 @@ describe('handleCompareToReference', () => {
 
         void handleCompareToReference.execute({ type: 'compareToReference', payload: undefined });
 
-        expect(mocks.notifyUser).toHaveBeenCalledWith('Mix comparison: 62% match — 2 suggestions', 'warning');
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Mix comparison vs built-in mastered target: 62% match — 2 suggestions',
+            'warning'
+        );
+    });
+
+    it('reports unavailable audio instead of a fabricated match score', () => {
+        mocks.compareToReference.mockReturnValue({ status: 'unavailable', reason: 'no-program-audio' });
+
+        void handleCompareToReference.execute({ type: 'compareToReference', payload: undefined });
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Mix comparison unavailable: no program audio is available to measure — render or select audible material first',
+            'warning'
+        );
     });
 
     it('should provide a description', () => {

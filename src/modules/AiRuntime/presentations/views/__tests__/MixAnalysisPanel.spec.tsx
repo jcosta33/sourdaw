@@ -22,6 +22,9 @@ vi.mock('#/modules/AiRuntime/useCases/aiPanelActions/runAppAction', () => ({
 }));
 
 vi.mock('../../components/mixAnalysis/MixAnalysisSections', () => ({
+    EvidenceStatus: ({ status }: any) => (
+        <div data-testid="evidence-status">Availability: {status?.availability ?? 'unknown'}</div>
+    ),
     OverallLevel: ({ level }: any) => <div data-testid="overall-level">Level: {level}</div>,
     FrequencyBalance: ({ bands }: any) => <div data-testid="freq-balance">Bands: {bands?.length || 0}</div>,
     TrackLevelsList: ({ trackLevels }: any) => <div data-testid="track-levels">Tracks: {trackLevels?.length || 0}</div>,
@@ -97,6 +100,7 @@ describe('MixAnalysisPanel', () => {
 
     it('should render analysis results when available', () => {
         mockState.result = {
+            status: { availability: 'measured', provenance: 'live-analyser-snapshot' },
             overallLevel: -12,
             frequencyBalance: [{ freq: 100, level: -20 }],
             trackLevels: [{ trackId: 't1', level: -10 }],
@@ -114,6 +118,7 @@ describe('MixAnalysisPanel', () => {
 
     it('should call runAppAction with autoFixMix when auto-fix button is clicked', () => {
         mockState.result = {
+            status: { availability: 'measured', provenance: 'live-analyser-snapshot' },
             overallLevel: -12,
             frequencyBalance: [],
             trackLevels: [],
@@ -125,6 +130,25 @@ describe('MixAnalysisPanel', () => {
         const autoFixButton = screen.getByText('Auto-Fix');
         fireEvent.click(autoFixButton);
         expect(runAppAction).toHaveBeenCalledWith({ type: 'autoFixMix' });
+    });
+
+    it('should disable auto-fix while the measurement is insufficient', () => {
+        mockState.result = {
+            status: {
+                availability: 'insufficient',
+                reason: 'no-signal',
+                provenance: 'live-analyser-snapshot',
+            },
+            overallLevel: -12,
+            frequencyBalance: { sub: null, bass: null, lowMid: null, mid: null, highMid: null, high: null },
+            trackLevels: [],
+            issues: [{ severity: 'info', message: 'No signal measured' }],
+            suggestions: ['Start playback'],
+            timestamp: Date.now(),
+        };
+        render(<MixAnalysisPanel />);
+        expect(screen.getByTestId('evidence-status')).toHaveTextContent('Availability: insufficient');
+        expect(screen.getByText('Auto-Fix')).toBeDisabled();
     });
 
     it('should surface action execution rejection in the panel', async () => {

@@ -3,7 +3,6 @@
 //! Real levain sections don't play in perfect unison. This module
 //! simulates the natural behaviors of ensemble playing.
 
-use super::humanize::Rng;
 use super::types::*;
 
 // ---------------------------------------------------------------------------
@@ -190,52 +189,16 @@ pub struct EnsembleTiming {
     pub convergence_time_ms: f32,
     /// Dynamic bloom: collective crescendo builds over N ms.
     pub bloom_time_ms: f32,
-    rng: Rng,
 }
 
 impl EnsembleTiming {
-    pub fn new(seed: u64) -> Self {
+    pub fn new() -> Self {
         Self {
             enabled: false,
             attack_spread_ms: 12.0,
             initial_detune_cents: 5.0,
             convergence_time_ms: 300.0,
             bloom_time_ms: 200.0,
-            rng: Rng::new(seed),
-        }
-    }
-
-    /// Generate per-voice ensemble timing offsets.
-    pub fn generate_voice_offsets(&mut self) -> EnsembleVoiceOffsets {
-        if !self.enabled {
-            return EnsembleVoiceOffsets::default();
-        }
-
-        EnsembleVoiceOffsets {
-            timing_offset_ms: self.rng.next_bipolar() * self.attack_spread_ms,
-            initial_detune_cents: self.rng.next_bipolar() * self.initial_detune_cents,
-            convergence_time_ms: self.convergence_time_ms,
-            bloom_time_ms: self.bloom_time_ms,
-        }
-    }
-}
-
-/// Per-voice ensemble timing offsets.
-#[derive(Debug, Clone, Copy)]
-pub struct EnsembleVoiceOffsets {
-    pub timing_offset_ms: f32,
-    pub initial_detune_cents: f32,
-    pub convergence_time_ms: f32,
-    pub bloom_time_ms: f32,
-}
-
-impl Default for EnsembleVoiceOffsets {
-    fn default() -> Self {
-        Self {
-            timing_offset_ms: 0.0,
-            initial_detune_cents: 0.0,
-            convergence_time_ms: 0.0,
-            bloom_time_ms: 0.0,
         }
     }
 }

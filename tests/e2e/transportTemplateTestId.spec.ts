@@ -60,6 +60,8 @@ test.describe('Transport with Pop Song template — deep integration', () => {
 
     test('record toggle changes aria-pressed on populated project', async ({ page }) => {
         const record = page.getByTestId('transport-record');
+        // Arm the first track so Record has an eligible target (#3679).
+        await page.locator('[data-testid^="track-arm-"]').first().click();
         await expect(record).toBeVisible({ timeout: 15_000 });
         await expect(record).toHaveAttribute('aria-pressed', 'false');
 
