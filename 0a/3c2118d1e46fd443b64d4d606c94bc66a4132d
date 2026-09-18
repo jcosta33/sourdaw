@@ -1,0 +1,23 @@
+evidence/agent-campaign/manifest.json
+  s_9e15f5b7ec3308::t_15ce8e51015220 178,202,226,286
+src/modules/AiRuntime/models/Tools/__tests__/MidiAutomationRouting.spec.ts
+  s_9e15f5b7ec3308::t_302103f0cd0e6e 30-34,40-54,61-65
+src/modules/AiRuntime/useCases/__tests__/gainSchemaCeilingParity.spec.ts
+  s_9e15f5b7ec3308::t_0f1f0ef71568be 4,21-27,46-56,87-90,93,95-150,155-166,169,173-174,176-177
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0a3c2118d1e46fd443b64d4d606c94bc66a4132d",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
