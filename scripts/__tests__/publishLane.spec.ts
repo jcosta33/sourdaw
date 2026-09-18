@@ -26,14 +26,17 @@ import { AUTHOR_MODEL_PATTERN as OPEN_LANE_MODEL_PATTERN, AUTHOR_MODEL_RULE } fr
 import { composePublishBody, type GuardFailureReceipt } from '../prContract.ts';
 import {
     AUTHOR_MODEL_PATTERN,
+    addPullRequestProjectsArgs,
     applyPullRequestMetadataArgs,
     canonicalLabelName,
     canonicalMilestoneTitle,
     canonicalProjectTitle,
     derivedLabelFromSubject,
+    derivedProjectFromSubject,
     descriptiveLabelNames,
     ensureModelLabelArgs,
     existingOpenPullRequestArgs,
+    issueProjectItemsArgs,
     issueTrackerMetadataArgs,
     labelListArgs,
     labelRowsFromListing,
@@ -41,10 +44,13 @@ import {
     modelLabelName,
     openMilestoneTitlesArgs,
     openMilestoneTitlesFromRows,
+    operatorSessionAccess,
     projectListArgs,
     projectTitlesFromListing,
+    projectTitlesFromRow,
     pullRequestMetadataArgs,
-    pullRequestMetadataFromRow,
+    pullRequestLabelMetadataFromRow,
+    pullRequestProjectItemsArgs,
     trackerMetadataFromIssueRow,
     updatePullRequestArgs,
     issueExistsFromLookup,
@@ -57,6 +63,7 @@ import {
     resolveAuthorLane,
     shellPort,
     type LabelRow,
+    type PullRequestLabelMetadata,
     type OpenPullRequestRow,
     type PublishLanePort,
     type PublishWorktree,
@@ -145,11 +152,11 @@ type FakeInput = {
     guardFailure?: (laneName: string) => GuardFailureReceipt | undefined;
     /** `branch.<branch>.sourdaw-author-model` as publish reads it back; `null` records no model. */
     authorModel?: string | null;
-    /** Raw `gh issue view --json labels,milestone,projectItems` row; routed through the real extraction. */
+    /** Raw `gh issue view` rows for both reads — the App's and the operator's — as one fixture. */
     issueTracker?: { labels?: unknown[]; milestone?: { title?: unknown } | null; projectItems?: unknown[] };
     openMilestoneTitles?: string[];
     knownProjects?: string[];
-    /** When set, `gh project list` fails under the App, as it does for user-owned Projects v2. */
+    /** When set, `gh project list` fails, as it does without a usable operator credential. */
     projectListError?: string;
     /** The repository label list `gh label list --limit 200 --json name,description` would answer. */
     repositoryLabels?: LabelRow[];
@@ -168,6 +175,7 @@ function fakePort(input: FakeInput = {}) {
     const bodies: string[] = [];
     const dirty = input.dirty ?? false;
     const subject = input.subject === undefined ? DEFAULT_SUBJECT : (input.subject ?? undefined);
+    const currentMetadata = input.currentMetadata ?? { labels: [modelLabelName('glm-5.3')], projectTitles: [] };
     let pullRequestQueries = 0;
     const port: PublishLanePort = {
         baseSha: () => input.baseSha ?? 'base',
@@ -240,17 +248,29 @@ function fakePort(input: FakeInput = {}) {
             }
             return input.knownProjects ?? [];
         },
+        readIssueProjectTitles: (issue) => {
+            calls.push(`issueProjects:${issue}`);
+            return projectTitlesFromRow(input.issueTracker ?? {});
+        },
         knownLabels: () => {
             calls.push('labelList');
             return input.repositoryLabels ?? [];
         },
+        // The App read answers labels and milestone alone, exactly as the split `gh pr view` does.
         readPullRequestMetadata: (number) => {
             calls.push(`prMeta:${number}`);
-            const current = input.currentMetadata ?? {
-                labels: [modelLabelName('glm-5.3')],
-                projectTitles: [],
+            const metadata: PullRequestLabelMetadata = {
+                labels: currentMetadata.labels,
+                fencedAuthorLabels: currentMetadata.fencedAuthorLabels ?? [],
             };
-            return { fencedAuthorLabels: [], ...current };
+            if (currentMetadata.milestoneTitle !== undefined) {
+                metadata.milestoneTitle = currentMetadata.milestoneTitle;
+            }
+            return metadata;
+        },
+        readPullRequestProjectTitles: (number) => {
+            calls.push(`prProjects:${number}`);
+            return currentMetadata.projectTitles;
         },
         applyPullRequestMetadata: (number, plan) => {
             calls.push(
@@ -565,6 +585,8 @@ describe('lane publish', () => {
                     "import { appendFileSync } from 'node:fs';\n" +
                     'const args = process.argv.slice(2);\n' +
                     "if (args[0] === 'repo') console.log(process.env.TEST_REPOSITORY ?? 'jcosta33/sourdaw');\n" +
+                    "else if (args[0] === 'auth' && args[1] === 'token') console.log('gho_operator');\n" +
+                    "else if (args[0] === 'api' && args.at(-1) === 'user') console.log(JSON.stringify({ type: 'User', node_id: 'MDQ6VXNlcjg5NzgyNzA=' }));\n" +
                     "else if (args[0] === 'api' && String(args[1]).includes('/issues/')) console.log(JSON.stringify({ number: 12, isPullRequest: false }));\n" +
                     "else if (args[0] === 'api') console.log('[]');\n" +
                     "else if (args[0] === 'issue' && args[1] === 'view') console.log(JSON.stringify({ milestone: null, projectItems: [] }));\n" +
@@ -1543,6 +1565,103 @@ describe('lane publish', () => {
     });
 
     /**
+     * Installation tokens cannot reach user-owned Projects v2, so the split between the two
+     * credentials is the whole fix: a fake port can prove which port member is called, but only a
+     * real `gh` child can prove which token each call carries.
+     */
+    it('carries the operator token on every project call and the App token on the rest', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-publish-operator-'));
+        try {
+            const log = join(root, 'gh.log');
+            const ghPath = join(root, 'gh');
+            writeFileSync(
+                ghPath,
+                '#!/usr/bin/env node\n' +
+                    "import { appendFileSync } from 'node:fs';\n" +
+                    'const args = process.argv.slice(2);\n' +
+                    `appendFileSync(${JSON.stringify(log)}, JSON.stringify({ token: process.env.GH_TOKEN, args }) + '\\n');\n` +
+                    "if (args[0] === 'project') console.log(JSON.stringify({ projects: [{ title: 'Sourdaw Bugs' }], totalCount: 1 }));\n" +
+                    "else if (args[1] === 'view') console.log(JSON.stringify({ projectItems: [{ title: 'Sourdaw Roadmap' }] }));\n"
+            );
+            chmodSync(ghPath, 0o700);
+            const app: GhSession = {
+                configDir: join(root, 'app'),
+                env: { PATH: process.env.PATH, GH_TOKEN: 'app-token' },
+                dispose: () => {},
+            };
+            let operatorSessions = 0;
+            const operator = operatorSessionAccess({}, () => {
+                operatorSessions += 1;
+                return {
+                    session: {
+                        configDir: join(root, 'operator'),
+                        env: { PATH: process.env.PATH, GH_TOKEN: 'operator-token' },
+                        dispose: () => {},
+                    },
+                };
+            });
+            const port = shellPort(app, root, root, { git: 'git', gh: ghPath }, operator);
+
+            expect(port.knownProjectTitles()).toEqual(['Sourdaw Bugs']);
+            expect(port.readIssueProjectTitles(12)).toEqual(['Sourdaw Roadmap']);
+            expect(port.readPullRequestProjectTitles(88)).toEqual(['Sourdaw Roadmap']);
+            port.readPullRequestMetadata(88);
+            port.applyPullRequestMetadata(88, {
+                addLabels: ['bug'],
+                removeLabels: [],
+                addProjectTitles: ['Sourdaw Bugs'],
+            });
+
+            const entries = readFileSync(log, 'utf8')
+                .trim()
+                .split('\n')
+                .map((line) => JSON.parse(line) as { token: string; args: string[] });
+            const touchesProjects = (entry: { args: string[] }) =>
+                entry.args[0] === 'project' ||
+                entry.args.includes('projectItems') ||
+                entry.args.includes('--add-project');
+            // The listing, both membership reads, and the board write.
+            expect(entries.filter(touchesProjects)).toHaveLength(4);
+            for (const entry of entries) {
+                expect(entry.token).toBe(touchesProjects(entry) ? 'operator-token' : 'app-token');
+            }
+            // Two edits, never one: the App writes labels and milestone, the operator writes the
+            // board. A single edit carrying both would fail whole under either token.
+            const edits = entries.filter((entry) => entry.args[0] === 'pr' && entry.args[1] === 'edit');
+            expect(edits).toEqual([
+                { token: 'app-token', args: ['pr', 'edit', '88', '--repo', 'jcosta33/sourdaw', '--add-label', 'bug'] },
+                {
+                    token: 'operator-token',
+                    args: ['pr', 'edit', '88', '--repo', 'jcosta33/sourdaw', '--add-project', 'Sourdaw Bugs'],
+                },
+            ]);
+            // One credential for the whole publish, opened on its first project call.
+            expect(operatorSessions).toBe(1);
+        } finally {
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    it('refuses the project reads when the operator identity is unverifiable or absent', () => {
+        const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => {} };
+        const here = import.meta.dirname;
+        const unverifiable = shellPort(
+            session,
+            here,
+            here,
+            { git: 'git', gh: 'gh' },
+            operatorSessionAccess({}, () => {
+                throw new Error('invalid orchestrator identity');
+            })
+        );
+
+        expect(() => unverifiable.knownProjectTitles()).toThrow(/invalid orchestrator identity/);
+        expect(() => shellPort(session, here, here).knownProjectTitles()).toThrow(
+            /project membership needs the verified operator credential/
+        );
+    });
+
+    /**
      * The regression this pins is a real merge commit, so it is measured against real git history:
      * a fake port can only prove which port member `publishLane` calls, never what the git command
      * behind it answers. The merge subject is the one that reached `main` through pull request
@@ -2050,6 +2169,8 @@ describe('lane publish', () => {
         });
 
         it('builds the metadata reads against the required repository', () => {
+            // Labels and milestone are the author App's to read; projectItems is split off because
+            // only the operator credential can reach user-owned Projects v2.
             expect(issueTrackerMetadataArgs(12)).toEqual([
                 'issue',
                 'view',
@@ -2057,7 +2178,16 @@ describe('lane publish', () => {
                 '--repo',
                 'jcosta33/sourdaw',
                 '--json',
-                'labels,milestone,projectItems',
+                'labels,milestone',
+            ]);
+            expect(issueProjectItemsArgs(12)).toEqual([
+                'issue',
+                'view',
+                '12',
+                '--repo',
+                'jcosta33/sourdaw',
+                '--json',
+                'projectItems',
             ]);
             expect(openMilestoneTitlesArgs()).toEqual(['api', 'repos/jcosta33/sourdaw/milestones?state=open']);
             expect(projectListArgs('jcosta33')).toEqual(['project', 'list', '--owner', 'jcosta33', '--format', 'json']);
@@ -2071,7 +2201,16 @@ describe('lane publish', () => {
                 '--repo',
                 'jcosta33/sourdaw',
                 '--json',
-                'labels,milestone,projectItems',
+                'labels,milestone',
+            ]);
+            expect(pullRequestProjectItemsArgs(41)).toEqual([
+                'pr',
+                'view',
+                '41',
+                '--repo',
+                'jcosta33/sourdaw',
+                '--json',
+                'projectItems',
             ]);
         });
 
@@ -2086,21 +2225,20 @@ describe('lane publish', () => {
                         7,
                     ],
                     milestone: { title: 'v1.2' },
-                    projectItems: [{ title: 'Roadmap' }, { title: 'Roadmap' }, {}, { title: 3 }],
                 })
             ).toEqual({
                 milestoneTitle: 'v1.2',
-                projectTitles: ['Roadmap'],
                 labels: [
                     { name: 'bug', description: "Something isn't working" },
                     { name: 'enhancement' },
                     { name: 'kimi-k2.5', description: 'Authored by kimi-k2.5' },
                 ],
             });
-            expect(trackerMetadataFromIssueRow({ milestone: null, projectItems: undefined })).toEqual({
-                projectTitles: [],
-                labels: [],
-            });
+            expect(trackerMetadataFromIssueRow({ milestone: null })).toEqual({ labels: [] });
+            expect(
+                projectTitlesFromRow({ projectItems: [{ title: 'Roadmap' }, { title: 'Roadmap' }, {}, { title: 3 }] })
+            ).toEqual(['Roadmap']);
+            expect(projectTitlesFromRow({ projectItems: undefined })).toEqual([]);
             expect(openMilestoneTitlesFromRows([{ title: 'v1.2' }, { title: 3 }, 'bare'])).toEqual(['v1.2']);
             expect(() => openMilestoneTitlesFromRows({})).toThrow(/malformed/);
             expect(projectTitlesFromListing({ projects: [{ title: 'Roadmap' }], totalCount: 1 })).toEqual(['Roadmap']);
@@ -2120,20 +2258,19 @@ describe('lane publish', () => {
             ]);
             expect(() => labelRowsFromListing({})).toThrow(/malformed/);
             expect(
-                pullRequestMetadataFromRow({
+                pullRequestLabelMetadataFromRow({
                     labels: [{ name: 'glm-5.3' }, 'bug', {}],
                     milestone: { title: 'v1.2' },
-                    projectItems: [{ title: 'Roadmap' }, { title: 'Roadmap' }],
                 })
             ).toEqual({
                 labels: ['glm-5.3', 'bug'],
                 fencedAuthorLabels: [],
                 milestoneTitle: 'v1.2',
-                projectTitles: ['Roadmap'],
             });
-            expect(pullRequestMetadataFromRow({ labels: undefined, milestone: null, projectItems: undefined })).toEqual(
-                { labels: [], fencedAuthorLabels: [], projectTitles: [] }
-            );
+            expect(pullRequestLabelMetadataFromRow({ labels: undefined, milestone: null })).toEqual({
+                labels: [],
+                fencedAuthorLabels: [],
+            });
         });
 
         it('drops the issue-workflow namespaces and authored-by labels from inherited labels', () => {
@@ -2160,6 +2297,18 @@ describe('lane publish', () => {
             expect(derivedLabelFromSubject('test(delivery): cover publish')).toBeUndefined();
             expect(derivedLabelFromSubject('refactor: simplify')).toBeUndefined();
             expect(derivedLabelFromSubject('Knob polishing pass')).toBeUndefined();
+        });
+
+        it('derives the board an issueless lane belongs on from its type label', () => {
+            expect(derivedProjectFromSubject('fix(audio): repair dropout')).toBe('Sourdaw Bugs');
+            expect(derivedProjectFromSubject('feat(vcs): add identities')).toBe('Sourdaw Roadmap');
+            expect(derivedProjectFromSubject('docs: explain lanes')).toBe('Sourdaw Roadmap');
+            expect(derivedProjectFromSubject('fix(ui)!: urgent regression')).toBe('Sourdaw Bugs');
+            // A type outside the label map names work that is none of the three, so it names no
+            // board either — the same deliberately small map, read once.
+            expect(derivedProjectFromSubject('chore(build): bump')).toBeUndefined();
+            expect(derivedProjectFromSubject('refactor: simplify')).toBeUndefined();
+            expect(derivedProjectFromSubject('Knob polishing pass')).toBeUndefined();
         });
 
         it('resolves --label values to the canonical live spelling', () => {
@@ -2242,7 +2391,7 @@ describe('lane publish', () => {
 
         it('reads fenced authorship labels from the pull-request row', () => {
             expect(
-                pullRequestMetadataFromRow({
+                pullRequestLabelMetadataFromRow({
                     labels: [
                         { name: 'bug', description: 'Something is broken' },
                         { name: 'glm-5.3', description: 'Authored by glm-5.3' },
@@ -2274,6 +2423,8 @@ describe('lane publish', () => {
             if (plan === undefined) {
                 throw new Error('expected a metadata edit plan');
             }
+            // The App edit carries labels and milestone only: --add-project needs the operator
+            // credential, and one gh call cannot hold both identities.
             expect(applyPullRequestMetadataArgs(41, plan)).toEqual([
                 'pr',
                 'edit',
@@ -2284,8 +2435,26 @@ describe('lane publish', () => {
                 'bug',
                 '--milestone',
                 'v1.2',
+            ]);
+            expect(addPullRequestProjectsArgs(41, plan.addProjectTitles)).toEqual([
+                'pr',
+                'edit',
+                '41',
+                '--repo',
+                'jcosta33/sourdaw',
                 '--add-project',
                 'Roadmap',
+            ]);
+            expect(addPullRequestProjectsArgs(41, ['Sourdaw Bugs', 'Sourdaw Roadmap'])).toEqual([
+                'pr',
+                'edit',
+                '41',
+                '--repo',
+                'jcosta33/sourdaw',
+                '--add-project',
+                'Sourdaw Bugs',
+                '--add-project',
+                'Sourdaw Roadmap',
             ]);
         });
 
@@ -2448,7 +2617,6 @@ describe('lane publish', () => {
                 labels: ['glm-5.3'],
                 fencedAuthorLabels: ['glm-5.3'],
                 milestoneTitle: 'v1.2',
-                projectTitles: [],
             });
 
             publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
@@ -2524,6 +2692,36 @@ describe('lane publish', () => {
 
             expect(calls.some((call) => call.startsWith('issueView:'))).toBe(false);
             expect(calls).toContain('metaEdit:88:glm-5.3,enhancement:-:-:-');
+        });
+
+        it('puts an issueless fix lane on the bugs board its type label names', () => {
+            const { port, calls } = fakePort({
+                trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+                cwd: CLEANUP_LANE,
+                subject: 'fix(audio): repair the dropout',
+                knownProjects: ['Sourdaw Bugs', 'Sourdaw Roadmap'],
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            expect(calls).toContain('projectList');
+            expect(calls.some((call) => call.startsWith('issueProjects:'))).toBe(false);
+            expect(calls).toContain('metaEdit:88:glm-5.3,bug:-:Sourdaw Bugs:-');
+        });
+
+        it('carries the live spelling of a derived board, not the table spelling', () => {
+            const { port, calls } = fakePort({
+                trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+                cwd: CLEANUP_LANE,
+                subject: 'docs: explain the lane contract',
+                knownProjects: ['SOURDAW ROADMAP'],
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            expect(calls).toContain('metaEdit:88:glm-5.3,documentation:-:SOURDAW ROADMAP:-');
         });
 
         it('derives from the frozen existing title on a republish, not the newest subject', () => {
@@ -2691,8 +2889,8 @@ describe('lane publish', () => {
             expect(calls.some((call) => call.startsWith('metaEdit:'))).toBe(false);
         });
 
-        it("fails an explicit --project when the App cannot list the owner's projects", () => {
-            const { port, calls } = fakePort({ projectListError: 'gh: Must have admin rights' });
+        it("fails an explicit --project when the owner's projects cannot be listed", () => {
+            const { port, calls } = fakePort({ projectListError: 'cannot verify orchestrator authentication' });
 
             expect(() =>
                 publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY, undefined, {
@@ -2704,24 +2902,25 @@ describe('lane publish', () => {
             expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
         });
 
-        it('skips project inheritance loudly when a bound issue reads empty and the App cannot list projects', () => {
-            // The reachable production shape: gh >= 2.92 swallows the Projects v2 enrichment error
-            // under an installation token, so the bound issue answers projectItems: [] while the
-            // owner's user-owned projects are unreadable. The probe must fire on the bound issue,
-            // not on a non-empty inherited list, or this skip is dead code.
+        it('skips project inheritance loudly when the operator credential cannot list projects', () => {
+            // Without a usable operator credential the owner's user-owned projects are unreadable,
+            // so the bound issue's own membership cannot be read either. The probe must fire before
+            // the inherited read, not after it, or the publish dies where it should warn.
             const { port, calls, logs } = fakePort({
-                issueTracker: { milestone: { title: 'v1.2' }, projectItems: [] },
+                issueTracker: { milestone: { title: 'v1.2' }, projectItems: [{ title: 'Sourdaw Roadmap' }] },
                 openMilestoneTitles: ['v1.2'],
-                projectListError: 'gh: Must have admin rights',
+                projectListError: 'cannot verify orchestrator authentication',
                 currentMetadata: { labels: [], milestoneTitle: 'v1.0', projectTitles: [] },
             });
 
             expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
 
             expect(calls).toContain('projectList');
+            expect(calls.some((call) => call.startsWith('issueProjects:'))).toBe(false);
             expect(logs).toContain(
-                "cannot list the owner's projects as the author App (gh: Must have admin rights); " +
-                    "leaving the pull request's project membership to the operator backfill"
+                "cannot list the owner's projects with the verified operator credential " +
+                    "(cannot verify orchestrator authentication); leaving the pull request's project " +
+                    'membership to the operator backfill'
             );
             // Label and milestone still asserted, with no --add-project piece: the skip must not
             // drop the whole metadata assertion.
@@ -2737,14 +2936,19 @@ describe('lane publish', () => {
             publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
             expect(calls).toContain('projectList');
+            expect(calls).toContain('issueProjects:12');
             expect(logs.some((line) => line.startsWith("cannot list the owner's projects"))).toBe(false);
             expect(calls).toContain('metaEdit:88:glm-5.3:-:-:-');
+            // Nothing to add, so the pull request's own membership is never read either.
+            expect(calls.some((call) => call.startsWith('prProjects:'))).toBe(false);
         });
 
-        it('skips the project-list probe entirely on an issueless lane without flags', () => {
+        it('skips the project-list probe entirely when nothing can name a project', () => {
+            // No issue, no flags, and a subject type that derives neither a label nor a board.
             const { port, calls } = fakePort({
                 trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
                 cwd: CLEANUP_LANE,
+                subject: 'chore(build): bump the toolchain',
             });
 
             expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
@@ -2753,14 +2957,16 @@ describe('lane publish', () => {
             expect(calls.some((call) => call.startsWith('issueView:'))).toBe(false);
         });
 
-        it("applies a canonical --project on an issueless lane when the App can list the owner's projects", () => {
+        it("applies a canonical --project on an issueless lane when the owner's projects list", () => {
             // The flags half of the probe trigger: nothing is inherited on this lane, so the
             // project piece of the edit can only come from the flag through the probe. If the
-            // probe's guard ignored flags, the edit would carry no project piece at all.
+            // probe's guard ignored flags, the edit would carry no project piece at all. The
+            // board this feat subject would derive is in the listing too, so the flag has to
+            // replace it rather than join it.
             const { port, calls } = fakePort({
                 trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
                 cwd: CLEANUP_LANE,
-                knownProjects: ['Roadmap'],
+                knownProjects: ['Roadmap', 'Sourdaw Roadmap'],
                 currentMetadata: { labels: [], projectTitles: [] },
             });
 
@@ -2778,11 +2984,11 @@ describe('lane publish', () => {
             expect(calls).toContain('metaEdit:88:glm-5.3,enhancement:-:Roadmap:-');
         });
 
-        it("fails an explicit --project on an issueless lane when the App cannot list the owner's projects", () => {
+        it("fails an explicit --project on an issueless lane when the owner's projects cannot be listed", () => {
             const { port, calls } = fakePort({
                 trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
                 cwd: CLEANUP_LANE,
-                projectListError: 'gh: Must have admin rights',
+                projectListError: 'cannot verify orchestrator authentication',
             });
 
             expect(() =>
@@ -2798,7 +3004,7 @@ describe('lane publish', () => {
             expect(calls.some((call) => call.startsWith('metaEdit:'))).toBe(false);
         });
 
-        it("applies inherited projects when the App can list the owner's projects", () => {
+        it("applies inherited projects when the operator credential can list the owner's projects", () => {
             const { port, calls } = fakePort({
                 issueTracker: { milestone: null, projectItems: [{ title: 'Roadmap' }] },
                 knownProjects: ['Roadmap'],
@@ -2807,8 +3013,49 @@ describe('lane publish', () => {
 
             publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
 
-            expect(calls).toContain('projectList');
+            // The probe proves the credential before the issue's own membership is read through it.
+            expect(calls.indexOf('projectList')).toBeGreaterThanOrEqual(0);
+            expect(calls.indexOf('issueProjects:12')).toBeGreaterThan(calls.indexOf('projectList'));
+            expect(calls).toContain('prProjects:88');
             expect(calls).toContain('metaEdit:88:glm-5.3:-:Roadmap:-');
+        });
+
+        it('leaves the pull request off every board when its derived project does not exist', () => {
+            const { port, calls, logs } = fakePort({
+                trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+                cwd: CLEANUP_LANE,
+                subject: 'fix(audio): repair the dropout',
+                knownProjects: ['Sourdaw Roadmap'],
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            expect(logs).toContain(
+                'no project named "Sourdaw Bugs" exists for jcosta33/sourdaw\'s owner; leaving this ' +
+                    "issueless lane's pull request off every board"
+            );
+            expect(calls).toContain('metaEdit:88:glm-5.3,bug:-:-:-');
+        });
+
+        it('skips the derived project loudly when the operator credential cannot list projects', () => {
+            const { port, calls, logs } = fakePort({
+                trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+                cwd: CLEANUP_LANE,
+                subject: 'fix(audio): repair the dropout',
+                projectListError: 'cannot read stored orchestrator authentication',
+                currentMetadata: { labels: [], projectTitles: [] },
+            });
+
+            expect(publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            expect(calls).toContain('projectList');
+            expect(logs).toContain(
+                "cannot list the owner's projects with the verified operator credential " +
+                    "(cannot read stored orchestrator authentication); leaving the pull request's " +
+                    'project membership to the operator backfill'
+            );
+            expect(calls).toContain('metaEdit:88:glm-5.3,bug:-:-:-');
         });
 
         it('refuses an unknown --milestone or --project before writing anything', () => {

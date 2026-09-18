@@ -12,6 +12,7 @@ import {
     REQUIRED_REPOSITORY,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
+    authenticateOrchestratorSession,
     authenticatePublishingAuthor,
     isAuthorBotNodeId,
     gitAuthenticatedArgs,
@@ -144,13 +145,18 @@ export type PublishMetadataFlags = {
     labels?: string[];
 };
 
-export type PullRequestMetadata = {
+/**
+ * The half of a pull request's metadata the author App can read. Project membership is not in it:
+ * it is read separately, through the operator credential, and only when a target project exists.
+ */
+export type PullRequestLabelMetadata = {
     labels: string[];
     /** Fenced authorship labels (`Authored by …` description) the pull request wears now. */
     fencedAuthorLabels: string[];
     milestoneTitle?: string;
-    projectTitles: string[];
 };
+
+export type PullRequestMetadata = PullRequestLabelMetadata & { projectTitles: string[] };
 
 /** The metadata a publication must leave on its pull request. `labels` leads with the model label. */
 export type PublishMetadataTarget = {
@@ -259,24 +265,29 @@ function labelNamesFromRow(labels: unknown[] | undefined): string[] {
 export type IssueTrackerRow = {
     labels?: unknown[];
     milestone?: { title?: unknown } | null;
-    projectItems?: unknown[];
 };
 
 export function trackerMetadataFromIssueRow(row: IssueTrackerRow): {
     milestoneTitle?: string;
-    projectTitles: string[];
     labels: LabelRow[];
 } {
     const milestoneTitle = titleOf(row.milestone);
-    const projectTitles = (row.projectItems ?? []).flatMap((item) => {
-        const title = titleOf(item);
-        return title === undefined ? [] : [title];
-    });
     return {
         ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
-        projectTitles: [...new Set(projectTitles)],
         labels: labelRowsFromRow(row.labels),
     };
+}
+
+/** One parser for both `projectItems` rows: an issue's and a pull request's carry the same shape. */
+export function projectTitlesFromRow(row: { projectItems?: unknown[] }): string[] {
+    return [
+        ...new Set(
+            (row.projectItems ?? []).flatMap((item) => {
+                const title = titleOf(item);
+                return title === undefined ? [] : [title];
+            })
+        ),
+    ];
 }
 
 export function openMilestoneTitlesFromRows(rows: unknown): string[] {
@@ -308,10 +319,9 @@ export function projectTitlesFromListing(listing: unknown): string[] {
 export type PullRequestMetadataRow = {
     labels?: unknown[];
     milestone?: { title?: unknown } | null;
-    projectItems?: unknown[];
 };
 
-export function pullRequestMetadataFromRow(row: PullRequestMetadataRow): PullRequestMetadata {
+export function pullRequestLabelMetadataFromRow(row: PullRequestMetadataRow): PullRequestLabelMetadata {
     const milestoneTitle = titleOf(row.milestone);
     return {
         labels: labelNamesFromRow(row.labels),
@@ -319,14 +329,6 @@ export function pullRequestMetadataFromRow(row: PullRequestMetadataRow): PullReq
             .filter(isAuthorshipLabel)
             .map((label) => label.name),
         ...(milestoneTitle === undefined ? {} : { milestoneTitle }),
-        projectTitles: [
-            ...new Set(
-                (row.projectItems ?? []).flatMap((item) => {
-                    const title = titleOf(item);
-                    return title === undefined ? [] : [title];
-                })
-            ),
-        ],
     };
 }
 
@@ -407,6 +409,23 @@ export function derivedLabelFromSubject(subject: string): string | undefined {
 }
 
 /**
+ * Where an issueless lane's pull request belongs, keyed by the type label its subject derives: the
+ * boards an issue-bound lane would inherit through its issue. A type that derives no label lands on
+ * no board either, and the derived title is still proven against the live project listing before it
+ * is applied — this table names a board, it does not assert one exists.
+ */
+const TYPE_LABEL_PROJECTS: Readonly<Record<string, string>> = {
+    bug: 'Sourdaw Bugs',
+    enhancement: 'Sourdaw Roadmap',
+    documentation: 'Sourdaw Roadmap',
+};
+
+export function derivedProjectFromSubject(subject: string): string | undefined {
+    const label = derivedLabelFromSubject(subject);
+    return label === undefined ? undefined : TYPE_LABEL_PROJECTS[label];
+}
+
+/**
  * gh's default page is 30; the repository's label set is far below this limit. The description
  * rides along because it is what the authorship fence reads.
  */
@@ -458,6 +477,11 @@ export function metadataEditPlan(
     };
 }
 
+/**
+ * Labels and milestone only: those are the author App's to write. `--add-project` needs the
+ * operator credential and travels in its own edit, so mixing it in here would fail the whole edit
+ * and leave the labels unapplied too.
+ */
 export function applyPullRequestMetadataArgs(number: number, plan: MetadataEditPlan): string[] {
     return [
         'pr',
@@ -468,7 +492,17 @@ export function applyPullRequestMetadataArgs(number: number, plan: MetadataEditP
         ...plan.addLabels.flatMap((label) => ['--add-label', label]),
         ...plan.removeLabels.flatMap((label) => ['--remove-label', label]),
         ...(plan.milestoneTitle === undefined ? [] : ['--milestone', plan.milestoneTitle]),
-        ...plan.addProjectTitles.flatMap((title) => ['--add-project', title]),
+    ];
+}
+
+export function addPullRequestProjectsArgs(number: number, titles: string[]): string[] {
+    return [
+        'pr',
+        'edit',
+        String(number),
+        '--repo',
+        REQUIRED_REPOSITORY,
+        ...titles.flatMap((title) => ['--add-project', title]),
     ];
 }
 
@@ -495,13 +529,15 @@ export type PublishLanePort = {
     ensureModelLabel: (model: string) => void;
     readIssueTrackerMetadata: (issue: number) => {
         milestoneTitle?: string;
-        projectTitles: string[];
         labels: LabelRow[];
     };
     openMilestoneTitles: () => string[];
+    /** Operator-credentialed: user-owned Projects v2 are unreachable for an installation token. */
     knownProjectTitles: () => string[];
+    readIssueProjectTitles: (issue: number) => string[];
     knownLabels: () => LabelRow[];
-    readPullRequestMetadata: (number: number) => PullRequestMetadata;
+    readPullRequestMetadata: (number: number) => PullRequestLabelMetadata;
+    readPullRequestProjectTitles: (number: number) => string[];
     applyPullRequestMetadata: (number: number, plan: MetadataEditPlan) => void;
     log: (message: string) => void;
     guardFailure: (laneName: string) => GuardFailureReceipt | undefined;
@@ -1014,8 +1050,9 @@ export function publishLane(
  * with neither fails closed rather than pushing an unattributed pull request. The resolved
  * model's label name is then proven free against the live label list, so the `--force` label
  * creation can only ever create fresh or update the mechanism's own label. Milestone and
- * projects come from the lane's issue, and flag values override them per field after validation
- * against live tracker state — left empty rather than forced onto the pull request. Descriptive
+ * projects come from the lane's issue, or on an issueless lane the projects come from the
+ * conventional subject's type, and flag values override them per field after validation against
+ * live tracker state — left empty rather than forced onto the pull request. Descriptive
  * labels come from the same issue read (minus the issue-workflow namespaces and authorship
  * labels), or on an issueless lane from the conventional subject, and `--label` adds more by
  * live canonical name; unlike authorship labels they are never created on demand. The model
@@ -1026,7 +1063,7 @@ export function publishLane(
  * (this script never retitles, so a follow-up commit's subject must not re-derive the label), or
  * the newest non-merge conventional subject on a fresh create. A manually retitled,
  * non-conventional title derives nothing. It is `undefined` for a legacy lane, whose title is not
- * this script's to derive, so a legacy lane derives no label either.
+ * this script's to derive, so a legacy lane derives neither a label nor a project.
  */
 function resolvePublishMetadata(
     lane: ResolvedLane,
@@ -1063,8 +1100,8 @@ function resolvePublishMetadata(
         }
     }
     const projectTitles = resolveProjectTitles(
-        laneIssue !== undefined,
-        inherited?.projectTitles ?? [],
+        laneIssue,
+        laneIssue === undefined && subject !== undefined ? derivedProjectFromSubject(subject) : undefined,
         flags?.projects,
         port
     );
@@ -1133,25 +1170,32 @@ function readRecordedAuthorModel(branch: string, port: PublishLanePort): string 
 }
 
 /**
- * Installation tokens cannot access user-owned Projects v2 — the platform offers no installation
+ * Every project read and write on this path runs through the verified operator credential, because
+ * installation tokens cannot access user-owned Projects v2 — the platform offers no installation
  * permission for them — and gh ≥ 2.92 swallows the Projects v2 enrichment error and answers
- * `gh issue view --json projectItems` with `projectItems: []` and exit 0, so under this token an
- * empty read cannot be trusted as "no projects": empty and unreadable are indistinguishable. The
- * project list probe is therefore the only reliable capability signal, and it runs before any
- * pull-request write whenever a lane issue is bound or `--project` flags are present. With
- * explicit flags an unreachable list is a hard failure (the operator asked for something this
- * token cannot deliver and must know now), while an issue-bound lane with no flags skips project
- * application with one loud line and the publish continues, leaving the pull request's project
- * membership to the operator backfill. Only a lane with neither a bound issue nor flags skips the
- * probe entirely — there is nothing to apply and nothing to report.
+ * `gh issue view --json projectItems` with `projectItems: []` and exit 0, so under the author App
+ * an empty read cannot be trusted as "no projects": empty and unreadable are indistinguishable.
+ *
+ * The project list is therefore both the capability probe and the credential's first use: it runs
+ * before any inherited or derived title is read, and before any pull-request write, whenever a lane
+ * issue is bound, `--project` flags are present, or an issueless lane's subject derives a board.
+ * With explicit flags an unreachable list is a hard failure — the operator asked for something this
+ * run cannot deliver and must know now — while the other two sources skip project application with
+ * one loud line and let the publish continue, leaving the pull request's project membership to the
+ * operator backfill. A lane with none of the three skips the probe entirely: there is nothing to
+ * apply and nothing to report.
+ *
+ * A derived title names a board this repository is expected to keep, not one that must exist, so it
+ * survives only when the live listing canonically matches it; an inherited title needs no such
+ * check, because the issue already sits on the board.
  */
 function resolveProjectTitles(
-    issueBound: boolean,
-    inheritedTitles: string[],
+    laneIssue: number | undefined,
+    derivedTitle: string | undefined,
     flaggedTitles: string[] | undefined,
     port: PublishLanePort
 ): string[] {
-    if (!issueBound && flaggedTitles === undefined) {
+    if (laneIssue === undefined && flaggedTitles === undefined && derivedTitle === undefined) {
         return [];
     }
     let knownTitles: string[];
@@ -1161,14 +1205,15 @@ function resolveProjectTitles(
         const reason = error instanceof Error ? error.message : String(error);
         if (flaggedTitles !== undefined) {
             fail(
-                `cannot list the owner's projects as the author App (${reason}); installation tokens cannot ` +
-                    'access user-owned Projects v2. Apply the project membership by hand under the operator ' +
-                    'backfill exception, or retry without --project'
+                `cannot list the owner's projects with the verified operator credential (${reason}); ` +
+                    'installation tokens cannot access user-owned Projects v2, so only that credential can ' +
+                    'apply project membership. Apply it by hand under the operator backfill exception, or ' +
+                    'retry without --project'
             );
         }
         port.log(
-            `cannot list the owner's projects as the author App (${reason}); leaving the pull request's ` +
-                'project membership to the operator backfill'
+            `cannot list the owner's projects with the verified operator credential (${reason}); leaving ` +
+                "the pull request's project membership to the operator backfill"
         );
         return [];
     }
@@ -1176,7 +1221,21 @@ function resolveProjectTitles(
         const canonical = flaggedTitles.map((title) => canonicalProjectTitle(title, knownTitles));
         return [...new Set(canonical)];
     }
-    return inheritedTitles;
+    if (laneIssue !== undefined) {
+        return port.readIssueProjectTitles(laneIssue);
+    }
+    if (derivedTitle === undefined) {
+        return [];
+    }
+    const canonical = knownTitles.find((known) => known.toLowerCase() === derivedTitle.toLowerCase());
+    if (canonical === undefined) {
+        port.log(
+            `no project named "${derivedTitle}" exists for ${REQUIRED_REPOSITORY}'s owner; leaving this ` +
+                "issueless lane's pull request off every board"
+        );
+        return [];
+    }
+    return [canonical];
 }
 
 /**
@@ -1187,7 +1246,10 @@ function resolveProjectTitles(
  */
 function assertPullRequestMetadata(number: number, target: PublishMetadataTarget, port: PublishLanePort): void {
     const current = port.readPullRequestMetadata(number);
-    const plan = metadataEditPlan(target, current);
+    // With no target board the plan's project piece is empty whatever the pull request already
+    // carries, and the read costs the operator credential this run may not hold at all.
+    const projectTitles = target.projectTitles.length === 0 ? [] : port.readPullRequestProjectTitles(number);
+    const plan = metadataEditPlan(target, { ...current, projectTitles });
     if (plan === undefined) {
         return;
     }
@@ -1368,11 +1430,42 @@ function laneSubjectArgs(baseSha: string, headSha: string): string[] {
     return ['log', '-1', '--format=%s', '--no-merges', `${baseSha}..${headSha}`];
 }
 
+/**
+ * The verified operator credential, opened on its first project read and reused for the rest of the
+ * publish. Opening it lazily keeps every publish that touches no board — a legacy lane, an
+ * issueless lane whose subject derives none — working on a machine that holds no operator
+ * credential at all, and keeps the token's lifetime to the window that needs it.
+ */
+export type OperatorSessionAccess = {
+    session: () => GhSession;
+    dispose: () => void;
+};
+
+export function operatorSessionAccess(
+    env: NodeJS.ProcessEnv,
+    authenticate: (input: { env: NodeJS.ProcessEnv }) => { session: GhSession } = authenticateOrchestratorSession
+): OperatorSessionAccess {
+    let opened: GhSession | undefined;
+    return {
+        session: () => {
+            if (opened === undefined) {
+                opened = authenticate({ env }).session;
+            }
+            return opened;
+        },
+        dispose: () => {
+            opened?.dispose();
+            opened = undefined;
+        },
+    };
+}
+
 export function shellPort(
     session: GhSession,
     cwd: string = process.cwd(),
     resolvedPrimaryRoot?: string,
-    executables: { git: string; gh: string } = { git: 'git', gh: 'gh' }
+    executables: { git: string; gh: string } = { git: 'git', gh: 'gh' },
+    operator?: OperatorSessionAccess
 ): PublishLanePort {
     const primaryRoot =
         resolvedPrimaryRoot ??
@@ -1392,6 +1485,14 @@ export function shellPort(
         });
     const gh = (args: string[]) => spawnCapture(executables.gh, args, { cwd: primaryRoot, env: session.env });
     const ghRun = (args: string[]) => spawnRun(executables.gh, args, { cwd: primaryRoot, env: session.env });
+    const operatorEnv = () => {
+        if (operator === undefined) {
+            fail('project membership needs the verified operator credential, which this port was built without');
+        }
+        return operator.session().env;
+    };
+    const operatorGh = (args: string[]) => spawnCapture(executables.gh, args, { cwd: primaryRoot, env: operatorEnv() });
+    const operatorGhRun = (args: string[]) => spawnRun(executables.gh, args, { cwd: primaryRoot, env: operatorEnv() });
     return {
         baseSha: () => {
             spawnRun(
@@ -1588,17 +1689,36 @@ export function shellPort(
         openMilestoneTitles: () =>
             openMilestoneTitlesFromRows(parseJson<unknown>(gh(openMilestoneTitlesArgs()), 'open milestone titles')),
         knownProjectTitles: () =>
-            projectTitlesFromListing(parseJson<unknown>(gh(projectListArgs(repositoryOwner)), 'project list')),
+            projectTitlesFromListing(parseJson<unknown>(operatorGh(projectListArgs(repositoryOwner)), 'project list')),
+        readIssueProjectTitles: (issue) =>
+            projectTitlesFromRow(
+                parseJson<{ projectItems?: unknown[] }>(
+                    operatorGh(issueProjectItemsArgs(issue)),
+                    `issue #${issue} project membership`
+                )
+            ),
         knownLabels: () => labelRowsFromListing(parseJson<unknown>(gh(labelListArgs()), 'repository label list')),
         readPullRequestMetadata: (number) =>
-            pullRequestMetadataFromRow(
+            pullRequestLabelMetadataFromRow(
                 parseJson<PullRequestMetadataRow>(
                     gh(pullRequestMetadataArgs(number)),
                     `pull request #${number} metadata`
                 )
             ),
+        readPullRequestProjectTitles: (number) =>
+            projectTitlesFromRow(
+                parseJson<{ projectItems?: unknown[] }>(
+                    operatorGh(pullRequestProjectItemsArgs(number)),
+                    `pull request #${number} project membership`
+                )
+            ),
         applyPullRequestMetadata: (number, plan) => {
-            ghRun(applyPullRequestMetadataArgs(number, plan));
+            if (plan.addLabels.length > 0 || plan.removeLabels.length > 0 || plan.milestoneTitle !== undefined) {
+                ghRun(applyPullRequestMetadataArgs(number, plan));
+            }
+            if (plan.addProjectTitles.length > 0) {
+                operatorGhRun(addPullRequestProjectsArgs(number, plan.addProjectTitles));
+            }
         },
         log: (message) => {
             console.log(message);
@@ -1682,7 +1802,11 @@ export function updatePullRequestArgs(number: number, body: string): string[] {
 }
 
 export function issueTrackerMetadataArgs(issue: number): string[] {
-    return ['issue', 'view', String(issue), '--repo', REQUIRED_REPOSITORY, '--json', 'labels,milestone,projectItems'];
+    return ['issue', 'view', String(issue), '--repo', REQUIRED_REPOSITORY, '--json', 'labels,milestone'];
+}
+
+export function issueProjectItemsArgs(issue: number): string[] {
+    return ['issue', 'view', String(issue), '--repo', REQUIRED_REPOSITORY, '--json', 'projectItems'];
 }
 
 export function openMilestoneTitlesArgs(): string[] {
@@ -1694,7 +1818,11 @@ export function projectListArgs(owner: string): string[] {
 }
 
 export function pullRequestMetadataArgs(number: number): string[] {
-    return ['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'labels,milestone,projectItems'];
+    return ['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'labels,milestone'];
+}
+
+export function pullRequestProjectItemsArgs(number: number): string[] {
+    return ['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'projectItems'];
 }
 
 export type OpenPullRequestRow = {
@@ -1823,6 +1951,10 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
                 trim: false,
             }),
     });
+    // The App session env strips every GH_/GITHUB_ variable and points gh at a throwaway config
+    // directory, so the stored operator credential is only reachable from the process-derived
+    // authorization env.
+    const operator = operatorSessionAccess(authorizationEnv);
     try {
         const repository = spawnCapture(
             runtime.ghPath,
@@ -1838,7 +1970,7 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
         }
         publishLane(
             parsed.issue,
-            shellPort(auth.session, selectionPath, primaryRoot, { git: runtime.gitPath, gh: runtime.ghPath }),
+            shellPort(auth.session, selectionPath, primaryRoot, { git: runtime.gitPath, gh: runtime.ghPath }, operator),
             parsed.relationship,
             parsed.testInstructions,
             parsed.summary,
@@ -1853,6 +1985,7 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
         return 0;
     } finally {
         auth.session.dispose();
+        operator.dispose();
     }
 }
 
