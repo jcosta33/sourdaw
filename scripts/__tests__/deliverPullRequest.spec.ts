@@ -29,6 +29,7 @@ import {
     type ShellRunner,
     type StackedPullRequest,
     type TrackerCompletionPort,
+    run,
 } from '../deliverPullRequest';
 import {
     AUTHOR_BOT_NODE_ID,
@@ -12628,6 +12629,14 @@ describe('delivery shell boundary', () => {
 
         expect(() => port.requiredStatusCheckContexts()).toThrow(
             'branch ruleset for jcosta33/sourdaw carries a required_status_checks rule with no parameters array'
+        );
+    });
+});
+
+describe('trusted child run', () => {
+    it("carries a failing child's stderr in the thrown error so skips name their cause", () => {
+        expect(() => run(process.execPath, ['-e', "console.error('trusted-child-boom'); process.exit(1)"])).toThrow(
+            /trusted-child-boom/
         );
     });
 });
