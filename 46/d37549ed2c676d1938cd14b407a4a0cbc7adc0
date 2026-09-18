@@ -1,0 +1,19 @@
+scripts/__tests__/publishLane.spec.ts
+  s_e703e32ff68acb::t_6a8d178a573897 890-892
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "46d37549ed2c676d1938cd14b407a4a0cbc7adc0",
+  "prompts": {},
+  "sessions": {
+    "s_e703e32ff68acb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa43314667015337f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
