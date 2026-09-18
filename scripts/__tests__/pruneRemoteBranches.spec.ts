@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { REQUIRED_REPOSITORY } from '../githubAppIdentity.ts';
+import { branchHoldsRevision, recordedRevisionsInTables, type RemoteBranch } from '../measurementRevisionHolders.ts';
 import {
-    branchHoldsRevision,
     classifyRemoteBranch,
     deleteRemoteBranch,
     encodeBranchRefPath,
@@ -10,13 +10,11 @@ import {
     parsePullRequestListing,
     pruneRemoteBranches,
     queryBaseDependents,
-    recordedRevisionsInTables,
     type BranchPullRequest,
     type DeleteOutcome,
     type PruneRemoteBranchesArgs,
     type PruneRemoteBranchesPort,
     type PullRequestListing,
-    type RemoteBranch,
 } from '../pruneRemoteBranches.ts';
 
 function branch(name: string, tip: string): RemoteBranch {
@@ -179,6 +177,7 @@ type FakePortInput = {
     branchTip?: (name: string) => string | undefined;
     deleteBranch?: (name: string) => DeleteOutcome;
     recordedMeasurementRevisions?: () => string[];
+    baseBranchTip?: () => RemoteBranch;
     branchHoldsRevision?: (branch: RemoteBranch, revision: string) => boolean;
 };
 function toListing(value: FakePullRequestsResult | undefined): PullRequestListing {
@@ -218,6 +217,10 @@ function fakePort(input: FakePortInput): {
             return input.deleteBranch === undefined ? 'deleted' : input.deleteBranch(name);
         },
         recordedMeasurementRevisions: () => input.recordedMeasurementRevisions?.() ?? [],
+        baseBranchTip: () =>
+            input.baseBranchTip?.() ??
+            input.branches.find((candidate) => candidate.name === 'main') ??
+            input.branches[0] ?? { name: 'main', tip: 'tip-main' },
         branchHoldsRevision: (branch, revision) => input.branchHoldsRevision?.(branch, revision) ?? false,
     };
     return { port, deleteCalls, pullRequestBatchSizes, branchTipCalls };
@@ -532,6 +535,7 @@ describe('pruneRemoteBranches', () => {
                 return 'deleted';
             },
             recordedMeasurementRevisions: () => [],
+            baseBranchTip: () => branch('main', 'tip-main'),
             branchHoldsRevision: () => false,
         };
         const { log, lines } = collectingLog();
@@ -606,6 +610,160 @@ describe('pruneRemoteBranches', () => {
         expect(lines).toContain(
             'kept measured: last remote holder of recorded measurement revision 2222222222222222222222222222222222222222'
         );
+    });
+
+    it('prunes ordinary branches and reports the revision by name when the recorded revision is gone from the remote', () => {
+        // A tracked table can record a sourceRevision the remote no longer holds: GitHub answers the
+        // comparison with "gh: Not Found (HTTP 404)", which the holder read classifies as a stale
+        // table entry rather than an unanswerable comparison. The run must report it once and still
+        // prune the merged branches that hold no revision. Without the gone-revision guard the error
+        // escapes and this test fails with the thrown error instead of returning 0.
+        const goneRevision = '7777777777777777777777777777777777777777';
+        const heldRevision = '8888888888888888888888888888888888888888';
+        const { port, deleteCalls } = fakePort({
+            branches: [branch('measured', 'tip-measured'), branch('ordinary', 'tip-ordinary')],
+            pullRequestsFor: () =>
+                new Map([
+                    ['measured', [mergedPr(1, 'tip-measured')]],
+                    ['ordinary', [mergedPr(2, 'tip-ordinary')]],
+                ]),
+            recordedMeasurementRevisions: () => [goneRevision, heldRevision],
+            baseBranchTip: () => branch('main', 'tip-main'),
+            branchHoldsRevision: (_candidate, revision) => {
+                if (revision === goneRevision) {
+                    throw new Error('gh: Not Found (HTTP 404)');
+                }
+                return false;
+            },
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual(['measured', 'ordinary']);
+        expect(lines).toContain(`unresolvable measurement revision ${goneRevision}: no remote branch holds it`);
+        expect(lines.filter((line) => line.startsWith('unresolvable measurement revision'))).toHaveLength(1);
+        expect(lines).toContain('spent ordinary tip-ordin #2:MERGED');
+        expect(lines).toContain('deleted 2, already gone 0, kept at re-check 0, remaining spent 0');
+    });
+
+    it('keeps the branch that still holds a recorded revision alongside an unresolvable one', () => {
+        // The resolver must keep working for the revisions after the gone one, or the branch that is
+        // the last remote holder of a live revision gets deleted and breaks the required Gate on main.
+        const goneRevision = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1';
+        const heldRevision = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2';
+        const { port, deleteCalls } = fakePort({
+            branches: [branch('holder', 'tip-holder'), branch('other', 'tip-other')],
+            pullRequestsFor: () =>
+                new Map([
+                    ['holder', [mergedPr(1, 'tip-holder')]],
+                    ['other', [mergedPr(2, 'tip-other')]],
+                ]),
+            recordedMeasurementRevisions: () => [goneRevision, heldRevision],
+            baseBranchTip: () => branch('main', 'tip-main'),
+            branchHoldsRevision: (candidate, revision) => {
+                if (revision === goneRevision) {
+                    throw new Error('gh: Not Found (HTTP 404)');
+                }
+                return candidate.name === 'holder';
+            },
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual(['other']);
+        expect(lines).toContain(`kept holder: last remote holder of recorded measurement revision ${heldRevision}`);
+    });
+
+    it('refuses the whole run without deleting anything when a revision comparison cannot be answered', () => {
+        // Only a comparison GitHub itself confirms gone may be reported and skipped. A rate limit,
+        // network failure, or unexpected response shape leaves reachability unknown, and an unknown
+        // answer must never be treated as "no branch holds it": a wrong skip deletes the last remote
+        // holder of a live measurement revision. The confirmed-gone classification is the only
+        // reason to continue, so any other failure escapes pruneRemoteBranches before the plan prints.
+        const { port, deleteCalls } = fakePort({
+            branches: [branch('measured', 'tip-measured')],
+            pullRequestsFor: () => new Map([['measured', [mergedPr(1, 'tip-measured')]]]),
+            recordedMeasurementRevisions: () => ['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'],
+            branchHoldsRevision: () => {
+                throw new Error('gh: API rate limit exceeded for installation (HTTP 403)');
+            },
+        });
+        const { log, lines } = collectingLog();
+
+        expect(() => pruneRemoteBranches(applyArgs(), port, log)).toThrow(
+            'gh: API rate limit exceeded for installation (HTTP 403)'
+        );
+        expect(deleteCalls).toEqual([]);
+        expect(lines).not.toContain(
+            'unresolvable measurement revision bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb: no remote branch holds it'
+        );
+        expect(lines.some((line) => line.startsWith('spent: '))).toBe(false);
+    });
+
+    it('reports only the gone revision and still refuses an unanswerable comparison reached alongside it', () => {
+        // The catch must discriminate on the confirmed-gone comparison, not on "some comparison
+        // failed": a first revision the remote confirms gone is reported and skipped, a later
+        // unanswerable one must still escape. Replacing the 404 classification with a bare catch
+        // would therefore report the second revision as gone and return normally.
+        const goneRevision = 'ccccccccccccccccccccccccccccccccccccccc1';
+        const unanswerableRevision = 'ccccccccccccccccccccccccccccccccccccccc2';
+        const { port, deleteCalls } = fakePort({
+            branches: [branch('spent-branch', 'tip-spent')],
+            pullRequestsFor: () => new Map([['spent-branch', [mergedPr(1, 'tip-spent')]]]),
+            recordedMeasurementRevisions: () => [goneRevision, unanswerableRevision],
+            baseBranchTip: () => branch('main', 'tip-main'),
+            branchHoldsRevision: (_candidate, revision) => {
+                if (revision === goneRevision) {
+                    throw new Error('gh: Not Found (HTTP 404)');
+                }
+                throw new Error('gh: unexpected end of JSON input');
+            },
+        });
+        const { log, lines } = collectingLog();
+
+        expect(() => pruneRemoteBranches(applyArgs(), port, log)).toThrow('gh: unexpected end of JSON input');
+        expect(deleteCalls).toEqual([]);
+        expect(lines).toContain(`unresolvable measurement revision ${goneRevision}: no remote branch holds it`);
+        expect(lines).not.toContain(
+            `unresolvable measurement revision ${unanswerableRevision}: no remote branch holds it`
+        );
+    });
+
+    it('retains a later holder when an earlier listed branch cannot be compared', () => {
+        // gh answers the same 404 for a vanished branch tip as for a missing revision, so a branch
+        // that cannot be compared must mean only "this branch holds nothing". Aborting the scan
+        // there would both discard holders already found and abandon the remaining branches, so the
+        // resolver would answer no holders and the prune would delete the branch that is the
+        // revision's last remote holder. The reference branch is compared successfully, so the
+        // revision is provably live and must never be reported as unresolvable.
+        const revision = '9999999999999999999999999999999999999999';
+        const { port, deleteCalls } = fakePort({
+            branches: [
+                branch('vanished', 'tip-vanished'),
+                branch('measured', 'tip-measured'),
+                branch('ordinary', 'tip-ordinary'),
+            ],
+            pullRequestsFor: () =>
+                new Map([
+                    ['vanished', [openPr(9, 'tip-elsewhere')]],
+                    ['measured', [mergedPr(1, 'tip-measured')]],
+                    ['ordinary', [mergedPr(2, 'tip-ordinary')]],
+                ]),
+            recordedMeasurementRevisions: () => [revision],
+            baseBranchTip: () => branch('reference', 'tip-reference'),
+            branchHoldsRevision: (candidate) => {
+                if (candidate.name === 'vanished') {
+                    throw new Error('gh: Not Found (HTTP 404)');
+                }
+                return candidate.name === 'measured';
+            },
+        });
+        const { log, lines } = collectingLog();
+
+        expect(pruneRemoteBranches(applyArgs(), port, log)).toBe(0);
+        expect(deleteCalls).toEqual(['ordinary']);
+        expect(lines).toContain(`kept measured: last remote holder of recorded measurement revision ${revision}`);
+        expect(lines.some((line) => line.startsWith('unresolvable measurement revision'))).toBe(false);
     });
 
     it('does not retain a holder when a surviving branch still holds the recorded revision', () => {
@@ -737,6 +895,91 @@ describe('branchHoldsRevision', () => {
         expect(() => branchHoldsRevision(branch('alpha', 'tip-alpha'), 'revision-sha', runner)).toThrow(
             'gh: Not Found (HTTP 404)'
         );
+    });
+
+    it('propagates an HTTP 404 that carries no resolvable revision, such as a malformed revision name', () => {
+        const runner = (): string => {
+            throw new Error('gh: Not Found (HTTP 404)');
+        };
+
+        expect(() => branchHoldsRevision(branch('alpha', 'tip-alpha'), 'revision-sha', runner)).toThrow(
+            'gh: Not Found (HTTP 404)'
+        );
+    });
+});
+
+describe('pruneRemoteBranches comparison-failure classification', () => {
+    const revision = 'dddddddddddddddddddddddddddddddddddddddd';
+
+    function pruneWithComparisonFailure(failure: (branch: RemoteBranch, revision: string) => boolean): {
+        deleteCalls: string[];
+        lines: string[];
+    } {
+        const { port, deleteCalls } = fakePort({
+            branches: [branch('measured', 'tip-measured')],
+            pullRequestsFor: () => new Map([['measured', [mergedPr(1, 'tip-measured')]]]),
+            recordedMeasurementRevisions: () => [revision],
+            baseBranchTip: () => branch('main', 'tip-main'),
+            branchHoldsRevision: failure,
+        });
+        const { log, lines } = collectingLog();
+        expect(() => pruneRemoteBranches(applyArgs(), port, log)).toThrow();
+        expect(deleteCalls).toEqual([]);
+        expect(lines).not.toContain(`unresolvable measurement revision ${revision}: no remote branch holds it`);
+        return { deleteCalls, lines };
+    }
+
+    it('refuses the run on a rate limit rather than treating an unknown reachability answer as gone', () => {
+        expect(
+            pruneWithComparisonFailure(() => {
+                throw new Error('gh: API rate limit exceeded for installation (HTTP 403)');
+            }).deleteCalls
+        ).toEqual([]);
+    });
+
+    it('refuses the run on a server fault or a gateway response', () => {
+        pruneWithComparisonFailure(() => {
+            throw new Error('gh: Server Error (HTTP 502)');
+        });
+        pruneWithComparisonFailure(() => {
+            throw new Error('gh: Bad Gateway (HTTP 504)');
+        });
+    });
+
+    it('refuses the run on a network failure or an unparsable response', () => {
+        pruneWithComparisonFailure(() => {
+            throw new Error('getaddrinfo ENOTFOUND api.github.com');
+        });
+        pruneWithComparisonFailure(() => {
+            throw new Error('gh: unexpected end of JSON input');
+        });
+    });
+
+    it('refuses the run when only the base comparison cannot be answered, so an unproven revision is never skipped', () => {
+        // A 404 on every listed branch is not proof on its own: if the independent base comparison
+        // fails for any other reason, reachability is unknown and the run must still refuse.
+        pruneWithComparisonFailure((candidate) => {
+            if (candidate.name === 'main') {
+                throw new Error('gh: Server Error (HTTP 502)');
+            }
+            throw new Error('gh: Not Found (HTTP 404)');
+        });
+    });
+
+    it('refuses the run on an HTTP 404 for a revision that is not full hexadecimal, so a malformed name never reads as gone', () => {
+        const { port, deleteCalls } = fakePort({
+            branches: [branch('measured', 'tip-measured')],
+            pullRequestsFor: () => new Map([['measured', [mergedPr(1, 'tip-measured')]]]),
+            recordedMeasurementRevisions: () => ['revision-sha'],
+            baseBranchTip: () => branch('main', 'tip-main'),
+            branchHoldsRevision: () => {
+                throw new Error('gh: Not Found (HTTP 404)');
+            },
+        });
+        const { log, lines } = collectingLog();
+        expect(() => pruneRemoteBranches(applyArgs(), port, log)).toThrow('gh: Not Found (HTTP 404)');
+        expect(deleteCalls).toEqual([]);
+        expect(lines).not.toContain('unresolvable measurement revision revision-sha: no remote branch holds it');
     });
 });
 

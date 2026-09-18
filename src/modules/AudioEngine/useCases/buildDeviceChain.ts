@@ -18,12 +18,15 @@ import {
     type DeviceNoteOnRequest,
 } from '../repositories/deviceStrategy/AudioDeviceStrategy';
 import { createWithheldDeviceStrategy } from '../repositories/deviceStrategy/createWithheldDeviceStrategy';
+import { isDesktopExternalPluginRuntime } from '../repositories/deviceStrategy/isDesktopExternalPluginRuntime';
+import { isEngineHostedPluginDeviceType } from '../repositories/deviceStrategy/isEngineHostedPluginDeviceType';
 import { isNodelessOfflineDeviceType } from '../repositories/deviceStrategy/nodelessOfflineDeviceTypes';
 import { createDeviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
 import { isUnrenderableCatalogDeviceType } from '../repositories/deviceStrategy/unrenderableCatalogDeviceTypes';
 import { isUnsupportedDeviceTypeError } from '../repositories/deviceStrategy/unsupportedDeviceTypeError';
 import { createFaustDevice } from '../repositories/faustDeviceFactory';
 
+import { readLoadedExternalInstanceIds } from './livePlayback/readLoadedExternalInstanceIds';
 import { isOfflineInstrumentDevice } from './offlineRender/isOfflineInstrumentDevice';
 
 export type DeviceNodeEntry = {
@@ -174,6 +177,82 @@ export type BuildDeviceChainContext = {
 };
 
 /**
+ * The user-visible reason this render cannot contain `device`, or `undefined`
+ * when leaving the device out reproduces what the session plays.
+ *
+ * `loaded` is whether the device names an instance loaded on the desktop
+ * runtime — a parameter snapshot exists for it in
+ * `externalPluginParameterStore`, whether or not the native engine has
+ * attached it yet. It decides the plugin arm, because a loaded instance
+ * sounds live the moment the engine attaches it, which can happen after this
+ * render already ran: a plugin loaded while the transport is parked has not
+ * attached yet but sounds on the very next Play, so keying the refusal on the
+ * narrower attach state would let that instance's offline render go dry. A
+ * duplicated track, a track template, a never-loaded device and a
+ * browser-build project (whose `loadPlugin` stub writes a snapshot but never
+ * sounds, so the desktop-runtime gate excludes it) all carry an
+ * `external-plugin` device with nothing loaded behind it, and
+ * `TrackNode` then builds a unity pass-through that is silent in playback
+ * too. Refusing over one of those would make a project unrenderable over a
+ * device it never sounded.
+ *
+ * The wording names the *render* rather than one command: the same refusal
+ * reaches the user through Export, Freeze, Bounce and the stems warning
+ * channel, so "Export stopped" read as a lie on three of the four.
+ */
+function unrenderableDeviceRefusal(device: Device, trackLabel: string, loaded: boolean): string | undefined {
+    if (isEngineHostedPluginDeviceType(device.type)) {
+        if (!loaded) {
+            return undefined;
+        }
+        return (
+            `Track "${trackLabel}" hosts the plugin "${device.name}" (${device.type}), which only the native ` +
+            `engine can render, so this render cannot include it. Bypass or remove the plugin to render without it.`
+        );
+    }
+    if (isUnrenderableCatalogDeviceType(device.type)) {
+        // Name it both ways: the rack chip the user has to find is labelled
+        // with the display name, while the type is what a bug report or a
+        // project file will show.
+        return (
+            `Track "${trackLabel}" uses the device "${device.name}" (${device.type}), which this build cannot ` +
+            `render offline, so this render cannot include it. Remove the device from the track to render without it.`
+        );
+    }
+    return undefined;
+}
+
+/**
+ * Release the strategies this chain already built, before a refusal throws
+ * past them.
+ *
+ * Every metered native device takes one of the shared 64 telemetry slots at
+ * construction, and only its `destroy()` gives the slot back — the same reason
+ * `destroyOfflineDeviceStrategies` exists for the success and failure paths of
+ * a whole render. A refusal thrown out of the middle of a rack is the one exit
+ * that helper cannot cover: the entries never reach the caller, so nothing
+ * else can tear them down and the slots leak for the page session.
+ *
+ * A device that throws on the way out must not replace the refusal the user
+ * needs to read, so each teardown is guarded and the loop carries on.
+ */
+function releaseBuiltStrategies(
+    entries: readonly DeviceNodeEntry[],
+    logger: { warn: (message: string) => void }
+): void {
+    for (const entry of entries) {
+        try {
+            entry.strategy.destroy?.();
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            logger.warn(
+                `Device ${entry.deviceType} (${entry.deviceId}) threw while a refused render tore it down: ${reason}`
+            );
+        }
+    }
+}
+
+/**
  * Build an audio device chain, connecting devices between input and output nodes.
  *
  * Supports three device backends via the unified DeviceFactoryRegistry:
@@ -197,6 +276,28 @@ export type BuildDeviceChainContext = {
  *   no `instrumentControls`, an unrenderable *instrument* came back as the
  *   builtin fallback synth (sawtooth at 0.3) — wrong in a way that sounds
  *   deliberate. A render must contain what playback contains.
+ * - An `external-plugin` device whose instance is loaded on the desktop
+ *   runtime (`isEngineHostedPluginDeviceType` and
+ *   `readLoadedExternalInstanceIds`) is the same refusal for a different
+ *   reason: it is not a coverage hole, it is a device family this render path
+ *   cannot reach at all. A loaded instance is *not* silent in live playback —
+ *   once the engine attaches it, the native engine hosts and sounds it inline
+ *   on its own audio callback, with the Web Audio graph carrying only a unity
+ *   pass-through — so dropping it here would diverge from what the session
+ *   actually plays, worst of all on freeze, where the resulting dry render
+ *   replaces the audible track. A plugin loaded while the transport is parked
+ *   has not attached yet but sounds on the very next Play, so the refusal
+ *   keys on the load, not the narrower attach state. The native offline path
+ *   cannot host a plugin instance either (it maps against an empty instance
+ *   table by design), so there is no render to build toward yet; refusing
+ *   until a bounce through the live engine exists is the honest behaviour.
+ *
+ *   The load state is the whole test, not the device type: a duplicated
+ *   track, a track template and a browser-build project (whose `loadPlugin`
+ *   stub writes a snapshot but never sounds, so the desktop-runtime gate
+ *   excludes it) all carry the device with nothing loaded, and `TrackNode`
+ *   gives it a unity pass-through that sounds nothing live either. Those
+ *   degrade with the warning, exactly like the never-claimed types below.
  * - Everything else degrades and reaches the user through the export warning
  *   channel instead of only the log: a real implementation that failed at
  *   runtime (missing WASM asset, unavailable worklet, Faust compile error), and
@@ -204,7 +305,8 @@ export type BuildDeviceChainContext = {
  *   live playback too — `TrackNode` returns without a node when no descriptor
  *   matches — so dropping it offline matches playback rather than diverging
  *   from it. Refusing there would make a project unexportable over a device it
- *   never sounded.
+ *   never sounded. (A stale factory-preset display name, e.g. `Drum Comp`, is
+ *   this case, not the plugin case above.)
  *
  * Device types rendered by another offline path never reach either branch; see
  * `isNodelessOfflineDeviceType`.
@@ -231,6 +333,17 @@ export const buildDeviceChain = inject({ logger })(
                 inputNode.connect(outputNode);
                 return [];
             }
+
+            // One snapshot for the whole chain, so every device in a rack is
+            // judged against the same engine state. Taken here rather than per
+            // device: the set is rebuilt from the store on each read, and a
+            // rack that straddled two reads could refuse over one device and
+            // degrade over another for reasons the user cannot see.
+            const loadedInstanceIds = readLoadedExternalInstanceIds();
+            // Static for the whole chain build too — the browser build's
+            // `loadPlugin` stub writes a snapshot that never sounds, so a
+            // loaded instance only means something live on the desktop runtime.
+            const onDesktopRuntime = isDesktopExternalPluginRuntime();
 
             const entries: DeviceNodeEntry[] = [];
             let prev: AudioNode = inputNode;
@@ -284,30 +397,25 @@ export const buildDeviceChain = inject({ logger })(
                             await runOfflineInstrumentSetup({ device, port: workletPort, logger });
                         }
                     } catch (error) {
-                        // Refuse only when the product claims this device and we
-                        // cannot render it — that is the case where dropping it
-                        // hands back a file the session does not play. A type the
-                        // catalog does not know (a stale preset string, a
-                        // third-party plugin an OfflineAudioContext cannot host) is
-                        // already silent in live playback, so dropping it offline
-                        // reproduces playback exactly and degrades instead.
+                        // Refuse only for a device the session is actually
+                        // sounding — dropping one of those hands back a file the
+                        // session does not play. A type the catalog does not know
+                        // (a stale factory-preset display name), and a hosted
+                        // plugin with nothing loaded, are both silent in live
+                        // playback already, so dropping them offline reproduces
+                        // playback exactly and degrades instead;
+                        // `unrenderableDeviceRefusal` draws that line.
                         //
                         // A track whose audio cannot reach the file at all is never
                         // worth refusing over; see `contributesAudio`.
-                        if (
-                            isUnsupportedDeviceTypeError(error) &&
-                            contributesAudio &&
-                            isUnrenderableCatalogDeviceType(device.type)
-                        ) {
-                            // Name it both ways: the rack chip the user has to find
-                            // is labelled with the display name, while the type is
-                            // what a bug report or a project file will show.
-                            throw createExportError(
-                                `Track "${trackLabel}" uses the device "${device.name}" (${device.type}), which this ` +
-                                    `build cannot render offline. Export stopped rather than producing a file without ` +
-                                    `it. Remove the device from the track to export.`,
-                                error
-                            );
+                        const loaded =
+                            onDesktopRuntime &&
+                            device.externalInstanceId !== undefined &&
+                            loadedInstanceIds.has(device.externalInstanceId);
+                        const refusal = unrenderableDeviceRefusal(device, trackLabel, loaded);
+                        if (isUnsupportedDeviceTypeError(error) && contributesAudio && refusal !== undefined) {
+                            releaseBuiltStrategies(entries, logger);
+                            throw createExportError(refusal, error);
                         }
                         // When the plugin fails because it requires cross-origin
                         // isolation (SharedArrayBuffer), surface a user-visible message —

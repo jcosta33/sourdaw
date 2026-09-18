@@ -96,7 +96,11 @@ export const EVIDENCE_SUITE_COMMANDS: Readonly<Record<string, string>> = {
  * runtime rather than a path token in its own text, so `commandFixturePaths` can never see it.
  */
 export const EVIDENCE_SUITE_DATA: Readonly<Record<string, readonly string[]>> = {
-    'AC-054': ['evidence/agent-campaign/corpora/development.json', 'evidence/agent-campaign/corpora/held-out.json'],
+    'AC-054': [
+        'evidence/agent-campaign/corpora/development.json',
+        'evidence/agent-campaign/corpora/fixture-project.json',
+        'evidence/agent-campaign/corpora/held-out.json',
+    ],
 };
 
 /** Task ownership of the requirement ids. Every id above appears under exactly one task. */

@@ -108,16 +108,28 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     }
 
     let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [], withheldDeviceTypes: [] };
-    const renderedBuffer = await renderTrackOffline(track, startBeat, finalEndBeat, {
-        onScheduled: (tally) => {
-            scheduleTally = tally;
-        },
-        includeInserts: options.includeInserts,
-        includeSends: options.includeSends,
-        includeAutomation: options.includeAutomation,
-        normalization: options.normalization,
-        autoTail: options.tailHandling === 'auto',
-    });
+    // The render refuses outright for a device it cannot honestly include — a
+    // hosted plugin the engine is sounding, an unrenderable catalog device — and
+    // that refusal carries the sentence the user has to act on. Bounce is fired
+    // as `void bounceTrack(...)` from the track menu, so an uncaught rejection
+    // reached no one: the command simply did nothing. Surfaced the way freeze
+    // surfaces it, and nothing below here runs, so no clip or track is written.
+    let renderedBuffer: AudioBuffer | null;
+    try {
+        renderedBuffer = await renderTrackOffline(track, startBeat, finalEndBeat, {
+            onScheduled: (tally) => {
+                scheduleTally = tally;
+            },
+            includeInserts: options.includeInserts,
+            includeSends: options.includeSends,
+            includeAutomation: options.includeAutomation,
+            normalization: options.normalization,
+            autoTail: options.tailHandling === 'auto',
+        });
+    } catch (error) {
+        notifyUser(error instanceof Error ? error.message : String(error), 'error');
+        return false;
+    }
 
     if (!renderedBuffer) {
         return false;

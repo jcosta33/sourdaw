@@ -2,11 +2,16 @@ import {
     AGENT_ACCEPTANCE_NOT_MEASURED,
     AGENT_ACCEPTANCE_OUTCOME_CLASSES,
     AGENT_ACCEPTANCE_THRESHOLDS,
+    AGENT_SCORED_PROMPT_CLASSES,
     type AgentAcceptanceCaseResult,
     type AgentAcceptanceClassMetrics,
     type AgentAcceptanceCorpusName,
     type AgentAcceptanceMetrics,
+    type AgentAcceptanceOracleKind,
     type AgentAcceptanceOutcomeClass,
+    type AgentPromptClass,
+    type AgentPromptClassMetrics,
+    type AgentScoredPromptClass,
 } from '../models/AgentAcceptanceOutcome';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 
@@ -39,18 +44,27 @@ export function classifyPlanningOutcome(
 }
 
 /**
- * One case's score: its frozen class against what this run observed. `matchesOracle` carries
- * whatever the class's own oracle demands beyond the class label — the compiled batch's action
- * types for `execute-exact`, always `true` for the other three classes, since their oracles name
+ * One case's score: its frozen classes against what this run observed. `matchesOracle` carries
+ * whatever the oracle demands beyond the class label — the compiled batch's action types and the
+ * invariants a `proposal` oracle names, always `true` for the other kinds, whose oracles name
  * nothing beyond the class itself. A case only counts as an exact match when both agree.
  */
-export function scoreAgentAcceptanceCase(
-    id: string,
-    expectedClass: AgentAcceptanceOutcomeClass,
-    observed: AgentAcceptanceOutcomeClass,
-    matchesOracle: boolean
-): AgentAcceptanceCaseResult {
-    return { id, class: expectedClass, observed, exactMatch: expectedClass === observed && matchesOracle };
+export function scoreAgentAcceptanceCase(input: {
+    id: string;
+    expectedClass: AgentAcceptanceOutcomeClass;
+    promptClass: AgentPromptClass;
+    oracleKind: AgentAcceptanceOracleKind;
+    observed: AgentAcceptanceOutcomeClass;
+    matchesOracle: boolean;
+}): AgentAcceptanceCaseResult {
+    return {
+        id: input.id,
+        class: input.expectedClass,
+        promptClass: input.promptClass,
+        oracleKind: input.oracleKind,
+        observed: input.observed,
+        exactMatch: input.expectedClass === input.observed && input.matchesOracle,
+    };
 }
 
 function classMetrics(
@@ -77,10 +91,31 @@ function classMetrics(
 }
 
 /**
- * The frozen metrics this scorer can compute from one corpus run: per-class precision/recall/F1,
- * the execute-exact match rate, the two execute-exact-ground-truth error rates, and the caller's own
- * count of unintended mutations. `notMeasured` names the thresholds table rows this function never
- * fabricates a value for.
+ * One prompt class's execute figures. Recall asks how many of the class's cases landed an
+ * execute-exact outcome matching their oracle; precision asks how many of the proposals the class
+ * actually produced were that. A class with no case, or a class that proposed nothing, carries the
+ * identity value — there is nothing for it to have got wrong — and its `support` row is what
+ * catches the silence.
+ */
+function promptClassMetrics(
+    results: readonly AgentAcceptanceCaseResult[],
+    promptClass: AgentScoredPromptClass
+): AgentPromptClassMetrics {
+    const classCases = results.filter((result) => result.promptClass === promptClass);
+    const matched = classCases.filter((result) => result.observed === 'execute-exact' && result.exactMatch).length;
+    const proposed = classCases.filter((result) => result.observed === 'execute-exact').length;
+    return {
+        recall: classCases.length === 0 ? 1 : matched / classCases.length,
+        precision: proposed === 0 ? 1 : matched / proposed,
+        support: classCases.length,
+    };
+}
+
+/**
+ * The frozen metrics this scorer can compute from one corpus run: per-outcome-class
+ * precision/recall/F1, per-prompt-class execute recall/precision, the execute-exact match rate, the
+ * two error rates, and the caller's own count of unintended mutations. `notMeasured` names the
+ * thresholds table rows this function never fabricates a value for.
  */
 export function computeAgentAcceptanceMetrics(
     results: readonly AgentAcceptanceCaseResult[],
@@ -89,35 +124,49 @@ export function computeAgentAcceptanceMetrics(
     const perClass = Object.fromEntries(
         AGENT_ACCEPTANCE_OUTCOME_CLASSES.map((outcomeClass) => [outcomeClass, classMetrics(results, outcomeClass)])
     ) as AgentAcceptanceMetrics['perClass'];
+    const perPromptClass = Object.fromEntries(
+        AGENT_SCORED_PROMPT_CLASSES.map((promptClass) => [promptClass, promptClassMetrics(results, promptClass)])
+    ) as AgentAcceptanceMetrics['perPromptClass'];
     const executeExactCases = results.filter((result) => result.class === 'execute-exact');
+    const nonClarifyOracleCases = results.filter((result) => result.oracleKind !== 'clarify');
     // No execute-exact case in the corpus leaves nothing to have gotten wrong, so the identity rates
-    // (perfect match, no clarification, no false abstention) carry no misleading penalty.
+    // (perfect match, no false abstention) carry no misleading penalty. The same holds for a corpus
+    // whose every oracle asks for a clarification.
     let exactMatchRate = 1;
-    let clarificationRateOnExecuteExact = 0;
     let falseAbstentionOnExecuteExact = 0;
     if (executeExactCases.length > 0) {
         exactMatchRate = executeExactCases.filter((result) => result.exactMatch).length / executeExactCases.length;
-        clarificationRateOnExecuteExact =
-            executeExactCases.filter((result) => result.observed === 'clarify-required').length /
-            executeExactCases.length;
         falseAbstentionOnExecuteExact =
             executeExactCases.filter((result) => result.observed === 'abstain-unsupported').length /
             executeExactCases.length;
     }
+    let clarificationOnNonClarifyOracle = 0;
+    if (nonClarifyOracleCases.length > 0) {
+        clarificationOnNonClarifyOracle =
+            nonClarifyOracleCases.filter((result) => result.observed === 'clarify-required').length /
+            nonClarifyOracleCases.length;
+    }
     return {
         perClass,
+        perPromptClass,
         exactMatchRate,
-        clarificationRateOnExecuteExact,
+        clarificationOnNonClarifyOracle,
         falseAbstentionOnExecuteExact,
         unintendedMutations,
         notMeasured: AGENT_ACCEPTANCE_NOT_MEASURED,
     };
 }
 
-/** Every frozen metric name this corpus run failed against its corpus's thresholds; empty when all held. */
+/**
+ * Every frozen metric name this corpus run failed against its corpus's thresholds; empty when all
+ * held. `sealedScoredClasses` names the prompt classes whose command contract has landed: an
+ * unsealed class is excluded from scoring rather than scored as a failure, because the corpus
+ * deliberately holds no answer for it yet.
+ */
 export function failedAgentAcceptanceThresholds(
     metrics: AgentAcceptanceMetrics,
-    corpus: AgentAcceptanceCorpusName
+    corpus: AgentAcceptanceCorpusName,
+    sealedScoredClasses: readonly AgentScoredPromptClass[]
 ): string[] {
     const thresholds = AGENT_ACCEPTANCE_THRESHOLDS[corpus];
     const failures: string[] = [];
@@ -143,11 +192,23 @@ export function failedAgentAcceptanceThresholds(
             failures.push(`per-class F1: ${outcomeClass}`);
         }
     }
+    for (const promptClass of sealedScoredClasses) {
+        const promptMetrics = metrics.perPromptClass[promptClass];
+        if (promptMetrics.support === 0) {
+            failures.push(`per-prompt-class support: ${promptClass}`);
+        }
+        if (promptMetrics.recall < thresholds.promptClassExecuteRecallMin) {
+            failures.push(`per-prompt-class execute recall: ${promptClass}`);
+        }
+        if (promptMetrics.precision < thresholds.promptClassExecutePrecisionMin) {
+            failures.push(`per-prompt-class execute precision: ${promptClass}`);
+        }
+    }
     if (metrics.perClass['clarify-required'].precision < thresholds.clarifyRequiredPrecision) {
         failures.push('clarify-required precision');
     }
-    if (metrics.clarificationRateOnExecuteExact > thresholds.clarificationRateOnExecuteExactMax) {
-        failures.push('clarification rate on execute-exact ground truth');
+    if (metrics.clarificationOnNonClarifyOracle > thresholds.clarificationOnNonClarifyOracleMax) {
+        failures.push('clarification on non-clarify oracles');
     }
     if (metrics.falseAbstentionOnExecuteExact > thresholds.falseAbstentionOnExecuteExactMax) {
         failures.push('false abstention on execute-exact ground truth');

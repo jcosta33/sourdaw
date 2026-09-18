@@ -54,6 +54,7 @@ const mocks = vi.hoisted(() => {
         cacheAudioBuffer: vi.fn<(input: CacheAudioBufferInput) => string>(),
         pushUndoEntry: vi.fn<PushUndoEntry>(),
         renderTrackOffline: vi.fn<RenderTrackOffline>(),
+        notifyUser: vi.fn<(message: string, level: string) => void>(),
         readSecondsAtBeat: vi.fn<(input: { beat: number }) => number>(),
         readBeatAtSamples: vi.fn<(input: { samples: number; sampleRate: number }) => number>(),
         getAutomationLanes: vi.fn<() => LaneFixture[]>(),
@@ -92,6 +93,10 @@ vi.mock('../../../stores/trackStore', () => ({
 
 vi.mock('../renderOffline', () => ({
     renderTrackOffline: mocks.renderTrackOffline,
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
 }));
 
 function createTestAudioBuffer(): AudioBuffer {
@@ -329,6 +334,39 @@ describe('bounceTrack', () => {
         expect(didWrite).toBe(false);
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.trackStore.set).not.toHaveBeenCalled();
+    });
+
+    // The render refuses rather than hand back a buffer missing a device the
+    // session is sounding — a hosted plugin the engine holds, an unrenderable
+    // catalog device. Bounce is fired as `void bounceTrack(...)` from the track
+    // menu, so before this the rejection reached no one and the command looked
+    // like it had simply done nothing.
+    it('surfaces a refused render to the user and writes nothing', async () => {
+        const sourceTrack = createAudioTrack();
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockRejectedValue(
+            Object.assign(new Error('Track "Guitar" hosts the plugin "Analog EQ" (external-plugin)'), {
+                _tag: 'Export',
+            })
+        );
+
+        const didWrite = await bounceTrack('track-1', {
+            includeInserts: false,
+            includeSends: false,
+            includeAutomation: false,
+            normalization: 'off',
+            tailHandling: 'off',
+            destination: 'replace',
+        });
+
+        expect(didWrite).toBe(false);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Track "Guitar" hosts the plugin "Analog EQ" (external-plugin)',
+            'error'
+        );
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.trackStore.set).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
     it('adds a fixed 5-second tail when tailHandling is manual', async () => {

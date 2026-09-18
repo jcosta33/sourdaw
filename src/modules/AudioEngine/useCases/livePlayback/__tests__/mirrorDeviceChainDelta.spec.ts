@@ -642,7 +642,7 @@ describe('mirrorDeviceChainDelta', () => {
      */
     it('lands an insert after a device an unload released before the next held device', async () => {
         nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['comp', 'proq', 'limiter']]]);
-        recordNativeChainReleases([{ id: 'audio-1', deviceIds: ['comp', 'limiter'] }]);
+        await recordNativeChainReleases([{ id: 'audio-1', deviceIds: ['comp', 'limiter'] }]);
 
         await mirrorDeviceChainDelta({
             before: track([device('comp'), device('proq'), device('limiter')]),

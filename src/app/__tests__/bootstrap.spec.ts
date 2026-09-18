@@ -262,7 +262,9 @@ const {
         // Toaster and MIDI-learn bindings above: the sink-wiring assertion
         // pins this exact reference, so registering some other function in
         // its place — or dropping the registration outright — fails here.
-        recordNativeChainReleasesMock: vi.fn(),
+        // Returns a resolved promise so the sink wrapper pin can observe the discard: a
+        // bare undefined-returning mock cannot distinguish wrapper from bare use case.
+        recordNativeChainReleasesMock: vi.fn(() => Promise.resolve()),
         registerReleasedStripReportSinkMock: vi.fn<(sink: (reports: readonly unknown[]) => void) => void>(),
     };
 });
@@ -931,8 +933,22 @@ describe('bootstrap', () => {
      * registering some other function, or dropping the registration outright,
      * leaves an unload's released strips with nowhere to narrow the mirror.
      */
+    /**
+     * The sink's slot returns void while the queued write returns a promise, so
+     * bootstrap registers a discarding wrapper rather than the use case itself
+     * (#3888). Identity pinning would miss the wrapper, so pin the contract: the
+     * registered function forwards the reports to the use case and returns void.
+     */
     it('wires an unload plugin release report to narrow the native chain session AudioEngine holds', () => {
-        expect(registerReleasedStripReportSinkMock).toHaveBeenCalledExactlyOnceWith(recordNativeChainReleasesMock);
+        expect(registerReleasedStripReportSinkMock).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
+        const [registered] = registerReleasedStripReportSinkMock.mock.calls[0] ?? [];
+        if (registered === undefined) {
+            throw new Error('expected the sink registration to carry a function');
+        }
+        const reports = [{ id: 'audio-1', deviceIds: ['comp'] }];
+        const returned = registered(reports);
+        expect(recordNativeChainReleasesMock).toHaveBeenCalledExactlyOnceWith(reports);
+        expect(returned).toBeUndefined();
     });
 
     /**

@@ -330,7 +330,7 @@ type SourceExampleDisposition = (typeof SOURCE_EXAMPLE_DISPOSITIONS)[number];
 
 type SourceExample = { id: string; disposition: SourceExampleDisposition };
 
-function asSourceExamplesRecord(value: unknown, label: string): Record<string, unknown> {
+function asJsonRecord(value: unknown, label: string): Record<string, unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         throw new TypeError(`${label}: expected an object`);
     }
@@ -338,7 +338,7 @@ function asSourceExamplesRecord(value: unknown, label: string): Record<string, u
 }
 
 function parseSourceExample(value: unknown, label: string): SourceExample {
-    const entry = asSourceExamplesRecord(value, label);
+    const entry = asJsonRecord(value, label);
     if (typeof entry.id !== 'string') {
         throw new TypeError(`${label}.id: expected a string`);
     }
@@ -351,7 +351,7 @@ function parseSourceExample(value: unknown, label: string): SourceExample {
 
 /** Parses the corpus with the same strict, throw-on-shape-mismatch style as `evidenceManifest.ts`. */
 function parseSourceExamplesCorpus(text: string): readonly SourceExample[] {
-    const root = asSourceExamplesRecord(JSON.parse(text), SOURCE_EXAMPLES_CORPUS_PATH);
+    const root = asJsonRecord(JSON.parse(text), SOURCE_EXAMPLES_CORPUS_PATH);
     if (!Array.isArray(root.examples)) {
         throw new TypeError(`${SOURCE_EXAMPLES_CORPUS_PATH}.examples: expected an array`);
     }
@@ -373,6 +373,86 @@ export function sourceExampleReleaseBlockers(root: string): readonly string[] {
     return parseSourceExamplesCorpus(readFileSync(absolute, 'utf8'))
         .filter((example) => example.disposition === 'unrecovered')
         .map((example) => `source-example ${example.id}: unrecovered`);
+}
+
+/**
+ * The AC-054 acceptance corpora, read beside the manifest for the same reason the source-examples
+ * register is: they are data the release evaluation reads, not fixtures a suite command names.
+ */
+export const ACCEPTANCE_CORPUS_PATHS: Readonly<Record<string, string>> = {
+    development: 'evidence/agent-campaign/corpora/development.json',
+    'held-out': 'evidence/agent-campaign/corpora/held-out.json',
+};
+
+/** The twelve scored prompt classes. `boundary` is always sealed and carries no execute floor, so it never blocks. */
+const SCORED_PROMPT_CLASSES: readonly string[] = [
+    'literal-structural',
+    'named-target-with-unit',
+    'device-insert-with-parameter',
+    'new-bus-send-with-level',
+    'time-scoped-level',
+    'bulk-by-role',
+    'comparative-by-measurement',
+    'perceptual-single-target',
+    'perceptual-multi-target',
+    'whole-project-vibe-with-constraint',
+    'refinement',
+    'question',
+];
+
+type AcceptanceCorpusClass = { sealed: boolean; pendingContract: string | undefined };
+
+function parseAcceptanceCorpusClass(value: unknown, label: string): AcceptanceCorpusClass {
+    const entry = asJsonRecord(value, label);
+    if (typeof entry.sealed !== 'boolean') {
+        throw new TypeError(`${label}.sealed: expected a boolean`);
+    }
+    if (entry.pendingContract !== undefined && typeof entry.pendingContract !== 'string') {
+        throw new TypeError(`${label}.pendingContract: expected a string`);
+    }
+    return { sealed: entry.sealed, pendingContract: entry.pendingContract };
+}
+
+/** Parses the corpus with the same strict, throw-on-shape-mismatch style as `evidenceManifest.ts`. */
+function parseAcceptanceCorpusClasses(text: string, path: string): ReadonlyMap<string, AcceptanceCorpusClass> {
+    const root = asJsonRecord(JSON.parse(text), path);
+    const classes = asJsonRecord(root.classes, `${path}.classes`);
+    return new Map(
+        Object.entries(classes).map(([name, value]) => [
+            name,
+            parseAcceptanceCorpusClass(value, `${path}.classes.${name}`),
+        ])
+    );
+}
+
+/**
+ * One release blocker per scored prompt class either corpus still leaves unsealed, plus a blocker
+ * for a corpus file that is absent. A release cannot claim the agent answers a request shape whose
+ * command contract has not landed, and an unsealed class is exactly that admission written down.
+ */
+export function acceptanceCorpusReleaseBlockers(root: string): readonly string[] {
+    const blockers: string[] = [];
+    for (const [corpus, path] of Object.entries(ACCEPTANCE_CORPUS_PATHS)) {
+        const absolute = resolve(root, path);
+        if (!existsSync(absolute)) {
+            blockers.push(`corpus ${corpus} missing`);
+            continue;
+        }
+        const classes = parseAcceptanceCorpusClasses(readFileSync(absolute, 'utf8'), path);
+        for (const promptClass of SCORED_PROMPT_CLASSES) {
+            const state = classes.get(promptClass);
+            if (state === undefined) {
+                blockers.push(`corpus ${corpus} class ${promptClass}: missing`);
+                continue;
+            }
+            if (!state.sealed) {
+                blockers.push(
+                    `corpus ${corpus} class ${promptClass}: unsealed (pending ${state.pendingContract ?? 'unnamed contract'})`
+                );
+            }
+        }
+    }
+    return blockers;
 }
 
 function readRecords(root: string, manifest: EvidenceManifest): readonly EvidenceRecord[] {
@@ -530,7 +610,7 @@ function runGate(root: string, manifest: EvidenceManifest, taskId: string, gateI
 function runRelease(root: string, manifest: EvidenceManifest): number {
     const release = { head: headCommit(root), environment: readEnvironmentDigests(root, manifest) };
     const { blockers } = evaluateRelease(manifest, readRecords(root, manifest), release);
-    return report([...blockers, ...sourceExampleReleaseBlockers(root)]);
+    return report([...blockers, ...sourceExampleReleaseBlockers(root), ...acceptanceCorpusReleaseBlockers(root)]);
 }
 
 type EvidenceGateOptions = {
