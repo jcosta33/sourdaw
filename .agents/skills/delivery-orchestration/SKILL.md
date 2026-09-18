@@ -29,6 +29,7 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Reply `Done` and resolve     | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                                                                                                         |
 | Squash-merge                 | `pnpm deliver <pr>`                                                                                                                                                                           |
 | Recover a crashed delivery   | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
+| Recover a wedged review post | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
 | Close a superseded PR        | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                                                                                                                             |
 | Prune spent remote branches  | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
 | Remove a spent lane          | `pnpm lane:remove <path>`                                                                                                                                                                     |
@@ -36,7 +37,10 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Prune lane artifacts         | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                      |
 
 `branch:prune` defaults to dry run and deletes only branches whose every PR is
-merged or closed.
+merged or closed. It retains a branch that is the last remote holder of a
+measurement source revision a tracked table records, because the admission
+resolves that revision by SHA and squash delivery never lands the lane head on
+`main`.
 
 ## Claim at lane open
 
@@ -267,6 +271,34 @@ dead-owner-keyed receipt; repeat recovery replays it without GitHub access.
 Already-merged recovery accepts the immutable orchestrator User or historical
 author Bot as merger; fresh delivery requires the orchestrator User and rejects
 a fresh author-bot merge. Actor type and immutable ID must agree in both paths.
+
+## Review-publication lock recovery
+
+`review:publish` and `review:accept` serialize each PR with their own owner ref.
+A run that dies after the journal records `remote-mutation-attempted` but before
+GitHub answers leaves a dead owner that recovery can neither release nor replace
+with a releasable one: the journal cannot prove the POST never landed, so the
+default refusal has to hold, and adoption only re-creates the same refusal.
+
+`review:publish:recover` refuses a live fence, authenticates the recorded
+publication identity, and requires the retained payload digest to match the
+bundle document plus two stable inspections of the same head. When the journal
+itself proves no mutation landed — the owner is still `prepared`, or it carries
+an HTTP 422 marker — absence releases the owner, and its receipt makes repeat
+recovery idempotent without GitHub access.
+
+`--attest-absent` is the operator's explicit assertion that the review POST never
+landed, and it is the only path that releases an owner whose sole failing
+condition is a missing definitive answer. It is legitimate only after
+independently establishing that the remote holds no review at the journaled head
+— for instance, the owning run has been dead long enough that a landed POST
+would be visible. The flag adds one term to the release decision; every other
+protection still runs and keeps its refusal: a live fence, ambiguous or non-exact
+landed review evidence, unauthorized landed review evidence, a payload digest
+that differs from the retained lock, and a missing or mismatched bundle. The
+release records the operator attestation in its own receipt version rather than
+inferring it from an older receipt, so replay distinguishes it from a
+journal-attested absence and a receipt that did not record it never gains it.
 
 ## Receipts
 

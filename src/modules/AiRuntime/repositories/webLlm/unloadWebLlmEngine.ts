@@ -2,12 +2,16 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { engineState } from './engineLifecycleState';
+import { retireWebLlmEngine } from './retireWebLlmEngine';
 
 export const unloadWebLlmEngine = inject({ logger })(
     ({ logger }) =>
         function unloadWebLlmEngine(): void {
             engineState.initController?.abort(new DOMException('WebLLM initialization unloaded', 'AbortError'));
-            if (engineState.worker) {
+            const engine = engineState.engine;
+            if (engine) {
+                retireWebLlmEngine(engine, new DOMException('WebLLM engine unloaded', 'AbortError'));
+            } else if (engineState.worker) {
                 engineState.worker.terminate();
                 engineState.worker = null;
             }

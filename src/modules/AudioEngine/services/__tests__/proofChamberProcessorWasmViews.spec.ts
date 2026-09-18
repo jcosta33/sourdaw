@@ -30,6 +30,7 @@ const GROWN_RIGHT_BASE = 410;
 
 const memory = createGrowableMemory(HEAP_BYTES);
 let growOnNextProcess = false;
+let growOnNextAutomation = false;
 
 function seedGrownBuffer(): void {
     growAndSeedRamps(memory, HEAP_BYTES, [
@@ -40,7 +41,12 @@ function seedGrownBuffer(): void {
 
 class ProofChamberInstanceMock {
     set_param(): void {}
-    set_param_by_id(): void {}
+    set_param_by_id(): void {
+        if (growOnNextAutomation) {
+            growOnNextAutomation = false;
+            growAndSeedRamps(memory, HEAP_BYTES, []);
+        }
+    }
     get_latency(): number {
         return 128;
     }
@@ -49,6 +55,9 @@ class ProofChamberInstanceMock {
             growOnNextProcess = false;
             seedGrownBuffer();
         }
+        return OUT_LEFT_PTR;
+    }
+    get_left_ptr(): number {
         return OUT_LEFT_PTR;
     }
     get_right_ptr(): number {
@@ -86,6 +95,7 @@ describe('ProofChamberProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => 
     beforeEach(() => {
         resetGrowableMemory(memory, HEAP_BYTES);
         growOnNextProcess = false;
+        growOnNextAutomation = false;
     });
 
     it('allocates no WASM-memory view across steady-state process() blocks once warmed up', async () => {
@@ -122,5 +132,30 @@ describe('ProofChamberProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => 
         expect(out0.some((sample) => Number.isNaN(sample))).toBe(false);
         expect(out0).toEqual(ramp(FRAMES, GROWN_LEFT_BASE));
         expect(Array.from(outputs[0]![1]!)).toEqual(ramp(FRAMES, GROWN_RIGHT_BASE));
+    });
+
+    it('maps input views after parameter automation grows memory', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 0,
+            segments: [{ startFrame: 0, endFrame: 0, startValue: 0, endValue: 1 }],
+        });
+
+        const warmup = makeBlock();
+        proc.process(warmup.inputs, warmup.outputs);
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 0,
+            segments: [{ startFrame: 0, endFrame: 0, startValue: 0, endValue: 0.5 }],
+        });
+
+        growOnNextAutomation = true;
+        const { inputs, outputs } = makeBlock();
+        proc.process(inputs, outputs);
+
+        expect(proc.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+        expect(outputs[0]).toEqual(inputs[0]);
     });
 });
