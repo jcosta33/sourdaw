@@ -1,0 +1,19 @@
+tests/e2e/timelineNavigation.spec.ts
+  s_728d23f5458683::t_8d2086dfdb47d2 38-45,51-53,55,58-60,66,70-73,78-80,85-89,95-96,108-111,113-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ae8f9dbd74cfdb1ea74bcae2ba5f6f4ea104335a",
+  "prompts": {},
+  "sessions": {
+    "s_728d23f5458683": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af8333e68e899c0e9",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
