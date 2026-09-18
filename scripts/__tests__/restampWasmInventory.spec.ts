@@ -49,27 +49,33 @@ afterEach(() => {
     }
 });
 
-/** A tree whose project-wasm surface and manifest snapshot both drifted from the committed manifest. */
-function createDriftedFixture(): string {
+/**
+ * A tree whose project-wasm surface and manifest snapshot both drifted from the committed manifest,
+ * or which omits one of them so the command's shape refusals are reachable.
+ */
+function createFixture(omit?: 'surface' | 'snapshot'): string {
     const root = mkdtempSync(join(tmpdir(), 'restamp-wasm-'));
     fixtureRoots.push(root);
     mkdirSync(join(root, 'public/wasm'), { recursive: true });
     copyFileSync(join(wasmArtifacts.repoRoot, MANIFEST_SNAPSHOT_PATH), join(root, MANIFEST_SNAPSHOT_PATH));
     mkdirSync(join(root, 'release'), { recursive: true });
-    const inventory: RecordedInventory = {
-        surfaces: [
-            {
-                id: 'project-wasm',
-                kind: 'stale-kind',
-                paths: ['stale-paths'],
-                sources: ['stale-sources'],
-                revisions: ['stale-revisions'],
-                digests: ['stale-digests'],
-                licenses: ['stale-licenses'],
-            },
-        ],
-        snapshots: [{ path: MANIFEST_SNAPSHOT_PATH, sha256: 'stale-snapshot' }],
-    };
+    const surfaces: Record<string, unknown>[] = [];
+    if (omit !== 'surface') {
+        surfaces.push({
+            id: 'project-wasm',
+            kind: 'stale-kind',
+            paths: ['stale-paths'],
+            sources: ['stale-sources'],
+            revisions: ['stale-revisions'],
+            digests: ['stale-digests'],
+            licenses: ['stale-licenses'],
+        });
+    }
+    const snapshots: { path: string; sha256: string }[] = [];
+    if (omit !== 'snapshot') {
+        snapshots.push({ path: MANIFEST_SNAPSHOT_PATH, sha256: 'stale-snapshot' });
+    }
+    const inventory: RecordedInventory = { surfaces, snapshots };
     writeFileSync(join(root, RELEASE_INVENTORY_PATH), `${JSON.stringify(inventory, null, 4)}\n`, 'utf8');
     return root;
 }
@@ -203,7 +209,7 @@ describe('wasm restamp write and refusals', () => {
     });
 
     it('refuses a drifted manifest through the command before writing the fixture', () => {
-        const root = createDriftedFixture();
+        const root = createFixture();
         const before = filesUnder(root);
         const manifest = wasmArtifacts.readManifest();
         const [id, entry] = Object.entries(manifest.packages)[0]!;
@@ -222,8 +228,28 @@ describe('wasm restamp write and refusals', () => {
         expect(filesUnder(root)).toEqual(before);
     });
 
+    it('refuses an inventory with no project-wasm surface, leaving every file untouched', () => {
+        const root = createFixture('surface');
+        const before = filesUnder(root);
+        const message = thrownMessage(() => {
+            restampWasmInventory(root);
+        });
+        expect(message).toContain('project-wasm surface is absent from the inventory');
+        expect(filesUnder(root)).toEqual(before);
+    });
+
+    it('refuses an inventory with no manifest snapshot entry, leaving every file untouched', () => {
+        const root = createFixture('snapshot');
+        const before = filesUnder(root);
+        const message = thrownMessage(() => {
+            restampWasmInventory(root);
+        });
+        expect(message).toContain('manifest snapshot entry is absent from the inventory');
+        expect(filesUnder(root)).toEqual(before);
+    });
+
     it('restamps a drifted fixture to exactly what the repository contract computes', () => {
-        const root = createDriftedFixture();
+        const root = createFixture();
         const output = execFileSync('node', [RESTAMP_SCRIPT_PATH], { cwd: root, encoding: 'utf8' });
         const written = readFixtureInventory(root);
         const expected = wasmReleaseInventoryContract(root, wasmArtifacts.readManifest());
@@ -246,19 +272,19 @@ describe('wasm restamp write and refusals', () => {
 
 describe('wasm restamp entry point', () => {
     it('importing the module leaves a deliberately drifted tree untouched', () => {
-        const root = createDriftedFixture();
+        const root = createFixture();
         const before = filesUnder(root);
         const moduleUrl = pathToFileURL(RESTAMP_SCRIPT_PATH).href;
         const output = execFileSync(
             'node',
-            ['--input-type=module', '-e', `await import(${JSON.stringify(moduleUrl)})`],
+            ['--input-type=module', '-e', `await import(${JSON.stringify(moduleUrl)})`, 'not-this-script.ts'],
             {
                 cwd: root,
                 encoding: 'utf8',
             }
         );
-        expect(output.trim()).toBe('');
         expect(filesUnder(root)).toEqual(before);
+        expect(output.trim()).toBe('');
     });
 
     it('is reachable as pnpm release:restamp:wasm', () => {
