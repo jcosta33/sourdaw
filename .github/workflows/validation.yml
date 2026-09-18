@@ -539,7 +539,7 @@ jobs:
 
       # `--with-deps` shells out to apt-get for the browser library set, and a
       # transient mirror outage (apt exiting 100) red this job and Gate on an
-      # otherwise-green head (#4085). Three attempts with a 15s then 30s
+      # otherwise-green head (#4085). Three attempts with a 5s then 10s
       # backoff; the last failure still fails the step.
       - name: Install Playwright browsers
         run: |
