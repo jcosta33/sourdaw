@@ -1,0 +1,35 @@
+scripts/recoverPublishReviewLock.ts
+  s_9b530f08172a54::t_a5b73d321c7518 445-456,460-461,463,465-468
+  s_9b530f08172a54::t_abfa1aea99d9dc 550
+  s_9b530f08172a54::t_bb686cbdc66e28 365
+.agents/skills/delivery-orchestration/SKILL.md
+  s_9b530f08172a54::t_adae51aa420cc1 148-154
+scripts/__tests__/publishReview.spec.ts
+  s_9b530f08172a54::t_7585a55a6c1adb 708-724,726-745
+  s_9b530f08172a54::t_5a1d25309a2627 583
+  s_9b530f08172a54::t_edbf3237c4e8d4 2005
+  s_9b530f08172a54::t_99dbb66e5df992 800
+  s_9b530f08172a54::t_063afa4b1ec59d 73-74
+  s_9b530f08172a54::t_6b1a41cf8453bf 1057
+  s_9b530f08172a54::t_d2dce9eebb3755 570
+  s_9b530f08172a54::t_5cbed6019f501f 3376,3378-3443
+  s_9b530f08172a54::t_d4311afc7996f6 3377
+  s_9b530f08172a54::t_7c5285cea39eea 4272
+  s_9b530f08172a54::t_ddffb79379a622 484-492
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cda21ac859c5eb491fc4b54c72e0dde783addc58",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
