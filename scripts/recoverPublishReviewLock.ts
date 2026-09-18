@@ -40,10 +40,12 @@ import {
 import { assertReviewCommentLinesInBundleDiff } from './reviewCommentDiffPreflight.ts';
 import { legacyReviewPublicationIncidents } from './reviewPublicationLegacyIncidents.ts';
 import {
+    OPERATOR_ABSENT_ATTESTATION,
     hasExactRecoveryReceipt,
     isMatchingRecoveryReceipt,
     isReplayableAdoptedRecoveryReceipt,
     recoveryReceipt,
+    type RecoveryReceipt,
 } from './reviewPublicationRecoveryReceipt.ts';
 import {
     exactPublishedReview,
@@ -58,17 +60,8 @@ type LegacyReviewPublicationIncident = (typeof legacyReviewPublicationIncidents)
 export type RecoverPublishReviewArgs = {
     number?: number;
     owner?: string;
+    attestAbsent: boolean;
     help: boolean;
-};
-
-type PersistedRecoveryReceipt = {
-    version: 2;
-    number: number;
-    ownerOid: string;
-    adoptedOwnerOid: string;
-    head: string;
-    payloadDigest: string;
-    outcome: 'absent' | 'landed';
 };
 
 export type RecoverPublishReviewDependencies = {
@@ -87,25 +80,29 @@ export type RecoverPublishReviewDependencies = {
     currentOwnerFence?: () => PullRequestMutationLockOwnerFence;
     isLegacyOwnerLive?: (pid: number) => boolean;
     legacyIncident?: (number: number, ownerOid: string) => LegacyReviewPublicationIncident | undefined;
-    beforeReplayReceiptRelease?: (receipt: PersistedRecoveryReceipt) => void;
-    afterRecoveryReceiptPersisted?: (receipt: PersistedRecoveryReceipt) => void;
+    beforeReplayReceiptRelease?: (receipt: RecoveryReceipt) => void;
+    afterRecoveryReceiptPersisted?: (receipt: RecoveryReceipt) => void;
 };
 
-const recoverPublishReviewUsage = 'usage: pnpm review:publish:recover <pr-number> --owner <lock-object-id>';
+const recoverPublishReviewUsage =
+    'usage: pnpm review:publish:recover <pr-number> --owner <lock-object-id> [--attest-absent]';
 
 export function parseRecoverPublishReviewArgs(args: string[]): RecoverPublishReviewArgs {
     if (args.length === 1 && args[0] === '--help') {
-        return { help: true };
+        return { help: true, attestAbsent: false };
     }
-    if (args.length !== 3 || !/^[1-9][0-9]*$/u.test(args[0] ?? '') || args[1] !== '--owner') {
+    const attestAbsentIndex = args.indexOf('--attest-absent');
+    const flagArgs =
+        attestAbsentIndex === -1 ? args : [...args.slice(0, attestAbsentIndex), ...args.slice(attestAbsentIndex + 1)];
+    if (flagArgs.length !== 3 || !/^[1-9][0-9]*$/u.test(flagArgs[0] ?? '') || flagArgs[1] !== '--owner') {
         fail(recoverPublishReviewUsage);
     }
-    const number = Number(args[0]);
-    const owner = args[2];
+    const number = Number(flagArgs[0]);
+    const owner = flagArgs[2];
     if (!Number.isSafeInteger(number) || owner === undefined || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(owner)) {
         fail(recoverPublishReviewUsage);
     }
-    return { number, owner: owner.toLowerCase(), help: false };
+    return { number, owner: owner.toLowerCase(), attestAbsent: attestAbsentIndex !== -1, help: false };
 }
 
 function defaultRecoverPublishReviewDependencies(): RecoverPublishReviewDependencies {
@@ -151,6 +148,7 @@ type AttestedRecoveryOwner = {
     legacyIncident: LegacyReviewPublicationIncident | undefined;
     expectedHead: string;
     expectedActorNodeId: string;
+    attestAbsent: boolean;
 };
 
 export async function runRecoverPublishReviewLockCli(
@@ -169,7 +167,7 @@ export async function runRecoverPublishReviewLockCli(
     if (replayed !== undefined) {
         return replayed;
     }
-    const attestation = attestRecoveryOwner(primaryRoot, number, ownerOid, dependencies);
+    const attestation = attestRecoveryOwner(primaryRoot, number, ownerOid, parsed.attestAbsent, dependencies);
     return reconcileRecoveredOwner(primaryRoot, number, ownerOid, attestation, dependencies);
 }
 
@@ -223,6 +221,7 @@ function attestRecoveryOwner(
     primaryRoot: string,
     number: number,
     ownerOid: string,
+    attestAbsent: boolean,
     dependencies: RecoverPublishReviewDependencies
 ): AttestedRecoveryOwner {
     const originalOwner = readPullRequestMutationLockOwner(primaryRoot, ownerOid, number);
@@ -241,7 +240,7 @@ function attestRecoveryOwner(
     if (expectedHead === undefined || expectedActorNodeId === undefined) {
         fail(`PR #${number} recovery requires a review-publication lock owner`);
     }
-    return { originalOwner, journaledOwner, legacyIncident, expectedHead, expectedActorNodeId };
+    return { originalOwner, journaledOwner, legacyIncident, expectedHead, expectedActorNodeId, attestAbsent };
 }
 
 function requireTrustedLegacyIncident(
@@ -556,16 +555,26 @@ function releaseAdoptedOwnerWithRecoveryReceipt(
     assertNoUnauthorizedLandedEvidence(second, document, attestation.expectedHead, attestation.expectedActorNodeId);
     assertReconciliationStable(first, second, document, attestation.expectedHead, attestation.expectedActorNodeId);
     const outcome = second.reviews.length === 1 ? 'landed' : 'absent';
-    const absentReleaseIsAttested =
+    const absentReleaseAuthorizedByJournal =
         attestation.journaledOwner?.mutation.phase === 'prepared' ||
         attestation.legacyIncident?.definitiveNoMutationHttpStatus === 422 ||
         attestation.journaledOwner?.mutation.definitiveNoMutationHttpStatus === 422;
-    if (outcome === 'absent' && !absentReleaseIsAttested) {
+    const absentReleaseAuthorizedByOperator =
+        outcome === 'absent' && attestation.attestAbsent && !absentReleaseAuthorizedByJournal;
+    if (outcome === 'absent' && !absentReleaseAuthorizedByJournal && !attestation.attestAbsent) {
         fail(
             'review-publication recovery cannot release an owner that attempted a remote mutation without landed evidence'
         );
     }
-    const receipt = recoveryReceipt(number, ownerOid, adoptedOid, attestation.expectedHead, expectedDigest, outcome);
+    const receipt = recoveryReceipt(
+        number,
+        ownerOid,
+        adoptedOid,
+        attestation.expectedHead,
+        expectedDigest,
+        outcome,
+        absentReleaseAuthorizedByOperator ? OPERATOR_ABSENT_ATTESTATION : undefined
+    );
     recordReviewPublicationRecoveryReceipt(primaryRoot, number, ownerOid, receipt);
     if (!hasExactRecoveryReceipt(readPullRequestMutationLockReceipt(primaryRoot, number, ownerOid), receipt)) {
         fail('review-publication recovery receipt does not attest the exact owner, head, payload, and outcome');
