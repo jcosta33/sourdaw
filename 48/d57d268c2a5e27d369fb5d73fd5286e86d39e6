@@ -1,0 +1,20 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_1228e573df1f42 32,272-299
+scripts/__tests__/publishReview.spec.ts
+  h_1228e573df1f42 45,2551-2850,3005
+scripts/recoverPublishReviewLock.ts
+  h_1228e573df1f42 43,48,63,83-84,87-88,92,94-97,100-101,105,151,170,224,243,558,562-564,569-577
+scripts/reviewPublicationRecoveryReceipt.ts
+  h_1228e573df1f42 1-2,16,21-34,44,47-59,66-67,69-70,78-94,107,109,129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "48d57d268c2a5e27d369fb5d73fd5286e86d39e6",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
