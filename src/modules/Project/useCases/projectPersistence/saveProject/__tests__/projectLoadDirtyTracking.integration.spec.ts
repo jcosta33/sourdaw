@@ -30,7 +30,8 @@ const {
     mockClearUndoHistory,
     mockCompactProject,
     mockProjectActionHistoryToStore,
-    mockResetCrdtProjectAuthority,
+    mockResetCrdtProject,
+    mockFinalizeReset,
     mockStartCrdtAutoSave,
     mockUnloadLoadedExternalPlugins,
     mockEnsureTrackStrips,
@@ -46,7 +47,11 @@ const {
     mockClearUndoHistory: vi.fn(),
     mockCompactProject: vi.fn(() => Promise.resolve()),
     mockProjectActionHistoryToStore: vi.fn(),
-    mockResetCrdtProjectAuthority: vi.fn(),
+    mockResetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
+        onAuthorityReplaced?.();
+        return Promise.resolve({ status: 'replaced', finalize: mockFinalizeReset });
+    }),
+    mockFinalizeReset: vi.fn(() => Promise.resolve('finalized')),
     mockStartCrdtAutoSave: vi.fn(() => () => {}),
     mockUnloadLoadedExternalPlugins: vi.fn(() => Promise.resolve()),
     mockEnsureTrackStrips: vi.fn(),
@@ -57,10 +62,14 @@ const {
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    forgetProjectLatchedPedals: vi.fn(),
+    stopTrackInputMonitoring: vi.fn(),
+
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    projectsToDifferentNativeBank: vi.fn(() => false),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     discardDecodedAudioFile: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
@@ -88,7 +97,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDeviceChainTailSeconds: vi.fn(),
     getEngineState: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
-    getLiveEngineSampleRate: vi.fn(),
     getRuntimeGraphRevision: vi.fn(),
     getTrackStrip: vi.fn(),
     initializeTrackStripFromSnapshot: vi.fn(),
@@ -117,6 +125,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
@@ -141,15 +150,15 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     hasCrdtDoc: vi.fn(),
     mutateCrdtDoc: vi.fn(),
     persistCrdtProject: vi.fn(),
-    preserveBranchStateForSession: vi.fn(),
+    beginBranchSession: vi.fn(),
     projectActionHistoryToStore: mockProjectActionHistoryToStore,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
-    replaceBranchState: vi.fn(),
+    projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
     replaceCrdtDocInLineage: vi.fn(),
-    resetCrdtProjectAuthority: mockResetCrdtProjectAuthority,
-    restoreBranchStateAfterSession: vi.fn(),
+    resetCrdtProject: mockResetCrdtProject,
+    endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
     setupProjectionBridge: vi.fn(),
@@ -168,6 +177,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     restorePluginState: vi.fn(),
 }));
 vi.mock('#/modules/Transport/useCases', () => ({
+    stopTrackInputMonitoring: vi.fn(),
     defaultTransportState: { masterGain: 75, isPlaying: false },
     ensureTrackStrips: mockEnsureTrackStrips,
     stopPlayback: mockStopPlayback,
@@ -357,6 +367,11 @@ describe('project load dirty tracking (audit M-011)', () => {
                     throw new Error('initial compaction failed');
                 }
             });
+            if (compactionRejects) {
+                // Nothing of the fresh project reached storage, so its reset
+                // cannot finalize and the minted identity stays non-durable.
+                mockFinalizeReset.mockResolvedValueOnce('authority-mismatch');
+            }
 
             await withRealAutomergeStoragePort(async (readMutationCount) => {
                 await expect(newProject('Fresh Project')).resolves.toBe(true);

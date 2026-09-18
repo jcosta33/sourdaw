@@ -599,9 +599,12 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             'target-low',
             'target-high',
         ]);
+        // `copyMidiArticulations` writes midi content through an uncertified handler,
+        // so its midi-overlay preview is unsupported and the risk reason carries the
+        // escalation alongside the registry's own broad-reversible reason.
         expect(confirmation?.risk).toEqual({
             level: 'broad-reversible',
-            reason: 'This action can change a broad section of the project.',
+            reason: 'This action can change a broad section of the project. Preview is unsupported for midi-overlay; explicit acceptance is required.',
         });
 
         expect(await confirmPendingChatActions({ confirmationId })).toEqual({ status: 'executed' });

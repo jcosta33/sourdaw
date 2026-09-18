@@ -31,6 +31,7 @@
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
+import { fromStereoPan } from '#/utils/audioLevelLaw';
 
 import {
     type AudioGraphParameterTarget,
@@ -124,7 +125,7 @@ function seamFaderValue(recorded: number, vcaMultiplier: number): number {
 
 /** Pan node-domain (−1…1) back to the seam's −50…50 project scale. */
 function seamPanValue(recorded: number): number {
-    return recorded * 50;
+    return fromStereoPan(recorded);
 }
 
 /**

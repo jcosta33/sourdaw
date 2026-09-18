@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
-import { getTrackStoreState, updateClip, startRecording } from '#/modules/Arrangement/useCases';
+import { getTrackEligibility } from '#/modules/Arrangement/stores';
+import { getTrackStoreState, updateClip, startRecording, removeClip } from '#/modules/Arrangement/useCases';
 import {
     resumeEngine,
     getAudioContext,
@@ -18,6 +19,7 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
+import { DEFAULT_TEMPO_BPM } from '../../stores/transportStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 
 import { recordingLifecycle } from './recordingLifecycle';
@@ -58,6 +60,17 @@ async function beginActualRecording(
 
         return startAudioRecording(track.id, (result) => {
             if (result.kind === 'failed') {
+                // A capture that dies mid-take (ring overrun, worker crash, a
+                // WAV that never decoded) must not strand an empty provisional
+                // clip on the arrangement or stay silent about it (#4265).
+                notifyUser(
+                    'Recording failed — the partial take was discarded. Check your audio input and try again.',
+                    'error'
+                );
+                const failedClip = clips.find((context) => context.trackId === track.id);
+                if (failedClip) {
+                    removeClip(failedClip.id);
+                }
                 return;
             }
             const { buffer } = result;
@@ -67,7 +80,7 @@ async function beginActualRecording(
                 cacheAudioBuffer({ buffer, bufferId });
 
                 const transport = getTransportState();
-                const defaultTempo = transport?.tempo ?? 120;
+                const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
                 const tempoChanges = tempoMapStore.value?.changes ?? [];
                 // The capture is open before the transport is asked to roll, and
                 // on a desktop build the roll waits for the native session, so
@@ -235,6 +248,23 @@ export function toggleRecording(): void {
         if (!state.isPlaying) {
             void startPlayback();
         }
+        return;
+    }
+
+    // Record needs a take target. `startRecording` opens take clips on armed,
+    // recording-eligible tracks; with none armed it creates nothing, yet the
+    // transport below would present an engaged recording and roll playback
+    // under its name — a record button that captures nothing and says so only
+    // in its tooltip. Refuse with the arm guidance instead (#3679). The same
+    // admission governs the count-in branch below: counting in for a take
+    // that cannot exist is the same defect one count earlier. The punch arm
+    // above stays open — it engages no recording, and the scheduler owns the
+    // window it arms.
+    const hasArmedTakeTarget =
+        getTrackStoreState()?.tracks.some((track) => track.armed && getTrackEligibility(track.kind).acceptsRecording) ??
+        false;
+    if (!hasArmedTakeTarget) {
+        notifyUser('No track is armed for recording. Arm a track, then press Record.', 'warning');
         return;
     }
 

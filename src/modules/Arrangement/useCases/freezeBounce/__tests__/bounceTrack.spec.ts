@@ -17,7 +17,12 @@ type RenderTrackOffline = (
     options?: unknown
 ) => Promise<AudioBuffer | null>;
 
-type PushUndoEntry = (label: string, undoFn: () => void, redoFn: () => void) => void;
+type PushUndoEntry = (
+    label: string,
+    undoFn: () => void,
+    redoFn: () => void,
+    metadata?: { restoresBufferIds?: string[] }
+) => void;
 
 type TestTransportStore = {
     value: { tempo: number } | null;
@@ -26,6 +31,14 @@ type TestTransportStore = {
 type TestTrackStore = {
     value: TrackStoreState | null;
     set: ReturnType<typeof vi.fn<(state: TrackStoreState) => void>>;
+};
+
+/** Only the fields the lane filter reads; the full lane model is Automation's. */
+type LaneFixture = {
+    id: string;
+    trackId: string;
+    clipId?: string;
+    parameterId: string;
 };
 
 const mocks = vi.hoisted(() => {
@@ -41,6 +54,11 @@ const mocks = vi.hoisted(() => {
         cacheAudioBuffer: vi.fn<(input: CacheAudioBufferInput) => string>(),
         pushUndoEntry: vi.fn<PushUndoEntry>(),
         renderTrackOffline: vi.fn<RenderTrackOffline>(),
+        readSecondsAtBeat: vi.fn<(input: { beat: number }) => number>(),
+        readBeatAtSamples: vi.fn<(input: { samples: number; sampleRate: number }) => number>(),
+        getAutomationLanes: vi.fn<() => LaneFixture[]>(),
+        removeAutomationLane: vi.fn<(laneId: string) => void>(),
+        restoreAutomationLanes: vi.fn<(lanes: unknown[]) => void>(),
         trackStore,
         transportStore,
     };
@@ -50,13 +68,22 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: mocks.cacheAudioBuffer,
 }));
 
+vi.mock('#/modules/Automation/useCases', () => ({
+    getAutomationLanes: mocks.getAutomationLanes,
+    removeAutomationLane: mocks.removeAutomationLane,
+    restoreAutomationLanes: mocks.restoreAutomationLanes,
+}));
+
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({
+    DEFAULT_TEMPO_BPM: 120,
     transportStore: mocks.transportStore,
+    readSecondsAtBeat: mocks.readSecondsAtBeat,
+    readBeatAtSamples: mocks.readBeatAtSamples,
 }));
 
 vi.mock('../../../stores/trackStore', () => ({
@@ -139,6 +166,10 @@ describe('bounceTrack', () => {
         });
         mocks.transportStore.value = { tempo: 120 };
         mocks.cacheAudioBuffer.mockImplementation((input) => input.bufferId ?? 'generated-buffer-id');
+        // Flat 120 BPM in both directions: one beat is half a second.
+        mocks.readSecondsAtBeat.mockImplementation(({ beat }) => beat * 0.5);
+        mocks.readBeatAtSamples.mockImplementation((input) => input.samples / (0.5 * input.sampleRate));
+        mocks.getAutomationLanes.mockImplementation(() => []);
     });
 
     afterEach(() => {
@@ -533,5 +564,261 @@ describe('bounceTrack', () => {
         expect(() => undo()).not.toThrow();
         expect(() => redo()).not.toThrow();
         expect(mocks.trackStore.value).toBeNull();
+    });
+
+    describe('auto-tail clip span (#3691)', () => {
+        /** Five seconds of captured decay at the harness sample rate. */
+        function createDecayBuffer(): AudioBuffer {
+            const buffer = createTestAudioBuffer();
+            return { ...buffer, length: 5 * 48000, duration: 5 };
+        }
+
+        it('spans the bounced clip across the captured decay an auto-tail render holds', async () => {
+            const sourceTrack = createAudioTrack({ clips: [createAudioClip({ startBeat: 0, endBeat: 4 })] });
+            setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+            mocks.renderTrackOffline.mockResolvedValue(createDecayBuffer());
+
+            await bounceTrack('track-1', {
+                includeInserts: true,
+                includeSends: false,
+                includeAutomation: false,
+                normalization: 'off',
+                tailHandling: 'auto',
+                destination: 'replace',
+            });
+
+            // Beats 0-4 are 2 seconds of music; the buffer holds 5 seconds, which
+            // is beat 10 at 120 BPM. Writing 4 would leave the decay unplayed.
+            expect(mocks.renderTrackOffline).toHaveBeenCalledWith(
+                sourceTrack,
+                0,
+                4,
+                expect.objectContaining({ autoTail: true })
+            );
+            expect(mocks.trackStore.value?.tracks[0]?.clips[0]).toEqual(
+                expect.objectContaining({ startBeat: 0, endBeat: 10 })
+            );
+        });
+
+        it('keeps the musical end when tail handling is off even if the buffer runs longer', async () => {
+            const sourceTrack = createAudioTrack({ clips: [createAudioClip({ startBeat: 0, endBeat: 4 })] });
+            setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+            mocks.renderTrackOffline.mockResolvedValue(createDecayBuffer());
+
+            await bounceTrack('track-1', {
+                includeInserts: true,
+                includeSends: false,
+                includeAutomation: false,
+                normalization: 'off',
+                tailHandling: 'off',
+                destination: 'replace',
+            });
+
+            expect(mocks.trackStore.value?.tracks[0]?.clips[0]).toEqual(
+                expect.objectContaining({ startBeat: 0, endBeat: 4 })
+            );
+        });
+
+        it('keeps the manual tail endpoint instead of deriving one from the buffer', async () => {
+            const sourceTrack = createAudioTrack({ clips: [createAudioClip({ startBeat: 0, endBeat: 4 })] });
+            setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+            mocks.renderTrackOffline.mockResolvedValue(createDecayBuffer());
+
+            await bounceTrack('track-1', {
+                includeInserts: true,
+                includeSends: false,
+                includeAutomation: false,
+                normalization: 'off',
+                tailHandling: 'manual',
+                destination: 'replace',
+            });
+
+            // The 5-second manual tail is already expressed in beats (4 + 10).
+            expect(mocks.trackStore.value?.tracks[0]?.clips[0]).toEqual(
+                expect.objectContaining({ startBeat: 0, endBeat: 14 })
+            );
+        });
+    });
+
+    describe('committed fader and pan (#3689)', () => {
+        function createMixerTrack(): Track {
+            return createAudioTrack({ gain: 0.5, pan: -25, clips: [createAudioClip({})] });
+        }
+
+        it('commits the baked fader and pan to unity on replace when automation is included', async () => {
+            const sourceTrack = createMixerTrack();
+            setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+            mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+            await bounceTrack('track-1', {
+                includeInserts: true,
+                includeSends: false,
+                includeAutomation: true,
+                normalization: 'off',
+                tailHandling: 'off',
+                destination: 'replace',
+            });
+
+            // The samples already carry the mixer moves; replaying them through
+            // the retained 0.5 fader would audition 0.25.
+            const replaced = mocks.trackStore.value?.tracks[0];
+            expect(replaced?.gain).toBe(1);
+            expect(replaced?.pan).toBe(0);
+        });
+
+        it('commits the baked fader and pan to unity on the new track', async () => {
+            const sourceTrack = createMixerTrack();
+            setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+            mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+            await bounceTrack('track-1', {
+                includeInserts: true,
+                includeSends: false,
+                includeAutomation: true,
+                normalization: 'off',
+                tailHandling: 'off',
+                destination: 'new-track',
+            });
+
+            const newTrack = mocks.trackStore.value?.tracks[1];
+            expect(newTrack?.gain).toBe(1);
+            expect(newTrack?.pan).toBe(0);
+            // The original keeps its fader: it still plays its own (unbaked) clips.
+            expect(mocks.trackStore.value?.tracks[0]?.gain).toBe(0.5);
+        });
+
+        it('retains the source fader and pan when the bounce does not include automation', async () => {
+            const sourceTrack = createMixerTrack();
+            setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+            mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+            await bounceTrack('track-1', {
+                includeInserts: true,
+                includeSends: false,
+                includeAutomation: false,
+                normalization: 'off',
+                tailHandling: 'off',
+                destination: 'replace',
+            });
+
+            // Without automation the print is made at a neutral fader, so the
+            // destination still owes the track's own values to replay.
+            const replaced = mocks.trackStore.value?.tracks[0];
+            expect(replaced?.gain).toBe(0.5);
+            expect(replaced?.pan).toBe(-25);
+        });
+
+        it('keeps the source fader and pan when the caller owns the undo unit', async () => {
+            const sourceTrack = createMixerTrack();
+            setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+            mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+            // consolidateAllTracks inverts through a track-clip-state restore that
+            // does not carry gain/pan; committing there would write a level undo
+            // cannot put back.
+            await bounceTrack('track-1', {
+                includeInserts: true,
+                includeSends: false,
+                includeAutomation: true,
+                normalization: 'off',
+                tailHandling: 'off',
+                destination: 'replace',
+                recordUndoEntry: false,
+            });
+
+            const replaced = mocks.trackStore.value?.tracks[0];
+            expect(replaced?.gain).toBe(0.5);
+            expect(replaced?.pan).toBe(-25);
+        });
+
+        it('retires the committed gain/pan lanes, restores them on undo, retires them again on redo', async () => {
+            const gainLane: LaneFixture = { id: 'lane-gain', trackId: 'track-1', parameterId: 'gain' };
+            const panLane: LaneFixture = { id: 'lane-pan', trackId: 'track-1', parameterId: 'pan' };
+            const deviceLane: LaneFixture = { id: 'lane-device', trackId: 'track-1', parameterId: 'drive' };
+            const clipLane: LaneFixture = {
+                id: 'lane-clip',
+                trackId: 'track-1',
+                clipId: 'clip-1',
+                parameterId: 'gain',
+            };
+            const otherTrackLane: LaneFixture = { id: 'lane-other', trackId: 'track-2', parameterId: 'gain' };
+            mocks.getAutomationLanes.mockImplementation(() => [
+                gainLane,
+                panLane,
+                deviceLane,
+                clipLane,
+                otherTrackLane,
+            ]);
+            const sourceTrack = createAudioTrack({ gain: 0.5, clips: [createAudioClip({})] });
+            setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+            mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+            await bounceTrack('track-1', {
+                includeInserts: true,
+                includeSends: false,
+                includeAutomation: true,
+                normalization: 'off',
+                tailHandling: 'off',
+                destination: 'replace',
+            });
+
+            // Only the target's track-level mixer lanes were baked into the
+            // samples; device, clip-scoped and foreign lanes stay.
+            expect(mocks.removeAutomationLane.mock.calls.map((call) => call[0])).toEqual(['lane-gain', 'lane-pan']);
+
+            const [, undo, redo] = getFirstUndoEntry();
+            undo();
+            expect(mocks.restoreAutomationLanes).toHaveBeenCalledWith([gainLane, panLane]);
+            redo();
+            expect(mocks.removeAutomationLane.mock.calls.map((call) => call[0])).toEqual([
+                'lane-gain',
+                'lane-pan',
+                'lane-gain',
+                'lane-pan',
+            ]);
+        });
+
+        it('retires no automation lanes when the destination is a new track', async () => {
+            const gainLane: LaneFixture = { id: 'lane-gain', trackId: 'track-1', parameterId: 'gain' };
+            mocks.getAutomationLanes.mockImplementation(() => [gainLane]);
+            const sourceTrack = createAudioTrack({ gain: 0.5, clips: [createAudioClip({})] });
+            setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+            mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+            await bounceTrack('track-1', {
+                includeInserts: true,
+                includeSends: false,
+                includeAutomation: true,
+                normalization: 'off',
+                tailHandling: 'off',
+                destination: 'new-track',
+            });
+
+            // The new track has a fresh id, so the lanes do not follow it and
+            // cannot double-apply.
+            expect(mocks.removeAutomationLane).not.toHaveBeenCalled();
+        });
+
+        it('clears the replaced track sends when the bounce captured the returns', async () => {
+            const sourceTrack = createAudioTrack({
+                clips: [createAudioClip({})],
+                sends: [{ busId: 'return-bus', level: 1, preFader: false }],
+            });
+            setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+            mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+            await bounceTrack('track-1', {
+                includeInserts: false,
+                includeSends: true,
+                includeAutomation: false,
+                normalization: 'off',
+                tailHandling: 'off',
+                destination: 'replace',
+            });
+
+            // The wet is baked into the clip now; the retained send would feed
+            // the return a second time.
+            expect(mocks.trackStore.value?.tracks[0]?.sends).toEqual([]);
+        });
     });
 });

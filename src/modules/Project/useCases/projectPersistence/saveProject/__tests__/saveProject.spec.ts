@@ -14,6 +14,8 @@ import type { BuiltProjectData } from '../../fileIO/buildProjectData';
 
 type ProjectRepairState = Exclude<ReturnType<typeof inspectCurrentAgentProjectRepairState>, null>;
 
+const PROJECT_AUDIO_STORAGE_LOCK_NAME = 'sourdaw:project-audio-storage';
+
 const mocks = vi.hoisted(() => {
     const repairState: { value: ProjectRepairState | null } = { value: null };
 
@@ -249,13 +251,17 @@ describe('saveProject', () => {
     it('revalidates snapshot authority after waiting for the storage lock', async () => {
         const held = deferred();
         const holder = lockManager.locks.request(
-            'sourdaw:project-audio-storage',
+            PROJECT_AUDIO_STORAGE_LOCK_NAME,
             { mode: 'exclusive' },
             async () => held.promise
         );
 
         const saving = saveProject();
-        await vi.waitFor(() => expect(lockManager.requestedNames).toHaveLength(2));
+        await vi.waitFor(() =>
+            expect(lockManager.requestedNames.filter((name) => name === PROJECT_AUDIO_STORAGE_LOCK_NAME)).toHaveLength(
+                2
+            )
+        );
         expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce();
         expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledWith([]);
 
@@ -272,7 +278,7 @@ describe('saveProject', () => {
     it('refuses a preflight receipt invalidated while Save waits for the storage lock', async () => {
         const held = deferred();
         const holder = lockManager.locks.request(
-            'sourdaw:project-audio-storage',
+            PROJECT_AUDIO_STORAGE_LOCK_NAME,
             { mode: 'exclusive' },
             async () => held.promise
         );
@@ -285,7 +291,11 @@ describe('saveProject', () => {
         });
 
         const saving = saveProject();
-        await vi.waitFor(() => expect(lockManager.requestedNames).toHaveLength(2));
+        await vi.waitFor(() =>
+            expect(lockManager.requestedNames.filter((name) => name === PROJECT_AUDIO_STORAGE_LOCK_NAME)).toHaveLength(
+                2
+            )
+        );
         expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledOnce();
         receiptCurrent = false;
         held.resolve();

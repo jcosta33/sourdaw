@@ -12,7 +12,14 @@ function computeMaxTimelinePreRoll(clipB: Clip, stretchFactor: number): number {
     return Math.max(0, clipB.audioOffsetBeats ?? 0) / stretchFactor;
 }
 
-export function crossfadeClips(clipAId: string, clipBId: string, durationBeats = 0.5): boolean {
+/**
+ * Crossfade length used when a caller does not name one — a quarter-note
+ * equal-power overlap reads as a musical edit at any tempo. The handler's
+ * `?? ` fallback reads this same constant.
+ */
+export const DEFAULT_CROSSFADE_BEATS = 0.5;
+
+export function crossfadeClips(clipAId: string, clipBId: string, durationBeats = DEFAULT_CROSSFADE_BEATS): boolean {
     if (clipAId === clipBId || !Number.isFinite(durationBeats) || durationBeats < 0) {
         return false;
     }

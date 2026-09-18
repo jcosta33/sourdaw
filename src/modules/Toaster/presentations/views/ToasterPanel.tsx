@@ -3,6 +3,7 @@ import { type ReactElement, useEffect, useState } from 'react';
 import { Cpu, Play, Send, Square } from 'lucide-react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
@@ -17,9 +18,10 @@ import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
 import { getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
+import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
-import { type PadState, withActivePatternId } from '../../models/ToasterKit';
+import { TOASTER_PAD_COUNT, type PadState, withActivePatternId } from '../../models/ToasterKit';
 import {
     defaultToasterState,
     selectPad,
@@ -270,14 +272,14 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     }
 
     function triggerPad(index: number): void {
-        const bpm = transportStore.value?.tempo ?? 120;
+        const bpm = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
         if (isRepeatActive) {
             if (is16Levels) {
                 if (sixteenLevelsTarget === 'velocity') {
-                    const velocity = Math.round(((index + 1) / 16) * 127);
+                    const velocity = Math.round(((index + 1) / TOASTER_PAD_COUNT) * 127);
                     startNoteRepeat(deviceId, selectedPadIndex, velocity, bpm, repeatRate);
                 } else {
-                    const fraction = (index + 1) / 16;
+                    const fraction = (index + 1) / TOASTER_PAD_COUNT;
                     if (sixteenLevelsTarget === 'tune') {
                         setPadParamImmediate({
                             deviceId,
@@ -297,7 +299,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             deviceId,
                             padIndex: selectedPadIndex,
                             key: 'filterCutoff',
-                            value: 20 * (20000 / 20) ** fraction,
+                            value: MIN_AUDIBLE_FREQ_HZ * (MAX_AUDIBLE_FREQ_HZ / MIN_AUDIBLE_FREQ_HZ) ** fraction,
                         });
                     }
                     startNoteRepeat(deviceId, selectedPadIndex, 127, bpm, repeatRate);
@@ -576,10 +578,10 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                     setToasterPadParam(deviceId, selectedPadIndex, 'filterCutoff', value)
                                 }
                                 label="Bright"
-                                min={20}
-                                max={20000}
+                                min={MIN_AUDIBLE_FREQ_HZ}
+                                max={MAX_AUDIBLE_FREQ_HZ}
                                 step={10}
-                                defaultValue={20000}
+                                defaultValue={MAX_AUDIBLE_FREQ_HZ}
                                 readout={
                                     selectedPad.filterCutoff >= 1000
                                         ? `${(selectedPad.filterCutoff / 1000).toFixed(1)}k`
@@ -699,7 +701,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                         return;
                                     }
 
-                                    startSequencer(deviceId, transportStore.value?.tempo ?? 120);
+                                    startSequencer(deviceId, transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM);
                                 }}
                             >
                                 {isPlaying ? <Square className="size-3.5" /> : <Play className="size-3.5" />}
@@ -716,6 +718,10 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 To timeline
                             </DawPluginChip>
                         </Row>
+                        <DawInlineHint>
+                            Play sounds the pattern live only. To timeline writes it to the arrangement for export and
+                            native playback.
+                        </DawInlineHint>
                         <div role="status" className="text-[9px] leading-4 text-muted-foreground">
                             {grooveStatusMessage}
                         </div>

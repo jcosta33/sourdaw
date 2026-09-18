@@ -10,11 +10,12 @@
 import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
 
 import { type GestureAuthority } from '#/components/daw/RotaryKnob';
+import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 const MIN_FREQ = 20;
-const MAX_FREQ = 20000;
+const MAX_FREQ = MAX_AUDIBLE_FREQ_HZ;
 const DB_RANGE = 18;
 const BAND_COLORS = ['#6BAACE', '#52BA46', '#E0AA2A', '#FF5F80', '#4CB8B8', '#954EB2', '#6BAACE', '#52BA46'];
 const CHANNEL_INDICATORS: Record<number, string> = { 0: '', 1: 'M', 2: 'S' };
@@ -569,7 +570,7 @@ export const ProofEqCurve = ({
         }
         const { x: mx, y: my } = pointerToCanvasPoint(canvas, width, height, e.clientX, e.clientY);
 
-        const newFreq = Math.round(Math.max(20, Math.min(20000, xToFreq(mx, width))));
+        const newFreq = Math.round(Math.max(MIN_AUDIBLE_FREQ_HZ, Math.min(MAX_AUDIBLE_FREQ_HZ, xToFreq(mx, width))));
 
         // HP/LP cutoff bands have no gain axis: the engine ignores `gain` for them,
         // so vertical drag must not write it. Only frequency changes for those bands.

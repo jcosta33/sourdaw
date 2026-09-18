@@ -6,7 +6,7 @@ import {
     prepareCachedAudioBuffersFromIdb,
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
-import { compactProject, resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
+import { compactProject, resetCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips } from '#/modules/Transport/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
@@ -34,6 +34,7 @@ vi.mock('../../../repositories/project/writeProjectJson', () => ({
 
 vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    forgetProjectLatchedPedals: vi.fn(),
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
@@ -49,6 +50,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDefaultBendRangeSemitones: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
     isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
@@ -61,7 +63,10 @@ vi.mock('#/modules/Command/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: vi.fn().mockResolvedValue(undefined),
-    resetCrdtProjectAuthority: vi.fn(),
+    resetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
+        onAuthorityReplaced?.();
+        return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
+    }),
     projectActionHistoryToStore: vi.fn(),
     startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
@@ -153,7 +158,7 @@ describe('loadRecentProject', () => {
     it('does not replace project truth when discard authority is revoked while its JSON read is pending', async () => {
         let resolveRead: ((value: string) => void) | undefined;
         let authorityCurrent = true;
-        vi.mocked(resetCrdtProjectAuthority).mockClear();
+        vi.mocked(resetCrdtProject).mockClear();
         vi.mocked(hydrateModuleStoresFromProjectData).mockClear();
         vi.mocked(readNamedProjectJson).mockImplementation(
             () =>
@@ -167,7 +172,7 @@ describe('loadRecentProject', () => {
         resolveRead?.(validProject);
 
         await expect(load).resolves.toBe('aborted');
-        expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(resetCrdtProject).not.toHaveBeenCalled();
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
     });
 
@@ -411,8 +416,8 @@ describe('loadRecentProject', () => {
      */
     it('reports a load that destroyed the session as failed, not aborted', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
-        vi.mocked(resetCrdtProjectAuthority).mockImplementationOnce(
-            (_name: string, onAuthorityReplaced?: () => void): void => {
+        vi.mocked(resetCrdtProject).mockImplementationOnce(
+            (_name: string, onAuthorityReplaced?: () => void): Promise<never> => {
                 onAuthorityReplaced?.();
                 throw new DOMException('exceeded the quota', 'QuotaExceededError');
             }

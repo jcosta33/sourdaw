@@ -1,29 +1,14 @@
-import { type MidiClipDataActionSnapshot, type MidiClipGlueActionSnapshot } from '#/utils/handlerContract';
+import { type MidiClipGlueActionSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
+
+import { snapshotMidiClipData } from './snapshotMidiClipData';
 
 export type MidiClipGlueStateMatchInput = {
     expected: MidiClipGlueActionSnapshot;
     replacement: MidiClipGlueActionSnapshot;
 };
-
-function snapshotClipData(state: MidiStoreState, clipId: string): MidiClipDataActionSnapshot {
-    return {
-        notes: {
-            present: Object.hasOwn(state.notesByClipId, clipId),
-            value: structuredClone(state.notesByClipId[clipId] ?? []),
-        },
-        controlChanges: {
-            present: Object.hasOwn(state.ccByClipId, clipId),
-            value: structuredClone(state.ccByClipId[clipId] ?? []),
-        },
-        pitchBends: {
-            present: Object.hasOwn(state.pitchBendByClipId, clipId),
-            value: structuredClone(state.pitchBendByClipId[clipId] ?? []),
-        },
-    };
-}
 
 /** Same precondition `restoreMidiClipGlueState` writes against, kept as the sole export of its
  *  own file (rather than a second export alongside the write) so a handler's `validate` can
@@ -43,7 +28,7 @@ export function midiClipGlueStateMatches(
         state !== undefined &&
         new Set(expectedIds).size === expectedIds.length &&
         JSON.stringify(expectedIds) === JSON.stringify(replacementIds) &&
-        expected.clips.every((clip) => valuesEqual(snapshotClipData(state, clip.clipId), clip.data)) &&
+        expected.clips.every((clip) => valuesEqual(snapshotMidiClipData(state, clip.clipId), clip.data)) &&
         JSON.stringify(expected.migratedAbsoluteNoteClipIds.value.filter((clipId) => expectedIds.includes(clipId))) ===
             JSON.stringify((state.migratedAbsoluteNoteClipIds ?? []).filter((clipId) => expectedIds.includes(clipId)))
     );

@@ -1,5 +1,7 @@
 import { strToU8, zipSync } from 'fflate';
 
+import { METADATA_XML_ENTRY_NAME, PROJECT_XML_ENTRY_NAME } from './dawProjectEntryNames';
+
 export type BuildDawProjectZipInput = {
     projectXml: string;
     metadataXml: string;
@@ -20,8 +22,8 @@ function toUint8(source: Uint8Array): Uint8Array {
 
 export function buildDawProjectZip(input: BuildDawProjectZipInput): Uint8Array {
     const entries: Record<string, Uint8Array> = {
-        'project.xml': toUint8(strToU8(input.projectXml)),
-        'metadata.xml': toUint8(strToU8(input.metadataXml)),
+        [PROJECT_XML_ENTRY_NAME]: toUint8(strToU8(input.projectXml)),
+        [METADATA_XML_ENTRY_NAME]: toUint8(strToU8(input.metadataXml)),
     };
     for (const [path, bytes] of input.audioFiles) {
         entries[path] = toUint8(bytes);

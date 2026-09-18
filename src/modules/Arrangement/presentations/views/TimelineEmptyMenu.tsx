@@ -8,7 +8,8 @@ import { useStore } from '#/infra/store/useStore';
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
+import { AUDIO_ACCEPT_ATTRIBUTE } from '#/utils/audioFileExtensions';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
@@ -94,7 +95,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
         const authority = captureProjectTransitionAuthority();
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = 'audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.aiff';
+        input.accept = AUDIO_ACCEPT_ATTRIBUTE;
         input.onchange = async () => {
             const file = input.files?.[0];
             if (!file || !authority.isCurrent()) {
@@ -114,7 +115,9 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                         addTrack({ name: file.name.replace(/\.[^.]+$/, ''), kind: 'audio' });
                         return trackStore.value?.tracks[trackStore.value.tracks.length - 1]?.id ?? '';
                     })();
-                const durationBeats = Math.ceil((result.buffer.duration / 60) * (transportStore.value?.tempo ?? 120));
+                const durationBeats = Math.ceil(
+                    (result.buffer.duration / 60) * (transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM)
+                );
                 const clip = addClip({
                     trackId: targetTrackId,
                     startBeat: beat,

@@ -1,4 +1,4 @@
-import { type AgentRun, type AgentRunState } from '../../models/AgentRun';
+import { type AgentRun, type AgentRunState, trackActiveSince } from '../../models/AgentRun';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 
 import { reduceAgentRunTransition } from './reduceAgentRunTransition';
@@ -79,34 +79,40 @@ export function recoverInterruptedAgentRunState(
                   knownDomain: true,
               })
             : null;
-        return {
-            ...run,
-            phase: reduceAgentRunTransition(run.phase, { type: 'recovery-resolved', requiresManualResume }),
-            workLeases: run.workLeases.map((lease) =>
-                lease.terminalState === null ? { ...lease, terminalState: 'orphaned', settledAt: recoveredAt } : lease
-            ),
-            temporaryAssets: run.temporaryAssets.map((asset) =>
-                asset.status === 'live' ? { ...asset, status: 'cleanup-pending' } : asset
-            ),
-            manualResume: {
-                required: requiresManualResume,
-                reason: requiresManualResume
-                    ? 'The application restarted before this run finished. Its exact continuation is unavailable; start a new run from the retained request and receipts.'
-                    : null,
-                workIds: uniqueOrphanedWorkIds,
-                requiredAt: requiresManualResume ? recoveredAt : null,
-            },
-            errors: recoveryError ? [...run.errors, recoveryError] : run.errors,
-            saga: {
-                schemaVersion: 1,
-                steps: run.saga.steps.map((step) =>
-                    step.state === 'external-pending' && !retainedEffectBatchIds.has(step.workId)
-                        ? { ...step, state: 'manual-repair', updatedAt: recoveredAt }
-                        : step
+        return trackActiveSince(
+            run,
+            {
+                ...run,
+                phase: reduceAgentRunTransition(run.phase, { type: 'recovery-resolved', requiresManualResume }),
+                workLeases: run.workLeases.map((lease) =>
+                    lease.terminalState === null
+                        ? { ...lease, terminalState: 'orphaned', settledAt: recoveredAt }
+                        : lease
                 ),
+                temporaryAssets: run.temporaryAssets.map((asset) =>
+                    asset.status === 'live' ? { ...asset, status: 'cleanup-pending' } : asset
+                ),
+                manualResume: {
+                    required: requiresManualResume,
+                    reason: requiresManualResume
+                        ? 'The application restarted before this run finished. Its exact continuation is unavailable; start a new run from the retained request and receipts.'
+                        : null,
+                    workIds: uniqueOrphanedWorkIds,
+                    requiredAt: requiresManualResume ? recoveredAt : null,
+                },
+                errors: recoveryError ? [...run.errors, recoveryError] : run.errors,
+                saga: {
+                    schemaVersion: 1,
+                    steps: run.saga.steps.map((step) =>
+                        step.state === 'external-pending' && !retainedEffectBatchIds.has(step.workId)
+                            ? { ...step, state: 'manual-repair', updatedAt: recoveredAt }
+                            : step
+                    ),
+                },
+                updatedAt: recoveredAt,
             },
-            updatedAt: recoveredAt,
-        };
+            recoveredAt
+        );
     });
     return { state: { ...state, runs }, recoveredRunIds };
 }

@@ -46,10 +46,16 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     quantiseDeviceParameterValue: ({ value }: { value: number }) => value,
 }));
 
-// Non-spread listing of ensureTrackStrip and getAudioSampleRate — resolveGrandBouleEngine imports both for the engine readiness tile.
+// Non-spread listing of ensureTrackStrip, getAudioSampleRate, sendNativeLiveMidiControl and
+// writeNativeBuiltinParameters — resolveGrandBouleEngine imports the first two for the engine
+// readiness tile, the third to mirror a panel pedal onto the engine's own body, and the fourth to
+// mirror a calibration write onto the native body (#4302). `ensureTrackStrip` answers no device
+// nodes here, so the resolved handle is always disconnected and never calls it.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureTrackStrip: () => ({ deviceNodes: [], analyserNode: null }),
     getAudioSampleRate: () => 44100,
+    sendNativeLiveMidiControl: async () => true,
+    writeNativeBuiltinParameters: () => {},
 }));
 
 const hydrateGrandBouleConfigFromProject = vi.hoisted(() => vi.fn());

@@ -58,6 +58,16 @@ export type MatchControllerProfileOutput =
 type SuccessfulTierResult = Extract<MatchControllerProfileOutput, { status: 'match' | 'ambiguous' }>;
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
+// Framing bytes of a Universal Non-Realtime SysEx Device Identity Reply
+// (MIDI 1.0 spec: F0 start, 7E non-realtime, sub-id1 06 "General
+// Information", sub-id2 02 "Identity Reply", F7 end). A reply that does not
+// carry this exact frame is not an identity reply, whatever it contains.
+const SYSEX_START_BYTE = 0xf0;
+const SYSEX_UNIVERSAL_NON_REALTIME_BYTE = 0x7e;
+const SYSEX_GENERAL_INFORMATION_SUB_ID = 0x06;
+const SYSEX_IDENTITY_REPLY_SUB_ID = 0x02;
+const SYSEX_END_BYTE = 0xf7;
+
 const isUnknownRecord = (value: unknown): value is UnknownRecord => {
     if (typeof value !== 'object' || value === null) {
         return false;
@@ -107,11 +117,11 @@ const isValidSysExIdentityReply = (reply: unknown): reply is readonly number[] =
         return false;
     }
 
-    if (reply[0] !== 0xf0) {
+    if (reply[0] !== SYSEX_START_BYTE) {
         return false;
     }
 
-    if (reply[1] !== 0x7e) {
+    if (reply[1] !== SYSEX_UNIVERSAL_NON_REALTIME_BYTE) {
         return false;
     }
 
@@ -119,7 +129,7 @@ const isValidSysExIdentityReply = (reply: unknown): reply is readonly number[] =
         return false;
     }
 
-    if (reply[3] !== 0x06 || reply[4] !== 0x02) {
+    if (reply[3] !== SYSEX_GENERAL_INFORMATION_SUB_ID || reply[4] !== SYSEX_IDENTITY_REPLY_SUB_ID) {
         return false;
     }
 
@@ -134,7 +144,7 @@ const isValidSysExIdentityReply = (reply: unknown): reply is readonly number[] =
         return false;
     }
 
-    if (reply[reply.length - 1] !== 0xf7) {
+    if (reply[reply.length - 1] !== SYSEX_END_BYTE) {
         return false;
     }
 

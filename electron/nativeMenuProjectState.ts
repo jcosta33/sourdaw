@@ -35,11 +35,13 @@ const isControlCodePoint = (codePoint: number): boolean =>
  * (electron/windowCloseDialog.ts). Without this, a control character or an
  * unbounded length reaches native OS chrome unfiltered.
  */
-export const boundShellLabel = (value: string): string =>
-    [...value]
+export const boundShellLabel = (value: string): string => {
+    const codePoints = Array.from(value);
+    return codePoints
         .filter((character) => !isControlCodePoint(character.codePointAt(0) ?? 0))
         .slice(0, MAX_MENU_LABEL_CODE_POINTS)
         .join('');
+};
 
 /** Applies the renderer's validated native-menu projection to shell-owned surfaces. */
 export const createNativeMenuProjectStateController = ({

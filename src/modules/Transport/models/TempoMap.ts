@@ -11,6 +11,38 @@ export type TempoRange = {
 };
 
 /**
+ * Tempo range a stored *tempo-map change* must fall in.
+ *
+ * Deliberately its own name and not Transport's `MIN_TEMPO`/`MAX_TEMPO`, because
+ * the two ranges are genuinely different: the transport's base tempo is capped
+ * at 300, a tempo-map change at 999. They already disagree, so collapsing them
+ * would be wrong.
+ *
+ * Both bounds are exported for use inside Transport: the tempo field edits a
+ * tempo-map change in place whenever a map governs the playhead, so the field's
+ * own clamp has to be this range and not Transport's — clamping a stored 400 BPM
+ * change to 300 on the first pixel of a drag destroys it.
+ *
+ * The minimum is additionally one of the two floors the
+ * unknown-frozen-tail derivation has to clear — a project's slowest legal tempo
+ * is the slowest either validator will accept, and that derivation used to be
+ * checked against Transport's copy alone. `frozenTailAnchor.spec.ts` pins it
+ * against both. That cross-check is the point: a value duplicated across a
+ * boundary with no test spanning it is invisible precisely while the copies
+ * agree.
+ */
+export const MIN_TEMPO_MAP_TEMPO = 20;
+export const MAX_TEMPO_MAP_TEMPO = 999;
+
+/**
+ * Two beats closer together than this are the same beat. Every tempo- and
+ * meter-change "replace or insert at this beat?" decision compares through
+ * this epsilon so adding, updating, and removing a change at one beat all
+ * agree on what "at this beat" means.
+ */
+export const BEAT_EPSILON = 1e-6;
+
+/**
  * Beat-ordered view of a change list, keyed by the list's own identity.
  *
  * Every query below needs the changes in beat order, and the scheduler asks for
@@ -117,7 +149,7 @@ export function createTempoChange(beat: number, tempo: number, curve: TempoChang
     return {
         id: `tempo-${crypto.randomUUID()}`,
         beat,
-        tempo: Math.max(20, Math.min(999, tempo)),
+        tempo: Math.max(MIN_TEMPO_MAP_TEMPO, Math.min(MAX_TEMPO_MAP_TEMPO, tempo)),
         curve,
     };
 }

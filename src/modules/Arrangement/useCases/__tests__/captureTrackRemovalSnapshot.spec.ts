@@ -117,8 +117,50 @@ describe('captureTrackRemovalSnapshot', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
 
         expect(() => captureTrackRemovalSnapshot('t1', { actions: [malformedComp], actionIndex: 1 })).toThrow(
-            'Could not project prior comp actions for track removal snapshot'
+            'Could not project prior take-lane actions for track removal snapshot'
         );
+    });
+
+    it('captures selection and comp state produced by the ordered action prefix', () => {
+        const track = TrackDummy.create({ id: 't1' });
+        const lane = {
+            id: 'lane-1',
+            trackId: 't1',
+            takes: [
+                { id: 'take-a', clipId: 'clip-a', name: 'A', startBeat: 0, endBeat: 8, selected: true },
+                { id: 'take-b', clipId: 'clip-b', name: 'B', startBeat: 0, endBeat: 8, selected: false },
+            ],
+            activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'take-a' }],
+        };
+        const select = { type: 'selectTake', payload: { trackId: 't1', takeId: 'take-b' } } satisfies AppAction;
+        const comp = {
+            type: 'setCompRegion',
+            payload: {
+                laneId: lane.id,
+                trackId: lane.trackId,
+                startBeat: 2,
+                endBeat: 4,
+                takeId: 'take-b',
+                expected: [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }],
+                replacement: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
+            },
+        } satisfies AppAction;
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
+
+        const snapshot = captureTrackRemovalSnapshot('t1', { actions: [select, comp], actionIndex: 2 });
+
+        expect(snapshot?.takeLaneSnapshots).toEqual([
+            {
+                ...lane,
+                takes: lane.takes.map((take) => ({ ...take, selected: take.id === 'take-b' })),
+                activeCompRegions: [
+                    { startBeat: 0, endBeat: 2, takeId: 'take-a' },
+                    { startBeat: 2, endBeat: 4, takeId: 'take-b' },
+                    { startBeat: 4, endBeat: 8, takeId: 'take-a' },
+                ],
+            },
+        ]);
     });
 
     it('captures the full removal snapshot: routing, automation, midi, take lanes, sidechain, modulation', () => {

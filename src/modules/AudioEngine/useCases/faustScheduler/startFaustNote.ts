@@ -1,9 +1,16 @@
-import { scheduleDeviceParam } from '../deviceControls/scheduleDeviceParam';
+import { scheduleDeviceKeyOff } from '../deviceControls/scheduleDeviceKeyOff';
+import { scheduleDeviceKeyOn } from '../deviceControls/scheduleDeviceKeyOn';
 import { getCurrentTime } from '../scheduling/getCurrentTime';
 
 /**
- * Start a Faust-synth note for interactive preview; returns a function that
- * releases the note. Lives in AudioEngine (previously Synth) to remove the
+ * Start a Faust-synth note for interactive preview (piano-roll audition, Web
+ * MIDI input); returns a function that releases the note.
+ *
+ * Notes go through the polyphonic voice allocator (`keyOn`/`keyOff`, the same
+ * dispatch the offline render and `scheduleFaustNote` use) so a fresh
+ * instrument processor actually voices the note and overlapping notes hold
+ * independent voices (#3721). The poly allocator maps velocity to voice gain
+ * as velocity/127. Lives in AudioEngine (previously Synth) to remove the
  * `Synth → AudioEngine` static edge.
  */
 export function startFaustNote(
@@ -13,14 +20,9 @@ export function startFaustNote(
     velocity: number,
     currentTime: number
 ): () => void {
-    const frequency = 440 * 2 ** ((pitch - 69) / 12);
-    const gain = velocity / 127;
-
-    scheduleDeviceParam(trackId, deviceId, 'freq', frequency, currentTime);
-    scheduleDeviceParam(trackId, deviceId, 'gain', gain, currentTime);
-    scheduleDeviceParam(trackId, deviceId, 'gate', 1, currentTime);
+    scheduleDeviceKeyOn(trackId, deviceId, pitch, velocity, currentTime);
 
     return () => {
-        scheduleDeviceParam(trackId, deviceId, 'gate', 0, getCurrentTime());
+        scheduleDeviceKeyOff(trackId, deviceId, pitch, 0, getCurrentTime());
     };
 }

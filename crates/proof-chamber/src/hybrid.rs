@@ -48,6 +48,9 @@ impl HybridReverb {
                 };
             }
             "hybrid_blend" => self.blend = value.clamp(0.0, 1.0),
+            // The `mix` forwarded here restates the wire vocabulary daw-dsp
+            // owns in `crates/daw-dsp/src/params.rs` (this crate cannot depend
+            // on that one); keep the name in step with it.
             "conv_mix" => self.convolution.set_param("mix", value),
             n => {
                 // Forward to both engines

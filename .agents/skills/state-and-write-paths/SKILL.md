@@ -76,6 +76,23 @@ Never persist a derivative as truth. Selectors stay read-only — no write side 
 
 For a normalized project-state command, test the authoritative terminal projection through the public command entry: raw document, owning store projection, visible control state, and engine projection must agree on the same committed value. #4082 (commit `418906`, merged as `dcb995a`) showed that a Loop control could update a visible flag while leaving an invalid loop region that the document decoder rejected. A direct use-case or static-prop fixture cannot prove this agreement.
 
+### Identity-scoped replay must prove owner and empty-state recovery
+
+Attack undo and redo after replacing an aggregate with a new owner that reuses the same track and child identities, and
+exercise a forward write whose prior state is empty. Persistence evidence must create history through the real producer,
+persist and reload the document, hydrate that saved history, then replay it; an injected undo entry proves neither the
+producer nor the saved contract.
+
+### Grouped inverse capture must read the owning action prefix
+
+`executeAppActionBatch` describes every member before any member executes. When a handler's description captures an
+inverse from project state, project the earlier siblings through the owning domain before reading that state, then use
+the same projection for batch validation. PR #4083 introduced guarded take-selection replay with green single-handler
+coverage but captured each grouped inverse from the same live pre-batch selection; PR #4073 added projected validation
+for heterogeneous grouped replay without closing that description-time capture route. Prove prefix-dependent capture
+through real grouped undo and redo, inspecting both raw CRDT authority and the owning store projection; independently
+green handler tests do not establish sibling-state capture.
+
 ### 8. Async fetch/cache is not editable business state
 
 Edit project truth through domain writes, then invalidate or refetch. The query cache is never a mutable document.
@@ -90,6 +107,12 @@ PR #3943 acquired checkpoint retention from raw audio buffer IDs, so a replaced 
 over stale disk PCM. Review every acquisition route with a genuine durability receipt and active storage scope, then
 change the source after retention commits and prove exact-token cleanup either removes the row or reports retained
 ownership explicitly.
+
+### Async cache admission must stay release-visible before every await
+
+Review the path from request admission through every await before cache registration. Release or cancel while transfer
+data is pending, then admit a fresh request and prove late cleanup affects only its exact former entry. Tests must
+observe release-visible ownership before provider creation begins.
 
 ## Prepared settlement review crosses module instances
 

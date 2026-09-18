@@ -9,11 +9,12 @@
 import { type ReactElement, useRef, useEffect } from 'react';
 
 import { Row } from '#/components/layout';
+import { MAX_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 
 import { type ProofAnalyserStatus } from '../hooks/useProofAnalyser';
 
 const MIN_FREQ = 20;
-const MAX_FREQ = 20000;
+const MAX_FREQ = MAX_AUDIBLE_FREQ_HZ;
 const MIN_DB = -50;
 const MAX_DB = 10;
 
@@ -38,7 +39,7 @@ const HARMAN_CURVE: Array<{ freq: number; db: number }> = [
     { freq: 10000, db: -5 },
     { freq: 12000, db: -7 },
     { freq: 16000, db: -10 },
-    { freq: 20000, db: -15 },
+    { freq: MAX_FREQ, db: -15 },
 ];
 
 /** Genre target adjustments. */

@@ -82,6 +82,19 @@ export function createGrandBouleStore(deviceId: string) {
     return store;
 }
 
+/**
+ * The per-device store already created for `deviceId`, or `undefined` when
+ * none has. Never creates one: unlike `createGrandBouleStore`, which
+ * notifies `storeCreatedListeners` and stands up a fresh default-valued
+ * store, this is for a caller that only wants to read state that already
+ * exists — a build-time projection folding a calibrated store into a native
+ * body must not itself bring a store into existence, or every unopened panel
+ * would start reporting a live one.
+ */
+export function peekGrandBouleStore(deviceId: string): ReturnType<typeof createStore<GrandBouleState>> | undefined {
+    return storesByDevice.get(deviceId);
+}
+
 export function subscribeToGrandBouleStoreCreation(
     listener: (deviceId: string, store: ReturnType<typeof createStore<GrandBouleState>>) => void
 ): () => void {

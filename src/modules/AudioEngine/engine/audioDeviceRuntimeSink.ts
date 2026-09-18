@@ -126,8 +126,14 @@ export type AudioDeviceRuntimeSink = {
      * `projectDeviceForNativeBody` calls it, pure and synchronous, to fold a
      * device's kit into the record a native body actually receives. A type with
      * nothing beyond `parameterValues` — most native built-ins — answers `null`.
+     *
+     * Called even when `deviceState` is `undefined`: Grand Boule's calibration
+     * lives in its per-device store rather than in `deviceState` at all, so its
+     * arm needs `deviceId` to look the store up and must run regardless of
+     * whether this device has committed any state chunk.
      */
     projectNativeDeviceState: (input: {
+        deviceId: string;
         deviceType: string;
         deviceState: DeviceStateChunk | undefined;
     }) => Readonly<Record<string, number>> | null;

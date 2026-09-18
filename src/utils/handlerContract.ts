@@ -1086,11 +1086,18 @@ export type AppAction =
     | { type: 'muteTrack'; payload: { trackId: string; muted: boolean; expectedMuted: boolean } }
     | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean } }
     | {
-          /** Guarded self-inverse of comp take selection. `expectedSelectedTakeId`
+          /** Guarded self-inverse of comp take selection. Fresh intent carries a
+           *  non-null `takeId`; replay also binds the captured lane owner and may
+           *  use `null` to restore an empty selection. `expectedSelectedTakeId`
            *  optimistic-locks the lane's current selection: `undefined` asserts
-           *  nothing (fresh user intent), `null` asserts no take is selected. */
+           *  nothing, `null` asserts no take is selected. */
           type: 'selectTake';
-          payload: { trackId: string; takeId: string; expectedSelectedTakeId?: string | null };
+          payload: {
+              trackId: string;
+              takeId: string | null;
+              expectedLaneId?: string;
+              expectedSelectedTakeId?: string | null;
+          };
       }
     | { type: 'toggleSoloSafe'; payload: { trackId: string } }
     | { type: 'setSoloSafe'; payload: { trackId: string; soloSafe: boolean } }
@@ -2139,6 +2146,8 @@ export type AppAction =
               clipId: string;
               segments: PitchEditSegmentSnapshot[];
               contour: PitchContourSnapshot;
+              retuneSpeedMs?: number;
+              formantPreserve?: boolean;
           };
       }
     | {
@@ -2325,6 +2334,17 @@ export type AppAction =
               expectedRevision: number;
               brief: unknown;
           };
+      }
+    | {
+          /**
+           * User-initiated repair of a repair-required project (issue #3573):
+           * closes the document's unresolved conflicts by keeping the value each
+           * already resolved to and re-projects every slot. The one action type
+           * the repair-required admission gate admits while it holds; a
+           * user route only, deliberately absent from the agent surface.
+           */
+          type: 'repairProjectData';
+          payload?: undefined;
       }
     | {
           type: 'createVcaGroup';

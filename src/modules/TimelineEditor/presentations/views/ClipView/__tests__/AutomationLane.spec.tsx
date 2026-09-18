@@ -66,6 +66,8 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    clipHasActiveGainEnvelope: vi.fn(),
+    getGainEnvelopeSeries: vi.fn(),
     trackStore: { value: null },
     defaultTrackState: { tracks: [] },
     // A barrel factory replaces the whole module, so every member anything in

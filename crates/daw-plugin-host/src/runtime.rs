@@ -194,6 +194,12 @@ impl HostedPluginRuntime for HostedRuntime {
         delegate!(self, backend => backend.poll_latency_change())
     }
 
+    /// CLAP-only today: VST3 has no `request_callback`, so its backend keeps
+    /// the trait's empty default and this arm never finds anything pending.
+    fn service_main_thread_callback(&mut self) {
+        delegate!(self, backend => backend.service_main_thread_callback())
+    }
+
     fn latency_ms(&self) -> f64 {
         delegate!(self, backend => backend.latency_ms())
     }
@@ -279,5 +285,14 @@ impl HostedRuntime {
             Self::Clap(_) => crate::scanner::PluginFormat::Clap,
             Self::Vst3(_) => crate::scanner::PluginFormat::Vst3,
         }
+    }
+
+    /// The rate this instance was activated at.
+    ///
+    /// The engine that registers this runtime compares its own rate against
+    /// this one: a runtime activated on one clock renders mistuned on another,
+    /// so the two must match before the runtime is ever handed to an engine.
+    pub fn activation_sample_rate(&self) -> f64 {
+        delegate!(self, backend => backend.sample_rate())
     }
 }

@@ -6,11 +6,12 @@ import { PitchDetector } from 'pitchy';
 
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { NOTE_NAMES } from '#/utils/noteNames';
+import { frequencyToMidiNote } from '#/utils/pitch';
 
 import { type PitchResult, type PitchTrackingOptions } from '../models/PitchTypes';
 
 function freqToMidi(freq: number): number {
-    return Math.round(69 + 12 * Math.log2(freq / 440));
+    return Math.round(frequencyToMidiNote(freq));
 }
 
 function freqToNoteName(freq: number): string {

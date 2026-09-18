@@ -18,14 +18,20 @@ type CommitCheckpointCatalogInput = {
     newArtifact?: CheckpointArtifactRecord;
 };
 
-type CommitCheckpointCatalogResult = { status: 'committed'; catalogRevision: string } | { status: 'conflict' };
+export type CommitCheckpointCatalogOptions = {
+    shouldCommit: () => boolean;
+};
+
+type CommitCheckpointCatalogResult =
+    { status: 'committed'; catalogRevision: string } | { status: 'conflict' } | { status: 'superseded' };
 
 function normalizeExpectedRevision(value: unknown): string | null {
     return value === null ? null : requireCheckpointIdentity(value, 'expectedCatalogRevision');
 }
 
 export async function commitCheckpointCatalog(
-    input: CommitCheckpointCatalogInput
+    input: CommitCheckpointCatalogInput,
+    options: CommitCheckpointCatalogOptions
 ): Promise<CommitCheckpointCatalogResult> {
     const ownerProjectId = requireCheckpointIdentity(input.ownerProjectId, 'ownerProjectId');
     const expectedCatalogRevision = normalizeExpectedRevision(input.expectedCatalogRevision);
@@ -33,6 +39,9 @@ export async function commitCheckpointCatalog(
     const newArtifact = input.newArtifact ? normalizeCheckpointArtifactRecord(input.newArtifact) : undefined;
     if (newArtifact && newArtifact.ownerProjectId !== ownerProjectId) {
         throw new Error('[CheckpointPersistence] New checkpoint artifact belongs to another owner');
+    }
+    if (!options.shouldCommit()) {
+        return { status: 'superseded' };
     }
 
     const database = await openDatabase();
@@ -46,6 +55,15 @@ export async function commitCheckpointCatalog(
     const completion = checkpointOwnerSnapshot.transaction(transaction);
     try {
         const current = await checkpointOwnerSnapshot.read(transaction, ownerProjectId);
+        if (!options.shouldCommit()) {
+            try {
+                transaction.abort();
+            } catch {
+                // The transaction already completed or aborted.
+            }
+            await completion.catch(() => undefined);
+            return { status: 'superseded' };
+        }
         const currentCatalogRevision = current.state?.catalogRevision ?? null;
         if (currentCatalogRevision !== expectedCatalogRevision) {
             await completion;

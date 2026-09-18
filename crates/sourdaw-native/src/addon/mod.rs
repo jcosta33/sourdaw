@@ -546,18 +546,12 @@ impl SourdawNative {
     }
 
     #[napi]
-    pub async fn load_plugin(
-        &self,
-        plugin_id: String,
-        instance_id: String,
-        sample_rate: f64,
-    ) -> Result<Value> {
+    pub async fn load_plugin(&self, plugin_id: String, instance_id: String) -> Result<Value> {
         let windows = self.window_host();
         json(reason(
             commands::plugins::load_plugin(
                 PluginId(plugin_id),
                 PluginInstanceId(instance_id),
-                sample_rate,
                 windows.as_ref(),
                 &self.singletons.app_state,
             )
@@ -1187,15 +1181,15 @@ impl SourdawNative {
     // ── Crumbs ─────────────────────────────────────────────────────────
 
     #[napi]
-    pub async fn create_crumbs(&self, instance_id: String) -> Result<()> {
-        reason(
+    pub async fn create_crumbs(&self, instance_id: String) -> Result<Value> {
+        json(reason(
             commands::crumbs::create_crumbs(
                 instance_id,
                 &self.singletons.crumbs,
                 &self.singletons.app_state,
             )
             .await,
-        )
+        )?)
     }
 
     #[napi]
@@ -1312,6 +1306,17 @@ impl SourdawNative {
         // Sample position is a u64 frame count: past 2^53 frames a JS number
         // would start rounding, and a rounded playhead is a wrong playhead.
         Ok(BigInt::from(position))
+    }
+
+    #[napi]
+    pub async fn get_crumbs_dropped_sample_writes(&self, instance_id: String) -> Result<u32> {
+        reason(
+            commands::crumbs::get_crumbs_dropped_sample_writes(
+                instance_id,
+                &self.singletons.crumbs,
+            )
+            .await,
+        )
     }
 
     #[napi]

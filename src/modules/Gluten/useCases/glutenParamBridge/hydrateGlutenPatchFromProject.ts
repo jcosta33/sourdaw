@@ -1,6 +1,14 @@
 import { trackStore } from '#/modules/Arrangement/stores';
+import { GAIN_TRIM_DB } from '#/utils/audioLevelLaw';
 
-import { clampOversampling, DEFAULT_PATCH, type GlutenPatch, type GlutenTopology } from '../../models/GlutenPatch';
+import { GLUTEN_PARAM_IDS } from '../../models/GlutenParamIds';
+import {
+    clampOversampling,
+    DEFAULT_PATCH,
+    SC_LPF_FREQ_RANGE,
+    type GlutenPatch,
+    type GlutenTopology,
+} from '../../models/GlutenPatch';
 import { getGlutenState, loadGlutenPatch } from '../../stores/glutenStore';
 
 const TOPOLOGIES = ['vca', 'opto', 'fet', 'diode'] as const;
@@ -8,47 +16,47 @@ const STYLES = ['glue', 'punch', 'smooth', 'pump'] as const;
 const STEREO_MODES = ['stereo', 'mid', 'side', 'dual-mono'] as const;
 
 const NUMERIC_FIELDS = [
-    'amount',
-    'threshold',
-    'ratio',
-    'attack',
-    'release',
-    'knee',
-    'makeup',
-    'mix',
-    'range',
-    'scHpfFreq',
-    'thrust',
-    'stereoLink',
-    'oversampling',
-    'lookahead',
-    'scLpfFreq',
-    'scEqFreq',
-    'scEqGain',
-    'scEqQ',
-    'inputGain',
-    'outputGain',
-    'xfmrDrive',
-    'recovery',
-    'vcaType',
-    'vcaCharacter',
-    'jfetK3',
-    'xfmrK2',
-    'blendAmount',
+    GLUTEN_PARAM_IDS.amount,
+    GLUTEN_PARAM_IDS.threshold,
+    GLUTEN_PARAM_IDS.ratio,
+    GLUTEN_PARAM_IDS.attack,
+    GLUTEN_PARAM_IDS.release,
+    GLUTEN_PARAM_IDS.knee,
+    GLUTEN_PARAM_IDS.makeup,
+    GLUTEN_PARAM_IDS.mix,
+    GLUTEN_PARAM_IDS.range,
+    GLUTEN_PARAM_IDS.scHpfFreq,
+    GLUTEN_PARAM_IDS.thrust,
+    GLUTEN_PARAM_IDS.stereoLink,
+    GLUTEN_PARAM_IDS.oversampling,
+    GLUTEN_PARAM_IDS.lookahead,
+    GLUTEN_PARAM_IDS.scLpfFreq,
+    GLUTEN_PARAM_IDS.scEqFreq,
+    GLUTEN_PARAM_IDS.scEqGain,
+    GLUTEN_PARAM_IDS.scEqQ,
+    GLUTEN_PARAM_IDS.inputGain,
+    GLUTEN_PARAM_IDS.outputGain,
+    GLUTEN_PARAM_IDS.xfmrDrive,
+    GLUTEN_PARAM_IDS.recovery,
+    GLUTEN_PARAM_IDS.vcaType,
+    GLUTEN_PARAM_IDS.vcaCharacter,
+    GLUTEN_PARAM_IDS.jfetK3,
+    GLUTEN_PARAM_IDS.xfmrK2,
+    GLUTEN_PARAM_IDS.blendAmount,
 ] as const satisfies readonly (keyof GlutenPatch)[];
 
 const BOOLEAN_FIELDS = [
-    'autoMakeup',
-    'autoRelease',
-    'scHpfEnabled',
-    'scLpfEnabled',
-    'scEqEnabled',
-    'deltaListen',
-    'gainMatchBypass',
-    'extSidechain',
-    'allButtons',
-    'limitMode',
-    'feedForward',
+    GLUTEN_PARAM_IDS.autoMakeup,
+    GLUTEN_PARAM_IDS.autoRelease,
+    GLUTEN_PARAM_IDS.scHpfEnabled,
+    GLUTEN_PARAM_IDS.scLpfEnabled,
+    GLUTEN_PARAM_IDS.scEqEnabled,
+    GLUTEN_PARAM_IDS.deltaListen,
+    GLUTEN_PARAM_IDS.gainMatchBypass,
+    GLUTEN_PARAM_IDS.extSidechain,
+    GLUTEN_PARAM_IDS.allButtons,
+    GLUTEN_PARAM_IDS.limitMode,
+    GLUTEN_PARAM_IDS.feedForward,
 ] as const satisfies readonly (keyof GlutenPatch)[];
 
 function rustU8(value: number): number {
@@ -76,12 +84,12 @@ const NUMERIC_NORMALIZERS = {
     stereoLink: (value) => clamp(value, 0, 1),
     oversampling: (value) => clampOversampling(rustU8(value)),
     lookahead: (value) => clamp(value, 0, 20),
-    scLpfFreq: (value) => clamp(value, 1000, 20000),
+    scLpfFreq: (value) => clamp(value, SC_LPF_FREQ_RANGE.min, SC_LPF_FREQ_RANGE.max),
     scEqFreq: (value) => clamp(value, 20, 20000),
     scEqGain: (value) => clamp(value, -18, 18),
     scEqQ: (value) => clamp(value, 0.1, 10),
     inputGain: (value) => clamp(value, -12, 24),
-    outputGain: (value) => clamp(value, -24, 24),
+    outputGain: (value) => clamp(value, GAIN_TRIM_DB.min, GAIN_TRIM_DB.max),
     xfmrDrive: (value) => clamp(value, 0, 3),
     recovery: (value) => clamp(rustU8(value), 1, 5),
     vcaType: (value) => clamp(rustU8(value), 0, 2),
@@ -130,29 +138,37 @@ export function hydrateGlutenPatchFromProject(deviceId: string): void {
         }
     }
 
-    const topology = device.parameterValues.topology;
+    const topology = device.parameterValues[GLUTEN_PARAM_IDS.topology];
     if (typeof topology === 'number' && Number.isFinite(topology)) {
-        patch = withField(patch, 'topology', topologyFromWire(topology, DEFAULT_PATCH.topology));
+        patch = withField(patch, GLUTEN_PARAM_IDS.topology, topologyFromWire(topology, DEFAULT_PATCH.topology));
     }
 
-    const blendTopology = device.parameterValues.blendTopology;
+    const blendTopology = device.parameterValues[GLUTEN_PARAM_IDS.blendTopology];
     if (typeof blendTopology === 'number' && Number.isFinite(blendTopology)) {
-        patch = withField(patch, 'blendTopology', topologyFromWire(blendTopology, DEFAULT_PATCH.blendTopology));
+        patch = withField(
+            patch,
+            GLUTEN_PARAM_IDS.blendTopology,
+            topologyFromWire(blendTopology, DEFAULT_PATCH.blendTopology)
+        );
     }
 
-    const style = device.parameterValues.style;
+    const style = device.parameterValues[GLUTEN_PARAM_IDS.style];
     if (typeof style === 'number' && Number.isFinite(style)) {
-        patch = withField(patch, 'style', STYLES[rustU8(style)] ?? DEFAULT_PATCH.style);
+        patch = withField(patch, GLUTEN_PARAM_IDS.style, STYLES[rustU8(style)] ?? DEFAULT_PATCH.style);
     }
 
-    const detection = device.parameterValues.detection;
+    const detection = device.parameterValues[GLUTEN_PARAM_IDS.detection];
     if (typeof detection === 'number' && Number.isFinite(detection)) {
-        patch = withField(patch, 'detection', detection > 0.5 ? 'peak' : 'rms');
+        patch = withField(patch, GLUTEN_PARAM_IDS.detection, detection > 0.5 ? 'peak' : 'rms');
     }
 
-    const stereoMode = device.parameterValues.stereoMode;
+    const stereoMode = device.parameterValues[GLUTEN_PARAM_IDS.stereoMode];
     if (typeof stereoMode === 'number' && Number.isFinite(stereoMode)) {
-        patch = withField(patch, 'stereoMode', STEREO_MODES[rustU8(stereoMode)] ?? DEFAULT_PATCH.stereoMode);
+        patch = withField(
+            patch,
+            GLUTEN_PARAM_IDS.stereoMode,
+            STEREO_MODES[rustU8(stereoMode)] ?? DEFAULT_PATCH.stereoMode
+        );
     }
 
     if (patch !== currentPatch) {

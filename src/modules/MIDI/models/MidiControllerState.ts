@@ -20,6 +20,8 @@
  * mutable per-channel holder lives in the repository layer.
  */
 
+import { HIGH_RESOLUTION_MAX } from '#/utils/midiData';
+
 /** Lowest controller number that carries the MSB of a 14-bit pair. */
 export const HIGH_RESOLUTION_MSB_MIN = 0;
 /** Highest controller number that carries the MSB of a 14-bit pair. */
@@ -60,8 +62,12 @@ export const STANDARD_BEND_RANGE_SEMITONES = 2;
 /** Widest bend range RPN 0's semitone byte can express. */
 export const MAX_BEND_RANGE_SEMITONES = 127;
 
-/** Full-scale value of a 14-bit controller pair. */
-export const HIGH_RESOLUTION_MAX = 16383;
+/**
+ * Full-scale value of a 14-bit controller pair. The number lives in
+ * `#/utils/midiData` so every 14-bit conversion shares one definition;
+ * re-exported here because it belongs to this model's vocabulary.
+ */
+export { HIGH_RESOLUTION_MAX };
 
 /** Full-scale value of a single 7-bit controller byte. */
 export const SEVEN_BIT_MAX = 127;

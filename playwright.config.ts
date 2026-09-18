@@ -2,6 +2,14 @@ import { env } from 'node:process';
 
 import { defineConfig, devices } from '@playwright/test';
 
+import { e2eOrigin, resolveE2ePort } from './scripts/e2eServerIdentity';
+
+// One lane-scoped port feeds baseURL and webServer together, so lanes sharing
+// a machine export SOURDAW_E2E_PORT with a lane-unique value instead of
+// silently reusing whatever checkout owns the default port. strictPort makes
+// a collision abort loudly instead of drifting to another port.
+const port = resolveE2ePort(env.SOURDAW_E2E_PORT);
+
 // oxlint-disable typescript/no-unsafe-member-access -- Typed by tsconfig.e2e.json.
 // oxlint-disable-next-line import/no-default-export -- Playwright requires this export shape.
 export default defineConfig({
@@ -23,18 +31,18 @@ export default defineConfig({
     workers: 1,
     reporter: 'html',
     use: {
-        baseURL: 'http://localhost:5173',
+        baseURL: e2eOrigin(port),
         trace: 'retain-on-failure',
     },
     projects: [
         {
             name: 'chromium',
-            use: { ...devices['Desktop Chrome'] },
+            use: devices['Desktop Chrome'],
         },
     ],
     webServer: {
-        command: 'pnpm dev --mode e2e',
-        url: 'http://localhost:5173',
+        command: `pnpm dev --mode e2e --port ${port} --strictPort`,
+        url: e2eOrigin(port),
         reuseExistingServer: !env.CI,
     },
 });

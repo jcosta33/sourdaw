@@ -53,6 +53,13 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
             const result = await analyzeMix(context?.signal);
             mixAnalysisDisplayLifecycle.complete({ token, result });
 
+            // A snapshot that measured no signal (suspended engine, silent or
+            // stopped mix) is not evidence for a gain decision. Refusing here is
+            // what keeps auto-fix from "correcting" a healthy mix out of silence.
+            if (result.status.availability === 'insufficient') {
+                return;
+            }
+
             const tracks = getTrackStoreState()?.tracks ?? [];
             // `executeAppAction` waits for the pending CRDT snapshot transaction
             // before it admits a write, and only re-checks authority *after* that
@@ -104,6 +111,14 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
             await settleDelay(ANALYSER_SETTLE_MS, context?.signal);
             let latest = await analyzeMix(context?.signal);
             mixAnalysisDisplayLifecycle.complete({ token, result: latest });
+
+            // The track corrections above were justified by evidence available
+            // when they were applied; the master decision below needs fresh
+            // evidence of its own. A re-read that comes back without signal
+            // refuses the decision instead of acting on nothing.
+            if (latest.status.availability === 'insufficient') {
+                return;
+            }
 
             if (latest.overallLevel.peakDb > -3) {
                 // Reduce the master fader *relative to its current fader*, not by

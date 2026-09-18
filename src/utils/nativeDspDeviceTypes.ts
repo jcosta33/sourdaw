@@ -47,6 +47,32 @@ export const NATIVE_DSP_DEVICE_TYPES = [
 export type NativeDspDeviceType = (typeof NATIVE_DSP_DEVICE_TYPES)[number];
 
 /**
+ * The wire value of every native-DSP device type, keyed by a symbolic name a
+ * comparison site can spell. `Device.type` is an open `string`, so the raw
+ * literals that compare against it have no type system keeping them honest —
+ * a typo'd `'grand-boule'` compiles and silently never matches. Sites that
+ * read `DEVICE_TYPE_IDS.grandBoule` cannot drift from the union the
+ * factories and the hydration table share; `nativeDspDeviceTypes.spec.ts`
+ * pins that every type in {@link NATIVE_DSP_DEVICE_TYPES} has exactly one
+ * entry here, since the symbolic keys put that out of the type system's reach.
+ */
+export const DEVICE_TYPE_IDS = {
+    fermenter: 'fermenter',
+    toaster: 'toaster',
+    levain: 'levain',
+    builtinCrumbs: 'builtin-crumbs',
+    grandBoule: 'grand-boule',
+    gluten: 'gluten',
+    crust: 'crust',
+    bacteria: 'bacteria',
+    grinder: 'grinder',
+    proof: 'proof',
+    dutchOven: 'dutch-oven',
+    nativeScoring: 'native-scoring',
+    knead: 'knead',
+} as const satisfies Record<string, NativeDspDeviceType>;
+
+/**
  * Resolve a project's raw device-type string to its canonical native-DSP type,
  * or `null` when no native factory claims it.
  *

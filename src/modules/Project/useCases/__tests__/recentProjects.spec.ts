@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { logger } from '#/infra/logger/appLogger';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
+import { RECENT_PROJECTS_KEY } from '../../models/ProjectData';
 import { readNamedProjectJson } from '../../repositories/project/readNamedProjectJson';
 import { setProjectIdentityTransitionDependencies } from '../projectPersistence/projectIdentityTransitionDependencies';
 import { addToRecentProjects } from '../recentProjects/addToRecentProjects';
@@ -42,14 +43,26 @@ vi.mock('#/modules/Project/repositories/project/writeProjectJson', () => ({
     writeProjectJson: vi.fn(),
 }));
 
-vi.mock('#/infra/store/storage/createLocalStorage', () => ({
-    createLocalStorage: vi.fn(() => ({
-        get: storageMocks.mockGet,
-        set: storageMocks.mockSet,
-        clear: vi.fn(),
-        isSupported: () => true,
-    })),
-}));
+vi.mock('#/infra/store/storage/createLocalStorage', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/infra/store/storage/createLocalStorage')>();
+
+    return {
+        ...actual,
+        createLocalStorage: vi.fn((...args: Parameters<typeof actual.createLocalStorage>) => {
+            const [key] = args;
+            const adapter = actual.createLocalStorage(...args);
+            if (key !== RECENT_PROJECTS_KEY) {
+                return adapter;
+            }
+
+            return {
+                ...adapter,
+                get: storageMocks.mockGet,
+                set: storageMocks.mockSet,
+            };
+        }),
+    };
+});
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: {

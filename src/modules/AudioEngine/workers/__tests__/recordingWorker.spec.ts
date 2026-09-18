@@ -613,6 +613,52 @@ describe('acquireRingChunk', () => {
         expect(chunkSamples(copied.chunk)).toEqual([...firstBlock, ...secondBlock]);
     });
 
+    it('keeps the actual producer and consumer coherent across the signed Int32 count boundary', async () => {
+        const writeRingRelease = await loadActualProducer();
+        const { control, ring } = makeRing(8);
+        // 2^31 - 3: the next publication pushes the count's low word past the
+        // Int32 range, the exact boundary where a signed counter read made the
+        // consumer report empty success while the producer's head went negative.
+        const boundaryHead = 2_147_483_645;
+        publishCount(control, boundaryHead);
+
+        const afterFirst = writeRingRelease(
+            ring,
+            control,
+            boundaryHead,
+            Float32Array.from([0.125, -0.25, 0.5, -1]),
+            boundaryHead
+        );
+        expect(afterFirst).toBe(2_147_483_649);
+        const first = expectOkRead(mod.acquireRingChunk(ring, control, boundaryHead));
+        expect(first.nextReadHead).toBe(afterFirst);
+        expect(chunkSamples(first.chunk)).toEqual([0.125, -0.25, 0.5, -1]);
+
+        // Repeated post-wrap production and acquisition keeps serving exact PCM.
+        const afterSecond = writeRingRelease(ring, control, afterFirst, Float32Array.from([0.75, -0.875]), afterFirst);
+        const second = expectOkRead(mod.acquireRingChunk(ring, control, afterFirst));
+        expect(second.nextReadHead).toBe(afterSecond);
+        expect(chunkSamples(second.chunk)).toEqual([0.75, -0.875]);
+    });
+
+    it('keeps a real 128-frame worklet block that straddles the signed boundary intact', async () => {
+        const writeRingRelease = await loadActualProducer();
+        const { control, ring } = makeRing(512);
+        const head = 2_147_483_648 - 100;
+        publishCount(control, head);
+        const block = Float32Array.from(
+            { length: 128 },
+            (_, index) => ((index % 2 === 0 ? 1 : -1) * (index + 1)) / 128
+        );
+
+        const after = writeRingRelease(ring, control, head, block, head);
+        expect(after).toBe(head + block.length);
+
+        const copied = expectOkRead(mod.acquireRingChunk(ring, control, head));
+        expect(copied.nextReadHead).toBe(after);
+        expect(chunkSamples(copied.chunk)).toEqual(Array.from(block));
+    });
+
     it('reports overrun after one or more complete unsigned low-word turns', () => {
         const { control, ring } = makeRing(8);
         publishCount(control, 2 * 0x1_0000_0000 + 3);

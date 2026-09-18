@@ -2,19 +2,16 @@ import { PATTERN_TEMPLATES as patternTemplates } from '../../services/MidiPatter
 
 import { toPublicPatternTemplate } from './toPublicPatternTemplate';
 
+import type { KeyName, PatternCategory, ScaleType } from '../../models/MidiPatternType';
+
 type PublicPatternTemplate = {
     id: string;
     name: string;
-    category: 'chords' | 'bass' | 'drums' | 'melody';
+    category: PatternCategory;
     genres: string[];
     tags: string[];
     description: string;
-    generate: (generation_params: {
-        key: 'C' | 'C#' | 'D' | 'D#' | 'E' | 'F' | 'F#' | 'G' | 'G#' | 'A' | 'A#' | 'B';
-        scale: 'major' | 'minor' | 'blues' | 'harmonic-minor' | 'dorian' | 'pentatonic-minor' | 'pentatonic-major';
-        density: number;
-        complexity: number;
-    }) => Array<{
+    generate: (generation_params: { key: KeyName; scale: ScaleType; density: number; complexity: number }) => Array<{
         pitch: number;
         velocity: number;
         startBeat: number;

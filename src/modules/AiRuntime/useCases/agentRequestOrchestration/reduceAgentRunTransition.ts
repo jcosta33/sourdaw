@@ -1,6 +1,4 @@
-import { type AgentRunPhase } from '../../models/AgentRun';
-
-const TERMINAL_PHASES = new Set<AgentRunPhase>(['completed', 'failed', 'cancelled', 'partially-completed']);
+import { AGENT_RUN_TERMINAL_PHASES, type AgentRunPhase } from '../../models/AgentRun';
 
 const REQUESTED_PHASE_TRANSITIONS: Record<AgentRunPhase, ReadonlySet<AgentRunPhase>> = {
     created: new Set(['planning', 'failed', 'cancelled']),
@@ -39,7 +37,7 @@ function requestedPhase(current: AgentRunPhase, next: AgentRunPhase): AgentRunPh
 }
 
 function assertNonTerminal(current: AgentRunPhase, operation: string): void {
-    if (TERMINAL_PHASES.has(current)) {
+    if (AGENT_RUN_TERMINAL_PHASES.has(current)) {
         throw new Error(`Terminal agent run cannot ${operation} from ${current}`);
     }
 }
@@ -64,7 +62,7 @@ export function reduceAgentRunTransition(current: AgentRunPhase, event: AgentRun
             }
             return event.hasCommittedWork ? 'partially-completed' : 'failed';
         case 'cancellation-requested':
-            if (TERMINAL_PHASES.has(current)) {
+            if (AGENT_RUN_TERMINAL_PHASES.has(current)) {
                 return current;
             }
             return event.hasCommittedWork ? 'partially-completed' : 'cancelled';

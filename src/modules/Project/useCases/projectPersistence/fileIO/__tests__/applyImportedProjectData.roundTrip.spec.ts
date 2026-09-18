@@ -47,7 +47,7 @@ const {
     prepareCachedAudioBuffersFromIdb,
     persistCrdtProject,
     resetAudioGraph,
-    resetCrdtProjectAuthority,
+    resetCrdtProject,
     resetMidiState,
     restoreOldAudioGraph,
     setSidechainRoutes,
@@ -64,8 +64,10 @@ const {
     const resetAudioGraph = vi.fn(() => {
         engineGraph.value = 'empty';
     });
-    const resetCrdtProjectAuthority = vi.fn((name: string) => {
+    const resetCrdtProject = vi.fn((name: string, onAuthorityReplaced?: () => void) => {
         crdtAuthority.value = name;
+        onAuthorityReplaced?.();
+        return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
     });
     const restoreOldAudioGraph = vi.fn(() => {
         engineGraph.value = 'old-project';
@@ -84,7 +86,7 @@ const {
             .mockResolvedValue({ cancel: () => undefined, publish: () => 0 }),
         persistCrdtProject: vi.fn().mockResolvedValue(undefined),
         resetAudioGraph,
-        resetCrdtProjectAuthority,
+        resetCrdtProject,
         resetMidiState: vi.fn(),
         restoreOldAudioGraph,
         setSidechainRoutes: vi.fn(),
@@ -140,15 +142,15 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     hasCrdtDoc: vi.fn(),
     mutateCrdtDoc: vi.fn(),
     persistCrdtProject,
-    preserveBranchStateForSession: vi.fn(),
+    beginBranchSession: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
-    replaceBranchState: vi.fn(),
+    projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
     replaceCrdtDocInLineage: vi.fn(),
-    resetCrdtProjectAuthority,
-    restoreBranchStateAfterSession: vi.fn(),
+    resetCrdtProject,
+    endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
     setupProjectionBridge: vi.fn(),
@@ -326,7 +328,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         prepareCachedAudioBuffersFromIdb.mockClear();
         setSidechainRoutes.mockClear();
         compactProject.mockClear();
-        resetCrdtProjectAuthority.mockClear();
+        resetCrdtProject.mockClear();
         resetAudioGraph.mockClear();
         restoreOldAudioGraph.mockClear();
         persistCrdtProject.mockClear();
@@ -357,7 +359,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(call?.audioContext).toBe(audioContext);
         expect(call?.bufferIds).toEqual(['buf-frozen', 'buf-1', 'buf-2', 'buf-alt']);
         expect(call?.shouldContinue?.()).toBe(true);
-        expect(resetCrdtProjectAuthority).toHaveBeenCalledWith('Round Trip', expect.any(Function));
+        expect(resetCrdtProject).toHaveBeenCalledWith('Round Trip', expect.any(Function));
         expect(trackStore.value?.tracks[0]?.clips[0]).toMatchObject({
             audioBufferId: 'buf-1',
             audioOffsetBeats: 1,
@@ -437,7 +439,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         trackStore.set({ tracks: [baseTrack('old-track', [])], selectedTrackId: null });
         engineGraph.value = 'old-project';
         crdtAuthority.value = 'Old Project';
-        resetCrdtProjectAuthority.mockImplementationOnce(() => {
+        resetCrdtProject.mockImplementationOnce(() => {
             throw new Error('branch persistence failed');
         });
 
@@ -475,7 +477,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(engineGraph.value).toBe('empty');
         expect(crdtAuthority.value).toBe('Round Trip');
         expect(resetAudioGraph).toHaveBeenCalledOnce();
-        expect(resetCrdtProjectAuthority).toHaveBeenCalledOnce();
+        expect(resetCrdtProject).toHaveBeenCalledOnce();
         expect(notifyUser).toHaveBeenCalledWith(
             'Project loaded with recovery errors. Save a new copy before closing.',
             'warning'

@@ -3,7 +3,7 @@ import { type AdjustmentLayerSnapshot, type AppAction, type HandlerValidationCon
 
 import { adjustmentLayerStore, getNextRegionId, type AdjustmentLayer } from '../../stores/adjustmentLayer';
 import { trackStore } from '../../stores/trackStore';
-import { addAdjustmentRegion } from '../../useCases/adjustmentLayer/addAdjustmentRegion';
+import { addAdjustmentRegion, DEFAULT_REGION_FADE_BEATS } from '../../useCases/adjustmentLayer/addAdjustmentRegion';
 
 function matchesExpectedLayer(layer: AdjustmentLayer, expected: AdjustmentLayerSnapshot): boolean {
     if (
@@ -78,8 +78,8 @@ function expectedLayerAtExecution(
                 startBeat: priorAction.payload.startBeat,
                 endBeat: priorAction.payload.endBeat,
                 blend: priorAction.payload.blend ?? 1,
-                fadeInBeats: priorAction.payload.fadeInBeats ?? 0.25,
-                fadeOutBeats: priorAction.payload.fadeOutBeats ?? 0.25,
+                fadeInBeats: priorAction.payload.fadeInBeats ?? DEFAULT_REGION_FADE_BEATS,
+                fadeOutBeats: priorAction.payload.fadeOutBeats ?? DEFAULT_REGION_FADE_BEATS,
             });
         }
         expectedRegions = expectedRegions.toSorted((alpha, beta) => alpha.startBeat - beta.startBeat);
@@ -174,8 +174,8 @@ export const handleAddAdjustmentRegion = createHandler<'addAdjustmentRegion'>({
                         startBeat: a.payload.startBeat,
                         endBeat: a.payload.endBeat,
                         blend: a.payload.blend ?? 1,
-                        fadeInBeats: a.payload.fadeInBeats ?? 0.25,
-                        fadeOutBeats: a.payload.fadeOutBeats ?? 0.25,
+                        fadeInBeats: a.payload.fadeInBeats ?? DEFAULT_REGION_FADE_BEATS,
+                        fadeOutBeats: a.payload.fadeOutBeats ?? DEFAULT_REGION_FADE_BEATS,
                     },
                     ...(a.payload.expectedTracks ? { expectedTracks: a.payload.expectedTracks } : {}),
                 },

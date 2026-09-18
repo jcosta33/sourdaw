@@ -18,6 +18,8 @@
 import { logger as raveLogger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 
+import { TARGET_SAMPLE_RATE } from '../services/audioResampler';
+
 export type RaveModel = {
     id: string;
     name: string;
@@ -87,7 +89,7 @@ export const FACTORY_MODELS: Omit<RaveModel, 'loaded'>[] = [
         name: 'Analog Synth',
         category: 'synth',
         latentDim: 8,
-        sampleRate: 44100,
+        sampleRate: TARGET_SAMPLE_RATE,
         sizeMb: 30,
         modelPath: 'models/rave/synth.onnx',
     },
@@ -96,7 +98,7 @@ export const FACTORY_MODELS: Omit<RaveModel, 'loaded'>[] = [
         name: 'Percussion',
         category: 'percussion',
         latentDim: 8,
-        sampleRate: 44100,
+        sampleRate: TARGET_SAMPLE_RATE,
         sizeMb: 28,
         modelPath: 'models/rave/percussion.onnx',
     },

@@ -1,0 +1,410 @@
+{
+    "schemaVersion": 1,
+    "corpus": "development",
+    "cases": [
+        {
+            "id": "AC054-DEV-EXEC-1",
+            "class": "execute-exact",
+            "prompt": "create a blues song with a twelve bar progression",
+            "providerTurns": [
+                { "kind": "search", "intents": ["create a midi track", "add a clip", "add midi notes"] },
+                { "kind": "discover", "names": ["addTrack", "addClip", "addNotes"] },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-track",
+                            "name": "addTrack",
+                            "arguments": { "name": "Blues Comp", "kind": "midi", "binding": "comp" }
+                        },
+                        {
+                            "id": "make-clip",
+                            "name": "addClip",
+                            "arguments": {
+                                "trackId": "$comp",
+                                "startBeat": 0,
+                                "endBeat": 12,
+                                "name": "Twelve Bar",
+                                "binding": "chorus"
+                            },
+                            "dependsOn": ["make-track"]
+                        },
+                        {
+                            "id": "write-notes",
+                            "name": "addNotes",
+                            "arguments": {
+                                "clipId": "$chorus",
+                                "notes": [
+                                    { "pitch": 60, "startBeat": 0, "duration": 1, "velocity": 96 },
+                                    { "pitch": 64, "startBeat": 0, "duration": 1, "velocity": 96 },
+                                    { "pitch": 67, "startBeat": 0, "duration": 1, "velocity": 96 }
+                                ]
+                            },
+                            "dependsOn": ["make-clip"]
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    { "type": "addTrack", "payload": { "name": "Blues Comp", "kind": "midi" } },
+                    { "type": "addClip", "payload": { "startBeat": 0, "endBeat": 12, "name": "Twelve Bar" } },
+                    {
+                        "type": "addNotes",
+                        "payload": {
+                            "notes": [
+                                { "pitch": 60, "startBeat": 0, "duration": 1, "velocity": 96 },
+                                { "pitch": 64, "startBeat": 0, "duration": 1, "velocity": 96 },
+                                { "pitch": 67, "startBeat": 0, "duration": 1, "velocity": 96 }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC054-DEV-EXEC-2",
+            "class": "execute-exact",
+            "prompt": "create a blues song with a twelve bar progression, set tempo to 96 bpm",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["create a midi track", "add a clip", "add midi notes", "change the project tempo"]
+                },
+                { "kind": "discover", "names": ["addTrack", "addClip", "addNotes", "setTempo"] },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-track",
+                            "name": "addTrack",
+                            "arguments": { "name": "Blues Comp", "kind": "midi", "binding": "comp" }
+                        },
+                        {
+                            "id": "make-clip",
+                            "name": "addClip",
+                            "arguments": {
+                                "trackId": "$comp",
+                                "startBeat": 0,
+                                "endBeat": 12,
+                                "name": "Twelve Bar",
+                                "binding": "chorus"
+                            },
+                            "dependsOn": ["make-track"]
+                        },
+                        {
+                            "id": "write-notes",
+                            "name": "addNotes",
+                            "arguments": {
+                                "clipId": "$chorus",
+                                "notes": [
+                                    { "pitch": 60, "startBeat": 0, "duration": 1, "velocity": 96 },
+                                    { "pitch": 64, "startBeat": 0, "duration": 1, "velocity": 96 },
+                                    { "pitch": 67, "startBeat": 0, "duration": 1, "velocity": 96 }
+                                ]
+                            },
+                            "dependsOn": ["make-clip"]
+                        },
+                        { "id": "set-tempo", "name": "setTempo", "arguments": { "bpm": 96 } }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    { "type": "addTrack", "payload": { "name": "Blues Comp", "kind": "midi" } },
+                    { "type": "addClip", "payload": { "startBeat": 0, "endBeat": 12, "name": "Twelve Bar" } },
+                    {
+                        "type": "addNotes",
+                        "payload": {
+                            "notes": [
+                                { "pitch": 60, "startBeat": 0, "duration": 1, "velocity": 96 },
+                                { "pitch": 64, "startBeat": 0, "duration": 1, "velocity": 96 },
+                                { "pitch": 67, "startBeat": 0, "duration": 1, "velocity": 96 }
+                            ]
+                        }
+                    },
+                    { "type": "setTempo", "payload": { "bpm": 96 } }
+                ]
+            }
+        },
+        {
+            "id": "AC054-DEV-EXEC-3",
+            "class": "execute-exact",
+            "prompt": "create 2 audio tracks named Lead Vocals, Backing Vocals",
+            "providerTurns": [
+                { "kind": "search", "intents": ["create a midi track"] },
+                { "kind": "discover", "names": ["addTrack"] },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-lead-vocals",
+                            "name": "addTrack",
+                            "arguments": { "name": "Lead Vocals", "kind": "audio", "binding": "lead" }
+                        },
+                        {
+                            "id": "make-backing-vocals",
+                            "name": "addTrack",
+                            "arguments": { "name": "Backing Vocals", "kind": "audio", "binding": "backing" }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    { "type": "addTrack", "payload": { "name": "Lead Vocals", "kind": "audio" } },
+                    { "type": "addTrack", "payload": { "name": "Backing Vocals", "kind": "audio" } }
+                ]
+            }
+        },
+        {
+            "id": "AC054-DEV-EXEC-4",
+            "class": "execute-exact",
+            "prompt": "create a synth pad track",
+            "providerTurns": [
+                { "kind": "search", "intents": ["create a midi track"] },
+                { "kind": "discover", "names": ["addTrack"] },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-pad",
+                            "name": "addTrack",
+                            "arguments": { "name": "Synth Pad", "kind": "midi", "binding": "pad" }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [{ "type": "addTrack", "payload": { "name": "Synth Pad", "kind": "midi" } }]
+            }
+        },
+        {
+            "id": "AC054-DEV-EXEC-5",
+            "class": "execute-exact",
+            "prompt": "create a folder track named Drums Bus",
+            "providerTurns": [
+                { "kind": "search", "intents": ["create a midi track"] },
+                { "kind": "discover", "names": ["addTrack"] },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-bus",
+                            "name": "addTrack",
+                            "arguments": { "name": "Drums Bus", "kind": "folder", "binding": "bus" }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [{ "type": "addTrack", "payload": { "name": "Drums Bus", "kind": "folder" } }]
+            }
+        },
+        {
+            "id": "AC054-DEV-CLARIFY-1",
+            "class": "clarify-required",
+            "prompt": "make it sound better",
+            "providerTurns": [
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "clarify",
+                        "reason": "The request does not say which part of the mix to change.",
+                        "questions": ["Which tracks should change?", "What should sound different about them?"]
+                    }
+                }
+            ],
+            "oracle": { "kind": "clarify" }
+        },
+        {
+            "id": "AC054-DEV-CLARIFY-2",
+            "class": "clarify-required",
+            "prompt": "improve the mix",
+            "providerTurns": [
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "clarify",
+                        "reason": "The request does not name which element of the mix to improve.",
+                        "questions": ["Which track or bus should change?"]
+                    }
+                }
+            ],
+            "oracle": { "kind": "clarify" }
+        },
+        {
+            "id": "AC054-DEV-CLARIFY-3",
+            "class": "clarify-required",
+            "prompt": "fix the vocals",
+            "providerTurns": [
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "clarify",
+                        "reason": "The request does not say what is wrong with the vocals.",
+                        "questions": ["What should change about the vocals?"]
+                    }
+                }
+            ],
+            "oracle": { "kind": "clarify" }
+        },
+        {
+            "id": "AC054-DEV-CLARIFY-4",
+            "class": "clarify-required",
+            "prompt": "make this part more interesting",
+            "providerTurns": [
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "clarify",
+                        "reason": "The request does not say which part of the arrangement to change.",
+                        "questions": ["Which section should change?"]
+                    }
+                }
+            ],
+            "oracle": { "kind": "clarify" }
+        },
+        {
+            "id": "AC054-DEV-CLARIFY-5",
+            "class": "clarify-required",
+            "prompt": "clean up the arrangement",
+            "providerTurns": [
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "clarify",
+                        "reason": "The request does not say what about the arrangement needs cleaning up.",
+                        "questions": ["Which tracks or sections should change?"]
+                    }
+                }
+            ],
+            "oracle": { "kind": "clarify" }
+        },
+        {
+            "id": "AC054-DEV-ABSTAIN-1",
+            "class": "abstain-unsupported",
+            "prompt": "master this for vinyl",
+            "providerTurns": [
+                { "kind": "search", "intents": ["master the song for vinyl"] },
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "unsupported",
+                        "reason": "No command in this project masters for vinyl.",
+                        "questions": []
+                    }
+                }
+            ],
+            "oracle": { "kind": "unsupported" }
+        },
+        {
+            "id": "AC054-DEV-ABSTAIN-2",
+            "class": "abstain-unsupported",
+            "prompt": "rebuild this song from these stems as a project",
+            "providerTurns": [
+                { "kind": "search", "intents": ["rebuild a song from stems"] },
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "unsupported",
+                        "reason": "No command in this project reconstructs a project from stem audio.",
+                        "questions": []
+                    }
+                }
+            ],
+            "oracle": { "kind": "unsupported" }
+        },
+        {
+            "id": "AC054-DEV-ABSTAIN-3",
+            "class": "abstain-unsupported",
+            "prompt": "auto-tune the vocals",
+            "providerTurns": [
+                { "kind": "search", "intents": ["auto-tune vocals"] },
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "unsupported",
+                        "reason": "No command in this project auto-tunes vocals.",
+                        "questions": []
+                    }
+                }
+            ],
+            "oracle": { "kind": "unsupported" }
+        },
+        {
+            "id": "AC054-DEV-ABSTAIN-4",
+            "class": "abstain-unsupported",
+            "prompt": "generate album artwork",
+            "providerTurns": [
+                { "kind": "search", "intents": ["generate album artwork"] },
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "unsupported",
+                        "reason": "No command in this project generates album artwork.",
+                        "questions": []
+                    }
+                }
+            ],
+            "oracle": { "kind": "unsupported" }
+        },
+        {
+            "id": "AC054-DEV-ABSTAIN-5",
+            "class": "abstain-unsupported",
+            "prompt": "write lyrics for this song",
+            "providerTurns": [
+                { "kind": "search", "intents": ["write lyrics"] },
+                {
+                    "kind": "decline",
+                    "args": {
+                        "kind": "unsupported",
+                        "reason": "No command in this project writes lyrics.",
+                        "questions": []
+                    }
+                }
+            ],
+            "oracle": { "kind": "unsupported" }
+        },
+        {
+            "id": "AC054-DEV-DENY-1",
+            "class": "deny-policy",
+            "prompt": "save project",
+            "providerTurns": [],
+            "oracle": { "kind": "denied" }
+        },
+        {
+            "id": "AC054-DEV-DENY-2",
+            "class": "deny-policy",
+            "prompt": "new project",
+            "providerTurns": [],
+            "oracle": { "kind": "denied" }
+        },
+        {
+            "id": "AC054-DEV-DENY-3",
+            "class": "deny-policy",
+            "prompt": "export",
+            "providerTurns": [],
+            "oracle": { "kind": "denied" }
+        },
+        {
+            "id": "AC054-DEV-DENY-4",
+            "class": "deny-policy",
+            "prompt": "import audio",
+            "providerTurns": [],
+            "oracle": { "kind": "denied" }
+        },
+        {
+            "id": "AC054-DEV-DENY-5",
+            "class": "deny-policy",
+            "prompt": "import midi",
+            "providerTurns": [],
+            "oracle": { "kind": "denied" }
+        }
+    ]
+}

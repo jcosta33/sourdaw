@@ -4,12 +4,16 @@ import { decodeAudioFile, discardDecodedAudioFile, getCachedAudioBuffer } from '
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { resolveDroppedSampleFile } from '#/modules/SampleLibrary/useCases';
+import { isAudioFile } from '#/utils/audioFileExtensions';
+import { AI_RENDER_DRAG_MIME_TYPE, PLUGIN_DRAG_MIME_TYPE, SAMPLE_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { trackStore } from '../../stores/trackStore';
 import { addTrack } from '../../useCases/addTrack';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { addClip } from '../../useCases/clip/addClip';
+import { type ClipAudioAssetStaging } from '../../useCases/clip/clipAudioAssetStagingState';
+import { stageClipAudioAsset } from '../../useCases/clip/stageClipAudioAsset';
 import { executeAddDeviceAction } from '../../useCases/device/executeAddDeviceAction';
 import { importMidiFile } from '../../useCases/importMidiFile';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
@@ -148,8 +152,9 @@ export const useTimelineFileDrop = ({
 
         // AI-rendered audio clips already have their AudioBuffer cached — just create
         // a clip pointing at the bufferId. No file decoding needed.
-        const aiRenderData = event.dataTransfer.getData('application/x-sourdaw-ai-render');
+        const aiRenderData = event.dataTransfer.getData(AI_RENDER_DRAG_MIME_TYPE);
         if (aiRenderData) {
+            let stagedAsset: ClipAudioAssetStaging | null = null;
             try {
                 const render = parseAiRender(aiRenderData);
                 let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
@@ -165,21 +170,48 @@ export const useTimelineFileDrop = ({
                 }
                 const model = buildTimelineRenderModel();
                 const durationBeats = Math.max(1, Math.ceil((render.durationSeconds / 60) * model.tempo));
-                addClip({
+                // The generated PCM exists only in this peer's audio cache, so the
+                // drop registers shareable, hash-verified bytes before the clip can
+                // carry them to a collaborator (#3759, round 7). A staging failure
+                // must not publish a clip a peer would receive as silence.
+                const renderBuffer = getCachedAudioBuffer({ bufferId: render.bufferId });
+                if (renderBuffer) {
+                    try {
+                        stagedAsset = await stageClipAudioAsset(renderBuffer, render.name);
+                    } catch {
+                        notifyUser(
+                            `Could not place "${render.name}" — its audio could not be registered for sharing.`,
+                            'error'
+                        );
+                        return;
+                    }
+                }
+                const clip = addClip({
                     trackId: targetTrackId,
                     startBeat: beat,
                     endBeat: beat + durationBeats,
                     name: render.name,
                     type: 'audio',
                     audioBufferId: render.bufferId,
+                    assetHash: stagedAsset?.hash,
                 });
+                if (clip) {
+                    if (stagedAsset) {
+                        getAssetTransfer()?.promoteStagedAsset(stagedAsset.leaseId);
+                    }
+                } else if (stagedAsset) {
+                    getAssetTransfer()?.releaseStagedAsset(stagedAsset.leaseId);
+                }
             } catch {
+                if (stagedAsset) {
+                    getAssetTransfer()?.releaseStagedAsset(stagedAsset.leaseId);
+                }
                 notifyUser('Could not place the generated clip — the dropped item was malformed.', 'error');
             }
             return;
         }
 
-        const sampleData = event.dataTransfer.getData('application/x-sourdaw-sample');
+        const sampleData = event.dataTransfer.getData(SAMPLE_DRAG_MIME_TYPE);
         if (sampleData) {
             setIsImporting(true);
             let sampleCommitted = false;
@@ -218,6 +250,21 @@ export const useTimelineFileDrop = ({
                         1,
                         Math.ceil((cachedBuffer.duration / 60) * buildTimelineRenderModel().tempo)
                     );
+                    // Cached samples — factory content and already-decoded imports —
+                    // have no file to re-read, so their PCM is encoded and staged
+                    // here: the hash a receiving peer requests and verifies the
+                    // bytes against (#3759).
+                    try {
+                        const staged = await stageClipAudioAsset(cachedBuffer, sample.name);
+                        assetHash = staged?.hash;
+                        assetLeaseId = staged?.leaseId;
+                    } catch {
+                        discardPreparedSampleResources();
+                        if (authority.isCurrent()) {
+                            notifyUser(`Failed to import "${sample.name}" — asset registration failed`, 'error');
+                        }
+                        return;
+                    }
                 }
 
                 // The sample must survive read → decode → stage before anything is
@@ -338,7 +385,7 @@ export const useTimelineFileDrop = ({
             return;
         }
 
-        const pluginData = event.dataTransfer.getData('application/x-sourdaw-plugin');
+        const pluginData = event.dataTransfer.getData(PLUGIN_DRAG_MIME_TYPE);
         if (pluginData) {
             try {
                 const plugin = parsePlugin(pluginData);
@@ -374,11 +421,7 @@ export const useTimelineFileDrop = ({
                     file.type === 'audio/midi' ||
                     file.type === 'audio/x-midi' ||
                     ['mid', 'midi'].includes(file.name.toLowerCase().split('.').pop() ?? '');
-                const isAudioFile =
-                    file.type.startsWith('audio/') ||
-                    ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'webm', 'aiff', 'aif'].includes(
-                        file.name.toLowerCase().split('.').pop() ?? ''
-                    );
+                const isAudio = file.type.startsWith('audio/') || isAudioFile(file.name);
 
                 if (isMidiFile) {
                     const result = await importMidiFile(file, { shouldContinue: authority.isCurrent });
@@ -388,7 +431,7 @@ export const useTimelineFileDrop = ({
                     continue;
                 }
 
-                if (!isAudioFile) {
+                if (!isAudio) {
                     continue;
                 }
 

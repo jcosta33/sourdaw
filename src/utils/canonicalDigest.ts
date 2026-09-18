@@ -5,6 +5,18 @@
  * silently, and a drifted digest reads as a changed value that never changed.
  */
 
+/**
+ * FNV-1a 32-bit offset basis. The digest above is SHA-256; these two live in
+ * the same identity home because every lighter-weight FNV content hash in the
+ * app (contract fingerprints, device manifests) must use the same parameters —
+ * a hash computed with a drifted basis or prime collides with nothing and
+ * compares equal to nothing.
+ */
+export const FNV_1A_OFFSET_BASIS = 0x811c9dc5;
+
+/** FNV-1a 32-bit prime. */
+export const FNV_1A_PRIME = 0x01000193;
+
 export function canonicalJson(value: unknown): string {
     if (Array.isArray(value)) {
         return `[${value.map(canonicalJson).join(',')}]`;

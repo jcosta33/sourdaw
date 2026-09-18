@@ -39,8 +39,9 @@ import { preferencesStore } from '#/modules/Preferences/stores';
 import { setTimelineMinimapHeight } from '#/modules/Preferences/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { SessionView } from '#/modules/SessionLauncher/presentations/views';
-import { transportStore } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { closeScratchPad, setSessionViewWidth, setTrackListWidth } from '#/modules/WorkspaceShell/useCases';
+import { isAudioFile } from '#/utils/audioFileExtensions';
 import {
     allocateMainFirstWidths,
     ARRANGE_RESIZE_HANDLE_WIDTH,
@@ -440,9 +441,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
                     return { kind: 'midi' as const, file };
                 }
 
-                const isAudio =
-                    file.type.startsWith('audio/') ||
-                    ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'webm', 'aiff', 'aif'].includes(ext);
+                const isAudio = file.type.startsWith('audio/') || isAudioFile(file.name);
                 if (!isAudio) {
                     return { kind: 'skip' as const };
                 }
@@ -502,7 +501,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
                 continue;
             }
 
-            const tempo = transportStore.value?.tempo ?? 120;
+            const tempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
             const durationBeats = Math.max(4, Math.ceil((result.buffer.duration / 60) * tempo));
 
             const clip = addClip({

@@ -4,6 +4,7 @@ import { MixerStripValue } from '#/components/daw/MixerStripValue';
 import { Row } from '#/components/layout';
 import { getTrackPeakLevel, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
 import { LevelMeter } from '#/modules/Metering/presentations/views';
+import { METER_FLOOR_DB } from '#/utils/audioLevelLaw';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 import { cn } from '#/utils/Styles/cn';
 
@@ -15,7 +16,7 @@ type MixerLevelReadoutProps = {
     valueSize?: 'sm' | 'md';
 };
 
-const MIN_DB = -60;
+const MIN_DB = METER_FLOOR_DB;
 
 const linearToDb = (linear: number): number => {
     if (linear <= 0) {

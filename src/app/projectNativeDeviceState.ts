@@ -1,17 +1,32 @@
 import { type DeviceStateChunk } from '#/modules/Arrangement/stores';
+import { projectGrandBouleCalibrationToNativePatch } from '#/modules/GrandBoule/useCases';
 import { projectLevainDeviceStateToNativePatch } from '#/modules/Levain/useCases';
 import { projectToasterKitToNativePatch } from '#/modules/Toaster/useCases';
 import { type NativeDspDeviceType, resolveNativeDspDeviceType } from '#/utils/nativeDspDeviceTypes';
 
 export type ProjectNativeDeviceStateInput = {
+    /** The device's id, so an arm reading its own per-device store can find it. */
+    deviceId: string;
     /** Device type, as `projectDeviceForNativeBody` read it off the project. */
     deviceType: string;
     /** Project state that configures the device beyond `parameterValues`. */
     deviceState: DeviceStateChunk | undefined;
 };
 
-/** What one native device's `deviceState` projects to, once it exists. */
-type ProjectDeviceState = (deviceState: DeviceStateChunk) => Readonly<Record<string, number>> | null;
+/**
+ * What one native device projects to, once it can be answered.
+ *
+ * Takes `deviceId` alongside `deviceState` because not every projection reads
+ * `deviceState` at all: Grand Boule's calibration lives in its per-device
+ * store, so its arm ignores `deviceState` and looks the store up by
+ * `deviceId` instead. An arm that does need a chunk answers `null` when one
+ * has not been committed yet, the same "nothing to project" answer a type
+ * with no projection at all gives.
+ */
+type ProjectDeviceState = (input: {
+    deviceId: string;
+    deviceState: DeviceStateChunk | undefined;
+}) => Readonly<Record<string, number>> | null;
 
 /**
  * Every native-DSP device, and what of its `deviceState` a native body needs
@@ -34,13 +49,13 @@ const NATIVE_DEVICE_STATE_PROJECTIONS: Record<NativeDspDeviceType, ProjectDevice
     // `deviceState` (`projectToasterKitToEngineMessages`), so the native body
     // needs it folded in here the same way the web offline path pushes it after
     // construction (`prepareOfflineToaster`).
-    toaster: (deviceState) => projectToasterKitToNativePatch({ deviceState }),
+    toaster: ({ deviceState }) => (deviceState ? projectToasterKitToNativePatch({ deviceState }) : null),
     // The sampler's articulation choice is a string in `deviceState`, not a
     // `parameterValues` entry, and the engine takes it as the numeric
     // `current_articulation`. Its sample zones are not projected at all: they
     // reach the engine as a staged bank, which `nativeSampleBanks.ts` answers
     // for through this sink's own bank door.
-    levain: (deviceState) => projectLevainDeviceStateToNativePatch({ deviceState }),
+    levain: ({ deviceState }) => (deviceState ? projectLevainDeviceStateToNativePatch({ deviceState }) : null),
     // No native body: Crumbs streaming is native-only through its own registry,
     // not through a built-in body.
     'builtin-crumbs': null,
@@ -51,7 +66,14 @@ const NATIVE_DEVICE_STATE_PROJECTIONS: Record<NativeDspDeviceType, ProjectDevice
     // way Toaster's kit does — a parallel gap this projection does not close.
     // A native Grand Boule strip with morph enabled renders the unmorphed base
     // model until that gap has its own lane.
-    'grand-boule': null,
+    //
+    // MIDI calibration is the one thing this arm does project: it is not
+    // `deviceState` at all but per-device store state
+    // (`createGrandBouleStore(deviceId)`), which is why the arm reads
+    // `deviceId` and ignores `deviceState` entirely — a native body built
+    // fresh at Play must start on the calibrated half-pedal edge, not the DSP
+    // default (#4302).
+    'grand-boule': ({ deviceId }) => projectGrandBouleCalibrationToNativePatch({ deviceId }),
     // Every control the panel owns is a `GlutenPatch` key encoded to a number
     // and persisted as a `parameterValues` entry; nothing else to project.
     gluten: null,
@@ -92,7 +114,7 @@ export function projectNativeDeviceState(
     input: ProjectNativeDeviceStateInput
 ): Readonly<Record<string, number>> | null {
     const deviceType = resolveNativeDspDeviceType(input.deviceType);
-    if (!deviceType || !input.deviceState) {
+    if (!deviceType) {
         return null;
     }
 
@@ -101,5 +123,5 @@ export function projectNativeDeviceState(
         return null;
     }
 
-    return project(input.deviceState);
+    return project({ deviceId: input.deviceId, deviceState: input.deviceState });
 }

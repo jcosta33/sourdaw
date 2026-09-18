@@ -1,6 +1,13 @@
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore, takeLaneStore, activeRecordingRef } from '#/modules/Arrangement/stores';
-import { startRecording, stopRecording, addTakeLane, addTake, updateClip } from '#/modules/Arrangement/useCases';
+import {
+    startRecording,
+    stopRecording,
+    addTakeLane,
+    addTake,
+    updateClip,
+    removeClip,
+} from '#/modules/Arrangement/useCases';
 import {
     stopAllScheduled,
     startAudioRecording,
@@ -13,9 +20,11 @@ import {
     refreshSidechainAlignment,
 } from '#/modules/AudioEngine/useCases';
 import { startAutomationRecording, applyModulation, applyModulationToEngine } from '#/modules/Automation/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
@@ -150,6 +159,8 @@ export function startPlayheadScheduler(): void {
 
     schedulerSession.lastTickTime = ctx.currentTime;
     schedulerSession.accumulatedPosition = state.playheadPosition;
+    playheadClockRef.beat = state.playheadPosition;
+    playheadClockRef.audioTimeSeconds = ctx.currentTime;
     playheadPositionRef.current = state.playheadPosition;
     schedulerSession.lastScheduledBeat = state.playheadPosition - 0.0001;
     schedulerSession.lastTempoMapChanges = tempoMapStore.value?.changes ?? null;
@@ -388,6 +399,13 @@ export function startPlayheadScheduler(): void {
         }
 
         schedulerSession.accumulatedPosition = newPosition;
+        // The audio-clock instant `newPosition` is the position for — sampled at
+        // this tick's start, so the anchor stays exact even though the commit
+        // lands after the awaits above. `captureGestureBeat` projects from this
+        // pair, which is why it must be published with the position and never
+        // on its own.
+        playheadClockRef.beat = newPosition;
+        playheadClockRef.audioTimeSeconds = now;
         // The cursor follows the transport that is producing the sound. While
         // the native engine is that transport it reports where it actually
         // rendered to — loop wraps included — and this integration is only the
@@ -484,6 +502,14 @@ export function startPlayheadScheduler(): void {
                     Promise.resolve(
                         startAudioRecording(track.id, (result) => {
                             if (result.kind === 'failed') {
+                                // A capture that dies mid-punch (ring overrun,
+                                // worker crash, a WAV that never decoded) must
+                                // not strand an empty provisional clip on the
+                                // arrangement or stay silent about it (#4265).
+                                notifyUser('Punch-in recording failed — the partial take was discarded.', 'error');
+                                if (recClip) {
+                                    removeClip(recClip.id);
+                                }
                                 return;
                             }
                             const { buffer } = result;

@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import {
     clearRuntimeCachedAudioBuffers,
+    forgetProjectLatchedPedals,
     getAudioContext,
     importCachedAudioBuffers,
     prepareCachedAudioBuffersFromIdb,
@@ -11,7 +12,7 @@ import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
     compactProject,
     projectActionHistoryToStore,
-    resetCrdtProjectAuthority,
+    resetCrdtProject,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
@@ -27,6 +28,7 @@ import { setAutoSaveHandle } from './autoSaveHandle';
 import { collectProjectAudioBufferIds } from './collectProjectAudioBufferIds';
 import { hydrateArrangementStoreFromProjectData } from './hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from './hydrateModuleStoresFromProjectData';
+import { markProjectDurabilityPending } from './markProjectDurabilityPending';
 import { resetModuleStoresToDefault } from './resetModuleStoresToDefault';
 import { projectLoadEpoch, type ProjectLoadTransaction } from './runProjectLoadTransaction';
 import { stopActiveAutoSave } from './stopActiveAutoSave';
@@ -56,6 +58,9 @@ type ProjectReplacementResult =
      * project never arrived and the previous one is already gone. Distinct from
      * `aborted`, which means the previous session is still there. */
     | { status: 'failed' };
+
+/** The replacement branch of the reset contract, derived from its callable shape. */
+type ReplacedProject = Extract<Awaited<ReturnType<typeof resetCrdtProject>>, { status: 'replaced' }>;
 
 function logPreparationFailure(context: ReplaceProjectDataInput['context'], error: unknown): void {
     logger.error(new Error(`[${context}] Project replacement preparation failed`, { cause: error }));
@@ -259,30 +264,73 @@ export async function replaceProjectData({
 
     let previousPersistenceStopped = false;
     let authorityReplaced = false;
+    let replaced: ReplacedProject | null = null;
+
+    /**
+     * Settle the reset marker, reporting whether the loaded project is durable.
+     *
+     * Called on every path past the authority switch, the failing ones
+     * included: an unsettled marker is what a later boot would have to
+     * classify, and a finalization that cannot answer leaves the project
+     * pending instead.
+     */
+    async function finalizeProjectReset(): Promise<boolean> {
+        if (replaced === null) {
+            return false;
+        }
+        const outcome = await replaced.finalize();
+        if (outcome === 'finalized') {
+            return true;
+        }
+        logger.error(new Error(`[${context}] Project reset did not finalize (${outcome})`));
+        return false;
+    }
+
+    function restartPreviousProjectPersistence(): void {
+        if (!previousPersistenceStopped) {
+            return;
+        }
+        try {
+            setAutoSaveHandle(startCrdtAutoSave());
+        } catch (restartError) {
+            logger.error(
+                new Error(`[${context}] Previous CRDT durability lifecycle restart failed`, {
+                    cause: restartError,
+                })
+            );
+        }
+    }
+
     try {
         stopActiveAutoSave();
         previousPersistenceStopped = true;
-        resetCrdtProjectAuthority(data.meta.name, () => {
+        const reset = await resetCrdtProject(data.meta.name, () => {
             authorityReplaced = true;
         });
+        if (reset.status === 'refused') {
+            // Every refusal is decided before the switch, so the previous
+            // project is still the live one and this is an ordinary abort.
+            logger.error(new Error(`[${context}] Project reset refused (${reset.reason})`));
+            restorePreviousAudioGraph(context);
+            restartPreviousProjectPersistence();
+            return abortProjectReplacement();
+        }
+        replaced = reset;
+        // Point of no return: the loaded project now owns the document, so the
+        // pedals latched under the old one can never be replayed back into it.
+        forgetProjectLatchedPedals();
         projectActionHistoryToStore();
     } catch (error) {
         logPreparationFailure(context, error);
         if (authorityReplaced) {
+            // The marker is settled on every path past the switch: the loaded
+            // project never became durable, and finalization is what records
+            // that where the next boot reads it.
+            await finalizeProjectReset();
             return failProjectReplacement();
         }
         restorePreviousAudioGraph(context);
-        if (previousPersistenceStopped) {
-            try {
-                setAutoSaveHandle(startCrdtAutoSave());
-            } catch (restartError) {
-                logger.error(
-                    new Error(`[${context}] Previous CRDT durability lifecycle restart failed`, {
-                        cause: restartError,
-                    })
-                );
-            }
-        }
+        restartPreviousProjectPersistence();
         return abortProjectReplacement();
     } finally {
         releaseRuntimeTransition();
@@ -391,20 +439,21 @@ export async function replaceProjectData({
         } catch (error) {
             degraded = true;
             durable = false;
-            // A durable recovery caller must not close a clean-looking loaded
-            // projection whose initial CRDT snapshot failed. This transient
-            // Project-owned barrier is cleared only by the normal save path.
-            runCommittedStep('project durability pending', () => {
-                const project = projectStore.value;
-                if (project) {
-                    projectStore.set({ ...project, identityPersistencePending: true });
-                }
-            });
+            runCommittedStep('project durability pending', markProjectDurabilityPending);
             logger.error(new Error(`[${context}] Initial CRDT snapshot persistence failed`, { cause: error }));
         }
     }
 
-    if (transaction.isCurrent()) {
+    // The durability lifecycle starts only once the reset is finalized: until
+    // then the loaded project is not the durable one, and an autosave
+    // compacting it would move the authority past the one the reset recorded.
+    const finalized = await finalizeProjectReset();
+    if (!finalized) {
+        durable = false;
+        runCommittedStep('project durability pending', markProjectDurabilityPending);
+    }
+
+    if (finalized && transaction.isCurrent()) {
         runCommittedStep('CRDT durability lifecycle start', () => {
             setAutoSaveHandle(startCrdtAutoSave());
         });

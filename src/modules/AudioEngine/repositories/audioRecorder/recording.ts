@@ -91,9 +91,11 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
                 const ctx = audioEngine.context;
                 sourceNode = ctx.createMediaStreamSource(mediaStream);
 
-                // Monitor via the track strip (same as before).
-                const strip = audioEngine.ensureTrackStrip(trackId);
-                sourceNode.connect(strip.gainNode);
+                // Capture only: the session source feeds the recording worklet
+                // and never the audible strip. Listening edges belong to the
+                // input-monitoring repository, which respects the track's
+                // monitoring mode; connecting here would monitor Off tracks
+                // and double On tracks (issue #3688).
 
                 // ── SAB ring ─────────────────────────────────────────────────────────
                 const sab = new SharedArrayBuffer(SAB_BYTES);

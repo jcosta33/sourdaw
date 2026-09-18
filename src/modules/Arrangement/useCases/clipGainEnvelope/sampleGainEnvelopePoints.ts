@@ -1,4 +1,4 @@
-import { type GainEnvelopePoint } from '../../stores/gainEnvelopeStore';
+import { type GainEnvelopePoint, sampleGainEnvelopeSeries } from '../../stores/gainEnvelopeStore';
 
 /**
  * The clip gain envelope curve law on raw points, without the store read or the
@@ -11,30 +11,16 @@ import { type GainEnvelopePoint } from '../../stores/gainEnvelopeStore';
  * a segment is only ever entered from below its end, so a coincident pair reads
  * as whichever of the two the approach reaches — the earlier one mid-curve, the
  * later one past the end of the curve.
+ *
+ * The walk itself lives in the store (`sampleGainEnvelopeSeries`), stated once
+ * for the one-beat read and for the span series both audio renderers schedule;
+ * this is the one-beat read over a zero-width span of that one law.
  */
 export function sampleGainEnvelopePoints(points: readonly GainEnvelopePoint[], beatOffset: number): number {
     if (points.length === 0) {
         return 0;
     }
 
-    if (beatOffset <= points[0]!.beatOffset) {
-        return points[0]!.gainDb;
-    }
-
-    const lastPoint = points[points.length - 1]!;
-    if (beatOffset >= lastPoint.beatOffset) {
-        return lastPoint.gainDb;
-    }
-
-    for (let index = 0; index < points.length - 1; index++) {
-        const alpha = points[index]!;
-        const beta = points[index + 1]!;
-        if (beatOffset >= alpha.beatOffset && beatOffset <= beta.beatOffset) {
-            const span = beta.beatOffset - alpha.beatOffset;
-            const time = (beatOffset - alpha.beatOffset) / span;
-            return alpha.gainDb + time * (beta.gainDb - alpha.gainDb);
-        }
-    }
-
-    return 0;
+    const series = sampleGainEnvelopeSeries(points, beatOffset, beatOffset);
+    return series[series.length - 1]!.gainDb;
 }

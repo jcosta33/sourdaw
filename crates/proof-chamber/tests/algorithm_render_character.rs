@@ -105,12 +105,22 @@ const EXPECTED_AT_SMALLEST_SIZE: [[Character; 4]; 2] = [
             rms: 0.023_802_584,
             active_span_ms: 963.946,
             late_energy_ratio: 0.000_000_106,
-            high_frequency_ratio: 0.170_458_42,
+            // Re-measured when Spring gained the 15 ms default Pre-Delay it
+            // shares with the plate and the FDN pair. Peak, RMS and duration
+            // hold (the wet path is a time shift), but the burst now meets the
+            // loop's modulation at a different LFO phase, and the resulting
+            // one-sample change in the modulated read moves this ratio by
+            // 2.8%. The other four figures are left as measured before the
+            // change because they stayed inside their tolerances.
+            high_frequency_ratio: 0.165_666_193,
         },
         Character {
-            peak: 0.305_436_2,
-            rms: 0.011_507_511,
-            active_span_ms: 102.517,
+            // Updated for the complementary sin² overlap (#3792): the
+            // boundary fade that attenuated peaks is gone, so the render
+            // carries ~4.5% more peak level at the same settings.
+            peak: 0.319_111_705,
+            rms: 0.013_234_116,
+            active_span_ms: 111.088,
             late_energy_ratio: 0.0,
             high_frequency_ratio: 0.270_421_24,
         },
@@ -135,12 +145,13 @@ const EXPECTED_AT_SMALLEST_SIZE: [[Character; 4]; 2] = [
             rms: 0.023_865_303,
             active_span_ms: 941.542,
             late_energy_ratio: 0.000_000_104,
-            high_frequency_ratio: 0.170_841_14,
+            // Same re-measurement as the 44.1 kHz Spring row above.
+            high_frequency_ratio: 0.175_849_587,
         },
         Character {
-            peak: 0.303_078_23,
-            rms: 0.011_496_001,
-            active_span_ms: 102.521,
+            peak: 0.321_296_245,
+            rms: 0.013_222_702,
+            active_span_ms: 111.100,
             late_energy_ratio: 0.0,
             high_frequency_ratio: 0.248_945_88,
         },

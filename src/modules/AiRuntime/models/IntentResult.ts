@@ -4,6 +4,7 @@ import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type CreativeRequestAuthority } from './CreativeInterpretation';
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
 import { type PlanningOutcome } from './PlanningOutcome';
+import { type PlanningRejectionEvidence } from './PlanningRejectionEvidence';
 import { type WholeProjectVibeMixPlan } from './WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from './WorkflowCapability';
 
@@ -13,6 +14,8 @@ export type IntentResult = {
     requiresConfirmation: boolean;
     /** Present when a recognized command was rejected before execution. */
     rejectionReason?: string;
+    /** Bounded, application-owned diagnostic for what the proposal violated. */
+    rejectionEvidence?: PlanningRejectionEvidence;
     /** Why this attempt did or did not produce a batch; always present on a planned result. */
     planningOutcome?: PlanningOutcome;
     /** Provider-originated actions that require the atomic, compensable Command batch path. */

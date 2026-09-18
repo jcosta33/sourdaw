@@ -1,5 +1,7 @@
 //! Parameter smoothing for Bacteria — prevents zipper noise.
 
+use crate::proof::metering::SILENCE_DB;
+
 /// One-pole smoothing filter for parameter changes.
 pub struct SmoothedParam {
     current: f32,
@@ -56,7 +58,7 @@ pub fn db_to_linear(db: f32) -> f32 {
 /// Convert linear gain to dB.
 pub fn linear_to_db(linear: f32) -> f32 {
     if linear <= 0.0 {
-        -100.0
+        SILENCE_DB
     } else {
         20.0 * linear.log10()
     }

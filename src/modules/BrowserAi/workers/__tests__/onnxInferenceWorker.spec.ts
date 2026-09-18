@@ -413,6 +413,119 @@ describe('onnxInferenceWorker session coalescing and cancellation', () => {
         } satisfies WorkerResponse);
     });
 
+    it('does not resurrect a released model when delayed model-port bytes arrive after a fresh request', async () => {
+        const onmessage = self.onmessage as WorkerMessageHandler;
+        const channel = new MessageChannel();
+        const otherModelLoad = createDeferred<{ run: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }>();
+        const staleRequest = onmessage({
+            data: {
+                type: 'create-session-from-model-port',
+                requestId: 'stale-port-request',
+                modelId: 'model-port-release',
+                modelDataPort: channel.port1,
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        createSession.mockImplementationOnce(() => otherModelLoad.promise);
+        const otherModelRequest = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'other-model-request',
+                modelId: 'model-unrelated',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+        await vi.waitFor(() => expect(createSession).toHaveBeenCalledOnce());
+
+        await onmessage({
+            data: {
+                type: 'release-session',
+                modelId: 'model-port-release',
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        const freshRequest = onmessage({
+            data: {
+                type: 'create-session',
+                requestId: 'fresh-request',
+                modelId: 'model-port-release',
+                modelData: new ArrayBuffer(8),
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        const staleData = new ArrayBuffer(8);
+        channel.port2.postMessage({ type: 'model-data', modelData: staleData }, [staleData]);
+        otherModelLoad.resolve({ run: vi.fn(), release: vi.fn().mockResolvedValue(undefined) });
+        await Promise.all([staleRequest, freshRequest, otherModelRequest]);
+
+        expect(createSession).toHaveBeenCalledTimes(2);
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'error',
+            requestId: 'stale-port-request',
+            error: expect.stringContaining('cancelled'),
+        } satisfies WorkerResponse);
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'session-created',
+            requestId: 'fresh-request',
+            modelId: 'model-port-release',
+            executionProviders: ['wasm'],
+        } satisfies WorkerResponse);
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'session-created',
+            requestId: 'other-model-request',
+            modelId: 'model-unrelated',
+            executionProviders: ['wasm'],
+        } satisfies WorkerResponse);
+
+        await onmessage({
+            data: {
+                type: 'get-status',
+                requestId: 'status-req',
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'status',
+            requestId: 'status-req',
+            loadedModels: ['model-unrelated', 'model-port-release'],
+            memoryUsageBytes: 16,
+        } satisfies WorkerResponse);
+    });
+
+    it('cancels a held model-port request without waiting for bytes and closes its port', async () => {
+        const close = vi.spyOn(MessagePort.prototype, 'close');
+        const channel = new MessageChannel();
+        const onmessage = self.onmessage as WorkerMessageHandler;
+        const request = onmessage({
+            data: {
+                type: 'create-session-from-model-port',
+                requestId: 'cancel-held-port',
+                modelId: 'model-cancel-held-port',
+                modelDataPort: channel.port1,
+                options: {},
+            },
+        } as MessageEvent<WorkerRequest>);
+
+        await onmessage({
+            data: {
+                type: 'cancel-request',
+                requestId: 'cancel-held-port',
+            },
+        } as MessageEvent<WorkerRequest>);
+        await request;
+
+        expect(createSession).not.toHaveBeenCalled();
+        expect(close).toHaveBeenCalledOnce();
+        expect(self.postMessage).toHaveBeenCalledWith({
+            type: 'error',
+            requestId: 'cancel-held-port',
+            error: expect.stringContaining('cancelled'),
+        } satisfies WorkerResponse);
+    });
+
     it('aborts in-flight creation and releases session when all subscribers cancel', async () => {
         const deferred = createDeferred<{ run: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }>();
         const mockRelease = vi.fn().mockResolvedValue(undefined);

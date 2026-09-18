@@ -1,11 +1,21 @@
-import { scheduleDeviceParam } from '../deviceControls/scheduleDeviceParam';
+import { scheduleDeviceKeyOff } from '../deviceControls/scheduleDeviceKeyOff';
+import { scheduleDeviceKeyOn } from '../deviceControls/scheduleDeviceKeyOn';
 
 /**
- * Schedule a Faust-synth note by writing frequency/gain/gate device params.
+ * Schedule a Faust-synth note for timeline playback through the polyphonic
+ * voice allocator (#3721).
  *
- * Lives in AudioEngine (previously Synth) so the Synth barrel does not have
- * an outgoing edge into AudioEngine/useCases — that edge was the canonical
- * `AudioEngine → Synth → AudioEngine` barrel cycle.
+ * Faust instruments are compiled with `FaustPolyDspGenerator`, whose processor
+ * only computes voices that `keyOn` allocated — plain freq/gain/gate parameter
+ * writes land on no voice and render silence (free voices are skipped
+ * entirely). `keyOn`/`keyOff` are the same dispatch the offline render uses
+ * (`FaustDeviceStrategy.noteOn/noteOff` → `wamControls.keyOn/keyOff`), and
+ * they voice overlapping notes independently instead of one parameter set
+ * cutting the previous note off.
+ *
+ * The poly allocator maps velocity to voice gain as velocity/127, so scaling
+ * velocity by clipGain reproduces the (velocity/127) * clipGain gain the old
+ * parameter route wrote.
  */
 export function scheduleFaustNote(
     trackId: string,
@@ -16,11 +26,6 @@ export function scheduleFaustNote(
     velocity: number,
     clipGain: number = 1.0
 ): void {
-    const frequency = 440 * 2 ** ((pitch - 69) / 12);
-    const gain = (velocity / 127) * clipGain;
-
-    scheduleDeviceParam(trackId, deviceId, 'freq', frequency, startTime);
-    scheduleDeviceParam(trackId, deviceId, 'gain', gain, startTime);
-    scheduleDeviceParam(trackId, deviceId, 'gate', 1, startTime);
-    scheduleDeviceParam(trackId, deviceId, 'gate', 0, startTime + duration);
+    scheduleDeviceKeyOn(trackId, deviceId, pitch, velocity * clipGain, startTime);
+    scheduleDeviceKeyOff(trackId, deviceId, pitch, 0, startTime + duration);
 }

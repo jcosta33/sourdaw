@@ -4,9 +4,11 @@
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { INIT_SAB_MESSAGE_TYPE, LATENCY_CHANGED_MESSAGE_TYPE } from '#/infra/audioWorklet/workletPortMessages';
 import { logger } from '#/infra/logger/appLogger';
 
-import { type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
+import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
+import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
 import { compileRuntimeGrinderNeuralPatch } from '../services/compileRuntimeGrinderNeuralPatch';
 import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
@@ -131,8 +133,8 @@ export async function createGrinderNode(
         node = new AudioWorkletNode(ctx, 'grinder-processor', {
             numberOfInputs: 1,
             numberOfOutputs: 1,
-            outputChannelCount: [2],
-            channelCount: 2,
+            outputChannelCount: [STEREO_CHANNEL_COUNT],
+            channelCount: STEREO_CHANNEL_COUNT,
             channelCountMode: 'explicit',
             processorOptions: { wasmModule: wasmLease.module },
         });
@@ -156,7 +158,7 @@ export async function createGrinderNode(
     };
 
     if (slot) {
-        node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
+        node.port.postMessage({ type: INIT_SAB_MESSAGE_TYPE, sab: slot.sab, byteOffset: slot.byteOffset });
     }
 
     // Per-frame coalescing applies only to immediate message-port controls
@@ -183,7 +185,7 @@ export async function createGrinderNode(
         const result = compileRuntimeDeviceControl(
             {
                 schemaVersion: 1,
-                command: 'set-fallback-param',
+                command: SET_FALLBACK_PARAM_COMMAND,
                 target: {
                     trackId: fallbackControlTarget.trackId,
                     deviceId: fallbackControlTarget.deviceId,
@@ -271,7 +273,7 @@ export async function createGrinderNode(
         const outcome = handshake.onMessage(event);
         if (outcome === 'other') {
             const data = event.data as Record<string, unknown>;
-            if (data && data.type === 'latency-changed' && typeof data.latency === 'number') {
+            if (data && data.type === LATENCY_CHANGED_MESSAGE_TYPE && typeof data.latency === 'number') {
                 reportLatencyChange(data.latency);
             }
             return;

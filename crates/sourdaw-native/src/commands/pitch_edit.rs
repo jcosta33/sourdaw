@@ -1,7 +1,7 @@
 use daw_dsp::knead::pitch_edit::{
-    CompiledDeltaMap, NoteSegment, PitchContour, PitchPoint, PITCH_DETECTION_ALGORITHM,
+    render_pitch_commit, NoteSegment, PitchCommitSettings, PitchContour, PitchPoint,
+    PITCH_DETECTION_ALGORITHM,
 };
-use daw_dsp::knead::psola::{psola_process_offline_inplace, PsolaConfig};
 use daw_dsp::knead::yin::{yin_frame, YinConfig};
 use hound::{WavReader, WavSpec, WavWriter};
 use serde::{Deserialize, Serialize};
@@ -123,12 +123,30 @@ pub async fn analyze_pitch(
     .map_err(|e| format!("Task failed: {}", e))?
 }
 
+/// The desktop commit request. The renderer sends the envelope keys in
+/// camelCase (the seam's own vocabulary), so the rename is what makes the
+/// request parse at all; `segments` and `contour` carry the daw_dsp shapes'
+/// native snake_case field names.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PitchCommitRequest {
     pub input_audio_path: String,
     pub output_audio_path: String,
     pub segments: Vec<NoteSegment>,
     pub contour: PitchContour,
+    /// Retune speed in milliseconds, applied by the shared render as the
+    /// glide between segment shifts (#2058). The bounce must carry the same
+    /// processed configuration the live worklet applied.
+    #[serde(default)]
+    pub retune_speed_ms: f32,
+    /// Whether the baked render keeps the spectral envelope fixed while the
+    /// fundamental moves (#2058).
+    #[serde(default = "default_true")]
+    pub formant_preserve: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 pub async fn commit_pitch_edit(request: PitchCommitRequest) -> Result<(), String> {
@@ -164,63 +182,18 @@ pub async fn commit_pitch_edit(request: PitchCommitRequest) -> Result<(), String
             }
         };
 
-        let map = CompiledDeltaMap::compile(&request.segments, sample_rate, samples.len(), 256);
-
-        // Build target F0 curve using the original contour + map deltas
-        let mut target_f0_curve = vec![0.0_f32; samples.len()];
-        let mut pitch_marks = Vec::new();
-
-        // Simple epoch extraction from contour: place a mark at every fundamental period
-        let mut current_sample = 0.0;
-        while (current_sample as usize) < samples.len() {
-            let idx = current_sample as usize;
-
-            // Find the closest point in the contour
-            let point_idx = (idx / request.contour.hop_size as usize)
-                .min(request.contour.points.len().saturating_sub(1));
-
-            if let Some(pt) = request.contour.points.get(point_idx) {
-                if pt.voiced && pt.frequency_hz > 20.0 {
-                    pitch_marks.push(idx);
-
-                    let shift_semitones = map.get_shift_at(idx);
-                    let ratio = 2.0_f32.powf(shift_semitones / 12.0);
-                    let target_hz = pt.frequency_hz * ratio;
-
-                    // Fill curve ahead roughly one source period (up to the
-                    // next mark) — filling one target period leaves zero
-                    // stretches that read as "no shift" downstream.
-                    let period = (sample_rate / pt.frequency_hz).max(1.0);
-                    let end_idx = ((current_sample + period) as usize).min(target_f0_curve.len());
-                    for i in idx..end_idx {
-                        target_f0_curve[i] = target_hz;
-                    }
-
-                    current_sample += sample_rate / pt.frequency_hz;
-                    continue;
-                }
-            }
-
-            // Unvoiced or missing data, just skip forward
-            current_sample += sample_rate / 100.0; // 10ms default skip
-        }
-
-        let cfg = PsolaConfig {
-            sample_rate,
-            max_semitones_transparent: 4.0,
-            grain_rate: 1.0,
-        };
-
-        let mut out_samples = vec![0.0_f32; samples.len()];
-        let mut scratch = vec![0.0_f32; (sample_rate / 20.0) as usize * 4]; // Max grain size
-
-        psola_process_offline_inplace(
+        // The same shared render the WASM bounce runs, so both supported
+        // renderers bake the complete live configuration: the coarse segment
+        // shifts, the retune glide, and the formant coupling (#2058).
+        let out_samples = render_pitch_commit(
             &samples,
-            &pitch_marks,
-            &target_f0_curve,
-            &cfg,
-            &mut scratch,
-            &mut out_samples,
+            sample_rate,
+            &request.segments,
+            &request.contour,
+            PitchCommitSettings {
+                retune_speed_ms: request.retune_speed_ms,
+                formant_preserve: request.formant_preserve,
+            },
         );
 
         // Write the output file.

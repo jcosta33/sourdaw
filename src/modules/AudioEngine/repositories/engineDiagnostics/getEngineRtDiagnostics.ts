@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
+import { isDesktopRuntime, desktopInvoke, isNativeHostUnavailableError } from '#/utils/desktopBridge';
 
 import {
     notRunningEngineRtDiagnostics,
@@ -8,6 +8,10 @@ import {
     type EngineStreamErrorKind,
     type EngineStreamSide,
 } from '../../models/EngineRtDiagnostics';
+import {
+    isEngineDiagnosticsNativeSurfaceRetired,
+    retireEngineDiagnosticsNativeSurface,
+} from '../../services/engineDiagnosticsNativeSurface';
 
 const streamErrorKinds: readonly EngineStreamErrorKind[] = [
     'deviceNotAvailable',
@@ -109,12 +113,24 @@ function toEngineRtDiagnostics(response: unknown): EngineRtDiagnostics {
  * The browser build has no native engine, so it reports the not-running shape
  * rather than failing. On the desktop the command can still reject — a poisoned
  * engine mutex is one way — so the caller polls with the same call on both
- * platforms but must own the rejection.
+ * platforms but must own the rejection. The one desktop rejection treated like
+ * the browser is the native host being absent: a shell whose addon never loaded
+ * has no native engine to read, so the first refusal retires the surface and
+ * every later call answers the not-running shape without touching the bridge —
+ * the 1 Hz poll stops rejecting forever instead of backing nothing.
  */
 export async function getEngineRtDiagnostics(): Promise<EngineRtDiagnostics> {
-    if (!isDesktopRuntime()) {
+    if (!isDesktopRuntime() || isEngineDiagnosticsNativeSurfaceRetired()) {
         return notRunningEngineRtDiagnostics;
     }
 
-    return toEngineRtDiagnostics(await desktopInvoke('engine_rt_diagnostics'));
+    try {
+        return toEngineRtDiagnostics(await desktopInvoke('engine_rt_diagnostics'));
+    } catch (error) {
+        if (isNativeHostUnavailableError(error)) {
+            retireEngineDiagnosticsNativeSurface();
+            return notRunningEngineRtDiagnostics;
+        }
+        throw error;
+    }
 }

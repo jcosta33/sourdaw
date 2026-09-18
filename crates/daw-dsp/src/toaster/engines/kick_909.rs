@@ -10,6 +10,7 @@
 //! Results in more midrange punch, less sub-bass, audible click.
 
 use super::lfsr::Lfsr31;
+use crate::params::{ATTACK, DECAY, TUNE};
 use crate::primitives::flush_denormal_in_place;
 use crate::toaster::adaa::{adaa_first_order, antiderivative_tanh};
 use crate::toaster::dc_block::DcBlocker;
@@ -188,9 +189,9 @@ impl Kick909Engine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "decay" => self.decay = value.clamp(0.0, 1.0),
-            "tune" => self.tune = value.clamp(-24.0, 24.0),
-            "attack" => self.attack = value.clamp(0.0, 1.0),
+            DECAY => self.decay = value.clamp(0.0, 1.0),
+            TUNE => self.tune = value.clamp(-24.0, 24.0),
+            ATTACK => self.attack = value.clamp(0.0, 1.0),
             _ => {}
         }
     }

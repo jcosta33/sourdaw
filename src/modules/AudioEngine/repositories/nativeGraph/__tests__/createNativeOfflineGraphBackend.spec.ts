@@ -21,6 +21,12 @@ import {
     type RegisterTimelineSampleInput,
     type RenderGraphOfflineInput,
 } from '../nativeGraphTransport';
+import {
+    claimedNativeSampleBankKeysByBackend,
+    inFlightNativeSampleBankShipments,
+    registeredNativeSampleBankKeys,
+} from '../registeredNativeSampleBankKeys';
+import { registerNativeSampleBanks } from '../registerNativeSampleBanks';
 
 const SAMPLE_RATE = 48_000;
 
@@ -661,5 +667,132 @@ describe('createNativeOfflineGraphBackend', () => {
             'commit_levain_bank',
             'map_graph_batch',
         ]);
+    });
+
+    // Dispose drops this bounce's own claim (#4203): it sends no further
+    // batch, so a bank it alone named must not go on shielding it from a
+    // replacement elsewhere. The bank itself is not released by dispose —
+    // only a later `replaceTopology` batch reclaims from the process-wide
+    // store, exactly as it would for any other backend that stopped naming a
+    // key.
+    it('lets a live replaceTopology reclaim a disposed session bank once nothing else claims it', async () => {
+        registeredNativeSampleBankKeys.clear();
+        inFlightNativeSampleBankShipments.clear();
+        claimedNativeSampleBankKeysByBackend.clear();
+
+        const scripted = scriptedTransport();
+        const releases: string[] = [];
+        const transport: NativeGraphTransport = {
+            ...scripted,
+            async beginLevainBank() {
+                return null;
+            },
+            async registerLevainSample() {
+                return null;
+            },
+            async commitLevainBank() {
+                return null;
+            },
+            async releaseLevainBank(input) {
+                releases.push(input.bankKey);
+                return null;
+            },
+        };
+
+        const backend = createNativeOfflineGraphBackend({
+            sampleRate: SAMPLE_RATE,
+            transport,
+            acquireNativeSampleBank: () =>
+                Promise.resolve({
+                    bank: {
+                        instrumentId: 'trombone-1',
+                        numArticulations: 1,
+                        numMics: 1,
+                        zones: [],
+                        legatoTransitions: [],
+                        samples: [
+                            {
+                                sampleId: '0',
+                                sampleRate: SAMPLE_RATE,
+                                channels: 1,
+                                frameCount: 1,
+                                pcm: new Uint8Array([1, 2]),
+                            },
+                        ],
+                    },
+                    release: vi.fn(),
+                }),
+        });
+
+        const applied = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    ...TRACK_STRIP,
+                    devices: [
+                        {
+                            id: 'device-a',
+                            name: 'Levain',
+                            type: 'levain',
+                            bypassed: false,
+                            parameterValues: {},
+                            sampleBankKey: 'levain:trombone',
+                        },
+                    ],
+                },
+            ],
+        });
+        expect(applied.application).toBe('applied');
+        expect(registeredNativeSampleBankKeys.has('levain:trombone')).toBe(true);
+
+        backend.dispose();
+
+        // A different backend's replaceTopology, naming other banks entirely,
+        // must reclaim what the disposed session used to name — its claim is
+        // gone, and no one else ever spoke for `levain:trombone`.
+        await registerNativeSampleBanks({
+            transport,
+            commands: [
+                {
+                    ...TRACK_STRIP,
+                    trackId: 'track-2',
+                    devices: [
+                        {
+                            id: 'device-b',
+                            name: 'Levain',
+                            type: 'levain',
+                            bypassed: false,
+                            parameterValues: {},
+                            sampleBankKey: 'levain:tuba',
+                        },
+                    ],
+                },
+            ],
+            acquire: () =>
+                Promise.resolve({
+                    bank: {
+                        instrumentId: 'tuba-1',
+                        numArticulations: 1,
+                        numMics: 1,
+                        zones: [],
+                        legatoTransitions: [],
+                        samples: [
+                            {
+                                sampleId: '0',
+                                sampleRate: SAMPLE_RATE,
+                                channels: 1,
+                                frameCount: 1,
+                                pcm: new Uint8Array([1, 2]),
+                            },
+                        ],
+                    },
+                    release: vi.fn(),
+                }),
+            replaceTopology: true,
+            backendId: 'other-backend',
+        });
+
+        expect(releases).toContain('levain:trombone');
+        expect(registeredNativeSampleBankKeys.has('levain:trombone')).toBe(false);
     });
 });

@@ -16,6 +16,7 @@ export { startAudioRecording } from './audioRecorder/startAudioRecording';
 export { startInputMonitoring } from './audioRecorder/startInputMonitoring';
 export { stopAudioRecording } from './audioRecorder/stopAudioRecording';
 export { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
+export { stopTrackInputMonitoring } from './audioRecorder/stopTrackInputMonitoring';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export { playAuditionNote } from './audition';
@@ -78,9 +79,12 @@ export { getAudioContext, audioEngine } from './engineAccess/getAudioContext';
 export { getEngineState } from './engineAccess/getEngineState';
 export { getEngineDiagnostics } from './engineAccess/getEngineDiagnostics';
 export { getEngineHealth } from './engineAccess/getEngineHealth';
+export { collectAudioDeadlineEvidence } from './collectAudioDeadlineEvidence';
+export { startMainThreadLongTaskObservation } from './startMainThreadLongTaskObservation';
 export { isEngineAudioAvailable } from './engineAccess/isEngineAudioAvailable';
 export { refreshEngineRtDiagnostics } from './engineAccess/refreshEngineRtDiagnostics';
 export { readNativeOutputLatency } from './engineAccess/readNativeOutputLatency';
+export { readNativeEngineStatus } from './engineAccess/readNativeEngineStatus';
 export { getDeviceReadinessDiagnostics } from './engineAccess/getDeviceReadinessDiagnostics';
 export { resetEnginePlaybackLatencyStats } from './engineAccess/resetEnginePlaybackLatencyStats';
 export { resumeEngine } from './engineAccess/resumeEngine';
@@ -93,7 +97,6 @@ export { setMasterGainValue } from './engineAccess/setMasterGainValue';
 export { setMasterComparisonTrimDb } from './engineAccess/setMasterComparisonTrimDb';
 export { syncControlRoomMonitoring } from './engineAccess/syncControlRoomMonitoring';
 export { getAudioSampleRate } from './engineAccess/getAudioSampleRate';
-export { getLiveEngineSampleRate } from './engineAccess/getLiveEngineSampleRate';
 export { getTrackAnalyser } from './engineAccess/getTrackAnalyser';
 export { getDeviceOutputNode } from './engineAccess/getDeviceOutputNode';
 export { getFaustMeterReading } from './engineAccess/getFaustMeterReading';
@@ -120,12 +123,16 @@ export { initializeAudioEngine } from './initializeAudioEngine';
 export { claimNativeSessionRearm } from './livePlayback/claimNativeSessionRearm';
 export { nativeSessionRearmClaimHolds } from './livePlayback/nativeSessionRearmClaimHolds';
 export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
+// Published because the project-leaving use cases own the commit point the pedal latch is scoped to.
+export { forgetProjectLatchedPedals } from './livePlayback/forgetProjectLatchedPedals';
 export { isDeviceCarriedByNativeSession } from './livePlayback/isDeviceCarriedByNativeSession';
 // Published because the composition root decides which of the Tuner's two carriers publishes a reading.
 export { isTunerTelemetryNativelyOwned } from './livePlayback/isTunerTelemetryNativelyOwned';
 // Published because the MIDI module's live note sink needs the same answer the session's own sink reads.
 export { soundsNativeNotes } from './livePlayback/soundsNativeNotes';
 export { mirrorDeviceChainDelta } from './livePlayback/mirrorDeviceChainDelta';
+// Published because handleSetDeviceState needs the same bank-key-changed law mirrorDeviceChainDelta swaps on (#4203).
+export { projectsToDifferentNativeBank } from './livePlayback/projectsToDifferentNativeBank';
 // Published because the transport has to know, before it can await anything, whether a play here is offered a session.
 export { nativeLiveGraphSessionOffered } from './livePlayback/nativeLiveGraphSessionOffered';
 export { nativeLiveGraphSessionSplice } from './livePlayback/nativeLiveGraphSessionSplice';
@@ -133,6 +140,7 @@ export { recordNativeChainReleases } from './livePlayback/recordNativeChainRelea
 export { syncNativeTimelineSamples } from './livePlayback/syncNativeTimelineSamples';
 export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
 export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';
+export { sendNativeLiveMidiControl } from './livePlayback/sendNativeLiveMidiControl';
 export { sendNativeLiveMidiNote } from './livePlayback/sendNativeLiveMidiNote';
 export { startNativeLiveGraphSession } from './livePlayback/startNativeLiveGraphSession';
 export { stopNativeLiveGraphSession } from './livePlayback/stopNativeLiveGraphSession';

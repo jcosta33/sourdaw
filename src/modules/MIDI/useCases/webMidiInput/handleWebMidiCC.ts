@@ -12,13 +12,10 @@ import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime } from './resolveInputEventTime';
+import { routePedalToBodies } from './routePedalToBodies';
 
 const CC_CHANNEL_VOLUME = 7;
 const CC_PAN = 10;
-const CC_SUSTAIN_PEDAL = 64;
-const CC_SOSTENUTO_PEDAL = 66;
-const CC_UNA_CORDA_PEDAL = 67;
-const PEDAL_LATCH_THRESHOLD = 64;
 const PAN_RANGE = 50;
 
 export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
@@ -105,34 +102,20 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             const track = trackState?.tracks.find((candidate) => candidate.id === targetTrackId);
             const grandBouleDevice = track?.devices.find((device) => device.type === 'grand-boule');
             if (grandBouleDevice) {
-                const strip = audioEngine.getTrackStrip(targetTrackId);
-                const deviceNode = resolveDeviceNode(strip, { deviceId: grandBouleDevice.id, type: 'grand-boule' });
-                if (deviceNode?.grandBouleControls?.ready) {
-                    // Pedals are 64/66/67 — above the 14-bit range, so the
-                    // resolved controller and value are the raw ones.
-                    if (controlChange.cc === CC_SUSTAIN_PEDAL) {
-                        deviceNode.grandBouleControls.setSustain(controlChange.normalized);
-                        void deps.eventBus.emit('midi.pedalCc', {
-                            deviceId: grandBouleDevice.id,
-                            cc: CC_SUSTAIN_PEDAL,
-                            value: controlChange.normalized,
-                        });
-                    } else if (controlChange.cc === CC_SOSTENUTO_PEDAL) {
-                        deviceNode.grandBouleControls.setSostenuto(controlChange.value >= PEDAL_LATCH_THRESHOLD);
-                        void deps.eventBus.emit('midi.pedalCc', {
-                            deviceId: grandBouleDevice.id,
-                            cc: CC_SOSTENUTO_PEDAL,
-                            value: controlChange.value >= PEDAL_LATCH_THRESHOLD,
-                        });
-                    } else if (controlChange.cc === CC_UNA_CORDA_PEDAL) {
-                        deviceNode.grandBouleControls.setUnaCorda(controlChange.value >= PEDAL_LATCH_THRESHOLD);
-                        void deps.eventBus.emit('midi.pedalCc', {
-                            deviceId: grandBouleDevice.id,
-                            cc: CC_UNA_CORDA_PEDAL,
-                            value: controlChange.value >= PEDAL_LATCH_THRESHOLD,
-                        });
+                routePedalToBodies(
+                    {
+                        trackId: targetTrackId,
+                        deviceId: grandBouleDevice.id,
+                        cc: controlChange.cc,
+                        value: controlChange.value,
+                        normalized: controlChange.normalized,
+                        channel,
+                    },
+                    {
+                        sendNativeLiveMidiControl: deps.sendNativeLiveMidiControl,
+                        emitPedalCc: (payload) => void deps.eventBus.emit('midi.pedalCc', payload),
                     }
-                }
+                );
             }
 
             const levainDevice = track?.devices.find((device) => device.type === 'levain');
@@ -145,6 +128,19 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                     // engine reads a controller number and a 7-bit value.
                     deviceNode.levainControls.handleCc(cc, value);
                 }
+                // Both carriers, every time, and unconditionally: the native
+                // session carries its own copy of this device, its readiness is
+                // nothing the web node's gate can answer for, and the send is
+                // silent when no session is carrying the strip. The same raw
+                // 7-bit byte, because the engine's own body reads a controller
+                // on that scale.
+                void deps.sendNativeLiveMidiControl({
+                    trackId: targetTrackId,
+                    deviceId: levainDevice.id,
+                    controller: cc,
+                    value,
+                    channel,
+                });
             }
         }
 );

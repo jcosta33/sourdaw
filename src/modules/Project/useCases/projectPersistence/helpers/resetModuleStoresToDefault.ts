@@ -2,7 +2,7 @@ import { resetArrangementStoresForProject } from '#/modules/Arrangement/useCases
 import { setMasterGainValue } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { bacteriaStore } from '#/modules/Bacteria/stores';
-import { crustStore, defaultCrustState } from '#/modules/Crust/stores';
+import { crustStore, crustMeterStore } from '#/modules/Crust/stores';
 import { fermenterStore } from '#/modules/Fermenter/stores';
 import { glutenStore, glutenMeterStore } from '#/modules/Gluten/stores';
 import { resetGrandBouleStores } from '#/modules/GrandBoule/stores';
@@ -85,6 +85,10 @@ export function resetModuleStoresToDefault({
     // would leave every other device's slice intact and leak it into the next
     // project. resetGrandBouleStores() resets every per-device store (§13.1).
     resetGrandBouleStores();
-    crustStore.set(defaultCrustState);
+    // Crust is per-device like Gluten: clear both the patch instances and the
+    // meter telemetry, so no previous project's patch or readings survive a
+    // device-id reuse (§13.1).
+    crustStore.set({});
+    crustMeterStore.set({});
     kneadStore.set(defaultKneadState);
 }

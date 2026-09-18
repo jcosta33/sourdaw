@@ -6,7 +6,10 @@ export type DeleteAgentRunArtifactsResult =
     | { status: 'missing'; deletedAssetIds: []; failedAssetIds: [] }
     | { status: 'completed' | 'partial'; deletedAssetIds: string[]; failedAssetIds: string[] };
 
-export async function deleteAgentRunArtifacts(runId: string): Promise<DeleteAgentRunArtifactsResult> {
+export async function deleteAgentRunArtifacts(
+    runId: string,
+    now: number = Date.now()
+): Promise<DeleteAgentRunArtifactsResult> {
     const state = readAgentRunState();
     const run = state.runs.find((candidate) => candidate.runId === runId);
     if (!run) {
@@ -32,17 +35,20 @@ export async function deleteAgentRunArtifacts(runId: string): Promise<DeleteAgen
     }
     const completed = new Set(deletedAssetIds);
     const current = readAgentRunState();
-    persistAgentRunState({
-        ...current,
-        runs: current.runs.map((candidate) =>
-            candidate.runId === runId
-                ? {
-                      ...candidate,
-                      temporaryAssets: candidate.temporaryAssets.filter((asset) => !completed.has(asset.assetId)),
-                  }
-                : candidate
-        ),
-    });
+    persistAgentRunState(
+        {
+            ...current,
+            runs: current.runs.map((candidate) =>
+                candidate.runId === runId
+                    ? {
+                          ...candidate,
+                          temporaryAssets: candidate.temporaryAssets.filter((asset) => !completed.has(asset.assetId)),
+                      }
+                    : candidate
+            ),
+        },
+        now
+    );
     return {
         status: failedAssetIds.length === 0 ? 'completed' : 'partial',
         deletedAssetIds,

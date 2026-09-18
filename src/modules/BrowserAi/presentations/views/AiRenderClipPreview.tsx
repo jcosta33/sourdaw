@@ -20,6 +20,7 @@ import {
     playCachedAudioBufferPreview,
     releasePreviewAudioBuffer,
 } from '#/modules/AudioEngine/useCases';
+import { AI_RENDER_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 
 type AiRenderClipPreviewProps = {
     audio: Float32Array;
@@ -159,7 +160,7 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
         // under the clip. handleDragEnd settles the count.
         handedOffCountRef.current += 1;
         event.dataTransfer.setData(
-            'application/x-sourdaw-ai-render',
+            AI_RENDER_DRAG_MIME_TYPE,
             JSON.stringify({ name, bufferId, durationSeconds: durationSec })
         );
         event.dataTransfer.effectAllowed = 'copy';

@@ -52,6 +52,13 @@ pub struct CrumbsVoice {
     pub sample_id: SampleId,
     pub root_note: u8,
     pub tune_cents: f32,
+    /// The loaded PCM's own decoded rate, taken from the trigger params the
+    /// engine fills from the sample pool. Browser preparation decodes at a
+    /// fixed 44.1 kHz and native loading preserves the file's rate, so this is
+    /// routinely different from the engine's output rate — and a speed computed
+    /// from pitch alone plays such a sample sharp and fast by the whole ratio
+    /// (issue #3716).
+    source_sample_rate: f32,
 
     // Playback position (f64 for sub-sample precision)
     position: f64,
@@ -119,6 +126,7 @@ impl CrumbsVoice {
             sample_id: 0,
             root_note: 60,
             tune_cents: 0.0,
+            source_sample_rate: 0.0,
             position: 0.0,
             speed: 1.0,
             direction: 1.0,
@@ -161,6 +169,7 @@ impl CrumbsVoice {
         self.age = 0;
         self.sample_id = params.sample_id;
         self.root_note = params.root_note;
+        self.source_sample_rate = params.source_sample_rate;
         self.choke_group = params.choke_group;
         self.playback_mode = params.playback_mode;
         self.loop_mode = params.loop_mode;
@@ -597,7 +606,8 @@ impl CrumbsVoice {
     }
 
     fn set_playback_speed(&mut self, semitone_diff: f32) {
-        let Some(speed) = bounded_playback_speed(semitone_diff) else {
+        let ratio = playback_rate_ratio(self.source_sample_rate, self.sample_rate);
+        let Some(speed) = bounded_playback_speed(semitone_diff, ratio) else {
             return;
         };
         self.speed = speed;
@@ -726,14 +736,27 @@ impl CrumbsVoice {
     }
 }
 
+/// Source frames consumed per output frame: the loaded PCM's decoded rate over
+/// the engine's output rate. A degenerate pair (an unloadable rate on either
+/// side) falls back to the identity rather than inventing a ratio nothing
+/// measured.
+fn playback_rate_ratio(source_rate: f32, output_rate: f32) -> f64 {
+    if source_rate > 0.0 && output_rate > 0.0 {
+        f64::from(source_rate) / f64::from(output_rate)
+    } else {
+        1.0
+    }
+}
+
 pub(crate) fn resampling_work_units_for_pitch(
     note: u8,
     root_note: u8,
     tune_cents: f32,
+    rate_ratio: f64,
     seam_crossfade: bool,
 ) -> usize {
     let semitone_diff = (note as f32 - root_note as f32) + tune_cents / 100.0;
-    let Some(speed) = bounded_playback_speed(semitone_diff) else {
+    let Some(speed) = bounded_playback_speed(semitone_diff, rate_ratio) else {
         return UNITY_RESAMPLING_WORK_UNITS;
     };
     let base = if speed > 1.0 {
@@ -748,13 +771,12 @@ pub(crate) fn resampling_work_units_for_pitch(
     }
 }
 
-fn bounded_playback_speed(semitone_diff: f32) -> Option<f64> {
+fn bounded_playback_speed(semitone_diff: f32, rate_ratio: f64) -> Option<f64> {
     if !semitone_diff.is_finite() {
         return None;
     }
     Some(
-        2.0_f64
-            .powf(semitone_diff as f64 / 12.0)
+        (2.0_f64.powf(semitone_diff as f64 / 12.0) * rate_ratio)
             .clamp(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED),
     )
 }
@@ -890,6 +912,10 @@ pub struct VoiceTriggerParams {
     pub velocity: u8,
     pub sample_id: SampleId,
     pub root_note: u8,
+    /// The decoded rate of the sample this note maps to, filled in by the
+    /// engine from the sample pool. 0 (or any non-positive value) means
+    /// "unknown" and plays at a 1:1 ratio rather than guessing.
+    pub source_sample_rate: f32,
     pub choke_group: u8,
     pub playback_mode: PlaybackMode,
     pub loop_mode: LoopMode,
@@ -914,6 +940,7 @@ impl Default for VoiceTriggerParams {
             velocity: 127,
             sample_id: 0,
             root_note: 60,
+            source_sample_rate: 0.0,
             choke_group: 0,
             playback_mode: PlaybackMode::Sustain,
             loop_mode: LoopMode::Off,
@@ -1440,7 +1467,7 @@ mod tests {
     }
 
     /// One voice rendered at `ratio`x, reached by `note` plus `tune_cents`.
-    fn render_at_ratio(source_frequency: f32, ratio: usize, note: u8, tune_cents: f32) -> Vec<f32> {
+    fn render_at_ratio(source_frequency: f32, note: u8, tune_cents: f32) -> Vec<f32> {
         let semitones = (note as f32 - 60.0) + tune_cents / 100.0;
         render_at_semitones(source_frequency, semitones)
     }
@@ -1454,12 +1481,12 @@ mod tests {
     /// this ratio, not a proxy for it.
     fn foldback_margin_db(ratio: usize, note: u8, tune_cents: f32) -> (f32, f32) {
         let passband = bin_magnitude(
-            &render_at_ratio(8_000.0 / ratio as f32, ratio, note, tune_cents),
+            &render_at_ratio(8_000.0 / ratio as f32, note, tune_cents),
             8_000.0,
             SAMPLE_RATE,
         );
         let foldback = bin_magnitude(
-            &render_at_ratio(32_000.0 / ratio as f32, ratio, note, tune_cents),
+            &render_at_ratio(32_000.0 / ratio as f32, note, tune_cents),
             16_000.0,
             SAMPLE_RATE,
         );
@@ -1621,8 +1648,8 @@ mod tests {
 
         // The admission-time estimate must agree with the live accounting.
         assert_eq!(
-            resampling_work_units_for_pitch(60, 60, 0.0, true),
-            resampling_work_units_for_pitch(60, 60, 0.0, false) * 2,
+            resampling_work_units_for_pitch(60, 60, 0.0, 1.0, true),
+            resampling_work_units_for_pitch(60, 60, 0.0, 1.0, false) * 2,
             "admission must charge the same doubling the live accounting does"
         );
     }
@@ -1906,5 +1933,231 @@ mod tests {
                 "constant DC signal through normalized bandlimited filter must reconstruct unity: got {out_l} at fraction {fraction}"
             );
         }
+    }
+
+    // ── Source rate vs output rate (issue #3716) ──────────────────────────
+
+    /// Rising crossings per output second — the pitch a listener measures,
+    /// floored so interpolation ripple cannot count.
+    fn crossing_hz(samples: &[f32], output_rate: f32) -> f32 {
+        let peak = samples.iter().fold(0.0_f32, |acc, s| acc.max(s.abs()));
+        assert!(
+            peak > 1e-3,
+            "render was silent (peak {peak}); nothing to measure"
+        );
+        let floor = peak * 0.25;
+        let mut crossings = 0;
+        let mut armed = false;
+        for sample in samples {
+            if *sample < -floor {
+                armed = true;
+            } else if *sample > floor && armed {
+                crossings += 1;
+                armed = false;
+            }
+        }
+        crossings as f32 * output_rate / samples.len() as f32
+    }
+
+    /// Render a one-shot to completion: half a second of `source_hz` decoded at
+    /// `source_rate`, played by a voice at `output_rate`. Returns the output
+    /// and the voice's own speed.
+    fn render_one_shot_at_rates(
+        source_hz: f32,
+        source_rate: f32,
+        output_rate: f32,
+        note: u8,
+        root_note: u8,
+    ) -> (Vec<f32>, f64) {
+        let source_frames = (0.5 * source_rate) as usize;
+        let source = (0..source_frames)
+            .map(|frame| {
+                (2.0 * core::f32::consts::PI * source_hz * frame as f32 / source_rate).sin()
+            })
+            .collect();
+        let sample = SampleData::from_mono(source, source_rate as u32);
+        let mut voice = CrumbsVoice::new(output_rate);
+        voice.trigger(&VoiceTriggerParams {
+            note,
+            root_note,
+            source_sample_rate: source_rate,
+            playback_mode: PlaybackMode::OneShot,
+            ..VoiceTriggerParams::default()
+        });
+
+        let mut output = Vec::with_capacity(source_frames * 2);
+        let mut left = 0.0;
+        let mut right = 0.0;
+        while voice.render_sample(&sample, &mut left, &mut right) {
+            output.push(left);
+            left = 0.0;
+            right = 0.0;
+        }
+        (output, voice.speed)
+    }
+
+    /// The issue's own probe: a half-second 440 Hz recording decoded at
+    /// 44.1 kHz, played at its root. `position()` must reach 22,050 — after
+    /// 22,050 output frames at a 44.1 kHz engine, 24,000 at 48 kHz and 48,000
+    /// at 96 kHz — with the render measuring 440 Hz at all three. The pre-fix
+    /// voice advanced one source frame per output frame, ending after 22,050
+    /// frames at every rate and measuring ~480/958 Hz.
+    #[test]
+    fn a_44k1_source_spends_its_authored_span_at_every_engine_rate() {
+        for (output_rate, expected_frames) in [
+            (44_100.0_f32, 22_050_usize),
+            (48_000.0, 24_000),
+            (96_000.0, 48_000),
+        ] {
+            let (output, _) = render_one_shot_at_rates(440.0, 44_100.0, output_rate, 69, 69);
+            // One frame of slack for where the final step crosses the end;
+            // the pre-fix bug misses by 1,950 or 26,000 frames.
+            assert!(
+                (output.len() as i64 - expected_frames as i64).abs() <= 1,
+                "at {output_rate} Hz output the 22,050-frame source must spend ~{expected_frames} output frames, spent {}",
+                output.len()
+            );
+            let hz = crossing_hz(&output, output_rate);
+            assert!(
+                (hz - 440.0).abs() < 440.0 * 0.05,
+                "at {output_rate} Hz output the root-key render measured {hz:.1} Hz, not 440"
+            );
+        }
+    }
+
+    /// Transposition and the Tune control compose with the ratio instead of
+    /// being replaced by it.
+    #[test]
+    fn transposition_and_tune_compose_with_the_rate_ratio() {
+        let output_rate = 48_000.0_f32;
+        let source_rate = 44_100.0_f32;
+        let ratio = playback_rate_ratio(source_rate, output_rate);
+
+        // +12 semitones: an octave times the ratio.
+        let (output, speed) = render_one_shot_at_rates(440.0, source_rate, output_rate, 72, 60);
+        assert!(
+            (speed - 2.0 * ratio).abs() < 1e-9,
+            "speed {speed} must be the octave times the ratio {}",
+            2.0 * ratio
+        );
+        let hz = crossing_hz(&output, output_rate);
+        assert!(
+            (hz - 880.0).abs() < 880.0 * 0.05,
+            "the +12 render measured {hz:.1} Hz, not 880"
+        );
+
+        // A Tune update after the trigger must re-derive with the ratio too.
+        let mut voice = CrumbsVoice::new(output_rate);
+        voice.trigger(&VoiceTriggerParams {
+            note: 72,
+            root_note: 60,
+            source_sample_rate: source_rate,
+            playback_mode: PlaybackMode::OneShot,
+            ..VoiceTriggerParams::default()
+        });
+        voice.set_tune(-1_200.0);
+        assert!(
+            (voice.speed - ratio).abs() < 1e-9,
+            "after tuning down an octave the speed must be exactly the ratio, got {}",
+            voice.speed
+        );
+    }
+
+    /// Correcting the speed must not leave the admission budget pricing an
+    /// obsolete ratio: the live work units and the admission estimate agree
+    /// through the same combined speed, and a rate-ratio'd voice that plays
+    /// below unity pays the unity rate, not the bandlimited one.
+    #[test]
+    fn the_work_budget_prices_the_combined_ratio() {
+        let output_rate = 48_000.0_f32;
+        let source_rate = 44_100.0_f32;
+        let ratio = playback_rate_ratio(source_rate, output_rate);
+
+        // +24 semitones: 4x times the ratio — still above unity, so the
+        // bandlimited kernel runs, and admission must charge for it.
+        let mut voice = CrumbsVoice::new(output_rate);
+        voice.trigger(&VoiceTriggerParams {
+            note: 84,
+            root_note: 60,
+            source_sample_rate: source_rate,
+            playback_mode: PlaybackMode::OneShot,
+            ..VoiceTriggerParams::default()
+        });
+        let live = voice.resampling_work_units();
+        let admitted = resampling_work_units_for_pitch(84, 60, 0.0, ratio, false);
+        assert!(
+            live > UNITY_RESAMPLING_WORK_UNITS,
+            "4x times the ratio must still run the wide kernel"
+        );
+        assert_eq!(
+            live, admitted,
+            "admission must price the ratio the voice runs"
+        );
+
+        // -12 semitones: 0.5x times the ratio lands below unity — no wide
+        // kernel, whatever the note interval alone would have said (0.5 < 1
+        // anyway here; 44.1 kHz source on a 96 kHz engine at +12 is the case
+        // that flips: 2 · 0.459 < 1).
+        let mut downsampling = CrumbsVoice::new(96_000.0);
+        downsampling.trigger(&VoiceTriggerParams {
+            note: 72,
+            root_note: 60,
+            source_sample_rate: source_rate,
+            playback_mode: PlaybackMode::OneShot,
+            ..VoiceTriggerParams::default()
+        });
+        assert!(
+            downsampling.speed < 1.0,
+            "an octave up against a 44.1→96 ratio must still land below unity, got {}",
+            downsampling.speed
+        );
+        assert_eq!(
+            downsampling.resampling_work_units(),
+            UNITY_RESAMPLING_WORK_UNITS,
+            "below-unity playback must pay the unity rate"
+        );
+    }
+
+    /// A forward loop's wrap lands one source loop length per output pass
+    /// divided by the combined speed: 12,000 output frames at 48 kHz against a
+    /// 44.1 kHz source consume exactly 11,025 source frames.
+    #[test]
+    fn loop_position_advances_by_the_combined_ratio() {
+        let source_rate = 44_100.0_f32;
+        let output_rate = 48_000.0_f32;
+        let source = vec![0.5_f32; 22_050];
+        let sample = SampleData::from_mono(source, source_rate as u32);
+        let mut voice = CrumbsVoice::new(output_rate);
+        voice.trigger(&VoiceTriggerParams {
+            note: 69,
+            root_note: 69,
+            source_sample_rate: source_rate,
+            playback_mode: PlaybackMode::Sustain,
+            loop_mode: LoopMode::Forward,
+            loop_start: 0,
+            loop_end: 22_050,
+            ..VoiceTriggerParams::default()
+        });
+
+        for _ in 0..12_000 {
+            let mut left = 0.0;
+            let mut right = 0.0;
+            voice.render_sample(&sample, &mut left, &mut right);
+        }
+        assert!(
+            (voice.position() - 11_025.0).abs() < 0.01,
+            "after 12,000 output frames the playhead must sit at source frame 11,025, got {}",
+            voice.position()
+        );
+        for _ in 0..12_000 {
+            let mut left = 0.0;
+            let mut right = 0.0;
+            voice.render_sample(&sample, &mut left, &mut right);
+        }
+        assert!(
+            voice.position() < 1.0,
+            "after 24,000 output frames the loop must have wrapped, playhead at {}",
+            voice.position()
+        );
     }
 }

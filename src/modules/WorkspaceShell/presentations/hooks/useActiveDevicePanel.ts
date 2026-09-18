@@ -1,19 +1,8 @@
 import { useEffect, useState } from 'react';
 
 import { trackStore } from '#/modules/Arrangement/stores';
+import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
 
-import { onPanelShowBacteria } from '../../useCases/panels/devicePanels/onPanelShowBacteria';
-import { onPanelShowCrumbs } from '../../useCases/panels/devicePanels/onPanelShowCrumbs';
-import { onPanelShowCrust } from '../../useCases/panels/devicePanels/onPanelShowCrust';
-import { onPanelShowDutchOven } from '../../useCases/panels/devicePanels/onPanelShowDutchOven';
-import { onPanelShowFermenter } from '../../useCases/panels/devicePanels/onPanelShowFermenter';
-import { onPanelShowGluten } from '../../useCases/panels/devicePanels/onPanelShowGluten';
-import { onPanelShowGrandBoule } from '../../useCases/panels/devicePanels/onPanelShowGrandBoule';
-import { onPanelShowLevain } from '../../useCases/panels/devicePanels/onPanelShowLevain';
-import { onPanelShowProof } from '../../useCases/panels/devicePanels/onPanelShowProof';
-import { onPanelShowScoring } from '../../useCases/panels/devicePanels/onPanelShowScoring';
-import { onPanelShowToaster } from '../../useCases/panels/devicePanels/onPanelShowToaster';
-import { onPanelShowYeast } from '../../useCases/panels/devicePanels/onPanelShowYeast';
 import { onShowDevicePanel } from '../../useCases/panels/devicePanels/onShowDevicePanel';
 
 /**
@@ -113,30 +102,41 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
                 }
                 setActivePanel(devicePanelBuilders[kind](param.deviceId));
             };
+        // Device types (as carried on `panel.showDevice`) that own a device-
+        // bearing panel. Yeast is handled before this lookup because its panel
+        // tolerates a null deviceId; types without a panel here — e.g.
+        // `automation`, which AppShell routes to the bottom dock itself — are
+        // ignored by this hook.
+        const deviceTypeToPanelKind = {
+            [DEVICE_TYPE_IDS.fermenter]: 'fermenter',
+            [DEVICE_TYPE_IDS.toaster]: 'toaster',
+            [DEVICE_TYPE_IDS.levain]: 'levain',
+            [DEVICE_TYPE_IDS.dutchOven]: 'proofChamber',
+            [DEVICE_TYPE_IDS.gluten]: 'gluten',
+            [DEVICE_TYPE_IDS.bacteria]: 'bacteria',
+            [DEVICE_TYPE_IDS.grinder]: 'grinder',
+            [DEVICE_TYPE_IDS.proof]: 'proof',
+            [DEVICE_TYPE_IDS.nativeScoring]: 'scoring',
+            [DEVICE_TYPE_IDS.crust]: 'crust',
+            [DEVICE_TYPE_IDS.builtinCrumbs]: 'sampler',
+            [DEVICE_TYPE_IDS.grandBoule]: 'grandBoule',
+        } as const satisfies Record<string, NeedsDeviceId>;
         const subs = [
-            onPanelShowFermenter(openForKind('fermenter')),
-            onPanelShowToaster(openForKind('toaster')),
-            onPanelShowLevain(openForKind('levain')),
-            onPanelShowDutchOven(openForKind('proofChamber')),
-            onPanelShowGluten(openForKind('gluten')),
-            onPanelShowBacteria(openForKind('bacteria')),
-            onShowDevicePanel((payload) => {
-                if (payload.deviceType === 'grinder') {
-                    openForKind('grinder')({ deviceId: payload.deviceId });
+            onShowDevicePanel(({ deviceType, deviceId }) => {
+                if (deviceType === 'yeast') {
+                    setActivePanel({
+                        kind: 'yeast',
+                        deviceId: yeastDeviceIdForOpen(deviceId),
+                        trackId: currentTrackId(),
+                    });
+                    return;
                 }
+                const kind = deviceTypeToPanelKind[deviceType as keyof typeof deviceTypeToPanelKind];
+                if (kind === undefined) {
+                    return;
+                }
+                openForKind(kind)({ deviceId });
             }),
-            onPanelShowProof(openForKind('proof')),
-            onPanelShowYeast((payload) =>
-                setActivePanel({
-                    kind: 'yeast',
-                    deviceId: yeastDeviceIdForOpen(payload.deviceId),
-                    trackId: currentTrackId(),
-                })
-            ),
-            onPanelShowScoring(openForKind('scoring')),
-            onPanelShowCrust(openForKind('crust')),
-            onPanelShowCrumbs(openForKind('sampler')),
-            onPanelShowGrandBoule(openForKind('grandBoule')),
             trackStore.subscribe((state) => {
                 const nextSelected = state?.selectedTrackId ?? null;
                 setActivePanel((panel) => {

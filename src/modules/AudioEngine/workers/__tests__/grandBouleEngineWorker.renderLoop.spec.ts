@@ -48,10 +48,11 @@ let noteOnAtProcessCall = -1;
 let lifecycleState = 3;
 let sleepAfterProcessCalls: number | null = null;
 class GrandBouleInstanceMock {
-    note_on_with_channel(): void {
+    push_note_on(): boolean {
         noteOnCalls++;
         noteOnAtProcessCall = processCalls;
         lifecycleState = 0;
+        return true;
     }
     process(): number {
         processCalls++;

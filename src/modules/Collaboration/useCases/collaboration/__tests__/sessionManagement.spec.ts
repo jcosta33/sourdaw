@@ -1,4 +1,7 @@
+import { init as automergeInit } from '@automerge/automerge';
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+
+import { canonicalJson } from '#/utils/canonicalDigest';
 
 import {
     PEER_COLORS,
@@ -80,6 +83,7 @@ const automergeSyncMock = vi.hoisted(() => ({
         removePeer: ReturnType<typeof vi.fn>;
         forgetPeer: ReturnType<typeof vi.fn>;
         handlePeerMessage: ReturnType<typeof vi.fn>;
+        settleDurableTeardown: ReturnType<typeof vi.fn>;
     }[],
 }));
 
@@ -92,8 +96,11 @@ const assetTransferMock = vi.hoisted(() => ({
         prepareDurableOwnerRebind: Mock<
             (ownerId: string) => Promise<{
                 status: 'prepared';
-                commit: () => Promise<void>;
-                abort: () => Promise<void>;
+                commit: () => Promise<
+                    | { status: 'committed'; phase: 'commit' }
+                    | { status: 'retry-required'; phase: 'commit'; error: unknown }
+                >;
+                abort: () => Promise<{ status: 'aborted'; phase: 'abort' }>;
             }>
         >;
         commitDurableOwnerRebind: Mock<
@@ -121,12 +128,24 @@ const crdtMock = vi.hoisted(() => {
         getCrdtDoc: vi.fn(),
         mutateCrdtDoc: vi.fn(),
         persistCrdtProject: vi.fn().mockResolvedValue(undefined),
+        runCrdtPersistenceBarrier: vi.fn(),
         waitForCrdtDocumentTransition: vi.fn<(docId: string) => Promise<'aborted' | 'committed'> | null>(),
         subscribeToCrdtChanges: vi.fn().mockReturnValue(unsubscribeAutomergeChanges),
         unsubscribeAutomergeChanges,
-        preserveBranchStateForSession: vi.fn(),
-        replaceBranchState: vi.fn(),
-        restoreBranchStateAfterSession: vi.fn(),
+        beginBranchSession: vi.fn(() => Promise.resolve({ status: 'begun', handle: { owner: 'owner-mock' } })),
+        projectBranchSession: vi.fn<
+            (
+                handle: { owner: string },
+                state: unknown
+            ) => Promise<
+                | { status: 'committed'; revision: number }
+                | {
+                      status: 'refused';
+                      reason: 'superseded' | 'write-failed' | 'storage-unavailable' | 'lock-unavailable';
+                  }
+            >
+        >(() => Promise.resolve({ status: 'committed', revision: 1 })),
+        endBranchSession: vi.fn(() => Promise.resolve('restored')),
         replaceCrdtDocInLineage: vi.fn(),
     };
 });
@@ -213,6 +232,7 @@ vi.mock('../../automergeSync', () => ({
             removePeer: vi.fn(),
             forgetPeer: vi.fn(),
             handlePeerMessage: vi.fn(),
+            settleDurableTeardown: vi.fn().mockResolvedValue(undefined),
         };
         automergeSyncMock.instances.push(instance);
         return instance;
@@ -249,12 +269,21 @@ vi.mock('../../assetTransfer', () => ({
             prepareDurableOwnerRebind: vi.fn().mockImplementation(async (ownerId: string) => ({
                 status: 'prepared' as const,
                 commit: async () => {
-                    const result = await commitDurableOwnerRebind(ownerId);
-                    if (result.status === 'failed') {
-                        throw new Error(result.reason);
+                    try {
+                        const result = await commitDurableOwnerRebind(ownerId);
+                        if (result.status === 'failed') {
+                            return {
+                                status: 'retry-required' as const,
+                                phase: 'commit' as const,
+                                error: new Error(result.reason),
+                            };
+                        }
+                        return { status: 'committed' as const, phase: 'commit' as const };
+                    } catch (error) {
+                        return { status: 'retry-required' as const, phase: 'commit' as const, error };
                     }
                 },
-                abort: vi.fn().mockResolvedValue(undefined),
+                abort: vi.fn().mockResolvedValue({ status: 'aborted' as const, phase: 'abort' as const }),
             })),
             commitDurableOwnerRebind,
             options,
@@ -275,11 +304,12 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     getCrdtDoc: crdtMock.getCrdtDoc,
     mutateCrdtDoc: crdtMock.mutateCrdtDoc,
     persistCrdtProject: crdtMock.persistCrdtProject,
+    runCrdtPersistenceBarrier: crdtMock.runCrdtPersistenceBarrier,
     waitForCrdtDocumentTransition: crdtMock.waitForCrdtDocumentTransition,
     subscribeToCrdtChanges: crdtMock.subscribeToCrdtChanges,
-    preserveBranchStateForSession: crdtMock.preserveBranchStateForSession,
-    replaceBranchState: crdtMock.replaceBranchState,
-    restoreBranchStateAfterSession: crdtMock.restoreBranchStateAfterSession,
+    beginBranchSession: crdtMock.beginBranchSession,
+    projectBranchSession: crdtMock.projectBranchSession,
+    endBranchSession: crdtMock.endBranchSession,
     replaceCrdtDocInLineage: crdtMock.replaceCrdtDocInLineage,
 }));
 
@@ -313,6 +343,12 @@ function latestAutomergeSync() {
 function latestAssetTransfer() {
     return assetTransferMock.instances.at(-1)!;
 }
+function nextMacrotask(): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, 0);
+    });
+}
+
 function makePeer(overrides: Partial<PeerInfo> = {}): PeerInfo {
     return {
         id: 'peer-x',
@@ -439,13 +475,14 @@ describe('sessionRuntimePrimitives', () => {
         it('starts with no active peer manager or pending invite', () => {
             expect(sessionRuntimePrimitives.state.peerManager).toBeNull();
             expect(sessionRuntimePrimitives.state.pendingInviteId).toBeNull();
-            expect(sessionRuntimePrimitives.state.hasBranchStateBackup).toBe(false);
+            expect(sessionRuntimePrimitives.state.branchSession).toBeNull();
         });
     });
 });
 
 describe('sessionRuntimePrimitives runtime wiring', () => {
     let currentOwnerId = 'project:local-before-sync';
+    const rootDocument = automergeInit<Record<string, unknown>>();
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -459,6 +496,41 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         transportStoreMock.value = null;
         projectMock.settledId = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
         crdtMock.hasCrdtDoc.mockReturnValue(false);
+        crdtMock.getCrdtDoc.mockImplementation((docId: string) => (docId === 'root' ? rootDocument : undefined));
+        crdtMock.runCrdtPersistenceBarrier.mockImplementation(
+            async (
+                operation: (input: {
+                    persistCurrentProject: (expectedRootHeads?: readonly string[]) => Promise<unknown>;
+                }) => Promise<void>
+            ) => {
+                let result: unknown = { status: 'skipped', reason: 'operation-declined', durable: { write: 'none' } };
+                await operation({
+                    persistCurrentProject: async (expectedRootHeads) => {
+                        try {
+                            await crdtMock.persistCrdtProject(expectedRootHeads);
+                            const durable = {
+                                write: 'noop',
+                                authority: { epoch: 'test', revision: 1, rootLineage: 'main' },
+                            };
+                            if (expectedRootHeads) {
+                                result = {
+                                    status: 'settled',
+                                    mode: 'exact',
+                                    expectedRootHeads: [...expectedRootHeads],
+                                    durable,
+                                };
+                            } else {
+                                result = { status: 'settled', mode: 'ordinary', durable };
+                            }
+                        } catch (error) {
+                            result = { status: 'failed', durable: { write: 'none' }, error };
+                        }
+                        return result;
+                    },
+                });
+                return result;
+            }
+        );
         crdtMock.waitForCrdtDocumentTransition.mockReturnValue(null);
         currentOwnerId = 'project:local-before-sync';
         configureCollaborationAssetOwner({
@@ -466,14 +538,23 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         vi.useRealTimers();
+        // `clearAllMocks` drops recorded calls but keeps implementations, so
+        // anything a case wires up has to be reset back to the hoisted default
+        // here or it runs inside every later case.
+        crdtMock.getCrdtDoc
+            .mockReset()
+            .mockImplementation((docId: string) => (docId === 'root' ? rootDocument : undefined));
+        crdtMock.mutateCrdtDoc.mockReset();
+        crdtMock.projectBranchSession.mockReset();
         sessionRuntimePrimitives.cleanup();
+        await sessionRuntimePrimitives.settleRetainedTeardown().catch(() => undefined);
     });
 
     describe('initialize()', () => {
-        it('constructs and wires every subsystem, and returns the peer manager', () => {
-            const peerManager = sessionRuntimePrimitives.initialize('project-owner-1');
+        it('constructs and wires every subsystem, and returns the peer manager', async () => {
+            const peerManager = await sessionRuntimePrimitives.initialize('project-owner-1');
 
             expect(peerConnectionMock.instances).toHaveLength(1);
             expect(peerManager).toBe(latestPeerManager());
@@ -484,7 +565,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('rebinds a provisional join owner only after an authoritative host root sync', async () => {
-            sessionRuntimePrimitives.initialize('collaboration-join:attempt-1', {
+            await sessionRuntimePrimitives.initialize('collaboration-join:attempt-1', {
                 handoffSourceOwnerIds: ['project:local-before-sync'],
                 rebindToSynchronizedOwner: true,
             });
@@ -532,7 +613,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('continues owner convergence when a later host root replaces an intermediate projection', async () => {
-            sessionRuntimePrimitives.initialize('collaboration-join:attempt-multi-round', {
+            await sessionRuntimePrimitives.initialize('collaboration-join:attempt-multi-round', {
                 rebindToSynchronizedOwner: true,
             });
             collaborationStore.set(
@@ -607,7 +688,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                     ],
                 })
             );
-            sessionRuntimePrimitives.initialize('collaboration-join:attempt-same-id', {
+            await sessionRuntimePrimitives.initialize('collaboration-join:attempt-same-id', {
                 rebindToSynchronizedOwner: true,
             });
 
@@ -648,7 +729,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                     ],
                 })
             );
-            sessionRuntimePrimitives.initialize('collaboration-join:attempt-non-host', {
+            await sessionRuntimePrimitives.initialize('collaboration-join:attempt-non-host', {
                 rebindToSynchronizedOwner: true,
             });
 
@@ -666,7 +747,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(latestAssetTransfer().commitDurableOwnerRebind).not.toHaveBeenCalled();
         });
 
-        it('allows only the recognized host to replace root project identity on every runtime', () => {
+        it('allows only the recognized host to replace root project identity on every runtime', async () => {
             projectMock.settledId = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
             collaborationStore.set(
                 makeState({
@@ -696,7 +777,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                     ],
                 })
             );
-            sessionRuntimePrimitives.initialize(projectMock.settledId);
+            await sessionRuntimePrimitives.initialize(projectMock.settledId);
 
             expect(
                 latestAutomergeSync().hooks.captureSyncAcceptance?.({ peerId: 'guest-peer', docId: 'root' })
@@ -723,8 +804,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             ).toBeUndefined();
         });
 
-        it('retries a failed post-persist handoff without waiting for another sync event', async () => {
-            sessionRuntimePrimitives.initialize('collaboration-join:attempt-retry', {
+        it('keeps a failed post-persist handoff retryable through the captured transition', async () => {
+            await sessionRuntimePrimitives.initialize('collaboration-join:attempt-retry', {
                 rebindToSynchronizedOwner: true,
             });
             collaborationStore.set(
@@ -759,7 +840,11 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 rootHeads: ['retry-head'],
                 senderIsHost: true,
             });
-            await expect(transition?.commit()).resolves.toBeUndefined();
+            const first = await transition?.commit();
+            expect(first).toMatchObject({ status: 'retry-required', phase: 'commit', error: expect.any(Error) });
+            const second = await transition?.commit();
+            expect(second).toMatchObject({ status: 'retry-required', phase: 'commit', error: expect.any(Error) });
+            await expect(transition?.commit()).resolves.toMatchObject({ status: 'committed', phase: 'commit' });
             await sessionRuntimePrimitives.flushAssetOwnership();
 
             expect(assetTransfer.commitDurableOwnerRebind).toHaveBeenCalledTimes(3);
@@ -767,7 +852,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('commits a prepared persisted handoff after teardown detaches its transfer', async () => {
-            sessionRuntimePrimitives.initialize('collaboration-join:attempt-teardown', {
+            await sessionRuntimePrimitives.initialize('collaboration-join:attempt-teardown', {
                 rebindToSynchronizedOwner: true,
             });
             collaborationStore.set(
@@ -798,6 +883,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             });
 
             sessionRuntimePrimitives.cleanup();
+            await sessionRuntimePrimitives.settleRetainedTeardown();
             await transition?.commit();
 
             expect(assetTransfer.dispose).toHaveBeenCalledOnce();
@@ -808,8 +894,25 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('cleanup()', () => {
+        it('shares one in-flight retained teardown settlement between concurrent callers', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-shared-settlement');
+            const settlement = Promise.withResolvers<void>();
+            latestAutomergeSync().settleDurableTeardown.mockReturnValueOnce(settlement.promise);
+
+            sessionRuntimePrimitives.cleanup();
+            const first = sessionRuntimePrimitives.settleRetainedTeardown();
+            const second = sessionRuntimePrimitives.settleRetainedTeardown();
+
+            expect(second).toBe(first);
+            expect(latestAutomergeSync().settleDurableTeardown).toHaveBeenCalledOnce();
+
+            settlement.resolve();
+            await expect(first).resolves.toBeUndefined();
+            await expect(second).resolves.toBeUndefined();
+        });
+
         it('does not let a delayed leave tear down a replacement session', async () => {
-            createSession('Session A');
+            await createSession('Session A');
             const sessionAManager = latestPeerManager();
             const sessionASync = latestAutomergeSync();
             sessionAManager.getConnectedPeerIds.mockReturnValue(['peer-a']);
@@ -824,11 +927,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             await sendEntered.promise;
             expect(sessionASync.stop).toHaveBeenCalledTimes(1);
 
-            const sessionBId = createSession('Session B');
-            const sessionBManager = latestPeerManager();
+            const creatingSessionB = createSession('Session B');
+            await Promise.resolve();
+            expect(peerConnectionMock.instances).toHaveLength(1);
 
             releaseSend.resolve();
             await leavingSessionA;
+            const sessionBId = await creatingSessionB;
+            const sessionBManager = latestPeerManager();
 
             expect(sessionRuntimePrimitives.state.peerManager).toBe(sessionBManager);
             expect(sessionBManager.closeAll).not.toHaveBeenCalled();
@@ -840,76 +946,87 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             });
         });
 
-        it.each([
-            ['first', 0],
-            ['second', 1],
-        ] as const)(
-            'surfaces cleanup persistence failure when the %s buffered leave completes first',
-            async (_label, firstCompletionIndex) => {
-                createSession('Session A');
-                const sessionAManager = latestPeerManager();
-                sessionAManager.getConnectedPeerIds.mockReturnValue(['peer-a']);
-                const sendEntered = [Promise.withResolvers<void>(), Promise.withResolvers<void>()] as const;
-                const sends = [Promise.withResolvers<void>(), Promise.withResolvers<void>()] as const;
-                let sendIndex = 0;
-                sessionAManager.sendCrdtSyncBuffered.mockImplementation(async () => {
-                    const index = sendIndex;
-                    sendIndex += 1;
-                    sendEntered[index]!.resolve();
-                    await sends[index]!.promise;
-                });
-                const persistence = Promise.withResolvers<void>();
-                crdtMock.persistCrdtProject.mockReturnValueOnce(persistence.promise);
+        it('serializes concurrent leaves and lets the second call retry failed durable teardown', async () => {
+            await createSession('Session A');
+            const sessionAManager = latestPeerManager();
+            sessionAManager.getConnectedPeerIds.mockReturnValue(['peer-a']);
+            const send = Promise.withResolvers<void>();
+            sessionAManager.sendCrdtSyncBuffered.mockReturnValueOnce(send.promise);
+            const persistence = Promise.withResolvers<void>();
+            const cleanupError = new Error('cleanup failed');
+            crdtMock.persistCrdtProject.mockReturnValueOnce(persistence.promise);
 
-                const firstLeave = leaveSession();
-                await sendEntered[0].promise;
-                const secondLeave = leaveSession();
-                await sendEntered[1].promise;
+            const firstLeave = leaveSession();
+            await vi.waitFor(() => expect(sessionAManager.sendCrdtSyncBuffered).toHaveBeenCalledOnce());
+            const secondLeave = leaveSession();
+            send.resolve();
+            await vi.waitFor(() => expect(crdtMock.persistCrdtProject).toHaveBeenCalled());
+            persistence.reject(cleanupError);
 
-                const secondCompletionIndex = firstCompletionIndex === 0 ? 1 : 0;
-                sends[firstCompletionIndex].resolve();
-                await [firstLeave, secondLeave][firstCompletionIndex];
-                sends[secondCompletionIndex].resolve();
-                await [firstLeave, secondLeave][secondCompletionIndex];
-                persistence.reject(new Error('cleanup failed'));
-                await vi.waitFor(() =>
-                    expect(loggerMock.warn).toHaveBeenCalledWith(
-                        '[Collaboration] Failed to persist after branch sync cleanup:',
-                        expect.any(Error)
-                    )
-                );
-
-                expect(collaborationStore.value?.error).toBe(
-                    'Failed to save project locally after leaving the session.'
-                );
-            }
-        );
+            await expect(firstLeave).rejects.toBe(cleanupError);
+            await expect(secondLeave).resolves.toBeUndefined();
+            expect(sessionAManager.sendCrdtSyncBuffered).toHaveBeenCalledOnce();
+        });
 
         it('keeps cleanup persistence failure reportable when leave is repeated after cleanup', async () => {
-            createSession('Session A');
+            await createSession('Session A');
             const persistence = Promise.withResolvers<void>();
             crdtMock.persistCrdtProject.mockReturnValueOnce(persistence.promise);
 
-            await leaveSession();
-            await leaveSession();
-            persistence.reject(new Error('cleanup failed'));
-            await vi.waitFor(() =>
-                expect(loggerMock.warn).toHaveBeenCalledWith(
-                    '[Collaboration] Failed to persist after branch sync cleanup:',
-                    expect.any(Error)
-                )
-            );
-
-            expect(collaborationStore.value?.error).toBe('Failed to save project locally after leaving the session.');
+            const cleanupError = new Error('cleanup failed');
+            const firstLeave = leaveSession();
+            await vi.waitFor(() => expect(crdtMock.persistCrdtProject).toHaveBeenCalled());
+            persistence.reject(cleanupError);
+            await expect(firstLeave).rejects.toBe(cleanupError);
+            await expect(leaveSession()).resolves.toBeUndefined();
+            expect(crdtMock.persistCrdtProject).toHaveBeenCalledTimes(2);
         });
 
-        it('ignores retained callbacks from a replaced session', () => {
-            createSession('Session A');
+        it('does not persist or settle handoffs until branch restoration succeeds', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-branch-retry');
+            await sessionRuntimePrimitives.startBranchSync(true);
+            crdtMock.endBranchSession
+                .mockResolvedValueOnce('write-failed')
+                .mockResolvedValueOnce('write-failed')
+                .mockResolvedValueOnce('restored');
+
+            sessionRuntimePrimitives.cleanup();
+            await expect(sessionRuntimePrimitives.settleRetainedTeardown()).rejects.toThrow(
+                'Pre-session branch state could not be persisted'
+            );
+            expect(latestAutomergeSync().settleDurableTeardown).not.toHaveBeenCalled();
+            expect(crdtMock.runCrdtPersistenceBarrier).not.toHaveBeenCalled();
+
+            await expect(sessionRuntimePrimitives.settleRetainedTeardown()).resolves.toBeUndefined();
+            expect(latestAutomergeSync().settleDurableTeardown).toHaveBeenCalledOnce();
+            expect(crdtMock.runCrdtPersistenceBarrier).toHaveBeenCalledOnce();
+        });
+
+        it('retains final exact persistence after supersession and retries it explicitly', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-superseded-persist');
+            sessionRuntimePrimitives.cleanup();
+            crdtMock.runCrdtPersistenceBarrier.mockResolvedValueOnce({
+                status: 'superseded',
+                durable: {
+                    write: 'committed',
+                    authority: { epoch: 'test', revision: 2, rootLineage: 'main' },
+                },
+            });
+
+            await expect(sessionRuntimePrimitives.settleRetainedTeardown()).rejects.toThrow(
+                'Collaboration teardown persistence was superseded'
+            );
+            await expect(sessionRuntimePrimitives.settleRetainedTeardown()).resolves.toBeUndefined();
+            expect(crdtMock.runCrdtPersistenceBarrier).toHaveBeenCalledTimes(2);
+        });
+
+        it('ignores retained callbacks from a replaced session', async () => {
+            await createSession('Session A');
             const sessionAManager = latestPeerManager();
             const sessionASync = latestAutomergeSync();
             const sessionATransfer = latestAssetTransfer();
 
-            createSession('Session B');
+            await createSession('Session B');
             const sessionBManager = latestPeerManager();
             const sessionBState = collaborationStore.value;
 
@@ -942,7 +1059,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 .mockReturnValueOnce(decompression.promise);
             const joining = joinSession('invite', 'Joining session');
 
-            const sessionBId = createSession('Session B');
+            const sessionBId = await createSession('Session B');
             const sessionBManager = latestPeerManager();
             decompression.resolve(
                 JSON.stringify({
@@ -967,8 +1084,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             decompressInvite.mockRestore();
         });
 
-        it('tears down every subsystem and clears session state', () => {
-            const peerManager = sessionRuntimePrimitives.initialize('project-owner-1');
+        it('tears down every subsystem and clears session state', async () => {
+            const peerManager = await sessionRuntimePrimitives.initialize('project-owner-1');
             const automergeSync = latestAutomergeSync();
 
             sessionRuntimePrimitives.cleanup();
@@ -984,8 +1101,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
         // The secret authorises relay room membership, so a session that has
         // been torn down must not leave one behind for the next join to reuse.
-        it('clears the room secret so a torn-down session cannot authorise a join', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('clears the room secret so a torn-down session cannot authorise a join', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             sessionRuntimePrimitives.state.sessionSecret = 'room-secret-1';
 
             sessionRuntimePrimitives.cleanup();
@@ -996,8 +1113,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         // Dropping the reference alone leaves in-flight transfers holding
         // partial chunk buffers and armed stall timers that fire against a
         // torn-down session.
-        it('disposes transport state without releasing durable staged ownership', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('disposes transport state without releasing durable staged ownership', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             const assetTransfer = latestAssetTransfer();
 
             sessionRuntimePrimitives.cleanup();
@@ -1006,14 +1123,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(assetTransfer.releaseStagedAsset).not.toHaveBeenCalled();
         });
 
-        it('is safe to call when no session is active', () => {
+        it('is safe to call when no session is active', async () => {
             expect(() => sessionRuntimePrimitives.cleanup()).not.toThrow();
         });
     });
 
     describe('canApplySync (AutomergeSync hooks built at initialize())', () => {
-        it('surfaces a post-persist failure from the current session', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('surfaces a post-persist failure from the current session', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState());
 
             latestAutomergeSync().hooks.onPostPersistError?.(new Error('handoff failed'));
@@ -1023,11 +1140,11 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             );
         });
 
-        it('ignores a retained post-persist failure from a replaced session', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('ignores a retained post-persist failure from a replaced session', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             const oldHooks = latestAutomergeSync().hooks;
             sessionRuntimePrimitives.cleanup();
-            sessionRuntimePrimitives.initialize('project-owner-2');
+            await sessionRuntimePrimitives.initialize('project-owner-2');
             const sessionBState = makeState({ sessionId: 'session-b', localName: 'Session B' });
             collaborationStore.set(sessionBState);
 
@@ -1037,10 +1154,10 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('rejects every sync decision made by a replaced session', async () => {
-            sessionRuntimePrimitives.initialize('project-owner-1', { rebindToSynchronizedOwner: true });
+            await sessionRuntimePrimitives.initialize('project-owner-1', { rebindToSynchronizedOwner: true });
             const oldHooks = latestAutomergeSync().hooks;
             sessionRuntimePrimitives.cleanup();
-            sessionRuntimePrimitives.initialize('project-owner-2');
+            await sessionRuntimePrimitives.initialize('project-owner-2');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'host-1', isHost: true })] }));
 
             expect(oldHooks.captureSyncAcceptance?.({ peerId: 'host-1', docId: 'root' })).toEqual({
@@ -1060,48 +1177,48 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             ).rejects.toThrow('superseded');
         });
 
-        it('always allows syncs sent by the host, even for branch metadata', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('always allows syncs sent by the host, even for branch metadata', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'host-1', isHost: true })] }));
 
             const { canApplySync } = latestAutomergeSync().hooks;
             expect(canApplySync?.('host-1', '__branches__')).toBe(true);
         });
 
-        it('rejects branch-metadata syncs from a non-host sender', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('rejects branch-metadata syncs from a non-host sender', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
 
             const { canApplySync } = latestAutomergeSync().hooks;
             expect(canApplySync?.('peer-2', '__branches__')).toBe(false);
         });
 
-        it('applies a non-host peer sync to the root doc — an invite is unconditional write access', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('applies a non-host peer sync to the root doc — an invite is unconditional write access', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
 
             const { canApplySync } = latestAutomergeSync().hooks;
             expect(canApplySync?.('peer-2', 'root')).toBe(true);
         });
 
-        it('applies a non-host peer sync to a branch content doc (only __branches__ is host-only)', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('applies a non-host peer sync to a branch content doc (only __branches__ is host-only)', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
 
             const { canApplySync } = latestAutomergeSync().hooks;
             expect(canApplySync?.('peer-2', 'branch_abc')).toBe(true);
         });
 
-        it('applies a sync from a peer the store has never seen (no join-time gate)', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('applies a sync from a peer the store has never seen (no join-time gate)', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [] }));
 
             const { canApplySync } = latestAutomergeSync().hooks;
             expect(canApplySync?.('unknown-peer', 'root')).toBe(true);
         });
 
-        it('surfaces a store error when a received sync fails to persist', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('surfaces a store error when a received sync fails to persist', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState());
 
             latestAutomergeSync().hooks.onPersistError?.(new Error('boom'));
@@ -1115,8 +1232,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          * `setCollaborationError` instead puts it in the single `error` slot,
          * which every transient writer overwrites.
          */
-        it('records a quarantined peer in durable state rather than the transient error slot', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('records a quarantined peer in durable state rather than the transient error slot', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
             latestPeerManager().getConnectedPeerIds.mockReturnValue(['peer-2', 'peer-3']);
 
@@ -1144,8 +1261,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             ]);
         });
 
-        it('lists a peer once however many of its documents are quarantined', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('lists a peer once however many of its documents are quarantined', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState());
 
             const { onSyncQuarantine } = latestAutomergeSync().hooks;
@@ -1160,8 +1277,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          * `onSyncQuarantineLifted` hook. The row has to come down with the
          * quarantine, or it outlives the peer it describes.
          */
-        it('retires the durable record when the quarantine is lifted', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('retires the durable record when the quarantine is lifted', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ quarantinedPeerIds: ['peer-2'] }));
 
             latestAutomergeSync().hooks.onSyncQuarantineLifted?.({ peerId: 'peer-2' });
@@ -1171,8 +1288,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('handlePeerMessage (routed through the captured onMessage callback)', () => {
-        it('records the detector when this local peer is the named quarantined sender', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('records the detector when this local peer is the named quarantined sender', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     localPeerId: 'local-1',
@@ -1189,8 +1306,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(collaborationStore.value?.peers[0]?.syncHealth).toBe('diverged');
         });
 
-        it('records the named diverged peer when a connected detector reports it', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('records the named diverged peer when a connected detector reports it', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     localPeerId: 'local-1',
@@ -1212,8 +1329,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          * A third joiner's roster is often only the host, so a host report that
          * names sibling joiner J1 would otherwise be dropped.
          */
-        it('records a sibling joiner named by the host even when the local roster is only the host', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('records a sibling joiner named by the host even when the local roster is only the host', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     localPeerId: 'local-j2',
@@ -1229,8 +1346,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['joiner-j1']);
         });
 
-        it('keeps a local diverged flag when legacy peer-info omits sync health', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('keeps a local diverged flag when legacy peer-info omits sync health', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     localPeerId: 'local-1',
@@ -1253,8 +1370,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(collaborationStore.value?.peers[1]?.syncHealth).toBe('diverged');
         });
 
-        it('routes an asset crdt-sync message to the asset transfer subsystem', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('routes an asset crdt-sync message to the asset transfer subsystem', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             const message: PeerMessage = { type: 'crdt-sync', docId: DOC_ID_ASSET, data: 'payload' };
 
             latestPeerManager().callbacks.onMessage({ peerId: 'peer-1', message });
@@ -1263,8 +1380,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(latestAutomergeSync().handlePeerMessage).not.toHaveBeenCalled();
         });
 
-        it('no longer special-cases __permissions__ — it falls through to automerge sync, which drops it as an unknown doc', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('no longer special-cases __permissions__ — it falls through to automerge sync, which drops it as an unknown doc', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             const message: PeerMessage = { type: 'crdt-sync', docId: '__permissions__', data: 'payload' };
 
             latestPeerManager().callbacks.onMessage({ peerId: 'peer-1', message });
@@ -1272,8 +1389,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(latestAutomergeSync().handlePeerMessage).toHaveBeenCalledWith({ peerId: 'peer-1', message });
         });
 
-        it('routes every other crdt-sync message to automerge sync', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('routes every other crdt-sync message to automerge sync', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             const message: PeerMessage = { type: 'crdt-sync', docId: 'root', data: 'payload' };
 
             latestPeerManager().callbacks.onMessage({ peerId: 'peer-1', message });
@@ -1281,8 +1398,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(latestAutomergeSync().handlePeerMessage).toHaveBeenCalledWith({ peerId: 'peer-1', message });
         });
 
-        it('sanitizes and forwards presence from a peer already known to the store', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('sanitizes and forwards presence from a peer already known to the store', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-1', lastSeen: 0 })] }));
             const listener = vi.fn();
             sessionRuntimePrimitives.presenceListeners.add(listener);
@@ -1302,8 +1419,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(collaborationStore.value?.peers[0]?.lastSeen).toBeGreaterThan(0);
         });
 
-        it('ignores presence from a peer the store does not know', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('ignores presence from a peer the store does not know', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [] }));
             const listener = vi.fn();
             sessionRuntimePrimitives.presenceListeners.add(listener);
@@ -1318,17 +1435,17 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(listener).not.toHaveBeenCalled();
         });
 
-        it('keeps a mounted presence subscriber alive across a leave→rejoin cycle (regression: cleanup cleared app-lifetime listeners)', () => {
+        it('keeps a mounted presence subscriber alive across a leave→rejoin cycle (regression: cleanup cleared app-lifetime listeners)', async () => {
             const listener = vi.fn();
             const unsubscribe = onPresence(listener);
 
             // Session 1 ends: leave/create/join all run cleanup().
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             sessionRuntimePrimitives.cleanup();
 
             // Session 2: the overlay hook never re-subscribes — the same
             // registration must still receive presence.
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-1' })] }));
             latestPeerManager().callbacks.onMessage({
                 peerId: 'peer-1',
@@ -1346,8 +1463,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(listener).toHaveBeenCalledTimes(1);
         });
 
-        it('adds a newly seen peer from a peer-info message without trusting its self-claimed host flag', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('adds a newly seen peer from a peer-info message without trusting its self-claimed host flag', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ localPeerId: 'local-1', peers: [] }));
 
             latestPeerManager().callbacks.onMessage({
@@ -1359,8 +1476,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(collaborationStore.value?.peers[0]?.isHost).toBe(false);
         });
 
-        it('bounds sender-controlled identity fields from a peer-info message with the presence limits', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('bounds sender-controlled identity fields from a peer-info message with the presence limits', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ localPeerId: 'local-1', peers: [] }));
 
             latestPeerManager().callbacks.onMessage({
@@ -1375,8 +1492,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(collaborationStore.value?.peers[0]?.color).toBe('#888888');
         });
 
-        it('rejects a peer-info carrying an over-length peer id instead of storing it', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('rejects a peer-info carrying an over-length peer id instead of storing it', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ localPeerId: 'local-1', peers: [] }));
 
             latestPeerManager().callbacks.onMessage({
@@ -1387,8 +1504,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(collaborationStore.value?.peers).toHaveLength(0);
         });
 
-        it('adopts a host-assigned color from a peer-info message describing ourselves', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('adopts a host-assigned color from a peer-info message describing ourselves', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     localPeerId: 'local-1',
@@ -1407,8 +1524,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(collaborationStore.value?.peers).toHaveLength(1);
         });
 
-        it('sanitizes a host-assigned color before adopting it as localColor', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('sanitizes a host-assigned color before adopting it as localColor', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     localPeerId: 'local-1',
@@ -1426,8 +1543,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(collaborationStore.value?.localColor).toBe('#888888');
         });
 
-        it('removes a peer on a self-issued peer-leave message', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('removes a peer on a self-issued peer-leave message', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
 
             latestPeerManager().callbacks.onMessage({
@@ -1439,8 +1556,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(latestPeerManager().removePeer).toHaveBeenCalledWith('peer-2');
         });
 
-        it('ignores a peer-leave message impersonating a different peer', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('ignores a peer-leave message impersonating a different peer', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
 
             latestPeerManager().callbacks.onMessage({
@@ -1456,8 +1573,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          * `quarantinedPeerIds`. A host-relayed report never hits
          * `onSyncQuarantineLifted` on this node, so leave is the only drop.
          */
-        it('clears a remote-only quarantine record when that peer is removed', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('clears a remote-only quarantine record when that peer is removed', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     localPeerId: 'local-j2',
@@ -1476,8 +1593,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('handlePeerConnected (routed through the captured onConnected callback)', () => {
-        it('registers the peer with automerge sync and marks it connected (no role is granted)', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('registers the peer with automerge sync and marks it connected (no role is granted)', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     localPeerId: 'local-1',
@@ -1497,8 +1614,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             });
         });
 
-        it('re-announces the host-assigned color to a joiner once connected', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('re-announces the host-assigned color to a joiner once connected', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     localPeerId: 'host-1',
@@ -1516,8 +1633,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(secondCall[0]).toMatchObject({ peerId: 'peer-1', message: { type: 'peer-info' } });
         });
 
-        it('does not re-announce a color for a peer we have no record of yet', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('does not re-announce a color for a peer we have no record of yet', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ localPeerId: 'host-1', isHost: true, peers: [] }));
 
             latestPeerManager().callbacks.onConnected('peer-1');
@@ -1525,9 +1642,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(latestPeerManager().sendCrdtSync).toHaveBeenCalledTimes(1);
         });
 
-        it('cancels a pending disconnect cleanup when the peer reconnects in time', () => {
+        it('cancels a pending disconnect cleanup when the peer reconnects in time', async () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-1' })] }));
 
             latestPeerManager().callbacks.onDisconnected('peer-1');
@@ -1541,8 +1658,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          * Turns red on: `quarantinedPeerIds: []` in `handlePeerConnected`.
          * Admitting a new peer must not erase a live quarantine.
          */
-        it('leaves quarantinedPeerIds intact when a new peer connects', () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        it('leaves quarantinedPeerIds intact when a new peer connects', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
             latestAutomergeSync().hooks.onSyncQuarantine?.({
                 peerId: 'peer-2',
@@ -1558,9 +1675,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('handlePeerDisconnected (routed through the captured onDisconnected callback)', () => {
-        it('marks the peer disconnected immediately and removes it after the grace period', () => {
+        it('marks the peer disconnected immediately and removes it after the grace period', async () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ connectionStatus: 'connected', peers: [makePeer({ id: 'peer-1' })] }));
 
             latestPeerManager().callbacks.onDisconnected('peer-1');
@@ -1575,9 +1692,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(latestPeerManager().removePeer).toHaveBeenCalledWith('peer-1');
         });
 
-        it('keeps connectionStatus connected while another peer is still connected', () => {
+        it('keeps connectionStatus connected while another peer is still connected', async () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     connectionStatus: 'connected',
@@ -1591,8 +1708,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         /** A joiner whose only peer is the host, mid-session with a live broadcast. */
-        function startJoinerWithHost(): void {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        async function startJoinerWithHost(): Promise<void> {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             latestPeerManager().getConnectedPeerIds.mockReturnValue(['host-1']);
             collaborationStore.set(
                 makeState({
@@ -1606,9 +1723,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             vi.advanceTimersByTime(250);
         }
 
-        it('surfaces session end and stops the playhead broadcast once the HOST cleanup timer elapses', () => {
+        it('surfaces session end and stops the playhead broadcast once the HOST cleanup timer elapses', async () => {
             vi.useFakeTimers();
-            startJoinerWithHost();
+            await startJoinerWithHost();
             expect(latestPeerManager().broadcastPresence.mock.calls.length).toBeGreaterThan(0);
 
             latestPeerManager().callbacks.onDisconnected('host-1');
@@ -1633,9 +1750,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(latestPeerManager().broadcastPresence).toHaveBeenCalledTimes(callsAtDeparture);
         });
 
-        it('treats a host disconnect that recovers inside the grace period as a blip, not a session end', () => {
+        it('treats a host disconnect that recovers inside the grace period as a blip, not a session end', async () => {
             vi.useFakeTimers();
-            startJoinerWithHost();
+            await startJoinerWithHost();
 
             latestPeerManager().callbacks.onDisconnected('host-1');
             vi.advanceTimersByTime(1000);
@@ -1653,9 +1770,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(latestPeerManager().broadcastPresence.mock.calls.length).toBeGreaterThan(callsAfterRecovery);
         });
 
-        it('clears the session-ended error and restarts the broadcast when the host comes back after departing', () => {
+        it('clears the session-ended error and restarts the broadcast when the host comes back after departing', async () => {
             vi.useFakeTimers();
-            startJoinerWithHost();
+            await startJoinerWithHost();
 
             latestPeerManager().callbacks.onDisconnected('host-1');
             vi.advanceTimersByTime(15_000);
@@ -1678,9 +1795,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          * transient ICE `disconnected` state, so lifting a quarantine there
          * replays the failing exchange on every Wi-Fi flap.
          */
-        it('does not forget a peer on the immediate, transient disconnect path', () => {
+        it('does not forget a peer on the immediate, transient disconnect path', async () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ connectionStatus: 'connected', peers: [makePeer({ id: 'peer-1' })] }));
 
             latestPeerManager().callbacks.onDisconnected('peer-1');
@@ -1695,9 +1812,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          * that decides a peer really went away, so it is the only thing
          * allowed to reopen a channel closed against it.
          */
-        it('forgets the peer once the durable cleanup timer elapses', () => {
+        it('forgets the peer once the durable cleanup timer elapses', async () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ connectionStatus: 'connected', peers: [makePeer({ id: 'peer-1' })] }));
 
             latestPeerManager().callbacks.onDisconnected('peer-1');
@@ -1706,9 +1823,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(latestAutomergeSync().forgetPeer).toHaveBeenCalledWith('peer-1');
         });
 
-        it('does not declare the session ended when a non-host peer disconnects', () => {
+        it('does not declare the session ended when a non-host peer disconnects', async () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
                 makeState({
                     isHost: false,
@@ -1725,19 +1842,19 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('startBranchSync / stopBranchSync (via startBranchSync() and cleanup())', () => {
-        beforeEach(() => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+        beforeEach(async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
         });
 
-        it('seeds the __branches__ doc from the current branch list when hosting', () => {
+        it('seeds the __branches__ doc from the current branch list when hosting', async () => {
             branchStoreMock.value = { branches: [{ id: 'b1' }], activeBranchId: 'b1' };
 
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
 
             expect(crdtMock.removeCrdtDoc).toHaveBeenCalledWith('__branches__');
             expect(crdtMock.createCrdtDoc).toHaveBeenCalledWith('__branches__');
-            expect(crdtMock.preserveBranchStateForSession).toHaveBeenCalledTimes(1);
-            expect(sessionRuntimePrimitives.state.hasBranchStateBackup).toBe(true);
+            expect(crdtMock.beginBranchSession).toHaveBeenCalledTimes(1);
+            expect(sessionRuntimePrimitives.state.branchSession).toEqual({ owner: 'owner-mock' });
 
             const seedCall = crdtMock.mutateCrdtDoc.mock.calls.find(
                 (call) => (call[0] as { id: string }).id === '__branches__'
@@ -1747,16 +1864,16 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(doc.branches).toEqual([{ id: 'b1' }]);
         });
 
-        it('does not seed the doc when joining as a non-host', () => {
-            sessionRuntimePrimitives.startBranchSync(false);
+        it('does not seed the doc when joining as a non-host', async () => {
+            await sessionRuntimePrimitives.startBranchSync(false);
 
             expect(crdtMock.removeCrdtDoc).not.toHaveBeenCalled();
             expect(crdtMock.createCrdtDoc).not.toHaveBeenCalled();
         });
 
-        it('mirrors local branch mutations into the doc when a doc already exists', () => {
+        it('mirrors local branch mutations into the doc when a doc already exists', async () => {
             crdtMock.hasCrdtDoc.mockReturnValue(true);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1781,7 +1898,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             });
             crdtMock.hasCrdtDoc.mockReturnValue(true);
             crdtMock.waitForCrdtDocumentTransition.mockReturnValue(transition);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1811,7 +1928,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             });
             crdtMock.hasCrdtDoc.mockReturnValue(true);
             crdtMock.waitForCrdtDocumentTransition.mockReturnValue(transition);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1830,7 +1947,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             const transition = Promise.withResolvers<'aborted' | 'committed'>();
             crdtMock.hasCrdtDoc.mockReturnValue(true);
             crdtMock.waitForCrdtDocumentTransition.mockReturnValue(transition.promise);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1838,7 +1955,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             branchStoreListener({ branches: [{ id: 'session-a' }], activeBranchId: 'session-a' });
             sessionRuntimePrimitives.cleanup();
-            sessionRuntimePrimitives.initialize('project-owner-2');
+            await sessionRuntimePrimitives.initialize('project-owner-2');
             crdtMock.mutateCrdtDoc.mockClear();
 
             transition.resolve('committed');
@@ -1848,24 +1965,232 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
         });
 
-        it('does not mirror branch mutations while a projection is already in flight', () => {
+        it('does not write a projection echo back into the doc', async () => {
             crdtMock.hasCrdtDoc.mockReturnValue(true);
-            sessionRuntimePrimitives.startBranchSync(true);
+            // What the store looks like straight after a projection: the list it
+            // holds is the one already in the doc.
+            crdtMock.getCrdtDoc.mockReturnValue({ branches: [{ id: 'echoed' }] });
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
             crdtMock.mutateCrdtDoc.mockClear();
-            sessionRuntimePrimitives.state.isProjectingBranches = true;
 
-            branchStoreListener({ branches: [{ id: 'ignored' }], activeBranchId: 'b1' });
+            branchStoreListener({ branches: [{ id: 'echoed' }], activeBranchId: 'b1' });
 
             expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
-            sessionRuntimePrimitives.state.isProjectingBranches = false;
         });
 
-        it('does not mirror branch mutations when the doc has not been created yet', () => {
+        it('does not write a projection echo back into the doc when the document orders the record keys differently', async () => {
+            // The store builds a branch record in declaration order; Automerge
+            // materialises a map with its keys sorted. The same record therefore
+            // serialises two ways, and a key-order-sensitive comparison reads
+            // the projection's own hydrate as a local change.
+            const storeRecord = {
+                branchId: 'b-take-2',
+                name: 'Take 2',
+                rootDocId: 'doc-take-2',
+                sourceBranchId: 'main-branch-mock',
+                createdAt: 1_700_000_000_000,
+            };
+            const docRecord = {
+                branchId: 'b-take-2',
+                createdAt: 1_700_000_000_000,
+                name: 'Take 2',
+                rootDocId: 'doc-take-2',
+                sourceBranchId: 'main-branch-mock',
+            };
+            const doc = { branches: [docRecord] };
+            crdtMock.hasCrdtDoc.mockReturnValue(true);
+            crdtMock.getCrdtDoc.mockImplementation((docId: string) => (docId === '__branches__' ? doc : undefined));
+            branchStoreMock.value = { branches: [], activeBranchId: 'main-branch-mock' };
+            const branchStoreListener = () =>
+                branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
+                    state: { branches: unknown[]; activeBranchId: string } | null
+                ) => void;
+            // The durable projection hydrates the store with the store-shaped
+            // list before it reports committed.
+            crdtMock.projectBranchSession.mockImplementation(() => {
+                const hydrated = { branches: [storeRecord], activeBranchId: 'main-branch-mock' };
+                branchStoreMock.value = hydrated;
+                branchStoreListener()(hydrated);
+                return Promise.resolve({ status: 'committed' as const, revision: 1 });
+            });
+
+            await sessionRuntimePrimitives.startBranchSync(false);
+            const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
+                docId?: string
+            ) => void;
+            crdtMock.mutateCrdtDoc.mockClear();
+
+            crdtChangeListener('__branches__');
+
+            expect(crdtMock.projectBranchSession).toHaveBeenCalledTimes(1);
+            expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
+        });
+
+        it('mirrors a local branch write that lands while a projection is still in flight', async () => {
+            crdtMock.hasCrdtDoc.mockReturnValue(true);
+            // The doc holds the peers' list; the projection that is publishing
+            // it has not resolved yet.
+            crdtMock.getCrdtDoc.mockReturnValue({ branches: [{ id: 'from-peer' }] });
+            const projection = Promise.withResolvers<{ status: 'committed'; revision: number }>();
+            crdtMock.projectBranchSession.mockReturnValueOnce(projection.promise);
+            await sessionRuntimePrimitives.startBranchSync(true);
+            const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
+                docId?: string
+            ) => void;
+            const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
+                state: { branches: unknown[]; activeBranchId: string } | null
+            ) => void;
+            crdtChangeListener('__branches__');
+            crdtMock.mutateCrdtDoc.mockClear();
+
+            // A local fork/delete commits on the same transaction lock the
+            // projection is waiting on, and its hydration lands inside the
+            // projection's window. Swallowing it leaves the peers on a list that
+            // no longer exists locally.
+            branchStoreListener({ branches: [{ id: 'local-fork' }], activeBranchId: 'local-fork' });
+
+            expect(crdtMock.mutateCrdtDoc).toHaveBeenCalledTimes(1);
+            const [{ id, changeFn }] = crdtMock.mutateCrdtDoc.mock.calls[0] as [
+                { id: string; changeFn: (doc: Record<string, unknown>) => void },
+            ];
+            expect(id).toBe('__branches__');
+            const doc: Record<string, unknown> = {};
+            changeFn(doc);
+            expect(doc.branches).toEqual([{ id: 'local-fork' }]);
+
+            projection.resolve({ status: 'committed', revision: 2 });
+            await projection.promise;
+        });
+
+        /**
+         * A local commit and a peer change queued one behind the other used to
+         * feed each other forever: every projection hydrated the store with a
+         * list the doc no longer held, the mirror wrote that list back, and the
+         * change listener queued the other one again — one durable branch write
+         * and one broadcast per macrotask, without end.
+         */
+        it('settles on one branch list instead of trading a local commit against a peer change', async () => {
+            const base = { id: 'base' };
+            const local = { id: 'local' };
+            const peer = { id: 'peer' };
+            const doc: { branches: unknown[] } = { branches: [base] };
+            branchStoreMock.value = { branches: [base], activeBranchId: 'base' };
+            crdtMock.hasCrdtDoc.mockReturnValue(true);
+            crdtMock.getCrdtDoc.mockImplementation((docId: string) => (docId === '__branches__' ? doc : undefined));
+            const branchStoreListener = () =>
+                branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
+                    state: { branches: unknown[]; activeBranchId: string } | null
+                ) => void;
+            const crdtChangeListener = () =>
+                crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (docId?: string) => void;
+
+            // The durable projection queue: one list per macrotask, hydrating
+            // the store — and so running the mirror — before it reports
+            // committed, exactly as the real lock-serialised write does.
+            let projections = Promise.resolve();
+            let revision = 0;
+            crdtMock.projectBranchSession.mockImplementation((_handle, next) => {
+                const projected = next as { branches: unknown[]; activeBranchId: string };
+                const hydrated = projections.then(async () => {
+                    await nextMacrotask();
+                    branchStoreMock.value = projected;
+                    branchStoreListener()(projected);
+                });
+                projections = hydrated.then(
+                    () => undefined,
+                    () => undefined
+                );
+                revision += 1;
+                const committed = { status: 'committed' as const, revision };
+                return hydrated.then(() => committed);
+            });
+
+            await sessionRuntimePrimitives.startBranchSync(true);
+            crdtMock.mutateCrdtDoc.mockImplementation(
+                ({ id, changeFn }: { id: string; changeFn: (target: Record<string, unknown>) => void }) => {
+                    if (id !== '__branches__') {
+                        return;
+                    }
+                    changeFn(doc);
+                    crdtChangeListener()('__branches__');
+                }
+            );
+            // Drop the host's seeding write so what remains is what the
+            // exchange below costs.
+            crdtMock.mutateCrdtDoc.mockClear();
+
+            // The local commit hydrates the store, so the mirror publishes it
+            // and the change listener queues a projection of it. The peer's
+            // change lands before that projection runs.
+            branchStoreListener()({ branches: [base, local], activeBranchId: 'base' });
+            doc.branches = [base, peer];
+            crdtChangeListener()('__branches__');
+            for (let macrotask = 0; macrotask < 20; macrotask += 1) {
+                await nextMacrotask();
+            }
+
+            // One projection per list that really arrived, and the local
+            // commit's own mirror write. Nothing repeats.
+            expect(crdtMock.projectBranchSession).toHaveBeenCalledTimes(2);
+            expect(
+                crdtMock.mutateCrdtDoc.mock.calls.filter((call) => (call[0] as { id: string }).id === '__branches__')
+            ).toHaveLength(1);
+            const settledJson = canonicalJson(doc.branches);
+            expect(canonicalJson(branchStoreMock.value?.branches)).toBe(settledJson);
+            expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(settledJson);
+            expect(sessionRuntimePrimitives.state.projectingBranchesJson).toEqual([]);
+        });
+
+        it('mirrors a local write of a list an earlier settled projection had published', async () => {
+            const listA = [{ id: 'a' }];
+            const listB = [{ id: 'b' }];
+            const doc: { branches: unknown[] } = { branches: [] };
+            crdtMock.hasCrdtDoc.mockReturnValue(true);
+            crdtMock.getCrdtDoc.mockImplementation((docId: string) => (docId === '__branches__' ? doc : undefined));
+            branchStoreMock.value = { branches: [], activeBranchId: 'b1' };
+            crdtMock.projectBranchSession.mockResolvedValue({ status: 'committed', revision: 1 });
+
+            await sessionRuntimePrimitives.startBranchSync(false);
+            const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
+                docId?: string
+            ) => void;
+            const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
+                state: { branches: unknown[]; activeBranchId: string } | null
+            ) => void;
+
+            doc.branches = listA;
+            crdtChangeListener('__branches__');
+            await vi.waitFor(() =>
+                expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(canonicalJson(listA))
+            );
+            doc.branches = listB;
+            crdtChangeListener('__branches__');
+            await vi.waitFor(() =>
+                expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(canonicalJson(listB))
+            );
+            crdtMock.mutateCrdtDoc.mockClear();
+
+            // The user forks back to the list the first projection published.
+            // The doc holds B, so this is a local change the peers need — and
+            // only a projection that is still in flight may suppress a write.
+            branchStoreListener({ branches: listA, activeBranchId: 'b1' });
+
+            expect(crdtMock.mutateCrdtDoc).toHaveBeenCalledTimes(1);
+            const [{ id, changeFn }] = crdtMock.mutateCrdtDoc.mock.calls[0] as [
+                { id: string; changeFn: (target: Record<string, unknown>) => void },
+            ];
+            expect(id).toBe('__branches__');
+            const written: Record<string, unknown> = {};
+            changeFn(written);
+            expect(written.branches).toEqual(listA);
+        });
+
+        it('does not mirror branch mutations when the doc has not been created yet', async () => {
             crdtMock.hasCrdtDoc.mockReturnValue(false);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1876,9 +2201,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
         });
 
-        it('does not mirror a null branchStore state', () => {
+        it('does not mirror a null branchStore state', async () => {
             crdtMock.hasCrdtDoc.mockReturnValue(true);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             const branchStoreListener = branchStoreMock.subscribe.mock.calls.at(-1)![0] as (
                 state: { branches: unknown[]; activeBranchId: string } | null
             ) => void;
@@ -1889,8 +2214,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(crdtMock.mutateCrdtDoc).not.toHaveBeenCalled();
         });
 
-        it('projects an incoming __branches__ doc change into branchStore via replaceBranchState', () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+        it('projects an incoming __branches__ doc change through this session claim', async () => {
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
@@ -1899,15 +2224,22 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             crdtChangeListener('__branches__');
 
-            expect(crdtMock.replaceBranchState).toHaveBeenCalledWith({
-                branches: [{ id: 'incoming' }],
-                activeBranchId: 'active-1',
-            });
-            expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(JSON.stringify([{ id: 'incoming' }]));
+            expect(crdtMock.projectBranchSession).toHaveBeenCalledWith(
+                { owner: 'owner-mock' },
+                { branches: [{ id: 'incoming' }], activeBranchId: 'active-1' }
+            );
+            // The durable write is asynchronous, and only a committed one may
+            // record the projected list: a refused projection that recorded it
+            // would suppress the retry of the very list it failed to publish.
+            await vi.waitFor(() =>
+                expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(
+                    JSON.stringify([{ id: 'incoming' }])
+                )
+            );
         });
 
-        it('falls back to MAIN_BRANCH_ID when branchStore has no active branch yet', () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+        it('falls back to MAIN_BRANCH_ID when branchStore has no active branch yet', async () => {
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
@@ -1916,14 +2248,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             crdtChangeListener(undefined);
 
-            expect(crdtMock.replaceBranchState).toHaveBeenCalledWith({
-                branches: [{ id: 'incoming' }],
-                activeBranchId: 'main-branch-mock',
-            });
+            expect(crdtMock.projectBranchSession).toHaveBeenCalledWith(
+                { owner: 'owner-mock' },
+                { branches: [{ id: 'incoming' }], activeBranchId: 'main-branch-mock' }
+            );
         });
 
-        it('ignores a change notification for an unrelated doc id', () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+        it('ignores a change notification for an unrelated doc id', async () => {
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
@@ -1932,11 +2264,11 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             crdtChangeListener('some-other-doc');
 
             expect(crdtMock.getCrdtDoc).not.toHaveBeenCalled();
-            expect(crdtMock.replaceBranchState).not.toHaveBeenCalled();
+            expect(crdtMock.projectBranchSession).not.toHaveBeenCalled();
         });
 
-        it('ignores a change notification whose doc has no branches array yet', () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+        it('ignores a change notification whose doc has no branches array yet', async () => {
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
@@ -1944,106 +2276,159 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             crdtChangeListener('__branches__');
 
-            expect(crdtMock.replaceBranchState).not.toHaveBeenCalled();
+            expect(crdtMock.projectBranchSession).not.toHaveBeenCalled();
         });
 
-        it('skips re-projecting the same branch JSON twice in a row', () => {
-            sessionRuntimePrimitives.startBranchSync(true);
+        it('skips re-projecting the same branch JSON twice in a row', async () => {
+            await sessionRuntimePrimitives.startBranchSync(true);
             const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
                 docId?: string
             ) => void;
             crdtMock.getCrdtDoc.mockReturnValue({ branches: [{ id: 'same' }] });
 
             crdtChangeListener('__branches__');
-            crdtMock.replaceBranchState.mockClear();
+            await vi.waitFor(() =>
+                expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(JSON.stringify([{ id: 'same' }]))
+            );
+            crdtMock.projectBranchSession.mockClear();
             crdtChangeListener('__branches__');
 
-            expect(crdtMock.replaceBranchState).not.toHaveBeenCalled();
+            expect(crdtMock.projectBranchSession).not.toHaveBeenCalled();
+        });
+
+        it('re-projects an identical branch list after the durable write was refused', async () => {
+            crdtMock.projectBranchSession.mockResolvedValueOnce({ status: 'refused', reason: 'write-failed' });
+            await sessionRuntimePrimitives.startBranchSync(true);
+            const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
+                docId?: string
+            ) => void;
+            crdtMock.getCrdtDoc.mockReturnValue({ branches: [{ id: 'retried' }] });
+
+            crdtChangeListener('__branches__');
+            await vi.waitFor(() =>
+                expect(loggerMock.warn).toHaveBeenCalledWith(
+                    '[Collaboration] Incoming branch list could not be persisted (write-failed)'
+                )
+            );
+            // Nothing was published, so nothing may be remembered as published.
+            expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBeNull();
+
+            // The same list arriving again is the retry. Recording it on the
+            // first attempt would make this arrival a no-op and leave the list
+            // the session received permanently unpublished.
+            crdtChangeListener('__branches__');
+
+            expect(crdtMock.projectBranchSession).toHaveBeenCalledTimes(2);
+            await vi.waitFor(() =>
+                expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBe(
+                    JSON.stringify([{ id: 'retried' }])
+                )
+            );
+        });
+
+        it('stops both branch directions when another instance takes the list over mid-flight', async () => {
+            const projection = Promise.withResolvers<{ status: 'refused'; reason: 'superseded' }>();
+            crdtMock.projectBranchSession.mockReturnValueOnce(projection.promise);
+            await sessionRuntimePrimitives.startBranchSync(true);
+            const crdtChangeListener = crdtMock.subscribeToCrdtChanges.mock.calls.at(-1)![0] as (
+                docId?: string
+            ) => void;
+            crdtMock.getCrdtDoc.mockReturnValue({ branches: [{ id: 'peer-list' }] });
+
+            crdtChangeListener('__branches__');
+            projection.resolve({ status: 'refused', reason: 'superseded' });
+            await vi.waitFor(() => expect(sessionRuntimePrimitives.state.unsubscribeBranchStore).toBeNull());
+
+            // Both directions go: this session can no longer publish what it
+            // receives, and mirroring local writes into a doc peers still sync
+            // would hand them a list nobody owns. The mirror subscription being
+            // gone is what keeps a later `branchStore.set` out of the doc.
+            expect(branchStoreMock.unsubscribeBranchStore).toHaveBeenCalledTimes(1);
+            expect(crdtMock.unsubscribeAutomergeChanges).toHaveBeenCalledTimes(1);
+            expect(sessionRuntimePrimitives.state.unsubscribeAutomergeChanges).toBeNull();
+            expect(loggerMock.warn).toHaveBeenCalledWith(
+                '[Collaboration] The branch list is no longer owned by this session; branch sync stopped.'
+            );
+            expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBeNull();
         });
 
         it('stops branch sync on cleanup: unsubscribes, removes the doc, restores state, and persists', async () => {
             branchStoreMock.value = { branches: [], activeBranchId: 'b1' };
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
             crdtMock.removeCrdtDoc.mockClear();
 
             sessionRuntimePrimitives.cleanup();
+            await sessionRuntimePrimitives.settleRetainedTeardown();
 
             expect(branchStoreMock.unsubscribeBranchStore).toHaveBeenCalledTimes(1);
             expect(crdtMock.unsubscribeAutomergeChanges).toHaveBeenCalledTimes(1);
             expect(crdtMock.removeCrdtDoc).toHaveBeenCalledWith('__branches__');
-            expect(crdtMock.restoreBranchStateAfterSession).toHaveBeenCalledTimes(1);
+            expect(crdtMock.endBranchSession).toHaveBeenCalledWith({ owner: 'owner-mock' });
+            expect(crdtMock.endBranchSession).toHaveBeenCalledTimes(1);
             expect(crdtMock.persistCrdtProject).toHaveBeenCalledTimes(1);
-            expect(sessionRuntimePrimitives.state.hasBranchStateBackup).toBe(false);
+            expect(sessionRuntimePrimitives.state.branchSession).toBeNull();
             expect(sessionRuntimePrimitives.state.lastProjectedBranchesJson).toBeNull();
             await Promise.resolve();
         });
 
-        it('does not restore branch state on cleanup when no backup was ever taken', () => {
+        it('does not hand back the branch list on cleanup when this session never claimed it', async () => {
             sessionRuntimePrimitives.cleanup();
 
-            expect(crdtMock.restoreBranchStateAfterSession).not.toHaveBeenCalled();
+            expect(crdtMock.endBranchSession).not.toHaveBeenCalled();
         });
 
         it('surfaces a store error and logs a warning when post-cleanup persistence fails', async () => {
             collaborationStore.set(makeState());
-            crdtMock.persistCrdtProject.mockRejectedValueOnce(new Error('disk full'));
-            sessionRuntimePrimitives.startBranchSync(true);
+            const persistenceError = new Error('disk full');
+            crdtMock.persistCrdtProject.mockRejectedValueOnce(persistenceError);
+            await sessionRuntimePrimitives.startBranchSync(true);
 
-            await leaveSession();
-            await Promise.resolve();
-            await Promise.resolve();
+            await expect(leaveSession()).rejects.toBe(persistenceError);
 
             expect(loggerMock.warn).toHaveBeenCalledWith(
                 '[Collaboration] Failed to persist after branch sync cleanup:',
                 expect.any(Error)
             );
-            expect(collaborationStore.value?.error).toBe('Failed to save project locally after leaving the session.');
+            expect(collaborationStore.value?.connectionStatus).toBe('disconnected');
         });
 
-        it('does not surface old cleanup persistence failure into a pending join', async () => {
+        it('does not install a pending join while old cleanup persistence is unresolved', async () => {
             collaborationStore.set(makeState());
             const persistence = Promise.withResolvers<void>();
             crdtMock.persistCrdtProject.mockReturnValueOnce(persistence.promise);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
 
             const decompression = Promise.withResolvers<string>();
             const decompressInvite = vi
                 .spyOn(sessionRuntimePrimitives, 'decompressInvite')
                 .mockReturnValueOnce(decompression.promise);
             const joining = joinSession('invite', 'Joining session');
-            expect(collaborationStore.value).toMatchObject({ connectionStatus: 'connecting', error: null });
-
-            persistence.reject(new Error('old cleanup failed'));
-            await vi.waitFor(() =>
-                expect(loggerMock.warn).toHaveBeenCalledWith(
-                    '[Collaboration] Failed to persist after branch sync cleanup:',
-                    expect.any(Error)
-                )
-            );
-
-            expect(collaborationStore.value).toMatchObject({ connectionStatus: 'connecting', error: null });
+            await vi.waitFor(() => expect(crdtMock.persistCrdtProject).toHaveBeenCalled());
+            expect(peerConnectionMock.instances).toHaveLength(1);
 
             decompression.resolve(JSON.stringify({ type: 'answer' }));
-            await expect(joining).rejects.toThrow('expected offer');
+            const oldCleanupError = new Error('old cleanup failed');
+            persistence.reject(oldCleanupError);
+            await expect(joining).rejects.toBe(oldCleanupError);
+            expect(peerConnectionMock.instances).toHaveLength(1);
             decompressInvite.mockRestore();
         });
 
-        it('does not surface old cleanup persistence failure into a created session', async () => {
+        it('requires a second create attempt after old cleanup persistence fails', async () => {
             collaborationStore.set(makeState());
             const persistence = Promise.withResolvers<void>();
             crdtMock.persistCrdtProject.mockReturnValueOnce(persistence.promise);
-            sessionRuntimePrimitives.startBranchSync(true);
+            await sessionRuntimePrimitives.startBranchSync(true);
 
-            const sessionBId = createSession('Session B');
+            const oldCleanupError = new Error('old cleanup failed');
+            const firstCreate = createSession('Session B');
+            await vi.waitFor(() => expect(crdtMock.persistCrdtProject).toHaveBeenCalled());
+            expect(peerConnectionMock.instances).toHaveLength(1);
+            persistence.reject(oldCleanupError);
+            await expect(firstCreate).rejects.toBe(oldCleanupError);
+
+            const sessionBId = await createSession('Session B');
             const sessionBManager = latestPeerManager();
-            persistence.reject(new Error('old cleanup failed'));
-            await vi.waitFor(() =>
-                expect(loggerMock.warn).toHaveBeenCalledWith(
-                    '[Collaboration] Failed to persist after branch sync cleanup:',
-                    expect.any(Error)
-                )
-            );
-
             expect(sessionRuntimePrimitives.state.peerManager).toBe(sessionBManager);
             expect(collaborationStore.value).toMatchObject({ sessionId: sessionBId, error: null });
         });
@@ -2053,9 +2438,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         // An abandoned asset transfer used to be a logger.warn and nothing
         // else: clips referencing the asset stayed silent with no user-visible
         // signal anywhere in the panel.
-        it('surfaces an abandoned transfer on the store error row', () => {
+        it('surfaces an abandoned transfer on the store error row', async () => {
             collaborationStore.set(makeState());
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
 
             latestAssetTransfer().options.onTransferFailed('sha256:abc', 'the sending peer stopped responding');
 
@@ -2067,9 +2452,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         // The retry driver is the scheduler tick, so the message must name that
         // condition rather than promise an unconditional retry: with playback
         // stopped, nothing re-asks for the asset.
-        it('states the condition under which the asset is asked for again', () => {
+        it('states the condition under which the asset is asked for again', async () => {
             collaborationStore.set(makeState());
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
 
             latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed');
 
@@ -2077,9 +2462,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(collaborationStore.value?.error).toContain('Playing over the affected clips');
         });
 
-        it('leaves the live session state alone — a failed asset is not a failed session', () => {
+        it('leaves the live session state alone — a failed asset is not a failed session', async () => {
             collaborationStore.set(makeState({ connectionStatus: 'connected', isEnabled: true }));
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
 
             latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed');
 
@@ -2094,7 +2479,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         }
 
         it('does nothing when the transferred asset is not yet available', async () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             latestAssetTransfer().getAsset.mockReturnValue(undefined);
             trackStoreMock.value = { tracks: [{ clips: [{ id: 'c1', assetHash: 'hash-1', audioBufferId: 'buf-1' }] }] };
 
@@ -2106,7 +2491,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('does nothing when the audio context is unavailable', async () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             latestAssetTransfer().getAsset.mockReturnValue({ arrayBuffer: vi.fn() });
             audioEngineMock.getAudioContext.mockImplementation(() => {
                 throw new Error('no context yet');
@@ -2121,7 +2506,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('decodes and caches the buffer for a matching, uncached clip', async () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             const arrayBuffer = new ArrayBuffer(8);
             const blob = { arrayBuffer: vi.fn().mockResolvedValue(arrayBuffer) };
             latestAssetTransfer().getAsset.mockReturnValue(blob);
@@ -2141,7 +2526,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('does not cache a decoded buffer after its session is replaced', async () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             const blob = { arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) };
             latestAssetTransfer().getAsset.mockReturnValue(blob);
             const decoding = Promise.withResolvers<AudioBuffer>();
@@ -2154,7 +2539,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             await vi.waitFor(() => expect(decodeAudioData).toHaveBeenCalledTimes(1));
 
             sessionRuntimePrimitives.cleanup();
-            sessionRuntimePrimitives.initialize('project-owner-2');
+            await sessionRuntimePrimitives.initialize('project-owner-2');
             decoding.resolve(makeAudioBuffer());
             await decoding.promise;
             await Promise.resolve();
@@ -2163,7 +2548,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('does not begin decoding after an old session finishes reading an asset', async () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             const reading = Promise.withResolvers<ArrayBuffer>();
             latestAssetTransfer().getAsset.mockReturnValue({ arrayBuffer: vi.fn().mockReturnValue(reading.promise) });
             const decodeAudioData = vi.fn();
@@ -2174,7 +2559,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             latestAssetTransfer().options.onAssetAvailable('hash-1');
             await Promise.resolve();
             sessionRuntimePrimitives.cleanup();
-            sessionRuntimePrimitives.initialize('project-owner-2');
+            await sessionRuntimePrimitives.initialize('project-owner-2');
             reading.resolve(new ArrayBuffer(8));
             await reading.promise;
             await Promise.resolve();
@@ -2188,7 +2573,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         // arrived outlived its own successful retry for the whole session.
         it('clears a previous transfer failure once the asset resolves', async () => {
             collaborationStore.set(makeState());
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             latestAssetTransfer().options.onTransferFailed('hash-1', 'the sending peer stopped responding');
             expect(collaborationStore.value?.error).not.toBeNull();
 
@@ -2215,7 +2600,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          */
         it('leaves a live quarantine visible after an unrelated asset resolves', async () => {
             collaborationStore.set(makeState());
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             latestAutomergeSync().hooks.onSyncQuarantine?.({
                 peerId: 'peer-2',
                 docId: 'root',
@@ -2243,7 +2628,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('skips a clip whose asset hash does not match', async () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             latestAssetTransfer().getAsset.mockReturnValue({ arrayBuffer: vi.fn() });
             audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData: vi.fn() });
             trackStoreMock.value = {
@@ -2258,7 +2643,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('skips a matching clip that has no audioBufferId', async () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             latestAssetTransfer().getAsset.mockReturnValue({ arrayBuffer: vi.fn() });
             audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData: vi.fn() });
             trackStoreMock.value = { tracks: [{ clips: [{ id: 'c1', assetHash: 'hash-1' }] }] };
@@ -2271,7 +2656,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('skips decoding a clip whose buffer is already cached', async () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             const blob = { arrayBuffer: vi.fn() };
             latestAssetTransfer().getAsset.mockReturnValue(blob);
             const decodeAudioData = vi.fn();
@@ -2288,7 +2673,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         });
 
         it('logs a warning and continues when decoding fails for a clip', async () => {
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             const blob = { arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(4)) };
             latestAssetTransfer().getAsset.mockReturnValue(blob);
             const decodeAudioData = vi.fn().mockRejectedValue(new Error('bad codec'));
@@ -2307,9 +2692,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('startPlayheadBroadcast / stopPlayheadBroadcast', () => {
-        it('does not broadcast while no peers are connected', () => {
+        it('does not broadcast while no peers are connected', async () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(makeState({ localPeerId: 'local-1' }));
             latestPeerManager().getConnectedPeerIds.mockReturnValue([]);
 
@@ -2319,9 +2704,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(latestPeerManager().broadcastPresence).not.toHaveBeenCalled();
         });
 
-        it('does not broadcast when there is no active collaboration state', () => {
+        it('does not broadcast when there is no active collaboration state', async () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             latestPeerManager().getConnectedPeerIds.mockReturnValue(['peer-1']);
             collaborationStore.set(null);
 
@@ -2331,9 +2716,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(latestPeerManager().broadcastPresence).not.toHaveBeenCalled();
         });
 
-        it('broadcasts the local playhead position at ~4 Hz once peers are connected', () => {
+        it('broadcasts the local playhead position at ~4 Hz once peers are connected', async () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             latestPeerManager().getConnectedPeerIds.mockReturnValue(['peer-1']);
             collaborationStore.set(makeState({ localPeerId: 'local-1', localName: 'Me', localColor: '#3b82f6' }));
             transportStoreMock.value = { playheadPosition: 42 };
@@ -2351,9 +2736,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(latestPeerManager().broadcastPresence).toHaveBeenCalledTimes(2);
         });
 
-        it('defaults the playhead beat to null when the transport has no position yet', () => {
+        it('defaults the playhead beat to null when the transport has no position yet', async () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             latestPeerManager().getConnectedPeerIds.mockReturnValue(['peer-1']);
             collaborationStore.set(makeState({ localPeerId: 'local-1' }));
             transportStoreMock.value = null;
@@ -2365,9 +2750,9 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(call.data.playheadBeat).toBeNull();
         });
 
-        it('stops broadcasting once cleanup() clears the interval', () => {
+        it('stops broadcasting once cleanup() clears the interval', async () => {
             vi.useFakeTimers();
-            sessionRuntimePrimitives.initialize('project-owner-1');
+            await sessionRuntimePrimitives.initialize('project-owner-1');
             latestPeerManager().getConnectedPeerIds.mockReturnValue(['peer-1']);
             collaborationStore.set(makeState({ localPeerId: 'local-1' }));
 

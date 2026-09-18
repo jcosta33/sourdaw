@@ -91,7 +91,7 @@ describe('crustParamBridge', () => {
 
         setCrustParamWithAudio('d1', 'algorithm', 'aggressive');
 
-        expect(setCrustParam).toHaveBeenCalledWith('algorithm', 'aggressive');
+        expect(setCrustParam).toHaveBeenCalledWith('d1', 'algorithm', 'aggressive');
         expect(mockUpdateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'algorithm', 4);
         expect(mockPersistDeviceParam).toHaveBeenCalledWith('d1', 'algorithm', 4);
     });
@@ -110,8 +110,8 @@ describe('crustParamBridge', () => {
         // first-insertion order and style must land before the algorithm it derives.
         setCrustParamWithAudio('d1', 'style', 'loud');
 
-        expect(setCrustParam).toHaveBeenCalledWith('style', 'loud');
-        expect(setCrustParam).toHaveBeenCalledWith('algorithm', 'wall');
+        expect(setCrustParam).toHaveBeenCalledWith('d1', 'style', 'loud');
+        expect(setCrustParam).toHaveBeenCalledWith('d1', 'algorithm', 'wall');
 
         expect(mockUpdateDeviceParam).toHaveBeenCalledTimes(1);
         expect(mockUpdateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'style', 2);
@@ -134,7 +134,7 @@ describe('crustParamBridge', () => {
         // target line.
         setCrustParamWithAudio('d1', 'streamingPreset', 'ebu_r128');
 
-        expect(setCrustParam).toHaveBeenCalledWith('streamingPreset', 'ebu_r128');
+        expect(setCrustParam).toHaveBeenCalledWith('d1', 'streamingPreset', 'ebu_r128');
         // No engine index table for streamingPreset → no engine write.
         expect(mockUpdateDeviceParam).not.toHaveBeenCalled();
     });

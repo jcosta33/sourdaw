@@ -851,9 +851,17 @@ const guardedPayloadContractCases = [
         invalidPayloads: [
             { trackId: '', takeId: 'take-1' },
             { trackId: 'track-1', takeId: '' },
+            { trackId: 'track-1', takeId: null },
             { trackId: 'track-1' },
-            // `expectedSelectedTakeId` is internal replay metadata, rejected for providers.
+            // Owner and selection guards are internal replay metadata, rejected for providers.
+            { trackId: 'track-1', takeId: 'take-1', expectedLaneId: 'lane-1' },
             { trackId: 'track-1', takeId: 'take-1', expectedSelectedTakeId: 'take-2' },
+            {
+                trackId: 'track-1',
+                takeId: null,
+                expectedLaneId: 'lane-1',
+                expectedSelectedTakeId: 'take-2',
+            },
         ],
     }),
 ] as const;
@@ -868,6 +876,16 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(validatorEntry).toBeDefined();
             expect(validatorEntry?.[1]).toBeTypeOf('function');
         }
+    });
+
+    it('keeps internal take-selection replay fields out of the provider schema', () => {
+        const schema = getExecutableAppActionToolSchemas().find((candidate) => candidate.function.name === 'selectTake')
+            ?.function.parameters;
+
+        expect(schema).toBeDefined();
+        expect(Object.keys(schema?.properties ?? {})).toEqual(['trackId', 'takeId']);
+        expect(schema?.required).toEqual(['trackId', 'takeId']);
+        expect(schema?.additionalProperties).toBe(false);
     });
 
     describe('declared RuntimeAction payload contracts', () => {

@@ -30,6 +30,8 @@ import {
     composeDeliveryReceipt,
     fail,
     parseDeliveryReceipt,
+    PR_STATE,
+    TRUSTED_GATE_WORKFLOW_ENV,
     type DeliveryReceiptPayload,
 } from './prContract.ts';
 import {
@@ -75,6 +77,7 @@ export type PullRequestSnapshot = {
     additions: number;
     deletions: number;
     mergedByActorNodeId: string | null;
+    readonly mergeCommit?: { readonly oid: string } | null;
 };
 
 export type { ReviewState } from './pullRequestReviewState.ts';
@@ -116,6 +119,13 @@ export type DeliveryPort = CheckEvidencePort & {
         expectedCurrent?: DeliveryReceiptAuthorityExpectation
     ) => void;
     clearDeliveryReceiptAuthority: (number: number, expectedCurrent?: DeliveryReceiptAuthorityExpectation) => void;
+    readonly syncAuthorshipNotes?: (input: {
+        readonly mergeCommitSha: string;
+        readonly headSha: string;
+        readonly baseSha: string;
+        readonly headRef: string;
+        readonly baseRef: string;
+    }) => void;
     log: (message: string) => void;
 };
 
@@ -314,7 +324,7 @@ function validatePullRequest(
     checks: CheckEvidencePort,
     ciAdmissionMode: CiAdmissionMode
 ): void {
-    if (pullRequest.state !== 'OPEN') {
+    if (pullRequest.state !== PR_STATE.OPEN) {
         fail(`PR #${pullRequest.number} is ${pullRequest.state.toLowerCase()}`);
     }
     if (pullRequest.isDraft) {
@@ -450,19 +460,19 @@ function refreshStructuralMergeability(
 ): PullRequestSnapshot {
     let pullRequest = initial;
     observe?.(pullRequest);
-    if (pullRequest.state === 'MERGED' || pullRequest.state === 'CLOSED') {
+    if (pullRequest.state === PR_STATE.MERGED || pullRequest.state === PR_STATE.CLOSED) {
         return pullRequest;
     }
     for (
         let refreshes = 0;
-        pullRequest.state === 'OPEN' &&
+        pullRequest.state === PR_STATE.OPEN &&
         pullRequest.mergeable === 'UNKNOWN' &&
         refreshes < STRUCTURAL_MERGEABILITY_REFRESH_LIMIT;
         refreshes += 1
     ) {
         const refreshed = port.pullRequest(initial.number);
         observe?.(refreshed);
-        if (refreshed.state === 'MERGED' || refreshed.state === 'CLOSED') {
+        if (refreshed.state === PR_STATE.MERGED || refreshed.state === PR_STATE.CLOSED) {
             return refreshed;
         }
         validateStablePullRequest(initial, refreshed);
@@ -476,7 +486,7 @@ function resolveStructuralMergeability(
     port: Pick<DeliveryPort, 'pullRequest'>
 ): PullRequestSnapshot {
     const pullRequest = refreshStructuralMergeability(initial, port);
-    if (pullRequest.state === 'MERGED' || pullRequest.state === 'CLOSED') {
+    if (pullRequest.state === PR_STATE.MERGED || pullRequest.state === PR_STATE.CLOSED) {
         return pullRequest;
     }
     validateStructuralMergeability(pullRequest);
@@ -669,7 +679,6 @@ function isSuccessfulRequiredCheck(check: HeadCheckRun): boolean {
 const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
 const GATE_JOB_ID = 'gate';
 const EXPRESSION_OPENER = '${{';
-const GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
 
 /** One job as the workflow declares it. Every value is unresolved, because resolving one is a rule. */
 type WorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown; strategy?: unknown };
@@ -773,16 +782,18 @@ function workflowSummary(serialized: string): { jobs: WorkflowJobs; called: Call
     try {
         summary = JSON.parse(serialized);
     } catch (error) {
-        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} is not JSON: ${error instanceof Error ? error.message : ''}`);
+        failUnreadableWorkflow(
+            `${TRUSTED_GATE_WORKFLOW_ENV} is not JSON: ${error instanceof Error ? error.message : ''}`
+        );
     }
     if (!isRecord(summary)) {
-        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} is not a workflow summary`);
+        failUnreadableWorkflow(`${TRUSTED_GATE_WORKFLOW_ENV} is not a workflow summary`);
     }
     if (typeof summary.unreadable === 'string') {
         failUnreadableWorkflow(summary.unreadable);
     }
     if (!isRecord(summary.jobs)) {
-        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} carries no jobs mapping`);
+        failUnreadableWorkflow(`${TRUSTED_GATE_WORKFLOW_ENV} carries no jobs mapping`);
     }
     return { jobs: declaredJobs(summary.jobs, ''), called: calledWorkflows(summary.called) };
 }
@@ -813,7 +824,7 @@ function calledWorkflows(carried: unknown): CalledWorkflows {
         return called;
     }
     if (!isRecord(carried)) {
-        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} carries a called mapping that is not a mapping`);
+        failUnreadableWorkflow(`${TRUSTED_GATE_WORKFLOW_ENV} carries a called mapping that is not a mapping`);
     }
     for (const [usesPath, entry] of Object.entries(carried)) {
         if (!isRecord(entry)) {
@@ -1284,22 +1295,22 @@ function declaredCheckName(jobId: string, name: unknown, workflowPath: string): 
  * verdict — which is also what a `deliver` run outside the protected launcher looks like from here.
  */
 export function readGateRequiredCheckNames(env: NodeJS.ProcessEnv = process.env): ReadonlySet<string> {
-    const serialized = env[GATE_WORKFLOW_ENV];
+    const serialized = env[TRUSTED_GATE_WORKFLOW_ENV];
     if (serialized === undefined || serialized === '') {
         fail(
             `deliver must run through the protected primary checkout launcher, which passes ` +
-                `${GATE_WORKFLOW_ENV} from ${HEALTH_GATES_WORKFLOW_PATH} at the pinned origin/main commit`
+                `${TRUSTED_GATE_WORKFLOW_ENV} from ${HEALTH_GATES_WORKFLOW_PATH} at the pinned origin/main commit`
         );
     }
     return gateRequiredCheckNames(serialized);
 }
 
 export function readGateRequiredSkipAliases(env: NodeJS.ProcessEnv = process.env): ReadonlyMap<string, string> {
-    const serialized = env[GATE_WORKFLOW_ENV];
+    const serialized = env[TRUSTED_GATE_WORKFLOW_ENV];
     if (serialized === undefined || serialized === '') {
         fail(
             `deliver must run through the protected primary checkout launcher, which passes ` +
-                `${GATE_WORKFLOW_ENV} from ${HEALTH_GATES_WORKFLOW_PATH} at the pinned origin/main commit`
+                `${TRUSTED_GATE_WORKFLOW_ENV} from ${HEALTH_GATES_WORKFLOW_PATH} at the pinned origin/main commit`
         );
     }
     return gateRequiredSkipAliases(serialized);
@@ -1990,7 +2001,10 @@ function releaseStaleFrozenDeliveryReceiptAuthorityBeforeOpenRetry(
 }
 
 function shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(pullRequest: PullRequestSnapshot): boolean {
-    return pullRequest.state === 'CLOSED' || (pullRequest.state === 'OPEN' && pullRequest.mergeable !== 'UNKNOWN');
+    return (
+        pullRequest.state === PR_STATE.CLOSED ||
+        (pullRequest.state === PR_STATE.OPEN && pullRequest.mergeable !== 'UNKNOWN')
+    );
 }
 
 function restoreDeliveryReceiptAuthorityBeforeClosedRetry(number: number, port: DeliveryPort): void {
@@ -2045,7 +2059,7 @@ function resolveFinalSnapshotWithRestorablePreparedAuthority(
                 latestDefinitiveUnmerged = pullRequest;
             }
         });
-        if (finalSnapshot.state !== 'MERGED') {
+        if (finalSnapshot.state !== PR_STATE.MERGED) {
             validateStructuralMergeability(finalSnapshot);
         }
         return finalSnapshot;
@@ -2078,28 +2092,28 @@ function tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
         port.fetch();
         const raw = port.pullRequest(number);
         latestObserved = raw;
-        if (raw.state === 'MERGED') {
+        if (raw.state === PR_STATE.MERGED) {
             return;
         }
-        if (raw.state === 'CLOSED') {
+        if (raw.state === PR_STATE.CLOSED) {
             restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
             return;
         }
-        if (raw.state !== 'OPEN') {
+        if (raw.state !== PR_STATE.OPEN) {
             return;
         }
         const current = refreshStructuralMergeability(raw, port, (pullRequest) => {
             latestObserved = pullRequest;
         });
         latestObserved = current;
-        if (current.state === 'MERGED') {
+        if (current.state === PR_STATE.MERGED) {
             return;
         }
-        if (current.state === 'OPEN' && current.mergeable === 'CONFLICTING') {
+        if (current.state === PR_STATE.OPEN && current.mergeable === 'CONFLICTING') {
             restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
             return;
         }
-        if (current.state !== 'OPEN' && current.state !== 'CLOSED') {
+        if (current.state !== PR_STATE.OPEN && current.state !== PR_STATE.CLOSED) {
             return;
         }
     } catch {
@@ -2595,7 +2609,7 @@ function ensureDeliveryReceipt(
 
 function validateDependent(current: PullRequestSnapshot, expected: StackedPullRequest): void {
     if (
-        current.state !== 'OPEN' ||
+        current.state !== PR_STATE.OPEN ||
         current.headRefOid !== expected.headRefOid ||
         current.headRefName !== expected.headRefName ||
         current.baseRefName !== expected.baseRefName
@@ -2614,7 +2628,7 @@ function validateDependentSet(before: StackedPullRequest[], after: StackedPullRe
         const current = afterByNumber.get(number);
         if (
             current === undefined ||
-            current.state !== 'OPEN' ||
+            current.state !== PR_STATE.OPEN ||
             current.headRefOid !== expected.headRefOid ||
             current.headRefName !== expected.headRefName ||
             current.baseRefName !== expected.baseRefName
@@ -2629,7 +2643,7 @@ function retargetDependents(dependents: StackedPullRequest[], baseBranch: string
         port.retarget(dependent.number, baseBranch);
         const retargeted = port.pullRequest(dependent.number);
         if (
-            retargeted.state !== 'OPEN' ||
+            retargeted.state !== PR_STATE.OPEN ||
             retargeted.headRefOid !== dependent.headRefOid ||
             retargeted.baseRefName !== baseBranch
         ) {
@@ -2687,7 +2701,7 @@ function validateFreshMerger(pullRequest: PullRequestSnapshot): void {
 
 function validateHistoricalMerger(pullRequest: PullRequestSnapshot): void {
     if (
-        pullRequest.state !== 'MERGED' ||
+        pullRequest.state !== PR_STATE.MERGED ||
         (!isAuthorBotNodeId(pullRequest.mergedByActorNodeId) &&
             !isOrchestratorUserNodeId(pullRequest.mergedByActorNodeId))
     ) {
@@ -2704,15 +2718,15 @@ function deliverPullRequestWithCiAdmission(
 ): void {
     port.fetch();
     const rawInitial = port.pullRequest(number);
-    if (rawInitial.state === 'CLOSED') {
+    if (rawInitial.state === PR_STATE.CLOSED) {
         restoreDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
     }
     const initial = resolveStructuralMergeability(rawInitial, port);
-    if (initial.state === 'CLOSED') {
+    if (initial.state === PR_STATE.CLOSED) {
         restoreDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
     }
-    if (initial.state === 'MERGED') {
-        if (rawInitial.state !== 'MERGED') {
+    if (initial.state === PR_STATE.MERGED) {
+        if (rawInitial.state !== PR_STATE.MERGED) {
             validateFreshMerger(initial);
         }
         validateBaseBranch(initial);
@@ -2794,7 +2808,7 @@ function deliverPullRequestWithCiAdmission(
         finalFetchArmedAuthority,
         port
     );
-    if (finalSnapshot.state === 'MERGED') {
+    if (finalSnapshot.state === PR_STATE.MERGED) {
         validateFreshMerger(finalSnapshot);
         validatePostMergeSnapshot(preparedPostMergeValidation, finalSnapshot, number);
         const recoveredReceipt = readStableExactDeliveryReceipt(finalSnapshot, port, receipt.id);
@@ -2921,6 +2935,15 @@ function deliverPullRequestWithCiAdmission(
         finalDependents.map((dependent) => dependent.number)
     );
     completeIssueAfterMerge(number, finalReceiptPayload.closingIssue, tracker);
+    if (mergedSnapshot.mergeCommit?.oid) {
+        port.syncAuthorshipNotes?.({
+            mergeCommitSha: mergedSnapshot.mergeCommit.oid,
+            headSha: finalSnapshot.headRefOid,
+            baseSha: finalSnapshot.baseRefOid,
+            headRef: finalSnapshot.headRefName,
+            baseRef: finalSnapshot.baseRefName,
+        });
+    }
     persistTerminalDeliveryReceiptAuthority(
         number,
         finalReceipt,
@@ -2964,17 +2987,27 @@ function capture(command: string, args: string[]): string {
     return result.stdout.trim();
 }
 
-function run(command: string, args: string[]): void {
+export function run(command: string, args: string[]): void {
     const result = spawnSync(command, args, {
         cwd: process.cwd(),
-        stdio: 'inherit',
+        // stderr is captured rather than inherited so a failing child names its own failure —
+        // the git-ai authorship sync's exit 1 was unattributable without it (#4344).
+        stdio: ['inherit', 'inherit', 'pipe'],
+        maxBuffer: 64 * 1024 * 1024,
         shell: false,
         ...(command === 'git' ? { env: trustedDeliveryGitEnv() } : {}),
     });
     if (result.error !== undefined) {
         throw result.error;
     }
+    if (result.stderr !== null && result.stderr.length > 0) {
+        console.error(result.stderr.toString().trim());
+    }
     if (result.status !== 0) {
+        const stderr = result.stderr === null ? '' : result.stderr.toString().trim();
+        if (stderr !== '') {
+            throw new Error(`${command} failed with exit ${result.status ?? 'signal'}: ${stderr}`);
+        }
         throw new Error(`${command} failed with exit ${result.status ?? 'signal'}`);
     }
 }
@@ -3486,6 +3519,7 @@ export function shellPort(
         'additions',
         'deletions',
         'mergedBy',
+        'mergeCommit',
     ].join(',');
     const readRollupPage = (number: number, headRefOid: string, cursor: string | null): RollupPage =>
         parseRollupPage(
@@ -3517,18 +3551,25 @@ export function shellPort(
                         '--prune',
                         GITHUB_HTTPS_REMOTE,
                         '+refs/heads/*:refs/remotes/origin/*',
+                        '+refs/notes/ai:refs/notes/ai',
                     ])
                 );
                 return;
             }
-            shell.run('git', ['fetch', '--prune', 'origin']);
+            shell.run('git', [
+                'fetch',
+                '--prune',
+                'origin',
+                '+refs/heads/*:refs/remotes/origin/*',
+                '+refs/notes/ai:refs/notes/ai',
+            ]);
         },
         pullRequest: (number) => {
             const snapshot = toPullRequestSnapshot(
                 shell.capture('gh', ['pr', 'view', String(number), '--repo', repository, '--json', pullRequestFields]),
                 number
             );
-            if (snapshot.state !== 'MERGED') {
+            if (snapshot.state !== PR_STATE.MERGED) {
                 return snapshot;
             }
             return {
@@ -3663,6 +3704,47 @@ export function shellPort(
             writeDeliveryReceiptAuthority(primaryRoot, number, authority, expectedCurrent),
         clearDeliveryReceiptAuthority: (number, expectedCurrent) =>
             clearDeliveryReceiptAuthority(primaryRoot, number, expectedCurrent),
+        syncAuthorshipNotes: ({ mergeCommitSha, headSha, baseSha, headRef, baseRef }) => {
+            try {
+                // The launcher-bounded child PATH carries only resolved executables; git-ai
+                // reaches it through the trusted path the launcher freezes when present.
+                shell.run(process.env.SOURDAW_TRUSTED_GIT_AI_PATH ?? 'git-ai', [
+                    'ci',
+                    'local',
+                    'merge',
+                    '--merge-commit-sha',
+                    mergeCommitSha,
+                    '--base-ref',
+                    baseRef,
+                    '--base-sha',
+                    baseSha,
+                    '--head-ref',
+                    headRef,
+                    '--head-sha',
+                    headSha,
+                    '--skip-fetch',
+                    '--skip-push',
+                ]);
+                if (options.gitToken) {
+                    const helperDir =
+                        options.helperDir ?? fail('authenticated git push requires a credential helper directory');
+                    shell.run(
+                        'git',
+                        gitAuthenticatedArgs(options.gitToken, helperDir, [
+                            'push',
+                            GITHUB_HTTPS_REMOTE,
+                            'refs/notes/ai:refs/notes/ai',
+                        ])
+                    );
+                } else {
+                    shell.run('git', ['push', 'origin', 'refs/notes/ai:refs/notes/ai']);
+                }
+            } catch (error) {
+                console.warn(
+                    `warning: git-ai authorship sync skipped: ${error instanceof Error ? error.message : String(error)}`
+                );
+            }
+        },
         log: (message) => console.log(message),
     };
 }

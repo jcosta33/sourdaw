@@ -27,16 +27,17 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     loadCrdtProject: vi.fn(),
     mutateCrdtDoc: vi.fn(),
     persistCrdtProject: vi.fn(),
-    preserveBranchStateForSession: vi.fn(),
+    beginBranchSession: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     projectCrdtToStores: vi.fn(),
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
-    replaceBranchState: vi.fn(),
+    projectBranchSession: vi.fn(),
     replaceCrdtDoc: vi.fn(),
     replaceCrdtDocInLineage: vi.fn(),
     resetCrdtProjectAuthority: vi.fn(),
-    restoreBranchStateAfterSession: vi.fn(),
+    resetCrdtProject: vi.fn(),
+    endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
     setupProjectionBridge: vi.fn(),
@@ -69,6 +70,9 @@ vi.mock('../agentReference/registerPreparedStemImportResources', () => ({
 }));
 
 import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
+import { DEFAULT_AGENT_RESOURCE_LIMITS, describeAgentRunCreationRefusal } from '../../models/AgentResourceLimits';
+import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { readAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { planPromptActions } from '../planPromptActions';
@@ -87,6 +91,7 @@ describe('planPromptActions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         agentRunLifecycle.clear();
+        agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
         mocks.captureProjectRevision.mockReset().mockReturnValue('rev-1');
         mocks.settlePendingProjectWritesAndCaptureRevision.mockReset().mockReturnValue('rev-1');
         mocks.getProjectContext.mockReset().mockReturnValue({ tracks: [] });
@@ -128,6 +133,28 @@ describe('planPromptActions', () => {
 
         const result = await planPromptActions({ prompt: 'unclear prompt' });
         expect(result.result.actions).toEqual([]);
+    });
+
+    it('denies an unadmitted planning request at the configured concurrency ceiling', async () => {
+        agentResourceLimitsStore.set({ ...DEFAULT_AGENT_RESOURCE_LIMITS, concurrentRuns: 1 });
+        agentRunLifecycle.create({
+            runId: 'occupying-run',
+            request: 'Arrange this project.',
+            mode: 'apply',
+            createdRevision: 'rev-1',
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'occupying-run', phase: 'planning' });
+        mocks.parsePromptToActions.mockResolvedValue({ actions: [{ type: 'testAction' }], raw: 'parsed' });
+
+        const result = await planPromptActions({ prompt: 'do something' });
+
+        expect(result.result.planningOutcome).toEqual({
+            kind: 'denied',
+            reason: describeAgentRunCreationRefusal('concurrentRuns'),
+        });
+        expect(result.result.actions).toEqual([]);
+        expect(mocks.parsePromptToActions).not.toHaveBeenCalled();
+        expect(readAgentRunState().runs.map((run) => run.runId)).toEqual(['occupying-run']);
     });
 
     it('does not start a model correction without application-owned attempt admission', async () => {

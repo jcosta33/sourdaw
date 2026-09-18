@@ -10,15 +10,25 @@
  */
 
 import { isProofRuntimeParameterId, PROOF_RUNTIME_PARAMETER_COUNT } from '../models/ProofRuntimeControl';
+import { SET_FALLBACK_PARAM_COMMAND } from '../models/RuntimeDeviceControl';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ProofInstance } from '../wasm/daw_dsp.js';
 
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 
+/**
+ * Port message discriminants, restated from the app-side owner
+ * `src/infra/audioWorklet/workletPortMessages.ts` because this processor runs
+ * in the isolated worklet realm and must not import app-side code; pinned
+ * equal by `__tests__/workletPortMessageParity.spec.ts`.
+ */
+export const INIT_SAB_MESSAGE_TYPE = 'init-sab';
+export const LATENCY_CHANGED_MESSAGE_TYPE = 'latency-changed';
+
 type ProofMsg =
     | { type: 'init' }
-    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
+    | { type: typeof INIT_SAB_MESSAGE_TYPE; sab: SharedArrayBuffer; byteOffset: number }
     | { type: 'param'; name: string; value: number }
     | { type: 'reorder'; order: [number, number, number, number, number] }
     | { type: 'reset_integrated' };
@@ -289,7 +299,7 @@ class ProofProcessor extends AudioWorkletProcessor {
                     }
                     this._initWasm(wasmModule);
                     wasmModule = null;
-                } else if (msg.type === 'init-sab') {
+                } else if (msg.type === INIT_SAB_MESSAGE_TYPE) {
                     this._initTelemetrySlot(msg.sab, msg.byteOffset);
                 } else if (this._initializeFallbackControl(msg)) {
                     return;
@@ -429,7 +439,7 @@ class ProofProcessor extends AudioWorkletProcessor {
             if (
                 !only(msg, ['schemaVersion', 'command', 'target', 'value', 'correlation', 'scheduling']) ||
                 msg.schemaVersion !== 1 ||
-                msg.command !== 'set-fallback-param' ||
+                msg.command !== SET_FALLBACK_PARAM_COMMAND ||
                 !isRecord(msg.target) ||
                 !only(msg.target, ['trackId', 'deviceId', 'deviceType', 'parameterId']) ||
                 !isProofRuntimeParameterId(msg.target.parameterId) ||
@@ -461,7 +471,7 @@ class ProofProcessor extends AudioWorkletProcessor {
             inst.set_param(msg.target.parameterId, clampToRange(msg.target.parameterId, msg.value));
             const newLatency = inst.get_latency_samples();
             if (newLatency !== oldLatency) {
-                this.port.postMessage({ type: 'latency-changed', latency: newLatency });
+                this.port.postMessage({ type: LATENCY_CHANGED_MESSAGE_TYPE, latency: newLatency });
             }
             return;
         }
@@ -469,7 +479,7 @@ class ProofProcessor extends AudioWorkletProcessor {
         const oldLatency = inst.get_latency_samples();
 
         switch ((msg as ProofMsg).type) {
-            case 'init-sab':
+            case INIT_SAB_MESSAGE_TYPE:
             case 'init':
                 break;
             case 'param': {
@@ -502,7 +512,7 @@ class ProofProcessor extends AudioWorkletProcessor {
 
         const newLatency = inst.get_latency_samples();
         if (newLatency !== oldLatency) {
-            this.port.postMessage({ type: 'latency-changed', latency: newLatency });
+            this.port.postMessage({ type: LATENCY_CHANGED_MESSAGE_TYPE, latency: newLatency });
         }
     }
 

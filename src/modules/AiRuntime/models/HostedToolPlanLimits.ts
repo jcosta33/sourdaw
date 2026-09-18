@@ -5,10 +5,11 @@
  * claude-sonnet-5, the catalog default) while giving the planner enough room that a
  * legitimate plan is never cut mid-call.
  *
- * Both the compiled provider request that admits a tool-planning attempt
- * (`llmOrchestration/inference.ts`) and wire requests across Anthropic, OpenAI-compatible,
- * and WebLLM must derive their output token limit from this constant. Two independently
- * declared numbers can only stay equal by coincidence — the admission ceiling and the
- * request that runs would otherwise be free to drift apart.
+ * This constant is the default of the `maxModelOutputTokens` resource limit, not the value a
+ * request carries: the compiled provider request that admits a tool-planning attempt
+ * (`llmOrchestration/inference.ts`) reads the configured limit, and wire requests across
+ * Anthropic, OpenAI-compatible, and WebLLM derive their output token limit from what that
+ * request admitted. Two independently declared numbers can only stay equal by coincidence — the
+ * admission ceiling and the request that runs would otherwise be free to drift apart.
  */
 export const TOOL_PLAN_MAX_OUTPUT_TOKENS = 8192;

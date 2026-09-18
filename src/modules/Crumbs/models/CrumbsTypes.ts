@@ -61,6 +61,18 @@ export type EnvelopeParams = {
     release: number;
 };
 
+/**
+ * What `create_crumbs` left behind, as the caller reads it.
+ *
+ * `attached` is false when the instance was created before any engine was
+ * running: the native side parks it dormant and the next graph batch takes it
+ * over, reporting it as `attachedCrumbs`. Nothing else revises this answer, so
+ * a caller that mirrors the attach state has to read both reports.
+ */
+export type CrumbsCreateResult = {
+    attached: boolean;
+};
+
 export type CrumbsLoadResult = {
     sampleId: number;
     sampleRate: number;

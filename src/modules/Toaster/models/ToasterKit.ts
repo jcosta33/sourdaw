@@ -236,8 +236,16 @@ export function withActivePatternId(kit: ToasterKit, patternId: string): Toaster
     return { ...kit, activePatternId: patternId };
 }
 
+/**
+ * Pads on the Toaster's playing surface. 16-levels mode, the pad grid, the
+ * pad mixer, and the default kit all address exactly this many pads — a
+ * surface that sized itself differently from the mode that spreads one pad
+ * across it would leave pads unreachable or steps with no pad.
+ */
+export const TOASTER_PAD_COUNT = 16;
+
 export function createDefaultKit(): ToasterKit {
-    const numPads = 16;
+    const numPads = TOASTER_PAD_COUNT;
     return {
         version: 1,
         name: 'Plain Bread',

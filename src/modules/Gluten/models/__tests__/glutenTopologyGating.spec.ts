@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { readRustConstReferences, type RustConstReferences } from '#/infra/testing/__tests__/rustConstReferences';
+
 import { DEFAULT_PATCH, type GlutenPatch, type GlutenTopology } from '../GlutenPatch';
 import {
     GLUTEN_PATCH_STATE_GAPS,
@@ -49,7 +51,12 @@ import {
  * an earlier revision of this file shipped with only that one — which made the
  * census blind by construction to the other two rather than merely incomplete.
  *
- * - **`set-param`** — derived from the four structs' arms, as above.
+ * - **`set-param`** — derived from the four structs' arms, as above. Since the
+ *   shared-constants campaign an arm element may be an all-caps const
+ *   (`THRESHOLD =>` in `vca.rs`) rather than a quoted literal; it resolves to
+ *   its wire name through `readRustConstReferences`, and a const that resolves
+ *   to no literal `&str` is reported by the fail-closed check rather than
+ *   guessed at.
  * - **detector routing** — every configured detector stage is derived from
  *   `engine.rs`, then `process_topology` is checked to prove all four topology
  *   calls consume the conditioned detector.
@@ -100,17 +107,50 @@ function readSource(relativePath: string): string {
  *
  * `\s*` between the alternatives spans newlines, so the multi-line form
  * (`"knee"\n| "range" => …`) is read too.
+ *
+ * ## Const arm elements
+ *
+ * Since the shared-constants campaign, an arm element may be an all-caps const
+ * the file imports (`THRESHOLD =>`, `ATTACK =>`) rather than a quoted literal.
+ * The const resolves to its wire name through `readRustConstReferences`, which
+ * follows the file's `use` to the defining module and reads the literal there.
+ * A const that resolves to no literal `&str` — an unimported name, a computed
+ * value — contributes no name, and `uncapturedArmNames` below reports it
+ * rather than letting the arm vanish from the population in silence. All-caps
+ * only, so a `_ =>` wildcard, an enum variant (`None =>`), and a local
+ * binding can never pose as a wire name.
  */
-const ARM_HEAD_PATTERN = /^[ \t]*("[a-z0-9_]+"(?:\s*\|\s*"[a-z0-9_]+")*)\s*=>/gm;
+const ARM_ELEMENT = String.raw`(?:"[a-z0-9_]+"|[A-Z][A-Z0-9_]*)`;
+const ARM_HEAD_PATTERN = new RegExp(String.raw`^[ \t]*(${ARM_ELEMENT}(?:\s*\|\s*${ARM_ELEMENT})*)\s*=>`, 'gm');
 
-type ArmHead = { readonly names: string[]; readonly start: number; readonly end: number };
+type ArmHead = {
+    readonly names: string[];
+    /** The const identifiers that resolved, so the fail-closed check can tell them from unread ones. */
+    readonly resolvedConsts: string[];
+    readonly start: number;
+    readonly end: number;
+};
 
-function readArmHeads(block: string): ArmHead[] {
-    return [...block.matchAll(ARM_HEAD_PATTERN)].map((match) => ({
-        names: [...match[1]!.matchAll(/"([a-z0-9_]+)"/g)].map((name) => name[1]!),
-        start: match.index,
-        end: match.index + match[0].length,
-    }));
+function readArmHeads(block: string, references: RustConstReferences): ArmHead[] {
+    const heads: ArmHead[] = [];
+    for (const match of block.matchAll(ARM_HEAD_PATTERN)) {
+        const names: string[] = [];
+        const resolvedConsts: string[] = [];
+        for (const element of match[1]!.matchAll(/"([a-z0-9_]+)"|([A-Z][A-Z0-9_]*)/g)) {
+            if (element[1] !== undefined) {
+                names.push(element[1]);
+                continue;
+            }
+            const wireName = references.wireName(element[2]!);
+            if (wireName === null) {
+                continue;
+            }
+            names.push(wireName);
+            resolvedConsts.push(element[2]!);
+        }
+        heads.push({ names, resolvedConsts, start: match.index, end: match.index + match[0].length });
+    }
+    return heads;
 }
 
 /**
@@ -119,21 +159,37 @@ function readArmHeads(block: string): ArmHead[] {
  *
  * Capturing the or-pattern fixes the shape known today. This reds on the shape
  * nobody has thought of yet: any line inside the `match` that begins with a
- * quoted name or with `|` is an arm head or its continuation, so every literal
- * on it must have been read. An arm written in a form this parse cannot see
- * therefore fails the spec instead of silently narrowing the population it
- * derives.
+ * quoted name, with `|`, or with an all-caps const identifier is an arm head
+ * or its continuation, so every element before its `=>` must have been read —
+ * a quoted name must be captured, a const must have resolved. Elements after
+ * the `=>` are arm *body*, not head (`THRESHOLD => … value.clamp(THRESHOLD_MIN_DB,
+ * …)` carries bound consts after the arrow), so they are not demanded here. An
+ * arm written in a form this parse cannot see therefore fails the spec instead
+ * of silently narrowing the population it derives.
  */
-function uncapturedArmNames(block: string, captured: ReadonlySet<string>): string[] {
+function uncapturedArmNames(
+    block: string,
+    captured: ReadonlySet<string>,
+    resolvedConsts: ReadonlySet<string>
+): string[] {
     const missed: string[] = [];
     for (const line of block.split('\n')) {
         const trimmed = line.trim();
-        if (!trimmed.startsWith('"') && !trimmed.startsWith('|')) {
+        const constHead = /^[A-Z][A-Z0-9_]*(?!\w)/.test(trimmed);
+        if (!trimmed.startsWith('"') && !trimmed.startsWith('|') && !constHead) {
             continue;
         }
-        for (const match of trimmed.matchAll(/"([a-z0-9_]+)"/g)) {
-            if (!captured.has(match[1]!)) {
-                missed.push(match[1]!);
+        const arrow = trimmed.indexOf('=>');
+        const headPart = arrow === -1 ? trimmed : trimmed.slice(0, arrow);
+        for (const element of headPart.matchAll(/"([a-z0-9_]+)"|([A-Z][A-Z0-9_]*)/g)) {
+            if (element[1] !== undefined) {
+                if (!captured.has(element[1])) {
+                    missed.push(element[1]);
+                }
+                continue;
+            }
+            if (!resolvedConsts.has(element[2]!)) {
+                missed.push(element[2]!);
             }
         }
     }
@@ -164,10 +220,13 @@ function readSetParamBlock(relativePath: string): string {
  */
 function readSetParamArms(relativePath: string): Set<string> {
     const block = readSetParamBlock(relativePath);
-    const captured = new Set(readArmHeads(block).flatMap((arm) => arm.names));
+    const references = readRustConstReferences(join(REPO_ROOT, relativePath));
+    const heads = readArmHeads(block, references);
+    const captured = new Set(heads.flatMap((arm) => arm.names));
+    const resolvedConsts = new Set(heads.flatMap((arm) => arm.resolvedConsts));
 
     expect(
-        uncapturedArmNames(block, captured),
+        uncapturedArmNames(block, captured, resolvedConsts),
         `${relativePath} has match arms this spec cannot read — the derived population would be too wide`
     ).toEqual([]);
 
@@ -216,7 +275,7 @@ function censusFor(topology: GlutenTopology): string[] {
  */
 function readEngineArmBodies(): Map<string, string> {
     const block = readSetParamBlock(ENGINE_SOURCE);
-    const arms = readArmHeads(block);
+    const arms = readArmHeads(block, readRustConstReferences(join(REPO_ROOT, ENGINE_SOURCE)));
 
     const bodies = new Map<string, string>();
     for (const [index, arm] of arms.entries()) {
@@ -296,9 +355,18 @@ describe('the set_param arm reader', () => {
         '            "knee"\n            | "range" => {\n                self.x = value;\n            }\n';
     const NESTED_CALL =
         '            "amount" => {\n                self.vca.set_param("threshold", t);\n            }\n';
+    const CONST_ARM =
+        '            THRESHOLD => {\n                self.x = value.clamp(THRESHOLD_MIN_DB, THRESHOLD_MAX_DB);\n            }\n';
 
-    function namesIn(block: string): string[] {
-        return readArmHeads(block)
+    /** Stands in for `crate::params`: `THRESHOLD`/`ATTACK` are wire names, the bounds are numbers. */
+    const RESOLVING: RustConstReferences = {
+        wireName: (identifier) => ({ ATTACK: 'attack', THRESHOLD: 'threshold' })[identifier] ?? null,
+        number: () => null,
+    };
+    const UNRESOLVING: RustConstReferences = { wireName: () => null, number: () => null };
+
+    function namesIn(block: string, references: RustConstReferences = UNRESOLVING): string[] {
+        return readArmHeads(block, references)
             .flatMap((arm) => arm.names)
             .sort();
     }
@@ -313,28 +381,54 @@ describe('the set_param arm reader', () => {
 
     it('still refuses a nested set_param call that is not an arm', () => {
         // The other half of the bound: `GlutenEngine`'s `amount` arm *calls*
-        // `self.vca.set_param("threshold", …)`, and reading that as an arm
+        // `self.vca.set_param("threshold", ...)`, and reading that as an arm
         // would file `threshold` as engine-handled and drop it out of the
         // forwarded population entirely.
         expect(namesIn(NESTED_CALL)).toEqual(['amount']);
     });
 
     it('maps every name of an or-pattern to the arm’s one body', () => {
-        const [arm] = readArmHeads('            "knee" | "range" => { self.x = value; }\n');
+        const [arm] = readArmHeads('            "knee" | "range" => { self.x = value; }\n', UNRESOLVING);
         expect(arm?.names).toEqual(['knee', 'range']);
     });
 
+    it('reads a const arm through the wire name it imports', () => {
+        expect(namesIn(CONST_ARM, RESOLVING)).toEqual(['threshold']);
+    });
+
+    it('reads a mixed or-pattern of literals and consts', () => {
+        const block = '            "knee" | THRESHOLD => {\n                self.x = value;\n            }\n';
+        expect(namesIn(block, RESOLVING)).toEqual(['knee', 'threshold']);
+    });
+
     it('reports a name it could not read as an arm head', () => {
-        // Fail-closed. A guard arm (`"knee" if … =>`) is a shape this parse
+        // Fail-closed. A guard arm (`"knee" if ... =>`) is a shape this parse
         // cannot read, and reading zero arms from it would widen the derived
         // gap population in silence.
         const block = '            "knee" if value > 0.0 => {\n                self.x = value;\n            }\n';
-        expect(uncapturedArmNames(block, new Set(namesIn(block)))).toEqual(['knee']);
+        expect(uncapturedArmNames(block, new Set(namesIn(block)), new Set())).toEqual(['knee']);
+    });
+
+    it('reports an unresolvable const arm rather than guessing its wire name', () => {
+        // The const twin of the guard-arm case: an arm element whose const
+        // resolves to no literal `&str` must surface here, because the arm
+        // itself contributed no name and the derived population would widen
+        // in silence otherwise.
+        expect(readArmHeads(CONST_ARM, UNRESOLVING)[0]?.names).toEqual([]);
+        expect(uncapturedArmNames(CONST_ARM, new Set(), new Set())).toEqual(['THRESHOLD']);
+    });
+
+    it('does not demand the bound consts that follow the arrow', () => {
+        // `THRESHOLD_MIN_DB`/`THRESHOLD_MAX_DB` sit in the arm *body*; they
+        // name clamp bounds, not wire names, and demanding them would red
+        // every const arm this reader just learned to read.
+        const resolvedConsts = new Set(readArmHeads(CONST_ARM, RESOLVING).flatMap((arm) => arm.resolvedConsts));
+        expect(uncapturedArmNames(CONST_ARM, new Set(['threshold']), resolvedConsts)).toEqual([]);
     });
 
     it('reports nothing when every arm head was read', () => {
         const block = '            "knee" | "range" => {\n                self.x = value;\n            }\n';
-        expect(uncapturedArmNames(block, new Set(namesIn(block)))).toEqual([]);
+        expect(uncapturedArmNames(block, new Set(namesIn(block)), new Set())).toEqual([]);
     });
 });
 
