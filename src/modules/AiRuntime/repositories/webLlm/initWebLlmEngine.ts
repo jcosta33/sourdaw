@@ -5,6 +5,7 @@ import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 
 import { engineState, type WebLlmEngine } from './engineLifecycleState';
+import { retireWebLlmEngine } from './retireWebLlmEngine';
 import { unloadWebLlmEngine } from './unloadWebLlmEngine';
 import { admitWebLlmModelArtifacts } from './webLlmArtifactAdmission';
 import { getWebLlmArtifactManifestModel } from './webLlmArtifactManifest';
@@ -124,24 +125,29 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts })(
 
                         let created: Awaited<ReturnType<typeof CreateWebWorkerMLCEngine>>;
                         try {
-                            created = await CreateWebWorkerMLCEngine(
+                            created = await raceWorkerEngineCreation({
                                 worker,
-                                targetModel,
-                                {
-                                    appConfig: verifiedAdmission.appConfig,
-                                    initProgressCallback: (report: { progress: number; text: string }) => {
-                                        if (attemptSignal.aborted || engineState.initAttemptId !== attemptId) {
-                                            return;
-                                        }
-                                        llmStatusStore.set({
-                                            state: 'loading',
-                                            progress: report.progress,
-                                            text: report.text,
-                                        });
-                                    },
-                                },
-                                { context_window_size: 8192 }
-                            );
+                                signal: attemptSignal,
+                                create: () =>
+                                    CreateWebWorkerMLCEngine(
+                                        worker,
+                                        targetModel,
+                                        {
+                                            appConfig: verifiedAdmission.appConfig,
+                                            initProgressCallback: (report: { progress: number; text: string }) => {
+                                                if (attemptSignal.aborted || engineState.initAttemptId !== attemptId) {
+                                                    return;
+                                                }
+                                                llmStatusStore.set({
+                                                    state: 'loading',
+                                                    progress: report.progress,
+                                                    text: report.text,
+                                                });
+                                            },
+                                        },
+                                        { context_window_size: 8192 }
+                                    ),
+                            });
                         } finally {
                             attemptSignal.removeEventListener('abort', handleAbort);
                         }
@@ -174,6 +180,7 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts })(
 
                 engineState.engine = initializedEngine;
                 engineState.activeArtifactSetDigest = admission.artifactSetDigest;
+                installWorkerRetirement(workerForAttempt(attemptWorker), initializedEngine);
                 if (!attemptSignal.aborted) {
                     llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: targetModel });
                 }
@@ -267,4 +274,59 @@ function waitForWebLlmAttempt({ attemptId, promise, signal }: WaitForWebLlmAttem
             }
         );
     });
+}
+
+function workerForAttempt(worker: Worker | null): Worker {
+    if (!worker) {
+        throw new Error('WebLLM worker was lost before engine initialization completed');
+    }
+    return worker;
+}
+
+function createWorkerFailure(event: Event): Error {
+    if ('error' in event && event.error instanceof Error) {
+        return event.error;
+    }
+    return new Error('WebLLM worker failed');
+}
+
+function raceWorkerEngineCreation<Engine>(input: {
+    worker: Worker;
+    signal: AbortSignal;
+    create: () => Promise<Engine>;
+}): Promise<Engine> {
+    return new Promise<Engine>((resolve, reject) => {
+        let settled = false;
+        function finish(callback: () => void): void {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            input.signal.removeEventListener('abort', onAbort);
+            input.worker.removeEventListener('error', onWorkerFailure);
+            input.worker.removeEventListener('messageerror', onWorkerFailure);
+            callback();
+        }
+        function onAbort(): void {
+            finish(() => reject(input.signal.reason));
+        }
+        function onWorkerFailure(event: Event): void {
+            finish(() => reject(createWorkerFailure(event)));
+        }
+        input.signal.addEventListener('abort', onAbort, { once: true });
+        input.worker.addEventListener('error', onWorkerFailure, { once: true });
+        input.worker.addEventListener('messageerror', onWorkerFailure, { once: true });
+        void input.create().then(
+            (engine) => finish(() => resolve(engine)),
+            (error: unknown) => finish(() => reject(error))
+        );
+    });
+}
+
+function installWorkerRetirement(worker: Worker, engine: WebLlmEngine): void {
+    function retire(event: Event): void {
+        retireWebLlmEngine(engine, createWorkerFailure(event));
+    }
+    worker.addEventListener('error', retire, { once: true });
+    worker.addEventListener('messageerror', retire, { once: true });
 }
