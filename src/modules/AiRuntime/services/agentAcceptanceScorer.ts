@@ -72,7 +72,8 @@ function classMetrics(
     const precision = truePositives + falsePositives === 0 ? 1 : truePositives / (truePositives + falsePositives);
     const recall = truePositives + falseNegatives === 0 ? 1 : truePositives / (truePositives + falseNegatives);
     const f1 = precision + recall === 0 ? 0 : (2 * precision * recall) / (precision + recall);
-    return { precision, recall, f1 };
+    const support = results.filter((result) => result.class === outcomeClass).length;
+    return { precision, recall, f1, support };
 }
 
 /**
@@ -133,6 +134,11 @@ export function failedAgentAcceptanceThresholds(
         failures.push('execute-exact exact-match rate');
     }
     for (const outcomeClass of AGENT_ACCEPTANCE_OUTCOME_CLASSES) {
+        // Zero corpus cases for a class leaves precision, recall, and F1 vacuously perfect, so an
+        // uncovered class needs its own failing row rather than riding through on those identities.
+        if (metrics.perClass[outcomeClass].support === 0) {
+            failures.push(`per-class support: ${outcomeClass}`);
+        }
         if (metrics.perClass[outcomeClass].f1 < thresholds.perClassF1Min) {
             failures.push(`per-class F1: ${outcomeClass}`);
         }

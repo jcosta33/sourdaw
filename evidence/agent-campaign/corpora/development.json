@@ -45,7 +45,23 @@
                     ]
                 }
             ],
-            "oracle": { "kind": "proposal", "actionTypes": ["addTrack", "addClip", "addNotes"] }
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    { "type": "addTrack", "payload": { "name": "Blues Comp", "kind": "midi" } },
+                    { "type": "addClip", "payload": { "startBeat": 0, "endBeat": 12, "name": "Twelve Bar" } },
+                    {
+                        "type": "addNotes",
+                        "payload": {
+                            "notes": [
+                                { "pitch": 60, "startBeat": 0, "duration": 1, "velocity": 96 },
+                                { "pitch": 64, "startBeat": 0, "duration": 1, "velocity": 96 },
+                                { "pitch": 67, "startBeat": 0, "duration": 1, "velocity": 96 }
+                            ]
+                        }
+                    }
+                ]
+            }
         },
         {
             "id": "AC054-DEV-EXEC-2",
@@ -94,7 +110,24 @@
                     ]
                 }
             ],
-            "oracle": { "kind": "proposal", "actionTypes": ["addTrack", "addClip", "addNotes", "setTempo"] }
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    { "type": "addTrack", "payload": { "name": "Blues Comp", "kind": "midi" } },
+                    { "type": "addClip", "payload": { "startBeat": 0, "endBeat": 12, "name": "Twelve Bar" } },
+                    {
+                        "type": "addNotes",
+                        "payload": {
+                            "notes": [
+                                { "pitch": 60, "startBeat": 0, "duration": 1, "velocity": 96 },
+                                { "pitch": 64, "startBeat": 0, "duration": 1, "velocity": 96 },
+                                { "pitch": 67, "startBeat": 0, "duration": 1, "velocity": 96 }
+                            ]
+                        }
+                    },
+                    { "type": "setTempo", "payload": { "bpm": 96 } }
+                ]
+            }
         },
         {
             "id": "AC054-DEV-EXEC-3",
@@ -119,7 +152,13 @@
                     ]
                 }
             ],
-            "oracle": { "kind": "proposal", "actionTypes": ["addTrack", "addTrack"] }
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    { "type": "addTrack", "payload": { "name": "Lead Vocals", "kind": "audio" } },
+                    { "type": "addTrack", "payload": { "name": "Backing Vocals", "kind": "audio" } }
+                ]
+            }
         },
         {
             "id": "AC054-DEV-EXEC-4",
@@ -139,7 +178,10 @@
                     ]
                 }
             ],
-            "oracle": { "kind": "proposal", "actionTypes": ["addTrack"] }
+            "oracle": {
+                "kind": "proposal",
+                "actions": [{ "type": "addTrack", "payload": { "name": "Synth Pad", "kind": "midi" } }]
+            }
         },
         {
             "id": "AC054-DEV-EXEC-5",
@@ -159,7 +201,10 @@
                     ]
                 }
             ],
-            "oracle": { "kind": "proposal", "actionTypes": ["addTrack"] }
+            "oracle": {
+                "kind": "proposal",
+                "actions": [{ "type": "addTrack", "payload": { "name": "Drums Bus", "kind": "folder" } }]
+            }
         },
         {
             "id": "AC054-DEV-CLARIFY-1",

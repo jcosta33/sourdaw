@@ -29,6 +29,10 @@ export type AgentAcceptanceClassMetrics = {
     precision: number;
     recall: number;
     f1: number;
+    /** How many corpus cases carry this class. A class no case in the corpus names cannot fail on
+     *  precision, recall, or F1 — those go vacuously perfect — so support is the only thing that
+     *  catches a class the corpus silently stopped covering. */
+    support: number;
 };
 
 /**

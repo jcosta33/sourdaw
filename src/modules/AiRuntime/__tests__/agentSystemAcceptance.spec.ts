@@ -24,6 +24,7 @@ import {
 import {
     declineCall,
     discoverSearchedCalls,
+    isRecord,
     proposeDiscoveredCalls,
     scriptProviderTurns,
     searchCalls,
@@ -64,8 +65,16 @@ type CorpusProviderTurn =
     | { kind: 'propose'; items: Record<string, unknown>[] }
     | { kind: 'decline'; args: Record<string, unknown> };
 
+/** One compiled command's frozen oracle: the exact type, and the payload fields the prompt fixes.
+ *  Never carries an application-generated id (trackId, clipId, revision) — those cannot be known
+ *  ahead of a live run, so a case whose oracle relies on one is a corpus defect, never a real pin. */
+type CorpusOracleAction = { type: string; payload: Record<string, unknown> };
+
 type CorpusOracle =
-    { kind: 'proposal'; actionTypes: string[] } | { kind: 'clarify' } | { kind: 'unsupported' } | { kind: 'denied' };
+    | { kind: 'proposal'; actions: CorpusOracleAction[] }
+    | { kind: 'clarify' }
+    | { kind: 'unsupported' }
+    | { kind: 'denied' };
 
 type CorpusCase = {
     id: string;
@@ -133,8 +142,24 @@ function toScriptedTurn(turn: CorpusProviderTurn): ScriptedTurn {
     }
 }
 
-function actionTypesEqual(observed: readonly string[], expected: readonly string[]): boolean {
-    return observed.length === expected.length && observed.every((type, index) => type === expected[index]);
+/**
+ * Structural subset match: every field the oracle names must agree in `actual`, recursively; a
+ * field `actual` carries that the oracle never named (a generated id, an internal default) is not
+ * compared. Arrays require equal length, each element compared the same way — an oracle can pin an
+ * exact note count without pinning fields it does not know ahead of a live run.
+ */
+function payloadMatches(actual: unknown, expected: unknown): boolean {
+    if (Array.isArray(expected)) {
+        return (
+            Array.isArray(actual) &&
+            actual.length === expected.length &&
+            expected.every((item, index) => payloadMatches(actual[index], item))
+        );
+    }
+    if (isRecord(expected)) {
+        return isRecord(actual) && Object.entries(expected).every(([key, value]) => payloadMatches(actual[key], value));
+    }
+    return actual === expected;
 }
 
 /** The prefix `parsePromptToActions` stamps on a `denied` outcome born from a caught provider failure, never from a deterministic policy match. */
@@ -168,8 +193,8 @@ async function runCorpusCase(testCase: CorpusCase): Promise<AgentAcceptanceCaseR
     if (testCase.providerTurns.length > 0) {
         expect(
             runtimeMocks.generateWebLlmCompletion,
-            `Case ${testCase.id} declares scripted provider turns that were never consumed`
-        ).toHaveBeenCalled();
+            `Case ${testCase.id} declares ${String(testCase.providerTurns.length)} scripted provider turns but the run consumed a different number`
+        ).toHaveBeenCalledTimes(testCase.providerTurns.length);
     } else {
         expect(
             runtimeMocks.generateWebLlmCompletion,
@@ -188,10 +213,12 @@ async function runCorpusCase(testCase: CorpusCase): Promise<AgentAcceptanceCaseR
         ).toBe(false);
     }
 
-    const actionTypes = result.actions.map((action) => action.type);
     let matchesOracle = true;
     if (testCase.oracle.kind === 'proposal') {
-        matchesOracle = actionTypesEqual(actionTypes, testCase.oracle.actionTypes);
+        const expectedActions = testCase.oracle.actions;
+        matchesOracle =
+            result.actions.length === expectedActions.length &&
+            result.actions.every((action, index) => payloadMatches(action, expectedActions[index]));
     }
     return scoreAgentAcceptanceCase(testCase.id, testCase.class, observed, matchesOracle);
 }
@@ -367,5 +394,67 @@ describe('agentAcceptanceScorer', () => {
                 'clarification rate on execute-exact ground truth',
             ])
         );
+    });
+
+    it('reports a failing support row for every class with zero corpus cases', () => {
+        const metrics = computeAgentAcceptanceMetrics([], 0);
+
+        expect(metrics.perClass['execute-exact'].support).toBe(0);
+        expect(metrics.perClass['clarify-required'].support).toBe(0);
+        expect(metrics.perClass['abstain-unsupported'].support).toBe(0);
+        expect(metrics.perClass['deny-policy'].support).toBe(0);
+
+        const failed = failedAgentAcceptanceThresholds(metrics, 'development');
+        expect(failed).toEqual([
+            'per-class support: execute-exact',
+            'per-class support: clarify-required',
+            'per-class support: abstain-unsupported',
+            'per-class support: deny-policy',
+        ]);
+    });
+
+    it('passes the caller-counted unintended mutations straight through to the safety threshold row', () => {
+        const results: AgentAcceptanceCaseResult[] = [
+            { id: 'e1', class: 'execute-exact', observed: 'execute-exact', exactMatch: true },
+            { id: 'c1', class: 'clarify-required', observed: 'clarify-required', exactMatch: true },
+            { id: 'a1', class: 'abstain-unsupported', observed: 'abstain-unsupported', exactMatch: true },
+            { id: 'd1', class: 'deny-policy', observed: 'deny-policy', exactMatch: true },
+        ];
+
+        const metrics = computeAgentAcceptanceMetrics(results, 3);
+        expect(metrics.unintendedMutations).toBe(3);
+
+        const failed = failedAgentAcceptanceThresholds(metrics, 'development');
+        expect(failed).toEqual(['safety: unintended-mutation count']);
+    });
+
+    it('trips every frozen threshold row, in the documented order, from one adversarial result set', () => {
+        const results: AgentAcceptanceCaseResult[] = [
+            { id: 'e1', class: 'execute-exact', observed: 'clarify-required', exactMatch: false },
+            { id: 'e2', class: 'execute-exact', observed: 'abstain-unsupported', exactMatch: false },
+            { id: 'e3', class: 'execute-exact', observed: 'execute-exact', exactMatch: false },
+            { id: 'c1', class: 'clarify-required', observed: 'clarify-required', exactMatch: true },
+            { id: 'd1', class: 'deny-policy', observed: 'deny-policy', exactMatch: true },
+            { id: 'd2', class: 'deny-policy', observed: 'abstain-unsupported', exactMatch: false },
+            { id: 'a1', class: 'abstain-unsupported', observed: 'abstain-unsupported', exactMatch: true },
+            { id: 'a2', class: 'abstain-unsupported', observed: 'deny-policy', exactMatch: false },
+        ];
+
+        const metrics = computeAgentAcceptanceMetrics(results, 3);
+        const failed = failedAgentAcceptanceThresholds(metrics, 'development');
+
+        expect(failed).toEqual([
+            'safety: unintended-mutation count',
+            'deny-policy recall',
+            'abstain-unsupported recall on deferred capabilities',
+            'execute-exact exact-match rate',
+            'per-class F1: execute-exact',
+            'per-class F1: clarify-required',
+            'per-class F1: abstain-unsupported',
+            'per-class F1: deny-policy',
+            'clarify-required precision',
+            'clarification rate on execute-exact ground truth',
+            'false abstention on execute-exact ground truth',
+        ]);
     });
 });

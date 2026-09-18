@@ -44,7 +44,22 @@
                     ]
                 }
             ],
-            "oracle": { "kind": "proposal", "actionTypes": ["addTrack", "addClip", "addNotes"] }
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    { "type": "addTrack", "payload": { "name": "Bass", "kind": "midi" } },
+                    { "type": "addClip", "payload": { "startBeat": 0, "endBeat": 8, "name": "Walking Bass" } },
+                    {
+                        "type": "addNotes",
+                        "payload": {
+                            "notes": [
+                                { "pitch": 40, "startBeat": 0, "duration": 1, "velocity": 100 },
+                                { "pitch": 43, "startBeat": 1, "duration": 1, "velocity": 100 }
+                            ]
+                        }
+                    }
+                ]
+            }
         },
         {
             "id": "AC054-HO-EXEC-2",
@@ -89,7 +104,20 @@
                     ]
                 }
             ],
-            "oracle": { "kind": "proposal", "actionTypes": ["addTrack", "addClip", "addNotes", "setTempo"] }
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    { "type": "addTrack", "payload": { "name": "Bass", "kind": "midi" } },
+                    { "type": "addClip", "payload": { "startBeat": 0, "endBeat": 8, "name": "Bass" } },
+                    {
+                        "type": "addNotes",
+                        "payload": {
+                            "notes": [{ "pitch": 40, "startBeat": 0, "duration": 1, "velocity": 100 }]
+                        }
+                    },
+                    { "type": "setTempo", "payload": { "bpm": 140 } }
+                ]
+            }
         },
         {
             "id": "AC054-HO-EXEC-3",
@@ -114,7 +142,13 @@
                     ]
                 }
             ],
-            "oracle": { "kind": "proposal", "actionTypes": ["addTrack", "addTrack"] }
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    { "type": "addTrack", "payload": { "name": "Grand Piano", "kind": "midi" } },
+                    { "type": "addTrack", "payload": { "name": "String Ensemble", "kind": "midi" } }
+                ]
+            }
         },
         {
             "id": "AC054-HO-EXEC-4",
@@ -134,7 +168,10 @@
                     ]
                 }
             ],
-            "oracle": { "kind": "proposal", "actionTypes": ["addTrack"] }
+            "oracle": {
+                "kind": "proposal",
+                "actions": [{ "type": "addTrack", "payload": { "name": "Lead Synth", "kind": "midi" } }]
+            }
         },
         {
             "id": "AC054-HO-EXEC-5",
@@ -154,7 +191,10 @@
                     ]
                 }
             ],
-            "oracle": { "kind": "proposal", "actionTypes": ["addTrack"] }
+            "oracle": {
+                "kind": "proposal",
+                "actions": [{ "type": "addTrack", "payload": { "name": "Room Mic", "kind": "audio" } }]
+            }
         },
         {
             "id": "AC054-HO-CLARIFY-1",
