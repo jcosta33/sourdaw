@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 import { fail } from './prContract.ts';
 
 import type { ApprovalEvidence, ReviewDocument } from './publishReview.ts';
@@ -21,9 +19,7 @@ export function renderReviewDocumentBody(document: ReviewDocument): string {
     if (document.format !== 'compact-v1') {
         return document.body;
     }
-    const evidence = parseApprovalEvidence(document.evidence);
-    const digest = createHash('sha256').update(JSON.stringify(evidence)).digest('hex');
-    const body = `${document.body}\n\nEvidence SHA-256: ${digest}`;
+    const body = document.body;
     const length = [...body].length;
     if (length > 600) {
         fail(`APPROVE public body is ${length} Unicode code points; maximum is 600`);
