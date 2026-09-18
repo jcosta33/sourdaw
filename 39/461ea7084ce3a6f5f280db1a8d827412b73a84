@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_9e15f5b7ec3308::t_fea148c1f12494 1647-1702
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "39461ea7084ce3a6f5f280db1a8d827412b73a84",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
