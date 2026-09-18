@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+
 import { describe, expect, it } from 'vitest';
 
 import { applyWasmRestamp, assertCommittedArtifactsAreFresh, wasmRestampPlan } from '../restampWasmInventory.ts';
