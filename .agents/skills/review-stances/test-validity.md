@@ -33,6 +33,14 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-09-18 — a command whose own spec imported it, and a freshness check that healed the state it asserted (escaped via PR #4356)
+
+`scripts/restampWasmInventory.ts` ended in a bare `run();` with no entry guard, and its spec imported the module for its helpers, so collecting the spec executed the command: running it rewrote `release/open-source-inventory.json`, the spec's "the command reports a current inventory on a fresh committed tree" case then observed the file it had just healed and could never fail on a drifted tree, and on a tree the command would refuse the module-level throw prevented the file's tests from running at all. The same head's refusal also told the reader to run "its wasm:* script", a name that does not exist for every package.
+
+Blind spot: the stance asked what each assertion would do under a mutation of the logic under test, but treated one spawned end-to-end case as covering the command without checking which branch it took — that tree had nothing to restamp, so every write-path mutation stayed green — and it never asked what the spec's own imports do to the tree.
+
+Probe that would have caught it: for a spec that imports the module it tests, import it against a deliberately drifted fixture and require every tracked file to be unchanged; then require the command's happy path to be exercised on a drifted fixture and delete the write, retarget the path, drop the refusal call and remove the printing, requiring each mutation to fail the suite.
+
 ### 2026-09-02 — a rejected review stranded its mutation lock (escaped via PR #3342)
 
 Review publication treated a definitive GitHub validation rejection as an ordinary failed write and retained a generic lock owner with no immutable publication intent. A later operator could not prove whether the review landed, so neither release nor replay was safe.

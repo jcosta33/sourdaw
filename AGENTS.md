@@ -178,6 +178,7 @@ locally at other lanes' expense.
 | Rebuild every wasm        | `pnpm wasm:all`                              |
 | Rewrite wasm manifest     | `pnpm wasm:manifest`                         |
 | Prove wasm freshness      | `pnpm wasm:verify`                           |
+| Restamp the wasm surface  | `pnpm release:restamp:wasm`                  |
 | Restamp a dependency bump | `pnpm release:restamp`                       |
 
 Structural code search uses the pinned read-only `ast-grep` (`pnpm exec ast-grep run`) per [`.agents/skills/ast-grep/`](./.agents/skills/ast-grep/); rewrite modes are forbidden.
