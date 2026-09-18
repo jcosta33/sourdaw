@@ -18,12 +18,13 @@ import { describe, expect, it } from 'vitest';
 import {
     AUTHOR_LOCK_REASON,
     GITHUB_HTTPS_REMOTE,
+    ORCHESTRATOR_USER_NODE_ID,
     createGhSession,
     resolvePrimaryRoot,
     type GhSession,
 } from '../githubAppIdentity.ts';
 import { AUTHOR_MODEL_PATTERN as OPEN_LANE_MODEL_PATTERN, AUTHOR_MODEL_RULE } from '../openLane.ts';
-import { composePublishBody, type GuardFailureReceipt } from '../prContract.ts';
+import { TRUSTED_GH_PATH_ENV, composePublishBody, type GuardFailureReceipt } from '../prContract.ts';
 import {
     AUTHOR_MODEL_PATTERN,
     addPullRequestProjectsArgs,
@@ -1845,6 +1846,45 @@ describe('lane publish', () => {
 
         access.dispose();
         expect(disposeCalls).toBe(1);
+    });
+
+    /**
+     * Every other `operatorSessionAccess` case in this file injects its own `authenticate`, which
+     * proves the split against a fake session but never proves what the omitted default resolves
+     * to. `runPublishLaneCli` is the only production caller and always omits it, so this drives a
+     * real `gh` child through the unmodified default binding, `authenticateOrchestratorSession`,
+     * and checks it both refuses a foreign identity and accepts the verified one.
+     */
+    it('binds the verified orchestrator authenticator by default and refuses a foreign identity', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-publish-orchestrator-default-'));
+        try {
+            const ghScript = (actor: { type: string; node_id: string }) =>
+                '#!/usr/bin/env node\n' +
+                'const args = process.argv.slice(2);\n' +
+                "if (args[0] === 'auth') console.log('stored-token');\n" +
+                `else console.log(${JSON.stringify(JSON.stringify(actor))});\n`;
+
+            const foreignGhPath = join(root, 'gh-foreign');
+            writeFileSync(foreignGhPath, ghScript({ type: 'User', node_id: 'foreign-user' }));
+            chmodSync(foreignGhPath, 0o700);
+
+            const realGhPath = join(root, 'gh-real');
+            writeFileSync(realGhPath, ghScript({ type: 'User', node_id: ORCHESTRATOR_USER_NODE_ID }));
+            chmodSync(realGhPath, 0o700);
+
+            const foreign = operatorSessionAccess({ PATH: process.env.PATH, [TRUSTED_GH_PATH_ENV]: foreignGhPath });
+            expect(() => foreign.session()).toThrow(/orchestrator/);
+
+            const real = operatorSessionAccess({ PATH: process.env.PATH, [TRUSTED_GH_PATH_ENV]: realGhPath });
+            const session = real.session();
+            expect(session.env.GH_TOKEN).toBe('stored-token');
+            const configDir = session.configDir;
+            expect(existsSync(configDir)).toBe(true);
+            real.dispose();
+            expect(existsSync(configDir)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
     });
 
     /**
