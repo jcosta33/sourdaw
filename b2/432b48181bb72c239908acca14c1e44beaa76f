@@ -1,0 +1,25 @@
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_914af328b3988f::t_61cb237c728447 140-150,157-161,167-179,184-189
+  s_914af328b3988f::t_7cbb2eae33839d 190,288,290,303-305,312
+evidence/agent-campaign/corpora/held-out.json
+  s_914af328b3988f::t_cbf10cacf65ccc 97
+  s_914af328b3988f::t_45c1aeb5cfe360 107,112
+evidence/agent-campaign/manifest.json
+  s_914af328b3988f::t_7ed0fa3f7c8e50 804,812
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b2432b48181bb72c239908acca14c1e44beaa76f",
+  "prompts": {},
+  "sessions": {
+    "s_914af328b3988f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a711b68-94e4-49ad-8756-061730571abe",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
