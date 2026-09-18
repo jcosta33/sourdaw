@@ -7,7 +7,8 @@
 //! beside the engine cover different phases: `phase_sweep_over_a_small_window_loses_no_impulse`
 //! sweeps every phase of a 512-sample window, boundary included, and
 //! `production_rate_window_survives_boundary_phases` probes the boundary cases
-//! at production rate; `phase_sweep_interior_achieves_near_full_amplitude`
+//! on a shortened 0.2 s test window that still carries the shipped 15 ms
+//! crossfade; `phase_sweep_interior_achieves_near_full_amplitude`
 //! deliberately excludes the ramps to check the flat middle. `steady_tone_produces_continuous_output`
 //! checks a sustained tone never gates the wet path. None of them compares the
 //! running output level across the boundary — the property a listener hears as
