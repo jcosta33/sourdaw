@@ -10,6 +10,10 @@ release/dependency-license-proofs.json
   h_1228e573df1f42 64
 release/open-source-inventory.json
   h_1228e573df1f42 169,1695
+crates/daw-dsp/benches/quantum-cost-table.json
+  h_1228e573df1f42 271,432,469,868,1006,1044-1045,1178,1181,1365
+crates/daw-dsp/benches/quantum-cost-table.md
+  h_1228e573df1f42 305
 ---
 {
   "schema_version": "authorship/3.0.0",
