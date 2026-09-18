@@ -161,12 +161,25 @@ export async function launch_from_template({ page, template_name }: LaunchFromTe
  * that needs a track-scoped control (e.g. the per-track arm button) must
  * create one first through this route or the command-palette equivalent.
  */
+/**
+ * Each wait carries its own budget so a slow boot fails loudly at the step that
+ * is slow, instead of silently consuming the whole 90s test timeout here and
+ * letting the spec's next locator (the arm button) absorb the expiry (#4299:
+ * both record-toggle specs timed out at the arm click on CI's cold server while
+ * passing locally against a warm one).
+ */
+const ADD_TRACK_STEP_TIMEOUT_MS = 15_000;
+
 export async function add_midi_track(page: Page): Promise<void> {
     const emptyStateMidiButton = page.locator('button').filter({ hasText: 'MIDI' }).filter({ hasText: 'Keys' });
-    await emptyStateMidiButton.waitFor({ state: 'visible' });
+    await emptyStateMidiButton.waitFor({ state: 'visible', timeout: ADD_TRACK_STEP_TIMEOUT_MS });
     await emptyStateMidiButton.click();
     const trackList = page.getByRole('grid', { name: /Track list/i });
-    await trackList.getByRole('row').filter({ hasText: /MIDI/i }).first().waitFor();
+    await trackList
+        .getByRole('row')
+        .filter({ hasText: /MIDI/i })
+        .first()
+        .waitFor({ timeout: ADD_TRACK_STEP_TIMEOUT_MS });
 }
 
 const PANEL_OPEN_TIMEOUT_MS = 30_000;
