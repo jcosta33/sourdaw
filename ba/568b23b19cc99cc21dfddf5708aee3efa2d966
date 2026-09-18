@@ -1,0 +1,16 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  h_1228e573df1f42 11795,11850,11880
+scripts/deliverPullRequest.ts
+  h_1228e573df1f42 3711-3715
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ba568b23b19cc99cc21dfddf5708aee3efa2d966",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
