@@ -51,7 +51,14 @@ const repairedLineage: FindingLineage = {
     entries: [repairedEntry],
 };
 const receiptBody = supersessionCommentBody(replacementNumber);
-const lineageBody = renderFindingLineage(repairedLineage);
+/**
+ * The canonical marker body for `repairedLineage`, pinned as literal bytes rather than through the
+ * serializer under test. Sorted keys and no whitespace outside strings are the promise, so an
+ * indentation or ordering change must break this expectation instead of silently moving with it.
+ */
+const lineageBody =
+    'Finding lineage: #2244 superseded by #2246; repaired 1, transferred 0, discarded 0\n' +
+    'sourdaw-lineage-v1 {"entries":[{"disposition":"repaired","findingId":"1001","reason":"","replacementFindingId":"2001","replacementPr":2246}],"format":"lineage-v1","oldPr":2244,"replacementPr":2246}';
 const defaultThreads: SupersededReviewThread[] = [{ threadId: 'PRRT_1', rootCommentId: findingA }];
 
 type Input = {
@@ -261,6 +268,80 @@ const run = (
     lineage: FindingLineage = repairedLineage,
     nodeId: string = AUTHOR_BOT_NODE_ID
 ) => supersedePullRequest(oldNumber, head, replacementNumber, lineage, nodeId, port);
+
+const LINEAGE_MARKER = 'sourdaw-lineage-v1';
+
+function lineagePayloadOf(body: string): string {
+    const marker = body.split('\n').find((line) => line.startsWith(LINEAGE_MARKER));
+    if (marker === undefined) {
+        throw new Error(`no lineage marker line in ${JSON.stringify(body)}`);
+    }
+    return marker.slice(LINEAGE_MARKER.length).trim();
+}
+
+function isUnknownArray(value: unknown): value is readonly unknown[] {
+    return Array.isArray(value);
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The spec's own key-sorted, whitespace-free encoding, an independent expectation for the payload. */
+function canonicalJson(value: unknown): string {
+    if (isUnknownArray(value)) {
+        return `[${value.map((entry) => canonicalJson(entry)).join(',')}]`;
+    }
+    if (isUnknownRecord(value)) {
+        const members = Object.entries(value)
+            .sort(([left], [right]) => (left < right ? -1 : 1))
+            .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`);
+        return `{${members.join(',')}}`;
+    }
+    if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        return JSON.stringify(value);
+    }
+    throw new Error(`the lineage payload carries a value this spec cannot canonicalize: ${typeof value}`);
+}
+
+function whitespaceOutsideStrings(json: string): string[] {
+    const found: string[] = [];
+    let insideString = false;
+    let escaped = false;
+    for (const character of json) {
+        if (insideString) {
+            if (escaped) {
+                escaped = false;
+            } else if (character === '\\') {
+                escaped = true;
+            } else if (character === '"') {
+                insideString = false;
+            }
+            continue;
+        }
+        if (character === '"') {
+            insideString = true;
+        } else if (/\s/u.test(character)) {
+            found.push(character);
+        }
+    }
+    return found;
+}
+
+function sortedKeysEverywhere(value: unknown): boolean {
+    if (isUnknownArray(value)) {
+        return value.every((entry) => sortedKeysEverywhere(entry));
+    }
+    if (!isUnknownRecord(value)) {
+        return true;
+    }
+    const keys = Object.keys(value);
+    const sorted = [...keys].sort();
+    return (
+        keys.every((key, index) => key === sorted[index]) &&
+        Object.values(value).every((entry) => sortedKeysEverywhere(entry))
+    );
+}
 
 describe('pull-request supersession', () => {
     it('uses client mutation receipts for forward comment and close mutations', () => {
@@ -526,6 +607,28 @@ describe('pull-request supersession', () => {
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
     });
 
+    it('pins the canonical lineage marker bytes rather than whatever the serializer returns', () => {
+        expect(renderFindingLineage(repairedLineage)).toBe(lineageBody);
+    });
+    it('rejects a lineage rendering that is valid JSON but not the promised form', () => {
+        const payload = lineagePayloadOf(renderFindingLineage(repairedLineage));
+        const parsed: unknown = JSON.parse(payload);
+        expect(canonicalJson(parsed)).toBe(payload);
+        expect(sortedKeysEverywhere(parsed)).toBe(true);
+        expect(whitespaceOutsideStrings(payload)).toEqual([]);
+        const indented = JSON.stringify(parsed, null, 2);
+        const unsorted =
+            '{"format":"lineage-v1","oldPr":2244,"replacementPr":2246,"entries":[{"findingId":"1001","disposition":"repaired","replacementPr":2246,"replacementFindingId":"2001","reason":""}]}';
+        const indentedValue: unknown = JSON.parse(indented);
+        const unsortedValue: unknown = JSON.parse(unsorted);
+        expect(indentedValue).toEqual(parsed);
+        expect(unsortedValue).toEqual(parsed);
+        expect(sortedKeysEverywhere(unsortedValue)).toBe(false);
+        expect(whitespaceOutsideStrings(indented)).not.toEqual([]);
+        expect(canonicalJson(indentedValue)).not.toBe(indented);
+        expect(canonicalJson(unsortedValue)).not.toBe(unsorted);
+    });
+
     it.each([
         [
             'old number',
@@ -601,24 +704,22 @@ describe('pull-request supersession', () => {
         ).toThrow(/entries\[0\]\.reason value at index 0 is blank/i);
         expect(calls.filter((call) => call.startsWith('comment:') || call.startsWith('close:'))).toEqual([]);
     });
-    it('refuses a transferred entry bound to a different replacement pull request', () => {
-        const { port, calls } = fakePort();
+    it('accepts a transferred entry with a null replacement finding id', () => {
+        const { port, calls, authorNodeId } = fakePort();
         const transferred: FindingLineage = {
             ...repairedLineage,
             entries: [
                 {
                     findingId: findingA,
                     disposition: 'transferred',
-                    replacementPr: 9999,
-                    replacementFindingId: '2001',
+                    replacementPr: replacementNumber,
+                    replacementFindingId: null,
                     reason: '',
                 },
             ],
         };
-        expect(() =>
-            supersedePullRequest(oldNumber, head, replacementNumber, transferred, AUTHOR_BOT_NODE_ID, port)
-        ).toThrow(/entries\[0\]\.replacementPr must be 2246, found 9999/i);
-        expect(calls.filter((call) => call.startsWith('comment:') || call.startsWith('close:'))).toEqual([]);
+        expect(run(port, transferred, authorNodeId)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
     });
     it('refuses a repaired entry with a null replacement finding id', () => {
         const { port, calls } = fakePort();
