@@ -38,6 +38,13 @@ const FINDING_KEYS = ['commentId', 'path', 'line', 'side'] as const;
  */
 const SUMMARY_BYTE_LIMIT = Math.min(REVIEW_REPAIR_SUMMARY_MAX_BYTES, REVIEW_EVIDENCE_FIELD_MAX_BYTES);
 
+/**
+ * The comment fields both thread readers select. `pageInfo` belongs to the comment connection, so it
+ * sits beside `nodes` rather than inside it; one shared fragment keeps the two readers from drifting.
+ */
+export const REVIEW_THREAD_COMMENT_FIELDS =
+    'nodes{id body path line side author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}';
+
 export type ReviewRepairFinding = { commentId: number; path: string; line: number; side: 'LEFT' | 'RIGHT' };
 
 export type ReviewRepairEvidence = { observable: string; verification: string; observed: string };
@@ -370,6 +377,9 @@ function confirmationRefusal(
     const finding = findingRefusal(thread, record.finding);
     if (finding !== undefined) {
         return finding;
+    }
+    if (record.commit === record.head) {
+        return `commit ${record.commit} is not a distinct commit from head ${record.head}`;
     }
     if (!confirmation.isAncestor(record.commit, confirmation.head)) {
         return `commit ${record.commit} is not an ancestor of head ${confirmation.head}`;

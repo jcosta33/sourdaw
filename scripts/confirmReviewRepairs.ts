@@ -32,6 +32,7 @@ import {
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 import {
+    REVIEW_THREAD_COMMENT_FIELDS,
     confirmClientMutationId,
     renderReviewRepairReply,
     selectEligibleRepairs,
@@ -153,8 +154,9 @@ export function confirmReviewRepairs(
     if (live !== head) {
         fail(`head moved: ${live} is not ${head}`);
     }
+    const threads = port.readThreads(number);
     const selection: ReviewRepairSelection = selectEligibleRepairs({
-        threads: port.readThreads(number),
+        threads,
         pr: number,
         head,
         authorNodeId: AUTHOR_BOT_NODE_ID,
@@ -170,16 +172,33 @@ export function confirmReviewRepairs(
         thread: entry.thread,
         record: entry.record,
     }));
+    const threadsById = new Map(threads.map((thread) => [thread.thread, thread] as const));
     for (const entry of confirmed) {
-        port.postConfirmation(
-            entry.thread,
-            renderConfirmationReply(entry.record),
-            confirmReplyClientMutationId(number, entry.thread, head)
-        );
+        if (!confirmationAlreadyPosted(threadsById.get(entry.thread), entry.record)) {
+            port.postConfirmation(
+                entry.thread,
+                renderConfirmationReply(entry.record),
+                confirmReplyClientMutationId(number, entry.thread, head)
+            );
+        }
         port.resolve(entry.thread, confirmResolveClientMutationId(number, entry.thread, head));
         port.log(`repair-confirmed:${number}:${entry.thread}`);
     }
     return { resolved: confirmed.map((entry) => entry.thread) };
+}
+
+/**
+ * GitHub echoes the deterministic `clientMutationId` rather than deduplicating the reply, so a rerun
+ * after a failed resolve would post the confirmation a second time. The posted reply itself is the
+ * state that proves the first post landed: an unresolved thread that already carries this reviewer's
+ * confirmation for the same record performs only the missing resolve.
+ */
+function confirmationAlreadyPosted(thread: ReviewRepairThreadState | undefined, record: ReviewRepairRecord): boolean {
+    if (thread === undefined) {
+        return false;
+    }
+    const body = renderConfirmationReply(record);
+    return thread.replies.some((reply) => isReviewerBotNodeId(reply.authorNodeId) && reply.body === body);
 }
 
 type Gh = (args: string[]) => string;
@@ -272,9 +291,6 @@ function readThread(node: unknown, label: string): ReviewRepairThreadState {
     };
 }
 
-const THREAD_COMMENT_FIELDS =
-    'nodes{id body path line side author{__typename login ... on Bot{id}} pageInfo{hasNextPage endCursor}}';
-
 /** The cursor is only a variable once a second page exists, so it joins the fields only then. */
 function appendCursor(fields: string[], cursor: string | undefined): string[] {
     if (cursor === undefined) {
@@ -283,10 +299,10 @@ function appendCursor(fields: string[], cursor: string | undefined): string[] {
     return [...fields, '-f', `cursor=${cursor}`];
 }
 
-function threadPage(cursor: string | undefined): string {
+export function threadPage(cursor: string | undefined): string {
     const connection = `reviewThreads(first:${GRAPHQL_PAGE_SIZE}${cursor === undefined ? '' : ',after:$cursor'})`;
     const variables = `$owner:String!,$name:String!,$number:Int!${cursor === undefined ? '' : ',$cursor:String!'}`;
-    const pullRequest = `pullRequest(number:$number){${connection}{${THREAD_COMMENT_FIELDS}}}`;
+    const pullRequest = `pullRequest(number:$number){${connection}{${REVIEW_THREAD_COMMENT_FIELDS}}}`;
     return `query(${variables}){repository(owner:$owner,name:$name){${pullRequest}}}`;
 }
 

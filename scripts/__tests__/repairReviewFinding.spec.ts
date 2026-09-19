@@ -441,6 +441,15 @@ describe('repairReviewFinding', () => {
         expect(calls).toEqual([`read:${THREAD}`]);
     });
 
+    it('should refuse a commit that is the head itself', () => {
+        const { port, calls, posted } = fakePort();
+        expect(() => repairReviewFinding(PR, repairInput({ commit: HEAD }), port)).toThrow(
+            `commit ${HEAD} is not a distinct commit from head ${HEAD}`
+        );
+        expect(calls).toEqual([`read:${THREAD}`]);
+        expect(posted).toEqual([]);
+    });
+
     it('should refuse a blank summary', () => {
         const { port, posted } = fakePort();
         expect(() => repairReviewFinding(PR, repairInput({ summary: '   ' }), port)).toThrow(

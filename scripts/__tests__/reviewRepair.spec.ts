@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { threadPage } from '../confirmReviewRepairs.ts';
+import { threadQuery } from '../repairReviewFinding.ts';
 import {
     REVIEW_REPAIR_FORMAT,
     REVIEW_REPAIR_SUMMARY_MAX_BYTES,
@@ -21,6 +23,7 @@ const HEAD = 'a'.repeat(40);
 const COMMIT = 'b'.repeat(40);
 const STALE_HEAD = 'c'.repeat(40);
 const THREAD = 'PRRT_kwDOrepair';
+const OTHER_THREAD = 'PRRT_kwDOother';
 const ROOT_COMMENT_ID = 5_001;
 const FINDING_PATH = 'scripts/reviewRepair.ts';
 const FINDING_LINE = 12;
@@ -375,6 +378,71 @@ describe('selectEligibleRepairs', () => {
         });
     });
 
+    it('should refuse a record bound to another pull request', () => {
+        const record = repairRecord({ pr: PR + 1 });
+        const selection = selectRepairs([threadState({ replies: [repairReply(11, record)] })]);
+
+        expect(selection).toEqual({
+            eligible: [],
+            refused: [{ thread: THREAD, reason: `pr ${PR + 1} does not match the confirmed pr ${PR}` }],
+            ignored: [],
+        });
+    });
+
+    it('should refuse a record bound to another thread', () => {
+        const record = repairRecord({ thread: OTHER_THREAD });
+        const selection = selectRepairs([threadState({ replies: [repairReply(11, record)] })]);
+
+        expect(selection).toEqual({
+            eligible: [],
+            refused: [
+                {
+                    thread: THREAD,
+                    reason: `thread ${OTHER_THREAD} does not match the confirmed thread ${THREAD}`,
+                },
+            ],
+            ignored: [],
+        });
+    });
+
+    it('should refuse a finding whose path is not the thread root', () => {
+        const record = repairRecord({ finding: { ...VALID_RECORD.finding, path: 'scripts/other.ts' } });
+        const selection = selectRepairs([threadState({ replies: [repairReply(11, record)] })]);
+
+        expect(selection).toEqual({
+            eligible: [],
+            refused: [
+                {
+                    thread: THREAD,
+                    reason: `finding path scripts/other.ts does not match the thread root ${FINDING_PATH}`,
+                },
+            ],
+            ignored: [],
+        });
+    });
+
+    it('should refuse a finding whose side is not the thread root', () => {
+        const record = repairRecord({ finding: { ...VALID_RECORD.finding, side: 'LEFT' } });
+        const selection = selectRepairs([threadState({ replies: [repairReply(11, record)] })]);
+
+        expect(selection).toEqual({
+            eligible: [],
+            refused: [{ thread: THREAD, reason: 'finding side LEFT does not match the thread root RIGHT' }],
+            ignored: [],
+        });
+    });
+
+    it('should refuse a record whose commit is the confirmed head', () => {
+        const record = repairRecord({ commit: HEAD });
+        const selection = selectRepairs([threadState({ replies: [repairReply(11, record)] })]);
+
+        expect(selection).toEqual({
+            eligible: [],
+            refused: [{ thread: THREAD, reason: `commit ${HEAD} is not a distinct commit from head ${HEAD}` }],
+            ignored: [],
+        });
+    });
+
     it('should refuse a record bound to a stale head', () => {
         const record = repairRecord({ head: STALE_HEAD });
         const selection = selectRepairs([threadState({ replies: [repairReply(11, record)] })]);
@@ -511,5 +579,33 @@ describe('confirmClientMutationId', () => {
         expect(confirmClientMutationId(PR + 1, THREAD, HEAD)).not.toBe(baseline);
         expect(confirmClientMutationId(PR, `${THREAD}x`, HEAD)).not.toBe(baseline);
         expect(confirmClientMutationId(PR, THREAD, STALE_HEAD)).not.toBe(baseline);
+    });
+});
+
+/**
+ * The exact text both thread readers send. `pageInfo` is a member of the comment connection, so it
+ * belongs beside `nodes`; the expectation is written out independently of the shared fragment, so a
+ * nested `pageInfo` in either module reddens this spec.
+ */
+describe('review thread queries', () => {
+    const COMMENT_FIELDS =
+        'nodes{id body path line side author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}';
+
+    it('should ask for the repair thread and its comments with pageInfo beside nodes', () => {
+        expect(threadQuery(false)).toBe(
+            `query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number headRefOid} comments(first:100){${COMMENT_FIELDS}}}}}`
+        );
+        expect(threadQuery(true)).toBe(
+            `query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number headRefOid} comments(first:100,after:$cursor){${COMMENT_FIELDS}}}}}`
+        );
+    });
+
+    it('should ask for the review threads with pageInfo beside nodes in both page forms', () => {
+        expect(threadPage(undefined)).toBe(
+            `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){${COMMENT_FIELDS}}}}}`
+        );
+        expect(threadPage('CURSOR')).toBe(
+            `query($owner:String!,$name:String!,$number:Int!,$cursor:String!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){${COMMENT_FIELDS}}}}}`
+        );
     });
 });

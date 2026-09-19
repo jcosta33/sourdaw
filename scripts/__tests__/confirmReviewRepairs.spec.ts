@@ -29,6 +29,7 @@ import {
     confirmClientMutationId,
     parseReviewRepairReply,
     renderReviewRepairReply,
+    selectEligibleRepairs,
     type ReviewRepairRecord,
     type ReviewRepairThreadState,
 } from '../reviewRepair.ts';
@@ -133,6 +134,7 @@ function fakePort(
     const calls: string[] = [];
     const logs: string[] = [];
     const mutations: Mutation[] = [];
+    let postedReplies = 0;
     // Fresh objects per run, so a mutation the command applies never reaches the caller's fixture.
     const threads = new Map(
         initialThreads.map((thread) => [thread.thread, { ...thread, replies: [...thread.replies] }] as const)
@@ -153,6 +155,19 @@ function fakePort(
         postConfirmation: (thread, body, clientMutationId) => {
             calls.push(`post:${thread}`);
             mutations.push({ kind: 'post', thread, clientMutationId, body });
+            // The reply is applied to the thread state a later run reads back, so a rerun's decision
+            // to skip the post observes the first pass's post rather than a scripted state.
+            const current = threads.get(thread);
+            if (current !== undefined) {
+                threads.set(thread, {
+                    ...current,
+                    replies: [
+                        ...current.replies,
+                        { id: 9_800 + postedReplies, body, authorNodeId: REVIEWER_BOT_NODE_ID },
+                    ],
+                });
+                postedReplies += 1;
+            }
         },
         resolve: (thread, clientMutationId) => {
             calls.push(`resolve:${thread}`);
@@ -321,6 +336,27 @@ describe('confirmReviewRepairs', () => {
         ]);
     });
 
+    it('should skip the confirmation reply a rerun finds already posted and complete the resolve', () => {
+        const { port: base, mutations } = fakePort();
+        let resolveFails = true;
+        const port: ConfirmReviewRepairsPort = {
+            ...base,
+            resolve: (thread, clientMutationId) => {
+                if (resolveFails) {
+                    resolveFails = false;
+                    throw new Error(`resolve exploded on ${thread}`);
+                }
+                base.resolve(thread, clientMutationId);
+            },
+        };
+
+        expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(`resolve exploded on ${THREAD}`);
+        expect(confirmReviewRepairs(PR, HEAD, port)).toEqual({ resolved: [THREAD, SECOND_THREAD] });
+
+        const posted = mutations.filter((entry) => entry.kind === 'post');
+        expect(posted.map((entry) => entry.thread)).toEqual([THREAD, SECOND_THREAD]);
+    });
+
     it('should keep the client mutation ids stable across runs', () => {
         const { port, mutations } = fakePort();
         confirmReviewRepairs(PR, HEAD, port);
@@ -389,8 +425,8 @@ describe('confirmReviewRepairs', () => {
     });
 
     it('should fail closed on a record whose commit is not an ancestor of the head', () => {
-        // Only this thread's record is not an ancestor; the rest of the batch stays eligible, so one
-        // refusal is what aborts the transaction.
+        // Only the second thread's OTHER_COMMIT record is a non-ancestor: the first thread's COMMIT
+        // record stays eligible, so the refusal is driven by the second record and the batch aborts whole.
         const threads = cleanThreads();
         const secondRecord = recordFor({
             thread: SECOND_THREAD,
@@ -402,20 +438,30 @@ describe('confirmReviewRepairs', () => {
                 side: 'RIGHT',
             },
         });
-        const { port, calls, mutations } = fakePort(
-            HEAD,
-            [
-                threads[0]!,
-                {
-                    ...threads[1]!,
-                    replies: [
-                        threads[1]!.replies[0]!,
-                        { id: 9_009, body: authorRecordReply(secondRecord), authorNodeId: AUTHOR_BOT_NODE_ID },
-                    ],
-                },
-            ],
-            (commit, head) => !(commit === COMMIT && head === HEAD)
-        );
+        const batch = [
+            threads[0]!,
+            {
+                ...threads[1]!,
+                replies: [
+                    threads[1]!.replies[0]!,
+                    { id: 9_009, body: authorRecordReply(secondRecord), authorNodeId: AUTHOR_BOT_NODE_ID },
+                ],
+            },
+        ];
+        const isAncestor = (commit: string, head: string) => commit === COMMIT && head === HEAD;
+        const selection = selectEligibleRepairs({
+            threads: batch,
+            pr: PR,
+            head: HEAD,
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            isAncestor,
+        });
+        expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
+        expect(selection.refused).toEqual([
+            { thread: SECOND_THREAD, reason: `commit ${OTHER_COMMIT} is not an ancestor of head ${HEAD}` },
+        ]);
+
+        const { port, calls, mutations } = fakePort(HEAD, batch, isAncestor);
         expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(REFUSED_MESSAGE);
         expect(mutations).toEqual([]);
         expect(calls).toContain(`isAncestor:${COMMIT}:${HEAD}`);

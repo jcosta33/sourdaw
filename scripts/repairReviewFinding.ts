@@ -30,6 +30,7 @@ import {
 import { fail } from './prContract.ts';
 import {
     REVIEW_REPAIR_FORMAT,
+    REVIEW_THREAD_COMMENT_FIELDS,
     assertReviewRepairRecord,
     parseReviewRepairReply,
     renderReviewRepairReply,
@@ -355,6 +356,9 @@ export function repairReviewFinding(
         fail(`GitHub returned thread ${state.threadId} for requested thread ${input.threadId}`);
     }
     assertThreadPrecondition(state, number, input.head);
+    if (input.commit === input.head) {
+        fail(`commit ${input.commit} is not a distinct commit from head ${input.head}`);
+    }
     if (!port.isAncestor(input.commit, input.head)) {
         fail(`commit ${input.commit} is not an ancestor of head ${input.head}`);
     }
@@ -386,12 +390,9 @@ type ThreadNode = {
     comments?: { nodes?: unknown; pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } };
 };
 
-const THREAD_COMMENT_FIELDS =
-    'nodes{id body path line side author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}';
-
-function threadQuery(paged: boolean): string {
+export function threadQuery(paged: boolean): string {
     const connection = paged ? 'comments(first:100,after:$cursor)' : 'comments(first:100)';
-    return `query($threadId:ID!${paged ? ',$cursor:String!' : ''}){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number headRefOid} ${connection}{${THREAD_COMMENT_FIELDS}}}}}`;
+    return `query($threadId:ID!${paged ? ',$cursor:String!' : ''}){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number headRefOid} ${connection}{${REVIEW_THREAD_COMMENT_FIELDS}}}}}`;
 }
 
 type ThreadCommentNode = {
