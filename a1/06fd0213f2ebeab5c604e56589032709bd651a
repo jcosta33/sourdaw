@@ -1,0 +1,57 @@
+src/modules/Arrangement/useCases/__tests__/agentBuiltinDeviceFactoryManifest.spec.ts
+  s_ed5aa36a3ba357::t_d56e815e6cce03 117-119,124,129
+  s_ed5aa36a3ba357::t_1a9a2971d481c3 134-142
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts
+  s_ed5aa36a3ba357::t_1ac804a795271d 108,149
+src/modules/Arrangement/useCases/index.ts
+  s_ed5aa36a3ba357::t_1ac804a795271d 189
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_ed5aa36a3ba357::t_1a9a2971d481c3 1170-1206
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts
+  s_ed5aa36a3ba357::t_1ac804a795271d 24
+src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts
+  s_ed5aa36a3ba357::t_ac9ce396065f36 644-653
+  s_ed5aa36a3ba357::t_92394022fcf0b5 655-657
+  s_ed5aa36a3ba357::t_bd90c8d76770c7 13,100-110,340,632-643,654
+  s_ed5aa36a3ba357::t_1a9a2971d481c3 618-631,658-659
+src/modules/Arrangement/repositories/presets/getFactoryPresetContractsByDeviceType.ts
+  s_ed5aa36a3ba357::t_1ac804a795271d 21-22,29
+src/modules/Arrangement/useCases/getAgentPresetDiscoveryManifest.ts
+  s_ed5aa36a3ba357::t_1ac804a795271d 1-43
+src/modules/Project/useCases/agentDiscovery/collectPresetDiscoveryEntries.ts
+  s_ed5aa36a3ba357::t_1ac804a795271d 1,5,10,17,21-22,25-27,35
+src/modules/Project/useCases/agentDiscovery/collectDeviceDiscoveryEntries.ts
+  s_ed5aa36a3ba357::t_1ac804a795271d 32,50
+src/modules/Arrangement/repositories/presets/__tests__/getFactoryPresetContractsByDeviceType.spec.ts
+  s_ed5aa36a3ba357::t_1a9a2971d481c3 1-35,45-50,52-57
+  s_ed5aa36a3ba357::t_9df304c6450fee 36-44,51
+src/modules/Project/services/agentDiscovery/discoveryCandidates.ts
+  s_ed5aa36a3ba357::t_1ac804a795271d 14-15,18-19,38
+  s_ed5aa36a3ba357::t_ac9ce396065f36 20-24
+src/modules/AiRuntime/useCases/__tests__/deviceCharacterResolution.spec.ts
+  s_ed5aa36a3ba357::t_2bce6b64528172 1-48
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptors.ts
+  s_ed5aa36a3ba357::t_fa77db942d5388 872
+src/modules/Arrangement/models/DeviceParameterTypes.ts
+  s_ed5aa36a3ba357::t_1ac804a795271d 164-173,197-198
+src/modules/Arrangement/repositories/presets/expandedPresets.ts
+  s_ed5aa36a3ba357::t_2bce6b64528172 635
+src/modules/Arrangement/useCases/getAgentBuiltinDeviceFactoryManifest.ts
+  s_ed5aa36a3ba357::t_1ac804a795271d 31,106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a106fd0213f2ebeab5c604e56589032709bd651a",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
