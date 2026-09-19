@@ -1,0 +1,16 @@
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  h_1228e573df1f42 754-760
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  h_1228e573df1f42 103-104,202-217,1362-1479
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d3f7347d60a113a50929696de46a3847e0195fd7",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
