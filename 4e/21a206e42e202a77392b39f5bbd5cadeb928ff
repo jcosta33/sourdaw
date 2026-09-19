@@ -1,0 +1,24 @@
+src/modules/Command/useCases/__tests__/parameterUnitValidation.spec.ts
+  s_ed5aa36a3ba357::t_ea89a949dbc62d 6,8,71-78,84,88-94,98-102,104
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_ed5aa36a3ba357::t_ea89a949dbc62d 443,458,576,591
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_ed5aa36a3ba357::t_ea89a949dbc62d 38-39,41-51,53
+  s_ed5aa36a3ba357::t_9117ce9d398ffa 40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4e21a206e42e202a77392b39f5bbd5cadeb928ff",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
