@@ -53,7 +53,7 @@ import {
     type ReviewEvent,
 } from './reviewDocumentParser.ts';
 import { assertPublicationSafeEvidence } from './reviewDossier.ts';
-import { buildReviewDossier, recordedReviewStances } from './reviewDossierPublication.ts';
+import { buildReviewDossier, readDossierStanceDraws, recordedReviewStances } from './reviewDossierPublication.ts';
 import { assertReviewerModelDiversity, type AuthorshipLabel } from './reviewerModelDiversity.ts';
 import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
 
@@ -312,7 +312,9 @@ function prepareReviewPublication(
     const document =
         actorNodeId === ORCHESTRATOR_USER_NODE_ID ? parseAcceptanceDocument(parsed) : parseReviewDocument(parsed);
     assertPublicationEvidence(document, head);
-    assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document });
+    // The acceptance identity never reads the dossier, and its diversity check is exempt anyway.
+    const stanceDraws = actorNodeId === ORCHESTRATOR_USER_NODE_ID ? undefined : readDossierStanceDraws(port, bundle);
+    assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document, stanceDraws });
     const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {

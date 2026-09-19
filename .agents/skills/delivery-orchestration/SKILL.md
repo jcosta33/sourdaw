@@ -170,8 +170,9 @@ movement of the base tip is allowed when that context is unchanged.
 
 The caller writes `stances.json` into that bundle in two phases: before
 dispatch it holds the derived stance set, one entry per stance naming the
-failure mode that admits it; as each dispatch reports, the reviewer's
-baseline-probe result is recorded into the same file. It sits alongside the
+failure mode that admits it; as each draw reports, its baseline-probe result —
+and its exhaustion when that draw fell back to an authoring model — is
+recorded into the same file. It sits alongside the
 later `dossier.json`, `review.json`, `discarded.json`, and `acceptance.json`.
 
 `risk-plan.json` records `format: 'risk-plan-v1'`, the `pr`/`headSha`/`baseSha`
@@ -203,7 +204,9 @@ base context. Fresh reviewer publication also carries the head-bound dossier and
 refuses before any remote write when the plan or dossier is missing, malformed,
 or rebound from the head/base/pr it must bind; when the bundle carries
 `stances.json` and the dossier's `stances` entries do not correspond to that
-record one-to-one — one entry per dispatched stance, no more and no fewer; when
+record as sets of stance names — every draw names a recorded stance and every
+recorded stance carries at least one draw, so several draws on one stance share
+its single entry; when
 its accepted findings do not match the document's comments
 one-to-one; or when its recommendation disagrees with the document's event. It
 then persists the canonical record, `format: 'dossier-v1'`: an append-only event
@@ -226,7 +229,9 @@ harness, model, and invocation are the dispatching session's choice. When only t
 author's model is available, the same-model review still publishes: `review.json`
 carries `modelExhaustion` (one line naming what made every other model unavailable)
 and the published body names the reviewer model, so the deviation is recorded rather
-than silently accepted.
+than silently accepted. A draw on an authoring model records its own exhaustion; a
+document-level whole-round `modelExhaustion` covers every draw; per-draw exhaustion
+excuses the document-level field in a mixed round.
 
 ## Review document formats
 
@@ -249,11 +254,14 @@ report.
 
 The orchestrator writes the caller-authored `dossier.json` beside `review.json`
 and `discarded.json`, in input form `format: 'dossier-input-v1'`: the same
-`pr`/`headSha`/`baseSha`, one `stances` entry per dispatched stance — the names
-the bundle's `stances.json` records, plan menu ids or free-form risk names
-alike — each with its `reviewerModel`, `modelTier` of
+`pr`/`headSha`/`baseSha`, one completed `stances` entry per dispatched draw — the
+names the bundle's `stances.json` records, plan menu ids or free-form risk names
+alike; one stance may carry several draws with distinct reviewer models — each
+with its `reviewerModel`, `modelTier` of
 `economy`/`standard`/`strongest`, and `outcome` of
-`blocker-found`/`clean`, plus the bounded `evidence` claims, and `limitations`.
+`blocker-found`/`clean`, its `exhaustion` when that draw fell back to an
+authoring model (one line naming what made every other model unavailable for
+that draw), the bounded `evidence` claims, and `limitations`.
 The accepted findings are not declared there: they are the review document's own
 inline comments. `discarded.json` is the orchestrator's discard record and is
 now actually read: an array of `{ finding, stance, reason }`, one entry per

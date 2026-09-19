@@ -41,8 +41,10 @@ habit or agent confidence.
 
 For each PR, diversify delegated tasks among equally adequate models at the cheapest adequate tier.
 Assign reviewers a model different from the author's when that set offers one; otherwise reuse the
-author's, recording the fallback in the review document: `modelExhaustion` names what made every
-other model unavailable, and the published body names the reviewer model.
+author's, recording the fallback in the review document: the published body names the reviewer
+model, and a draw on an authoring model records its own exhaustion; a document-level whole-round
+`modelExhaustion` covers every draw; per-draw exhaustion excuses the document-level field in a
+mixed round.
 
 Design the whole requested outcome before dispatch, then give each agent one independently safe
 behavior or behavior-preserving preparation with its required tests. Every dispatch includes the
@@ -78,24 +80,26 @@ holds, not a stance. Independence is distinct failure modes, never distinct file
 to different touched paths that share one probe library are one stance. Three is a minimum, not a
 target: fewer than three named risks means the enumeration was too narrow. Record the dispatched
 set in the bundle's `stances.json` before dispatch, one line per stance naming the failure mode
-that admits it — the input or state that breaks — never the path the diff touches; the caller
-writes it, no script generates it, and the orchestrator confirms its presence and substance before
-acceptance.
+that admits it — the input or state that breaks — never the path the diff touches; as each draw
+reports, its baseline probe and its exhaustion when it fell back are recorded beside its stance.
+The caller writes it, no script generates it, and the orchestrator confirms its presence and
+substance before acceptance.
 
 Tier reviewers by the criticality of the risk each stance attacks: economy for narrow low-risk
 checks, standard for behavioral and integration risk, strongest for real-time audio, security,
 data loss, irreversible change, or disputed severe findings. Also raise the tier for wide module
 diffusion, heavy churn on defect-prone surfaces, or surfaces touched by many recent lanes.
 The orchestrator may combine two independent strongest-tier draws from different models on one
-stance to expose different findings; this extends
-model diversity, not the stance count.
+stance to expose different findings; this extends model diversity, not the stance count, and each
+draw records its own completed entry and baseline probe.
 
 Every reviewer carries the baseline posture regardless of stance: establish what must break for
 each existing check to fail and whether it observes what its name claims. A pass alone is not
 evidence. The reviewer names a mechanical probe: revert the behavioral hunk or apply one targeted
-mutation, then run the named spec; remaining green fails the round. Each dispatch reports its
-baseline probe — the spec it ran, the mutation it applied, the observed result — and the
-orchestrator records these in `stances.json` beside the stances. The orchestrator validates or the
+mutation, then run the named spec; remaining green fails the round. Each draw reports its
+baseline probe — the spec it ran, the mutation it applied, the observed result — and its
+exhaustion when it fell back to an authoring model, and the orchestrator records these in
+`stances.json` beside the stances. The orchestrator validates or the
 author repairs in the change's existing lane; reviewers have no writable tree.
 
 Dispatch a posture as well as a surface: try to break the change; report the strongest surviving
@@ -125,12 +129,15 @@ The plan is an input to the stance enumeration, never a stance requirement: its 
 standing stance mapping name risk surfaces the enumeration must weigh, and the derived stances
 remain the orchestrator's judgement recorded in `stances.json`.
 
-Write the caller-authored `dossier.json` beside `review.json` and `discarded.json`: one entry per
-dispatched stance recording its reviewer model, tier, and outcome, the bounded evidence claims, and the
+Write the caller-authored `dossier.json` beside `review.json` and `discarded.json`: one completed
+entry per dispatched draw, each recording its stance, reviewer model, tier, and outcome; one stance
+may carry several draws with distinct models, and a draw that fell back to an authoring model
+records its exhaustion. Alongside the draw entries go the bounded evidence claims and the
 limitations. Accepted findings are not declared there; they are the review document's own inline
 comments. `review:publish` refuses a fresh reviewer publication before any remote write when the
 dossier is missing, malformed, or rebound from the head the plan binds; when the bundle carries
-`stances.json`, every dossier entry must match a recorded stance and every recorded stance an entry;
+`stances.json`, every dossier entry must match a recorded stance and every recorded stance an
+entry (draws on one stance share its single recorded entry);
 when its accepted findings do not match the document's comments one-to-one; or when its
 recommendation disagrees with the document's event. It then persists the canonical append-only record bound to the head; re-publishing
 the same head replays that record unchanged rather than minting a second one.
