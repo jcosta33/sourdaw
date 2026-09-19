@@ -419,7 +419,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/openAiProviderAdapter.contract.spec.ts",
-                    "digest": "c77fb1b0f05bcc9a4da3889e208863732f7b08fa63d38cdad339b60df11d8f74"
+                    "digest": "db14bd5f3ed63c2f47e969c0697ef0bfffb1c86f15a257830b708967d6ba1819"
                 }
             ]
         },
@@ -431,7 +431,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/anthropicProviderAdapter.contract.spec.ts",
-                    "digest": "63619f9942705f6828bc7f0e014b749d740f5ae5b0f94984afe203176d083770"
+                    "digest": "24b88917123be95f636b3cb3fd1117d5533573b518c8faee5b03b5ba854ce4dc"
                 }
             ]
         },

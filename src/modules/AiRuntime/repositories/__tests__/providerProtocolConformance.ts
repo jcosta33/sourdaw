@@ -172,7 +172,8 @@ export type ProviderToolScenario =
     | 'two-turn-history'
     | 'foreign-turn-history'
     | 'unidentified-turn-history'
-    | 'synthesised-call-id-history';
+    | 'synthesised-call-id-history'
+    | 'multi-call-turn-history';
 
 /** The receipt the earlier turn earned, answered natively as that dialect's tool result. */
 export const PROVIDER_TURN_HISTORY_RECEIPT: ApplicationToolReceipt = {
@@ -214,6 +215,25 @@ export const PROVIDER_SYNTHESISED_TURN_RECEIPT: ApplicationToolReceipt = {
     ...PROVIDER_TURN_HISTORY_RECEIPT,
     callId: SYNTHESISED_TURN_CALL_ID,
 };
+
+/**
+ * The identifiers the loop resolves for a turn that carried two calls, both unnamed by the
+ * provider: the same `<loopId>-<turn>-<index>` form, one per index. A dialect that restates or
+ * answers only the first call leaves the second identifier on one side of the pairing alone.
+ */
+export const MULTI_CALL_TURN_CALL_IDS = ['loop-1-1-0', 'loop-1-1-1'] as const;
+
+/** Both receipts that turn earned, distinct so a receipt answering the wrong call is visible. */
+export const PROVIDER_MULTI_CALL_TURN_RECEIPTS: readonly ApplicationToolReceipt[] = [
+    { ...PROVIDER_TURN_HISTORY_RECEIPT, callId: MULTI_CALL_TURN_CALL_IDS[0] },
+    {
+        ...PROVIDER_TURN_HISTORY_RECEIPT,
+        callId: MULTI_CALL_TURN_CALL_IDS[1],
+        toolName: 'muteTrack',
+        data: { muted: true },
+        summary: 'Muted the track.',
+    },
+];
 
 /** The two tool names every contract spec's `forced-terminal` scenario forces, matching the
  * fixture's own `toolCalls` so the same response body admits under a required directive. */
@@ -528,6 +548,17 @@ export function describeProviderProtocolConformance(name: string, harness: Provi
             const conversation = readConversation(observed.request);
             expect(conversation).not.toContain(PROVIDER_TURN_HISTORY_FIXTURE.assistantMarker);
             expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.budgetNote);
+            expectToolRequest(observed.request);
+        });
+
+        it('restates every call of a multi-call turn and answers each with its own receipt', async () => {
+            const observed = await harness.planTools('multi-call-turn-history');
+
+            // Both calls and both receipts, in the order the turn recorded them: a dialect that
+            // stops after the first leaves the second call unanswered or its receipt orphaned.
+            const correlation = harness.readCorrelatingIds(observed.request);
+            expect(correlation.callIds).toEqual([...MULTI_CALL_TURN_CALL_IDS]);
+            expect(correlation.resultIds).toEqual([...MULTI_CALL_TURN_CALL_IDS]);
             expectToolRequest(observed.request);
         });
 

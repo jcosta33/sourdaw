@@ -11,8 +11,10 @@ import { compileProviderAdapterInstallation, OPENAI_RESPONSES_ADAPTER_ID } from 
 import {
     describeProviderProtocolConformance,
     FORCED_TERMINAL_TOOL_NAMES,
+    MULTI_CALL_TURN_CALL_IDS,
     PROVIDER_CONFORMANCE_FIXTURE as FIXTURE,
     PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
+    PROVIDER_MULTI_CALL_TURN_RECEIPTS,
     PROVIDER_TURN_HISTORY_FIXTURE as HISTORY,
     PROVIDER_SYNTHESISED_TURN_RECEIPT,
     PROVIDER_TURN_HISTORY_RECEIPT,
@@ -260,6 +262,20 @@ const UNIDENTIFIED_TURN_HISTORY: HostedTurnHistory = [
     },
 ];
 
+/** One turn carrying two calls the provider never named, each with its own receipt. */
+const MULTI_CALL_TURN_HISTORY: HostedTurnHistory = [
+    {
+        turn: 1,
+        provider: 'openai',
+        assistantItems: null,
+        calls: [
+            { id: MULTI_CALL_TURN_CALL_IDS[0], name: 'project.query', arguments: {} },
+            { id: MULTI_CALL_TURN_CALL_IDS[1], name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
+        ],
+        receipts: PROVIDER_MULTI_CALL_TURN_RECEIPTS,
+    },
+];
+
 function turnHistoryFor(scenario: ProviderToolScenario): { history: HostedTurnHistory; budgetNote: string } | null {
     if (scenario === 'two-turn-history') {
         return { history: OWN_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
@@ -272,6 +288,9 @@ function turnHistoryFor(scenario: ProviderToolScenario): { history: HostedTurnHi
     }
     if (scenario === 'unidentified-turn-history') {
         return { history: UNIDENTIFIED_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
+    }
+    if (scenario === 'multi-call-turn-history') {
+        return { history: MULTI_CALL_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
     }
     return null;
 }
