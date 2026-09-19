@@ -102,6 +102,24 @@ export const handleSetClipGain = createHandler<'setClipGain'>({
                           },
                       }
                     : null,
+            // Without this, `redo.ts` would replay the forward action's own
+            // `deltaDb`/`gainDb`, re-resolving it against whatever gain the clip
+            // holds at redo time instead of the gain this `describe` actually
+            // predicted — the redo could land somewhere the retained inverse never
+            // expects, conflicting on every later undo. Stated linearly, the same
+            // way the inverse is, so replay always lands exactly where forward
+            // execution did.
+            redoAction:
+                previousClip && requested?.ok
+                    ? {
+                          type: 'setClipGain',
+                          payload: {
+                              clipId: previousClip.id,
+                              gain: clampClipGain(requested.linear),
+                              expectedGain: previousClip.gain,
+                          },
+                      }
+                    : undefined,
         };
     },
     undoable: true,

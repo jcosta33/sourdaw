@@ -4,6 +4,7 @@ import { type HandlerValidationContext } from '#/utils/handlerContract';
 import { type Track } from '../stores/trackStore';
 import { clampClipGain } from '../transformers/clampClipGain';
 import { getPlatformPlugins } from '../useCases/getPlatformPlugins';
+import { clampTrackGain } from '../useCases/setTrackGainPan/clampTrackGain';
 
 export function projectTrackThroughPriorBatchActions(track: Track, context: HandlerValidationContext): Track {
     const projected = structuredClone(track);
@@ -54,8 +55,12 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
                 projected.gain,
                 TRACK_FADER_LAW
             );
+            // The writer clamps a resolved gain on write (`clampTrackGain`), so the
+            // projection must clamp it too, the same way the clip arm below clamps
+            // its own resolved gain — otherwise a later action in the batch would
+            // plan against a gain the store could never actually hold.
             if (resolved.ok) {
-                projected.gain = resolved.linear;
+                projected.gain = clampTrackGain(resolved.linear);
             }
         } else if (action.type === 'renameTrack') {
             projected.name = action.payload.name;

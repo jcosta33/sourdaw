@@ -151,6 +151,23 @@ export const handleSetSend = createHandler<'setSend'>({
                     expectedPreFader: existing.preFader,
                 },
             },
+            // Without this, `redo.ts` would replay the forward action's own
+            // `deltaDb`/`gainDb`, re-resolving it against whatever level the send
+            // holds at redo time instead of the level this `describe` actually
+            // predicted — the redo could land somewhere the retained inverse never
+            // expects, conflicting on every later undo. Stated linearly, the same
+            // way the inverse is, so replay always lands exactly where forward
+            // execution did.
+            redoAction: {
+                type: 'setSend',
+                payload: {
+                    trackId: alpha.payload.trackId,
+                    busId: alpha.payload.busId,
+                    level: requested.linear,
+                    expectedLevel: existing.level,
+                    expectedPreFader: existing.preFader,
+                },
+            },
         };
     },
     previewExecution: 'isolated-project',

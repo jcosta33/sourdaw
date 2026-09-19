@@ -29,6 +29,7 @@ import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { clearUndoHistory } from '../clearUndoHistory';
 import { executeAppAction } from '../executeAppAction';
 import { executeAppActionBatch } from '../executeAppActionBatch';
+import { redo } from '../redo';
 import { resetActionReplayAuthority } from '../resetActionReplayAuthority';
 import { undo } from '../undo';
 
@@ -242,6 +243,17 @@ describe('decibel arguments on level-bearing commands', () => {
 
         expect(undoResult.headConsumed).toBe(true);
         expect(trackGain()).toBe(0.8);
+
+        // The redo must land back on the compounded post-batch gain, not
+        // re-resolve `deltaDb: -6` against the live 0.8 it now sits at.
+        await redo();
+
+        expect(trackGain()).toBeCloseTo(0.251189, 6);
+
+        const secondUndoResult = await undo();
+
+        expect(secondUndoResult.headConsumed).toBe(true);
+        expect(trackGain()).toBe(0.8);
     });
 
     it.each([
@@ -280,6 +292,17 @@ describe('decibel arguments on level-bearing commands', () => {
         const undoResult = await undo();
 
         expect(undoResult.headConsumed).toBe(true);
+        expect(transportStore.value?.masterGain).toBe(80);
+
+        // The redo must land back on the compounded post-batch percent, not
+        // re-resolve `deltaDb: -6` against the live 80 it now sits at.
+        await redo();
+
+        expect(transportStore.value?.masterGain).toBeCloseTo(100 * dbToGain(-12), 3);
+
+        const secondUndoResult = await undo();
+
+        expect(secondUndoResult.headConsumed).toBe(true);
         expect(transportStore.value?.masterGain).toBe(80);
     });
 
@@ -374,6 +397,17 @@ describe('decibel arguments on level-bearing commands', () => {
 
         expect(undoResult.headConsumed).toBe(true);
         expect(clipGain()).toBeCloseTo(dbToGain(4), 5);
+
+        // The redo must land back on the compounded post-batch gain, not
+        // re-resolve `deltaDb: -6` against the live pre-batch gain it now sits at.
+        await redo();
+
+        expect(clipGain()).toBeCloseTo(dbToGain(gainToDb(2) - 6), 5);
+
+        const secondUndoResult = await undo();
+
+        expect(secondUndoResult.headConsumed).toBe(true);
+        expect(clipGain()).toBeCloseTo(dbToGain(4), 5);
     });
 
     it.each([
@@ -425,6 +459,17 @@ describe('decibel arguments on level-bearing commands', () => {
         const undoResult = await undo();
 
         expect(undoResult.headConsumed).toBe(true);
+        expect(sendLevel()).toBe(0.5);
+
+        // The redo must land back on the compounded post-batch level, not
+        // re-resolve `deltaDb: 3` against the live 0.5 it now sits at.
+        await redo();
+
+        expect(sendLevel()).toBeCloseTo(dbToGain(-12) * dbToGain(3), 5);
+
+        const secondUndoResult = await undo();
+
+        expect(secondUndoResult.headConsumed).toBe(true);
         expect(sendLevel()).toBe(0.5);
     });
 
