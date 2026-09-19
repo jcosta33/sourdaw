@@ -1,0 +1,23 @@
+scripts/__tests__/publishLane.spec.ts
+  s_9e15f5b7ec3308::t_ad06c075baea69 258-261,1223-1225,1251-1258,1263,2237-2289
+scripts/prContract.ts
+  s_9e15f5b7ec3308::t_55de03fc69518a 635-647,649-651,671-675
+scripts/publishLane.ts
+  s_9e15f5b7ec3308::t_f5c38a6e8bd1e6 1775-1777,1782
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d7d3a87d6342414d530e3dafeec502326b7c1638",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
