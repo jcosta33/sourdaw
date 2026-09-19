@@ -16,7 +16,7 @@ import { delimiter, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 
 import { runAcceptReviewCli } from '../acceptReview.ts';
@@ -58,13 +58,16 @@ import { runResolveReviewThreadCli } from '../resolveThread.ts';
 import {
     BOOTSTRAP_PATH,
     assertTrustedSourceGraph,
+    defaultPort,
     executeTrustedSnapshot,
+    fetchOriginMain,
     resolveTrustedLauncherBinding,
     resolveTrustedExecutable,
     runTrustedGithubWriteCommand,
     trustedGitReadEnv,
     trustedDependencyPaths,
     trustedSnapshotEnv,
+    type TrustedLauncherBinding,
 } from '../trustedGithubWriteBootstrap.ts';
 
 import type {
@@ -2047,6 +2050,14 @@ describe('package scripts and gitignore', () => {
             trustedPublishFixture(root, 'literal');
             const bootstrap = readFileSync(join(root, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8');
             const literalCommit = runGit(root, ['rev-parse', 'HEAD']);
+            // The launcher fetches origin/main before resolving (#4436): give the fixture a real
+            // remote whose main is the commit under test, so the fetch succeeds without moving
+            // the ref and stderr stays clean.
+            const origin = join(root, 'origin.git');
+            runGit(root, ['init', '--quiet', '--bare', '--initial-branch', 'main', origin]);
+            runGit(root, ['remote', 'add', 'origin', origin]);
+            runGit(root, ['push', '--quiet', 'origin', `${literalCommit}:refs/heads/main`]);
+            runGit(root, ['update-ref', 'refs/remotes/origin/main', literalCommit]);
 
             writeFileSync(
                 join(root, 'scripts/publishLane.ts'),
@@ -3490,5 +3501,129 @@ describe('package scripts and gitignore', () => {
             },
         ]);
         expect(disposed).toEqual(['ghs_tracker', 'ghs_author']);
+    });
+});
+
+describe('origin/main snapshot freshness (#4436)', () => {
+    const scratchRoots: string[] = [];
+    afterEach(() => {
+        for (const root of scratchRoots.splice(0)) {
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    function runGitWithInput(repository: string, args: string[], input: string): string {
+        const env = { ...process.env };
+        delete env.GIT_DIR;
+        delete env.GIT_WORK_TREE;
+        return execFileSync('git', args, { cwd: repository, env, encoding: 'utf8', input }).trim();
+    }
+
+    function commitIdentity(repository: string): void {
+        runGit(repository, ['config', 'user.email', 'agent@example.invalid']);
+        runGit(repository, ['config', 'user.name', 'agent']);
+    }
+
+    /** Advances the bare origin's main by one commit built with plumbing, leaving any clone's tracking ref behind. */
+    function advanceBareMain(origin: string): string {
+        const blob = runGitWithInput(origin, ['hash-object', '-w', '--stdin'], 'second\n');
+        const tree = runGitWithInput(origin, ['mktree'], `100644 blob ${blob}\tfile.txt\n`);
+        const parent = runGit(origin, ['rev-parse', 'refs/heads/main']);
+        const commit = runGit(origin, ['commit-tree', tree, '-p', parent, '-m', 'second']);
+        runGit(origin, ['update-ref', 'refs/heads/main', commit]);
+        return commit;
+    }
+
+    /**
+     * A bare origin advanced past what the clone's refs/remotes/origin/main names — the exact
+     * post-merge state the issue reproduces: without a fetch before the resolve, the launcher
+     * pins and executes the pre-merge closure while the true remote main has moved.
+     */
+    function staleCloneFixture(): { primary: string; oldHead: string; newHead: string } {
+        const fixtureRoot = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-stale-origin-')));
+        scratchRoots.push(fixtureRoot);
+        const origin = join(fixtureRoot, 'origin.git');
+        const primary = join(fixtureRoot, 'primary');
+        runGit(fixtureRoot, ['init', '--quiet', '--bare', '--initial-branch', 'main', origin]);
+        commitIdentity(origin);
+        runGit(fixtureRoot, ['clone', '--quiet', origin, primary]);
+        commitIdentity(primary);
+        writeFileSync(join(primary, 'file.txt'), 'first\n');
+        runGit(primary, ['add', 'file.txt']);
+        runGit(primary, ['commit', '--quiet', '-m', 'first']);
+        runGit(primary, ['push', '--quiet', 'origin', 'HEAD:refs/heads/main']);
+        runGit(primary, ['fetch', '--quiet', 'origin']);
+        const oldHead = runGit(primary, ['rev-parse', 'refs/remotes/origin/main']);
+        const newHead = advanceBareMain(origin);
+        return { primary, oldHead, newHead };
+    }
+
+    function bindingFor(primary: string): TrustedLauncherBinding {
+        return {
+            primaryRoot: primary,
+            commonDir: join(primary, '.git'),
+            gitPath: 'git',
+            ghPath: 'gh',
+        };
+    }
+
+    it('fetches before resolving, so a remote merge is visible without an external fetch', () => {
+        const { primary, oldHead, newHead } = staleCloneFixture();
+        expect(oldHead).not.toBe(newHead);
+
+        const resolved = defaultPort(bindingFor(primary)).resolveOriginMain();
+
+        expect(resolved).toBe(newHead);
+    });
+
+    it('reports a failed fetch loudly and still resolves the local ref', () => {
+        const fixtureRoot = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-dead-origin-')));
+        scratchRoots.push(fixtureRoot);
+        const primary = join(fixtureRoot, 'primary');
+        runGit(fixtureRoot, ['init', '--quiet', primary]);
+        commitIdentity(primary);
+        writeFileSync(join(primary, 'file.txt'), 'content\n');
+        runGit(primary, ['add', 'file.txt']);
+        runGit(primary, ['commit', '--quiet', '-m', 'first']);
+        const head = runGit(primary, ['rev-parse', 'HEAD']);
+        // A remote that cannot be fetched from, and a tracking ref the resolve falls back to.
+        runGit(primary, ['remote', 'add', 'origin', join(fixtureRoot, 'missing.git')]);
+        runGit(primary, ['update-ref', 'refs/remotes/origin/main', head]);
+        const warnings: string[] = [];
+        const originalError = console.error;
+        console.error = (message: string) => warnings.push(message);
+
+        try {
+            const resolved = defaultPort(bindingFor(primary)).resolveOriginMain();
+
+            expect(resolved).toBe(head);
+            expect(warnings.some((line) => line.includes('cannot fetch origin/main'))).toBe(true);
+            expect(warnings.some((line) => line.includes('may be stale'))).toBe(true);
+        } finally {
+            console.error = originalError;
+        }
+    });
+
+    it('fetchOriginMain pins the fetch argv and reports both failure shapes', () => {
+        const calls: { command: string; args: string[]; cwd: string }[] = [];
+        const spawn = (command: string, args: string[], options: { cwd: string }) => {
+            calls.push({ command, args, cwd: options.cwd });
+            return { status: 0, stderr: '' };
+        };
+        expect(fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, spawn)).toEqual({ fresh: true });
+        expect(calls).toEqual([{ command: '/usr/bin/git', args: ['fetch', 'origin', 'main'], cwd: '/repo' }]);
+
+        expect(
+            fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, () => ({
+                status: 128,
+                stderr: 'fatal: remote error\n',
+            }))
+        ).toEqual({ fresh: false, reason: 'fatal: remote error' });
+        expect(
+            fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, () => ({
+                status: null,
+                stderr: '',
+            }))
+        ).toEqual({ fresh: false, reason: 'git fetch exited signal' });
     });
 });
