@@ -1,0 +1,14 @@
+.agents/skills/review-stances/session-lifecycle.md
+  h_1228e573df1f42 108-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a309c2c1182d361f1b965c051d111d1a4bc30065",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
