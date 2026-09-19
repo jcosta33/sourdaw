@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
     CONFIRM_USAGE,
+    authenticateConfirmReviewer,
     confirmReplyClientMutationId,
     confirmResolveClientMutationId,
     confirmReviewRepairs,
@@ -1575,5 +1576,10 @@ describe('defaultConfirmReviewRepairsCoordinatorDependencies', () => {
     it('should bind the reviewer role and the module confirm function', () => {
         const dependencies = defaultConfirmReviewRepairsCoordinatorDependencies();
         expect(dependencies.confirm).toBe(confirmReviewRepairs);
+    });
+
+    it('should bind reviewer authentication to the confirm adapter, whose mint is the confirm set', () => {
+        const dependencies = defaultConfirmReviewRepairsCoordinatorDependencies();
+        expect(dependencies.authenticateReviewer).toBe(authenticateConfirmReviewer);
     });
 });

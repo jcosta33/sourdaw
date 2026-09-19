@@ -53,3 +53,18 @@ Probe that would have caught it: enumerate every implicit root, create a synthet
 sibling one component outside each owned child, and drive every exposed read, list and write route.
 Require the sibling to be refused without mutation while the owned child and an explicit recursive
 grant remain positive controls.
+
+### 2026-09-19 — the reviewer confirm token could not perform its own mutation (introduced via PR #4411)
+
+`review:confirm` resolved threads through a reviewer installation token minted `contents: read`;
+GitHub gates `resolveReviewThread` on repository write access, so every confirm failed with
+"Resource not accessible by integration" and every lane silently fell back to author-side `Done` —
+the public record never showed a reviewer-resolved thread.
+
+Blind spot: review verified the flow's records and idempotence but never executed the identity's
+own GitHub mutation, so a permission-set/mutation mismatch shipped; the universal author-side
+fallback masked it from every later session.
+
+Probe that would have caught it: for every GitHub mutation a shipped script performs, prove the
+minted permission set admits that mutation class — resolve or create one real thread under the
+minted identity in a fixture repository and require the mutation to succeed before the flow lands.

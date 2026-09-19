@@ -88,6 +88,16 @@ export const REVIEWER_MINT_PERMISSIONS = {
     pull_requests: 'write',
 } as const;
 
+/**
+ * `resolveReviewThread` is gated on repository write access, so thread resolution needs contents
+ * write while review publication stays at read. Confirm keeps its own set so no other reviewer
+ * command's token is broadened.
+ */
+export const CONFIRM_REVIEWER_MINT_PERMISSIONS = {
+    contents: 'write',
+    pull_requests: 'write',
+} as const;
+
 export type Role = 'author' | 'reviewer';
 
 export type RoleCredentials = {
@@ -301,13 +311,15 @@ export async function mintInstallationToken(input: {
 export async function authenticateRole(input: {
     primaryRoot: string;
     role: Role;
+    /** Per-command mint override; only a command whose set the role default cannot serve supplies it. */
+    permissions?: MintPermissions;
     readFile?: FileReader;
     request?: GitHubJsonClient;
     env?: NodeJS.ProcessEnv;
 }): Promise<{ credentials: RoleCredentials; minted: MintedInstallation; session: GhSession }> {
     return authenticateWithPermissions(
         input,
-        input.role === 'author' ? AUTHOR_MINT_PERMISSIONS : REVIEWER_MINT_PERMISSIONS
+        input.permissions ?? (input.role === 'author' ? AUTHOR_MINT_PERMISSIONS : REVIEWER_MINT_PERMISSIONS)
     );
 }
 

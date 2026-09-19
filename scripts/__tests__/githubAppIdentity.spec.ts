@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { authenticateConfirmReviewer } from '../confirmReviewRepairs.ts';
 import {
     AUTHOR_BOT_NODE_ID,
     ORCHESTRATOR_USER_NODE_ID,
@@ -20,6 +21,7 @@ import {
     GITHUB_HTTPS_REMOTE,
     REVIEWER_BOT_NODE_ID,
     REVIEWER_MINT_PERMISSIONS,
+    CONFIRM_REVIEWER_MINT_PERMISSIONS,
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticatePublishingAuthor,
@@ -639,6 +641,79 @@ describe('installation mint', () => {
         expect(minted.token).toBe('ghs_minted');
         expect(requests.find((entry) => entry.url.includes('/users/'))?.authorization).toBe('Bearer ghs_minted');
     });
+
+    it('pins the reviewer and confirm mints to their exact permission sets', () => {
+        expect(REVIEWER_MINT_PERMISSIONS).toEqual({ contents: 'read', pull_requests: 'write' });
+        expect(CONFIRM_REVIEWER_MINT_PERMISSIONS).toEqual({ contents: 'write', pull_requests: 'write' });
+    });
+
+    it('mints the confirm reviewer set only when the confirm override is requested', async () => {
+        const { requests, request } = mintClient({
+            login: RENAMED_REVIEWER_LOGIN,
+            permissions: { contents: 'write', pull_requests: 'write' },
+        });
+        const auth = await authenticateRole({
+            primaryRoot: '/repo',
+            role: 'reviewer',
+            permissions: CONFIRM_REVIEWER_MINT_PERMISSIONS,
+            readFile: files(),
+            request,
+            env: {},
+        });
+        try {
+            expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({
+                permissions: CONFIRM_REVIEWER_MINT_PERMISSIONS,
+            });
+        } finally {
+            auth.session.dispose();
+        }
+    });
+
+    it('keeps the plain reviewer set as the default mint for publication', async () => {
+        const { requests, request } = mintClient({
+            login: RENAMED_REVIEWER_LOGIN,
+            permissions: { contents: 'read', pull_requests: 'write' },
+        });
+        const auth = await authenticateRole({
+            primaryRoot: '/repo',
+            role: 'reviewer',
+            readFile: files(),
+            request,
+            env: {},
+        });
+        try {
+            expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({ permissions: REVIEWER_MINT_PERMISSIONS });
+        } finally {
+            auth.session.dispose();
+        }
+    });
+
+    it('authenticates the confirm path through the reviewer credentials with the confirm set', async () => {
+        const { requests, request } = mintClient({
+            login: RENAMED_REVIEWER_LOGIN,
+            permissions: { contents: 'write', pull_requests: 'write' },
+        });
+        const reads: string[] = [];
+        const auth = await authenticateConfirmReviewer(
+            '/repo',
+            (path) => {
+                reads.push(path);
+                return files()(path);
+            },
+            request,
+            {}
+        );
+        try {
+            expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({
+                permissions: CONFIRM_REVIEWER_MINT_PERMISSIONS,
+            });
+            expect(reads.some((path) => path.endsWith('.env.sourdaw-reviewer'))).toBe(true);
+            expect(reads.some((path) => path.endsWith('.env.sourdaw-author'))).toBe(false);
+        } finally {
+            auth.session.dispose();
+        }
+    });
+
     it.each([
         ['reviewer', RENAMED_REVIEWER_LOGIN, AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID],
         ['author', RENAMED_AUTHOR_LOGIN, REVIEWER_BOT_NODE_ID, AUTHOR_BOT_NODE_ID],
