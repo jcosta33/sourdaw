@@ -34,11 +34,22 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Squash-merge                 | `pnpm deliver <pr>`                                                                                                                                                                           |
 | Recover a crashed delivery   | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
 | Recover a wedged review post | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
-| Close a superseded PR        | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                                                                                                                             |
+| Close a superseded PR        | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> --lineage <path-to-json>`                                                                                                    |
 | Prune spent remote branches  | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
 | Remove a spent lane          | `pnpm lane:remove <path>`                                                                                                                                                                     |
 | Strand an abandoned lane     | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                   |
 | Prune lane artifacts         | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                      |
+
+`pr:supersede` refuses to close a superseded pull request until every live
+review thread on it has exactly one recorded disposition on the replacement.
+Each finding is the decimal database id of a review thread's root comment, as
+GitHub reports it. The caller writes that total map as a `FindingLineage` JSON
+document and passes its path with `--lineage`; both the bare JSON object and the
+rendered marker form are accepted, `oldPr`/`replacementPr` must match the
+invocation, and a missing, unreadable, or malformed file refuses with the path.
+The transaction then posts the receipt plus a second lineage marker, converges
+duplicates to exactly one of each, and closes only afterwards, so a re-run after
+a partial transaction repairs rather than duplicates.
 
 `branch:prune` defaults to dry run and deletes only branches whose every PR is
 merged or closed. It retains a branch that is the last remote holder of a

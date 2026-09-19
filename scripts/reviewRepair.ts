@@ -14,6 +14,7 @@
  * publication-safety contract instead of restating its rules.
  */
 
+import { canonicalJson, lastMarkerLine, parseMarkerPayload } from './canonicalRecord.ts';
 import { fail } from './prContract.ts';
 import { REVIEW_EVIDENCE_FIELD_MAX_BYTES, assertPublicationSafeEvidence } from './reviewDossier.ts';
 
@@ -84,8 +85,6 @@ export type ReviewRepairSelection = {
     ignored: { thread: string; reason: string }[];
 };
 
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-
 type RepairCandidate = { record: ReviewRepairRecord; replyId: number };
 
 type AuthorRepairRecords =
@@ -97,20 +96,6 @@ type RepairConfirmation = {
     base: string;
     isAncestor: (commit: string, head: string) => boolean;
 };
-
-/** Key-sorted, whitespace-free JSON, so identical records have identical bytes. */
-function canonicalJson(value: JsonValue): string {
-    if (Array.isArray(value)) {
-        return `[${value.map((entry) => canonicalJson(entry)).join(',')}]`;
-    }
-    if (value !== null && typeof value === 'object') {
-        const members = Object.entries(value)
-            .sort(([left], [right]) => (left < right ? -1 : 1))
-            .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`);
-        return `{${members.join(',')}}`;
-    }
-    return JSON.stringify(value);
-}
 
 function serializeReviewRepairRecord(record: ReviewRepairRecord): string {
     return canonicalJson(record);
@@ -215,46 +200,13 @@ function readRecord(value: unknown): ReviewRepairRecord {
     };
 }
 
-function parseMarkerPayload(payload: string): unknown {
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(payload);
-    } catch {
-        return fail('review repair marker line is not valid JSON');
-    }
-    return parsed;
-}
-
-/**
- * A marker line starts with the marker token at the start of a trimmed line; a line that merely
- * mentions the token inside prose is not a marker, so such prose is ignored like any other.
- */
-function isMarkerLine(line: string): boolean {
-    if (!line.startsWith(REPAIR_MARKER)) {
-        return false;
-    }
-    const rest = line.slice(REPAIR_MARKER.length);
-    return rest === '' || /^\s/u.test(rest);
-}
-
-function lastMarkerLine(body: string): string | undefined {
-    let marker: string | undefined;
-    for (const line of body.split(/\r?\n/u)) {
-        const trimmed = line.trim();
-        if (isMarkerLine(trimmed)) {
-            marker = trimmed;
-        }
-    }
-    return marker;
-}
-
 export function renderReviewRepairReply(record: ReviewRepairRecord): string {
     const header = `${REPAIR_HEADER_PREFIX}${record.finding.path}:${record.finding.line} ${record.finding.side}`;
     return [header, record.summary, '', `${REPAIR_MARKER} ${serializeReviewRepairRecord(record)}`].join('\n');
 }
 
 export function parseReviewRepairReply(body: string): ReviewRepairRecord | undefined {
-    const marker = lastMarkerLine(body);
+    const marker = lastMarkerLine(body, REPAIR_MARKER);
     if (marker === undefined) {
         return undefined;
     }
@@ -262,7 +214,7 @@ export function parseReviewRepairReply(body: string): ReviewRepairRecord | undef
     if (payload === '') {
         fail('review repair marker line carries no record');
     }
-    return readRecord(parseMarkerPayload(payload));
+    return readRecord(parseMarkerPayload(payload, 'review repair'));
 }
 
 function assertPositiveInteger(label: string, value: number): void {
