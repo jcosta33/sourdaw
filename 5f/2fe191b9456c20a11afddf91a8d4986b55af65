@@ -1,0 +1,58 @@
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_ed5aa36a3ba357::t_1c18be5ac136f5 130,327,348-358
+  s_ed5aa36a3ba357::t_4350f051cef109 359-360
+src/modules/AiRuntime/presentations/__tests__/chatComposerWithoutBackend.spec.tsx
+  s_ed5aa36a3ba357::t_ad45268a26fa24 8,36-38,65-67
+  s_ed5aa36a3ba357::t_92b181ebbf7817 33
+  s_ed5aa36a3ba357::t_ea1caadb970c31 1-7,9-25,27-31,34-35,39-64,68-92,99-150,152-165,183-187,192-200,202-222,224-232,234-249,251-256
+  s_ed5aa36a3ba357::t_9b5a6f8f8fe62b 188-191
+  s_ed5aa36a3ba357::t_de731789fa84c8 32,182,233,250
+  s_ed5aa36a3ba357::t_bfaa3d0065ffc6 93-98,151,178-180
+  s_ed5aa36a3ba357::t_ef7ae1551cd0fb 26,166-177,181,201,223
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_ed5aa36a3ba357::t_f3f99e54c8cec1 175-193
+  s_ed5aa36a3ba357::t_30b84d6da26645 194-196
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_ed5aa36a3ba357::t_b64667752ec2a0 69-70
+  s_ed5aa36a3ba357::t_67ece3990eec79 71
+src/modules/AiRuntime/transformers/describePlanningOutcome.ts
+  s_ed5aa36a3ba357::t_67ece3990eec79 16-18
+  s_ed5aa36a3ba357::t_39d65b9f6f51d6 11-13
+src/modules/AiRuntime/transformers/__tests__/describePlanningOutcome.spec.ts
+  s_ed5aa36a3ba357::t_1c18be5ac136f5 1-16
+src/modules/AiRuntime/presentations/components/ChatComposer.tsx
+  s_ed5aa36a3ba357::t_67ece3990eec79 117,123
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_ed5aa36a3ba357::t_67ece3990eec79 326-327,365-376,1006-1007,1018-1019
+src/modules/AiRuntime/presentations/components/__tests__/ChatComposerBranches.spec.tsx
+  s_ed5aa36a3ba357::t_b64667752ec2a0 64-65,70,93,100-101
+  s_ed5aa36a3ba357::t_f3f99e54c8cec1 66,104
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_ed5aa36a3ba357::t_f3f99e54c8cec1 557-601
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_ed5aa36a3ba357::t_67ece3990eec79 31,194-196,272-273,308-310
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_ed5aa36a3ba357::t_f3f99e54c8cec1 1022-1070
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_ed5aa36a3ba357::t_1c18be5ac136f5 800-856
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_ed5aa36a3ba357::t_c41e0d87942899 45,54-56,65,134-137,147-149,151-155,159-160,191-195,231,542,544,546-548,554-558,561-562,564-566
+  s_ed5aa36a3ba357::t_36696a0c6a44a3 161,167,172-179,226
+  s_ed5aa36a3ba357::t_2d492e2aa52539 190,217,219,225,227-230,232,431,443,449-456,537,567-578,597,599,602,615
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5f2fe191b9456c20a11afddf91a8d4986b55af65",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
