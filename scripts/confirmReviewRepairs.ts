@@ -35,6 +35,7 @@ import { fail } from './prContract.ts';
 import {
     REVIEW_THREAD_COMMENT_FIELDS,
     confirmClientMutationId,
+    parseReviewRepairReply,
     renderReviewRepairReply,
     selectEligibleRepairs,
     type ReviewRepairRecord,
@@ -196,14 +197,24 @@ export function confirmReviewRepairs(
  * GitHub echoes the deterministic `clientMutationId` rather than deduplicating the reply, so a rerun
  * after a failed resolve would post the confirmation a second time. The posted reply itself is the
  * state that proves the first post landed: an unresolved thread that already carries this reviewer's
- * confirmation for the same record performs only the missing resolve.
+ * confirmation for the same record performs only the missing resolve. The record is compared parsed,
+ * exactly as the selection's refusal compares it, so a bare marker line counts as already posted
+ * rather than earning a second reply.
  */
 function confirmationAlreadyPosted(thread: ReviewRepairThreadState | undefined, record: ReviewRepairRecord): boolean {
     if (thread === undefined) {
         return false;
     }
-    const body = renderConfirmationReply(record);
-    return thread.replies.some((reply) => isReviewerBotNodeId(reply.authorNodeId) && reply.body === body);
+    const accepted = renderReviewRepairReply(record);
+    return thread.replies.some(
+        (reply) => isReviewerBotNodeId(reply.authorNodeId) && parsesToReplyRecord(reply.body, accepted)
+    );
+}
+
+/** A body that carries a marker the contract can read back to exactly the accepted record. */
+function parsesToReplyRecord(body: string, accepted: string): boolean {
+    const posted = parseReviewRepairReply(body);
+    return posted !== undefined && renderReviewRepairReply(posted) === accepted;
 }
 
 type Gh = (args: string[]) => string;
@@ -260,23 +271,21 @@ function readLine(value: unknown, label: string): number {
 /**
  * Only a Bot comment can be an author or reviewer reply. A person's actor node carries no id in the
  * shared fragment, and reading that prose as an agent reply would let a human comment become a repair
- * record, so a non-Bot author is read as a reply no selection acts on. A Bot comment without an id
- * still refuses, because the selection tells the two agent identities apart by exactly that id.
+ * record, so a non-Bot author is read as a reply no selection acts on. GitHub reports a deleted
+ * account as a null author, which is the same dead end rather than an unreadable thread. A Bot comment
+ * without an id still refuses, because the selection tells the two agent identities apart by exactly
+ * that id.
  */
 function readReply(comment: unknown, label: string): ReviewRepairThreadState['replies'][number] {
     if (!isRecord(comment) || typeof comment.id !== 'string' || typeof comment.body !== 'string') {
         fail(`${label} returned an unreadable comment`);
     }
     const author = isRecord(comment.author) ? comment.author : {};
-    const isBot = author.__typename === 'Bot';
-    if (isBot) {
+    if (author.__typename === 'Bot') {
         if (typeof author.id !== 'string') {
             fail(`${label} comment ${comment.id} carries no author node id`);
         }
         return { id: Number(comment.id), body: comment.body, authorNodeId: author.id };
-    }
-    if (typeof author.__typename !== 'string') {
-        fail(`${label} comment ${comment.id} carries no author node id`);
     }
     return { id: Number(comment.id), body: comment.body, authorNodeId: null };
 }
@@ -385,7 +394,8 @@ export function threadCommentsPage(): string {
 /**
  * Reads a thread's remaining comment pages before the selection sees it. A repair recorded past the
  * hundredth comment would otherwise make the thread look like it recorded none, so the connection is
- * drained rather than truncated.
+ * drained rather than truncated. A page that claims another while returning no comment nodes would
+ * drain forever, so it refuses instead.
  */
 function drainComments(listed: ListedThread, gh: Gh, label: string): ReviewRepairThreadState {
     const replies = [...listed.state.replies];
@@ -402,8 +412,12 @@ function drainComments(listed: ListedThread, gh: Gh, label: string): ReviewRepai
         if (!isRecord(node) || !isRecord(node.comments) || !isUnknownArray(node.comments.nodes)) {
             fail(`${label} carries no comment connection`);
         }
-        replies.push(...node.comments.nodes.map((comment) => readReply(comment, label)));
+        const nodes = node.comments.nodes;
+        replies.push(...nodes.map((comment) => readReply(comment, label)));
         cursor = readCommentCursor(node.comments, label);
+        if (nodes.length === 0 && cursor !== null) {
+            fail(`${label} returned an empty comment page while claiming another`);
+        }
     }
     return { ...listed.state, replies };
 }

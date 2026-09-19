@@ -72,6 +72,12 @@ function authorRecordReply(record: ReviewRepairRecord = recordFor()): string {
     return renderReviewRepairReply(record);
 }
 
+/** The contract's record marker line alone, as a bot composing the record by hand posts it. */
+function bareRecordMarker(record: ReviewRepairRecord = recordFor()): string {
+    const lines = renderReviewRepairReply(record).split('\n');
+    return lines[lines.length - 1] ?? '';
+}
+
 function subjectThread(overrides: Partial<ReviewRepairThreadState> = {}): ReviewRepairThreadState {
     return {
         thread: THREAD,
@@ -364,6 +370,19 @@ describe('confirmReviewRepairs', () => {
 
         const posted = mutations.filter((entry) => entry.kind === 'post');
         expect(posted.map((entry) => entry.thread)).toEqual([THREAD, SECOND_THREAD]);
+    });
+
+    it('should not post a second confirmation when the thread already carries the bare record marker', () => {
+        const record = recordFor();
+        const thread = subjectThread({
+            replies: [
+                ...subjectThread().replies,
+                { id: 9_103, body: bareRecordMarker(record), authorNodeId: REVIEWER_BOT_NODE_ID },
+            ],
+        });
+        const { port, mutations } = fakePort(HEAD, [thread]);
+        expect(confirmReviewRepairs(PR, HEAD, port)).toEqual({ resolved: [THREAD] });
+        expect(mutations.map((entry) => entry.kind)).toEqual(['resolve']);
     });
 
     it('should keep the client mutation ids stable across runs', () => {
@@ -771,13 +790,22 @@ describe('readReviewThreads', () => {
         );
     });
 
-    it('should refuse a comment that carries no author node id', () => {
+    it('should refuse a Bot comment that carries no author node id', () => {
         const { gh } = recordingGh(() =>
             page(
                 [
                     threadNode({
                         comments: {
-                            nodes: [{ id: '1', body: 'root', path: FINDING_PATH, line: 1, side: 'LEFT', author: null }],
+                            nodes: [
+                                {
+                                    id: '1',
+                                    body: 'root',
+                                    path: FINDING_PATH,
+                                    line: 1,
+                                    side: 'LEFT',
+                                    author: { __typename: 'Bot', login: 'a' },
+                                },
+                            ],
                             pageInfo: { hasNextPage: false, endCursor: null },
                         },
                     }),
@@ -850,6 +878,120 @@ describe('readReviewThreads', () => {
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
         expect(selection.refused).toEqual([]);
+    });
+
+    it('should read a deleted account as a reply no selection acts on and still resolve the repair', () => {
+        const record = recordFor();
+        const { gh } = recordingGh(() =>
+            page(
+                [
+                    threadNode({
+                        comments: {
+                            nodes: [
+                                {
+                                    id: String(ROOT_COMMENT_ID),
+                                    body: 'Defect. Consequence. Fix.',
+                                    path: FINDING_PATH,
+                                    line: FINDING_LINE,
+                                    side: 'RIGHT',
+                                    author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
+                                },
+                                {
+                                    id: '9000',
+                                    // A distinct repair-shaped record from a deleted account: were its
+                                    // null author to refuse the read, the whole transaction would abort.
+                                    body: authorRecordReply(
+                                        recordFor({
+                                            commit: OTHER_COMMIT,
+                                            summary: 'The deleted account pasted this.',
+                                        })
+                                    ),
+                                    path: null,
+                                    line: null,
+                                    side: null,
+                                    author: null,
+                                },
+                                {
+                                    id: '9001',
+                                    body: authorRecordReply(record),
+                                    path: null,
+                                    line: null,
+                                    side: null,
+                                    author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
+                                },
+                            ],
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                        },
+                    }),
+                ],
+                { hasNextPage: false, endCursor: null }
+            )
+        );
+
+        const threads = readReviewThreads(PR, gh, []);
+        expect(threads[0]?.replies.map((reply) => reply.authorNodeId)).toEqual([
+            REVIEWER_BOT_NODE_ID,
+            null,
+            AUTHOR_BOT_NODE_ID,
+        ]);
+        const selection = selectEligibleRepairs({
+            threads,
+            pr: PR,
+            head: HEAD,
+            base: BASE,
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            isAncestor: (_commit, target) => target === HEAD,
+        });
+        expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
+        expect(selection.refused).toEqual([]);
+        expect(confirmReviewRepairs(PR, HEAD, fakePort(HEAD, threads).port)).toEqual({ resolved: [THREAD] });
+    });
+
+    it('should refuse an empty comment page that claims another page instead of draining forever', () => {
+        let emptyPages = 0;
+        const { gh } = recordingGh((call) => {
+            if (call.query.includes('node(id:$threadId)')) {
+                emptyPages += 1;
+                return {
+                    data: {
+                        node: {
+                            comments: {
+                                nodes: [],
+                                pageInfo: {
+                                    hasNextPage: emptyPages < 2,
+                                    endCursor: `EMPTY_CURSOR_${emptyPages}`,
+                                },
+                            },
+                        },
+                    },
+                };
+            }
+            return page(
+                [
+                    threadNode({
+                        comments: {
+                            nodes: [
+                                {
+                                    id: String(ROOT_COMMENT_ID),
+                                    body: 'Defect.',
+                                    path: FINDING_PATH,
+                                    line: FINDING_LINE,
+                                    side: 'RIGHT',
+                                    author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
+                                },
+                            ],
+                            pageInfo: { hasNextPage: true, endCursor: 'COMMENT_CURSOR' },
+                        },
+                    }),
+                ],
+                { hasNextPage: false, endCursor: null }
+            );
+        });
+
+        expect(() => readReviewThreads(PR, gh, [])).toThrow(
+            `PR #${PR} review threads returned an empty comment page while claiming another`
+        );
     });
 
     it('should find an author repair recorded past the first comment page', () => {

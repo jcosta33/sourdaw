@@ -666,8 +666,8 @@ describe('readRepairReviewThread', () => {
         expect(calls[0]?.query).toContain('path line side');
     });
 
-    it('should follow comment pagination and keep the first comment as the root', () => {
-        function secondPage(): ThreadNodeFixture {
+    it('should follow comment pagination and keep the root from the first page', () => {
+        function firstPage(): ThreadNodeFixture {
             return threadNode({
                 comments: {
                     nodes: [
@@ -679,6 +679,15 @@ describe('readRepairReviewThread', () => {
                             side: 'LEFT',
                             author: null,
                         },
+                    ],
+                    pageInfo: { hasNextPage: true, endCursor: 'CURSOR' },
+                },
+            });
+        }
+        function secondPage(): ThreadNodeFixture {
+            return threadNode({
+                comments: {
+                    nodes: [
                         {
                             id: 'PRRC_reply',
                             body: 'reply',
@@ -694,14 +703,19 @@ describe('readRepairReviewThread', () => {
         }
         function firstPageOrSecond(call: { fields: Record<string, string> }): ThreadNodeFixture {
             if (call.fields.cursor === undefined) {
-                return threadNode({ comments: { nodes: [], pageInfo: { hasNextPage: true, endCursor: 'CURSOR' } } });
+                return firstPage();
             }
             return secondPage();
         }
         const { gh, calls } = recordingGh(firstPageOrSecond);
         const thread = readRepairReviewThread(THREAD, gh);
         expect(thread.replies.map((reply) => reply.id)).toEqual([String(ROOT_COMMENT_ID), 'PRRC_reply']);
-        expect(thread.rootComment.side).toBe('LEFT');
+        expect(thread.rootComment).toEqual({
+            id: ROOT_COMMENT_ID,
+            path: FINDING_PATH,
+            line: FINDING_LINE,
+            side: 'LEFT',
+        });
         expect(calls[1]?.fields.cursor).toBe('CURSOR');
     });
 

@@ -499,6 +499,8 @@ export function readRepairReviewThread(threadId: string, gh: Gh): RepairReviewFi
     const label = `review thread ${threadId}`;
     let cursor: string | undefined;
     const seen = new Set<string>();
+    const replies: RepairReviewFindingReply[] = [];
+    let firstPage: ReadThreadPage | undefined;
     for (;;) {
         const fields = ['-f', `threadId=${threadId}`];
         if (cursor !== undefined) {
@@ -511,19 +513,22 @@ export function readRepairReviewThread(threadId: string, gh: Gh): RepairReviewFi
         if (page === undefined) {
             fail(`${label} is not a readable pull-request review thread`);
         }
-        const [root, ...rest] = page.nodes;
-        const replies = (root === undefined ? [] : [root, ...rest]).map((comment) => readThreadReply(comment, label));
+        firstPage ??= page;
+        replies.push(...page.nodes.map((comment) => readThreadReply(comment, label)));
         const next = page.endCursor;
         if (!page.hasNextPage) {
+            // The root is the first comment GitHub returns, so it is read from the first page only; a
+            // later page's first comment is a reply.
+            const root = firstPage.nodes[0];
             if (root === undefined) {
                 fail(`${label} carries no root comment`);
             }
             return {
-                threadId: page.threadId,
-                isResolved: page.isResolved,
-                pullRequestNumber: page.pullRequestNumber,
-                head: page.head,
-                base: page.base,
+                threadId: firstPage.threadId,
+                isResolved: firstPage.isResolved,
+                pullRequestNumber: firstPage.pullRequestNumber,
+                head: firstPage.head,
+                base: firstPage.base,
                 rootComment: readRootComment(root, label),
                 replies,
             };
