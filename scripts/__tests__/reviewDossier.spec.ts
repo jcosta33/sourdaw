@@ -620,6 +620,7 @@ const UNSAFE_FIXTURES: { name: string; value: string }[] = [
     { name: 'an AWS access key id', value: `AKIA${'C'.repeat(16)}` },
     { name: 'a temporary AWS access key id', value: `ASIA${'D'.repeat(16)}` },
     { name: 'a private key header', value: '-----BEGIN RSA PRIVATE KEY-----' },
+    { name: 'a PGP private key armor header', value: '-----BEGIN PGP PRIVATE KEY BLOCK-----' },
     { name: 'a JSON web token', value: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl' },
     { name: 'a bearer credential', value: 'Bearer 0123456789abcdef' },
     { name: 'a serialized assistant turn', value: '{"role": "assistant", "content": "review"}' },
@@ -669,6 +670,21 @@ describe('assertPublicationSafeEvidence', () => {
         expect(() => assertPublicationSafeEvidence('evidence[0].observed', [`ASIA${'D'.repeat(16)}`])).toThrow(
             /evidence\[0\]\.observed value at index 0 contains an AWS access key id/
         );
+    });
+
+    it('should refuse a PGP private key armor header by the private-key rule and name the field and index', () => {
+        expect(() =>
+            assertPublicationSafeEvidence('evidence[0].observed', ['-----BEGIN PGP PRIVATE KEY BLOCK-----'])
+        ).toThrow(/evidence\[0\]\.observed value at index 0 contains a private key header/);
+    });
+
+    it('should pass a PGP public key armor block and prose that mentions a private key', () => {
+        expect(() =>
+            assertPublicationSafeEvidence('evidence[0].observed', [
+                '-----BEGIN PGP PUBLIC KEY BLOCK-----',
+                'the private key must never be committed',
+            ])
+        ).not.toThrow();
     });
 
     it('should pass separator-free text and an under-length key-like value', () => {
