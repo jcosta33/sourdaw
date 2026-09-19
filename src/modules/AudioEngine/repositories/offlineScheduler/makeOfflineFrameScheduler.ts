@@ -44,28 +44,52 @@ export function makeOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCal
         const calls: (() => void)[] = [call];
         callsByFrame.set(frame, calls);
 
-        function fireImmediately(): void {
-            runCalls(calls);
-            callsByFrame.delete(frame);
-        }
+        // Exactly-once settlement. The frame's calls run once, on the first
+        // settlement that reaches them — a resolved suspend, a rejected suspend
+        // (the frame was already past when it was registered, so firing now is a
+        // best-effort fallback rather than dropping the calls), or a synchronous
+        // throw from `suspend()`. Nothing that settles afterwards re-runs them:
+        // `resume()` used to ride the same promise chain, so a resume rejection
+        // after a successful suspend arrived back here as a rejection, and a
+        // queued callback that threw arrived the same way.
+        let ran = false;
 
-        function onSuspend(): Promise<void> {
-            runCalls(calls);
-            return ctx.resume();
+        function fire(): void {
+            if (ran) {
+                return;
+            }
+            ran = true;
+            // Drop the frame before its calls run: one queued from inside a
+            // callback is a new batch, not a late append to a settled one.
+            callsByFrame.delete(frame);
+            try {
+                runCalls(calls);
+            } catch {
+                // A queued callback's exception is dropped here rather than left
+                // to become an unhandled rejection on the settle chain; the frame
+                // has already run and must not run again.
+            } finally {
+                // A throwing callback must not leave the render suspended forever.
+                void ctx.resume().catch(() => undefined);
+            }
         }
 
         try {
-            void ctx
-                .suspend(quantTime)
-                .then(onSuspend)
-                // suspend() rejects (rather than throws) when the frame is already
-                // in the past by the time it is registered. Fire this frame's
-                // calls immediately as a best-effort fallback rather than dropping
-                // the notes or leaving an unhandled rejection.
-                .catch(fireImmediately);
+            void ctx.suspend(quantTime).then(
+                () => {
+                    fire();
+                },
+                () => {
+                    // suspend() rejects (rather than throws) when the frame is
+                    // already in the past by the time it is registered. Fire this
+                    // frame's calls immediately as a best-effort fallback rather
+                    // than dropping the notes or leaving an unhandled rejection.
+                    fire();
+                }
+            );
         } catch {
             // Some implementations throw synchronously instead of rejecting.
-            fireImmediately();
+            fire();
         }
     };
 }

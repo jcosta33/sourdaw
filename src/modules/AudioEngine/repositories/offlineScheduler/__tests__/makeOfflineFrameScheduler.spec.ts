@@ -19,11 +19,13 @@ type ContextDouble = {
 };
 
 type SuspendMode = 'defer' | 'throw';
+type ResumeMode = 'resolve' | 'reject';
 
 type ContextDoubleOptions = {
     sampleRate?: number;
     currentTime?: number;
     suspendMode?: SuspendMode;
+    resumeMode?: ResumeMode;
 };
 
 /** Controllable OfflineAudioContext double: records every suspend(time) and settles it on demand. */
@@ -31,6 +33,7 @@ function makeContextDouble(options: ContextDoubleOptions = {}): ContextDouble {
     const suspends: SuspendRecord[] = [];
     const sampleRate = options.sampleRate ?? SAMPLE_RATE;
     const suspendMode = options.suspendMode ?? 'defer';
+    const resumeMode = options.resumeMode ?? 'resolve';
     let resumeCount = 0;
 
     const ctx = {
@@ -46,6 +49,9 @@ function makeContextDouble(options: ContextDoubleOptions = {}): ContextDouble {
         },
         resume(): Promise<void> {
             resumeCount += 1;
+            if (resumeMode === 'reject') {
+                return Promise.reject(new Error('resume rejected after the frame ran'));
+            }
             return Promise.resolve();
         },
     };
@@ -170,5 +176,50 @@ describe('makeOfflineFrameScheduler — suspend failure fallback', () => {
         expect(first).toHaveBeenCalledTimes(1);
         expect(second).toHaveBeenCalledTimes(1);
         expect(suspends).toHaveLength(0);
+    });
+});
+
+describe('makeOfflineFrameScheduler — exactly once after the frame has run', () => {
+    it('runs each call exactly once when a resolved suspend resume rejects', async () => {
+        const { ctx, suspends, resumeCount } = makeContextDouble({ resumeMode: 'reject' });
+        const schedule = makeOfflineFrameScheduler(ctx);
+        const first = vi.fn();
+        const second = vi.fn();
+
+        schedule(1, first);
+        schedule(1, second);
+
+        suspends[0]!.resolve();
+        await flushMicrotasks();
+
+        // The frame ran when its suspend resolved; a later resume failure must
+        // not make the chained rejection fallback run the same frame again.
+        expect(resumeCount()).toBe(1);
+        expect(first).toHaveBeenCalledTimes(1);
+        expect(second).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs a throwing queued callback once and does not re-run the frame', async () => {
+        const { ctx, suspends } = makeContextDouble();
+        const schedule = makeOfflineFrameScheduler(ctx);
+        const before = vi.fn();
+        const throwing = vi.fn(() => {
+            throw new Error('queued callback failed');
+        });
+        const after = vi.fn();
+
+        schedule(1, before);
+        schedule(1, throwing);
+        schedule(1, after);
+
+        expect(suspends).toHaveLength(1);
+        suspends[0]!.resolve();
+        await flushMicrotasks();
+
+        // A callback exception must not route the frame back through the
+        // suspend-rejection fallback: no call in the frame runs twice.
+        expect(before).toHaveBeenCalledTimes(1);
+        expect(throwing).toHaveBeenCalledTimes(1);
+        expect(after).not.toHaveBeenCalled();
     });
 });
