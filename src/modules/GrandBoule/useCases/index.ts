@@ -7,3 +7,4 @@ export { setGrandBouleMorphBalance } from './setGrandBouleMorphBalance';
 export { setGrandBouleMorphEnabled } from './setGrandBouleMorphEnabled';
 export { setGrandBouleMorphModel } from './setGrandBouleMorphModel';
 export { setGrandBouleMorphPosition } from './setGrandBouleMorphPosition';
+export { captureOfflineGrandBoule } from './captureOfflineGrandBoule';

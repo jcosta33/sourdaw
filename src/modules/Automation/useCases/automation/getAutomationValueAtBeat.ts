@@ -43,9 +43,10 @@ function clampToLaneRange(value: number, lane: AutomationLane, firstValue: numbe
 export function getAutomationValueAtBeat(
     laneId: string,
     beat: number,
-    _visited: Set<string> = new Set()
+    _visited: Set<string> = new Set(),
+    lanes?: readonly AutomationLane[]
 ): number | null {
-    const state = automationStore.value;
+    const state = lanes === undefined ? automationStore.value : { lanes };
     if (!state) {
         return null;
     }

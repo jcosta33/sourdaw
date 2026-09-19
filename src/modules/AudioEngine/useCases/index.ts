@@ -199,3 +199,8 @@ export { applyRuntimeGraphDelta } from './applyRuntimeGraphDelta';
 export { getRuntimeGraphRevision } from './getRuntimeGraphRevision';
 export { initializeTrackStripFromSnapshot } from './initializeTrackStripFromSnapshot';
 export { matchesRuntimeDeviceChainTopology } from './matchesRuntimeDeviceChainTopology';
+
+export { captureOfflineRenderInput } from './offlineRender/captureOfflineRenderInput';
+export { renderOfflineInput } from './offlineRender/renderOfflineInput';
+
+export { captureOfflineRenderRuntimeInput } from './offlineRender/captureOfflineRenderRuntimeInput';

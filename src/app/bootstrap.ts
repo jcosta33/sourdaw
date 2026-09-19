@@ -64,6 +64,7 @@ import {
 import { stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
 import {
     getAutomationValueAtBeat,
+    createOfflineAutomationEvaluator,
     prepareAutomationTimeOperation,
     prepareAutomationTimeStateRestore,
     recordAutomationValue,
@@ -146,6 +147,7 @@ import {
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
+import { externalPluginParameterStore } from '#/modules/PluginHost/stores';
 import {
     getExternalPluginContractVersionForCommand,
     registerReleasedStripReportSink,
@@ -205,7 +207,7 @@ import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
 import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
-import { prepareOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
+import { prepareOfflineDeviceSetup, captureOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
 import { projectNativeDeviceState } from './projectNativeDeviceState';
 import { eventBus, logger } from './registerDependencies';
 import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
@@ -270,22 +272,38 @@ void recoverInterruptedAgentRuns()
     .catch((error: unknown) => {
         logger.error(new Error('Interrupted AI runs could not be recovered during startup', { cause: error }));
     });
-const createOfflineYeastProcessor = () =>
-    createOfflineYeastMidiProcessor({
-        resolveMusicalPosition: createMusicalPositionProjector(),
-        resolvePpqPosition: createSamplePositionProjector(),
+const createOfflineYeastProcessor: Parameters<typeof configureOfflineYeastMidiProcessing>[0]['createProcessor'] = (
+    input
+) => {
+    const source = input?.source;
+    return createOfflineYeastMidiProcessor({
+        tracks: input?.tracks,
+        processorsByDevice: source?.yeastProcessorsByDevice,
+        grooveState: source?.grooveTemplates,
+        resolveMusicalPosition: createMusicalPositionProjector(source),
+        resolvePpqPosition: createSamplePositionProjector(source),
     });
+};
 configureOfflineMidiEventProjection({
     createProjector: createGrooveMidiEventProjector,
     selectProbability: shouldPlayMidiEvent,
     createChordPitchProjector,
     evaluateAutomationValue: getAutomationValueAtBeat,
+    createAutomationValueEvaluator: createOfflineAutomationEvaluator,
     resolveArticulationId: resolveMidiNoteArticulationId,
 });
 // The offline render and the native live automation producer enforce the same
 // device-parameter law the live apply path does; only the composition root sees
 // both Arrangement and the audio engine.
 configureOfflineDeviceParameterLaw({
+    captureExternalPluginLaw: (source = externalPluginParameterStore.value) => {
+        const state = structuredClone(source);
+        return {
+            acceptsExternalPluginParameter: (instanceId, parameterId) =>
+                acceptsExternalPluginAutomationParameter(instanceId, parameterId, state),
+            clampExternalPluginValue: (input) => clampExternalPluginAutomationValue(input, state),
+        };
+    },
     isAutomatable: isDeviceParameterAutomatable,
     clampValue: clampDeviceParameterValue,
     quantiseValue: quantiseDeviceParameterValue,
@@ -487,6 +505,12 @@ configureAudioDeviceRuntimeSink({
     // silence. Dispatch stays in the composition root; each module owns what its
     // own device needs. See `prepareOfflineDeviceSetup`.
     prepareOfflineInstrument: prepareOfflineDeviceSetup,
+    captureOfflineInstrument: (device, source) => {
+        const captured = captureOfflineDeviceSetup(device, source);
+        const deviceId = device.id;
+        const deviceType = device.type;
+        return ({ port, signal }) => prepareOfflineDeviceSetup({ deviceId, deviceType, captured, port, signal });
+    },
     // The live/offline-via-native mirror of the row above: a device's
     // `deviceState` never crosses the wire to the native engine, so this is
     // where its kit (or any state a `parameterValues` table cannot carry)

@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { crumbsStore, ensureInstance, setActiveSample, setMode } from '../../stores/crumbsStore';
-import { prepareCrumbsEngine } from '../prepareCrumbsEngine';
-
+import { toCrumbsDeviceState } from '../../models/CrumbsDeviceState';
 import type { SampleMeta } from '../../models/CrumbsTypes';
+import { crumbsStore, ensureInstance, setActiveSample, setMode } from '../../stores/crumbsStore';
+import { captureCrumbsEngine } from '../captureCrumbsEngine';
+import { prepareCrumbsEngine } from '../prepareCrumbsEngine';
 
 const { decodeMock, warnMock } = vi.hoisted(() => ({
     decodeMock: vi.fn(),
@@ -89,6 +90,55 @@ describe('prepareCrumbsEngine', () => {
 
     afterEach(() => {
         crumbsStore.set({});
+    });
+
+    it('decodes the captured sample and mode after same-id live state replacement', async () => {
+        ensureInstance(DEVICE);
+        setMode(DEVICE, 'slice');
+        setActiveSample(DEVICE, sampleMeta('/captured.wav'));
+        const captured = captureCrumbsEngine({ deviceId: DEVICE });
+        setMode(DEVICE, 'drum');
+        setActiveSample(DEVICE, sampleMeta('/replacement.wav'));
+        decodeMock.mockResolvedValue({ data: new Float32Array([0.5]), channels: 1, sampleRate: 48_000 });
+        const { port, posts, emit } = recordingPort();
+
+        const pending = prepareCrumbsEngine({ deviceId: DEVICE, port, captured });
+        await vi.waitFor(() => expect(messagesOfType(posts, 'loadSample')).toHaveLength(1));
+        emit({ type: 'sampleLoaded', loadToken: messagesOfType(posts, 'loadSample')[0]?.loadToken });
+        await expect(pending).resolves.toBe('ready');
+
+        expect(decodeMock).toHaveBeenCalledExactlyOnceWith({ filePath: '/captured.wav' });
+        expect(messagesOfType(posts, 'mode')).toEqual([{ type: 'mode', mode: 'slice' }]);
+    });
+
+    it('hydrates an alternate supplied sample without borrowing or writing live state', async () => {
+        ensureInstance(DEVICE);
+        setActiveSample(DEVICE, sampleMeta('/live.wav'));
+        const live = structuredClone(crumbsStore.value);
+        const device = {
+            deviceState: toCrumbsDeviceState({ mode: 'slice', activeSample: sampleMeta('/alternate.wav') }),
+        };
+        const captured = captureCrumbsEngine({ deviceId: DEVICE, device, state: null });
+        device.deviceState = toCrumbsDeviceState({ mode: 'drum', activeSample: sampleMeta('/changed.wav') });
+        decodeMock.mockResolvedValue({ data: new Float32Array([0.5]), channels: 1, sampleRate: 48_000 });
+        const { port, posts, emit } = recordingPort();
+
+        const pending = prepareCrumbsEngine({ deviceId: DEVICE, port, captured });
+        await vi.waitFor(() => expect(messagesOfType(posts, 'loadSample')).toHaveLength(1));
+        emit({ type: 'sampleLoaded', loadToken: messagesOfType(posts, 'loadSample')[0]?.loadToken });
+        await expect(pending).resolves.toBe('ready');
+
+        expect(decodeMock).toHaveBeenCalledExactlyOnceWith({ filePath: '/alternate.wav' });
+        expect(messagesOfType(posts, 'mode')).toEqual([{ type: 'mode', mode: 'slice' }]);
+        expect(crumbsStore.value).toEqual(live);
+    });
+
+    it('preserves captured absence when a live device later appears', async () => {
+        const captured = captureCrumbsEngine({ deviceId: DEVICE, device: null, state: null });
+        ensureInstance(DEVICE);
+        const { port, posts } = recordingPort();
+        await expect(prepareCrumbsEngine({ deviceId: DEVICE, port, captured })).resolves.toBe('failed');
+        expect(posts).toEqual([]);
     });
 
     it('settles ready only after the worklet commits the decoded sample', async () => {

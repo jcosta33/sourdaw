@@ -32,6 +32,20 @@ describe('projectClipMidiEvents', () => {
         });
     });
 
+    it('uses a supplied groove source without borrowing or writing live assignments', () => {
+        const source = structuredClone(grooveTemplateStore.value ?? defaultGrooveTemplateState);
+        grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
+        const project = createGrooveMidiEventProjector(source);
+        source.assignments = [];
+        const projected = project({
+            events: [{ id: 'note', startBeat: 4, duration: 0.25, velocity: 80 }],
+            phase: 'sequencer-groove',
+        });
+        expect(projected[0]?.startBeat).toBeCloseTo(3.9, 6);
+        expect(projected[0]?.velocity).toBe(88);
+        expect(grooveTemplateStore.value?.assignments).toEqual([]);
+    });
+
     it('composes clip-relative and absolute sequencer projection before applying one clip boundary policy', () => {
         const [projected] = projectClipMidiEvents({
             events: [{ id: 'n1', startBeat: 0, duration: 0.25, velocity: 80 }],

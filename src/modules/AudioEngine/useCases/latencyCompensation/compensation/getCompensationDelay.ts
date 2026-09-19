@@ -1,6 +1,7 @@
 import { deepestHostedLatencyMs } from './deepestHostedLatencyMs';
 import { getMaxTrackLatency } from './getMaxTrackLatency';
 import { getTrackLatency } from './getTrackLatency';
+import { type LatencyCompensationInput } from './LatencyCompensationInput';
 
 /**
  * How long one strip waits before it plays, in seconds, so that it meets the
@@ -23,17 +24,18 @@ import { getTrackLatency } from './getTrackLatency';
 export function getCompensationDelay(
     trackId: string,
     omitDeviceTypes?: readonly string[],
-    engineHostedStripIds?: ReadonlySet<string>
+    engineHostedStripIds?: ReadonlySet<string>,
+    input?: LatencyCompensationInput
 ): number {
     // Session max stays live (including every device type, and every device the
     // engine hosts). Omit only shrinks the queried track's own loop so freeze
     // can pin the delay that matches a printed buffer that withheld those
     // types.
-    const maxLatencyMs = getMaxTrackLatency();
-    const trackLatency = getTrackLatency(trackId, new Set(), omitDeviceTypes, engineHostedStripIds);
+    const maxLatencyMs = getMaxTrackLatency(input);
+    const trackLatency = getTrackLatency(trackId, new Set(), omitDeviceTypes, engineHostedStripIds, input);
     if (engineHostedStripIds === undefined) {
         return (maxLatencyMs - trackLatency.totalLatencyMs) / 1000;
     }
-    const engineHoldMs = deepestHostedLatencyMs(engineHostedStripIds);
+    const engineHoldMs = deepestHostedLatencyMs(engineHostedStripIds, input);
     return Math.max(0, maxLatencyMs - trackLatency.totalLatencyMs - engineHoldMs) / 1000;
 }

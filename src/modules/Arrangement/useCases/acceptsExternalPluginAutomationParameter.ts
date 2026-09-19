@@ -11,6 +11,10 @@ import { findExternalPluginAutomationParameter } from './findExternalPluginAutom
  * every external plugin device spells the same one, and it answers for no
  * parameter.
  */
-export function acceptsExternalPluginAutomationParameter(externalInstanceId: string, parameterId: string): boolean {
-    return findExternalPluginAutomationParameter(externalInstanceId, parameterId)?.isAutomatable ?? false;
+export function acceptsExternalPluginAutomationParameter(
+    externalInstanceId: string,
+    parameterId: string,
+    state?: Parameters<typeof findExternalPluginAutomationParameter>[2]
+): boolean {
+    return findExternalPluginAutomationParameter(externalInstanceId, parameterId, state)?.isAutomatable ?? false;
 }

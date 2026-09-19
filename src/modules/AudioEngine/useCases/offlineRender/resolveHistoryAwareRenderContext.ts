@@ -1,6 +1,7 @@
 import { beatToSeconds } from '../../services/beatConversion';
 
 import { MAX_OFFLINE_FRAMES } from './constants';
+import { type OfflineRenderProjectSource } from './OfflineRenderSource';
 import { resolveRenderContext, type ResolveRenderContextInput } from './resolveRenderContext';
 
 type HistoryAwareRenderContext = {
@@ -14,10 +15,19 @@ type HistoryAwareRenderContext = {
  * the same prior events as a full playthrough. The requested window remains a
  * separate duration and is cropped only after the graph has rendered.
  */
-export function resolveHistoryAwareRenderContext(input: ResolveRenderContextInput): HistoryAwareRenderContext {
+export function resolveHistoryAwareRenderContext(
+    input: ResolveRenderContextInput,
+    source?: OfflineRenderProjectSource
+): HistoryAwareRenderContext {
+    const resolve = (request: ResolveRenderContextInput) => {
+        if (source) {
+            return resolveRenderContext(request, source);
+        }
+        return resolveRenderContext(request);
+    };
     const startBeat = input.startBeat ?? 0;
     if (startBeat <= 0) {
-        const renderContext = resolveRenderContext(input);
+        const renderContext = resolve(input);
         return {
             renderContext,
             historySeconds: 0,
@@ -25,7 +35,7 @@ export function resolveHistoryAwareRenderContext(input: ResolveRenderContextInpu
         };
     }
 
-    const renderContext = resolveRenderContext({
+    const renderContext = resolve({
         ...input,
         durationBeats: startBeat + input.durationBeats,
         startBeat: 0,
