@@ -1,0 +1,21 @@
+AGENTS.md
+  s_9e15f5b7ec3308::t_75d62a4fbb19b3 324-325
+scripts/__tests__/claimTrackerIssue.spec.ts
+  s_9e15f5b7ec3308::t_c630e76a46bde4 169-171,379-384,388,390-395,399,402,404,420-435,440
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4e02a32f81462729a9009645e96ae4f4f34e2e80",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
