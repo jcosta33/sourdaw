@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 import { type AppAction } from '#/utils/handlerContract';
 
-import { type VersionedCommandBatchEnvelope } from '../../models/VersionedCommandBatchEnvelope';
+import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
+import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 import { parseVersionedCommandEnvelope } from '../parseVersionedCommandEnvelope';
 import { resolveVersionedCommandBatchBindings } from '../resolveVersionedCommandBatchBindings';
 import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
@@ -67,27 +68,40 @@ describe('setDeviceParameter native unit metadata', () => {
     });
 
     it('recomputes the carrier-backed value unit while resolving batch-local bindings', () => {
+        const producer = createExecutionCommandEnvelope({
+            action: {
+                type: 'addDevice',
+                payload: { deviceId: 'device-eq', deviceType: 'builtin-eq', trackId: 'track-1' },
+            },
+            expectedEffect: 'Create one equalizer',
+            normalizedProjectRevision: 'revision-1',
+        }).envelope;
         const consumer = createExecutionCommandEnvelope({
             action: {
                 type: 'setDeviceParameter',
                 payload: { deviceId: '$eq', paramId: 'eq-mid-freq', value: 2_400, valueUnit: 'Hz' },
             },
+            dependencyIds: [producer.commandId],
             expectedEffect: 'Set one device parameter',
             normalizedProjectRevision: 'revision-1',
         }).envelope;
-        const producer = {
-            ...createParameterEnvelope(),
-            commandId: 'producer-command',
-            applicationAssignedIds: [{ argument: 'deviceId', value: 'device-eq' }],
-        };
-        const batch = {
-            commands: [producer, consumer],
+        const compiled = compileVersionedCommandBatchEnvelope({
+            runId: 'run-parameter-unit-binding',
+            batchId: 'batch-parameter-unit-binding',
+            projectId: 'project-1',
+            baseRevision: 'revision-1',
+            intent: 'Create an equalizer and set its mid frequency',
+            commands: [serializeVersionedCommandEnvelope(producer), serializeVersionedCommandEnvelope(consumer)],
             batchLocalBindings: [
                 { bindingId: '$eq', producerArgument: 'deviceId', producerCommandId: producer.commandId },
             ],
-        } as VersionedCommandBatchEnvelope;
+        });
+        const parsed = parseVersionedCommandBatchEnvelope(compiled.serialized);
+        if (parsed.status === 'invalid') {
+            throw new Error(parsed.reason);
+        }
 
-        const resolved = resolveVersionedCommandBatchBindings(batch)[1];
+        const resolved = resolveVersionedCommandBatchBindings(parsed.envelope)[1];
 
         expect(resolved?.arguments).toMatchObject({ deviceId: 'device-eq', valueUnit: 'Hz' });
         expect(resolved?.parameterUnits).toContainEqual({ argument: 'value', unit: 'Hz' });

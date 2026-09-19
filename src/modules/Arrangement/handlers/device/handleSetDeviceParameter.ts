@@ -35,8 +35,22 @@ function hasExecutionGuards(action: {
 
 function resolveDeviceTarget(action: { payload: { deviceId: string } }, context?: HandlerValidationContext) {
     const currentTracks = getTrackStoreState()?.tracks ?? [];
+    const priorActions = context?.actions.slice(0, context.actionIndex) ?? [];
+    const createdEarlierInBatch = priorActions.some(
+        (priorAction) => priorAction.type === 'addDevice' && priorAction.payload.deviceId === action.payload.deviceId
+    );
+    const currentOwners = currentTracks.filter((track) =>
+        track.devices.some((device) => device.id === action.payload.deviceId)
+    );
+    // Validation runs before the batch prefix exists and execution runs after it
+    // has committed into the active transaction. Re-projecting an already-created
+    // device would insert its addDevice action twice and manufacture a stale chain.
+    if (createdEarlierInBatch && currentOwners.length === 1) {
+        const owner = currentOwners[0];
+        return { owner, device: owner?.devices.find((candidate) => candidate.id === action.payload.deviceId) };
+    }
     const candidateTrackIds = new Set(currentTracks.map((track) => track.id));
-    for (const priorAction of context?.actions.slice(0, context.actionIndex) ?? []) {
+    for (const priorAction of priorActions) {
         if (priorAction.type === 'addTrack' && priorAction.payload.id) {
             candidateTrackIds.add(priorAction.payload.id);
         }
