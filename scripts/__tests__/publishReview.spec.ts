@@ -5115,34 +5115,36 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('refuses unsafe approval evidence claims and never posts', () => {
-        const fixture = dossierFixture({
-            plan: riskPlan(),
-            dossier: dossierInput(),
-            document: {
-                ...reviewDocument,
-                evidence: {
-                    headSha: head,
-                    claims: [
-                        {
-                            observable: 'the evidence gate refuses a credential',
-                            verification: 'pnpm test:run scripts/__tests__/publishReview.spec.ts',
-                            observed: `ghp_${'A'.repeat(24)}`,
-                        },
-                    ],
+    it.each(['observable', 'verification', 'observed'] as const)(
+        'refuses an approval evidence claim carrying a credential in %s and never posts',
+        (field) => {
+            const claim = {
+                observable: 'the evidence gate refuses a credential',
+                verification: 'pnpm test:run scripts/__tests__/publishReview.spec.ts',
+                observed: 'no POST and no journal',
+                [field]: `ghp_${'A'.repeat(24)}`,
+            };
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput(),
+                document: {
+                    ...reviewDocument,
+                    evidence: { headSha: head, claims: [claim] },
                 },
-            },
-        });
-        try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toMatch(/review evidence claim\[0\]\.observed value at index 0 contains a GitHub token/u);
-            expect(fixture.calls).not.toContain('post');
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
-        } finally {
-            removeTemporaryDirectory(fixture.root);
+            });
+            try {
+                const message = refusalMessage(() => publishReview(number, fixture.port));
+                expect(message).toMatch(
+                    new RegExp(`review evidence claim\\[0\\]\\.${field} value at index 0 contains a GitHub token`, 'u')
+                );
+                expect(fixture.calls).not.toContain('post');
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toEqual([]);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
         }
-    });
+    );
 
     it.each(PLAN_DISAGREEMENTS)(
         'refuses a plan whose $label disagrees and never posts',

@@ -181,8 +181,9 @@ one-to-one; or when its recommendation disagrees with the document's event. It
 then persists the canonical record, `format: 'dossier-v1'`: an append-only event
 chain (`stance-completed`, `finding-accepted`, `finding-discarded`) whose records
 carry `sequence`, `previousDigest`, and `digest`, plus `headDigest` and a
-`dossierDigest` over the header identity. Re-publication of the same head
-replays that persisted record unchanged rather than minting a second one.
+`dossierDigest` over the header identity, evidence and limitations.
+Re-publication of the same head replays that persisted record unchanged rather
+than minting a second one.
 
 Legacy tolerance: a bundle with no `risk-plan.json` predates this contract and
 publishes exactly as before.

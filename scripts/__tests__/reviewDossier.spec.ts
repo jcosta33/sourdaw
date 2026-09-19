@@ -495,6 +495,27 @@ describe('parseReviewDossier refusals', () => {
         expect(() => parseReviewDossier(mutated)).toThrow(/dossierDigest does not match its payload/);
     });
 
+    it.each(['observable', 'verification', 'observed'] as const)(
+        'should refuse an edited evidence %s that keeps the recorded digest',
+        (field) => {
+            const mutated = cloneDossier();
+            const entry = mutated.evidence[0];
+            if (entry === undefined) {
+                throw new Error('fixture must carry one evidence entry');
+            }
+            entry[field] = `edited ${field} for the digest check`;
+
+            expect(() => parseReviewDossier(mutated)).toThrow(/dossierDigest does not match its payload/);
+        }
+    );
+
+    it('should refuse an edited limitation that keeps the recorded digest', () => {
+        const mutated = cloneDossier();
+        mutated.limitations = ['an edited limitation for the digest check'];
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/dossierDigest does not match its payload/);
+    });
+
     it('should refuse a sequence gap', () => {
         const mutated = cloneDossier();
         recordAt(mutated, 1).sequence = 7;
@@ -597,6 +618,7 @@ const UNSAFE_FIXTURES: { name: string; value: string }[] = [
     { name: 'a gh-prefixed GitHub token', value: `ghp_${'A'.repeat(24)}` },
     { name: 'a fine-grained GitHub token', value: `github_pat_${'B'.repeat(24)}` },
     { name: 'an AWS access key id', value: `AKIA${'C'.repeat(16)}` },
+    { name: 'a temporary AWS access key id', value: `ASIA${'D'.repeat(16)}` },
     { name: 'a private key header', value: '-----BEGIN RSA PRIVATE KEY-----' },
     { name: 'a JSON web token', value: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl' },
     { name: 'a bearer credential', value: 'Bearer 0123456789abcdef' },
@@ -608,6 +630,8 @@ const UNSAFE_FIXTURES: { name: string; value: string }[] = [
     { name: 'a session marker', value: '⏺ Read scripts/reviewDossier.ts' },
     { name: 'a session tag', value: '<session id="1">' },
     { name: 'a multiline value', value: 'first line\nsecond line' },
+    { name: 'a line separator value', value: 'first line\u2028second line' },
+    { name: 'a paragraph separator value', value: 'first line\u2029second line' },
     { name: 'an over-long value', value: 'x'.repeat(REVIEW_EVIDENCE_FIELD_MAX_BYTES + 1) },
     { name: 'an edge-untrimmed value', value: ' padded value ' },
     { name: 'a blank value', value: '   ' },
@@ -630,6 +654,27 @@ describe('assertPublicationSafeEvidence', () => {
         expect(() => assertPublicationSafeEvidence('evidence[0].observed', ['Bearer 0123456789abcdef'])).toThrow(
             /evidence\[0\]\.observed value at index 0 contains a bearer credential/
         );
+    });
+
+    it.each([
+        ['a line separator', 'first\u2028second'],
+        ['a paragraph separator', 'first\u2029second'],
+    ])('should refuse %s by the separator rule and name the field and index', (_name, value) => {
+        expect(() => assertPublicationSafeEvidence('evidence[0].observed', [value])).toThrow(
+            /evidence\[0\]\.observed value at index 0 contains a line separator/
+        );
+    });
+
+    it('should refuse a temporary AWS access key id by the AWS key rule and name the field and index', () => {
+        expect(() => assertPublicationSafeEvidence('evidence[0].observed', [`ASIA${'D'.repeat(16)}`])).toThrow(
+            /evidence\[0\]\.observed value at index 0 contains an AWS access key id/
+        );
+    });
+
+    it('should pass separator-free text and an under-length key-like value', () => {
+        expect(() =>
+            assertPublicationSafeEvidence('evidence[0].observed', ['a safe single-line value', `AKIA${'D'.repeat(15)}`])
+        ).not.toThrow();
     });
 
     it('should pass a bounded safe value', () => {

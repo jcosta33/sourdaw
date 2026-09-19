@@ -2,9 +2,11 @@
  * Durable, head-bound review-dossier record (#2999, spec #2995 AC-009/AC-010).
  *
  * A dossier binds one reviewed head to the stances its risk plan required, the findings the
- * orchestrator accepted or discarded, and the bounded evidence it publishes. Events form a hash
- * chain: every record's digest covers its predecessor, so a deleted, reordered or rewritten record
- * is detectable, and `headDigest` plus `dossierDigest` bind the record to that exact head.
+ * orchestrator accepted or discarded, and the bounded evidence and limitations it publishes. Events
+ * form a hash chain: every record's digest covers its predecessor, and `headDigest` plus the
+ * `dossierDigest` over the header, evidence and limitations bind the record's contents. The chain
+ * detects partial edits and inconsistent re-links; it is not an external anchor, so a wholesale
+ * re-link that recomputes every digest is not detectable here.
  */
 
 import { createHash } from 'node:crypto';
@@ -116,7 +118,7 @@ const DISCARDED_KEYS = ['finding', 'stance', 'reason'] as const;
 const UNSAFE_VALUE_SHAPES: readonly { readonly reason: string; readonly pattern: RegExp }[] = [
     { reason: 'a GitHub token', pattern: /gh[pousr]_/u },
     { reason: 'a fine-grained GitHub token', pattern: /github_pat_/u },
-    { reason: 'an AWS access key id', pattern: /AKIA[0-9A-Z]{16}/u },
+    { reason: 'an AWS access key id', pattern: /A[KS]IA[0-9A-Z]{16}/u },
     { reason: 'a private key header', pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/u },
     { reason: 'a JSON web token', pattern: /eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/u },
     { reason: 'a bearer credential', pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]+/u },
@@ -463,6 +465,8 @@ function computeDossierDigest(payload: DossierPayload, headDigest: string): stri
             baseSha: payload.baseSha,
             riskClasses: payload.riskClasses,
             requiredStances: payload.requiredStances,
+            evidence: payload.evidence,
+            limitations: payload.limitations,
             recommendation: payload.recommendation,
             headDigest,
         })
@@ -531,8 +535,8 @@ function assertSafeEvidenceValue(label: string, index: number, value: string): v
     if (value !== value.trim()) {
         fail(`${label} value at index ${index} is not edge-trimmed`);
     }
-    if (value.includes('\n') || value.includes('\r')) {
-        fail(`${label} value at index ${index} contains a newline`);
+    if (/[\r\n\u2028\u2029]/u.test(value)) {
+        fail(`${label} value at index ${index} contains a line separator`);
     }
     const bytes = Buffer.byteLength(value, 'utf8');
     if (bytes > REVIEW_EVIDENCE_FIELD_MAX_BYTES) {
@@ -608,12 +612,14 @@ export function parseReviewDossier(value: unknown): ReviewDossier {
         fail(`review dossier headDigest must be ${expectedHeadDigest}, found ${headDigest}`);
     }
     const dossierDigest = readNonBlankString('dossierDigest', value.dossierDigest);
+    const dossier: ReviewDossier = { format: REVIEW_DOSSIER_FORMAT, ...payload, events, headDigest, dossierDigest };
+    // The coarse byte ceiling runs before the content digest so an externally crafted over-size
+    // record is still refused by the bound rather than only by its content mismatch.
+    assertDossierSize(dossier);
     const expectedDossierDigest = computeDossierDigest(payload, headDigest);
     if (dossierDigest !== expectedDossierDigest) {
         fail(`review dossier dossierDigest does not match its payload: ${dossierDigest}`);
     }
-    const dossier: ReviewDossier = { format: REVIEW_DOSSIER_FORMAT, ...payload, events, headDigest, dossierDigest };
-    assertDossierSize(dossier);
     return dossier;
 }
 

@@ -279,7 +279,7 @@ function assertStancesMatchPlan(
 }
 
 function assertFindingsMatchComments(
-    accepted: readonly { path: string; line: number; side: 'LEFT' | 'RIGHT' }[],
+    accepted: readonly { findingId: string; path: string; line: number; side: 'LEFT' | 'RIGHT' }[],
     comments: readonly ReviewDossierComment[]
 ): void {
     if (accepted.length !== comments.length) {
@@ -291,6 +291,11 @@ function assertFindingsMatchComments(
         const comment = comments[index];
         if (comment === undefined) {
             fail(`review dossier publication has no review comment at index ${index}`);
+        }
+        if (finding.findingId !== `comment-${index}`) {
+            fail(
+                `review dossier publication accepted finding ${index} id ${finding.findingId} must be comment-${index}`
+            );
         }
         if (finding.path !== comment.path || finding.line !== comment.line || finding.side !== comment.side) {
             fail(
@@ -326,8 +331,10 @@ function assertPublicationAgreement(dossier: ReviewDossier, input: ReviewDossier
     );
     assertStancesMatchPlan(completedStances(dossier), input.plan.requiredStances);
     assertSameValue('review dossier publication recommendation', dossier.recommendation, input.recommendation);
-    assertFindingsMatchComments(acceptedFindings(dossier), input.comments);
+    // The discarded-id namespace is independent of the positional accepted ids, and the accepted
+    // check claims the whole comment-id namespace, so the collision guard runs first.
     assertNoCommentIdCollision(discardedDispositions(dossier), input.comments);
+    assertFindingsMatchComments(acceptedFindings(dossier), input.comments);
 }
 
 export function buildReviewDossier(input: ReviewDossierBuildInput): ReviewDossierPublication {
