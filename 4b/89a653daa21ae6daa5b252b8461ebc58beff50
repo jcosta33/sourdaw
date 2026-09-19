@@ -1,0 +1,16 @@
+scripts/__tests__/prepareReview.spec.ts
+  h_1228e573df1f42 13,20-21,112,142-196,285-314,459-478
+scripts/prepareReview.ts
+  h_1228e573df1f42 22-23,103-108,110-112,139-141,147-156,226-228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4b89a653daa21ae6daa5b252b8461ebc58beff50",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
