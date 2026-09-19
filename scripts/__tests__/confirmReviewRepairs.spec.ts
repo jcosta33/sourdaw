@@ -701,6 +701,8 @@ describe('readReviewThreads', () => {
         return {
             id: THREAD,
             isResolved: false,
+            // The side GitHub returns for a thread; a review comment carries no side of its own.
+            diffSide: 'RIGHT',
             comments: {
                 nodes: [
                     {
@@ -709,7 +711,6 @@ describe('readReviewThreads', () => {
                         body: 'Defect.',
                         path: FINDING_PATH,
                         line: FINDING_LINE,
-                        side: 'RIGHT',
                         author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                     },
                     {
@@ -718,7 +719,6 @@ describe('readReviewThreads', () => {
                         body: 'record',
                         path: null,
                         line: null,
-                        side: null,
                         author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
                     },
                 ],
@@ -805,7 +805,6 @@ describe('readReviewThreads', () => {
                                     body: 'root',
                                     path: FINDING_PATH,
                                     line: 1,
-                                    side: 'LEFT',
                                     author: { __typename: 'Bot', login: 'a' },
                                 },
                             ],
@@ -831,7 +830,6 @@ describe('readReviewThreads', () => {
                                     body: 'root',
                                     path: FINDING_PATH,
                                     line: 1,
-                                    side: 'LEFT',
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                             ],
@@ -843,6 +841,45 @@ describe('readReviewThreads', () => {
             )
         );
         expect(() => readReviewThreads(PR, gh, [])).toThrow('root comment id must be a numeric database id');
+    });
+
+    it('should refuse a database id that is zero, negative, fractional or unsafe', () => {
+        for (const databaseId of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+            const { gh } = recordingGh(() =>
+                page(
+                    [
+                        threadNode({
+                            comments: {
+                                nodes: [
+                                    {
+                                        id: 'PRRC_kwDOconfirmRoot',
+                                        databaseId,
+                                        body: 'root',
+                                        path: FINDING_PATH,
+                                        line: 1,
+                                        author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
+                                    },
+                                ],
+                                pageInfo: { hasNextPage: false, endCursor: null },
+                            },
+                        }),
+                    ],
+                    { hasNextPage: false, endCursor: null }
+                )
+            );
+            expect(() => readReviewThreads(PR, gh, []), `databaseId ${String(databaseId)} must be refused`).toThrow(
+                'root comment id must be a numeric database id'
+            );
+        }
+    });
+
+    it('should refuse a thread whose diff side is neither LEFT nor RIGHT', () => {
+        const { gh } = recordingGh(() =>
+            page([threadNode({ diffSide: 'UP' })], { hasNextPage: false, endCursor: null })
+        );
+        expect(() => readReviewThreads(PR, gh, [])).toThrow(
+            `PR #${PR} review threads diff side must be LEFT or RIGHT, found "UP"`
+        );
     });
 
     it('should read a human comment as a reply no selection acts on and still confirm the author repair', () => {
@@ -859,7 +896,6 @@ describe('readReviewThreads', () => {
                                     body: 'Defect. Consequence. Fix.',
                                     path: FINDING_PATH,
                                     line: FINDING_LINE,
-                                    side: 'RIGHT',
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                                 {
@@ -872,7 +908,6 @@ describe('readReviewThreads', () => {
                                     ),
                                     path: null,
                                     line: null,
-                                    side: null,
                                     author: { __typename: 'User', login: 'jcosta33' },
                                 },
                                 {
@@ -881,7 +916,6 @@ describe('readReviewThreads', () => {
                                     body: authorRecordReply(record),
                                     path: null,
                                     line: null,
-                                    side: null,
                                     author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
                                 },
                             ],
@@ -926,7 +960,6 @@ describe('readReviewThreads', () => {
                                     body: 'Defect. Consequence. Fix.',
                                     path: FINDING_PATH,
                                     line: FINDING_LINE,
-                                    side: 'RIGHT',
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                                 {
@@ -942,7 +975,6 @@ describe('readReviewThreads', () => {
                                     ),
                                     path: null,
                                     line: null,
-                                    side: null,
                                     author: null,
                                 },
                                 {
@@ -951,7 +983,6 @@ describe('readReviewThreads', () => {
                                     body: authorRecordReply(record),
                                     path: null,
                                     line: null,
-                                    side: null,
                                     author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
                                 },
                             ],
@@ -1013,7 +1044,6 @@ describe('readReviewThreads', () => {
                                     body: 'Defect.',
                                     path: FINDING_PATH,
                                     line: FINDING_LINE,
-                                    side: 'RIGHT',
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                             ],
@@ -1045,7 +1075,6 @@ describe('readReviewThreads', () => {
                                         body: authorRecordReply(record),
                                         path: null,
                                         line: null,
-                                        side: null,
                                         author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
                                     },
                                 ],
@@ -1066,7 +1095,6 @@ describe('readReviewThreads', () => {
                                     body: 'Defect. Consequence. Fix.',
                                     path: FINDING_PATH,
                                     line: FINDING_LINE,
-                                    side: 'RIGHT',
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                             ],
@@ -1224,6 +1252,7 @@ describe('shellPort', () => {
                                             {
                                                 id: THREAD,
                                                 isResolved: false,
+                                                diffSide: 'RIGHT',
                                                 comments: {
                                                     nodes: [
                                                         {
@@ -1232,7 +1261,6 @@ describe('shellPort', () => {
                                                             body: 'Defect.',
                                                             path: FINDING_PATH,
                                                             line: FINDING_LINE,
-                                                            side: 'RIGHT',
                                                             author: {
                                                                 __typename: 'Bot',
                                                                 login: 'r',

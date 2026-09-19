@@ -10,8 +10,9 @@
  * already the record this command exists to make.
  *
  * The read is this module's own single-thread GraphQL query rather than `readThread.ts`'s reply
- * shape, because the record binds the thread's root comment — its id, path, line and side — and
- * GitHub exposes the root of a review thread only as the first comment of the thread.
+ * shape, because the record binds the thread's root comment — its id, path and line, plus the
+ * thread's own `diffSide` — and GitHub exposes the root of a review thread only as the first comment
+ * of the thread.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -391,13 +392,14 @@ function graphql(gh: Gh, query: string, fields: string[], label: string): unknow
 type ThreadNode = {
     id?: unknown;
     isResolved?: unknown;
+    diffSide?: unknown;
     pullRequest?: { number?: unknown; headRefOid?: unknown; baseRefOid?: unknown };
     comments?: { nodes?: unknown; pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } };
 };
 
 export function threadQuery(paged: boolean): string {
     const connection = paged ? 'comments(first:100,after:$cursor)' : 'comments(first:100)';
-    return `query($threadId:ID!${paged ? ',$cursor:String!' : ''}){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number headRefOid baseRefOid} ${connection}{${REVIEW_THREAD_COMMENT_FIELDS}}}}}`;
+    return `query($threadId:ID!${paged ? ',$cursor:String!' : ''}){node(id:$threadId){... on PullRequestReviewThread{id isResolved diffSide pullRequest{number headRefOid baseRefOid} ${connection}{${REVIEW_THREAD_COMMENT_FIELDS}}}}}`;
 }
 
 type ThreadCommentNode = {
@@ -406,7 +408,6 @@ type ThreadCommentNode = {
     body?: unknown;
     path?: unknown;
     line?: unknown;
-    side?: unknown;
     author?: unknown;
 };
 
@@ -427,9 +428,15 @@ function readSide(value: unknown, label: string): 'LEFT' | 'RIGHT' {
 
 /**
  * The root is the first comment of the first page, so its database id is the numeric id already read
- * from that reply; this reads only the file position and side the record binds beside it.
+ * from that reply; this reads only the file position the record binds beside it. The side comes from
+ * the thread's `diffSide`, because GitHub defines no side on a review comment.
  */
-function readRootComment(node: ThreadCommentNode, id: number, label: string): RepairReviewFindingThread['rootComment'] {
+function readRootComment(
+    node: ThreadCommentNode,
+    id: number,
+    side: 'LEFT' | 'RIGHT',
+    label: string
+): RepairReviewFindingThread['rootComment'] {
     if (
         typeof node.path !== 'string' ||
         node.path.trim() === '' ||
@@ -439,12 +446,7 @@ function readRootComment(node: ThreadCommentNode, id: number, label: string): Re
     ) {
         fail(`${label} root comment carries no file position`);
     }
-    return {
-        id,
-        path: node.path,
-        line: node.line,
-        side: readSide(node.side, `${label} root comment side`),
-    };
+    return { id, path: node.path, line: node.line, side };
 }
 
 function readThreadReply(node: ThreadCommentNode, label: string): RepairReviewFindingReply {
@@ -462,6 +464,7 @@ function readThreadReply(node: ThreadCommentNode, label: string): RepairReviewFi
 type ReadThreadPage = {
     threadId: string;
     isResolved: boolean;
+    diffSide: 'LEFT' | 'RIGHT';
     pullRequestNumber: number;
     head: string;
     base: string;
@@ -475,7 +478,7 @@ type ReadThreadPage = {
  * thread. Reading through a validated copy keeps the checks and their subject in one statement
  * instead of leaving the property accesses to rest on an assertion made several lines earlier.
  */
-function readThreadPage(node: ThreadNode | null | undefined): ReadThreadPage | undefined {
+function readThreadPage(node: ThreadNode | null | undefined, label: string): ReadThreadPage | undefined {
     const pullRequest = node?.pullRequest;
     const comments = node?.comments;
     const pageInfo = comments?.pageInfo;
@@ -495,6 +498,7 @@ function readThreadPage(node: ThreadNode | null | undefined): ReadThreadPage | u
     return {
         threadId: node.id,
         isResolved: node.isResolved,
+        diffSide: readSide(node.diffSide, `${label} diff side`),
         pullRequestNumber: pullRequest.number,
         head: pullRequest.headRefOid,
         base: pullRequest.baseRefOid,
@@ -518,7 +522,7 @@ export function readRepairReviewThread(threadId: string, gh: Gh): RepairReviewFi
         const response = graphql(gh, threadQuery(cursor !== undefined), fields, label) as {
             data?: { node?: ThreadNode | null };
         };
-        const page = readThreadPage(response.data?.node);
+        const page = readThreadPage(response.data?.node, label);
         if (page === undefined) {
             fail(`${label} is not a readable pull-request review thread`);
         }
@@ -539,7 +543,7 @@ export function readRepairReviewThread(threadId: string, gh: Gh): RepairReviewFi
                 pullRequestNumber: firstPage.pullRequestNumber,
                 head: firstPage.head,
                 base: firstPage.base,
-                rootComment: readRootComment(root, rootReply.id, label),
+                rootComment: readRootComment(root, rootReply.id, firstPage.diffSide, label),
                 replies,
             };
         }

@@ -308,9 +308,10 @@ function readCommentCursor(comments: Record<string, unknown>, label: string): st
 }
 
 /**
- * The thread as this command needs it: the root comment supplies the finding the record must bind,
- * and every comment supplies the author identity the selection reads records from. The root must be a
- * numeric database id and carry a position, because a record binds exactly those values.
+ * The thread as this command needs it: the root comment supplies the finding's database id, path and
+ * line, the thread's own `diffSide` supplies its side, and every comment supplies the author identity
+ * the selection reads records from. The root must be a numeric database id and carry a position,
+ * because a record binds exactly those values.
  */
 function readThread(node: unknown, label: string): ListedThread {
     if (!isRecord(node) || typeof node.id !== 'string' || typeof node.isResolved !== 'boolean') {
@@ -331,7 +332,7 @@ function readThread(node: unknown, label: string): ListedThread {
             rootCommentId: readCommentId(root.databaseId, `${label} root comment id`),
             rootPath: readPath(root.path, `${label} root comment path`),
             rootLine: readLine(root.line, `${label} root comment line`),
-            rootSide: readSide(root.side, `${label} root comment side`),
+            rootSide: readSide(node.diffSide, `${label} diff side`),
             replies: [root, ...rest].map((comment) => readReply(comment, label)),
         },
         commentCursor: readCommentCursor(comments, label),
@@ -347,16 +348,17 @@ function appendCursor(fields: string[], cursor: string | undefined): string[] {
 }
 
 /**
- * The thread page selects what `readThread` needs: the thread's own `isResolved` and its comment
- * connection, where the shared *comment* fragment nests. Each connection carries its own `pageInfo`,
- * because `ReviewThreadsPageInfo` and `PageInfo` are different selections on different connections.
+ * The thread page selects what `readThread` needs: the thread's own `isResolved` and `diffSide`, and
+ * its comment connection, where the shared *comment* fragment nests. Each connection carries its own
+ * `pageInfo`, because `ReviewThreadsPageInfo` and `PageInfo` are different selections on different
+ * connections.
  */
 export function threadPage(cursor: string | undefined): string {
     const paged = cursor !== undefined;
     const connection = `reviewThreads(first:${GRAPHQL_PAGE_SIZE}${paged ? ',after:$cursor' : ''})`;
     const variables = `$owner:String!,$name:String!,$number:Int!${paged ? ',$cursor:String!' : ''}`;
     const comments = `comments(first:${GRAPHQL_PAGE_SIZE}){${REVIEW_THREAD_COMMENT_FIELDS}}`;
-    const threadFields = `nodes{id isResolved ${comments}} pageInfo{hasNextPage endCursor}`;
+    const threadFields = `nodes{id isResolved diffSide ${comments}} pageInfo{hasNextPage endCursor}`;
     const pullRequest = `pullRequest(number:$number){${connection}{${threadFields}}}`;
     return `query(${variables}){repository(owner:$owner,name:$name){${pullRequest}}}`;
 }

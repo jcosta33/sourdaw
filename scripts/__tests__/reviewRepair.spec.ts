@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { renderConfirmationReply, threadPage } from '../confirmReviewRepairs.ts';
+import { renderConfirmationReply, threadCommentsPage, threadPage } from '../confirmReviewRepairs.ts';
 import { threadQuery } from '../repairReviewFinding.ts';
 import {
     REVIEW_REPAIR_FORMAT,
@@ -665,26 +665,278 @@ describe('confirmClientMutationId', () => {
 /**
  * The exact text both thread readers send, written out literally rather than assembled from the shared
  * fragment. The repair reader nests the comment fragment under its comment connection; the confirm
- * reader must select the thread's own `isResolved` and nest that same fragment under `comments`, with
- * each connection carrying its own `pageInfo`. Re-nesting the fragment directly under `reviewThreads`
- * or moving `pageInfo` inside `nodes` changes these bytes and reddens this pin.
+ * reader must select the thread's own `isResolved` and `diffSide` and nest that same fragment under
+ * `comments`, with each connection carrying its own `pageInfo`. Re-nesting the fragment directly under
+ * `reviewThreads` or moving `pageInfo` inside `nodes` changes these bytes and reddens this pin.
  */
 describe('review thread queries', () => {
     it('should ask for the repair thread and its comment page with pageInfo beside nodes', () => {
         expect(threadQuery(false)).toBe(
-            'query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number headRefOid baseRefOid} comments(first:100){nodes{id databaseId body path line side author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}'
+            'query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{id isResolved diffSide pullRequest{number headRefOid baseRefOid} comments(first:100){nodes{id databaseId body path line author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}'
         );
         expect(threadQuery(true)).toBe(
-            'query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number headRefOid baseRefOid} comments(first:100,after:$cursor){nodes{id databaseId body path line side author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}'
+            'query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{id isResolved diffSide pullRequest{number headRefOid baseRefOid} comments(first:100,after:$cursor){nodes{id databaseId body path line author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}'
         );
     });
 
     it('should ask for the review threads with pageInfo beside nodes in both page forms', () => {
         expect(threadPage(undefined)).toBe(
-            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:100){nodes{id databaseId body path line side author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
+            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved diffSide comments(first:100){nodes{id databaseId body path line author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
         );
         expect(threadPage('CURSOR')).toBe(
-            'query($owner:String!,$name:String!,$number:Int!,$cursor:String!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved comments(first:100){nodes{id databaseId body path line side author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
+            'query($owner:String!,$name:String!,$number:Int!,$cursor:String!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved diffSide comments(first:100){nodes{id databaseId body path line author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
         );
+    });
+
+    it('should drain a long thread through the same comment fragment it started with', () => {
+        expect(threadCommentsPage()).toBe(
+            'query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{comments(first:100,after:$cursor){nodes{id databaseId body path line author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}'
+        );
+    });
+});
+
+/**
+ * The fields GitHub's schema defines for the types these thread queries select, recorded from the
+ * live schema with `fields(includeDeprecated: true)` — `databaseId` is selected and accepted but
+ * deprecated. `PullRequestReviewComment` and `PullRequestReviewThread` carry their full field sets,
+ * because a comment field GitHub does not define is exactly the defect this check exists to catch:
+ * the comment type has no `side`, and the side a finding sits on is the thread's `diffSide`.
+ * Container types carry the fields these three readers select, since their full sets span hundreds
+ * of unrelated fields.
+ */
+const QUERY_SCHEMA: Readonly<Record<string, readonly string[]>> = {
+    Query: ['node', 'repository'],
+    Node: ['id'],
+    Repository: ['pullRequest'],
+    PullRequest: ['number', 'headRefOid', 'baseRefOid', 'reviewThreads'],
+    PullRequestReviewThreadConnection: ['edges', 'nodes', 'pageInfo', 'totalCount'],
+    PullRequestReviewCommentConnection: ['edges', 'nodes', 'pageInfo', 'totalCount'],
+    PageInfo: ['endCursor', 'hasNextPage', 'hasPreviousPage', 'startCursor'],
+    Actor: ['avatarUrl', 'login', 'resourcePath', 'url'],
+    Bot: ['avatarUrl', 'createdAt', 'databaseId', 'id', 'login', 'resourcePath', 'updatedAt', 'url'],
+    PullRequestReviewThread: [
+        'comments',
+        'diffSide',
+        'id',
+        'isCollapsed',
+        'isOutdated',
+        'isResolved',
+        'line',
+        'originalLine',
+        'originalStartLine',
+        'path',
+        'pullRequest',
+        'repository',
+        'resolvedBy',
+        'startDiffSide',
+        'startLine',
+        'subjectType',
+        'viewerCanReply',
+        'viewerCanResolve',
+        'viewerCanUnresolve',
+    ],
+    PullRequestReviewComment: [
+        'author',
+        'authorAssociation',
+        'body',
+        'bodyHTML',
+        'bodyText',
+        'commit',
+        'createdAt',
+        'createdViaEmail',
+        'databaseId',
+        'diffHunk',
+        'draftedAt',
+        'editor',
+        'fullDatabaseId',
+        'id',
+        'includesCreatedEdit',
+        'isMinimized',
+        'lastEditedAt',
+        'line',
+        'minimizedReason',
+        'originalCommit',
+        'originalLine',
+        'originalPosition',
+        'originalStartLine',
+        'outdated',
+        'path',
+        'position',
+        'publishedAt',
+        'pullRequest',
+        'pullRequestReview',
+        'reactionGroups',
+        'reactions',
+        'replyTo',
+        'repository',
+        'resourcePath',
+        'startLine',
+        'state',
+        'subjectType',
+        'updatedAt',
+        'url',
+        'userContentEdits',
+        'viewerCanDelete',
+        'viewerCanMinimize',
+        'viewerCanReact',
+        'viewerCanUnminimize',
+        'viewerCanUpdate',
+        'viewerCannotUpdateReasons',
+        'viewerDidAuthor',
+    ],
+};
+
+/** The schema type each selected field's selection set nests into. */
+const QUERY_FIELD_TYPES: Readonly<Record<string, string>> = {
+    'Query.node': 'Node',
+    'Query.repository': 'Repository',
+    'Repository.pullRequest': 'PullRequest',
+    'PullRequestReviewThread.pullRequest': 'PullRequest',
+    'PullRequest.reviewThreads': 'PullRequestReviewThreadConnection',
+    'PullRequestReviewThread.comments': 'PullRequestReviewCommentConnection',
+    'PullRequestReviewThreadConnection.nodes': 'PullRequestReviewThread',
+    'PullRequestReviewCommentConnection.nodes': 'PullRequestReviewComment',
+    'PullRequestReviewThreadConnection.pageInfo': 'PageInfo',
+    'PullRequestReviewCommentConnection.pageInfo': 'PageInfo',
+    'PullRequestReviewComment.author': 'Actor',
+};
+
+/** Field names, argument lists, braces and typed inline fragments; every other character is noise. */
+function tokenizeQuery(query: string): string[] {
+    const tokens: string[] = [];
+    let word = '';
+    const flushWord = () => {
+        if (word !== '') {
+            tokens.push(word);
+            word = '';
+        }
+    };
+    for (let index = 0; index < query.length; index += 1) {
+        const character = query[index] ?? '';
+        if (/[A-Za-z0-9_]/u.test(character)) {
+            word += character;
+            continue;
+        }
+        flushWord();
+        if (query.startsWith('...', index)) {
+            tokens.push('...');
+            index += 2;
+        } else if (character === '{' || character === '}' || character === '(' || character === ')') {
+            tokens.push(character);
+        }
+    }
+    flushWord();
+    return tokens;
+}
+
+/** Field arguments carry nested parentheses only in theory; counting them keeps the skip honest. */
+function skipArguments(tokens: readonly string[], start: number): number {
+    let depth = 0;
+    for (let index = start; index < tokens.length; index += 1) {
+        if (tokens[index] === '(') {
+            depth += 1;
+        } else if (tokens[index] === ')') {
+            depth -= 1;
+            if (depth === 0) {
+                return index + 1;
+            }
+        }
+    }
+    throw new Error('the query ends inside an argument list');
+}
+
+function assertSchemaField(type: string, field: string): void {
+    if (field === '__typename') {
+        return;
+    }
+    const fields = QUERY_SCHEMA[type];
+    if (fields === undefined) {
+        throw new Error(`the schema fixture carries no type ${type}`);
+    }
+    if (!fields.includes(field)) {
+        throw new Error(`field ${field} does not exist on ${type}`);
+    }
+}
+
+function assertSchemaType(type: string): void {
+    if (QUERY_SCHEMA[type] === undefined) {
+        throw new Error(`the schema fixture carries no type ${type}`);
+    }
+}
+
+function parseQuerySelectionSet(tokens: readonly string[], start: number, type: string): number {
+    if (tokens[start] !== '{') {
+        throw new Error(`expected a selection set on ${type}`);
+    }
+    let index = start + 1;
+    while (tokens[index] !== '}') {
+        if (tokens[index] === undefined) {
+            throw new Error(`the ${type} selection set never closes`);
+        }
+        if (tokens[index] === '...') {
+            if (tokens[index + 1] !== 'on') {
+                throw new Error(`only typed inline fragments are supported on ${type}`);
+            }
+            const fragmentType = tokens[index + 2];
+            if (fragmentType === undefined) {
+                throw new Error(`an inline fragment on ${type} carries no type`);
+            }
+            assertSchemaType(fragmentType);
+            index = parseQuerySelectionSet(tokens, index + 3, fragmentType);
+            continue;
+        }
+        index = parseQueryField(tokens, index, type);
+    }
+    return index + 1;
+}
+
+function parseQueryField(tokens: readonly string[], start: number, type: string): number {
+    const field = tokens[start];
+    if (field === undefined || field === '{' || field === '}') {
+        throw new Error(`the ${type} selection set carries an unreadable field`);
+    }
+    assertSchemaField(type, field);
+    let index = start + 1;
+    if (tokens[index] === '(') {
+        index = skipArguments(tokens, index);
+    }
+    if (tokens[index] !== '{') {
+        return index;
+    }
+    const childType = QUERY_FIELD_TYPES[`${type}.${field}`];
+    if (childType === undefined) {
+        throw new Error(`the schema fixture carries no type for ${type}.${field}`);
+    }
+    return parseQuerySelectionSet(tokens, index, childType);
+}
+
+/** Walks a built query and refuses any field its parent schema type does not define. */
+function assertQuerySelectsSchemaFields(query: string): void {
+    const tokens = tokenizeQuery(query);
+    const operation = tokens.indexOf('{');
+    if (operation < 0) {
+        throw new Error('the query carries no selection set');
+    }
+    const end = parseQuerySelectionSet(tokens, operation, 'Query');
+    if (end !== tokens.length) {
+        throw new Error(`the query carries ${tokens.length - end} token(s) outside its selection set`);
+    }
+}
+
+describe('review thread query schema conformance', () => {
+    it.each([
+        ['the single thread query', threadQuery(false)],
+        ['the paged single thread query', threadQuery(true)],
+        ['the review thread page', threadPage(undefined)],
+        ['the paged review thread page', threadPage('CURSOR')],
+        ['the comment drain query', threadCommentsPage()],
+    ])('should select only fields the schema defines on %s', (_label, query) => {
+        expect(() => assertQuerySelectsSchemaFields(query)).not.toThrow();
+    });
+
+    it('should record the comment fields without a side and the thread field that carries it', () => {
+        expect(QUERY_SCHEMA.PullRequestReviewComment).toContain('databaseId');
+        expect(QUERY_SCHEMA.PullRequestReviewComment).not.toContain('side');
+        expect(QUERY_SCHEMA.PullRequestReviewThread).toContain('diffSide');
     });
 });

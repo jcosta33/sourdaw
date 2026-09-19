@@ -592,6 +592,7 @@ type ThreadNodeFixture = {
         node: {
             id: string;
             isResolved: boolean;
+            diffSide: 'LEFT' | 'RIGHT';
             pullRequest: { number: number; headRefOid: string; baseRefOid: string };
             comments: { nodes: unknown[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } };
         };
@@ -604,6 +605,8 @@ function threadNode(overrides: Record<string, unknown> = {}): ThreadNodeFixture 
             node: {
                 id: THREAD,
                 isResolved: false,
+                // The side GitHub returns for a thread; a review comment carries no side of its own.
+                diffSide: 'RIGHT',
                 pullRequest: { number: PR, headRefOid: HEAD, baseRefOid: BASE },
                 comments: {
                     nodes: [
@@ -613,7 +616,6 @@ function threadNode(overrides: Record<string, unknown> = {}): ThreadNodeFixture 
                             body: 'Defect.',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
-                            side: 'RIGHT',
                             author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                         },
                     ],
@@ -665,7 +667,10 @@ describe('readRepairReviewThread', () => {
         });
         expect(calls).toHaveLength(1);
         expect(calls[0]?.query).toContain('PullRequestReviewThread');
-        expect(calls[0]?.query).toContain('path line side');
+        // The thread carries the side; the comment type has no side field to ask for.
+        expect(calls[0]?.query).toContain('id isResolved diffSide');
+        expect(calls[0]?.query).toContain('path line author');
+        expect(calls[0]?.query).not.toContain('line side');
         // The record binds the numeric database id, so the fragment must select it beside the node id.
         expect(calls[0]?.query).toContain('nodes{id databaseId body');
     });
@@ -673,6 +678,7 @@ describe('readRepairReviewThread', () => {
     it('should follow comment pagination and keep the root from the first page', () => {
         function firstPage(): ThreadNodeFixture {
             return threadNode({
+                diffSide: 'LEFT',
                 comments: {
                     nodes: [
                         {
@@ -681,7 +687,6 @@ describe('readRepairReviewThread', () => {
                             body: 'Defect.',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
-                            side: 'LEFT',
                             author: null,
                         },
                     ],
@@ -699,7 +704,6 @@ describe('readRepairReviewThread', () => {
                             body: 'reply',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
-                            side: 'LEFT',
                             author: null,
                         },
                     ],
@@ -732,6 +736,13 @@ describe('readRepairReviewThread', () => {
         );
     });
 
+    it('should refuse a thread whose diff side is neither LEFT nor RIGHT', () => {
+        const { gh } = recordingGh(() => threadNode({ diffSide: 'UP' }));
+        expect(() => readRepairReviewThread(THREAD, gh)).toThrow(
+            `review thread ${THREAD} diff side must be LEFT or RIGHT, found "UP"`
+        );
+    });
+
     it('should refuse a thread whose pull request carries no base commit', () => {
         const { gh } = recordingGh(() => threadNode({ pullRequest: { number: PR, headRefOid: HEAD } }));
         expect(() => readRepairReviewThread(THREAD, gh)).toThrow(
@@ -756,7 +767,6 @@ describe('readRepairReviewThread', () => {
                             body: 'Defect.',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
-                            side: 'RIGHT',
                             author: null,
                         },
                     ],
@@ -767,6 +777,32 @@ describe('readRepairReviewThread', () => {
         expect(() => readRepairReviewThread(THREAD, gh)).toThrow(
             'comment PRRC_kwDOrepairRoot id must be a numeric database id'
         );
+    });
+
+    it('should refuse a database id that is zero, negative, fractional or unsafe', () => {
+        for (const databaseId of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+            const { gh } = recordingGh(() =>
+                threadNode({
+                    comments: {
+                        nodes: [
+                            {
+                                id: ROOT_COMMENT_NODE_ID,
+                                databaseId,
+                                body: 'Defect.',
+                                path: FINDING_PATH,
+                                line: FINDING_LINE,
+                                author: null,
+                            },
+                        ],
+                        pageInfo: { hasNextPage: false, endCursor: null },
+                    },
+                })
+            );
+            expect(
+                () => readRepairReviewThread(THREAD, gh),
+                `databaseId ${String(databaseId)} must be refused`
+            ).toThrow('must be a numeric database id');
+        }
     });
 
     it('should refuse a reply comment that carries no database id', () => {
@@ -780,7 +816,6 @@ describe('readRepairReviewThread', () => {
                             body: 'Defect.',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
-                            side: 'RIGHT',
                             author: null,
                         },
                         { id: 'PRRC_kwDOrepairReply', body: 'reply', author: null },
@@ -807,7 +842,6 @@ describe('readRepairReviewThread', () => {
                                 body: 'Defect.',
                                 path: FINDING_PATH,
                                 line: FINDING_LINE,
-                                side: 'RIGHT',
                                 author: null,
                             },
                         ],
@@ -841,7 +875,6 @@ describe('readRepairReviewThread', () => {
                             body: 'Defect.',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
-                            side: 'RIGHT',
                             author: null,
                         },
                     ],
