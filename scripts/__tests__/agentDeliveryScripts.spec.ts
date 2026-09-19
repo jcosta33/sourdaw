@@ -3604,14 +3604,24 @@ describe('origin/main snapshot freshness (#4436)', () => {
         }
     });
 
-    it('fetchOriginMain pins the fetch argv and reports both failure shapes', () => {
-        const calls: { command: string; args: string[]; cwd: string }[] = [];
-        const spawn = (command: string, args: string[], options: { cwd: string }) => {
-            calls.push({ command, args, cwd: options.cwd });
+    it('fetchOriginMain pins the fetch argv, the ambient environment, and the failure shapes', () => {
+        const calls: { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }[] = [];
+        const spawn = (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => {
+            calls.push({ command, args, cwd: options.cwd, env: options.env });
             return { status: 0, stderr: '' };
         };
         expect(fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, spawn)).toEqual({ fresh: true });
-        expect(calls).toEqual([{ command: '/usr/bin/git', args: ['fetch', 'origin', 'main'], cwd: '/repo' }]);
+        expect(calls).toEqual([
+            {
+                command: '/usr/bin/git',
+                args: ['fetch', 'origin', 'main'],
+                cwd: '/repo',
+                // The ambient environment is load-bearing: the scrubbed read env strips the
+                // credential helper, so a fetch routed through trustedGitReadEnv fails against
+                // every non-anonymous remote — the pin holds it to process.env by identity.
+                env: process.env,
+            },
+        ]);
 
         expect(
             fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, () => ({
@@ -3624,6 +3634,14 @@ describe('origin/main snapshot freshness (#4436)', () => {
                 status: null,
                 stderr: '',
             }))
-        ).toEqual({ fresh: false, reason: 'git fetch exited signal' });
+        ).toEqual({ fresh: false, reason: 'git fetch failed without diagnostics (exit signal)' });
+        // A spawn-level failure (EMFILE, ENOENT) answers status null with stderr undefined;
+        // warn-and-proceed must survive it rather than crash on .trim of undefined.
+        expect(
+            fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, () => ({
+                status: null,
+                stderr: undefined,
+            }))
+        ).toEqual({ fresh: false, reason: 'git fetch failed without diagnostics (exit signal)' });
     });
 });

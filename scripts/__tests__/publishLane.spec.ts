@@ -656,18 +656,22 @@ describe('lane publish', () => {
                     launcherEnv
                 )
             ).toThrow(/expected exactly one locked author lane for issue #12/);
-            // Every launcher run fetches origin/main before resolving its snapshot (#4436) — a
-            // read of the remote the git shim records as a `fetch` event. The refusal guarantee
-            // under test is that no authenticated write happened, so the comparison excludes
-            // that read; mint, push, and pull-request events must still be exactly none.
-            const withoutSnapshotFetch = (logs: ReturnType<typeof snapshotLogs>) => ({
+            // Every launcher run fetches origin/main exactly once before resolving its snapshot
+            // (#4436) — a read of the remote the git shim records as a `fetch` event. The refusal
+            // guarantee under test is that no authenticated write happened and that the refused
+            // run performed only that one expected read, so the comparison strips exactly one
+            // fetch per launcher run; mint, push, and pull-request events must still be none.
+            const fetchCount = (logs: ReturnType<typeof snapshotLogs>) =>
+                logs.events.split('\n').filter((line) => line === 'fetch').length;
+            const withoutSnapshotFetches = (logs: ReturnType<typeof snapshotLogs>) => ({
                 ...logs,
                 events: logs.events
                     .split('\n')
                     .filter((line) => line !== 'fetch')
                     .join('\n'),
             });
-            expect(withoutSnapshotFetch(snapshotLogs())).toEqual(withoutSnapshotFetch(beforeAmbiguousIssue));
+            expect(withoutSnapshotFetches(snapshotLogs())).toEqual(withoutSnapshotFetches(beforeAmbiguousIssue));
+            expect(fetchCount(snapshotLogs()) - fetchCount(beforeAmbiguousIssue)).toBe(1);
             runTrustedLanePublish(
                 primary,
                 ['--lane', authorizedLane, '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
@@ -706,13 +710,15 @@ describe('lane publish', () => {
                 /not inside a locked author lane/
             );
             const afterForeignLock = snapshotLogs();
-            expect(withoutSnapshotFetch(afterForeignLock)).toEqual(withoutSnapshotFetch(beforeForeignLock));
+            expect(withoutSnapshotFetches(afterForeignLock)).toEqual(withoutSnapshotFetches(beforeForeignLock));
+            expect(fetchCount(afterForeignLock) - fetchCount(beforeForeignLock)).toBe(1);
 
             const beforeUnlockedLane = snapshotLogs();
             expect(() => runTrustedLanePublish(primary, ['--lane', unlockedIssueLane], launcherEnv)).toThrow(
                 /not inside a locked author lane/
             );
-            expect(withoutSnapshotFetch(snapshotLogs())).toEqual(withoutSnapshotFetch(beforeUnlockedLane));
+            expect(withoutSnapshotFetches(snapshotLogs())).toEqual(withoutSnapshotFetches(beforeUnlockedLane));
+            expect(fetchCount(snapshotLogs()) - fetchCount(beforeUnlockedLane)).toBe(1);
 
             const beforeWrongRepository = snapshotLogs();
             expect(() =>
@@ -768,7 +774,8 @@ describe('lane publish', () => {
             expect(() =>
                 runTrustedLanePublish(primary, ['--lane', join(authorizedLane, '.github')], launcherEnv)
             ).toThrow(/--lane must name the exact author worktree root/);
-            expect(withoutSnapshotFetch(snapshotLogs())).toEqual(withoutSnapshotFetch(beforeNestedPath));
+            expect(withoutSnapshotFetches(snapshotLogs())).toEqual(withoutSnapshotFetches(beforeNestedPath));
+            expect(fetchCount(snapshotLogs()) - fetchCount(beforeNestedPath)).toBe(1);
         } finally {
             rmSync(fixtureRoot, { recursive: true, force: true });
         }

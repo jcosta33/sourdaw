@@ -1406,18 +1406,25 @@ export type OriginFetchOutcome = { fresh: true } | { fresh: false; reason: strin
 export type OriginFetchSpawn = (
     command: string,
     args: string[],
-    options: { cwd: string }
-) => { status: number | null; stderr: string };
+    options: { cwd: string; env: NodeJS.ProcessEnv }
+) => { status: number | null; stderr: string | undefined };
 
 export function fetchOriginMain(
     input: { gitPath: string; primaryRoot: string },
     spawn: OriginFetchSpawn = (command, args, options) => spawnSync(command, args, { ...options, encoding: 'utf8' })
 ): OriginFetchOutcome {
-    const result = spawn(input.gitPath, ['fetch', 'origin', 'main'], { cwd: input.primaryRoot });
+    const result = spawn(input.gitPath, ['fetch', 'origin', 'main'], {
+        cwd: input.primaryRoot,
+        env: process.env,
+    });
     if (result.status === 0) {
         return { fresh: true };
     }
-    return { fresh: false, reason: result.stderr.trim() || `git fetch exited ${result.status ?? 'signal'}` };
+    const detail = result.stderr?.trim();
+    if (detail !== undefined && detail !== '') {
+        return { fresh: false, reason: detail };
+    }
+    return { fresh: false, reason: `git fetch failed without diagnostics (exit ${result.status ?? 'signal'})` };
 }
 
 export function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
