@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -15,7 +15,7 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { composeReviewCommentBody, fail, PR_STATE } from './prContract.ts';
-import { reviewBundlePath, type ReviewBundleContext } from './prepareReview.ts';
+import { readReviewBundleContext, reviewBundlePath, type ReviewBundleContext } from './prepareReview.ts';
 import {
     type PullRequestRemoteMutationBoundary,
     type PullRequestReviewPublicationMutationBoundary,
@@ -47,7 +47,10 @@ import {
     type ReviewDocument,
     type ReviewEvent,
 } from './reviewDocumentParser.ts';
+import { assertPublicationSafeEvidence } from './reviewDossier.ts';
+import { buildReviewDossier } from './reviewDossierPublication.ts';
 import { assertReviewerModelDiversity, type AuthorshipLabel } from './reviewerModelDiversity.ts';
+import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
 
 export { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
 export {
@@ -77,6 +80,7 @@ export type PublishReviewPort = {
     pullRequest: (number: number) => { state: string; head: string; labels?: AuthorshipLabel[] };
     readReviewJson: (path: string) => unknown;
     readBundleDiff: (path: string) => string;
+    writeBundleText?: (path: string, contents: string) => void;
     assertApprovalContext?: (number: number, head: string, bundle: string) => ReviewBundleContext;
     reviewState?: (number: number, expectedHead: string) => ReviewState;
     postReview: (input: {
@@ -160,6 +164,114 @@ export type PreparedReviewPublication = {
     approvalContext?: ReviewBundleContext;
 };
 
+const REVIEW_RISK_PLAN_NAME = 'risk-plan.json';
+const REVIEW_DOSSIER_NAME = 'dossier.json';
+const REVIEW_DISCARDED_NAME = 'discarded.json';
+
+type BundleFileRead = { present: true; value: unknown } | { present: false };
+
+/**
+ * The publication port signals an absent bundle file by throwing, which is also how a file that
+ * does not parse arrives. Both are handled here as "not usable", so a probe reads this result
+ * rather than catching at each call site.
+ */
+function readBundleFile(port: PublishReviewPort, path: string): BundleFileRead {
+    try {
+        return { present: true, value: port.readReviewJson(path) };
+    } catch {
+        return { present: false };
+    }
+}
+
+function assertReviewRiskPlanBindsBundle(number: number, head: string, plan: ReviewRiskPlan, bundle: string): void {
+    let manifest: ReviewBundleContext;
+    try {
+        manifest = readReviewBundleContext(bundle);
+    } catch {
+        fail(`review risk plan has no readable bundle manifest at ${join(bundle, 'manifest.json')}`);
+    }
+    if (plan.pr !== number) {
+        fail(`review risk plan pr ${plan.pr} does not match pull request ${number}`);
+    }
+    if (plan.headSha !== head) {
+        fail(`review risk plan headSha ${plan.headSha} does not match the live head ${head}`);
+    }
+    if (plan.pr !== manifest.pr) {
+        fail(`review risk plan pr ${plan.pr} does not match the bundle manifest pr ${manifest.pr}`);
+    }
+    if (plan.headSha !== manifest.headSha) {
+        fail(`review risk plan headSha ${plan.headSha} does not match the bundle manifest headSha ${manifest.headSha}`);
+    }
+    if (plan.baseSha !== manifest.baseSha) {
+        fail(`review risk plan baseSha ${plan.baseSha} does not match the bundle manifest baseSha ${manifest.baseSha}`);
+    }
+}
+
+/**
+ * Approval claims are published evidence too, so they carry the same publication-safe shapes the
+ * durable dossier enforces. The bounded review body and inline comments are deliberately excluded:
+ * both are publication-fixed shapes with their own limits.
+ */
+function assertReviewEvidenceClaimsSafe(document: ReviewDocument): void {
+    for (const [index, claim] of (document.evidence?.claims ?? []).entries()) {
+        assertPublicationSafeEvidence(`review evidence claim[${index}].observable`, [claim.observable]);
+        assertPublicationSafeEvidence(`review evidence claim[${index}].verification`, [claim.verification]);
+        assertPublicationSafeEvidence(`review evidence claim[${index}].observed`, [claim.observed]);
+    }
+}
+
+function persistCanonicalReviewDossier(
+    publication: ReturnType<typeof buildReviewDossier>,
+    bundle: string,
+    port: PublishReviewPort
+): void {
+    if (publication.fromPersisted) {
+        return;
+    }
+    if (port.writeBundleText === undefined) {
+        fail(`review publication cannot write ${join(bundle, REVIEW_DOSSIER_NAME)}: the port has no bundle writer`);
+    }
+    port.writeBundleText(join(bundle, REVIEW_DOSSIER_NAME), publication.canonical);
+}
+
+/**
+ * Fresh reviewer publications carry the head-bound dossier beside the review document. The
+ * orchestrator's acceptance document is not a review stance record, so it never reaches here.
+ */
+function prepareReviewDossierPublication(input: {
+    number: number;
+    head: string;
+    bundle: string;
+    document: ReviewDocument;
+    port: PublishReviewPort;
+}): void {
+    const planRead = readBundleFile(input.port, join(input.bundle, REVIEW_RISK_PLAN_NAME));
+    if (!planRead.present) {
+        // Legacy compatibility: a bundle prepared before `review:prepare` wrote risk plans predates
+        // the dossier contract, so it publishes exactly as before instead of being refused for a
+        // record it was never prepared with.
+        return;
+    }
+    const plan = parseReviewRiskPlan(planRead.value);
+    assertReviewRiskPlanBindsBundle(input.number, input.head, plan, input.bundle);
+    const dossierRead = readBundleFile(input.port, join(input.bundle, REVIEW_DOSSIER_NAME));
+    if (!dossierRead.present) {
+        fail(
+            `missing review dossier at ${join(input.bundle, REVIEW_DOSSIER_NAME)}; write the caller's ${REVIEW_DOSSIER_NAME} beside review.json for head ${input.head}`
+        );
+    }
+    assertReviewEvidenceClaimsSafe(input.document);
+    const discardedRead = readBundleFile(input.port, join(input.bundle, REVIEW_DISCARDED_NAME));
+    const publication = buildReviewDossier({
+        plan,
+        raw: dossierRead.value,
+        discarded: discardedRead.present ? discardedRead.value : undefined,
+        comments: input.document.comments,
+        recommendation: input.document.event === 'APPROVE' ? 'approve' : 'request-changes',
+    });
+    persistCanonicalReviewDossier(publication, input.bundle, input.port);
+}
+
 function prepareReviewPublication(
     number: number,
     port: PublishReviewPort,
@@ -185,6 +297,9 @@ function prepareReviewPublication(
     });
     const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
+    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
+        prepareReviewDossierPublication({ number, head, bundle, document, port });
+    }
     return {
         head,
         document,
@@ -344,6 +459,7 @@ export function shellPort(
         reviewState: (number, head) => readPullRequestReviewState(number, head, REQUIRED_REPOSITORY, gh),
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
         readBundleDiff: (path) => readFileSync(path, 'utf8'),
+        writeBundleText: (path, contents) => writeFileSync(path, contents),
         assertApprovalContext: (number, head, bundle) =>
             readLiveApprovalContext(primaryRoot, number, head, bundle, session, capture),
         postReview: ({ number, commitId, event, body, comments }) => {
