@@ -2,9 +2,19 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+    realpathSync,
+    renameSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from 'node:fs';
 import { freemem, platform, tmpdir, totalmem } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resolvePrimaryRoot, spawnCapture } from './githubAppIdentity.ts';
@@ -1365,9 +1375,135 @@ type CliInput = {
     requireTarget: boolean;
     showOutput: boolean;
     recover: boolean;
+    lintTargetReplacements: LintTargetReplacement[];
     command: string;
     args: string[];
 };
+
+type LintTargetReplacement = {
+    oldTarget: string;
+    newTarget: string;
+};
+
+function parseLintTargetReplacement(value: string | undefined): LintTargetReplacement {
+    const separator = value?.indexOf('=') ?? -1;
+    if (value === undefined || separator <= 0 || separator === value.length - 1) {
+        throw new Error('--replace-lint-target requires OLD=NEW');
+    }
+    return {
+        oldTarget: value.slice(0, separator),
+        newTarget: value.slice(separator + 1),
+    };
+}
+
+function hasTraversal(path: string): boolean {
+    return path.split(/[\\/]/).includes('..');
+}
+
+function hasGlob(path: string): boolean {
+    return /[*?[\]{}]/.test(path);
+}
+
+function assertRecoveryTargetShape(target: string, label: 'OLD' | 'NEW'): void {
+    if (target.startsWith('-')) {
+        throw new Error(`--replace-lint-target ${label} cannot be a flag`);
+    }
+    if (hasGlob(target)) {
+        throw new Error(`--replace-lint-target ${label} cannot be a glob`);
+    }
+    if (hasTraversal(target)) {
+        throw new Error(`--replace-lint-target ${label} cannot contain path traversal`);
+    }
+}
+
+function resolveRecoveryLintArgs(input: {
+    receipt: GuardFailureReceipt;
+    replacements: LintTargetReplacement[];
+    cwd: string;
+    laneRoot: string;
+}): string[] {
+    if (input.replacements.length === 0) {
+        return input.receipt.args;
+    }
+    if (input.receipt.command !== 'pnpm' || input.receipt.args[0] !== 'lint') {
+        throw new Error('--replace-lint-target is only valid when recovering a recorded pnpm lint command');
+    }
+
+    const laneRoot = realpathSync(input.laneRoot);
+    const cwd = realpathSync(input.cwd);
+    const fileTargetIndexes = input.receipt.args
+        .map((argument, index) => ({ argument, index }))
+        .filter(({ argument, index }) => index > 0 && argument !== '--' && !argument.startsWith('-'));
+    const replacementsByIndex = new Map<number, LintTargetReplacement>();
+    const seenOldTargets = new Set<string>();
+    const seenNewTargets = new Set<string>();
+
+    for (const replacement of input.replacements) {
+        assertRecoveryTargetShape(replacement.oldTarget, 'OLD');
+        assertRecoveryTargetShape(replacement.newTarget, 'NEW');
+        const oldPath = resolve(cwd, replacement.oldTarget);
+        if (!containsPath(laneRoot, oldPath)) {
+            throw new Error(`--replace-lint-target OLD is outside the author lane: ${replacement.oldTarget}`);
+        }
+        if (seenOldTargets.has(oldPath)) {
+            throw new Error(`--replace-lint-target repeats OLD: ${replacement.oldTarget}`);
+        }
+        seenOldTargets.add(oldPath);
+
+        const recordedMatches = fileTargetIndexes.filter(({ argument }) => argument === replacement.oldTarget);
+        if (recordedMatches.length !== 1) {
+            throw new Error(
+                `--replace-lint-target OLD must match exactly one recorded lint file target: ${replacement.oldTarget}`
+            );
+        }
+        if (existsSync(oldPath)) {
+            throw new Error(`--replace-lint-target OLD still exists: ${replacement.oldTarget}`);
+        }
+
+        const oldExtension = extname(replacement.oldTarget);
+        const newExtension = extname(replacement.newTarget);
+        if (oldExtension === '' || oldExtension !== newExtension) {
+            throw new Error(
+                `--replace-lint-target requires the same source extension: ${replacement.oldTarget} -> ${replacement.newTarget}`
+            );
+        }
+
+        const newPath = resolve(cwd, replacement.newTarget);
+        let canonicalNewPath: string;
+        try {
+            canonicalNewPath = realpathSync(newPath);
+        } catch {
+            throw new Error(`--replace-lint-target NEW must be an existing regular file: ${replacement.newTarget}`);
+        }
+        if (!containsPath(laneRoot, canonicalNewPath)) {
+            throw new Error(`--replace-lint-target NEW is outside the author lane: ${replacement.newTarget}`);
+        }
+        if (!statSync(canonicalNewPath).isFile()) {
+            throw new Error(`--replace-lint-target NEW must be an existing regular file: ${replacement.newTarget}`);
+        }
+        if (seenNewTargets.has(canonicalNewPath)) {
+            throw new Error(`--replace-lint-target NEW duplicates another replacement: ${replacement.newTarget}`);
+        }
+        const recordedMatch = recordedMatches[0];
+        if (recordedMatch === undefined) {
+            throw new Error(`--replace-lint-target OLD is not a recorded lint target: ${replacement.oldTarget}`);
+        }
+        seenNewTargets.add(canonicalNewPath);
+        replacementsByIndex.set(recordedMatch.index, replacement);
+    }
+
+    for (const { argument, index } of fileTargetIndexes) {
+        if (replacementsByIndex.has(index)) {
+            continue;
+        }
+        const retainedPath = canonicalPath(resolve(cwd, argument), realpathSync);
+        if (seenNewTargets.has(retainedPath)) {
+            throw new Error(`--replace-lint-target NEW aliases retained lint target: ${argument}`);
+        }
+    }
+
+    return input.receipt.args.map((argument, index) => replacementsByIndex.get(index)?.newTarget ?? argument);
+}
 
 export function parseCliArgs(args: string[]): CliInput {
     let profile: ResourceProfile = 'focused';
@@ -1376,6 +1512,7 @@ export function parseCliArgs(args: string[]): CliInput {
     let requireTarget = false;
     let showOutput = false;
     let recover = false;
+    const lintTargetReplacements: LintTargetReplacement[] = [];
     let index = 0;
     for (; index < args.length; index += 1) {
         const argument = args[index];
@@ -1385,6 +1522,11 @@ export function parseCliArgs(args: string[]): CliInput {
         }
         if (argument === '--recover') {
             recover = true;
+            continue;
+        }
+        if (argument === '--replace-lint-target') {
+            lintTargetReplacements.push(parseLintTargetReplacement(args[index + 1]));
+            index += 1;
             continue;
         }
         if (argument === '--profile') {
@@ -1417,14 +1559,37 @@ export function parseCliArgs(args: string[]): CliInput {
         throw new Error(`unknown option: ${argument ?? ''}`);
     }
     const command = args[index];
+    if (lintTargetReplacements.length > 0 && !recover) {
+        throw new Error('--replace-lint-target requires --recover');
+    }
     if (command === undefined) {
         if (recover) {
-            return { profile, explicitProfile, maxRssBytes, requireTarget, showOutput, command: '', args: [], recover };
+            return {
+                profile,
+                explicitProfile,
+                maxRssBytes,
+                requireTarget,
+                showOutput,
+                command: '',
+                args: [],
+                recover,
+                lintTargetReplacements,
+            };
         }
         throw new Error('missing command after --');
     }
     const commandArgs = args.slice(index + 1);
-    return { profile, explicitProfile, maxRssBytes, requireTarget, showOutput, command, args: commandArgs, recover };
+    return {
+        profile,
+        explicitProfile,
+        maxRssBytes,
+        requireTarget,
+        showOutput,
+        command,
+        args: commandArgs,
+        recover,
+        lintTargetReplacements,
+    };
 }
 
 export async function main(
@@ -1465,15 +1630,27 @@ export async function main(
             }
             const receipt = readGuardFailureReceipt(lane.primaryRoot, lane.laneName);
             if (receipt === undefined) {
+                if (input.lintTargetReplacements.length > 0) {
+                    throw new Error('--replace-lint-target requires an active pnpm lint guard-failure receipt');
+                }
                 log(`guard: no active guard-failure receipt for lane ${lane.laneName}`);
                 return 0;
+            }
+            const recoveryArgs = resolveRecoveryLintArgs({
+                receipt,
+                replacements: input.lintTargetReplacements,
+                cwd,
+                laneRoot: lane.worktreePath,
+            });
+            for (const replacement of input.lintTargetReplacements) {
+                log(`guard: recovery lint target '${replacement.oldTarget}' -> '${replacement.newTarget}'`);
             }
             log(
                 `guard: executing recovery for lane ${lane.laneName} (${receipt.reason} at ${receipt.headSha.slice(0, 9)} during '${receipt.command} ${receipt.args.join(' ')}')`
             );
             const result = await runCommand({
                 command: receipt.command,
-                args: receipt.args,
+                args: recoveryArgs,
                 profile: input.explicitProfile
                     ? input.profile
                     : ((receipt.profile as ResourceProfile) ?? input.profile),
@@ -1486,7 +1663,7 @@ export async function main(
                 log(`guard: recovery succeeded; guard-failure receipt cleared for lane ${lane.laneName}`);
                 return 0;
             } else {
-                if (isGuardFailureReason(result.reason)) {
+                if (input.lintTargetReplacements.length === 0 && isGuardFailureReason(result.reason)) {
                     writeGuardFailureReceipt(lane.primaryRoot, {
                         ...receipt,
                         headSha: lane.headSha,
