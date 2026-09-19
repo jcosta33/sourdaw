@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_ed5aa36a3ba357::t_65c267481b5231 584
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_ed5aa36a3ba357::t_65c267481b5231 69-72,75,80,83
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_ed5aa36a3ba357::t_65c267481b5231 136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c83138409eba91a2fa7498573bebbca8587a5198",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
