@@ -1,0 +1,16 @@
+AGENTS.md
+  h_1228e573df1f42 131-133
+scripts/__tests__/reviewDossier.spec.ts
+  h_1228e573df1f42 617-633,639-642,672,694,699-721,729-731,741
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cf1d056bcac7aed0b2d8c30615e6a8abed23a780",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
