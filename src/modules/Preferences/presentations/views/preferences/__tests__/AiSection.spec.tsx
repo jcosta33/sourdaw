@@ -50,21 +50,17 @@ vi.mock('#/modules/AiRuntime/stores', () => ({
     llmStatusStore: {},
 }));
 
-vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => {
-    // Reads HOSTED_REASONING_EFFORTS from the real barrel instead of a transcribed
-    // literal, so this mock renders the same reasoning-effort set the real component
-    // ships and cannot silently drift from it.
-    const actual = await importOriginal<typeof import('#/modules/AiRuntime/useCases')>();
-    return {
-        configureCloudProvider: mocks.configureCloudProvider,
-        getDefaultHostedAnthropicModel: () => mocks.catalogModelA.value,
-        HOSTED_REASONING_EFFORTS: actual.HOSTED_REASONING_EFFORTS,
-        listHostedAnthropicModels: () => [mocks.catalogModelA, mocks.catalogModelB],
-        removeCloudProvider: mocks.removeCloudProvider,
-        resolveBackend: mocks.resolveBackend,
-        setAiBackendPreference: mocks.setAiBackendPreference,
-    };
-});
+// This tuple literal mirrors HOSTED_REASONING_EFFORTS in
+// src/modules/AiRuntime/models/HostedLlmProvider.ts; keep them equal.
+vi.mock('#/modules/AiRuntime/useCases', () => ({
+    configureCloudProvider: mocks.configureCloudProvider,
+    getDefaultHostedAnthropicModel: () => mocks.catalogModelA.value,
+    HOSTED_REASONING_EFFORTS: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+    listHostedAnthropicModels: () => [mocks.catalogModelA, mocks.catalogModelB],
+    removeCloudProvider: mocks.removeCloudProvider,
+    resolveBackend: mocks.resolveBackend,
+    setAiBackendPreference: mocks.setAiBackendPreference,
+}));
 
 vi.mock('#/modules/BrowserAi/presentations/views', () => ({
     CapabilityReportPanel: () => <div data-testid="capability-report-panel" />,
