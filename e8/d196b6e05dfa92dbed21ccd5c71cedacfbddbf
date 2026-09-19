@@ -1,0 +1,25 @@
+AGENTS.md
+  s_ed5aa36a3ba357::t_895a2bdff519f7 450-457
+package.json
+  s_ed5aa36a3ba357::t_4b08cda4c00818 60-61
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_ed5aa36a3ba357::t_3380d17538d6b4 58-59,916-919,1305-1327,1973,2134-2135,2166-2167,2320-2331,2357-2358
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_ed5aa36a3ba357::t_65fd250c07778a 239-240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e8d196b6e05dfa92dbed21ccd5c71cedacfbddbf",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
