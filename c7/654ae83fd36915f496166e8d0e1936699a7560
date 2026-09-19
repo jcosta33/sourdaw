@@ -1,0 +1,25 @@
+src/modules/Arrangement/handlers/clip/handleSetClipGain.ts
+  s_9e15f5b7ec3308::t_1befe5e61b1244 87-93,99-100,107-114,122-129
+  s_9e15f5b7ec3308::t_a3f9b061916d74 94-98
+src/modules/Arrangement/handlers/__tests__/projectTrackThroughPriorBatchActions.spec.ts
+  s_9e15f5b7ec3308::t_b573ee3a34a195 7
+  s_9e15f5b7ec3308::t_8356c2ed4e5ee0 116-117
+  s_9e15f5b7ec3308::t_99d19f879fdcb2 3
+  s_9e15f5b7ec3308::t_5586f49ea6555c 109-115,118-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c7654ae83fd36915f496166e8d0e1936699a7560",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
