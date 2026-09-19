@@ -1,0 +1,40 @@
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_9e15f5b7ec3308::t_66bd0caa08ed6c 2126,2131,2138-2139,2141,2145-2146
+src/modules/AiRuntime/transformers/llmActionStrategies/bridgeArgumentGuards.ts
+  s_9e15f5b7ec3308::t_6ce10420af1e2c 27
+src/modules/AiRuntime/transformers/llmActionStrategies/routingStrategy.ts
+  s_9e15f5b7ec3308::t_2b07ac66ee67fb 122-124,127-128
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_9e15f5b7ec3308::t_4d788496a23c27 4562,4568-4580
+  s_9e15f5b7ec3308::t_3cb1146abf5ee9 4581-4583
+src/modules/AiRuntime/useCases/__tests__/levelRequestGrounding.spec.ts
+  s_9e15f5b7ec3308::t_6e73e0db9d1163 161-187,189-196
+  s_9e15f5b7ec3308::t_b95d202e9e29ce 188
+  s_9e15f5b7ec3308::t_1e842c080ba125 259-276
+  s_9e15f5b7ec3308::t_09496663816c96 197-199,277-279
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_9e15f5b7ec3308::t_0972211aceea6a 2245-2248,2250
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/classifyPromptDecibelFigures.ts
+  s_9e15f5b7ec3308::t_fd719d775eb626 76-89,94,102
+  s_9e15f5b7ec3308::t_0d6cff3987d7b6 42
+  s_9e15f5b7ec3308::t_e30fe20caf2314 115,120-123,129
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_9e15f5b7ec3308::t_b4636f04b82aa2 1077,1081-1082,1084,1088-1089
+  s_9e15f5b7ec3308::t_2e8b670d90679e 2525-2530
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6bbf79f6434250998dc75db13f3230b6bb267bd0",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
