@@ -60,6 +60,9 @@ function namesPhrase(normalizedScope: string, phrase: string): boolean {
 /** The glyph a masked project reference is written in; `maskProjectReferences.ts` owns it. */
 const PROJECT_REFERENCE_MASK_GLYPH = '□';
 
+/** Only punctuation and spacing may separate a masked reference from the figure. */
+const PROJECT_REFERENCE_BOUNDARY_PATTERN = new RegExp(`${PROJECT_REFERENCE_MASK_GLYPH}[\\p{P}\\s]*$`, 'u');
+
 /**
  * The word the figure follows, with any article between them dropped: "to the
  * -6 dB" states the same connector "to -6 dB" does.
@@ -70,7 +73,7 @@ const PROJECT_REFERENCE_MASK_GLYPH = '□';
  */
 function getPrecedingWord(maskedScope: string, number: PromptNumber): string {
     const precedingText = maskedScope.slice(0, number.index);
-    if (precedingText.trimEnd().endsWith(PROJECT_REFERENCE_MASK_GLYPH)) {
+    if (PROJECT_REFERENCE_BOUNDARY_PATTERN.test(precedingText)) {
         return '';
     }
     const words = normalizePromptText(precedingText).split(' ');

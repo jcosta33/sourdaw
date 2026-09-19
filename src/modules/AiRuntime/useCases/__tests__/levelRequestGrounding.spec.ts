@@ -319,6 +319,37 @@ describe('a level stated in decibels reaches the handler in decibels', () => {
         expect(asDestination.actions).toEqual([]);
     });
 
+    it('binds a change after punctuation on a masked reference', () => {
+        const prompt = 'send Vocals to Reverb: 4 dB lower';
+
+        const change = bridge(
+            [{ name: 'addSend', arguments: { trackId: vocals.id, busId: reverb.id, deltaDb: -4 } }],
+            prompt
+        );
+        const wrongDirection = bridge(
+            [{ name: 'addSend', arguments: { trackId: vocals.id, busId: reverb.id, deltaDb: 4 } }],
+            prompt
+        );
+        const asDestination = bridge(
+            [{ name: 'addSend', arguments: { trackId: vocals.id, busId: reverb.id, levelDb: -4 } }],
+            prompt
+        );
+        const asAmplitude = bridge(
+            [{ name: 'addSend', arguments: { trackId: vocals.id, busId: reverb.id, level: 0.63 } }],
+            prompt
+        );
+
+        expect(change.actions).toEqual([
+            {
+                type: 'addSend',
+                payload: { trackId: vocals.id, busId: reverb.id, deltaDb: -4, expectedAbsent: true },
+            },
+        ]);
+        expect(wrongDirection.actions).toEqual([]);
+        expect(asDestination.actions).toEqual([]);
+        expect(asAmplitude.actions).toEqual([]);
+    });
+
     it('binds a change on an existing send stated after a masked reference', () => {
         const result = bridge(
             [{ name: 'setSend', arguments: { trackId: vocals.id, busId: reverb.id, deltaDb: -3 } }],
