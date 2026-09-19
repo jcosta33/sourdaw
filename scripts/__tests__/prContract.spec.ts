@@ -817,10 +817,32 @@ describe('product-scope test instructions', () => {
         ['a bare compiler head', 'tsc --noEmit'],
         ['a tool head with a conjunction', 'lint + format the touched modules'],
         ['a guard invocation', 'guard --profile focused -- pnpm test:run scripts/x.spec.ts'],
-        // The only slash-bearing fixture with no file extension: removing the path rule from
-        // isCommandToken leaves this token as a rescuing word, so the rule is pinned here alone.
+        // The dotted path pins the leading-dot rule, which alone keeps 'node ./scripts/seed'
+        // refused; the slash/colon rule is pinned by the prose-position slash token below and,
+        // incidentally, by the colon in 'pnpm typecheck:test (OK)'.
         ['a launch of an extension-less path', 'node ./scripts/seed'],
     ])('refuses %s as the only content', (_label, instructions) => {
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('refuses a prose-position slash token only through the path rule', () => {
+        // Outside any argument run, 'web/console' survives into the remainder as a plain word
+        // unless the slash rule drops it — deleting that rule turns it into a rescuing noun and
+        // reddens this fixture.
+        const line = 'the web/console spec and pnpm lint (clean)';
+
+        expect(commandOnlyTestInstructions(line)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(line))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a package-manager exec chain', 'pnpm exec cargo build'],
+        ['an exec chain seeding through a script', 'pnpm exec tsx scripts/seed.ts seed-project'],
+        ['a commit message quoted in single quotes', "git commit -m 'add the drag handle'"],
+    ])('refuses %s', (_label, instructions) => {
+        // A non-colon head reopens the argument run instead of closing it, and prose quoted inside
+        // the run drops with the run — neither can rescue the launch it belongs to.
         expect(commandOnlyTestInstructions(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
     });

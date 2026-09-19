@@ -20,7 +20,7 @@ const COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL =
  * narration. One list feeds both the leading-filler pattern and the annotation vocabulary, so the
  * two can never disagree about a word.
  */
-export const FILLER_WORDS = [
+const FILLER_WORDS = [
     'run',
     'runs',
     'ran',
@@ -42,13 +42,17 @@ const LEADING_LIST_MARKER = /^(?:[-*•]\s+|[0-9]+[.)]\s+|[a-z][.)]\s+)/i;
 /** Filler words that precede a command without making the segment anything but narration. */
 const LEADING_FILLER_WORD = new RegExp(`^(?:${FILLER_WORDS.join('|')})\\s+`, 'i');
 
-/** A leading terminated backtick span, for peeling the launch off a segment's front. */
-const LEADING_BACKTICK_SPAN = /^`[^`]*`/;
+/** Leading quoted spans (backtick or single-quote), for peeling the launch off a segment's front. */
+const LEADING_QUOTED_SPAN = /^(`[^`]*`|'[^']*')/;
 
-/** Any terminated backtick span, for removing quoted commands from a segment's prose remainder. */
-const BACKTICK_SPAN = /`[^`]*`/g;
+/** Any terminated quoted span (backtick or single-quote), for removing quoted commands from a segment's prose remainder. */
+const QUOTED_SPAN = /(`[^`]*`|'[^']*')/g;
 
-/** A balanced parenthetical, for stripping or keeping result annotations like `(140 passed)`. */
+/**
+ * A flat parenthetical, for stripping or keeping result annotations like `(140 passed)`. Deliberately
+ * not balance-aware: nested parentheses leave the unmatched remainder in the prose, and whatever
+ * survives can only fail a segment open, never shut.
+ */
 const PARENTHETICAL = /\([^)]*\)/g;
 
 /** Edge punctuation a first token may trail or lead with (`vitest:`, `pnpm,`). */
@@ -183,25 +187,29 @@ function stripRepeated(value: string, pattern: RegExp): string {
     return rest;
 }
 
-/** The content of a leading terminated backtick span, or the value unchanged when it has none. */
-function leadingBacktickSpanContent(value: string): string {
-    if (!value.startsWith('`')) {
+/**
+ * The content of a leading terminated quoted span (backtick or single-quote), or the value
+ * unchanged when it has none.
+ */
+function leadingQuotedSpanContent(value: string): string {
+    const quote = value[0];
+    if (quote !== '`' && quote !== "'") {
         return value;
     }
-    const closing = value.indexOf('`', 1);
+    const closing = value.indexOf(quote, 1);
     return closing > 1 ? value.slice(1, closing) : value;
 }
 
 /**
- * The segment's first token after list markers, any leading backtick span, and every leading
- * filler word are peeled away — '' when nothing remains. Unwrapping and filler stripping alternate
+ * The segment's first token after list markers, any leading quoted span, and every leading filler
+ * word are peeled away — '' when nothing remains. Unwrapping and filler stripping alternate
  * because each can expose the other and both strictly shorten the remainder, so the loop always
  * terminates.
  */
-function peeledLeadingToken(segment: string): string {
+function leadingTokenAfterPeeling(segment: string): string {
     let rest = stripRepeated(segment, LEADING_LIST_MARKER);
     for (;;) {
-        const stripped = stripRepeated(leadingBacktickSpanContent(rest), LEADING_FILLER_WORD);
+        const stripped = stripRepeated(leadingQuotedSpanContent(rest), LEADING_FILLER_WORD);
         if (stripped === rest) {
             return stripped.split(/\s+/)[0] ?? '';
         }
@@ -211,13 +219,13 @@ function peeledLeadingToken(segment: string): string {
 
 /**
  * The segment's prose remainder: the leading structure the token check consumes is stripped with
- * the same marker/filler/backtick machinery, but a leading backtick span leaves a space instead of
- * swallowing the rest — the observation a launch teaches usually lives after the span.
+ * the same marker/filler/quoted-span machinery, but a leading quoted span leaves a space instead
+ * of swallowing the rest — the observation a launch teaches usually lives after the span.
  */
 function proseRemainder(segment: string): string {
     let rest = stripRepeated(segment, LEADING_LIST_MARKER);
     for (;;) {
-        const stripped = stripRepeated(rest.replace(LEADING_BACKTICK_SPAN, ' '), LEADING_FILLER_WORD);
+        const stripped = stripRepeated(rest.replace(LEADING_QUOTED_SPAN, ' '), LEADING_FILLER_WORD);
         if (stripped === rest) {
             return stripped;
         }
@@ -238,18 +246,20 @@ function isCommandToken(token: string): boolean {
 }
 
 /**
- * The words the segment's leftover prose is made of. Backtick spans go first; a parenthetical is
- * stripped only when it carries no observation cue (`(clean)` is annotation, `(confirm the …)`
- * teaches the step and its content stays). Then the tokens drop: command heads, paths, extensions,
- * flags, pure numbers and punctuation. A launch's own argument run is command material too — after
- * a leading head, bare arguments drop until a word a reader would actually read (vocabulary or
- * cue) ends the run and is kept, or the next non-colon command head ends it and is dropped — a
+ * The words the segment's leftover prose is made of. Quoted spans go first — backtick and
+ * single-quote alike, so prose inside a command's quoted arguments cannot rescue it; a
+ * parenthetical is stripped only when it carries no observation cue (`(clean)` is annotation,
+ * `(confirm the …)` teaches the step and its content stays). Then the tokens drop: command heads,
+ * paths, extensions, flags, pure numbers and punctuation. A launch's own argument run is command
+ * material too — after a leading head, bare arguments drop until a word a reader would actually
+ * read (vocabulary or cue) ends the run and is kept, while a non-colon command head REOPENS the
+ * run and drops with it (`pnpm exec cargo build` is launch, subcommand, argument) — a
  * colon-bearing head is the same launch's script name, so the run continues through it — making
  * quoting the launch verdict-neutral and `git fetch origin` narration all the way through.
  */
 function proseRemainderWords(segment: string): string[] {
     const remainder = proseRemainder(segment)
-        .replaceAll(BACKTICK_SPAN, ' ')
+        .replaceAll(QUOTED_SPAN, ' ')
         .replace(PARENTHETICAL, (parenthetical) => (OBSERVATION_CUE.test(parenthetical) ? parenthetical : ' '));
     const tokens = remainder.split(/\s+/).map((token) => token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase());
     const words: string[] = [];
@@ -268,11 +278,8 @@ function proseRemainderWords(segment: string): string[] {
         }
         if (quotingArguments) {
             if (COMMAND_HEADS.has(word) && !word.includes(':')) {
-                // The next non-colon command head ends the run and drops with it — `pnpm typecheck
-                // and then pnpm lint` is two launches, not a step about "typecheck". A colon
-                // bearing head is the same launch's script name (`pnpm test:run …`) and the run
-                // continues through it.
-                quotingArguments = false;
+                // A non-colon command head REOPENS the run and drops with it: `pnpm exec cargo
+                // build` is launch, subcommand, argument — all command material.
                 continue;
             }
             if (isCommandToken(word)) {
@@ -295,17 +302,20 @@ function proseRemainderWords(segment: string): string[] {
 }
 
 /**
- * Whether the segment is led by a launch: a command head or a command-shaped token (path, flag,
- * dotted name) in the peeled leading position, or any command head among the segment's tokens once
- * quoted launches are unwrapped — annotation words between the filler and the launch must not
- * hide it.
+ * Whether a command head or a command-shaped token (path, flag, dotted name) sits in the peeled
+ * leading position.
  */
-function segmentIsCommandLed(segment: string): boolean {
-    const lead = peeledLeadingToken(segment).replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
-    if (COMMAND_HEADS.has(lead) || isCommandToken(lead)) {
-        return true;
-    }
-    const unwrapped = segment.replace(BACKTICK_SPAN, (span) => ` ${span.slice(1, -1)} `);
+function leadsWithCommandMaterial(segment: string): boolean {
+    const lead = leadingTokenAfterPeeling(segment).replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
+    return COMMAND_HEADS.has(lead) || isCommandToken(lead);
+}
+
+/**
+ * Whether any command head appears among the segment's tokens once quoted launches are unwrapped —
+ * annotation words between the filler and the launch must not hide it.
+ */
+function mentionsCommandHead(segment: string): boolean {
+    const unwrapped = segment.replace(QUOTED_SPAN, (span) => ` ${span.slice(1, -1)} `);
     return unwrapped
         .split(/\s+/)
         .some((token) => COMMAND_HEADS.has(token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase()));
@@ -314,9 +324,9 @@ function segmentIsCommandLed(segment: string): boolean {
 /**
  * Whether one segment reads as a tool invocation rather than a step a reviewer can perform. All
  * three must hold: the prose remainder (cue-bearing parentheticals included) carries no observation
- * cue, every leftover word is annotation from the closed vocabulary, and the segment is
- * command-led — any cue or any word beyond the vocabulary is real instruction and rescues the
- * segment.
+ * cue, every leftover word is annotation from the closed vocabulary, and the segment is launched —
+ * a command head or command-shaped token leads it, or a command head appears among its tokens. Any
+ * cue or any word beyond the vocabulary is real instruction and rescues the segment.
  */
 function isCommandNarration(segment: string): boolean {
     const words = proseRemainderWords(segment);
@@ -326,7 +336,7 @@ function isCommandNarration(segment: string): boolean {
     if (words.some((word) => !REMAINDER_VOCABULARY.has(word))) {
         return false;
     }
-    return segmentIsCommandLed(segment);
+    return leadsWithCommandMaterial(segment) || mentionsCommandHead(segment);
 }
 
 /**

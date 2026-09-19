@@ -1787,6 +1787,13 @@ describe('lane publish', () => {
 
         expect(lines[0]).toBe(PUBLISH_LANE_USAGE.replace('usage:', 'Usage:'));
         expect(lines).toContain(PUBLISH_LANE_TEST_GUIDANCE);
+        // The guidance derives its tree list from PRODUCT_SCOPE_PREFIXES, so this containment is
+        // content-level: dropping a tree from the interpolation reddens here without restating
+        // the literals beside the constant.
+        const guidance = lines.find((line) => line.includes('product-scope')) ?? '';
+        for (const prefix of PRODUCT_SCOPE_PREFIXES_UNDER_TEST) {
+            expect(guidance).toContain(prefix);
+        }
     });
 
     it('carries the selected lane path into the port for explicit path resolution', () => {
@@ -2325,10 +2332,14 @@ describe('lane publish', () => {
      * below catches, and which would fabricate product scope — instead of the lane's own scripts
      * change. The merge-base range must see exactly that change and, because a scripts path is
      * never product scope, must classify the lane as not firing the gate, whatever product paths
-     * unrelated main movement carries.
+     * unrelated main movement carries. The port carries a distinct primary root whose
+     * .gitattributes marks the lane's own file generated, so substituting the primary root for the
+     * lane in the classification reddens the handwritten expectation instead of passing vacuously.
      */
     it('classifies a scripts-only lane by its merge base, never by advanced main', () => {
         const repository = mkdtempSync(join(tmpdir(), 'sourdaw-publish-changed-range-'));
+        const primary = mkdtempSync(join(tmpdir(), 'sourdaw-publish-changed-primary-'));
+        writeFileSync(join(primary, '.gitattributes'), 'scripts/fixture.ts linguist-generated=true\n');
         const session: GhSession = {
             configDir: '/tmp/sourdaw-gh',
             env: { PATH: process.env.PATH, ...HERMETIC_GIT_CONFIG },
@@ -2359,12 +2370,13 @@ describe('lane publish', () => {
             git(['commit', '--no-gpg-sign', '-m', 'feat(audio): unrelated main movement']);
             const mainTip = git(['rev-parse', 'HEAD']);
 
-            const paths = shellPort(session, repository).changedPaths(repository, mainTip, laneHead);
+            const paths = shellPort(session, repository, primary).changedPaths(repository, mainTip, laneHead);
 
             // The merge-base view is the lane's own change alone, so the product path main gained
             // never reaches the classification — a two-dot revert answers two records here, the
             // scripts/fixture.ts addition and that same src/modules deletion entry, and the toEqual
-            // catches both.
+            // catches both. The lane's own root has no .gitattributes, so the entry stays
+            // handwritten: a primary-root substitution would answer generated.
             expect(paths).toEqual([
                 { path: 'scripts/fixture.ts', group: 'handwritten', added: 1, deleted: 0, binary: false },
             ]);
@@ -2372,6 +2384,7 @@ describe('lane publish', () => {
             expect(git(['merge-base', mainTip, laneHead])).toBe(base);
         } finally {
             rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+            rmSync(primary, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
     });
 
