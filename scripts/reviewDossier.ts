@@ -119,7 +119,7 @@ const UNSAFE_VALUE_SHAPES: readonly { readonly reason: string; readonly pattern:
     { reason: 'a GitHub token', pattern: /gh[pousr]_/u },
     { reason: 'a fine-grained GitHub token', pattern: /github_pat_/u },
     { reason: 'an AWS access key id', pattern: /A[KS]IA[0-9A-Z]{16}/u },
-    { reason: 'a private key header', pattern: /-----BEGIN (?:[A-Z0-9]+ )*(?:PRIVATE|SECRET) KEY(?: BLOCK)?-----/u },
+    { reason: 'a private key header', pattern: /-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}/u },
     { reason: 'a JSON web token', pattern: /eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/u },
     { reason: 'a bearer credential', pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]+/u },
     { reason: 'a serialized assistant turn', pattern: /"role"\s*:\s*"assistant"/u },
