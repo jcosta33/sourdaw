@@ -24,7 +24,7 @@ export function isFiniteNumber(value: unknown): value is number {
 export type LevelArgumentKeys = {
     linear: string;
     absolute: string;
-    /** Omitted by a control with nothing to move from, such as a send being created. */
+    /** Omitted by a control with nothing to move from. */
     relative?: string;
 };
 

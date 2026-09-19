@@ -2123,24 +2123,27 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'addSend',
         risk: 'authority-sensitive',
-        description: `Route a copy of a track's signal to a bus (parallel processing). Exactly one of levelDb or level. ${describeLevelLawDb(SEND_LEVEL_LAW)}.`,
+        description: `Route a copy of a track's signal to a bus (parallel processing). Exactly one of levelDb, deltaDb, or level. ${describeLevelLawDb(SEND_LEVEL_LAW)}.`,
         intentPhrases: ['add send', 'create send', 'send'],
         targetRules: sendTargetRules,
         valueRules: [
             { argument: 'levelDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'deltaDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'relative-decibel' },
             { argument: 'level', kind: 'number-if-present', scale: 'unit-interval', levelForm: 'linear' },
         ],
         parameters: {
             properties: {
                 trackId: { type: 'string' },
                 busId: { type: 'string' },
-                levelDb: {
+                levelDb: { type: 'number', description: `Absolute send level. ${describeLevelLawDb(SEND_LEVEL_LAW)}` },
+                deltaDb: {
                     type: 'number',
-                    description: `Absolute send level, the only decibel form a new send takes: it has no current level to move from. ${describeLevelLawDb(SEND_LEVEL_LAW)}`,
+                    description: `Change measured from unity, in decibels (negative is quieter): a new send starts at 0 dB, the full copy of the tapped signal. The result must land within ${describeLevelLawDb(SEND_LEVEL_LAW)}`,
                 },
                 level: {
                     type: 'number',
-                    description: 'Deprecated linear amplitude; prefer levelDb (absolute dB). Send level 0.0–1.0',
+                    description:
+                        'Deprecated linear amplitude; prefer levelDb (absolute dB) or deltaDb (relative dB). Send level 0.0–1.0',
                 },
                 preFader: { type: 'boolean', description: 'False for a post-fader send; true for pre-fader' },
             },

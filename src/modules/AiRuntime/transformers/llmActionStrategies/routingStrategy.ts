@@ -119,10 +119,13 @@ const routingStrategyDefinitions = [
             const source = findTrack(context, args.trackId);
             const bus = findProviderOutputTarget(context, args.busId);
             const existing = findSend(context, args.trackId, args.busId);
+            // A send being created has no level of its own to move from, so a
+            // change is measured from the full copy of the signal it taps, which
+            // is what the handler resolves it against.
             const level = readResolvedLevelArgument(
                 args,
-                { linear: 'level', absolute: 'levelDb' },
-                { current: undefined, law: SEND_LEVEL_LAW, linearBounds: { min: 0, max: 1 } }
+                { linear: 'level', absolute: 'levelDb', relative: 'deltaDb' },
+                { current: SEND_LEVEL_LAW.unity, law: SEND_LEVEL_LAW, linearBounds: { min: 0, max: 1 } }
             );
             if (
                 level === null ||

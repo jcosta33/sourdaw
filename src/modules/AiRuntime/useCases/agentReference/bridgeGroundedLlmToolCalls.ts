@@ -2235,22 +2235,6 @@ function containsPromptPhrase(actionScope: ActionPromptScope, phrases: readonly 
     return containsPhraseInMaskedText(actionScope.masked, phrases);
 }
 
-/**
- * A change in decibels carries its own direction in its sign, so the words the
- * request used are checked against that sign rather than against the level the
- * track sits at: +0.5 dB is louder than wherever it is now, however small the
- * figure looks beside a stored amplitude.
- */
-function validateRelativeLevelDirection(assertedValue: number, actionScope: ActionPromptScope): boolean {
-    if (containsPromptPhrase(actionScope, ['louder', 'raise', 'turn up'])) {
-        return assertedValue > 0;
-    }
-    if (containsPromptPhrase(actionScope, ['quieter', 'lower', 'turn down'])) {
-        return assertedValue < 0;
-    }
-    return true;
-}
-
 function validateTrackGainDirection(
     valueRule: NumberValueRule,
     assertedValue: number,
@@ -2258,8 +2242,12 @@ function validateTrackGainDirection(
     groundedArguments: Record<string, unknown>,
     context: ProjectContext
 ): boolean {
+    // A change in decibels carries its direction in its own sign, which the
+    // figure the request states is already signed for, so the numeric match
+    // settles direction; the stored gain is where the level is, not how far it
+    // was asked to move, and comparing a change against it means nothing.
     if (valueRule.levelForm === 'relative-decibel') {
-        return validateRelativeLevelDirection(assertedValue, actionScope);
+        return true;
     }
     const track = context.tracks.find((candidate) => candidate.id === groundedArguments.trackId);
     if (!track) {

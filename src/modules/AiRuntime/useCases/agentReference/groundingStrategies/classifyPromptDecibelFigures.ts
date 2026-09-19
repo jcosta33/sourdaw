@@ -39,7 +39,7 @@ const QUIETER_SUFFIXES: ReadonlySet<string> = new Set(['less', 'lower', 'quieter
 
 const LOUDER_SUFFIXES: ReadonlySet<string> = new Set(['higher', 'hotter', 'louder', 'more']);
 
-/** Words anywhere in the action scope that decide which way a bare "by 2 dB" moves. */
+/** Words anywhere in the action scope that decide which way a figure with no adjacent cue moves. */
 const QUIETER_SCOPE_PHRASES: readonly string[] = [
     'attenuate',
     'cut',
@@ -73,11 +73,25 @@ function getFollowingWord(maskedScope: string, unitEnd: number): string {
     return normalizePromptText(maskedScope.slice(unitEnd)).split(' ')[0] ?? '';
 }
 
+/**
+ * Which way the action itself moves the level, or `null` when its words say
+ * neither or both: "raise Vocals and cut the reverb send" names both
+ * directions, and neither figure in it is signed by the scope alone.
+ */
+function getScopeSign(normalizedScope: string): number | null {
+    const lowers = QUIETER_SCOPE_PHRASES.some((phrase) => namesPhrase(normalizedScope, phrase));
+    const raises = LOUDER_SCOPE_PHRASES.some((phrase) => namesPhrase(normalizedScope, phrase));
+    if (lowers === raises) {
+        return null;
+    }
+    return lowers ? -1 : 1;
+}
+
 function getRelativeSign(
     precedingWord: string,
     followingWord: string,
     raw: string,
-    normalizedScope: string
+    scopeSign: number | null
 ): number | null {
     if (precedingWord === 'down' || QUIETER_SUFFIXES.has(followingWord) || raw.startsWith('-')) {
         return -1;
@@ -85,12 +99,7 @@ function getRelativeSign(
     if (precedingWord === 'up' || LOUDER_SUFFIXES.has(followingWord) || raw.startsWith('+')) {
         return 1;
     }
-    const lowers = QUIETER_SCOPE_PHRASES.some((phrase) => namesPhrase(normalizedScope, phrase));
-    const raises = LOUDER_SCOPE_PHRASES.some((phrase) => namesPhrase(normalizedScope, phrase));
-    if (lowers === raises) {
-        return null;
-    }
-    return lowers ? -1 : 1;
+    return scopeSign;
 }
 
 function classifyFigure(maskedScope: string, number: PromptNumber, unitEnd: number): PromptDecibelFigure {
@@ -103,17 +112,21 @@ function classifyFigure(maskedScope: string, number: PromptNumber, unitEnd: numb
     if (ABSOLUTE_CONNECTORS.has(precedingWord)) {
         return { db, form: 'absolute' };
     }
+    const scopeSign = getScopeSign(normalizePromptText(maskedScope));
     const statesChange =
         RELATIVE_CONNECTORS.has(precedingWord) ||
         QUIETER_SUFFIXES.has(followingWord) ||
         LOUDER_SUFFIXES.has(followingWord) ||
-        number.raw.startsWith('+');
+        number.raw.startsWith('+') ||
+        // "raise Vocals 2 dB" states a change as plainly as "raise Vocals by
+        // 2 dB": the verb carries the distance reading and the direction.
+        (!number.raw.startsWith('-') && scopeSign !== null);
     if (!statesChange) {
         // An unsigned figure with no cue says neither; a negative one can only be
         // a level, since a control below the floor has nowhere to move down to.
         return number.raw.startsWith('-') ? { db, form: 'absolute' } : { db: null, form: 'unstated' };
     }
-    const sign = getRelativeSign(precedingWord, followingWord, number.raw, normalizePromptText(maskedScope));
+    const sign = getRelativeSign(precedingWord, followingWord, number.raw, scopeSign);
     if (sign === null) {
         return { db: null, form: 'unstated' };
     }

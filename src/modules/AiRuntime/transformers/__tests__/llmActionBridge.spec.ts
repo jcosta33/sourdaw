@@ -4559,9 +4559,25 @@ describe('level arguments in decibels', () => {
         expect(result.actions).toEqual([]);
     });
 
-    it('refuses a relative level on a send that does not exist yet', () => {
+    it('carries a change onto a new send, measured from the signal it taps', () => {
         const result = bridge({
             calls: [{ name: 'addSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', deltaDb: -6 } }],
+            context: contextWithoutVocalSends,
+        });
+
+        expect(result.actions).toEqual([
+            {
+                type: 'addSend',
+                payload: { trackId: 'track-vocals', busId: 'bus-reverb', deltaDb: -6, expectedAbsent: true },
+            },
+        ]);
+    });
+
+    it('refuses a change that lands a new send above the send ceiling', () => {
+        // A new send starts at unity, so anything upward already sits on the
+        // ceiling and 40 dB above it is nowhere the send can go.
+        const result = bridge({
+            calls: [{ name: 'addSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', deltaDb: 40 } }],
             context: contextWithoutVocalSends,
         });
 

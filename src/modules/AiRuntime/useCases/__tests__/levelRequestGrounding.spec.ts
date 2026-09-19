@@ -158,6 +158,45 @@ describe('a level stated in decibels reaches the handler in decibels', () => {
         expect(quieter.actions).toEqual([]);
     });
 
+    it('reads the direction from the verb when the figure follows it bare', () => {
+        const up = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: vocals.id, deltaDb: 2 } }],
+            'raise Vocals 2dB'
+        );
+        const upBackwards = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: vocals.id, deltaDb: -2 } }],
+            'raise Vocals 2dB'
+        );
+        const down = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: vocals.id, deltaDb: -2 } }],
+            'lower Vocals 2dB'
+        );
+
+        expect(up.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: vocals.id, deltaDb: 2 } }]);
+        expect(upBackwards.actions).toEqual([]);
+        expect(down.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: vocals.id, deltaDb: -2 } }]);
+    });
+
+    it('refuses both readings when no word says which one the figure is', () => {
+        const prompt = 'Vocals volume 2dB';
+
+        const asChange = bridge([{ name: 'setTrackGain', arguments: { trackId: vocals.id, deltaDb: 2 } }], prompt);
+        const asDestination = bridge([{ name: 'setTrackGain', arguments: { trackId: vocals.id, gainDb: 2 } }], prompt);
+
+        expect(asChange.actions).toEqual([]);
+        expect(asDestination.actions).toEqual([]);
+    });
+
+    it('grounds a change the request signs itself', () => {
+        const prompt = 'Vocals volume +3 dB';
+
+        const up = bridge([{ name: 'setTrackGain', arguments: { trackId: vocals.id, deltaDb: 3 } }], prompt);
+        const down = bridge([{ name: 'setTrackGain', arguments: { trackId: vocals.id, deltaDb: -3 } }], prompt);
+
+        expect(up.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: vocals.id, deltaDb: 3 } }]);
+        expect(down.actions).toEqual([]);
+    });
+
     it('grounds a fractional change stated with a connector', () => {
         const result = bridge(
             [{ name: 'setTrackGain', arguments: { trackId: vocals.id, deltaDb: 1.5 } }],
@@ -215,6 +254,27 @@ describe('a level stated in decibels reaches the handler in decibels', () => {
                 payload: { trackId: vocals.id, busId: reverb.id, levelDb: -10, expectedAbsent: true },
             },
         ]);
+    });
+
+    it('grounds a change on a send being created and refuses it as a destination', () => {
+        const prompt = 'send Vocals to Reverb down 6 dB';
+
+        const change = bridge(
+            [{ name: 'addSend', arguments: { trackId: vocals.id, busId: reverb.id, deltaDb: -6 } }],
+            prompt
+        );
+        const asDestination = bridge(
+            [{ name: 'addSend', arguments: { trackId: vocals.id, busId: reverb.id, levelDb: -6 } }],
+            prompt
+        );
+
+        expect(change.actions).toEqual([
+            {
+                type: 'addSend',
+                payload: { trackId: vocals.id, busId: reverb.id, deltaDb: -6, expectedAbsent: true },
+            },
+        ]);
+        expect(asDestination.actions).toEqual([]);
     });
 
     it('grounds a change on an existing send', () => {
