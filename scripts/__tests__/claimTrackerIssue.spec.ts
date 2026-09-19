@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
     ACTIVE_STATUS_LABEL,
+    assertTrustedClaimLauncherBinding,
     boardsFromGraphql,
     claimTrackerIssue,
-    issueLabelsArgs,
     labelNamesFromRow,
     labelSwapPlan,
     parseClaimArgs,
@@ -44,12 +44,13 @@ const BUGS: BoardFixture = {
     statusName: 'Needs evidence',
 };
 
-function boardsGraphql(boards: BoardFixture[]): string {
+function boardsGraphql(boards: BoardFixture[], totalCount: number = boards.length): string {
     return JSON.stringify({
         data: {
             repository: {
                 issue: {
                     projectItems: {
+                        totalCount,
                         nodes: boards.map((board) => ({
                             id: board.itemId,
                             project: {
@@ -120,6 +121,12 @@ describe('claim tracker issue', () => {
 
         claimTrackerIssue(4342, gh, (message) => logs.push(message));
 
+        const editIndex = calls.findIndex((call) => call[0] === 'issue' && call[1] === 'edit');
+        const boardsIndex = calls.findIndex((call) => call[0] === 'api');
+        const moveIndex = calls.findIndex((call) => call[0] === 'project' && call[1] === 'item-edit');
+        expect(editIndex).toBeGreaterThanOrEqual(0);
+        expect(boardsIndex).toBeGreaterThan(editIndex);
+        expect(moveIndex).toBeGreaterThan(boardsIndex);
         expect(calls).toContainEqual([
             'issue',
             'edit',
@@ -152,6 +159,20 @@ describe('claim tracker issue', () => {
 
         claimTrackerIssue(7, gh, () => undefined);
 
+        const boardsCall = calls.find((call) => call[0] === 'api' && call[1] === 'graphql');
+        expect(boardsCall).toEqual([
+            'api',
+            'graphql',
+            '-f',
+            expect.stringContaining('projectItems(first:20)'),
+            '-f',
+            'owner=jcosta33',
+            '-f',
+            'name=sourdaw',
+            '-F',
+            'number=7',
+        ]);
+        expect(boardsCall?.[3]).toContain('query($owner:String!,$name:String!,$number:Int!)');
         expect(callsWith(calls, ['project', 'field-list'])).toHaveLength(2);
         expect(calls).toContainEqual(['project', 'field-list', '3', '--owner', 'jcosta33', '--format', 'json']);
         expect(calls).toContainEqual(['project', 'field-list', '2', '--owner', 'jcosta33', '--format', 'json']);
@@ -175,7 +196,7 @@ describe('claim tracker issue', () => {
 
         expect(() => claimTrackerIssue(7, gh, () => undefined)).toThrow(/already carries status:active/);
         expect(calls).toHaveLength(1);
-        expect(calls[0]).toEqual(issueLabelsArgs(7));
+        expect(calls[0]).toEqual(['issue', 'view', '7', '--repo', 'jcosta33/sourdaw', '--json', 'labels']);
         expect(calls.some((call) => call[0] === 'project')).toBe(false);
     });
 
@@ -281,6 +302,11 @@ describe('claim board parsing', () => {
             boardsFromGraphql({ data: { repository: { issue: { projectItems: { nodes: [{ id: 5 }] } } } } }, 4342)
         ).toThrow(/malformed/);
     });
+
+    it('refuses loudly when the issue sits on more boards than one page reads', () => {
+        const truncated = JSON.parse(boardsGraphql([ROADMAP], 21));
+        expect(() => boardsFromGraphql(truncated, 4342)).toThrow(/sits on 21 project boards but the claim read only 1/);
+    });
 });
 
 describe('claim arguments', () => {
@@ -311,6 +337,37 @@ describe('claim trusted runtime', () => {
                 SOURDAW_TRUSTED_GH_PATH: '/usr/local/bin/gh',
                 SOURDAW_TRUSTED_ORIGIN_COMMIT: 'a'.repeat(40),
             })
-        ).toEqual({ primaryRoot: '/repo', gitPath: '/usr/bin/git', ghPath: '/usr/local/bin/gh' });
+        ).toEqual({
+            primaryRoot: '/repo',
+            gitPath: '/usr/bin/git',
+            ghPath: '/usr/local/bin/gh',
+            originCommit: 'a'.repeat(40),
+        });
+    });
+});
+
+describe('claim launcher binding', () => {
+    const binding = {
+        resolvedCwd: '/repo',
+        resolvedPrimaryRoot: '/repo',
+        executingSource: 'source',
+        originSource: 'source' as string | undefined,
+    };
+
+    it('admits the primary root with the pinned source', () => {
+        expect(() => assertTrustedClaimLauncherBinding(binding)).not.toThrow();
+        expect(() => assertTrustedClaimLauncherBinding({ ...binding, originSource: undefined })).not.toThrow();
+    });
+
+    it('refuses a lane worktree even with fully forged launcher env', () => {
+        expect(() =>
+            assertTrustedClaimLauncherBinding({ ...binding, resolvedCwd: '/repo/.agents/worktrees/agent-1-x' })
+        ).toThrow(/must be launched from the protected primary checkout/);
+    });
+
+    it('refuses an executing source that diverges from the pinned origin blob', () => {
+        expect(() => assertTrustedClaimLauncherBinding({ ...binding, executingSource: 'mutated' })).toThrow(
+            /does not match origin\/main; refusing to run a mutated copy/
+        );
     });
 });

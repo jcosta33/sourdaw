@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
     REQUIRED_REPOSITORY,
     authenticateOrchestratorSession,
+    githubAuthorizationGitEnv,
+    originMainBlob,
     parseGraphqlResponse,
     parseJson,
-    resolvePrimaryRoot,
     spawnCapture,
 } from './githubAppIdentity.ts';
 import {
@@ -55,7 +57,9 @@ export type ClaimBoardItem = {
 
 /**
  * The label swap runs before the board move: the labels are the claim another agent's survey
- * reads, while a board left behind by a partial claim is repaired by rerunning the script.
+ * reads. A rerun cannot repair boards a partial claim left behind — once status:active is on the
+ * issue the refusal below fires first — so the operator completes a stranded board move by hand
+ * under the manual-gh exception for an issue's own project membership.
  */
 export function labelSwapPlan(labels: string[]): { add: string; remove: string[] } {
     return {
@@ -90,7 +94,7 @@ export function issueEditLabelsArgs(issue: number, plan: { add: string; remove: 
 
 const BOARD_QUERY =
     'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){' +
-    'projectItems(first:20){nodes{id project{id number title owner{... on User{login} ... on Organization{login}}} ' +
+    'projectItems(first:20){totalCount nodes{id project{id number title owner{... on User{login} ... on Organization{login}}} ' +
     'fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}}}}';
 
 export function issueBoardsArgs(issue: number): string[] {
@@ -117,10 +121,19 @@ function malformedBoards(issue: number): never {
 }
 
 export function boardsFromGraphql(response: unknown, issue: number): ClaimBoardItem[] {
-    const envelope = response as { data?: { repository?: { issue?: { projectItems?: { nodes?: unknown } } } } };
-    const nodes = envelope.data?.repository?.issue?.projectItems?.nodes;
-    if (!Array.isArray(nodes)) {
+    const envelope = response as {
+        data?: { repository?: { issue?: { projectItems?: { totalCount?: unknown; nodes?: unknown } } } };
+    };
+    const connection = envelope.data?.repository?.issue?.projectItems;
+    const nodes = connection?.nodes;
+    if (!Array.isArray(nodes) || typeof connection?.totalCount !== 'number') {
         malformedBoards(issue);
+    }
+    if (connection.totalCount > nodes.length) {
+        fail(
+            `issue #${issue} sits on ${connection.totalCount} project boards but the claim read only ${nodes.length}; ` +
+                'remove the issue from the extra boards or widen the claim'
+        );
     }
     return nodes.map((node) => {
         if (typeof node !== 'object' || node === null) {
@@ -269,6 +282,7 @@ export type TrustedClaimRuntime = {
     primaryRoot: string;
     gitPath: string;
     ghPath: string;
+    originCommit: string;
 };
 
 export function trustedClaimRuntime(env: NodeJS.ProcessEnv = process.env): TrustedClaimRuntime {
@@ -288,7 +302,30 @@ export function trustedClaimRuntime(env: NodeJS.ProcessEnv = process.env): Trust
     ) {
         fail('issue:claim must run through the protected primary checkout launcher');
     }
-    return { primaryRoot, gitPath, ghPath };
+    return { primaryRoot, gitPath, ghPath, originCommit };
+}
+
+/**
+ * The runner-side half of the launcher trust boundary, matching lane:publish and
+ * lane:sync-parent: the working directory must be the trusted primary root itself —
+ * `git rev-parse --git-common-dir` resolves to the primary from every linked lane worktree, so
+ * it cannot prove where the executing file lives — and when origin/main carries this script, the
+ * executing source must be that blob, so a mutated copy never reaches the operator credential. A
+ * script origin/main does not carry yet (this file before its first merge) skips the blob
+ * comparison exactly as the siblings do.
+ */
+export function assertTrustedClaimLauncherBinding(input: {
+    resolvedCwd: string;
+    resolvedPrimaryRoot: string;
+    executingSource: string;
+    originSource: string | undefined;
+}): void {
+    if (input.resolvedCwd !== input.resolvedPrimaryRoot) {
+        fail('issue:claim must be launched from the protected primary checkout');
+    }
+    if (input.originSource !== undefined && input.executingSource !== input.originSource) {
+        fail('scripts/claimTrackerIssue.ts does not match origin/main; refusing to run a mutated copy');
+    }
 }
 
 export type ClaimAuthentication = { session: { env: NodeJS.ProcessEnv; dispose: () => void } };
@@ -306,17 +343,21 @@ export async function runClaimTrackerIssueCli(
         fail(CLAIM_USAGE);
     }
     const runtime = trustedClaimRuntime();
+    assertTrustedClaimLauncherBinding({
+        resolvedCwd: realpathSync(process.cwd()),
+        resolvedPrimaryRoot: realpathSync(runtime.primaryRoot),
+        executingSource: readFileSync(fileURLToPath(import.meta.url), 'utf8'),
+        originSource: originMainBlob(
+            'scripts/claimTrackerIssue.ts',
+            process.cwd(),
+            githubAuthorizationGitEnv(),
+            runtime.gitPath,
+            runtime.originCommit
+        ),
+    });
     const auth = authenticate();
     try {
-        const primaryRoot = resolvePrimaryRoot(
-            (command, commandArgs, directory) =>
-                spawnCapture(command, commandArgs, { cwd: directory, env: auth.session.env }),
-            process.cwd()
-        );
-        if (realpathSync(primaryRoot) !== realpathSync(runtime.primaryRoot)) {
-            fail('issue:claim trusted repository binding does not match the protected primary checkout');
-        }
-        const gh: Gh = (ghArgs) => spawnCapture('gh', ghArgs, { cwd: primaryRoot, env: auth.session.env });
+        const gh: Gh = (ghArgs) => spawnCapture('gh', ghArgs, { cwd: runtime.primaryRoot, env: auth.session.env });
         claimTrackerIssue(parsed.issue, gh, (message) => console.log(message));
         return 0;
     } finally {

@@ -2042,6 +2042,15 @@ describe('package scripts and gitignore', () => {
         }
     });
 
+    it('pins the issue:claim trusted closure exactly', () => {
+        expect(trustedDependencyPaths('issue:claim')).toEqual([
+            'scripts/trustedGithubWriteBootstrap.ts',
+            'scripts/claimTrackerIssue.ts',
+            'scripts/githubAppIdentity.ts',
+            'scripts/prContract.ts',
+        ]);
+    });
+
     it('should import the snapshot entry without direct execution and invoke its runner once with exact args', async () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-entry-import-'));
         const recordPath = join(fixtureRoot, 'invocations.jsonl');
