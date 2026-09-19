@@ -227,6 +227,10 @@ for (const input of CASES) {
                     {
                         deviceId: device.id,
                         deviceType: device.type,
+                        // Every case in this file renders a device the mixed
+                        // signal and the residual budget both observe, so the
+                        // strip prints.
+                        contributesAudio: true,
                         strategy: automatedDevice,
                     },
                 ],

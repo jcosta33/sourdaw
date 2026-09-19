@@ -1,4 +1,3 @@
-import { isDeviceParameterAutomatable } from '#/modules/Arrangement/useCases';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
@@ -61,7 +60,32 @@ function legacyFixtureDeviceLaw(deviceEntries: ReadonlyArray<FixtureDeviceEntry>
 }
 
 /**
- * The production law's *admission* half, for the cases that need it.
+ * The declared descriptor facts the cases taking the descriptor law ride,
+ * restated locally.
+ *
+ * Production hands `scheduleTrackAutomation` Arrangement's `DeviceParameterLaw`
+ * — the descriptor's `automatable` flag plus the declared-range clamp — which is
+ * the whole point of the parameter. A repository fixture may not import that
+ * law, or any part of Arrangement, so this is its test double: the rows below
+ * are the descriptor facts those cases depend on, and a parameter they do not
+ * carry has no descriptor fact this fixture states, so it is not admitted.
+ *
+ * Admission is the descriptor question alone. Whether the render can carry the
+ * lane is the scheduler's separate second question (`resolveOfflineAutomation`),
+ * and the pair is exactly what #4424 is about: the limiter ceiling's descriptor
+ * declares it automatable while the device answers `null` for it, so the lane
+ * passes admission and is then refused instead of silently dropped.
+ */
+const DECLARED_FIXTURE_DEVICE_PARAMETERS: Readonly<
+    Record<string, { readonly automatable: boolean; readonly minValue: number; readonly maxValue: number }>
+> = {
+    'builtin-gain:gain-level': { automatable: true, minValue: -60, maxValue: 24 },
+    'builtin-limiter:lim-ceiling': { automatable: true, minValue: -3, maxValue: 0 },
+    'builtin-limiter:lim-release': { automatable: true, minValue: 10, maxValue: 500 },
+};
+
+/**
+ * The descriptor law the cases about admission ride, as a local test double.
  *
  * Live admits a lane on the descriptor's `automatable` flag and asks whether
  * this render can carry it as a separate, second question; the fixture law
@@ -79,8 +103,14 @@ function legacyFixtureDeviceLaw(deviceEntries: ReadonlyArray<FixtureDeviceEntry>
 export function descriptorFixtureDeviceLaw(): OfflineDeviceAutomationLaw {
     return {
         acceptsAutomation: ({ deviceType, parameterId }) =>
-            isDeviceParameterAutomatable({ deviceType, paramId: parameterId }),
-        clampValue: ({ value }) => value,
+            DECLARED_FIXTURE_DEVICE_PARAMETERS[`${deviceType}:${parameterId}`]?.automatable ?? false,
+        clampValue: ({ deviceType, paramId, value }) => {
+            const declared = DECLARED_FIXTURE_DEVICE_PARAMETERS[`${deviceType}:${paramId}`];
+            if (!declared) {
+                return value;
+            }
+            return Math.min(declared.maxValue, Math.max(declared.minValue, value));
+        },
         quantiseValue: ({ value }) => value,
     };
 }
