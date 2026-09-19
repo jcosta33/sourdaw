@@ -746,7 +746,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                                     outputTokens: error.usage.outputTokens,
                                     cachedInputTokens: error.usage.cacheReadInputTokens,
                                     cacheWriteInputTokens: error.usage.cacheWriteInputTokens,
-                                    reasoningTokens: null,
+                                    reasoningTokens: error.usage.reasoningTokens,
                                 },
                                 provenance: 'provider-reported',
                             });

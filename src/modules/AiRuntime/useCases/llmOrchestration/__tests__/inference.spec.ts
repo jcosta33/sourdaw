@@ -455,7 +455,7 @@ describe('generateToolPlanningOutcome', () => {
                 outputTokens: 8,
                 cacheReadInputTokens: 100,
                 cacheWriteInputTokens: 7,
-                reasoningTokens: null,
+                reasoningTokens: 6,
             })
         );
         agentRunLifecycle.create({
@@ -489,9 +489,11 @@ describe('generateToolPlanningOutcome', () => {
                 outputTokens: 8,
                 cachedInputTokens: 100,
                 cacheWriteInputTokens: 7,
+                reasoningTokens: 6,
                 provenance: 'provider-reported',
             },
         });
+        expect(agentRunLifecycle.get('run-rejected-hosted-usage')?.providerUsage).toHaveLength(1);
         expect(agentRunLifecycle.get('run-rejected-hosted-usage')?.providerUsage[0]).toMatchObject({
             status: 'failed',
             inputTokens: 120,
@@ -499,6 +501,15 @@ describe('generateToolPlanningOutcome', () => {
             cachedInputTokens: 100,
             cacheWriteInputTokens: 7,
         });
+        expect(getProviderRouteView({ runId: 'run-rejected-hosted-usage', candidates: [] })?.cost).toEqual([
+            {
+                category: 'remoteTokens',
+                reserved: 128,
+                actual: 128,
+                provenance: 'provider-reported',
+                final: true,
+            },
+        ]);
     });
 
     it('forwards a required directive verbatim to generateCloudToolCalls with no abort signal supplied', async () => {
