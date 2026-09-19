@@ -1,0 +1,29 @@
+scripts/resourceGuard.ts
+  s_ed5aa36a3ba357::t_8e7456d5a65018 5-15,17,1378,1383-1432,1434-1443,1445-1470,1472-1486,1491,1493-1498,1500-1507,1515,1527-1531,1562-1564,1567-1577,1582-1592,1639-1647,1653,1666
+  s_ed5aa36a3ba357::t_6f114ceae07bdc 1487-1490,1492
+  s_ed5aa36a3ba357::t_b69517808ad56f 1433,1444,1471,1499
+  s_ed5aa36a3ba357::t_4909eb4ecc9175 1633-1635
+scripts/__tests__/resourceGuard.spec.ts
+  s_ed5aa36a3ba357::t_6f114ceae07bdc 11,748,1135,1147,1159
+  s_ed5aa36a3ba357::t_f07191198d2064 758-776,1699-1700,1717,1726,1734-1740,1754
+  s_ed5aa36a3ba357::t_bf20f9ffa232a9 1693-1698,1701-1716,1718-1725,1727-1733,1741-1753,1755-1756,1758-1759,1918-1920
+  s_ed5aa36a3ba357::t_f1740dfcc45ec7 1529-1573,1760-1868,1870-1898,1900-1917
+  s_ed5aa36a3ba357::t_4909eb4ecc9175 1609-1635
+  s_ed5aa36a3ba357::t_995325acb88079 1757,1869,1899
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5f499321cff8dd6ec51d9f7d8dfc890bc9420de7",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
