@@ -31,14 +31,18 @@ export type ReviewModelTier = 'economy' | 'standard' | 'strongest';
  */
 export type ReviewDossierStance = string;
 
+/** One completed entry per draw: one stance performed by one reviewer model. */
+export type CompletedReviewStance = {
+    stance: ReviewDossierStance;
+    reviewerModel: string;
+    modelTier: ReviewModelTier;
+    outcome: 'blocker-found' | 'clean';
+    /** Present only when this draw reused an authoring model; absent keeps historical digests. */
+    exhaustion?: string;
+};
+
 export type ReviewDossierEvent =
-    | {
-          kind: 'stance-completed';
-          stance: ReviewDossierStance;
-          reviewerModel: string;
-          modelTier: ReviewModelTier;
-          outcome: 'blocker-found' | 'clean';
-      }
+    | ({ kind: 'stance-completed' } & CompletedReviewStance)
     | { kind: 'finding-accepted'; findingId: string; path: string; line: number; side: 'LEFT' | 'RIGHT' }
     | { kind: 'finding-discarded'; findingId: string; stance: ReviewDossierStance; reason: string };
 
@@ -267,7 +271,7 @@ function readEvent(
     label: string
 ): ReviewDossierEvent {
     if (kind === 'stance-completed') {
-        return {
+        const completed: ReviewDossierEvent = {
             kind,
             stance: readPublicationSafeString(`${label} stance`, record.stance),
             reviewerModel: readPublicationSafeString(`${label} reviewerModel`, record.reviewerModel),
@@ -279,6 +283,10 @@ function readEvent(
             ),
             outcome: readLiteral(`${label} outcome`, record.outcome, isOutcome, 'blocker-found or clean'),
         };
+        if (record.exhaustion !== undefined) {
+            completed.exhaustion = readPublicationSafeString(`${label} exhaustion`, record.exhaustion);
+        }
+        return completed;
     }
     if (kind === 'finding-accepted') {
         return {
@@ -302,7 +310,12 @@ function readEventRecord(value: unknown, label: string, withChain: boolean): Rea
         fail(`review dossier ${label} must be an object, found ${describeValue(value)}`);
     }
     const kind = readEventKind(value, label);
-    const kindKeys = EVENT_KIND_KEYS[kind];
+    // A stance-completed event carries `exhaustion` only when that draw fell back, so its key set
+    // has two shapes; every other kind's key set is fixed.
+    let kindKeys: readonly string[] = EVENT_KIND_KEYS[kind];
+    if (kind === 'stance-completed' && 'exhaustion' in value) {
+        kindKeys = [...kindKeys, 'exhaustion'];
+    }
     assertExactKeys(value, withChain ? [...kindKeys, 'sequence', 'previousDigest', 'digest'] : kindKeys, label);
     return {
         event: readEvent(value, kind, label),
@@ -348,17 +361,23 @@ function readDiscardedEntry(value: unknown, index: number): ReviewDossierEvent {
 }
 
 function assertTotalMaps(payload: DossierPayload): void {
+    const completedDraws = new Set<string>();
     const completed = new Set<ReviewDossierStance>();
     const accepted = new Set<string>();
     const discarded = new Set<string>();
     for (const event of payload.events) {
         if (event.kind === 'stance-completed') {
-            if (completed.has(event.stance)) {
-                fail(`review dossier completes stance more than once: ${event.stance}`);
+            // One stance may carry several draws with distinct reviewer models; only an exact
+            // (stance, reviewerModel) repeat records the same draw twice. JSON framing cannot
+            // collide: the pair separator is structural, never string content.
+            const drawKey = JSON.stringify([event.stance, event.reviewerModel]);
+            if (completedDraws.has(drawKey)) {
+                fail(`review dossier completes stance ${event.stance} more than once on ${event.reviewerModel}`);
             }
             if (!payload.requiredStances.includes(event.stance)) {
                 fail(`review dossier completes a stance its required stances do not carry: ${event.stance}`);
             }
+            completedDraws.add(drawKey);
             completed.add(event.stance);
             continue;
         }
@@ -394,13 +413,18 @@ function assertEvidenceSafe(evidence: readonly ReviewEvidence[], limitations: re
 /** The event's own fields, in canonical order. Key order is fixed here, not by object insertion. */
 function eventFieldEntries(event: ReviewDossierEvent): FieldEntry[] {
     if (event.kind === 'stance-completed') {
-        return [
+        const entries: FieldEntry[] = [
             ['kind', event.kind],
             ['stance', event.stance],
             ['reviewerModel', event.reviewerModel],
             ['modelTier', event.modelTier],
             ['outcome', event.outcome],
         ];
+        // Absent, never null: a record persisted before exhaustion existed keeps its exact digest.
+        if (event.exhaustion !== undefined) {
+            entries.push(['exhaustion', event.exhaustion]);
+        }
+        return entries;
     }
     if (event.kind === 'finding-accepted') {
         return [
@@ -658,12 +682,7 @@ export function assembleReviewDossier(input: {
     return dossier;
 }
 
-export function completedStances(dossier: ReviewDossier): {
-    stance: ReviewDossierStance;
-    reviewerModel: string;
-    modelTier: ReviewModelTier;
-    outcome: 'blocker-found' | 'clean';
-}[] {
+export function completedStances(dossier: ReviewDossier): CompletedReviewStance[] {
     return dossier.events
         .filter((event) => event.kind === 'stance-completed')
         .map((event) => ({
@@ -671,6 +690,7 @@ export function completedStances(dossier: ReviewDossier): {
             reviewerModel: event.reviewerModel,
             modelTier: event.modelTier,
             outcome: event.outcome,
+            exhaustion: event.exhaustion,
         }));
 }
 
