@@ -100,6 +100,8 @@ const mocks = vi.hoisted(() => {
         resolveDrumKit: vi.fn<() => unknown>(() => null),
         checkCancel: vi.fn(),
         shouldPlayMidiEvent: vi.fn<OfflineMidiProbabilitySelector>(({ probabilityPercent }) => probabilityPercent > 0),
+        /** Flips the scheduler double onto the real `scheduleTrackAutomation`. */
+        runProductionScheduler: false,
         projection,
     };
 });
@@ -197,9 +199,22 @@ vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
     getCompensationDelay: mocks.getCompensationDelay,
 }));
 
-vi.mock('../../../repositories/offlineScheduler/automationScheduling', () => ({
-    scheduleTrackAutomation: mocks.scheduleTrackAutomation,
-}));
+// The cases below observe the input `scheduleTrackClips` builds for the
+// scheduler, so the scheduler is doubled by default. `runProductionScheduler`
+// flips the double onto the real `scheduleTrackAutomation`, which is what lets
+// the #4424 propagation case observe the production
+// `scheduleTrackClips -> scheduleTrackAutomation` chain end to end.
+vi.mock('../../../repositories/offlineScheduler/automationScheduling', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../repositories/offlineScheduler/automationScheduling')>();
+    return {
+        scheduleTrackAutomation: (input: Parameters<typeof actual.scheduleTrackAutomation>[0]) => {
+            mocks.scheduleTrackAutomation(input);
+            if (mocks.runProductionScheduler) {
+                actual.scheduleTrackAutomation(input);
+            }
+        },
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
@@ -266,6 +281,7 @@ function makeInstrumentEntry(): DeviceNodeEntry {
     return {
         deviceId: 'inst-1',
         deviceType: 'fermenter',
+        contributesAudio: true,
         node: {} as DeviceNodeEntry['node'],
         strategy: {} as DeviceNodeEntry['strategy'],
         instrumentControls: {
@@ -1343,6 +1359,124 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
     });
 });
 
+describe('scheduleTrackClips — refuses a device-parameter lane the scheduler cannot render (#4424)', () => {
+    /** The descriptor facts live admits the limiter ceiling on, restated locally. */
+    const limiterCeilingLaw = {
+        isAutomatable: ({ paramId }: { deviceType: string; paramId: string }) => paramId === 'lim-ceiling',
+        clampValue: ({ value }: { deviceType: string; paramId: string; value: number }) => value,
+        quantiseValue: ({ value }: { deviceType: string; paramId: string; value: number }) => value,
+        acceptsExternalPluginParameter: () => false,
+        clampExternalPluginValue: ({ value }: { externalInstanceId: string; parameterId: string; value: number }) =>
+            value,
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.takeLaneValue.value = null;
+        mocks.automationValue.value = null;
+        mocks.transportValue.value = null;
+        mocks.getCompensationDelay.mockReturnValue(0);
+        mocks.getSynthParamsFromDevices.mockReturnValue(null);
+        mocks.resolveDrumKit.mockReturnValue(null);
+        mocks.getDrumKitDefByIndex.mockReturnValue(null);
+        mocks.checkCancel.mockImplementation(() => {});
+        offlineDeviceParameterLawState.isAutomatable = null;
+        offlineDeviceParameterLawState.clampValue = null;
+        offlineDeviceParameterLawState.quantiseValue = null;
+        offlineDeviceParameterLawState.acceptsExternalPluginParameter = null;
+        offlineDeviceParameterLawState.clampExternalPluginValue = null;
+    });
+
+    afterEach(() => {
+        mocks.runProductionScheduler = false;
+    });
+
+    /**
+     * The limiter as the offline chain builds it: a strategy that resolves no
+     * binding for the ceiling — its cap is the clipper's rebuilt WaveShaper
+     * curve, not an AudioParam (#3736) — on a strip that reaches the print.
+     */
+    function makeLimiterEntry(): DeviceNodeEntry {
+        return {
+            deviceId: 'limiter-1',
+            deviceType: 'builtin-limiter',
+            contributesAudio: true,
+            node: {} as DeviceNodeEntry['node'],
+            strategy: { resolveOfflineAutomation: () => null } as unknown as DeviceNodeEntry['strategy'],
+        };
+    }
+
+    function makeCeilingLane() {
+        return {
+            id: 'lane-ceiling',
+            trackId: 'track-inst',
+            parameterId: 'limiter-1:lim-ceiling',
+            parameterName: 'Ceiling',
+            enabled: true,
+            minValue: -3,
+            maxValue: 0,
+            points: [{ beat: 0, value: -1, curve: 'linear' as const, tension: 0 }],
+        };
+    }
+
+    async function scheduleCeilingLane(pendingWorkletEvents: PendingWorkletEvent[]): Promise<void> {
+        const track = makeMidiTrack();
+        track.devices = [
+            {
+                id: 'limiter-1',
+                name: 'Limiter',
+                type: 'builtin-limiter',
+                bypassed: false,
+                parameterValues: { 'lim-ceiling': -1 },
+            },
+        ];
+
+        await scheduleTrackClips({
+            offlineCtx: makeOfflineCtx(),
+            track,
+            midi: makeMidi(),
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+                resolveArticulationId: mocks.resolveArticulationId,
+            },
+            pendingWorkletEvents,
+            allTracks: [track],
+            deviceEntriesByTrack: new Map([[track.id, [makeLimiterEntry()]]]),
+        });
+    }
+
+    it('propagates the refusal out of the production scheduler instead of scheduling the clips', async () => {
+        // The strip is admitted on the descriptor law — the device carries
+        // `lim-ceiling` and the law declares it automatable — and then resolves
+        // no offline binding. Running the real `scheduleTrackAutomation` here is
+        // the point: a `scheduleTrackClips` that swallowed the scheduler's
+        // refusal, or a scheduler that reverted to a bare `continue`, would make
+        // this case resolve and schedule the note.
+        mocks.automationValue.value = { lanes: [makeCeilingLane()] };
+        configureOfflineDeviceParameterLaw(limiterCeilingLaw);
+        mocks.runProductionScheduler = true;
+        const pendingWorkletEvents: PendingWorkletEvent[] = [];
+
+        await expect(scheduleCeilingLane(pendingWorkletEvents)).rejects.toThrow(/limiter ceiling/i);
+        expect(mocks.scheduleTrackAutomation).toHaveBeenCalledTimes(1);
+        expect(pendingWorkletEvents).toEqual([]);
+        expect(mocks.scheduleNoteOffline).not.toHaveBeenCalled();
+    });
+});
+
 describe('scheduleTrackClips — per-note MPE for offline worklet instruments', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -1388,6 +1522,7 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         const entry: DeviceNodeEntry = {
             deviceId: 'inst-1',
             deviceType,
+            contributesAudio: true,
             node: strategy.node,
             strategy,
             instrumentControls: {

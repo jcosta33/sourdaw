@@ -4,12 +4,14 @@ import { boundAutomationLaneValue } from '#/utils/automationLaneBound';
 import { resolveLinkedLane } from '#/utils/automationLaneLink';
 import { AUTOMATION_SLEW_ALPHA } from '#/utils/automationSlew';
 
+import { createExportError } from '../../errors/ExportError';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { beatToSeconds } from '../../services/beatConversion';
 import { type AudioDeviceStrategy } from '../deviceStrategy/AudioDeviceStrategy';
 
 import { type CompiledValueBound } from './compileAutomationEvents';
 import { compileAutomationSegments } from './compileAutomationSegments';
+import { unrenderableAutomationRefusal } from './refuseUnrenderableAutomation';
 import { scheduleAutomationOnParam } from './scheduleAutomationOnParam';
 
 type AutomationTempoChange = {
@@ -21,6 +23,12 @@ type ScheduleTrackAutomationDeviceEntry = {
     deviceId: string;
     deviceType: string;
     strategy: Pick<AudioDeviceStrategy, 'resolveOfflineAutomation'>;
+    /**
+     * Whether this device's strip prints. Carried from the chain entry rather
+     * than re-derived here, because re-deriving reachability would be a second
+     * source of truth for the question `buildDeviceChain` already answered.
+     */
+    contributesAudio: boolean;
 };
 
 /**
@@ -350,7 +358,20 @@ export function scheduleTrackAutomation({
             const candidate = deviceEntries[deviceIndex]!;
             const binding = candidate.strategy.resolveOfflineAutomation(parameterId);
             if (!binding) {
-                continue;
+                // A parameter with no offline binding used to be dropped in
+                // silence here, so a lane the monitor follows left the bounce at
+                // its static value while the export reported success. Only a
+                // strip that prints refuses — see the refusal module for why an
+                // inaudible one must not fail an unrelated print (#4424).
+                const refusal = unrenderableAutomationRefusal({
+                    deviceType: candidate.deviceType,
+                    parameterId,
+                    contributesAudio: candidate.contributesAudio,
+                });
+                if (refusal === null) {
+                    continue;
+                }
+                throw createExportError(refusal);
             }
             const clampStep = (value: number): number =>
                 deviceParameterLaw.clampValue({

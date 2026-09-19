@@ -1,7 +1,10 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { getDeviceAutomationParameterId } from '#/utils/automationDeviceTarget';
 
+import { createExportError } from '../../errors/ExportError';
+import { unrenderableAutomationRefusal } from '../../repositories/offlineScheduler/refuseUnrenderableAutomation';
 import { renderOffline } from '../renderOffline';
 
 const offlineRenderMocks = vi.hoisted(() => ({
@@ -9,7 +12,7 @@ const offlineRenderMocks = vi.hoisted(() => ({
     getMidiStoreState: vi.fn(() => null),
     getTransportStoreValue: vi.fn(() => null),
     getTempoMapState: vi.fn(() => null),
-    getAutomationLanes: vi.fn(() => []),
+    getAutomationLanes: vi.fn<() => { trackId: string; parameterId: string }[]>(() => []),
     audioBufferCache: { get: vi.fn(() => undefined) },
     buildDeviceChain: vi.fn(() => Promise.resolve([])),
     resolveClipsWithComping: vi.fn(() => []),
@@ -745,6 +748,135 @@ describe('renderOffline effective audibility (OE-4)', () => {
             expect(contributes('safe-bus')).toBe(true);
             expect(contributes('gated')).toBe(false);
             expect(contributes('lead')).toBe(true);
+        });
+
+        // #4424 — the refusal has to reach the musician through the print's own
+        // error channel. `scheduleTrackClips` is a double in this file, so what
+        // this case observes is the route, not the scheduler: given a refusal
+        // raised while scheduling, the export rejects instead of handing back a
+        // buffer holding a ceiling the monitor had already left behind. The
+        // production `scheduleTrackClips -> scheduleTrackAutomation` wiring is
+        // pinned by the scheduler-level specs and by the propagation case in
+        // `scheduleTrackClips.spec.ts`.
+        describe('an unrenderable device-parameter lane (#4424)', () => {
+            const LIMITER: DeviceFixture = { id: 'limiter-1', type: 'builtin-limiter', bypassed: false };
+
+            function makeCeilingParam() {
+                return {
+                    value: 0,
+                    setValueAtTime: vi.fn(),
+                    linearRampToValueAtTime: vi.fn(),
+                    setTargetAtTime: vi.fn(),
+                };
+            }
+
+            function ceilingLane(trackId: string) {
+                return {
+                    id: `lane-ceiling-${trackId}`,
+                    trackId,
+                    parameterId: 'limiter-1:lim-ceiling',
+                    parameterName: 'Ceiling',
+                    enabled: true,
+                    minValue: -3,
+                    maxValue: 0,
+                    points: [{ beat: 0, value: -1, curve: 'linear' as const, tension: 0 }],
+                };
+            }
+
+            function primeRenderForLimiterCeiling(laneTrackId: string): void {
+                offlineRenderMocks.getAutomationLanes.mockReturnValue([ceilingLane(laneTrackId)]);
+                offlineRenderMocks.createOfflineTrackStrip.mockImplementation(
+                    (_ctx: unknown, track: { id: string }, options: { contributesAudio?: boolean }) => {
+                        // Exactly the entry `buildDeviceChain` builds: the
+                        // strip's own reachability answer, and a strategy that
+                        // resolves no offline binding for the ceiling.
+                        const limiterEntries = [
+                            {
+                                deviceId: 'limiter-1',
+                                deviceType: 'builtin-limiter',
+                                contributesAudio: options.contributesAudio ?? true,
+                                strategy: { resolveOfflineAutomation: () => null },
+                            },
+                        ];
+                        const deviceEntries = track.id === laneTrackId ? limiterEntries : [];
+                        return Promise.resolve({
+                            trackId: track.id,
+                            inputNode: { connect: vi.fn() },
+                            preFaderTap: { gain: { value: 1 }, connect: vi.fn() },
+                            faderNode: { gain: makeCeilingParam(), connect: vi.fn() },
+                            postFaderGain: { connect: vi.fn() },
+                            panNode: { pan: makeCeilingParam(), connect: vi.fn() },
+                            outputNode: { connect: vi.fn() },
+                            deviceEntries,
+                        });
+                    }
+                );
+                offlineRenderMocks.renderWithTimeout.mockResolvedValue({ sampleRate: 44_100 });
+                class TestOfflineAudioContext {
+                    readonly destination = {};
+
+                    createGain() {
+                        return { gain: { value: 0 }, connect: vi.fn() };
+                    }
+                }
+                vi.stubGlobal('OfflineAudioContext', TestOfflineAudioContext);
+                offlineRenderMocks.scheduleTrackClips.mockImplementation(
+                    async (input: {
+                        track: { id: string };
+                        deviceEntriesByTrack: Map<string, { deviceType: string; contributesAudio: boolean }[]>;
+                    }) => {
+                        const lanesForTrack = offlineRenderMocks
+                            .getAutomationLanes()
+                            .filter((lane) => lane.trackId === input.track.id);
+                        for (const lane of lanesForTrack) {
+                            for (const entry of input.deviceEntriesByTrack.get(input.track.id) ?? []) {
+                                const refusal = unrenderableAutomationRefusal({
+                                    deviceType: entry.deviceType,
+                                    parameterId: getDeviceAutomationParameterId(lane.parameterId) ?? '',
+                                    contributesAudio: entry.contributesAudio,
+                                });
+                                if (refusal !== null) {
+                                    throw createExportError(refusal);
+                                }
+                            }
+                        }
+                    }
+                );
+            }
+
+            it('fails the print with the refusal message instead of returning a buffer', async () => {
+                offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                    renderContext([audioTrack({ id: 'limiter-track', devices: [LIMITER] })])
+                );
+                primeRenderForLimiterCeiling('limiter-track');
+
+                await expect(renderOffline(4)).rejects.toThrow(/limiter ceiling/i);
+                // The refusal is the whole point: a returned buffer would be the
+                // success report #4424 exists to remove.
+                expect(offlineRenderMocks.renderWithTimeout).not.toHaveBeenCalled();
+            });
+
+            it('still renders a scheduled limiter strip that cannot reach the print, which the refusal must not fail over', async () => {
+                offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                    renderContext([
+                        // Unmuted, and so scheduled by every other rule, but its
+                        // only route dies at a muted bus. The lane below is read
+                        // by the double only because the strip is scheduled —
+                        // the state `contributes('plugin-track')` observes above,
+                        // and the case #4424 forbids failing over.
+                        audioTrack({ id: 'limiter-track', outputId: 'muted-bus', devices: [LIMITER] }),
+                        audioTrack({ id: 'muted-bus', kind: 'bus', muted: true }),
+                    ])
+                );
+                primeRenderForLimiterCeiling('limiter-track');
+
+                const rendered = { sampleRate: 44_100 };
+                offlineRenderMocks.renderWithTimeout.mockResolvedValue(rendered);
+
+                await expect(renderOffline(4)).resolves.toBe(rendered);
+                expect(scheduledTrackIds()).toContain('limiter-track');
+                expect(contributes('limiter-track')).toBe(false);
+            });
         });
     });
 });

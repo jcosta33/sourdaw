@@ -8,7 +8,7 @@ import { resolveDeviceParamTargets } from '../../../services/deviceResolution';
 import { createOfflineDeviceNode, type OfflineDeviceNode } from '../../deviceNodeFactory';
 import { WebAudioDeviceStrategy } from '../../deviceStrategy/WebAudioDeviceStrategy';
 
-import { scheduleTrackAutomationFixture } from './scheduleTrackAutomationFixture';
+import { descriptorFixtureDeviceLaw, scheduleTrackAutomationFixture } from './scheduleTrackAutomationFixture';
 
 function makeParam() {
     return {
@@ -34,7 +34,7 @@ function makeLane(overrides: Partial<AutomationLane>): AutomationLane {
 }
 
 function webAudioEntry(deviceId: string, deviceType: string, node: OfflineDeviceNode) {
-    return { deviceId, deviceType, strategy: new WebAudioDeviceStrategy(node, deviceType) };
+    return { deviceId, deviceType, contributesAudio: true, strategy: new WebAudioDeviceStrategy(node, deviceType) };
 }
 
 describe('builtin device automation units reproduction (#3738)', () => {
@@ -207,26 +207,37 @@ describe('builtin device automation units reproduction (#3738)', () => {
         expect(comp.release.setValueAtTime).toHaveBeenCalledWith(0.1, 0);
 
         // The ceiling is a census exemption (#3739): the advertised cap lives
-        // in the clipper's rebuilt WaveShaper curve, so its lane must schedule
-        // nothing rather than move the gain alone and render past the knob.
-        scheduleTrackAutomationFixture({
-            lanes: [
-                makeLane({
-                    parameterId: 'device-1:lim-ceiling',
-                    minValue: -24,
-                    maxValue: 0,
-                    points: [{ beat: 0, value: -0.3, curve: 'linear', tension: 0 }],
-                }),
-            ],
-            trackId: 'track-1',
-            trackGainNode: { gain: makeParam() } as unknown as GainNode,
-            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
-            deviceEntries: [webAudioEntry('device-1', 'builtin-limiter', deviceNode)],
-            durationSeconds: 5,
-            defaultTempo: 120,
-            changes: [],
-        });
+        // in the clipper's rebuilt WaveShaper curve, so no binding answers and
+        // the lane cannot render. It used to schedule nothing and report
+        // success, leaving the bounce on the static ceiling the monitor had
+        // already ridden away from; since #4424 the lane the session is
+        // sounding is refused instead, and that refusal names the parameter.
+        expect(() =>
+            scheduleTrackAutomationFixture({
+                lanes: [
+                    makeLane({
+                        parameterId: 'device-1:lim-ceiling',
+                        minValue: -24,
+                        maxValue: 0,
+                        points: [{ beat: 0, value: -0.3, curve: 'linear', tension: 0 }],
+                    }),
+                ],
+                trackId: 'track-1',
+                trackGainNode: { gain: makeParam() } as unknown as GainNode,
+                trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+                deviceEntries: [webAudioEntry('device-1', 'builtin-limiter', deviceNode)],
+                // The descriptor admits the ceiling; the binding is what cannot
+                // answer for it.
+                deviceParameterLaw: descriptorFixtureDeviceLaw(),
+                durationSeconds: 5,
+                defaultTempo: 120,
+                changes: [],
+            })
+        ).toThrow(/limiter ceiling/i);
 
+        // The refusal is the whole observable: the ceiling's own gain write is
+        // still not made, so a caller that caught the error cannot be left with
+        // a half-applied lane.
         expect(ceiling.gain.setValueAtTime).not.toHaveBeenCalled();
     });
 
