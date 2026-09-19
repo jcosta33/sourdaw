@@ -42,10 +42,9 @@ export const REPAIR_USAGE =
     'usage: pnpm review:repair <pr-number> --thread <thread-node-id> --head <full-sha> --commit <full-sha> --summary <single-line> [--evidence <path-to-json>]';
 
 const FORTY_HEX_PATTERN = /^[0-9a-f]{40}$/;
-const COMMENT_ID_PATTERN = /^[0-9]+$/;
 const SHORT_COMMIT_LENGTH = 12;
 
-export type RepairReviewFindingReply = { id: string; body: string; authorNodeId: string | null };
+export type RepairReviewFindingReply = { id: number; body: string; authorNodeId: string | null };
 
 /**
  * The thread as this command needs it. `rootComment` is the finding the repair answers; `replies`
@@ -403,6 +402,7 @@ export function threadQuery(paged: boolean): string {
 
 type ThreadCommentNode = {
     id?: unknown;
+    databaseId?: unknown;
     body?: unknown;
     path?: unknown;
     line?: unknown;
@@ -410,11 +410,12 @@ type ThreadCommentNode = {
     author?: unknown;
 };
 
+/** A comment's node `id` is an opaque string; the numeric database id is what a record binds. */
 function readCommentId(value: unknown, label: string): number {
-    if (typeof value !== 'string' || !COMMENT_ID_PATTERN.test(value)) {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
         fail(`${label} must be a numeric database id, found ${describeValue(value)}`);
     }
-    return Number(value);
+    return value;
 }
 
 function readSide(value: unknown, label: string): 'LEFT' | 'RIGHT' {
@@ -424,7 +425,11 @@ function readSide(value: unknown, label: string): 'LEFT' | 'RIGHT' {
     return value;
 }
 
-function readRootComment(node: ThreadCommentNode, label: string): RepairReviewFindingThread['rootComment'] {
+/**
+ * The root is the first comment of the first page, so its database id is the numeric id already read
+ * from that reply; this reads only the file position and side the record binds beside it.
+ */
+function readRootComment(node: ThreadCommentNode, id: number, label: string): RepairReviewFindingThread['rootComment'] {
     if (
         typeof node.path !== 'string' ||
         node.path.trim() === '' ||
@@ -435,7 +440,7 @@ function readRootComment(node: ThreadCommentNode, label: string): RepairReviewFi
         fail(`${label} root comment carries no file position`);
     }
     return {
-        id: readCommentId(node.id, `${label} root comment id`),
+        id,
         path: node.path,
         line: node.line,
         side: readSide(node.side, `${label} root comment side`),
@@ -447,7 +452,11 @@ function readThreadReply(node: ThreadCommentNode, label: string): RepairReviewFi
         fail(`${label} returned an unreadable comment`);
     }
     const author = isRecord(node.author) ? node.author : {};
-    return { id: node.id, body: node.body, authorNodeId: typeof author.id === 'string' ? author.id : null };
+    return {
+        id: readCommentId(node.databaseId, `${label} comment ${node.id} id`),
+        body: node.body,
+        authorNodeId: typeof author.id === 'string' ? author.id : null,
+    };
 }
 
 type ReadThreadPage = {
@@ -520,7 +529,8 @@ export function readRepairReviewThread(threadId: string, gh: Gh): RepairReviewFi
             // The root is the first comment GitHub returns, so it is read from the first page only; a
             // later page's first comment is a reply.
             const root = firstPage.nodes[0];
-            if (root === undefined) {
+            const rootReply = replies[0];
+            if (root === undefined || rootReply === undefined) {
                 fail(`${label} carries no root comment`);
             }
             return {
@@ -529,9 +539,14 @@ export function readRepairReviewThread(threadId: string, gh: Gh): RepairReviewFi
                 pullRequestNumber: firstPage.pullRequestNumber,
                 head: firstPage.head,
                 base: firstPage.base,
-                rootComment: readRootComment(root, label),
+                rootComment: readRootComment(root, rootReply.id, label),
                 replies,
             };
+        }
+        // A page that claims another while returning no comment nodes would drain forever, so it
+        // refuses instead of paging on.
+        if (page.nodes.length === 0) {
+            fail(`${label} returned an empty comment page while claiming another`);
         }
         if (typeof next !== 'string' || next === '' || seen.has(next)) {
             fail(`${label} returned invalid comment pagination`);

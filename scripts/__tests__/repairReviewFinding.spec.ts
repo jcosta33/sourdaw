@@ -37,6 +37,7 @@ const MOVED_HEAD = 'c'.repeat(40);
 const COMMIT = 'b'.repeat(40);
 const OTHER_COMMIT = 'd'.repeat(40);
 const ROOT_COMMENT_ID = 5_001;
+const ROOT_COMMENT_NODE_ID = 'PRRC_kwDOrepairRoot';
 const FINDING_PATH = 'scripts/repairReviewFinding.ts';
 const FINDING_LINE = 42;
 const SUMMARY = 'Bind the repair to the commit that addresses it.';
@@ -53,7 +54,7 @@ const EVIDENCE_ENTRY = {
  */
 const CREDENTIAL_SHAPED = ['gh', 'p', '_', 'A'.repeat(24)].join('');
 
-function repairReply(id: string, body: string, authorNodeId: string = AUTHOR_BOT_NODE_ID) {
+function repairReply(id: number, body: string, authorNodeId: string = AUTHOR_BOT_NODE_ID) {
     return { id, body, authorNodeId };
 }
 
@@ -65,7 +66,7 @@ function threadState(overrides: Partial<RepairReviewFindingThread> = {}): Repair
         head: HEAD,
         base: BASE,
         rootComment: { id: ROOT_COMMENT_ID, path: FINDING_PATH, line: FINDING_LINE, side: 'RIGHT' },
-        replies: [repairReply('PRRC_root', 'Defect. Consequence. Fix.')],
+        replies: [repairReply(ROOT_COMMENT_ID, 'Defect. Consequence. Fix.')],
         ...overrides,
     };
 }
@@ -110,7 +111,7 @@ function fakePort(
         postReply: (threadId, body, clientMutationId) => {
             calls.push(`postReply:${threadId}:${clientMutationId}`);
             posted.push({ threadId, body, clientMutationId });
-            current = { ...current, replies: [...current.replies, repairReply(`PRRC_${posted.length}`, body)] };
+            current = { ...current, replies: [...current.replies, repairReply(9_000 + posted.length, body)] };
         },
         readEvidenceFile: (path) => {
             calls.push(`readEvidenceFile:${path}`);
@@ -393,7 +394,7 @@ describe('repairReviewFinding', () => {
     it('should post the new record when the author already recorded a different one', () => {
         const other = recordFor({ commit: OTHER_COMMIT, summary: 'A different repair of the same finding.' });
         const { port, posted } = fakePort(
-            threadState({ replies: [repairReply('PRRC_old', renderReviewRepairReply(other))] })
+            threadState({ replies: [repairReply(9_101, renderReviewRepairReply(other))] })
         );
         expect(repairReviewFinding(PR, repairInput(), port)).toBe(
             `repair-recorded:${PR}:${THREAD}:${COMMIT.slice(0, 12)}`
@@ -404,7 +405,7 @@ describe('repairReviewFinding', () => {
     it('should not read a foreign actor marker as the author record', () => {
         const { port, posted } = fakePort(
             threadState({
-                replies: [repairReply('PRRC_foreign', renderReviewRepairReply(recordFor()), REVIEWER_BOT_NODE_ID)],
+                replies: [repairReply(9_102, renderReviewRepairReply(recordFor()), REVIEWER_BOT_NODE_ID)],
             })
         );
         expect(repairReviewFinding(PR, repairInput(), port)).toBe(
@@ -607,7 +608,8 @@ function threadNode(overrides: Record<string, unknown> = {}): ThreadNodeFixture 
                 comments: {
                     nodes: [
                         {
-                            id: String(ROOT_COMMENT_ID),
+                            id: ROOT_COMMENT_NODE_ID,
+                            databaseId: ROOT_COMMENT_ID,
                             body: 'Defect.',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
@@ -655,7 +657,7 @@ describe('readRepairReviewThread', () => {
             rootComment: { id: ROOT_COMMENT_ID, path: FINDING_PATH, line: FINDING_LINE, side: 'RIGHT' },
             replies: [
                 {
-                    id: String(ROOT_COMMENT_ID),
+                    id: ROOT_COMMENT_ID,
                     body: 'Defect.',
                     authorNodeId: REVIEWER_BOT_NODE_ID,
                 },
@@ -664,6 +666,8 @@ describe('readRepairReviewThread', () => {
         expect(calls).toHaveLength(1);
         expect(calls[0]?.query).toContain('PullRequestReviewThread');
         expect(calls[0]?.query).toContain('path line side');
+        // The record binds the numeric database id, so the fragment must select it beside the node id.
+        expect(calls[0]?.query).toContain('nodes{id databaseId body');
     });
 
     it('should follow comment pagination and keep the root from the first page', () => {
@@ -672,7 +676,8 @@ describe('readRepairReviewThread', () => {
                 comments: {
                     nodes: [
                         {
-                            id: String(ROOT_COMMENT_ID),
+                            id: ROOT_COMMENT_NODE_ID,
+                            databaseId: ROOT_COMMENT_ID,
                             body: 'Defect.',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
@@ -689,7 +694,8 @@ describe('readRepairReviewThread', () => {
                 comments: {
                     nodes: [
                         {
-                            id: 'PRRC_reply',
+                            id: 'PRRC_kwDOrepairReply',
+                            databaseId: 5_002,
                             body: 'reply',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
@@ -709,7 +715,7 @@ describe('readRepairReviewThread', () => {
         }
         const { gh, calls } = recordingGh(firstPageOrSecond);
         const thread = readRepairReviewThread(THREAD, gh);
-        expect(thread.replies.map((reply) => reply.id)).toEqual([String(ROOT_COMMENT_ID), 'PRRC_reply']);
+        expect(thread.replies.map((reply) => reply.id)).toEqual([ROOT_COMMENT_ID, 5_002]);
         expect(thread.rootComment).toEqual({
             id: ROOT_COMMENT_ID,
             path: FINDING_PATH,
@@ -740,13 +746,13 @@ describe('readRepairReviewThread', () => {
         expect(() => readRepairReviewThread(THREAD, gh)).toThrow(`review thread ${THREAD} carries no root comment`);
     });
 
-    it('should refuse a root comment whose id is not a database id', () => {
+    it('should refuse a root comment that carries no database id', () => {
         const { gh } = recordingGh(() =>
             threadNode({
                 comments: {
                     nodes: [
                         {
-                            id: 'PRRC_not_numeric',
+                            id: ROOT_COMMENT_NODE_ID,
                             body: 'Defect.',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
@@ -758,12 +764,90 @@ describe('readRepairReviewThread', () => {
                 },
             })
         );
-        expect(() => readRepairReviewThread(THREAD, gh)).toThrow('root comment id must be a numeric database id');
+        expect(() => readRepairReviewThread(THREAD, gh)).toThrow(
+            'comment PRRC_kwDOrepairRoot id must be a numeric database id'
+        );
+    });
+
+    it('should refuse a reply comment that carries no database id', () => {
+        const { gh } = recordingGh(() =>
+            threadNode({
+                comments: {
+                    nodes: [
+                        {
+                            id: ROOT_COMMENT_NODE_ID,
+                            databaseId: ROOT_COMMENT_ID,
+                            body: 'Defect.',
+                            path: FINDING_PATH,
+                            line: FINDING_LINE,
+                            side: 'RIGHT',
+                            author: null,
+                        },
+                        { id: 'PRRC_kwDOrepairReply', body: 'reply', author: null },
+                    ],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                },
+            })
+        );
+        expect(() => readRepairReviewThread(THREAD, gh)).toThrow(
+            `comment PRRC_kwDOrepairReply id must be a numeric database id`
+        );
+    });
+
+    it('should refuse an empty comment page that claims another instead of draining forever', () => {
+        let emptyPages = 0;
+        const { gh } = recordingGh((call) => {
+            if (call.fields.cursor === undefined) {
+                return threadNode({
+                    comments: {
+                        nodes: [
+                            {
+                                id: ROOT_COMMENT_NODE_ID,
+                                databaseId: ROOT_COMMENT_ID,
+                                body: 'Defect.',
+                                path: FINDING_PATH,
+                                line: FINDING_LINE,
+                                side: 'RIGHT',
+                                author: null,
+                            },
+                        ],
+                        pageInfo: { hasNextPage: true, endCursor: 'COMMENT_CURSOR' },
+                    },
+                });
+            }
+            emptyPages += 1;
+            return threadNode({
+                comments: {
+                    nodes: [],
+                    pageInfo: { hasNextPage: emptyPages < 2, endCursor: `EMPTY_CURSOR_${emptyPages}` },
+                },
+            });
+        });
+
+        expect(() => readRepairReviewThread(THREAD, gh)).toThrow(
+            `review thread ${THREAD} returned an empty comment page while claiming another`
+        );
     });
 
     it('should refuse a repeated pagination cursor', () => {
+        // A non-empty page keeps this on the cursor-repetition path; an empty one refuses earlier.
         const { gh } = recordingGh(() =>
-            threadNode({ comments: { nodes: [], pageInfo: { hasNextPage: true, endCursor: 'CURSOR' } } })
+            threadNode({
+                comments: {
+                    nodes: [
+                        {
+                            id: ROOT_COMMENT_NODE_ID,
+                            databaseId: ROOT_COMMENT_ID,
+                            body: 'Defect.',
+                            path: FINDING_PATH,
+                            line: FINDING_LINE,
+                            side: 'RIGHT',
+                            author: null,
+                        },
+                    ],
+                    pageInfo: { hasNextPage: true, endCursor: 'CURSOR' },
+                },
+            })
         );
         expect(() => readRepairReviewThread(THREAD, gh)).toThrow(
             `review thread ${THREAD} returned invalid comment pagination`

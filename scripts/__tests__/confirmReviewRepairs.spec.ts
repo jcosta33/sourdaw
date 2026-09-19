@@ -704,7 +704,8 @@ describe('readReviewThreads', () => {
             comments: {
                 nodes: [
                     {
-                        id: String(ROOT_COMMENT_ID),
+                        id: 'PRRC_kwDOconfirmRoot',
+                        databaseId: ROOT_COMMENT_ID,
                         body: 'Defect.',
                         path: FINDING_PATH,
                         line: FINDING_LINE,
@@ -712,7 +713,8 @@ describe('readReviewThreads', () => {
                         author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                     },
                     {
-                        id: '9001',
+                        id: 'PRRC_kwDOconfirmRecord',
+                        databaseId: 9_001,
                         body: 'record',
                         path: null,
                         line: null,
@@ -798,7 +800,8 @@ describe('readReviewThreads', () => {
                         comments: {
                             nodes: [
                                 {
-                                    id: '1',
+                                    id: 'PRRC_kwDOconfirmNoAuthor',
+                                    databaseId: 1,
                                     body: 'root',
                                     path: FINDING_PATH,
                                     line: 1,
@@ -816,6 +819,32 @@ describe('readReviewThreads', () => {
         expect(() => readReviewThreads(PR, gh, [])).toThrow('carries no author node id');
     });
 
+    it('should refuse a comment that carries no database id', () => {
+        const { gh } = recordingGh(() =>
+            page(
+                [
+                    threadNode({
+                        comments: {
+                            nodes: [
+                                {
+                                    id: 'PRRC_kwDOconfirmNoDatabase',
+                                    body: 'root',
+                                    path: FINDING_PATH,
+                                    line: 1,
+                                    side: 'LEFT',
+                                    author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
+                                },
+                            ],
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                        },
+                    }),
+                ],
+                { hasNextPage: false, endCursor: null }
+            )
+        );
+        expect(() => readReviewThreads(PR, gh, [])).toThrow('root comment id must be a numeric database id');
+    });
+
     it('should read a human comment as a reply no selection acts on and still confirm the author repair', () => {
         const record = recordFor();
         const { gh } = recordingGh(() =>
@@ -825,7 +854,8 @@ describe('readReviewThreads', () => {
                         comments: {
                             nodes: [
                                 {
-                                    id: String(ROOT_COMMENT_ID),
+                                    id: 'PRRC_kwDOconfirmRoot',
+                                    databaseId: ROOT_COMMENT_ID,
                                     body: 'Defect. Consequence. Fix.',
                                     path: FINDING_PATH,
                                     line: FINDING_LINE,
@@ -833,7 +863,8 @@ describe('readReviewThreads', () => {
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                                 {
-                                    id: '9000',
+                                    id: 'PRRC_kwDOconfirmHuman',
+                                    databaseId: 9_000,
                                     // A distinct repair-shaped record: if a non-Bot author were read as an
                                     // author repair, this second record would refuse the thread as ambiguous.
                                     body: authorRecordReply(
@@ -845,7 +876,8 @@ describe('readReviewThreads', () => {
                                     author: { __typename: 'User', login: 'jcosta33' },
                                 },
                                 {
-                                    id: '9001',
+                                    id: 'PRRC_kwDOconfirmRecord',
+                                    databaseId: 9_001,
                                     body: authorRecordReply(record),
                                     path: null,
                                     line: null,
@@ -889,7 +921,8 @@ describe('readReviewThreads', () => {
                         comments: {
                             nodes: [
                                 {
-                                    id: String(ROOT_COMMENT_ID),
+                                    id: 'PRRC_kwDOconfirmRoot',
+                                    databaseId: ROOT_COMMENT_ID,
                                     body: 'Defect. Consequence. Fix.',
                                     path: FINDING_PATH,
                                     line: FINDING_LINE,
@@ -897,7 +930,8 @@ describe('readReviewThreads', () => {
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                                 {
-                                    id: '9000',
+                                    id: 'PRRC_kwDOconfirmDeleted',
+                                    databaseId: 9_000,
                                     // A distinct repair-shaped record from a deleted account: were its
                                     // null author to refuse the read, the whole transaction would abort.
                                     body: authorRecordReply(
@@ -912,7 +946,8 @@ describe('readReviewThreads', () => {
                                     author: null,
                                 },
                                 {
-                                    id: '9001',
+                                    id: 'PRRC_kwDOconfirmRecord',
+                                    databaseId: 9_001,
                                     body: authorRecordReply(record),
                                     path: null,
                                     line: null,
@@ -973,7 +1008,8 @@ describe('readReviewThreads', () => {
                         comments: {
                             nodes: [
                                 {
-                                    id: String(ROOT_COMMENT_ID),
+                                    id: 'PRRC_kwDOconfirmRoot',
+                                    databaseId: ROOT_COMMENT_ID,
                                     body: 'Defect.',
                                     path: FINDING_PATH,
                                     line: FINDING_LINE,
@@ -1004,7 +1040,8 @@ describe('readReviewThreads', () => {
                             comments: {
                                 nodes: [
                                     {
-                                        id: '9002',
+                                        id: 'PRRC_kwDOconfirmLateRecord',
+                                        databaseId: 9_002,
                                         body: authorRecordReply(record),
                                         path: null,
                                         line: null,
@@ -1024,7 +1061,8 @@ describe('readReviewThreads', () => {
                         comments: {
                             nodes: [
                                 {
-                                    id: String(ROOT_COMMENT_ID),
+                                    id: 'PRRC_kwDOconfirmRoot',
+                                    databaseId: ROOT_COMMENT_ID,
                                     body: 'Defect. Consequence. Fix.',
                                     path: FINDING_PATH,
                                     line: FINDING_LINE,
@@ -1189,7 +1227,8 @@ describe('shellPort', () => {
                                                 comments: {
                                                     nodes: [
                                                         {
-                                                            id: String(ROOT_COMMENT_ID),
+                                                            id: 'PRRC_kwDOconfirmRoot',
+                                                            databaseId: ROOT_COMMENT_ID,
                                                             body: 'Defect.',
                                                             path: FINDING_PATH,
                                                             line: FINDING_LINE,

@@ -1418,7 +1418,7 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve> [args...]'
     );
 }
 

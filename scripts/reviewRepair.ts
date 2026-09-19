@@ -44,9 +44,11 @@ const DIFFERENT_RECORD_CONFIRMATION_REFUSAL = 'thread already carries a confirma
 /**
  * The comment fields both thread readers select. `pageInfo` belongs to the comment connection, so it
  * sits beside `nodes` rather than inside it; one shared fragment keeps the two readers from drifting.
+ * A record binds the numeric `databaseId`; the node `id` is GitHub's opaque string and only names the
+ * comment in diagnostics.
  */
 export const REVIEW_THREAD_COMMENT_FIELDS =
-    'nodes{id body path line side author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}';
+    'nodes{id databaseId body path line side author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}';
 
 export type ReviewRepairFinding = { commentId: number; path: string; line: number; side: 'LEFT' | 'RIGHT' };
 

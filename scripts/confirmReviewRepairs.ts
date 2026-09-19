@@ -46,7 +46,6 @@ import {
 export const CONFIRM_USAGE = 'usage: pnpm review:confirm <pr-number> --head <full-sha>';
 
 const FORTY_HEX_PATTERN = /^[0-9a-f]{40}$/;
-const COMMENT_ID_PATTERN = /^[0-9]+$/;
 const GRAPHQL_PAGE_SIZE = 100;
 
 /** One line the reviewer's confirmation reply carries before the contract's record marker. */
@@ -239,12 +238,12 @@ function describeValue(value: unknown): string {
     return JSON.stringify(value) ?? typeof value;
 }
 
-/** `gh api graphql` speaks JSON, so a comment id arrives as a string; anything else is unreadable. */
+/** A comment's node `id` is an opaque string; the numeric database id is what a record binds. */
 function readCommentId(value: unknown, label: string): number {
-    if (typeof value !== 'string' || !COMMENT_ID_PATTERN.test(value)) {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
         fail(`${label} must be a numeric database id, found ${describeValue(value)}`);
     }
-    return Number(value);
+    return value;
 }
 
 function readSide(value: unknown, label: string): 'LEFT' | 'RIGHT' {
@@ -280,14 +279,15 @@ function readReply(comment: unknown, label: string): ReviewRepairThreadState['re
     if (!isRecord(comment) || typeof comment.id !== 'string' || typeof comment.body !== 'string') {
         fail(`${label} returned an unreadable comment`);
     }
+    const id = readCommentId(comment.databaseId, `${label} comment ${comment.id} id`);
     const author = isRecord(comment.author) ? comment.author : {};
     if (author.__typename === 'Bot') {
         if (typeof author.id !== 'string') {
             fail(`${label} comment ${comment.id} carries no author node id`);
         }
-        return { id: Number(comment.id), body: comment.body, authorNodeId: author.id };
+        return { id, body: comment.body, authorNodeId: author.id };
     }
-    return { id: Number(comment.id), body: comment.body, authorNodeId: null };
+    return { id, body: comment.body, authorNodeId: null };
 }
 
 /** A listed thread plus the cursor of its unread comment pages, when the first page was truncated. */
@@ -328,7 +328,7 @@ function readThread(node: unknown, label: string): ListedThread {
         state: {
             thread: node.id,
             resolved: node.isResolved,
-            rootCommentId: readCommentId(root.id, `${label} root comment id`),
+            rootCommentId: readCommentId(root.databaseId, `${label} root comment id`),
             rootPath: readPath(root.path, `${label} root comment path`),
             rootLine: readLine(root.line, `${label} root comment line`),
             rootSide: readSide(root.side, `${label} root comment side`),

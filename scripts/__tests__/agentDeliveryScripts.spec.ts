@@ -904,6 +904,8 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['review:publish:recover']).toBe(
             'node scripts/trustedGithubWriteBootstrap.ts review:publish:recover'
         );
+        expect(pkg.scripts['review:repair']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:repair');
+        expect(pkg.scripts['review:confirm']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:confirm');
         expect(pkg.scripts['review:resolve']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:resolve');
         expect(pkg.scripts['review:resolve:recover']).toBeUndefined();
         expect(pkg.scripts['deliver:recover-lock']).toBeUndefined();
@@ -1927,6 +1929,10 @@ describe('package scripts and gitignore', () => {
                 );
                 expect(result.status).toBe(1);
                 expect(result.stderr).toMatch(/usage: trustedGithubWriteBootstrap\.ts/i);
+                // The usage must name every command `parseCommand` accepts, not a subset of them.
+                expect(result.stderr).toContain(
+                    'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve>'
+                );
                 expect(result.stderr).not.toMatch(/trusted ps executable|protected primary checkout/i);
             } finally {
                 removeTemporaryDirectory(fixtureRoot);
