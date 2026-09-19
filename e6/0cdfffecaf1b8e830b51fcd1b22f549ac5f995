@@ -123,6 +123,14 @@ src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
   "base_commit_sha": "e60cdfffecaf1b8e830b51fcd1b22f549ac5f995",
   "prompts": {},
   "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
     "s_9e15f5b7ec3308": {
       "agent_id": {
         "tool": "claude",
