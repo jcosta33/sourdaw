@@ -485,14 +485,19 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                           })
                         : undefined;
                 const maxOutputTokens = readAgentResourceLimits().maxModelOutputTokens;
+                // Native replay starts at the first recorded turn. Before that there is nothing to
+                // hand back, and the composed user message is the only place the run's receipts
+                // exist: replacing it with the first message there would send a turn carrying no
+                // evidence at all.
+                const replayedTurn = hostedTurn !== undefined && hostedTurn.history.length > 0 ? hostedTurn : undefined;
                 const compiledRequest = providerProtocol.compileRequest({
                     correlationId,
                     ...(streamIdentity ?? {}),
                     operation: 'tools',
                     modality: 'text',
                     messages:
-                        backend === 'cloud' && hostedTurn !== undefined
-                            ? buildHostedTurnMessages(systemPrompt, hostedTurn)
+                        backend === 'cloud' && replayedTurn !== undefined
+                            ? buildHostedTurnMessages(systemPrompt, replayedTurn)
                             : [
                                   { role: 'system', content: systemPrompt },
                                   { role: 'user', content: userMessage },
@@ -585,7 +590,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             providerRequest.limits.maxOutputTokens,
                             directive,
                             undefined,
-                            hostedTurn
+                            replayedTurn
                         );
                     } else {
                         cloudInference = generateCloudToolCalls(
@@ -595,7 +600,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             providerRequest.limits.maxOutputTokens,
                             directive,
                             signal,
-                            hostedTurn
+                            replayedTurn
                         );
                     }
                     const plan = await waitForInference(cloudInference, signal);
@@ -676,11 +681,20 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         arguments: call.arguments,
                     }));
                     const hostedProvider = backend === 'cloud' ? getCloudProviderInfo()?.provider : undefined;
+                    // The provider's own assistant items are replayed verbatim, and the receipts
+                    // answering them correlate by the identifier the loop resolved. Only a turn
+                    // whose every call the provider itself identified carries that identifier in
+                    // its items; a turn it left unidentified would be replayed with tool results
+                    // naming an identifier no item holds, which every hosted dialect rejects. Such
+                    // a turn reports no replayable provider turn and keeps the text receipt form.
+                    const isReplayableTurn = providerCallIds.every(
+                        (callId) => callId !== undefined && callId.length > 0
+                    );
                     outcome = {
                         status: 'complete',
                         toolCalls: normalizedToolCalls,
                         proposal: extractAgentPlanProposal(normalizedToolCalls),
-                        ...(cloudToolPlan === null || hostedProvider === undefined
+                        ...(cloudToolPlan === null || hostedProvider === undefined || !isReplayableTurn
                             ? {}
                             : {
                                   providerTurn: {
