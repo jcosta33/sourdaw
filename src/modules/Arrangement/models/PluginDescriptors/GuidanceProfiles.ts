@@ -26,7 +26,7 @@ function audioProcessingCapabilities(): PluginDescriptorCapabilities {
     };
 }
 
-function defaultCenteredRange(parameter: DeviceParameter): { minimum: number; maximum: number } {
+export function defaultCenteredRange(parameter: DeviceParameter): { minimum: number; maximum: number } {
     const span = parameter.maxValue - parameter.minValue;
     const radius = span * 0.25;
     return {
@@ -34,6 +34,17 @@ function defaultCenteredRange(parameter: DeviceParameter): { minimum: number; ma
         maximum: Math.min(parameter.maxValue, parameter.defaultValue + radius),
     };
 }
+
+/**
+ * The modulation declaration every fallback control carries: no descriptor in
+ * this codebase declares a source-specific modulation route separate from its
+ * automation capability, so authored per-parameter overrides reuse this exact
+ * value rather than restating it.
+ */
+export const NO_SOURCE_SPECIFIC_MODULATION: DeviceParameterGuidance['modulation'] = {
+    availability: 'unavailable',
+    reason: 'This descriptor declares no source-specific modulation route beyond its separate automation capability.',
+};
 
 export function declaredControl(
     semanticRole: string,
@@ -43,10 +54,15 @@ export function declaredControl(
 ): (parameter: DeviceParameter) => DeviceParameterGuidance {
     return (parameter) => {
         const range = defaultCenteredRange(parameter);
-        return parameterGuidance(semanticRole, perceptualRole, range.minimum, range.maximum, interactions, risks, {
-            availability: 'unavailable',
-            reason: 'This descriptor declares no source-specific modulation route beyond its separate automation capability.',
-        });
+        return parameterGuidance(
+            semanticRole,
+            perceptualRole,
+            range.minimum,
+            range.maximum,
+            interactions,
+            risks,
+            NO_SOURCE_SPECIFIC_MODULATION
+        );
     };
 }
 
