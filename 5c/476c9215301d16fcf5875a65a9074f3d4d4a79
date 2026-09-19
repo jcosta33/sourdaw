@@ -1,0 +1,182 @@
+src/modules/AiRuntime/models/Tools/Transport.ts
+  s_9e15f5b7ec3308::t_1f17ca9aa209cf 1,46,48-57
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_9e15f5b7ec3308::t_9ced6ab7e6890d 3-9,67-84,235-239,246-257
+src/modules/Arrangement/handlers/device/handleSetSend.ts
+  s_9e15f5b7ec3308::t_a5ab1c3604831f 1,3,10-17,77-83,106-107,134-141,150
+  s_9e15f5b7ec3308::t_4f5fa726bf1e87 109,122-127,130
+  s_9e15f5b7ec3308::t_e9802607038452 19-41,43-53
+  s_9e15f5b7ec3308::t_0c29f9415dd087 42
+  s_9e15f5b7ec3308::t_9b0a86bb1136d6 128-129
+  s_9e15f5b7ec3308::t_7da7fad21c022d 8
+src/modules/Arrangement/transformers/clampClipGain.ts
+  s_9e15f5b7ec3308::t_88c7b53033b140 1-2,5
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_9e15f5b7ec3308::t_b7d96a25565555 273,275,284,316-327,358,360,369,392
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_9e15f5b7ec3308::t_fea148c1f12494 1647-1689,1708-1720
+  s_9e15f5b7ec3308::t_7efc3d3ff39dfc 1690-1707
+src/modules/AiRuntime/useCases/__tests__/validateActions.spec.ts
+  s_9e15f5b7ec3308::t_0aa299f851d39b 39-47
+src/modules/AiRuntime/useCases/validateActions.ts
+  s_9e15f5b7ec3308::t_a2359c880d89fd 4-5,44-62,144-148
+src/modules/AiRuntime/useCases/agentReference/projectBatchLocalCreation.ts
+  s_9e15f5b7ec3308::t_5c3b8ab67ea455 1-2,64
+src/modules/Arrangement/handlers/track/handleSetTrackGain.ts
+  s_9e15f5b7ec3308::t_08728d6749d0f4 2,12-34,48-50,61-65,75-76,79-83,90-94,107-113,121
+  s_9e15f5b7ec3308::t_4a5cccda8789ad 122-123
+  s_9e15f5b7ec3308::t_b33e06caf9a2c6 4
+  s_9e15f5b7ec3308::t_6abdeae64d256c 103
+  s_9e15f5b7ec3308::t_cf8361742db898 96-102
+  s_9e15f5b7ec3308::t_7a412968121f2d 104-106
+src/modules/Command/errors/AppActionExecutionError.ts
+  s_9e15f5b7ec3308::t_5b0be11367d2fc 16-21
+src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts
+  s_9e15f5b7ec3308::t_6e15cd3411a017 40-52,146,161
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_9e15f5b7ec3308::t_067d61418a9dce 444-445,475-477,552,560,574,578
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_9e15f5b7ec3308::t_ab8ee0a4017f35 40-52,498,513
+src/modules/Transport/handlers/transport/handleSetMasterGain.ts
+  s_9e15f5b7ec3308::t_9fffa52cdaf53e 1,3,11-28,60-63,65,80-81,84-93,106
+  s_9e15f5b7ec3308::t_b3125625890d19 107
+  s_9e15f5b7ec3308::t_56ed91c89f512e 30-48
+  s_9e15f5b7ec3308::t_9da5aebc6f6aad 8
+  s_9e15f5b7ec3308::t_d0b05d379f3578 70-72,77-79
+  s_9e15f5b7ec3308::t_0e7daccff70dff 68-69,73-76
+src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts
+  s_9e15f5b7ec3308::t_df0f2490634635 20-32,795,815
+src/modules/AiRuntime/models/Tools/ClipAndDevice.ts
+  s_9e15f5b7ec3308::t_626548fc75f589 1-2,160,163-171,173
+src/modules/AiRuntime/__tests__/projectContextLevelUnits.spec.ts
+  s_9e15f5b7ec3308::t_4b92a8543c3aff 1-145
+src/modules/AiRuntime/useCases/agentReference/__tests__/projectBatchLocalCreation.spec.ts
+  s_9e15f5b7ec3308::t_f3cbd972356438 85
+src/modules/Automation/handlers/automation/handleAutomateSendRanges.ts
+  s_9e15f5b7ec3308::t_60e2102718dc26 3,59-65,68-71
+src/modules/Automation/useCases/index.ts
+  s_9e15f5b7ec3308::t_8fcbe3f4030f7d 70
+src/modules/AiRuntime/models/Tools/MidiAutomationRouting.ts
+  s_9e15f5b7ec3308::t_96f444041ffd31 1-2,85,89-102,109,188,192-201,203,207,211-220,222
+src/modules/Arrangement/handlers/device/handleAddSend.ts
+  s_9e15f5b7ec3308::t_2b7e3ab0f90113 1,3,10-22,34-37,56-59,63,83-85,88-98
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_9e15f5b7ec3308::t_bf9faedccc6185 10,17,21,24-43,156-157,178,232,247,280
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_9e15f5b7ec3308::t_00e2a8b018aa89 1,7,79-81,87,98-102,209-212
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_9e15f5b7ec3308::t_e5ad851f60d47e 408
+src/modules/Command/useCases/__tests__/decibelCommandArguments.spec.ts
+  s_9e15f5b7ec3308::t_e8a3834bff7c0f 1-2,4-16,18,25-30,33,35-93,100-132,134-203,214-225,259-274,309-328,436-455,522-570,581-590
+  s_9e15f5b7ec3308::t_2291145323d982 329-335
+  s_9e15f5b7ec3308::t_944882987f816a 31
+  s_9e15f5b7ec3308::t_664714be7d5013 336-341,356-366
+  s_9e15f5b7ec3308::t_49e84127a1eefa 571-580
+  s_9e15f5b7ec3308::t_5342db84e8db9e 204-213
+  s_9e15f5b7ec3308::t_669502fa23ea1f 342-355
+  s_9e15f5b7ec3308::t_6aad83a990f395 456-465
+  s_9e15f5b7ec3308::t_0beee68e8c1f52 3
+  s_9e15f5b7ec3308::t_62d9aba9959e01 99
+  s_9e15f5b7ec3308::t_25e20e704b0b19 234
+  s_9e15f5b7ec3308::t_a550f3c87e79b1 133
+  s_9e15f5b7ec3308::t_d9e80ae702c06f 276-279,290
+  s_9e15f5b7ec3308::t_d2be089e72ab6b 467-469,480
+  s_9e15f5b7ec3308::t_9332471a1e792a 17,34
+  s_9e15f5b7ec3308::t_ef9adfbaf64645 19-24
+  s_9e15f5b7ec3308::t_e9bba43112f345 94-98
+  s_9e15f5b7ec3308::t_04557806a95ef4 275,280-289,291-295,307-308
+  s_9e15f5b7ec3308::t_b058c3857623fa 466,470-479,481-485,520-521
+  s_9e15f5b7ec3308::t_73a575a62cef36 226-233,235-245,257-258
+  s_9e15f5b7ec3308::t_11077cf9aaea8c 367-399,434-435
+  s_9e15f5b7ec3308::t_3c26258c7b7bfe 411,413-417,426,433
+  s_9e15f5b7ec3308::t_d3db1f0353a0a9 412,418-425,427-430
+  s_9e15f5b7ec3308::t_34f013cd81c9e5 431,497-519
+  s_9e15f5b7ec3308::t_9687f80b61b5ce 432
+src/modules/Automation/handlers/automation/handleAddAutomationPoint.ts
+  s_9e15f5b7ec3308::t_9b2bd9018d9fe8 1,3,6-8,11-12,22-75,78-80
+  s_9e15f5b7ec3308::t_e90a4534e005c8 81,85,92,95
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_9e15f5b7ec3308::t_892cc648ab0054 1-2,18-34,50-78,194-198,226-227,278-279,293-294
+src/modules/Automation/useCases/automation/isLinearGainAutomationLane.ts
+  s_9e15f5b7ec3308::t_f656b416514b20 1-15
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_9e15f5b7ec3308::t_1c276959531a8a 5,17-49,102
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_9e15f5b7ec3308::t_2786185001296d 2,37,71,543-549,554-555
+src/modules/CrdtDocument/useCases/__tests__/previewCommandBatch.spec.ts
+  s_9e15f5b7ec3308::t_aa68848945cbd3 41-53,518,522,534
+src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts
+  s_9e15f5b7ec3308::t_6f99004a2bf295 46-57,62,64,78-95
+  s_9e15f5b7ec3308::t_f18e8951ba2db1 1,5
+  s_9e15f5b7ec3308::t_a21cd3ecc99c20 115-135
+  s_9e15f5b7ec3308::t_1d3eb9ec05fcff 96-114
+src/modules/AudioAnalysis/handlers/analysis/__tests__/handleAutoFixMix.spec.ts
+  s_9e15f5b7ec3308::t_99d5f58bb4c38a 9-20,223-224,226-227,532
+src/modules/Command/useCases/executeAppAction.ts
+  s_9e15f5b7ec3308::t_b07c2ba3e0b0ef 117,256,259
+src/modules/AiRuntime/models/Tools/Track.ts
+  s_9e15f5b7ec3308::t_1b5fe1dc3ba4e9 1-6,66,69-77,79
+src/utils/audioLevelLaw.ts
+  s_9e15f5b7ec3308::t_b70bb161660c5b 78-86,153-376
+src/modules/Arrangement/handlers/clip/handleSetClipGain.ts
+  s_9e15f5b7ec3308::t_6c27baa56bfa29 61-66,68
+  s_9e15f5b7ec3308::t_af16091d6df3ce 1,3,11-28,32,41,43-44,46-47,57-60,67,69-70,72,75,105-106
+  s_9e15f5b7ec3308::t_02354a8023f213 31
+  s_9e15f5b7ec3308::t_cb74bc42ad71e3 48-50,52-53
+  s_9e15f5b7ec3308::t_c546a49d27c828 8
+  s_9e15f5b7ec3308::t_3f7f95659c898f 33-40,42,51,54
+  s_9e15f5b7ec3308::t_5e93a59d340938 74,76-86
+  s_9e15f5b7ec3308::t_1befe5e61b1244 87-93,99-100,107-114,122-129
+  s_9e15f5b7ec3308::t_a3f9b061916d74 94-98
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_9e15f5b7ec3308::t_48b3ef90f12c07 1,620-628,639-644
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  s_9e15f5b7ec3308::t_fada7f64793244 154-156,159-161
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_9e15f5b7ec3308::t_901714b7649c45 30-37,117-137,470-477,538-541,544-555,560-565,767,769-774,869,871-876,981,987-992,997,1003-1008
+src/utils/handlerContract.ts
+  s_9e15f5b7ec3308::t_b974194c3ad206 1189-1193,1200-1208,1472-1478,1482-1487,1664-1674,1685-1690,1790-1800,1803-1808,1947-1953,1956-1961,2003-2021,2787-2791
+evidence/agent-campaign/manifest.json
+  s_9e15f5b7ec3308::t_15ce8e51015220 178,202,226,286
+src/modules/AiRuntime/models/Tools/__tests__/MidiAutomationRouting.spec.ts
+  s_9e15f5b7ec3308::t_302103f0cd0e6e 30-34,40-54,61-65
+src/modules/AiRuntime/useCases/__tests__/gainSchemaCeilingParity.spec.ts
+  s_9e15f5b7ec3308::t_0f1f0ef71568be 4,21-27,46-56,87-90,93,95-150,155-166,169,173-174,176-177
+release/open-source-inventory.json
+  s_9e15f5b7ec3308::t_77faf3b91032f9 1204
+src/modules/Arrangement/handlers/__tests__/projectTrackThroughPriorBatchActions.spec.ts
+  s_9e15f5b7ec3308::t_eca3b30a0197a8 96-108
+  s_9e15f5b7ec3308::t_b573ee3a34a195 7
+  s_9e15f5b7ec3308::t_8356c2ed4e5ee0 116-117
+  s_9e15f5b7ec3308::t_99d19f879fdcb2 3
+  s_9e15f5b7ec3308::t_5586f49ea6555c 109-115,118-124
+src/modules/Arrangement/handlers/device/__tests__/handleSetSend.spec.ts
+  s_9e15f5b7ec3308::t_223b4660fb5cfd 3-4
+  s_9e15f5b7ec3308::t_7610ba37a1687f 132-170
+src/modules/Transport/handlers/transport/handleRestoreMasterGain.ts
+  s_9e15f5b7ec3308::t_eb39671dd56ba0 6,11-22
+src/modules/Transport/handlers/transport/projectMasterGainThroughPriorBatchActions.ts
+  s_9e15f5b7ec3308::t_79090af50c9429 1-6,14-21,23
+  s_9e15f5b7ec3308::t_362cf14804a68a 22
+  s_9e15f5b7ec3308::t_ece18057abd893 7-13
+  s_9e15f5b7ec3308::t_67c3abed4ace6d 24-47
+src/modules/Arrangement/handlers/clip/__tests__/handleSetClipGain.spec.ts
+  s_9e15f5b7ec3308::t_ef47a94a4252da 76-97
+  s_9e15f5b7ec3308::t_195c282ed291c6 3-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5c476c9215301d16fcf5875a65a9074f3d4d4a79",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
