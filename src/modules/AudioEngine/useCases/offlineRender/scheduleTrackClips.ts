@@ -132,10 +132,10 @@ export type ScheduleTrackClipsInput = {
     /** Caller-owned cancellation for freeze/bounce scheduling. */
     abortSignal?: AbortSignal;
     /**
-     * The render's one frame scheduler, owned by whoever created this
-     * `offlineCtx` and handed down so every frame-addressed lane in the render
-     * shares it. Omitted means this caller cannot write such a lane at all;
-     * `scheduleTrackAutomation` then fails closed instead of dropping it.
+     * The render's frame scheduler for its `offlineCtx`, handed down so every
+     * frame-addressed lane in the render writes through the context's one
+     * shared instance. Omitted means this caller cannot write such a lane at
+     * all; `scheduleTrackAutomation` then fails closed instead of dropping it.
      */
     scheduleFrame?: ScheduleCall;
 };
@@ -329,9 +329,10 @@ export async function scheduleTrackClips({
             // Automation's own law, read here rather than re-derived in the
             // scheduler — the same reason `deviceParameterLaw` is injected.
             resolveLaneCeiling: getAutomationLaneCeiling,
-            // The render's one frame scheduler, from the root that owns the
-            // context. A frame-addressed device lane cannot be written without
-            // it and the scheduler fails closed rather than dropping the lane.
+            // The frame scheduler for this context, threaded down by the root
+            // that created it. A frame-addressed device lane cannot be written
+            // without it and the scheduler fails closed rather than dropping
+            // the lane.
             scheduleFrame,
         });
     }

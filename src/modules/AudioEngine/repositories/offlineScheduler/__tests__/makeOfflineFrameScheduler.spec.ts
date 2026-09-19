@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
+import { createFaustDevice } from '../../faustDeviceFactory';
 import { makeOfflineFrameScheduler } from '../makeOfflineFrameScheduler';
 
 const SAMPLE_RATE = 48_000;
@@ -14,6 +15,8 @@ type SuspendRecord = {
 
 type ContextDouble = {
     ctx: OfflineAudioContext;
+    /** The class `ctx` instantiates, for the `instanceof OfflineAudioContext` gates under test. */
+    ContextClass: new () => unknown;
     suspends: SuspendRecord[];
     resumeCount: () => number;
 };
@@ -28,35 +31,50 @@ type ContextDoubleOptions = {
     resumeMode?: ResumeMode;
 };
 
-/** Controllable OfflineAudioContext double: records every suspend(time) and settles it on demand. */
+/**
+ * Controllable OfflineAudioContext double: records every suspend(time) and
+ * settles it on demand. A second suspend for a frame already registered throws,
+ * as the platform's does — the refusal the scheduler's fallback would turn into
+ * an immediate, early firing.
+ */
 function makeContextDouble(options: ContextDoubleOptions = {}): ContextDouble {
     const suspends: SuspendRecord[] = [];
-    const sampleRate = options.sampleRate ?? SAMPLE_RATE;
+    const resolvedSampleRate = options.sampleRate ?? SAMPLE_RATE;
     const suspendMode = options.suspendMode ?? 'defer';
     const resumeMode = options.resumeMode ?? 'resolve';
     let resumeCount = 0;
 
-    const ctx = {
-        sampleRate,
-        currentTime: options.currentTime ?? 0,
+    class OfflineAudioContextDouble {
+        readonly sampleRate = resolvedSampleRate;
+        currentTime = options.currentTime ?? 0;
+
         suspend(time: number): Promise<void> {
             if (suspendMode === 'throw') {
                 throw new Error('suspend threw synchronously');
             }
+            if (suspends.some((record) => record.time === time)) {
+                throw new Error(`cannot schedule a suspend at frame ${Math.round(time * resolvedSampleRate)}`);
+            }
             return new Promise<void>((resolve, reject) => {
                 suspends.push({ time, resolve, reject });
             });
-        },
+        }
+
         resume(): Promise<void> {
             resumeCount += 1;
             if (resumeMode === 'reject') {
                 return Promise.reject(new Error('resume rejected after the frame ran'));
             }
             return Promise.resolve();
-        },
-    };
+        }
+    }
 
-    return { ctx: ctx as unknown as OfflineAudioContext, suspends, resumeCount: () => resumeCount };
+    return {
+        ctx: new OfflineAudioContextDouble() as unknown as OfflineAudioContext,
+        ContextClass: OfflineAudioContextDouble,
+        suspends,
+        resumeCount: () => resumeCount,
+    };
 }
 
 async function flushMicrotasks(): Promise<void> {
@@ -81,6 +99,57 @@ describe('makeOfflineFrameScheduler — immediate path', () => {
         expect(inPast).toHaveBeenCalledTimes(1);
         expect(withoutTime).toHaveBeenCalledTimes(1);
         expect(suspends).toHaveLength(0);
+    });
+});
+
+describe('makeOfflineFrameScheduler — one scheduler per OfflineAudioContext', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('returns the same scheduler for a context and a distinct one for another context', () => {
+        const first = makeContextDouble();
+        const second = makeContextDouble();
+
+        expect(makeOfflineFrameScheduler(first.ctx)).toBe(makeOfflineFrameScheduler(first.ctx));
+        expect(makeOfflineFrameScheduler(first.ctx)).not.toBe(makeOfflineFrameScheduler(second.ctx));
+    });
+
+    it('runs a Faust note and a frame-addressed write due on the same frame together, firing neither early', async () => {
+        const { ctx, ContextClass, suspends } = makeContextDouble();
+        vi.stubGlobal('OfflineAudioContext', ContextClass);
+        const keyOn = vi.fn();
+        const write = vi.fn();
+
+        // The Faust caller reaches the scheduler through the factory's own
+        // offline branch, exactly as `createFaustDevice` builds its
+        // `scheduleCall` — not a private copy of the scheduler.
+        const device = await createFaustDevice({
+            ctx,
+            faustModuleId: 'faust',
+            compileFaustDSP: vi.fn().mockResolvedValue(true),
+            createFaustNode: vi.fn().mockResolvedValue({ keyOn, keyOff: vi.fn() }),
+        });
+        // The frame-addressed caller registers its write the way
+        // `scheduleCurveWritePoints` does: through the scheduler for this
+        // context, which is what the render root asks the factory for.
+        const scheduleFrame = makeOfflineFrameScheduler(ctx);
+
+        device!.wamControls!.keyOn!(0, 60, 100, 1);
+        scheduleFrame(1, write);
+
+        // Both calls share the context's one scheduler, so one suspend covers
+        // the frame. With a scheduler apiece the second suspend would throw and
+        // its fallback would fire `write` at once, at frame 0.
+        expect(suspends).toHaveLength(1);
+        expect(keyOn).not.toHaveBeenCalled();
+        expect(write).not.toHaveBeenCalled();
+
+        suspends[0]!.resolve();
+        await flushMicrotasks();
+
+        expect(keyOn).toHaveBeenCalledWith(0, 60, 100);
+        expect(write).toHaveBeenCalledTimes(1);
     });
 });
 

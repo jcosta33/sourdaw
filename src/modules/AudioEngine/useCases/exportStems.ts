@@ -234,10 +234,9 @@ export const exportStems: ExportStemsFn = async function exportStems(
             checkCancel();
 
             const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
-            // One frame scheduler for this stem's context, created with it: a
-            // second scheduler over the same context would collide on every
-            // shared suspend frame, and the loser would reach its writes only
-            // through the rejection fallback, at the wrong time.
+            // The frame scheduler for this stem's context. One instance per
+            // `OfflineAudioContext` comes back from the factory, so this stem's
+            // Faust devices share it rather than colliding on shared frames.
             const scheduleFrame = makeOfflineFrameScheduler(offlineCtx);
             const pendingWorkletEvents: PendingWorkletEvent[] = [];
             const boundPads = toasterParentIds.has(track.id)

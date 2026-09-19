@@ -177,9 +177,9 @@ export async function renderTrackSubgraphOffline({
         return null;
     }
     const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
-    // One frame scheduler for this context, created with it: a second suspend
-    // for a frame one scheduler already covers throws, so the freeze/bounce
-    // path shares one rather than creating one per device or per track.
+    // The frame scheduler for this context. One instance per
+    // `OfflineAudioContext` comes back from the factory, so this path's Faust
+    // devices share it rather than racing a second suspend for the same frame.
     const scheduleFrame = makeOfflineFrameScheduler(offlineCtx);
 
     const sidechainRoutes = sidechainStore.value?.routes ?? [];

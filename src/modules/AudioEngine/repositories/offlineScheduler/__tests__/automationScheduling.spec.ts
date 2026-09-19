@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { clampDeviceParameterValue, quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
 import { evaluateAutomationCurve } from '#/utils/automationCurve';
+import { slewStep } from '#/utils/automationSlew';
 
 import { asBaseAudioContext, createMockAudioContext } from '../../../../../helpers/__tests__/audioContext.mock';
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
@@ -12,7 +13,7 @@ import { makeCeilingClipCurve } from '../../devices/dynamics/makeCeilingClipCurv
 import { WebAudioDeviceStrategy } from '../../deviceStrategy/WebAudioDeviceStrategy';
 import { scheduleAutomationOnParam } from '../scheduleAutomationOnParam';
 
-import { scheduleTrackAutomationFixture } from './scheduleTrackAutomationFixture';
+import { SHIPPING_GRAIN_SLEW_TICK_SECONDS, scheduleTrackAutomationFixture } from './scheduleTrackAutomationFixture';
 
 type ParamProperty = 'frequency' | 'Q' | 'gain';
 type ExpectedParamTarget = readonly [node: string | number, property: ParamProperty, scale: number, offset: number];
@@ -1225,7 +1226,7 @@ describe('scheduleTrackAutomation — a frame-addressed ceiling lane (#4437)', (
         };
     }
 
-    it('writes the ceiling gain and the rebuilt clip curve at each point, clamped by the device law', () => {
+    it('writes the ceiling gain and the rebuilt clip curve on the device slew grid, clamped by the device law', () => {
         const node = makeLimiterNode();
         const ceiling = node.namedNodes!.ceiling as GainNode;
         const clipper = node.namedNodes!.clipper as unknown as { curve: Float32Array | null };
@@ -1244,17 +1245,44 @@ describe('scheduleTrackAutomation — a frame-addressed ceiling lane (#4437)', (
             scheduleFrame,
         });
 
-        // 120 bpm → 0.5 s/beat, so the two points land at 0 s and 2 s, in order.
-        expect(calls.map((call) => call.time)).toEqual([0, 2]);
+        // 120 bpm → 0.5 s/beat: a 2 s linear ramp from -0.3 dB to -5 dB. The
+        // lane is device-slewed like every other device parameter (live runs
+        // `slewStep` on all of them), so its compiled points ride the 10 ms
+        // slew grid rather than the two source-point times. The old two-point
+        // step held -0.3 dB for the whole ramp and then jumped.
+        expect(calls[1]!.time).toBeCloseTo(SHIPPING_GRAIN_SLEW_TICK_SECONDS, 9);
+        expect(calls[100]!.time).toBeCloseTo(1, 9);
+        expect(calls.at(-1)!.time!).toBeGreaterThan(2);
+
+        // The value partway through the ramp is the shared slew law's, not the
+        // pre-point value: the one-pole glide
+        // y[n] = clamp(y[n-1] + α·(x(t_n) − y[n-1])) over x(t) = -0.3 → -5 dB,
+        // clamped to the descriptor's -3..0 after each step. α = 0.4 and the
+        // tick is 10 ms, so 1.0 s is tick 100.
+        const descriptorClamp = (value: number): number => Math.min(0, Math.max(-3, value));
+        const rampDb = (timeSeconds: number): number => -0.3 + ((-5 - -0.3) * timeSeconds) / 2;
+        let expectedDb = descriptorClamp(rampDb(0));
+        for (let tick = 1; tick <= 100; tick++) {
+            expectedDb = descriptorClamp(slewStep(expectedDb, rampDb(tick * SHIPPING_GRAIN_SLEW_TICK_SECONDS)));
+        }
+        // Strictly between the ramp's endpoints: the pre-point step sits on
+        // -0.3, and a jump straight to the target sits on -3.
+        expect(expectedDb).toBeLessThan(-0.3);
+        expect(expectedDb).toBeGreaterThan(-3);
+
+        const gainAtSlewTick: number[] = [];
         for (const call of calls) {
             call.run();
+            gainAtSlewTick.push(ceiling.gain.value);
         }
+
+        expect(gainAtSlewTick[100]).toBeCloseTo(dbToGain(expectedDb), 12);
 
         const clampedGain = dbToGain(-3);
         expect(ceiling.gain.value).toBeCloseTo(clampedGain, 12);
         expect(clipper.curve).toEqual(makeCeilingClipCurve(clampedGain));
-        // The static factory curve for -0.3 dB is not what the later point
-        // writes: a static-only write reds here.
+        // The static factory curve for -0.3 dB is not what the later points
+        // write: a static-only write reds here.
         expect(clipper.curve).not.toEqual(makeCeilingClipCurve(dbToGain(-0.3)));
     });
 

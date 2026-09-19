@@ -297,12 +297,10 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         }
 
         const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
-        // Exactly one frame scheduler per OfflineAudioContext, created here at
-        // the root that owns the context and threaded into every track's
-        // scheduling. Registering a suspend for a frame one already covers
-        // throws, so a second scheduler over the same context — one per track,
-        // device or call — would reach its frames only through the rejection
-        // fallback, at the wrong time.
+        // The frame scheduler for this context, threaded into every track's
+        // scheduling. `makeOfflineFrameScheduler` returns one instance per
+        // `OfflineAudioContext`, so the Faust devices created inside the render
+        // share this one instead of racing a second suspend for the same frame.
         const scheduleFrame = makeOfflineFrameScheduler(offlineCtx);
         const masterGain = offlineCtx.createGain();
         masterGain.gain.value = masterGainValue;

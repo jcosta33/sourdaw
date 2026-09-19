@@ -11,11 +11,12 @@
  * `suspend` (#4437).
  *
  * That write needs the render's scheduler. The root that owns the
- * `OfflineAudioContext` creates exactly one and threads it down, but the
- * recording projection (`projectStripAutomationWrites`) runs the same lane laws
- * with no context of its own and passes none. Dropping the lane there would
- * report success with the lane's moves missing, so the render fails closed with
- * this message instead.
+ * `OfflineAudioContext` asks the factory for it and threads it down; the factory
+ * returns one shared instance per context, but the recording projection
+ * (`projectStripAutomationWrites`) runs the same lane laws with no context of
+ * its own and passes none. Dropping the lane there would report success with
+ * the lane's moves missing, so the render fails closed with this message
+ * instead.
  *
  * `contributesAudio` is the whole of the second half: a strip whose output
  * cannot reach the print contributes silence by construction, so refusing over

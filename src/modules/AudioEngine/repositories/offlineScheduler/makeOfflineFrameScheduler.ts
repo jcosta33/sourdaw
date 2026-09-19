@@ -4,9 +4,26 @@
  * Irreducible reason for batching: registering `suspend(time)` for a frame that
  * already has one scheduled throws, so every call due on one quantised sample
  * frame must ride a single suspend.
+ *
+ * Irreducible reason for one scheduler per context: the same throw makes a
+ * second scheduler over one `OfflineAudioContext` fatal, not merely redundant.
+ * Each scheduler answers the throw with its own fallback, which fires that
+ * frame's calls immediately, so a Faust note due at 1.0 s would sound at frame
+ * 0. That is why the sharing is guaranteed here, at the factory, instead of
+ * being a rule every caller has to remember: no caller can obtain a second
+ * scheduler for a context, however many times it asks or from where.
  */
 
 export type ScheduleCall = (time: number | undefined, call: () => void) => void;
+
+/**
+ * The one scheduler per `OfflineAudioContext`, for the context's whole
+ * lifetime. Weak so a finished render's context is collectable.
+ *
+ * Deliberately unreachable except through the factory below: that is what makes
+ * the one-suspend-per-frame rule structural rather than conventional.
+ */
+const schedulersByContext = new WeakMap<OfflineAudioContext, ScheduleCall>();
 
 /**
  * Offline scheduler: batch all note events sharing a sample frame behind a
@@ -16,8 +33,23 @@ export type ScheduleCall = (time: number | undefined, call: () => void) => void;
  * which was caught and fired the note immediately at the wrong time. Quantising
  * `time` to the context sample frame collapses near-duplicates so each distinct
  * frame gets exactly one suspend whose handler runs every queued call in order.
+ *
+ * Returns the context's existing scheduler when it already has one, so a Faust
+ * device's note calls and a frame-addressed automation write share one batch
+ * per frame instead of racing two suspends for it.
  */
 export function makeOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCall {
+    const existing = schedulersByContext.get(ctx);
+    if (existing) {
+        return existing;
+    }
+
+    const schedule = buildOfflineFrameScheduler(ctx);
+    schedulersByContext.set(ctx, schedule);
+    return schedule;
+}
+
+function buildOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCall {
     const { sampleRate } = ctx;
     // Keyed by quantised sample frame. Each entry holds every call due at that
     // frame; the first call to a frame registers a single suspend for it.

@@ -110,8 +110,10 @@ export type ScheduleTrackAutomationInput = {
     slewTickSeconds: number;
     deviceParameterLaw: OfflineDeviceAutomationLaw;
     /**
-     * The offline render's single frame scheduler, created once per
-     * `OfflineAudioContext` by the render root and threaded down.
+     * The offline render's frame scheduler for this context, threaded down by
+     * the render root. `makeOfflineFrameScheduler` returns the context's single
+     * shared instance, so a Faust device's note calls and these writes ride the
+     * same suspend per frame no matter which caller asks.
      *
      * A frame-addressed lane (see `OfflineAutomationBinding`'s `curveWrite`
      * kind) has no `AudioParam`, so its writes land on this. Optional because
@@ -186,13 +188,16 @@ function resolveLaneValueBound(
  * Write a frame-addressed lane's compiled points through the render's frame
  * scheduler.
  *
- * A value with no `AudioParam` cannot be ramped: each point rebuilds the
- * device-side curve and Web Audio holds it until the next point, so the writes
- * are discrete and land on the frames the compiled points fall on. The
- * `compensationDelaySec` shift is `scheduleAutomationOnParam`'s, for its reason
- * (M-038): clip audio is shifted by the track's latency compensation, so the
- * automation that shapes it must shift identically, and the region-start seed
- * is re-anchored at 0 so the gap the shift opens holds the lane's opening value.
+ * A value with no `AudioParam` cannot be ramped: each compiled point rebuilds
+ * the device-side curve and Web Audio holds it until the next point, so the
+ * writes are discrete and land on the frames the compiled points fall on. The
+ * caller compiles those points with the same device slew the other
+ * device-parameter branches use, so they are the glided grid the monitor
+ * follows rather than one write per source point. The `compensationDelaySec`
+ * shift is `scheduleAutomationOnParam`'s, for its reason (M-038): clip audio is
+ * shifted by the track's latency compensation, so the automation that shapes it
+ * must shift identically, and the region-start seed is re-anchored at 0 so the
+ * gap the shift opens holds the lane's opening value.
  */
 function scheduleCurveWritePoints(
     targets: OfflineCurveWriteTargets,
@@ -484,7 +489,11 @@ export function scheduleTrackAutomation({
                 }
                 // The lane's declared range runs before the device law, exactly
                 // as it does for the other two kinds (#2538); `scheduleCurveWritePoints`
-                // applies the device clamp to every emitted point.
+                // applies the device clamp to every emitted point. The slew is
+                // the other branches' too: live runs `slewStep` then the
+                // declared-range clamp on every device parameter including this
+                // one (`applyAutomation`), so without it the export stepped the
+                // ceiling at each point while the monitor glided between them.
                 const events = compileAutomationEvents(
                     points,
                     durationSeconds,
@@ -492,7 +501,12 @@ export function scheduleTrackAutomation({
                     changes,
                     regionStartSeconds,
                     projectBeatToSeconds,
-                    { ...boundOptions, activeWindowSeconds, valueScale: laneScale }
+                    {
+                        ...boundOptions,
+                        slew: { ...deviceSlewGrid, clampStep, quantiseEmit },
+                        activeWindowSeconds,
+                        valueScale: laneScale,
+                    }
                 );
                 // A write the render cannot reach is dropped, for a reason the
                 // AudioParam kinds do not have: `OfflineAudioContext.suspend`

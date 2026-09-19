@@ -9,7 +9,11 @@ import { createOfflineDeviceNode, type OfflineDeviceNode } from '../../deviceNod
 import { makeCeilingClipCurve } from '../../devices/dynamics/makeCeilingClipCurve';
 import { WebAudioDeviceStrategy } from '../../deviceStrategy/WebAudioDeviceStrategy';
 
-import { descriptorFixtureDeviceLaw, scheduleTrackAutomationFixture } from './scheduleTrackAutomationFixture';
+import {
+    descriptorFixtureDeviceLaw,
+    SHIPPING_GRAIN_SLEW_TICK_SECONDS,
+    scheduleTrackAutomationFixture,
+} from './scheduleTrackAutomationFixture';
 
 /**
  * The frame scheduler double: records every `(time, call)` and exposes the
@@ -253,8 +257,14 @@ describe('builtin device automation units reproduction (#3738)', () => {
             scheduleFrame,
         });
 
-        // One write per compiled point, in time order, at 120 bpm's 0.5s/beat.
-        expect(calls.map((call) => call.time)).toEqual([0, 2]);
+        // The ceiling lane is device-slewed like every other device parameter,
+        // so its compiled points ride the 10 ms slew grid across the 2 s ramp
+        // and on to the settle hold rather than landing as two discrete writes
+        // at the point times.
+        expect(calls.length).toBeGreaterThan(2);
+        expect(calls[0]!.time).toBe(0);
+        expect(calls[1]!.time).toBeCloseTo(SHIPPING_GRAIN_SLEW_TICK_SECONDS, 9);
+        expect(calls.at(-1)!.time!).toBeGreaterThan(2);
         for (const call of calls) {
             call.run();
         }
