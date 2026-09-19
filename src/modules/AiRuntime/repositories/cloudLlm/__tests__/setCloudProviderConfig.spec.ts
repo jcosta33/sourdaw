@@ -134,6 +134,7 @@ describe('setCloudProviderConfig', () => {
             baseUrl: 'http://localhost:1234/v1',
             authentication: 'none',
             reasoningEffort: null,
+            thinking: null,
         });
     });
 
@@ -198,6 +199,7 @@ describe('setCloudProviderConfig', () => {
             baseUrl: 'https://api.openai.com/v1',
             authentication: 'api-key',
             reasoningEffort: 'high',
+            thinking: null,
         });
     });
 
@@ -351,6 +353,7 @@ describe('setCloudProviderConfig', () => {
             baseUrl: 'http://localhost:1234/v1',
             authentication: 'none',
             reasoningEffort: null,
+            thinking: null,
         });
         expect(mocks.invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
             sessionId: SESSION_ID,
@@ -406,8 +409,44 @@ describe('setCloudProviderConfig', () => {
             baseUrl: null,
             authentication: 'api-key',
             reasoningEffort: null,
+            thinking: null,
         });
         expect(isCloudAvailable()).toBe(true);
+    });
+
+    it('carries the configured extended thinking on the Anthropic runtime and status', async () => {
+        mockProviderGateway({ probeBody: '{"data":[]}' });
+
+        await setCloudProviderConfig({
+            provider: 'anthropic',
+            model: 'claude-test',
+            authentication: 'api-key',
+            apiKey: 'sk-anthropic-test',
+            thinking: { type: 'enabled', budgetTokens: 2048 },
+        });
+
+        expect(getCloudProviderRuntime()).toMatchObject({ thinking: { type: 'enabled', budgetTokens: 2048 } });
+        expect(hostedLlmProviderStatusStore.value).toEqual({
+            provider: 'anthropic',
+            model: 'claude-test',
+            baseUrl: null,
+            authentication: 'api-key',
+            reasoningEffort: null,
+            thinking: { type: 'enabled', budgetTokens: 2048 },
+        });
+    });
+
+    it('lacks a thinking key on the Anthropic runtime when unconfigured', async () => {
+        mockProviderGateway({ probeBody: '{"data":[]}' });
+
+        await setCloudProviderConfig({
+            provider: 'anthropic',
+            model: 'claude-test',
+            authentication: 'api-key',
+            apiKey: 'sk-anthropic-test',
+        });
+
+        expect(getCloudProviderRuntime()).not.toHaveProperty('thinking');
     });
 
     it('revokes active requests and closes the old session during replacement', async () => {
@@ -521,6 +560,7 @@ describe('setCloudProviderConfig', () => {
             baseUrl: 'https://models.example.test/v1',
             authentication: 'api-key',
             reasoningEffort: null,
+            thinking: null,
         });
     });
 
@@ -610,6 +650,7 @@ describe('setCloudProviderConfig', () => {
             baseUrl: null,
             authentication: 'api-key',
             reasoningEffort: null,
+            thinking: null,
         });
         expect(mocks.invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
             sessionId: SESSION_ID,
@@ -694,6 +735,7 @@ describe('setCloudProviderConfig', () => {
                 baseUrl: null,
                 authentication: 'api-key',
                 reasoningEffort: null,
+                thinking: null,
             });
             expect(mocks.invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
                 sessionId: SESSION_ID,

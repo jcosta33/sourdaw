@@ -14,6 +14,7 @@ import { aiBackendPreferenceStore, hostedLlmProviderStatusStore, llmStatusStore 
 import {
     configureCloudProvider,
     getDefaultHostedAnthropicModel,
+    HOSTED_ANTHROPIC_THINKING_MIN_BUDGET_TOKENS,
     HOSTED_REASONING_EFFORTS,
     listHostedAnthropicModels,
     removeCloudProvider,
@@ -52,6 +53,8 @@ const HOSTED_MODEL_OPTIONS: Record<Exclude<HostedProviderSelection, 'openai-comp
 
 const CUSTOM_MODEL_VALUE = 'custom';
 const MAX_API_KEY_BYTES = 16 * 1024;
+/** What the budget field offers first once a fixed thinking budget is chosen. */
+const DEFAULT_THINKING_BUDGET_TOKENS = 4096;
 
 const DEFAULT_MODELS: Record<HostedProviderSelection, string> = {
     anthropic: getDefaultHostedAnthropicModel(),
@@ -60,9 +63,14 @@ const DEFAULT_MODELS: Record<HostedProviderSelection, string> = {
 };
 
 type HostedReasoningEffortSelection = (typeof HOSTED_REASONING_EFFORTS)[number];
+type HostedThinkingSelection = '' | 'adaptive' | 'enabled';
 
 function isHostedProviderSelection(value: string): value is HostedProviderSelection {
     return value === 'anthropic' || value === 'openai' || value === 'openai-compatible';
+}
+
+function isHostedThinkingSelection(value: string): value is HostedThinkingSelection {
+    return value === '' || value === 'adaptive' || value === 'enabled';
 }
 
 function isHostedReasoningEffortSelection(value: string): value is HostedReasoningEffortSelection {
@@ -118,6 +126,13 @@ export const AiSection = (): ReactElement => {
     const [reasoningEffort, setReasoningEffort] = useState<HostedReasoningEffortSelection | ''>(
         configuredProvider?.reasoningEffort ?? ''
     );
+    const configuredThinking = configuredProvider?.thinking ?? null;
+    const [thinking, setThinking] = useState<HostedThinkingSelection>(configuredThinking?.type ?? '');
+    const [thinkingBudget, setThinkingBudget] = useState(
+        String(
+            configuredThinking?.type === 'enabled' ? configuredThinking.budgetTokens : DEFAULT_THINKING_BUDGET_TOKENS
+        )
+    );
     const [configurationError, setConfigurationError] = useState<string | null>(null);
     const [configurationPending, setConfigurationPending] = useState(false);
     const hostedProvidersAvailable = getPlatformCapabilities().isDesktopApp;
@@ -152,6 +167,15 @@ export const AiSection = (): ReactElement => {
         }
         return 'None';
     };
+    const draftThinking = (): { type: 'adaptive' } | { type: 'enabled'; budgetTokens: number } | undefined => {
+        if (provider !== 'anthropic' || thinking === '') {
+            return undefined;
+        }
+        if (thinking === 'adaptive') {
+            return { type: 'adaptive' };
+        }
+        return { type: 'enabled', budgetTokens: Number(thinkingBudget) };
+    };
     const saveHostedProvider = async (): Promise<void> => {
         setConfigurationPending(true);
         try {
@@ -162,6 +186,7 @@ export const AiSection = (): ReactElement => {
                 authentication,
                 apiKey,
                 reasoningEffort: provider === 'openai' && reasoningEffort !== '' ? reasoningEffort : undefined,
+                thinking: draftThinking(),
             });
             setConfigurationError(null);
             setApiKey('');
@@ -247,6 +272,8 @@ export const AiSection = (): ReactElement => {
                                 setAuthentication('api-key');
                                 setApiKey('');
                                 setReasoningEffort('');
+                                setThinking('');
+                                setThinkingBudget(String(DEFAULT_THINKING_BUDGET_TOKENS));
                                 setConfigurationError(null);
                             }}
                             className="h-8 rounded-md border border-input bg-background px-2 text-xs"
@@ -335,6 +362,48 @@ export const AiSection = (): ReactElement => {
                                     </option>
                                 ))}
                             </DawCompactSelect>
+                        </div>
+                    ) : null}
+                    {provider === 'anthropic' ? (
+                        <div className="mb-1.5">
+                            <label
+                                htmlFor="hosted-ai-thinking"
+                                className="mb-1 block text-[10px] text-muted-foreground"
+                            >
+                                Extended thinking
+                            </label>
+                            <DawCompactSelect
+                                id="hosted-ai-thinking"
+                                value={thinking}
+                                onChange={(event) => {
+                                    const nextThinking = event.target.value;
+                                    if (!isHostedThinkingSelection(nextThinking)) {
+                                        return;
+                                    }
+                                    setThinking(nextThinking);
+                                    setConfigurationError(null);
+                                }}
+                                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                                aria-label="Extended thinking"
+                            >
+                                <option value="">Provider default</option>
+                                <option value="adaptive">Adaptive</option>
+                                <option value="enabled">Enabled (fixed budget)</option>
+                            </DawCompactSelect>
+                            {thinking === 'enabled' ? (
+                                <Input
+                                    id="hosted-ai-thinking-budget"
+                                    type="number"
+                                    min={HOSTED_ANTHROPIC_THINKING_MIN_BUDGET_TOKENS}
+                                    value={thinkingBudget}
+                                    onChange={(event) => {
+                                        setThinkingBudget(event.target.value);
+                                        setConfigurationError(null);
+                                    }}
+                                    className="h-8 text-xs font-mono mt-1.5"
+                                    aria-label="Thinking budget tokens"
+                                />
+                            ) : null}
                         </div>
                     ) : null}
                     {provider === 'openai-compatible' ? (

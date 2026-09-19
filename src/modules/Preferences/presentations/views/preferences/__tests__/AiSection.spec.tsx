@@ -50,11 +50,13 @@ vi.mock('#/modules/AiRuntime/stores', () => ({
     llmStatusStore: {},
 }));
 
-// This tuple literal mirrors HOSTED_REASONING_EFFORTS in
+// This tuple literal mirrors HOSTED_REASONING_EFFORTS, and the thinking minimum mirrors
+// HOSTED_ANTHROPIC_THINKING_MIN_BUDGET_TOKENS, both in
 // src/modules/AiRuntime/models/HostedLlmProvider.ts; keep them equal.
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     configureCloudProvider: mocks.configureCloudProvider,
     getDefaultHostedAnthropicModel: () => mocks.catalogModelA.value,
+    HOSTED_ANTHROPIC_THINKING_MIN_BUDGET_TOKENS: 1024,
     HOSTED_REASONING_EFFORTS: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
     listHostedAnthropicModels: () => [mocks.catalogModelA, mocks.catalogModelB],
     removeCloudProvider: mocks.removeCloudProvider,
@@ -146,6 +148,7 @@ describe('AiSection', () => {
             baseUrl: null,
             authentication: 'api-key',
             reasoningEffort: null,
+            thinking: null,
         };
         render(<AiSection />);
 
@@ -224,6 +227,7 @@ describe('AiSection', () => {
             baseUrl: null,
             authentication: 'api-key',
             reasoningEffort: 'high',
+            thinking: null,
         };
         render(<AiSection />);
 
@@ -242,6 +246,75 @@ describe('AiSection', () => {
                 reasoningEffort: 'high',
             });
         });
+    });
+
+    it('shows the extended thinking selector only for the Anthropic provider', () => {
+        render(<AiSection />);
+
+        expect(screen.getByLabelText('Extended thinking')).toHaveValue('');
+        expect(screen.getByRole('option', { name: 'Adaptive' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Enabled (fixed budget)' })).toBeInTheDocument();
+        expect(screen.queryByLabelText('Thinking budget tokens')).not.toBeInTheDocument();
+
+        fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai' } });
+        expect(screen.queryByLabelText('Extended thinking')).not.toBeInTheDocument();
+    });
+
+    it('forwards a fixed thinking budget when saving an Anthropic configuration', async () => {
+        render(<AiSection />);
+
+        fireEvent.change(screen.getByLabelText('Extended thinking'), { target: { value: 'enabled' } });
+        const budget = screen.getByLabelText('Thinking budget tokens');
+        expect(budget).toHaveAttribute('min', '1024');
+        expect(budget).toHaveValue(4096);
+        fireEvent.change(screen.getByLabelText('Hosted AI API key'), { target: { value: 'sk-anthropic-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+        await waitFor(() => {
+            expect(mocks.configureCloudProvider).toHaveBeenCalledExactlyOnceWith({
+                provider: 'anthropic',
+                model: mocks.catalogModelA.value,
+                baseUrl: undefined,
+                authentication: 'api-key',
+                apiKey: 'sk-anthropic-key',
+                reasoningEffort: undefined,
+                thinking: { type: 'enabled', budgetTokens: 4096 },
+            });
+        });
+    });
+
+    it('forwards no extended thinking when the selector is left at Provider default', async () => {
+        render(<AiSection />);
+
+        fireEvent.change(screen.getByLabelText('Hosted AI API key'), { target: { value: 'sk-anthropic-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+        await waitFor(() => {
+            expect(mocks.configureCloudProvider).toHaveBeenCalledExactlyOnceWith({
+                provider: 'anthropic',
+                model: mocks.catalogModelA.value,
+                baseUrl: undefined,
+                authentication: 'api-key',
+                apiKey: 'sk-anthropic-key',
+                reasoningEffort: undefined,
+                thinking: undefined,
+            });
+        });
+    });
+
+    it('seeds the extended thinking selector from a configured Anthropic status', () => {
+        mocks.hostedProvider.value = {
+            provider: 'anthropic',
+            model: mocks.catalogModelA.value,
+            baseUrl: null,
+            authentication: 'api-key',
+            reasoningEffort: null,
+            thinking: { type: 'adaptive' },
+        };
+        render(<AiSection />);
+
+        expect(screen.getByLabelText('Extended thinking')).toHaveValue('adaptive');
+        expect(screen.queryByLabelText('Thinking budget tokens')).not.toBeInTheDocument();
     });
 
     it('requires explicit unauthenticated intent for compatible endpoints and enforces the byte limit', async () => {
@@ -280,6 +353,7 @@ describe('AiSection', () => {
             baseUrl: 'http://localhost:1234/v1',
             authentication: 'none',
             reasoningEffort: null,
+            thinking: null,
         };
         render(<AiSection />);
 

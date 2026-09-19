@@ -10,6 +10,7 @@ type CloudStreamInput = {
     model: string;
     system: string;
     maxTokens: number;
+    thinking?: Record<string, unknown> | null;
     messages: Array<{ role: 'user' | 'assistant'; content: string }>;
     signal: AbortSignal;
     onEvent: (event: unknown) => void;
@@ -28,10 +29,13 @@ type CloudStreamEvent =
           };
       }
     | { type: 'content_block_delta'; delta: { type: 'text_delta'; text: string } }
+    | { type: 'content_block_delta'; delta: { type: 'thinking_delta'; thinking: string } }
+    | { type: 'content_block_delta'; delta: { type: 'signature_delta'; signature: string } }
+    | { type: 'content_block_start'; content_block: { type: string } }
     | {
           type: 'message_delta';
           delta: { stop_reason: string | null; stop_sequence: null };
-          usage?: { output_tokens: number };
+          usage?: { output_tokens: number; output_tokens_details?: { thinking_tokens: number } };
       }
     | { type: 'message_stop' }
     | { type: 'other_event' };
@@ -242,6 +246,100 @@ describe('streamCloudChatCompletion', () => {
             usage: { inputTokens: null, outputTokens: 4, cachedInputTokens: null, reasoningTokens: null },
             provenance: 'provider-reported',
         });
+    });
+
+    it('routes thinking deltas to onReasoning and keeps them out of the answer tokens', async () => {
+        installAnthropicEvents([
+            { type: 'content_block_start', content_block: { type: 'thinking' } },
+            { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'Check the mix first.' } },
+            { type: 'content_block_delta', delta: { type: 'signature_delta', signature: 'signature-bytes' } },
+            { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Lower the vocals.' } },
+            { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null } },
+            { type: 'message_stop' },
+        ]);
+        const onToken = vi.fn();
+        const onReasoning = vi.fn();
+        const onUnknownEvent = vi.fn();
+
+        await streamCloudChatCompletion([{ role: 'user', content: 'test' }], onToken, {
+            onReasoning,
+            onUnknownEvent,
+        });
+
+        expect(onReasoning).toHaveBeenCalledExactlyOnceWith('Check the mix first.');
+        expect(onToken).toHaveBeenCalledExactlyOnceWith('Lower the vocals.');
+        expect(onUnknownEvent).not.toHaveBeenCalled();
+    });
+
+    it('reads the final thinking-token figure as reasoning tokens', async () => {
+        installAnthropicEvents([
+            { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hello' } },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn', stop_sequence: null },
+                usage: { output_tokens: 40, output_tokens_details: { thinking_tokens: 12 } },
+            },
+            { type: 'message_stop' },
+        ]);
+        const onUsage = vi.fn();
+
+        await streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn(), { onUsage });
+
+        expect(onUsage).toHaveBeenCalledExactlyOnceWith({
+            type: 'usage',
+            mode: 'final',
+            usage: { inputTokens: null, outputTokens: 40, cachedInputTokens: null, reasoningTokens: 12 },
+            provenance: 'provider-reported',
+        });
+    });
+
+    it('asks the request builder for no thinking object when the Anthropic runtime configures none', async () => {
+        await streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn(), { maxTokens: 2048 });
+
+        const streamCall = mocks.stream.mock.calls[0];
+        if (!streamCall) {
+            throw new Error('Expected the cloud stream call to have been recorded');
+        }
+        expect(streamCall[0].thinking).toBeNull();
+        expect(streamCall[0].maxTokens).toBe(2048);
+    });
+
+    it('asks for summarized thinking on an adaptive Anthropic runtime', async () => {
+        mocks.getCloudProviderRuntime.mockReturnValue({
+            provider: 'anthropic',
+            authentication: 'api-key',
+            session_id: 'provider-session-00000000000000000000000000000000',
+            model: 'test-model',
+            thinking: { type: 'adaptive' },
+        });
+
+        await streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn(), { maxTokens: 2048 });
+
+        const streamCall = mocks.stream.mock.calls[0];
+        if (!streamCall) {
+            throw new Error('Expected the cloud stream call to have been recorded');
+        }
+        expect(streamCall[0].thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+        expect(streamCall[0].maxTokens).toBe(2048);
+    });
+
+    it('adds a fixed thinking budget on top of the caller output limit', async () => {
+        mocks.getCloudProviderRuntime.mockReturnValue({
+            provider: 'anthropic',
+            authentication: 'api-key',
+            session_id: 'provider-session-00000000000000000000000000000000',
+            model: 'test-model',
+            thinking: { type: 'enabled', budgetTokens: 1024 },
+        });
+
+        await streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn(), { maxTokens: 2048 });
+
+        const streamCall = mocks.stream.mock.calls[0];
+        if (!streamCall) {
+            throw new Error('Expected the cloud stream call to have been recorded');
+        }
+        expect(streamCall[0].thinking).toEqual({ type: 'enabled', budget_tokens: 1024 });
+        expect(streamCall[0].maxTokens).toBe(3072);
     });
 
     it('surfaces unknown Anthropic events without exposing their payload', async () => {

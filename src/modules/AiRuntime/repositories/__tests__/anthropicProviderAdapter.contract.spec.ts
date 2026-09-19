@@ -145,6 +145,17 @@ function directiveFor(scenario: ProviderToolScenario): HostedToolChoiceDirective
     return AUTO_TOOL_CHOICE;
 }
 
+/** The blocks a thinking model emits ahead of the calls it produced. */
+function thinkingPreface(scenario: ProviderToolScenario): Array<Record<string, unknown>> {
+    if (scenario !== 'thinking-preface-batch') {
+        return [];
+    }
+    return [
+        { type: 'thinking', thinking: 'Check the project first.', signature: 'signature-bytes' },
+        { type: 'redacted_thinking', data: 'redacted-bytes' },
+    ];
+}
+
 function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
     if (scenario === 'empty-batch') {
         return { id: FIXTURE.providerRequestId, content: [], stop_reason: 'end_turn' };
@@ -180,6 +191,7 @@ function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
     return {
         id: FIXTURE.providerRequestId,
         content: [
+            ...thinkingPreface(scenario),
             { type: 'tool_use', id: dottedCall?.id, name: dottedCall?.wireName, input: dottedCall?.arguments },
             { type: 'tool_use', id: plainCall?.id, name: plainCall?.wireName, input: plainCall?.arguments },
         ],

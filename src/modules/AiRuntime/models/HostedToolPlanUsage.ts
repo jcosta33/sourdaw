@@ -13,4 +13,6 @@ export type HostedToolPlanUsage = {
     outputTokens: number | null;
     cacheReadInputTokens: number | null;
     cacheWriteInputTokens: number | null;
+    /** Thinking tokens the provider billed as output; only the Anthropic dialect reports them. */
+    reasoningTokens: number | null;
 };

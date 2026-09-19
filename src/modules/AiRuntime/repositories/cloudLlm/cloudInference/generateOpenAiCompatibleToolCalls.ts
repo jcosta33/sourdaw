@@ -290,5 +290,7 @@ function readUsage(payload: Record<string, unknown>): HostedToolPlanUsage | null
         cacheReadInputTokens: readHostedTokenCount(details?.cached_tokens),
         // The chat-completions dialect reports no separate cache-write figure.
         cacheWriteInputTokens: null,
+        // This dialect's tool-planning path reads no reasoning-token figure.
+        reasoningTokens: null,
     };
 }
