@@ -3,6 +3,24 @@ import { type ModelProviderResult } from '../models/ModelProviderProtocol';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
 
+/**
+ * The hosted tool-planning usage fields carry absence-vs-false/null meaning (see
+ * `ModelProviderResult`'s own doc comments), so they are admitted onto the recorded usage
+ * only when the caller actually reported them, never defaulted.
+ */
+function optionalHostedUsageFields(
+    result: ModelProviderResult
+): Partial<{ strictToolSchemas: boolean; cacheWriteInputTokens: number | null }> {
+    const fields: Partial<{ strictToolSchemas: boolean; cacheWriteInputTokens: number | null }> = {};
+    if (result.strictToolSchemas !== undefined) {
+        fields.strictToolSchemas = result.strictToolSchemas;
+    }
+    if (result.cacheWriteInputTokens !== undefined) {
+        fields.cacheWriteInputTokens = result.cacheWriteInputTokens;
+    }
+    return fields;
+}
+
 export function recordAgentProviderUsage(
     runId: string,
     result: ModelProviderResult,
@@ -39,6 +57,7 @@ export function recordAgentProviderUsage(
             routeId,
             executor,
             ...(result.remoteDisclosure ? { disclosure: result.remoteDisclosure } : {}),
+            ...optionalHostedUsageFields(result),
             fallbackReason:
                 options.terminal || result.status === 'complete' ? null : (result.failure?.code ?? result.status),
         },

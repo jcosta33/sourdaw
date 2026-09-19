@@ -5,7 +5,8 @@ import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type AnthropicCloudRuntime } from '../cloudSession';
 
 import { buildWireToolNameCodec } from './buildWireToolNameCodec';
-import { type HostedToolPlan } from './hostedToolPlan';
+import { type HostedToolPlan, type HostedToolPlanUsage, readHostedTokenCount } from './hostedToolPlan';
+import { projectAnthropicStrictToolSchema } from './projectAnthropicStrictToolSchema';
 import { readProviderRequestId } from './readProviderRequestId';
 import { requestAnthropicProvider } from './requestAnthropicProvider';
 
@@ -15,6 +16,18 @@ const CACHE_CONTROL = { type: 'ephemeral' } as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readUsage(payload: Record<string, unknown>): HostedToolPlanUsage | null {
+    if (!isRecord(payload.usage)) {
+        return null;
+    }
+    return {
+        inputTokens: readHostedTokenCount(payload.usage.input_tokens),
+        outputTokens: readHostedTokenCount(payload.usage.output_tokens),
+        cacheReadInputTokens: readHostedTokenCount(payload.usage.cache_read_input_tokens),
+        cacheWriteInputTokens: readHostedTokenCount(payload.usage.cache_creation_input_tokens),
+    };
 }
 
 export async function generateAnthropicToolCalls(input: {
@@ -36,12 +49,16 @@ export async function generateAnthropicToolCalls(input: {
         model: input.runtime.model,
         max_tokens: input.maxOutputTokens,
         system: [{ type: 'text', text: input.systemPrompt, cache_control: CACHE_CONTROL }],
-        tools: input.toolSchemas.map((schema, index) => ({
-            name: codec.encode(schema.function.name),
-            description: schema.function.description,
-            input_schema: schema.function.parameters,
-            ...(index === lastToolIndex ? { cache_control: CACHE_CONTROL } : {}),
-        })),
+        tools: input.toolSchemas.map((schema, index) => {
+            const strictSchema = projectAnthropicStrictToolSchema(schema);
+            return {
+                name: codec.encode(strictSchema.function.name),
+                description: strictSchema.function.description,
+                input_schema: strictSchema.function.parameters,
+                strict: true,
+                ...(index === lastToolIndex ? { cache_control: CACHE_CONTROL } : {}),
+            };
+        }),
         messages: [{ role: 'user', content: input.userMessage }],
     });
     const response = await requestAnthropicProvider({
@@ -122,5 +139,10 @@ export async function generateAnthropicToolCalls(input: {
                 : 'Hosted AI returned an incomplete tool-call batch'
         );
     }
-    return { providerRequestId: readProviderRequestId(payload.id), calls: results };
+    return {
+        providerRequestId: readProviderRequestId(payload.id),
+        calls: results,
+        strictToolSchemas: true,
+        usage: readUsage(payload),
+    };
 }

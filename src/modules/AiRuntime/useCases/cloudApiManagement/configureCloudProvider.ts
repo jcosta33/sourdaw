@@ -73,6 +73,7 @@ export async function configureCloudProvider(configuration: HostedLlmConfigurati
         baseUrl: normalizedBaseUrl,
         authentication: configuration.authentication,
         apiKey,
+        strictToolSchemas: configuration.strictToolSchemas,
     });
 
     if (llmStatusStore.value?.state === 'ready' && llmStatusStore.value.backend === 'cloud') {

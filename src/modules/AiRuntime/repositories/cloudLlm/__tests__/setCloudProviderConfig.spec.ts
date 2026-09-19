@@ -124,6 +124,7 @@ describe('setCloudProviderConfig', () => {
             authentication: 'none',
             adapter: null,
             session_id: null,
+            strict_tool_schemas: false,
         });
         expect(mocks.invoke).not.toHaveBeenCalledWith('open_provider_gateway_session', expect.anything());
         expect(mocks.invoke).not.toHaveBeenCalledWith('provider_gateway_request', expect.anything());
@@ -297,6 +298,7 @@ describe('setCloudProviderConfig', () => {
             authentication: 'none',
             adapter: null,
             session_id: null,
+            strict_tool_schemas: false,
         });
         expect(hostedLlmProviderStatusStore.value).toEqual({
             provider: 'openai-compatible',

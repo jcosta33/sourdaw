@@ -11,6 +11,7 @@ const runtime: OpenAiCompatibleCloudRuntime = {
     session_id: null,
     model: 'gpt-5.2',
     base_url: 'http://localhost:1234/v1',
+    strict_tool_schemas: false,
 };
 
 const tools = [
@@ -146,6 +147,105 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         expect(body.tool_choice).toBe('auto');
         expect(body.n).toBe(1);
         expect(body).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('projects a strict, bound-free wire schema only when the runtime opts in', async () => {
+        const strictRuntime: OpenAiCompatibleCloudRuntime = { ...runtime, strict_tool_schemas: true };
+        const boundedTools = [
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setTempo',
+                    description: 'Set tempo',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { bpm: { type: 'number', minimum: 20, maximum: 300 } },
+                        required: ['bpm'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }],
+                    usage: { prompt_tokens: 11, completion_tokens: 3, prompt_tokens_details: { cached_tokens: 2 } },
+                }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+            )
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await generateOpenAiCompatibleToolCalls({
+            runtime: strictRuntime,
+            systemPrompt: 'system',
+            userMessage: 'faster',
+            toolSchemas: boundedTools,
+            maxOutputTokens: 8192,
+        });
+
+        const request = fetchMock.mock.calls[0]?.[1];
+        if (!request || typeof request.body !== 'string') {
+            throw new Error('Expected a JSON request body');
+        }
+        const body = JSON.parse(request.body) as {
+            tools: Array<{ function: { strict?: boolean; parameters: Record<string, unknown> } }>;
+        };
+        expect(body.tools[0]?.function.strict).toBe(true);
+        expect(body.tools[0]?.function.parameters).not.toHaveProperty(['properties', 'bpm', 'minimum']);
+        expect(result.strictToolSchemas).toBe(true);
+        expect(result.usage).toEqual({
+            inputTokens: 11,
+            outputTokens: 3,
+            cacheReadInputTokens: 2,
+            cacheWriteInputTokens: null,
+        });
+    });
+
+    it('sends an unprojected schema and no strict flag for a non-strict runtime', async () => {
+        const boundedTools = [
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setTempo',
+                    description: 'Set tempo',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { bpm: { type: 'number', minimum: 20, maximum: 300 } },
+                        required: ['bpm'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }] }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            })
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await generateOpenAiCompatibleToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'faster',
+            toolSchemas: boundedTools,
+            maxOutputTokens: 8192,
+        });
+
+        const request = fetchMock.mock.calls[0]?.[1];
+        if (!request || typeof request.body !== 'string') {
+            throw new Error('Expected a JSON request body');
+        }
+        const body = JSON.parse(request.body) as {
+            tools: Array<{ function: { strict?: boolean; parameters: Record<string, unknown> } }>;
+        };
+        expect(body.tools[0]?.function.strict).toBeUndefined();
+        expect(body.tools[0]).not.toHaveProperty('strict');
+        expect(body.tools[0]?.function.parameters).toHaveProperty(['properties', 'bpm', 'minimum'], 20);
+        expect(result.strictToolSchemas).toBe(false);
     });
 
     it('sends max_tokens for openai-compatible provider', async () => {
@@ -457,6 +557,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             session_id: null,
             model: 'local-model',
             base_url: 'http://localhost:1234/v1',
+            strict_tool_schemas: false,
         };
         const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
             new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }] }), {
