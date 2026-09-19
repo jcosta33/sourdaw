@@ -7,7 +7,9 @@ the input or state that breaks it. Per the Review section of `AGENTS.md`, this d
 lesson library, not a stance menu: an escape — a defect that reached `main` whose defect class
 matches this file — is recorded here as a lesson, and every dispatch whose derived stance matches
 this file carries its lessons. Lessons state the escape, the blind spot, and the probe that would
-have caught it. Keep each lesson short enough to paste into a dispatch.
+have caught it. Keep each lesson short enough to paste into a dispatch. A behavior-risk stance
+matching no more specific file carries this file; a stance with a more specific match never
+carries it in addition.
 
 ## Standing probes
 
@@ -135,30 +137,6 @@ deriving the set from the record.
 Probe that would have caught it: grep `src/**/__tests__` for the record's field or type name
 (`pendingEffectContinuations` here) and for the literal placeholder values the change retires, name
 every spec that hits, and require the author's evidence to include a run of each.
-
-### 2026-09-04 — a workflow comment's claim about a third-party installer read as evidence (escaped via PR #3548)
-
-PR #3548 added the nightly `desktop-measure` leg. Its install step said "BlackHole is a HAL
-plugin: coreaudiod picks it up as soon as the cask lands it, so nothing here reboots." The cask's
-own caveat prints "You must reboot for the installation of blackhole-2ch to take effect", its pkg
-distribution declares `onConclusion='RequireRestart'` with a post-install script that only fixes
-permissions, and coreaudiod enumerates `/Library/Audio/Plug-Ins/HAL` only when it starts. The first
-hosted run failed at `SwitchAudioSource` with
-`Could not find an audio device named "BlackHole 2ch"`. The approval attacked "whether every step's
-precondition holds in order on a hosted macos-latest runner" and reported all held, having checked
-the claim against the comment rather than the package; actions/runner-images issue 11746 had
-recorded the same failure and the `sudo killall coreaudiod` fix since March 2025.
-
-Blind spot: a comment or pull-request body asserting how a third-party installer, runner image, or
-external service behaves was accepted as evidence, and a job that cannot run on the pull request
-was approved with no run of it at all.
-
-Probe that would have caught it: for every claim about an external component in a workflow diff,
-open that component's primary source — the cask or formula, the installer's distribution and
-post-install scripts, the runner-image release notes, the vendor's open issues — and quote the line
-that supports or contradicts the claim; a caveat, restart flag, or open issue that contradicts the
-comment is the finding. When the job cannot run on the pull request, name the first hosted run as
-the only evidence and require the pull request's test section to say so.
 
 ### 2026-09-05 — a retired renderer body with a carrier rule that still routed to it (escaped via PR #3593; fixed in #3846)
 

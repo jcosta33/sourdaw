@@ -73,10 +73,13 @@ Reviewers never confer; findings meet only in the orchestrator.
 Derive the stances from the task, never from a menu or habit: enumerate the material risks this
 diff creates, then assign one independent stance to each, named for the specific risk it attacks.
 A stance any diff would admit — "correctness" above all — is the baseline every reviewer already
-holds, not a stance. Three is a minimum, not a target: fewer than three named risks means the
-enumeration was too narrow. Record the dispatched set in the bundle's `stances.json` beside
-`review.json`, one line per stance naming the diff evidence that admits it; the caller writes it,
-no script generates it.
+holds, not a stance. Independence is distinct failure modes, never distinct files: stances pinned
+to different touched paths that share one probe library are one stance. Three is a minimum, not a
+target: fewer than three named risks means the enumeration was too narrow. Record the dispatched
+set in the bundle's `stances.json` before dispatch, one line per stance naming the failure mode
+that admits it — the input or state that breaks — never the path the diff touches; the caller
+writes it, no script generates it, and the orchestrator confirms its presence and substance before
+acceptance.
 
 Tier reviewers by the criticality of the risk each stance attacks: economy for narrow low-risk
 checks, standard for behavioral and integration risk, strongest for real-time audio, security,
@@ -89,8 +92,10 @@ model diversity, not the stance count.
 Every reviewer carries the baseline posture regardless of stance: establish what must break for
 each existing check to fail and whether it observes what its name claims. A pass alone is not
 evidence. The reviewer names a mechanical probe: revert the behavioral hunk or apply one targeted
-mutation, then run the named spec; remaining green fails. The orchestrator validates or the author
-repairs in the change's existing lane; reviewers have no writable tree.
+mutation, then run the named spec; remaining green fails the round. Each dispatch reports its
+baseline probe — the spec it ran, the mutation it applied, the observed result — and the
+orchestrator records these in `stances.json` beside the stances. The orchestrator validates or the
+author repairs in the change's existing lane; reviewers have no writable tree.
 
 Dispatch a posture as well as a surface: try to break the change; report the strongest surviving
 finding with concrete failure inputs or state, or report none. Finding nothing is success; never
@@ -122,9 +127,11 @@ independent review; the orchestrator records final acceptance through `review:ac
 through `deliver` as the verified orchestrator User.
 
 For defects reaching `main`, fix under Ownership AND trace the introducing PR and missed stance
-(missing, mis-tiered, or mis-prompted). Attach the escape to the standing file under
-`.agents/skills/review-stances/` whose probes would have caught it, or mint a new file for a
-defect class none covers, so cold orchestrators inherit the escape lesson. Escapes measure review
+(missing, mis-tiered, or mis-prompted). Attach the escape to every standing file under
+`.agents/skills/review-stances/` whose probes participate in what would have caught it — the
+behavior-and-invariant file is the fallback home when no specific file matches — or mint a new
+file for a defect class none covers, so cold orchestrators inherit the escape lesson. Escapes
+measure review
 quality; fixing without learning does not prove it.
 
 ## Docs

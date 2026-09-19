@@ -100,7 +100,9 @@ export function readReviewBundleContext(destination: string): ReviewBundleContex
 }
 
 function hasCallerReviewDocuments(destination: string): boolean {
-    return ['review.json', 'discarded.json', 'acceptance.json'].some((name) => existsSync(join(destination, name)));
+    return ['stances.json', 'review.json', 'discarded.json', 'acceptance.json'].some((name) =>
+        existsSync(join(destination, name))
+    );
 }
 
 function assertReusableBundleContext(destination: string, expected: ReviewBundleContext): void {

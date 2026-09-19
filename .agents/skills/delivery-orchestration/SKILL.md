@@ -139,7 +139,13 @@ interface. Exclude session diaries, unpublished rounds, and mutation tables.
 ## Review bundles and publication
 
 `review:prepare` prints a primary-root bundle path containing `manifest.json`,
-`diff.patch`, `review-size.json`, `pr.md`, and merge-base `contracts/`. The
+`diff.patch`, `review-size.json`, `pr.md`, and merge-base `contracts/`.
+
+The caller writes `stances.json` into that bundle before dispatch — the derived stance set, one
+line per stance naming the failure mode that admits it, plus each reviewer's baseline-probe
+result — alongside the later `review.json`, `discarded.json`, and `acceptance.json`.
+
+The
 manifest binds PR, base branch, merge-base, and head. The diff and
 deterministic size report use the actual base/head merge-base; handwritten,
 test, documentation, and generated changes (including lockfiles) remain visible

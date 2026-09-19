@@ -8,9 +8,10 @@ here as a lesson, and every dispatch whose derived stance matches this file carr
 Lessons state the escape, the blind spot, and the probe that would have caught it. Keep each
 lesson short enough to paste into a dispatch.
 
-This file's defect class covers diffs that add or edit TypeScript or JavaScript (especially
-`src/**/presentations/**`, `src/components/**`, and `scripts/`), or that touch lint config,
-`docs/07-conventions.md`, or this file. Skip pure Rust/DSP-only diffs unless they also change TS.
+Stances attacking this class typically arise on diffs that add or edit TypeScript or JavaScript
+(especially `src/**/presentations/**`, `src/components/**`, and `scripts/`), or that touch lint
+config, `docs/07-conventions.md`, or this file; pure Rust/DSP-only diffs rarely admit one unless
+they also change TS.
 
 ## Standing probes
 
