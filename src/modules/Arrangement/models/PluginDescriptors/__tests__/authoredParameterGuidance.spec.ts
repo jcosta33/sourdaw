@@ -162,9 +162,19 @@ describe('authoredParameterGuidance', () => {
 
     it('every excluded id actually names an instrument-family descriptor in BUILTIN_PLUGINS', () => {
         const catalogById = new Map(BUILTIN_PLUGINS.map((descriptor) => [descriptor.id, descriptor]));
+        const effectDescriptorIds = new Set(EFFECT_DESCRIPTORS.map((descriptor) => descriptor.id));
         for (const id of INSTRUMENT_IDS_EXCLUDED) {
             const descriptor = catalogById.get(id);
             expect(descriptor, `${id} must exist in BUILTIN_PLUGINS`).toBeDefined();
+            // The instrument-family files (BuiltinInstrumentDescriptors.ts,
+            // FaustInstrumentDescriptors.ts, and the standalone ingredient
+            // descriptors) never feed BUILTIN_EFFECT_DESCRIPTORS,
+            // NATIVE_DSP_DESCRIPTORS, or FAUST_EFFECT_DESCRIPTORS; an id
+            // showing up in both would mean this list is masking a real
+            // effect descriptor from the census below.
+            expect(effectDescriptorIds.has(id), `${id} must be absent from the three effect descriptor exports`).toBe(
+                false
+            );
         }
     });
 

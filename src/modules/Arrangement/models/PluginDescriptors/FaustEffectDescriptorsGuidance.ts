@@ -23,14 +23,16 @@ const faustEffectGuidance = effectGuidance(
 export const FAUST_EFFECT_DESCRIPTORS_GUIDANCE = [
     descriptorGuidance('faust-zita-rev1-reverb', faustEffectGuidance, undefined, {
         decay_time: parameterGuidance(
-            'Zita-Rev1 decay time',
-            'Sets how long the reverb tail takes to fade to silence.',
+            'Zita-Rev1 low-frequency decay time',
+            "Sets how long low-frequency (DC) content in the tail takes to fade to silence, relative to the engine's fixed 2 s mid-band decay.",
             1,
             4,
             [
-                'damping shapes the brightness of the tail this sets the length of: raise damping to tame a long decay_time.',
+                'damping sets the corner frequency the wet path brightens above: lower damping to tame a long decay_time.',
             ],
-            ['Long decay_time can mask timing and rhythmic detail in a dense mix.'],
+            [
+                'A long decay_time relative to the fixed 2 s mid-band decay can leave low-frequency rumble ringing under a comparatively short mid-band tail.',
+            ],
             NO_SOURCE_SPECIFIC_MODULATION
         ),
         damping: parameterGuidance(
@@ -306,18 +308,18 @@ export const FAUST_EFFECT_DESCRIPTORS_GUIDANCE = [
             0.5,
             2.5,
             [
-                'brightness sets the tonal color of the tail this sets the length of: raise brightness to tame a long decay.',
+                'brightness sets the damping that darkens the tail this sets the length of: raise brightness to tame a long, ringing decay.',
             ],
             ['Long decay times can build a boingy, overly resonant tail.'],
             NO_SOURCE_SPECIFIC_MODULATION
         ),
         brightness: parameterGuidance(
-            'Spring reverb brightness',
-            'Sets how much high-frequency spring character survives in the tail.',
+            'Spring reverb brightness (damping)',
+            'Functions as a damping control on the spring tail: higher values darken and shorten perceived brightness, lower values leave the tail brighter and more resonant.',
             0.3,
             0.6,
-            ['decay sets the overall tail length that brightness colors: set decay before tuning brightness.'],
-            ['High brightness on a long decay can sound metallic or harsh.'],
+            ['decay sets the overall tail length that brightness darkens: set decay before tuning brightness.'],
+            ['High brightness values can darken the tail into a dull, muffled ring.'],
             NO_SOURCE_SPECIFIC_MODULATION
         ),
         mix: parameterGuidance(
@@ -389,8 +391,8 @@ export const FAUST_EFFECT_DESCRIPTORS_GUIDANCE = [
         invert_phase: parameterGuidance(
             'Phase invert',
             'Flips the polarity of the signal to fix cancellation with another source.',
-            1,
-            1,
+            0,
+            0,
             [
                 'gain sets the level this polarity flip is applied to: confirm invert_phase before trusting a gain-staged blend against another source.',
             ],
@@ -501,8 +503,8 @@ export const FAUST_EFFECT_DESCRIPTORS_GUIDANCE = [
         listen: parameterGuidance(
             'De-esser sidechain listen',
             'Solos the detected sibilant band so you can confirm placement by ear.',
-            1,
-            1,
+            0,
+            0,
             [
                 'frequency sets the band this solos: enable listen while adjusting frequency, then disable it before judging threshold.',
             ],

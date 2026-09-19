@@ -144,8 +144,8 @@ export const NATIVE_DSP_DESCRIPTORS_GUIDANCE = [
             freeze: parameterGuidance(
                 'Dutch Oven freeze',
                 'Sustains the current tail indefinitely instead of letting it decay.',
-                1,
-                1,
+                0,
+                0,
                 [
                     'shimmer often pairs with this to add pitched content while the tail sustains: enable shimmer only after freeze is confirmed working.',
                 ],
@@ -155,8 +155,8 @@ export const NATIVE_DSP_DESCRIPTORS_GUIDANCE = [
             shimmer: parameterGuidance(
                 'Dutch Oven shimmer enable',
                 'Adds a pitched octave layer that regenerates within the tail.',
-                1,
-                1,
+                0,
+                0,
                 [
                     'shimmer_amount sets how much pitched layer this adds and shimmer_pitch sets its interval: set shimmer_amount after enabling shimmer.',
                 ],
@@ -176,29 +176,31 @@ export const NATIVE_DSP_DESCRIPTORS_GUIDANCE = [
             ),
             shimmer_pitch: parameterGuidance(
                 'Dutch Oven shimmer pitch interval',
-                'Sets the pitch interval the shimmer layer regenerates at.',
-                0.4,
-                0.8,
+                'Switches the shimmer layer between a fifth interval below 0.5 and an octave interval at 0.5 and above.',
+                0.5,
+                1,
                 [
-                    'shimmer_amount sets how audible this interval is: choose shimmer_pitch before raising shimmer_amount.',
+                    'shimmer_amount sets how audible this interval choice is: pick shimmer_pitch before raising shimmer_amount.',
                 ],
                 ['An unfamiliar interval choice can clash harmonically with the source material.'],
                 NO_SOURCE_SPECIFIC_MODULATION
             ),
             gravity: parameterGuidance(
                 'Dutch Oven gravity',
-                "Biases the tail's modulation and diffusion character toward a darker or brighter feel.",
-                -0.3,
+                'Tilts the tank allpass gain to swell energy later in the tail below 0.5, or let it decay normally at and above 0.5; 0.5 is neutral.',
                 0.3,
-                ['mod_depth and diffusion respond to this bias: set gravity before fine-tuning mod_depth.'],
+                0.7,
+                [
+                    'decay sets the per-pass gain this tilts: set decay before dialing gravity away from its neutral 0.5.',
+                ],
                 ['Extreme gravity settings can push the tail into an unnatural, artificial character.'],
                 NO_SOURCE_SPECIFIC_MODULATION
             ),
             saturation: parameterGuidance(
                 'Dutch Oven saturation enable',
                 'Enables harmonic saturation on the tail for added warmth or grit.',
-                1,
-                1,
+                0,
+                0,
                 ['saturation_type sets which curve this applies: choose saturation_type before enabling saturation.'],
                 ['Saturation on a long decay can add audible distortion that builds through the tail.'],
                 NO_SOURCE_SPECIFIC_MODULATION
@@ -222,14 +224,14 @@ export const NATIVE_DSP_DESCRIPTORS_GUIDANCE = [
                 NO_SOURCE_SPECIFIC_MODULATION
             ),
             density: parameterGuidance(
-                'Dutch Oven echo density',
-                'Sets how many discrete echoes build the late tail per second.',
+                'Dutch Oven diffusion cross-coupling',
+                "Sets how strongly the tank's two delay halves cross-couple, thickening the diffusion of the tail.",
                 0.5,
                 0.9,
                 [
-                    'diffusion smooths the echoes this sets the count of: raise density before lowering diffusion for a grainy texture.',
+                    'diffusion sets the overall smear this cross-coupling thickens: raise density after diffusion is set.',
                 ],
-                ['Low density with low diffusion can expose audible individual echoes as flutter.'],
+                ['High density can blur transient detail into an indistinct wash.'],
                 NO_SOURCE_SPECIFIC_MODULATION
             ),
             decay_eq_0: parameterGuidance(
@@ -348,8 +350,8 @@ export const NATIVE_DSP_DESCRIPTORS_GUIDANCE = [
             mute: parameterGuidance(
                 'Scoring output mute',
                 "Silences the module's own audio output while it continues measuring.",
-                1,
-                1,
+                0,
+                0,
                 [
                     'tone determines whether there is anything to mute: enable mute whenever tone would otherwise be audible in the mix.',
                 ],
@@ -361,8 +363,8 @@ export const NATIVE_DSP_DESCRIPTORS_GUIDANCE = [
             tone: parameterGuidance(
                 'Reference tone enable',
                 'Generates an audible calibration tone at the reference pitch.',
-                1,
-                1,
+                0,
+                0,
                 [
                     'a4_hz sets the pitch this tone is generated at, and mute silences it: set a4_hz before enabling tone, then mute before delivery.',
                 ],
