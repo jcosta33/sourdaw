@@ -1,0 +1,16 @@
+scripts/__tests__/publishReview.spec.ts
+  h_1228e573df1f42 3,44-49,54-55,165-171,1028-1040,4864-5252
+scripts/publishReview.ts
+  h_1228e573df1f42 3,18,50-51,53,83,167-274,300-302,462
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cad4a110cae809e12f0f48d8c3ce9c3ead246311",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
