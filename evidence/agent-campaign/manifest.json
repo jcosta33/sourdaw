@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "0cbba1d547240c8fb5a765eb078c0f89e733cea7b68aa17616eb8803f6657dc2"
+                    "digest": "4065f35deaaebf0da8744c3892fc982fa23a3d31aaad615774d9aaf22db5bb70"
                 }
             ]
         },
@@ -419,7 +419,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/openAiProviderAdapter.contract.spec.ts",
-                    "digest": "342fcccef68ff72c29f2715e8de906af69e1fa0bf0f415c6e249ab95391d60f6"
+                    "digest": "8f3b078c729320103c32a0864f0faf3be788cf9e2579f214456f3fe5c19a0165"
                 }
             ]
         },
@@ -431,7 +431,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/anthropicProviderAdapter.contract.spec.ts",
-                    "digest": "f0300d45f054fa81f52df7ebad24b05785167483edc170a3d9be6bab0a977392"
+                    "digest": "1157fdcb1d102b828434dadc2f2222ec92bc46fe139cdfa6d44d7995e36d4fac"
                 }
             ]
         },
@@ -692,7 +692,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts",
-                    "digest": "7405b828b125185595f7a27a782310d4ce3053ccae57fdc1a3597587dca6e24e"
+                    "digest": "af018699f4ac1aa91fdd83631f5b2023d6c3648bd5d7ac07aa6fab1904896f38"
                 }
             ]
         },

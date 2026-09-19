@@ -9,12 +9,15 @@ export { type HostedToolPlanUsage };
 /**
  * What one hosted tool-planning request returned: the calls it produced, the
  * provider's own identifier for the request that produced them (so a plan can be
- * correlated with the provider-side record regardless of protocol), whether the
- * request used a strict tool schema, and the provider-reported usage for the request.
+ * correlated with the provider-side record regardless of protocol), the turn's raw
+ * assistant output exactly as the provider sent it (so a later turn can hand the same
+ * items back), whether the request used a strict tool schema, and the provider-reported
+ * usage for the request.
  */
 export type HostedToolPlan = {
     providerRequestId: string | null;
     calls: ToolCallResult[];
+    assistantItems: readonly unknown[];
     strictToolSchemas: boolean;
     usage: HostedToolPlanUsage | null;
 };

@@ -10,6 +10,7 @@ import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedEr
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../models/CreativeInterpretation';
+import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import {
@@ -19,6 +20,7 @@ import {
 import {
     type ModelProviderName,
     type ModelProviderFailure,
+    type ModelProviderMessage,
     type ModelProviderRequest,
     type ModelProviderResult,
     type ModelProviderSession,
@@ -57,6 +59,33 @@ import { getBackendChain } from './backendResolution/getBackendChain';
 // The mandatory planning contract (workflow selector, six application tools, the workflow action
 // tools) plus one prompt-selected slot; the budget bounds browser prompt size, not a provider limit.
 export const WEBLLM_TOOL_BUDGET = 31;
+
+/** What one hosted turn replays: the run's first user message, the turns behind it, and the note closing them. */
+type HostedTurnRequest = { firstUserMessage: string; history: HostedTurnHistory; budgetNote: string };
+
+/**
+ * The protocol record of a replayed hosted turn: the first user message, then every earlier
+ * turn as one assistant message and one tool message per receipt, closed by the remaining-budget
+ * note. A turn with no verbatim items to hand back is stated by its calls, exactly as the
+ * adapters restate it. The adapters send each dialect's own wire form; this states the same
+ * exchange in the provider-neutral shape the record is read in.
+ */
+function buildHostedTurnMessages(systemPrompt: string, hostedTurn: HostedTurnRequest): ModelProviderMessage[] {
+    const messages: ModelProviderMessage[] = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: hostedTurn.firstUserMessage },
+    ];
+    for (const record of hostedTurn.history) {
+        messages.push({ role: 'assistant', content: JSON.stringify(record.assistantItems ?? record.calls) });
+        for (const receipt of record.receipts) {
+            messages.push({ role: 'tool', content: JSON.stringify(receipt) });
+        }
+    }
+    if (hostedTurn.history.length > 0) {
+        messages.push({ role: 'user', content: hostedTurn.budgetNote });
+    }
+    return messages;
+}
 
 function createToolPlanningAbortError(): Error {
     const error = new Error('AI tool planning aborted');
@@ -350,7 +379,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult,
         // WebLLM plans locally with no provider wire form, so it has no tool-choice concept and
         // ignores this; only the cloud backend below translates it for its provider.
-        directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE
+        directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE,
+        // The application-owned loop's turn so far. A hosted backend replays it natively and
+        // sends `firstUserMessage` unchanged on every turn; WebLLM keeps reading `userMessage`,
+        // which already carries the same receipts as text.
+        hostedTurn?: HostedTurnRequest
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain({ operation: 'tools', modality: 'text', streaming: false });
         const reportProviderResult = (result: ModelProviderResult): void => {
@@ -453,15 +486,24 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                           })
                         : undefined;
                 const maxOutputTokens = readAgentResourceLimits().maxModelOutputTokens;
+                // Native replay starts at the first recorded turn, which every hosted turn now
+                // becomes: in practice only the run's opening turn arrives with an empty history.
+                // Before that first record there is nothing to hand back, and the composed user
+                // message is the only place the run's receipts exist, so replacing it with the
+                // first message there would send a turn carrying no evidence at all.
+                const replayedTurn = hostedTurn !== undefined && hostedTurn.history.length > 0 ? hostedTurn : undefined;
                 const compiledRequest = providerProtocol.compileRequest({
                     correlationId,
                     ...(streamIdentity ?? {}),
                     operation: 'tools',
                     modality: 'text',
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userMessage },
-                    ],
+                    messages:
+                        backend === 'cloud' && replayedTurn !== undefined
+                            ? buildHostedTurnMessages(systemPrompt, replayedTurn)
+                            : [
+                                  { role: 'system', content: systemPrompt },
+                                  { role: 'user', content: userMessage },
+                              ],
                     tools: providerTools.map((tool) => ({
                         name: tool.function.name,
                         description: tool.function.description ?? '',
@@ -548,7 +590,9 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             providerUserMessage,
                             providerTools,
                             providerRequest.limits.maxOutputTokens,
-                            directive
+                            directive,
+                            undefined,
+                            replayedTurn
                         );
                     } else {
                         cloudInference = generateCloudToolCalls(
@@ -557,7 +601,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             providerTools,
                             providerRequest.limits.maxOutputTokens,
                             directive,
-                            signal
+                            signal,
+                            replayedTurn
                         );
                     }
                     const plan = await waitForInference(cloudInference, signal);
@@ -637,10 +682,29 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         name: call.name,
                         arguments: call.arguments,
                     }));
+                    const hostedProvider = backend === 'cloud' ? getCloudProviderInfo()?.provider : undefined;
+                    // Every hosted turn is reported, so the run's evidence survives in the history
+                    // whatever the provider named its calls. The items themselves are replayed
+                    // verbatim only when the provider identified every call of the turn: the
+                    // receipts answering them correlate by the identifier the loop resolved, and
+                    // items naming an identifier no receipt can answer are rejected by every
+                    // hosted dialect. A turn that left a call unidentified reports null items and
+                    // is restated from its calls under the loop's own identifiers.
+                    const providerIdentifiedEveryCall = providerCallIds.every(
+                        (callId) => callId !== undefined && callId.length > 0
+                    );
                     outcome = {
                         status: 'complete',
                         toolCalls: normalizedToolCalls,
                         proposal: extractAgentPlanProposal(normalizedToolCalls),
+                        ...(cloudToolPlan === null || hostedProvider === undefined
+                            ? {}
+                            : {
+                                  providerTurn: {
+                                      provider: hostedProvider,
+                                      assistantItems: providerIdentifiedEveryCall ? cloudToolPlan.assistantItems : null,
+                                  },
+                              }),
                     };
                 } else {
                     const rejectedResult = providerSource.finish({

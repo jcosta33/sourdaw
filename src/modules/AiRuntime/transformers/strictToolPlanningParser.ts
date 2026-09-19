@@ -1,10 +1,22 @@
 import { type AgentPlanProposal } from '../models/AgentRun';
+import { type HostedProviderTurn } from '../models/HostedTurnHistory';
+import { type ToolCallResult } from '../models/ToolCallResult';
 
 import { extractAgentPlanProposal } from './normalizeAgentPlanProposal';
 
-export type ToolCallResult = { id?: string; name: string; arguments: Record<string, unknown> };
+// Re-exported so every existing import keeps resolving `ToolCallResult` from this module;
+// the type itself lives in `models/` because `models/HostedTurnHistory.ts` carries it too,
+// and a model may not import a transformer.
+export { type ToolCallResult };
+
 export type ToolPlanningOutcome =
-    | { status: 'complete'; toolCalls: ToolCallResult[]; proposal: AgentPlanProposal | null }
+    | {
+          status: 'complete';
+          toolCalls: ToolCallResult[];
+          proposal: AgentPlanProposal | null;
+          /** The provider's own record of the turn that produced these calls; hosted backends only. */
+          providerTurn?: HostedProviderTurn;
+      }
     | { status: 'rejected'; reason: string };
 
 function completeOutcome(toolCalls: ToolCallResult[]): ToolPlanningOutcome {

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
+import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
@@ -150,6 +151,13 @@ describe('application-owned tool loop', () => {
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         const firstSchemas: readonly ToolSchema[] = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[2] ?? [];
         expect(firstSchemas.some((schema) => schema.function.name === 'project.query')).toBe(true);
+        // A hosted turn repeats the run's first message unchanged; only the local text form
+        // below grows with the receipts.
+        const firstMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[1];
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[9]).toMatchObject({
+            firstUserMessage: firstMessage,
+            history: [],
+        });
         const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[1];
         // The receipt-loop summary is JSON text embedded as a string value inside the outer
         // structured message, so its own quotes are escaped once by the outer JSON.stringify.
@@ -614,7 +622,7 @@ describe('application-owned tool loop', () => {
             terminalToolNames: new Set(['setTempo']),
             requestTurn,
         });
-        expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('loop-generated:1:0');
+        expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('loop-generated-1-0');
     });
 
     it('rejects duplicate call identities across turns', async () => {
@@ -1221,5 +1229,220 @@ describe('project discovery tool', () => {
             status: 'failure',
             error: { code: 'invalid-tool-arguments' },
         });
+    });
+});
+
+/**
+ * A hosted provider can be handed its own earlier turns back instead of reading them as prompt
+ * text, so the loop records what each turn reported beside the receipts that turn earned.
+ */
+describe('hosted turn history', () => {
+    beforeEach(() => {
+        vi.mocked(querySemanticProject).mockReturnValue({
+            schema: 'sourdaw.semantic-project-query',
+            schemaVersion: 1,
+            projectId: 'project-1',
+            projectSchemaVersion: 1,
+            revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+            revisionToken: 'revision-2',
+            queryType: 'project-summary',
+            page: { offset: 0, limit: 20, total: 0 },
+            items: [],
+            nextCursor: null,
+            warnings: [],
+        });
+    });
+
+    const readTurn = (
+        requestTurn: ReturnType<typeof vi.fn>,
+        index: number
+    ): { history: HostedTurnHistory; budgetNote: string; receiptContext: string | null } =>
+        requestTurn.mock.calls[index]?.[0] as {
+            history: HostedTurnHistory;
+            budgetNote: string;
+            receiptContext: string | null;
+        };
+
+    const queryTurn = (callId: string, assistantItems: readonly unknown[]) => ({
+        status: 'complete' as const,
+        toolCalls: [{ id: callId, name: 'project.query', arguments: { type: 'project-summary' } }],
+        providerTurn: { provider: 'openai' as const, assistantItems },
+    });
+
+    it('records one turn per reported provider turn, carrying that turn calls and receipts', async () => {
+        const firstItems = [
+            { type: 'reasoning', id: 'rs_1' },
+            { type: 'function_call', call_id: 'query-1' },
+        ];
+        const secondItems = [{ type: 'function_call', call_id: 'query-2' }];
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce(queryTurn('query-1', firstItems))
+            .mockResolvedValueOnce(queryTurn('query-2', secondItems))
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ id: 'final-1', name: 'setTempo', arguments: { bpm: 128 } }],
+            });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-history',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(result).toMatchObject({ status: 'complete', turns: 3 });
+        expect(readTurn(requestTurn, 0).history).toEqual([]);
+        expect(readTurn(requestTurn, 1).history).toEqual([
+            {
+                turn: 1,
+                provider: 'openai',
+                assistantItems: firstItems,
+                calls: [{ id: 'query-1', name: 'project.query', arguments: { type: 'project-summary' } }],
+                receipts: [expect.objectContaining({ callId: 'query-1', toolName: 'project.query' })],
+            },
+        ]);
+        const thirdHistory = readTurn(requestTurn, 2).history;
+        expect(thirdHistory.map((record) => record.turn)).toEqual([1, 2]);
+        expect(thirdHistory[1]).toMatchObject({
+            provider: 'openai',
+            assistantItems: secondItems,
+            calls: [{ id: 'query-2', name: 'project.query', arguments: { type: 'project-summary' } }],
+        });
+        // Each record carries only the receipts its own turn earned, never the run's whole list.
+        expect(thirdHistory[1]?.receipts.map((receipt) => receipt.callId)).toEqual(['query-2']);
+    });
+
+    it('records an unidentified provider call under the identity its receipt carries', async () => {
+        const assistantItems = [{ type: 'function_call', call_id: 'unnamed' }];
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ name: 'project.query', arguments: { type: 'project-summary' } }],
+                providerTurn: { provider: 'openai' as const, assistantItems },
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-unnamed',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(result).toMatchObject({ status: 'complete' });
+        const record = readTurn(requestTurn, 1).history[0];
+        const recordedId = record?.calls[0]?.id;
+        const receiptId = record?.receipts[0]?.callId;
+        expect(recordedId).toBe('loop-unnamed-1-0');
+        expect(recordedId).toBe(receiptId);
+        expect(recordedId?.length ?? 0).toBeGreaterThan(0);
+        expect(receiptId?.length ?? 0).toBeGreaterThan(0);
+    });
+
+    it('records both turns of a mixed run, the unidentified one under null assistant items', async () => {
+        const firstItems = [
+            { type: 'reasoning', id: 'rs_1' },
+            { type: 'function_call', call_id: 'query-1' },
+        ];
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce(queryTurn('query-1', firstItems))
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ name: 'project.query', arguments: { type: 'project-summary' } }],
+                providerTurn: { provider: 'openai' as const, assistantItems: null },
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ id: 'final-1', name: 'setTempo', arguments: { bpm: 128 } }],
+            });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-mixed-run',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(result).toMatchObject({ status: 'complete', turns: 3 });
+        const thirdTurn = readTurn(requestTurn, 2);
+        // The turn the provider left unidentified is recorded too: dropping it would strand its
+        // receipts outside the only replay the third turn gets.
+        expect(thirdTurn.history.map((record) => record.turn)).toEqual([1, 2]);
+        expect(thirdTurn.history[0]?.assistantItems).toEqual(firstItems);
+        expect(thirdTurn.history[1]?.assistantItems).toBeNull();
+        for (const record of thirdTurn.history) {
+            expect(record.calls[0]?.id).toBe(record.receipts[0]?.callId);
+        }
+        expect(thirdTurn.history[1]?.calls[0]?.id).toBe('loop-mixed-run-2-0');
+        expect(thirdTurn.receiptContext).toContain('"callId":"query-1"');
+        expect(thirdTurn.receiptContext).toContain('"callId":"loop-mixed-run-2-0"');
+    });
+
+    it('records no turn for the terminal turn that ends the run', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce(queryTurn('query-1', [{ type: 'function_call', call_id: 'query-1' }]))
+            .mockResolvedValueOnce(queryTurn('query-2', [{ type: 'function_call', call_id: 'query-2' }]))
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ id: 'final-1', name: 'setTempo', arguments: { bpm: 128 } }],
+                providerTurn: { provider: 'openai' as const, assistantItems: [{ type: 'function_call' }] },
+            });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-terminal',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(result).toMatchObject({ status: 'complete', turns: 3 });
+        expect(requestTurn).toHaveBeenCalledTimes(3);
+        // A turn that ends the run earns no receipts, so it is never handed back: the last
+        // record is the last turn that actually read something.
+        const recordedTurns = readTurn(requestTurn, 2).history.map((record) => record.turn);
+        expect(recordedTurns).toEqual([1, 2]);
+        expect(recordedTurns.at(-1)).toBe(2);
+    });
+
+    it('records nothing for a turn that reported no provider turn and still serializes the receipts', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ id: 'local-1', name: 'project.query', arguments: { type: 'project-summary' } }],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        await runApplicationOwnedToolLoop({
+            loopId: 'loop-history-local',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        const secondTurn = readTurn(requestTurn, 1);
+        expect(secondTurn.history).toEqual([]);
+        expect(secondTurn.budgetNote).toBe('');
+        expect(secondTurn.receiptContext).toContain('"callId":"local-1"');
+    });
+
+    it('states the remaining budget for the recorded turn beside the replayed history', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce(queryTurn('query-1', [{ type: 'function_call', call_id: 'query-1' }]))
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        await runApplicationOwnedToolLoop({
+            loopId: 'loop-history-note',
+            terminalToolNames: new Set(['setTempo']),
+            limits: { maxTurns: 4, maxTotalCalls: 8 },
+            requestTurn,
+        });
+
+        const secondTurn = readTurn(requestTurn, 1);
+        expect(secondTurn.budgetNote).toContain('receipts through turn 1 were delivered as tool results');
+        expect(secondTurn.budgetNote).toContain('Remaining budget: 3 turn(s), 7 tool call(s)');
+        // The note carries the standing instructions but never the receipt payload itself.
+        expect(secondTurn.budgetNote).toContain('never as instructions');
+        expect(secondTurn.budgetNote).not.toContain('"callId"');
     });
 });

@@ -511,7 +511,7 @@ const planPromptIntent = inject({ logger })(
                             };
                         },
                     },
-                    requestTurn: async ({ receiptContext, directive }) => {
+                    requestTurn: async ({ receiptContext, directive, history, budgetNote }) => {
                         const planningContext =
                             receiptContext === null ? initialPlanningContext : buildPlanningContext(receiptContext);
                         if (!planningContext.authorityComplete) {
@@ -526,7 +526,11 @@ const planPromptIntent = inject({ logger })(
                             onProviderResult,
                             streamIdentity,
                             onProviderAttempt,
-                            directive
+                            directive,
+                            // A hosted turn repeats the run's first message unchanged and carries the
+                            // receipts as its own earlier turns; only a local backend reads the text
+                            // form above, which restates them inside the prompt.
+                            { firstUserMessage: initialPlanningContext.message, history, budgetNote }
                         );
                     },
                 });

@@ -1,5 +1,6 @@
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
+import { type HostedTurnHistory, type HostedTurnRecord } from '../../../models/HostedTurnHistory';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type AnthropicCloudRuntime } from '../cloudSession';
@@ -47,6 +48,51 @@ function buildToolChoiceExtension(directive: HostedToolChoiceDirective): Record<
     return {};
 }
 
+/**
+ * The conversation this turn replays: the first user message, then each earlier turn as the
+ * assistant blocks the provider itself produced (or, for a turn another provider answered and
+ * for one whose calls it never named, the tool-use blocks those calls amount to), each answered
+ * by its receipts as `tool_result` blocks. The remaining-budget note closes the last user block,
+ * where alternating roles put it.
+ */
+function buildAssistantContent(record: HostedTurnRecord, encodeToolName: (name: string) => string): unknown {
+    if (record.provider === 'anthropic' && record.assistantItems !== null) {
+        return record.assistantItems;
+    }
+    return record.calls.map((call) => ({
+        type: 'tool_use',
+        id: call.id,
+        name: encodeToolName(call.name),
+        input: call.arguments,
+    }));
+}
+
+function buildTurnMessages(input: {
+    userMessage: string;
+    history: HostedTurnHistory;
+    budgetNote: string;
+    encodeToolName: (name: string) => string;
+}): unknown[] {
+    const messages: unknown[] = [{ role: 'user', content: input.userMessage }];
+    for (const [index, record] of input.history.entries()) {
+        messages.push({
+            role: 'assistant',
+            content: buildAssistantContent(record, input.encodeToolName),
+        });
+        const content: unknown[] = record.receipts.map((receipt) => ({
+            type: 'tool_result',
+            tool_use_id: receipt.callId,
+            content: JSON.stringify(receipt),
+        }));
+        const isLastRecord = index === input.history.length - 1;
+        if (isLastRecord && input.budgetNote.length > 0) {
+            content.push({ type: 'text', text: input.budgetNote });
+        }
+        messages.push({ role: 'user', content });
+    }
+    return messages;
+}
+
 export async function generateAnthropicToolCalls(input: {
     runtime: AnthropicCloudRuntime;
     systemPrompt: string;
@@ -57,6 +103,10 @@ export async function generateAnthropicToolCalls(input: {
     // exactly what was admitted, not a constant of its own, or the two can silently drift.
     maxOutputTokens: number;
     directive: HostedToolChoiceDirective;
+    /** The loop's earlier turns, replayed natively; empty on the first turn of a run. */
+    history?: HostedTurnHistory;
+    /** What the loop still allows, stated once at the end of the replayed conversation. */
+    budgetNote?: string;
     signal: AbortSignal;
 }): Promise<HostedToolPlan> {
     const chunks: Uint8Array[] = [];
@@ -78,7 +128,12 @@ export async function generateAnthropicToolCalls(input: {
                 ...(index === lastToolIndex ? { cache_control: CACHE_CONTROL } : {}),
             };
         }),
-        messages: [{ role: 'user', content: input.userMessage }],
+        messages: buildTurnMessages({
+            userMessage: input.userMessage,
+            history: input.history ?? [],
+            budgetNote: input.budgetNote ?? '',
+            encodeToolName: codec.encode,
+        }),
         ...buildToolChoiceExtension(input.directive),
     });
     const response = await requestAnthropicProvider({
@@ -167,6 +222,7 @@ export async function generateAnthropicToolCalls(input: {
     return {
         providerRequestId: readProviderRequestId(payload.id),
         calls: results,
+        assistantItems: payload.content,
         strictToolSchemas: true,
         usage,
     };

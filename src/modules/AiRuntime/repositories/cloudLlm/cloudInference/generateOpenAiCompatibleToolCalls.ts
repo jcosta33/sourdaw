@@ -1,6 +1,7 @@
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { HostedToolCallingProtocolError } from '../../../errors/HostedToolCallingProtocolError';
 import { isToolPlanningRejectedError, ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
+import { type HostedTurnHistory } from '../../../models/HostedTurnHistory';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
@@ -26,6 +27,10 @@ type GenerateOpenAiCompatibleToolCallsInput = {
     toolSchemas: readonly ToolSchema[];
     maxOutputTokens: number;
     directive: HostedToolChoiceDirective;
+    /** The loop's earlier turns, replayed natively; empty on the first turn of a run. */
+    history?: HostedTurnHistory;
+    /** What the loop still allows, stated once at the end of the replayed conversation. */
+    budgetNote?: string;
     signal?: AbortSignal;
 };
 
@@ -56,6 +61,48 @@ function inspectAssistantContent(value: unknown): AssistantContentState {
         }
     }
     return { valid: true, hasContent };
+}
+
+/**
+ * The messages this turn replays: system and first user message, then each earlier turn as the
+ * assistant message the provider itself returned (or, for a turn another provider answered and
+ * for one whose calls it never named, an assistant message restating its calls), each answered
+ * by one `tool` message per receipt. The remaining-budget note closes the conversation as its
+ * own user message.
+ */
+function buildTurnMessages(input: {
+    systemPrompt: string;
+    userMessage: string;
+    history: HostedTurnHistory;
+    budgetNote: string;
+    encodeToolName: (name: string) => string;
+}): unknown[] {
+    const messages: unknown[] = [
+        { role: 'system', content: input.systemPrompt },
+        { role: 'user', content: input.userMessage },
+    ];
+    for (const record of input.history) {
+        if (record.provider === 'openai-compatible' && record.assistantItems !== null) {
+            messages.push(...record.assistantItems);
+        } else {
+            messages.push({
+                role: 'assistant',
+                content: null,
+                tool_calls: record.calls.map((call) => ({
+                    id: call.id,
+                    type: 'function',
+                    function: { name: input.encodeToolName(call.name), arguments: JSON.stringify(call.arguments) },
+                })),
+            });
+        }
+        for (const receipt of record.receipts) {
+            messages.push({ role: 'tool', tool_call_id: receipt.callId, content: JSON.stringify(receipt) });
+        }
+    }
+    if (input.history.length > 0 && input.budgetNote.length > 0) {
+        messages.push({ role: 'user', content: input.budgetNote });
+    }
+    return messages;
 }
 
 function parseToolCalls(response: unknown, decodeWireName: (wireName: string) => string): ToolCallResult[] {
@@ -136,16 +183,21 @@ export async function generateOpenAiCompatibleToolCalls({
     toolSchemas,
     maxOutputTokens,
     directive,
+    history,
+    budgetNote,
     signal,
 }: GenerateOpenAiCompatibleToolCallsInput): Promise<HostedToolPlan> {
     const codec = buildWireToolNameCodec(toolSchemas);
     const wireToolSchemas = narrowToolSchemasForDirective(toolSchemas, directive);
     const body = JSON.stringify({
         model: runtime.model,
-        messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMessage },
-        ],
+        messages: buildTurnMessages({
+            systemPrompt,
+            userMessage,
+            history: history ?? [],
+            budgetNote: budgetNote ?? '',
+            encodeToolName: codec.encode,
+        }),
         tools: wireToolSchemas.map((schema) => {
             const useStrictSchema = runtime.strict_tool_schemas === true;
             const wireSchema = useStrictSchema ? projectOpenAiStrictToolSchema(schema) : schema;
@@ -208,9 +260,19 @@ export async function generateOpenAiCompatibleToolCalls({
     return {
         providerRequestId: isRecord(payload) ? readProviderRequestId(payload.id) : null,
         calls,
+        assistantItems: readAssistantMessage(payload),
         strictToolSchemas: runtime.strict_tool_schemas === true,
         usage,
     };
+}
+
+/** The assistant message this turn returned, as the one item a later turn hands back. */
+function readAssistantMessage(payload: unknown): readonly unknown[] {
+    if (!isRecord(payload) || !Array.isArray(payload.choices)) {
+        return [];
+    }
+    const firstChoice: unknown = payload.choices[0];
+    return isRecord(firstChoice) && isRecord(firstChoice.message) ? [firstChoice.message] : [];
 }
 
 function hasErrorName(value: unknown, name: string): boolean {

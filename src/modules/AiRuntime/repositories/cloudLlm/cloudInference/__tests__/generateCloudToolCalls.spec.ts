@@ -51,6 +51,7 @@ describe('generateCloudToolCalls', () => {
         mocks.generateAnthropic.mockResolvedValue({
             providerRequestId: 'msg_anthropic_1',
             calls: [{ name: 'addTrack', arguments: { name: 'Vocals' } }],
+            assistantItems: [],
             strictToolSchemas: true,
             usage: null,
         });
@@ -95,6 +96,7 @@ describe('generateCloudToolCalls', () => {
         mocks.generateOpenAi.mockResolvedValue({
             providerRequestId: 'chatcmpl-1',
             calls: [{ name: 'addTrack', arguments: {} }],
+            assistantItems: [],
             strictToolSchemas: false,
             usage: null,
         });
@@ -133,6 +135,7 @@ describe('generateCloudToolCalls', () => {
         mocks.generateOpenAiResponses.mockResolvedValue({
             providerRequestId: 'resp_1',
             calls: [{ name: 'addTrack', arguments: {} }],
+            assistantItems: [],
             strictToolSchemas: true,
             usage: null,
         });

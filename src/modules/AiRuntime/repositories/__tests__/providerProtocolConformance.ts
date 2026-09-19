@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
@@ -163,14 +164,91 @@ export type ProviderStreamScenario =
     | 'oversized-request-id';
 
 export type ProviderToolScenario =
-    'tool-batch' | 'empty-batch' | 'malformed-arguments' | 'oversized-call-id' | 'forced-terminal';
+    | 'tool-batch'
+    | 'empty-batch'
+    | 'malformed-arguments'
+    | 'oversized-call-id'
+    | 'forced-terminal'
+    | 'two-turn-history'
+    | 'foreign-turn-history'
+    | 'unidentified-turn-history'
+    | 'synthesised-call-id-history'
+    | 'multi-call-turn-history';
+
+/** The receipt the earlier turn earned, answered natively as that dialect's tool result. */
+export const PROVIDER_TURN_HISTORY_RECEIPT: ApplicationToolReceipt = {
+    schema: 'sourdaw.application-tool-receipt',
+    schemaVersion: 1,
+    callId: 'call-alpha',
+    toolName: 'project.query',
+    turn: 1,
+    status: 'success',
+    revision: 'revision-2',
+    data: { items: [] },
+    summary: 'Queried the project.',
+    warnings: [],
+    error: null,
+};
+
+/**
+ * The earlier turn every dialect replays in the two history scenarios. Each contract spec
+ * renders `assistantMarker` into its own dialect's turn-one assistant items and tags the
+ * foreign record's items with `foreignMarker`, so the shared assertions below can tell a
+ * verbatim replay from a synthesised one without knowing the dialect's wire shape.
+ */
+export const PROVIDER_TURN_HISTORY_FIXTURE = {
+    assistantMarker: 'turn-one-assistant-item-marker',
+    foreignMarker: 'foreign-dialect-item-marker',
+    budgetNote: 'Remaining budget: 2 turn(s), 6 tool call(s), 40000 receipt byte(s).',
+    receipt: PROVIDER_TURN_HISTORY_RECEIPT,
+} as const;
+
+/**
+ * The identifier the loop resolves for a provider call that carried none, in the
+ * `<loopId>-<turn>-<index>` form the loop synthesises. Every dialect must put it on the wire
+ * unchanged, or the receipt answering that call names an identifier no call carries.
+ */
+export const SYNTHESISED_TURN_CALL_ID = 'loop-1-1-0';
+
+/** The same earlier turn, earned by a call the provider never named. */
+export const PROVIDER_SYNTHESISED_TURN_RECEIPT: ApplicationToolReceipt = {
+    ...PROVIDER_TURN_HISTORY_RECEIPT,
+    callId: SYNTHESISED_TURN_CALL_ID,
+};
+
+/**
+ * The identifiers the loop resolves for a turn that carried two calls, both unnamed by the
+ * provider: the same `<loopId>-<turn>-<index>` form, one per index. A dialect that restates or
+ * answers only the first call leaves the second identifier on one side of the pairing alone.
+ */
+export const MULTI_CALL_TURN_CALL_IDS = ['loop-1-1-0', 'loop-1-1-1'] as const;
+
+/** Both receipts that turn earned, distinct so a receipt answering the wrong call is visible. */
+export const PROVIDER_MULTI_CALL_TURN_RECEIPTS: readonly ApplicationToolReceipt[] = [
+    { ...PROVIDER_TURN_HISTORY_RECEIPT, callId: MULTI_CALL_TURN_CALL_IDS[0] },
+    {
+        ...PROVIDER_TURN_HISTORY_RECEIPT,
+        callId: MULTI_CALL_TURN_CALL_IDS[1],
+        toolName: 'muteTrack',
+        data: { muted: true },
+        summary: 'Muted the track.',
+    },
+];
 
 /** The two tool names every contract spec's `forced-terminal` scenario forces, matching the
  * fixture's own `toolCalls` so the same response body admits under a required directive. */
 export const FORCED_TERMINAL_TOOL_NAMES = ['project.query', 'muteTrack'] as const;
 
-/** What the adapter put on the wire, read back from the transport the harness stubbed. */
-export type ProviderRequestObservation = { model: unknown; stream: unknown; tools: unknown; toolChoice?: unknown };
+/** What the adapter put on the wire, read back from the transport the harness stubbed. The
+ * conversation is `messages` or `input`, whichever the dialect names it. */
+export type ProviderRequestObservation = {
+    model: unknown;
+    stream: unknown;
+    tools: unknown;
+    toolChoice?: unknown;
+    messages?: unknown;
+    input?: unknown;
+};
 
 export type ProviderStreamObservation = {
     text: string;
@@ -196,10 +274,26 @@ export type ProviderToolObservation = {
  * dialect's own wire shape. */
 export type ProviderWireTool = { strict: unknown; parameters: unknown };
 
+/**
+ * The identifiers the replayed conversation correlates by, read out of one dialect's own wire
+ * shape: the ids the restated tool calls carry (Anthropic `tool_use.id`, Responses
+ * `function_call.call_id`, chat completions `tool_calls[].id`) and the ids the tool results
+ * answer them with (`tool_result.tool_use_id`, `function_call_output.call_id`,
+ * `tool_call_id`), each in wire order, plus the serialised payload each tool result carries
+ * (`tool_result.content`, `function_call_output.output`, the `role: 'tool'` message's `content`)
+ * in that same order, raw as the dialect wrote it.
+ */
+export type ProviderCorrelationObservation = {
+    callIds: string[];
+    resultIds: string[];
+    resultPayloads: string[];
+};
+
 export type ProviderProtocolHarness = {
     streamText: (scenario: ProviderStreamScenario) => Promise<ProviderStreamObservation>;
     planTools: (scenario: ProviderToolScenario) => Promise<ProviderToolObservation>;
     readWireTool: (tool: unknown) => ProviderWireTool;
+    readCorrelatingIds: (request: ProviderRequestObservation) => ProviderCorrelationObservation;
 };
 
 function expectStreamRequest(request: ProviderRequestObservation): void {
@@ -210,6 +304,14 @@ function expectStreamRequest(request: ProviderRequestObservation): void {
 function expectToolRequest(request: ProviderRequestObservation): void {
     expect(request.model).toBe(PROVIDER_CONFORMANCE_FIXTURE.model);
     expect(request.stream).not.toBe(true);
+}
+
+/** The conversation the adapter sent, serialized so a shared assertion can read it without
+ * knowing whether the dialect carries items as `messages` or as `input`. */
+function readConversation(request: ProviderRequestObservation): string {
+    const conversation = request.messages ?? request.input;
+    expect(conversation).not.toBeUndefined();
+    return JSON.stringify(conversation);
 }
 
 function expectNoProviderBodyText(safeMessage: string | undefined): void {
@@ -399,6 +501,80 @@ export function describeProviderProtocolConformance(name: string, harness: Provi
             expect(observed.providerRequestId).toBeNull();
             expect(observed.finish).toBe('stop');
             expectStreamRequest(observed.request);
+        });
+
+        it('replays the earlier turn natively and closes the conversation with the budget note', async () => {
+            const observed = await harness.planTools('two-turn-history');
+
+            expect(observed.calls).toEqual(
+                PROVIDER_CONFORMANCE_FIXTURE.toolCalls.map((call) => ({
+                    id: call.id,
+                    name: call.name,
+                    arguments: call.arguments,
+                }))
+            );
+            const conversation = readConversation(observed.request);
+            // The provider's own items from turn one, the receipt that answered them, and the
+            // remaining-budget note that closes them — never the receipts folded into a prompt.
+            expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.assistantMarker);
+            expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.receipt.callId);
+            expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.receipt.summary);
+            expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.budgetNote);
+            expectToolRequest(observed.request);
+        });
+
+        it('restates a turn another dialect answered as tool calls instead of replaying its items', async () => {
+            const observed = await harness.planTools('foreign-turn-history');
+
+            const conversation = readConversation(observed.request);
+            expect(conversation).not.toContain(PROVIDER_TURN_HISTORY_FIXTURE.foreignMarker);
+            expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.receipt.callId);
+            expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.budgetNote);
+            expectToolRequest(observed.request);
+        });
+
+        it('restates a call the provider never named under the identifier its receipt carries', async () => {
+            const observed = await harness.planTools('synthesised-call-id-history');
+
+            const correlation = harness.readCorrelatingIds(observed.request);
+            expect(correlation.callIds).toEqual([SYNTHESISED_TURN_CALL_ID]);
+            expect(correlation.resultIds).toEqual([SYNTHESISED_TURN_CALL_ID]);
+            expectToolRequest(observed.request);
+        });
+
+        it('restates its own turn from the recorded calls when that turn carries no replayable items', async () => {
+            const observed = await harness.planTools('unidentified-turn-history');
+
+            // Same dialect, but the turn left a call unnamed: its items name an identifier the
+            // receipt cannot answer, so the calls are restated under the loop's identifier and
+            // the tool results still correlate to them.
+            const correlation = harness.readCorrelatingIds(observed.request);
+            expect(correlation.callIds).toEqual([SYNTHESISED_TURN_CALL_ID]);
+            expect(correlation.resultIds).toEqual([SYNTHESISED_TURN_CALL_ID]);
+            const conversation = readConversation(observed.request);
+            expect(conversation).not.toContain(PROVIDER_TURN_HISTORY_FIXTURE.assistantMarker);
+            expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.budgetNote);
+            expectToolRequest(observed.request);
+        });
+
+        it('restates every call of a multi-call turn and answers each with its own receipt', async () => {
+            const observed = await harness.planTools('multi-call-turn-history');
+
+            // Both calls and both receipts, in the order the turn recorded them: a dialect that
+            // stops after the first leaves the second call unanswered or its receipt orphaned.
+            const correlation = harness.readCorrelatingIds(observed.request);
+            expect(correlation.callIds).toEqual([...MULTI_CALL_TURN_CALL_IDS]);
+            expect(correlation.resultIds).toEqual([...MULTI_CALL_TURN_CALL_IDS]);
+            // The payload each result carries, not just the identifier it answers under: a
+            // dialect serialising one receipt into every result keeps the identifiers correct.
+            const answered = correlation.resultPayloads.map((payload) => {
+                const receipt = JSON.parse(payload) as { callId: unknown; toolName: unknown };
+                return { callId: receipt.callId, toolName: receipt.toolName };
+            });
+            expect(answered).toEqual(
+                PROVIDER_MULTI_CALL_TURN_RECEIPTS.map(({ callId, toolName }) => ({ callId, toolName }))
+            );
+            expectToolRequest(observed.request);
         });
 
         it('forces the terminal tool choice on the wire and still admits the reply', async () => {

@@ -144,20 +144,6 @@ function getProviderSection(userMessage: string, section: string): Record<string
     return parsed;
 }
 
-function getHostedUserMessage(body: string): string {
-    const request: unknown = JSON.parse(body);
-    if (!isRecord(request) || !isUnknownArray(request.messages)) {
-        throw new TypeError('Expected hosted provider messages');
-    }
-    const userMessage = request.messages.find(
-        (message) => isRecord(message) && message.role === 'user' && typeof message.content === 'string'
-    );
-    if (!isRecord(userMessage) || typeof userMessage.content !== 'string') {
-        throw new TypeError('Expected hosted provider user message');
-    }
-    return userMessage.content;
-}
-
 function getCommandBatchScope(plan: readonly ProviderCall[]): {
     targetIds: string[];
     targetRanges: Array<{ startBeat: number; endBeat: number }>;
@@ -245,8 +231,23 @@ function getApplicationToolReceipts(userMessage: string): unknown[] {
     return parsed.receipts;
 }
 
-function assertDiscoveredCommandSchema(userMessage: string): void {
-    const discoveryReceipt = getApplicationToolReceipts(userMessage).find(
+/** The receipts a hosted turn replays natively, one `tool` message per receipt, in wire order. */
+function getReplayedToolReceipts(requestBody: string): unknown[] {
+    const request: unknown = JSON.parse(requestBody);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    return request.messages.flatMap((message: unknown) => {
+        if (!isRecord(message) || message.role !== 'tool' || typeof message.content !== 'string') {
+            return [];
+        }
+        const receipt: unknown = JSON.parse(message.content);
+        return [receipt];
+    });
+}
+
+function assertDiscoveredCommandSchema(receipts: readonly unknown[]): void {
+    const discoveryReceipt = receipts.find(
         (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
     );
     if (
@@ -286,7 +287,7 @@ function createTurnTrackedWebLlmResponder(
         if (turn === 1) {
             return Promise.resolve(JSON.stringify(catalogDiscoveryPlan()));
         }
-        assertDiscoveredCommandSchema(userMessage);
+        assertDiscoveredCommandSchema(getApplicationToolReceipts(userMessage));
         return Promise.resolve(JSON.stringify(asCommandBatchProposal(buildPlan(userMessage))));
     };
 }
@@ -319,11 +320,10 @@ function createTurnTrackedHostedResponder(): (...args: Parameters<typeof fetch>)
         if (turn > 2) {
             throw new Error('Expected exactly two hosted provider turns');
         }
-        const userMessage = getHostedUserMessage(init.body);
         if (turn === 1) {
             return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan()));
         }
-        assertDiscoveredCommandSchema(userMessage);
+        assertDiscoveredCommandSchema(getReplayedToolReceipts(init.body));
         return Promise.resolve(toolCallsResponse(asCommandBatchProposal(providerPlan)));
     };
 }
