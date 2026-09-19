@@ -18,7 +18,7 @@ export function setInputMonitoring(trackId: string, mode: InputMonitoring): void
     // Stopping is per track: other tracks keep their monitor edges and the
     // shared capture stays live while any of them still listens.
     if (mode === 'on') {
-        void startInputMonitoring(trackId);
+        void startInputMonitoring(trackId, track?.inputId);
     } else {
         stopTrackInputMonitoring(trackId);
     }

@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type Track } from '../../../models/Track';
 import { setInputMonitoring } from '../setInputMonitoring';
+
+const inputTwoTrack = {
+    id: 't1',
+    kind: 'audio',
+    inputId: 'input-2',
+} satisfies Pick<Track, 'id' | 'kind' | 'inputId'>;
 
 const mocks = vi.hoisted(() => ({
     getTrackById: vi.fn(),
@@ -22,7 +29,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 }));
 
 describe('setInputMonitoring', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => vi.resetAllMocks());
 
     it('sets monitoring to ON and starts it in engine', () => {
         setInputMonitoring('t1', 'on');
@@ -35,7 +42,23 @@ describe('setInputMonitoring', () => {
         const updater = call[1];
         expect(updater({ inputMonitoring: 'off' })).toEqual({ inputMonitoring: 'on' });
 
-        expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1');
+        expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1', undefined);
+    });
+
+    it('starts monitoring on the track’s own selected input', () => {
+        mocks.getTrackById.mockReturnValue(inputTwoTrack);
+
+        setInputMonitoring('t1', 'on');
+
+        expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1', 'input-2');
+    });
+
+    it('starts monitoring on the default capture when the track has no explicit selection', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', inputId: null });
+
+        setInputMonitoring('t1', 'on');
+
+        expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1', null);
     });
 
     it('sets monitoring to OFF and stops that track’s listening edge only', () => {
@@ -60,13 +83,13 @@ describe('setInputMonitoring', () => {
         (mode) => {
             mocks.getTrackById.mockImplementation((trackId: string) => {
                 if (trackId === 'audio-1') {
-                    return { id: 'audio-1', kind: 'audio' };
+                    return { id: 'audio-1', kind: 'audio', inputId: 'input-2' };
                 }
                 return { id: 'vca-1', kind: 'vca' };
             });
 
             setInputMonitoring('audio-1', 'on');
-            expect(mocks.startInputMonitoring).toHaveBeenCalledWith('audio-1');
+            expect(mocks.startInputMonitoring).toHaveBeenCalledWith('audio-1', 'input-2');
             mocks.updateTrack.mockClear();
             mocks.startInputMonitoring.mockClear();
 

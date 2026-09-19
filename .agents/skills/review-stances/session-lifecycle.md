@@ -105,3 +105,27 @@ Probe: `grep -rn startNativeSessionAtBeat src/modules --include='*.ts' | grep -v
 read each caller and name what stands in for the deleted correction there. A caller with no answer
 is the finding, and "the shared path handles it" is not an answer unless that path can distinguish
 the callers.
+
+### 2026-09-19 — the acquisition cache keyed by nothing (escaped via PR #4394, fixed in #4423)
+
+PR #4394 let two tracks record from different audio devices, but the input-monitoring session stayed
+a singleton holding one monitor source and one pending acquisition, and `startInputMonitoring(trackId,
+inputId)` returned an existing source without ever comparing the requested input. The cache was keyed
+by nothing while the caller passes an identity, so one request silently served a different endpoint: a
+musician monitoring two armed tracks heard the first device for both while each track recorded its
+own. The manual On entry points never passed the track's selection at all, so enabling a monitor from
+the UI opened the global/default capture even when the track names its own device.
+
+Blind spot: the stance walked the recording path's own inputs and took the monitor session as one
+shared runtime rather than an acquisition cache keyed by the caller's identity. A cache that ignores
+the argument it is handed makes every later caller an alias of the first, and an entry point that
+drops the identity degrades to the same default for everyone.
+
+Probe that would have caught it: assert at the monitor outputs, never at forwarded identifiers. Two
+tracks requesting different inputs must yield two acquisitions and two distinct sources, each track
+edge fed by its own source, and the manual enable path must carry the track's own selection into the
+engine call. Restore the singleton reuse — attach to whatever source exists while ignoring the
+requested key — and the assertion reddens, as it does at #4423.
+
+Ownership half: a per-track edge and a per-key stream are released exactly once, and one key's failed
+acquisition must not disturb another key's source, edge, or pending grant.
