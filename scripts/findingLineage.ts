@@ -12,6 +12,7 @@
  * `undefined`, while a present but malformed marker throws.
  */
 
+import { canonicalJson, lastMarkerLine, parseMarkerPayload, type JsonValue } from './canonicalRecord.ts';
 import { fail } from './prContract.ts';
 import { assertPublicationSafeEvidence } from './reviewDossier.ts';
 
@@ -51,22 +52,6 @@ const DISPOSITIONS: Record<FindingDisposition, true> = {
     transferred: true,
     discarded: true,
 };
-
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-
-/** Key-sorted, whitespace-free JSON, so one lineage has exactly one marker payload. */
-function canonicalJson(value: JsonValue): string {
-    if (Array.isArray(value)) {
-        return `[${value.map((entry) => canonicalJson(entry)).join(',')}]`;
-    }
-    if (value !== null && typeof value === 'object') {
-        const members = Object.entries(value)
-            .sort(([left], [right]) => (left < right ? -1 : 1))
-            .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`);
-        return `{${members.join(',')}}`;
-    }
-    return JSON.stringify(value);
-}
 
 function describeValue(value: unknown): string {
     return JSON.stringify(value) ?? typeof value;
@@ -331,41 +316,9 @@ export function renderFindingLineage(lineage: FindingLineage): string {
     return `${summary}\n${LINEAGE_MARKER} ${serializeLineage(lineage)}`;
 }
 
-/**
- * A marker line starts with the marker token at the start of a trimmed line; a line that merely
- * mentions the token inside prose is not a marker, so such prose is ignored like any other.
- */
-function isMarkerLine(line: string): boolean {
-    if (!line.startsWith(LINEAGE_MARKER)) {
-        return false;
-    }
-    const rest = line.slice(LINEAGE_MARKER.length);
-    return rest === '' || /^\s/u.test(rest);
-}
-
-function lastMarkerLine(body: string): string | undefined {
-    let marker: string | undefined;
-    for (const line of body.split(/\r?\n/u)) {
-        const trimmed = line.trim();
-        if (isMarkerLine(trimmed)) {
-            marker = trimmed;
-        }
-    }
-    return marker;
-}
-
-function parseMarkerPayload(payload: string): unknown {
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(payload);
-    } catch {
-        return fail('finding lineage marker line is not valid JSON');
-    }
-    return parsed;
-}
-
+/** The last lineage marker line in `body` wins, so an appended record supersedes an earlier one. */
 export function parseFindingLineage(body: string): FindingLineage | undefined {
-    const marker = lastMarkerLine(body);
+    const marker = lastMarkerLine(body, LINEAGE_MARKER);
     if (marker === undefined) {
         return undefined;
     }
@@ -373,7 +326,7 @@ export function parseFindingLineage(body: string): FindingLineage | undefined {
     if (payload === '') {
         fail('finding lineage marker line carries no lineage record');
     }
-    const lineage = readLineage(parseMarkerPayload(payload));
+    const lineage = readLineage(parseMarkerPayload(payload, 'finding lineage'));
     assertLineageShape(lineage);
     return lineage;
 }

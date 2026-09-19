@@ -78,6 +78,7 @@ type Input = {
     existingLineageCount?: number;
     existingCommentAuthorType?: string;
     threads?: SupersededReviewThread[];
+    threadsBeforeClose?: SupersededReviewThread[];
 };
 
 function fakePort(input: Input = {}) {
@@ -90,6 +91,7 @@ function fakePort(input: Input = {}) {
     let concurrentCommentAdded = false;
     let closedAt: string | null = null;
     let postedCount = 0;
+    let threadReads = 0;
     let comments: IssueComment[] = [oldComment];
     const postedIds: string[] = [];
     const markerComment = (id: string, fullDatabaseId: string, body: string, authorType = 'Bot'): IssueComment => ({
@@ -199,6 +201,10 @@ function fakePort(input: Input = {}) {
         },
         inspectReviewThreads: (number) => {
             calls.push(`threads:${number}`);
+            threadReads += 1;
+            if (threadReads > 1 && input.threadsBeforeClose !== undefined) {
+                return input.threadsBeforeClose;
+            }
             return input.threads ?? defaultThreads;
         },
         comment: (number, body) => {
@@ -491,6 +497,7 @@ describe('pull-request supersession', () => {
             `comment:2244:${lineageBody}`,
             'inspect:2244',
             'inspect:2244',
+            'threads:2244',
             'close:2244',
             'inspect:2244',
             'log:pull-request-superseded:2244:2246',
@@ -593,6 +600,95 @@ describe('pull-request supersession', () => {
             supersedePullRequest(oldNumber, head, replacementNumber, discarded, AUTHOR_BOT_NODE_ID, port)
         ).toThrow(/entries\[0\]\.reason value at index 0 is blank/i);
         expect(calls.filter((call) => call.startsWith('comment:') || call.startsWith('close:'))).toEqual([]);
+    });
+    it('refuses a transferred entry bound to a different replacement pull request', () => {
+        const { port, calls } = fakePort();
+        const transferred: FindingLineage = {
+            ...repairedLineage,
+            entries: [
+                {
+                    findingId: findingA,
+                    disposition: 'transferred',
+                    replacementPr: 9999,
+                    replacementFindingId: '2001',
+                    reason: '',
+                },
+            ],
+        };
+        expect(() =>
+            supersedePullRequest(oldNumber, head, replacementNumber, transferred, AUTHOR_BOT_NODE_ID, port)
+        ).toThrow(/entries\[0\]\.replacementPr must be 2246, found 9999/i);
+        expect(calls.filter((call) => call.startsWith('comment:') || call.startsWith('close:'))).toEqual([]);
+    });
+    it('refuses a repaired entry with a null replacement finding id', () => {
+        const { port, calls } = fakePort();
+        const repaired: FindingLineage = {
+            ...repairedLineage,
+            entries: [{ ...repairedEntry, replacementFindingId: null }],
+        };
+        expect(() =>
+            supersedePullRequest(oldNumber, head, replacementNumber, repaired, AUTHOR_BOT_NODE_ID, port)
+        ).toThrow(/entries\[0\] is repaired, so replacementFindingId must name the finding on pull request 2246/i);
+        expect(calls.filter((call) => call.startsWith('comment:') || call.startsWith('close:'))).toEqual([]);
+    });
+    it('refuses a discarded entry naming a replacement pull request', () => {
+        const { port, calls } = fakePort();
+        const discarded: FindingLineage = {
+            ...repairedLineage,
+            entries: [
+                {
+                    findingId: findingA,
+                    disposition: 'discarded',
+                    replacementPr: replacementNumber,
+                    replacementFindingId: null,
+                    reason: 'carried on the replacement',
+                },
+            ],
+        };
+        expect(() =>
+            supersedePullRequest(oldNumber, head, replacementNumber, discarded, AUTHOR_BOT_NODE_ID, port)
+        ).toThrow(/entries\[0\] is discarded, so replacementPr must be null, found 2246/i);
+        expect(calls.filter((call) => call.startsWith('comment:') || call.startsWith('close:'))).toEqual([]);
+    });
+    it('refuses a discarded entry naming a replacement finding id', () => {
+        const { port, calls } = fakePort();
+        const discarded: FindingLineage = {
+            ...repairedLineage,
+            entries: [
+                {
+                    findingId: findingA,
+                    disposition: 'discarded',
+                    replacementPr: null,
+                    replacementFindingId: '2001',
+                    reason: 'carried on the replacement',
+                },
+            ],
+        };
+        expect(() =>
+            supersedePullRequest(oldNumber, head, replacementNumber, discarded, AUTHOR_BOT_NODE_ID, port)
+        ).toThrow(/entries\[0\] is discarded, so replacementFindingId must be null, found "2001"/i);
+        expect(calls.filter((call) => call.startsWith('comment:') || call.startsWith('close:'))).toEqual([]);
+    });
+
+    it('refuses a finding added during the transaction before the close', () => {
+        const { port, calls, authorNodeId, state } = fakePort({
+            threadsBeforeClose: [...defaultThreads, { threadId: 'PRRT_2', rootCommentId: findingB }],
+        });
+        expect(() => run(port, repairedLineage, authorNodeId)).toThrow(
+            /finding set changed after finding lineage: added 1002, removed none/i
+        );
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
+        expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id]);
+    });
+    it('refuses a finding removed during the transaction before the close', () => {
+        const { port, calls, authorNodeId, state } = fakePort({ threadsBeforeClose: [] });
+        expect(() => run(port, repairedLineage, authorNodeId)).toThrow(
+            /finding set changed after finding lineage: added none, removed 1001/i
+        );
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
+        expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id]);
     });
 
     it('refuses a wrong-body comment receipt before checking stability or closing', () => {
@@ -773,9 +869,11 @@ describe('pull-request supersession', () => {
         expect(calls.filter((call) => !call.startsWith('inspect') && !call.startsWith('threads:'))).toEqual([]);
     });
     it('surfaces compensation failure', () => {
-        const { port, authorNodeId } = fakePort({ throwAfterComment: true, failDelete: true });
+        const { port, authorNodeId, state, calls } = fakePort({ heads: [head, movedHead], failDelete: true });
         expect(() => run(port, repairedLineage, authorNodeId)).toThrow(
-            /comment transport lost[\s\S]*compensation failed/i
+            /head moved[\s\S]*compensation failed[\s\S]*delete denied/i
         );
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
+        expect(state().comments.map((comment) => comment.id)).toEqual([oldComment.id, 'IC_post_1', 'IC_post_2']);
     });
 });

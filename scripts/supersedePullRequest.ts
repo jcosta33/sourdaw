@@ -113,6 +113,33 @@ function lineageFindings(number: number, port: SupersedePullRequestPort): Lineag
     return port.inspectReviewThreads(number).map((thread) => ({ findingId: thread.rootCommentId, pr: number }));
 }
 
+/**
+ * The lineage covers the findings read before any mutation. Re-reading the live review threads
+ * immediately before the close refuses when that set moved, so a thread added or removed during the
+ * transaction cannot let the close record a disposition the lineage never wrote.
+ */
+function assertFindingsUnchanged(
+    number: number,
+    covered: readonly LineageFinding[],
+    port: SupersedePullRequestPort
+): void {
+    const current = lineageFindings(number, port);
+    const coveredIds = new Set(covered.map((finding) => finding.findingId));
+    const currentIds = new Set(current.map((finding) => finding.findingId));
+    const added = current.filter((finding) => !coveredIds.has(finding.findingId)).map((finding) => finding.findingId);
+    const removed = covered.filter((finding) => !currentIds.has(finding.findingId)).map((finding) => finding.findingId);
+    if (added.length === 0 && removed.length === 0) {
+        return;
+    }
+    fail(
+        `PR #${number} finding set changed after finding lineage: added ${formatFindingIds(added)}, removed ${formatFindingIds(removed)}; compensating`
+    );
+}
+
+function formatFindingIds(ids: readonly string[]): string {
+    return ids.length === 0 ? 'none' : ids.join(', ');
+}
+
 /** Which marker a comment must carry to be part of this transaction, and how a refusal names it. */
 type MarkerSpec = { body: string; label: string };
 /** The two markers, in the order the transaction posts them: the receipt, then the lineage. */
@@ -137,7 +164,8 @@ export function supersedePullRequest(
         fail('replacement pull request must differ from the old pull request');
     }
     assertLineageBinding(lineage, oldNumber, replacementNumber);
-    assertFindingLineage(lineage, lineageFindings(oldNumber, port));
+    const coveredFindings = lineageFindings(oldNumber, port);
+    assertFindingLineage(lineage, coveredFindings);
     const before = port.inspect(oldNumber);
     const replacement = port.inspect(replacementNumber);
     assertOldBinding(before, oldNumber, expectedHead);
@@ -165,6 +193,7 @@ export function supersedePullRequest(
         assertStableOpen(converged, oldNumber, expectedHead, before.base);
         const receiptMarker = requireOneCommentMarker(converged.comments, markers[0], markers, oldNumber);
         const lineageMarker = requireOneCommentMarker(converged.comments, markers[1], markers, oldNumber);
+        assertFindingsUnchanged(oldNumber, coveredFindings, port);
         closeAttempted = true;
         const closeResult = port.close(oldNumber);
         assertCloseReceipt(closeResult);

@@ -11,6 +11,7 @@
 
 import { createHash } from 'node:crypto';
 
+import { canonicalJson, type JsonValue } from './canonicalRecord.ts';
 import { fail } from './prContract.ts';
 
 import type { ReviewRiskClass, ReviewRiskPlan, ReviewStanceId } from './reviewRiskPolicy.ts';
@@ -56,7 +57,6 @@ export type ReviewDossier = {
 };
 
 type ReviewEvidence = ReviewDossier['evidence'][number];
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type FieldEntry = readonly [string, JsonValue];
 type ReadEventRecord = { event: ReviewDossierEvent; sequence: unknown; previousDigest: unknown; digest: unknown };
 type DossierPayload = Omit<ReviewDossier, 'format' | 'events' | 'headDigest' | 'dossierDigest'> & {
@@ -141,20 +141,6 @@ const UNSAFE_VALUE_SHAPES: readonly { readonly reason: string; readonly pattern:
 
 function sha256Hex(value: string): string {
     return createHash('sha256').update(value, 'utf8').digest('hex');
-}
-
-/** Key-sorted, whitespace-free JSON. Digest inputs are this text, never a pretty print. */
-function canonicalJson(value: JsonValue): string {
-    if (Array.isArray(value)) {
-        return `[${value.map((entry) => canonicalJson(entry)).join(',')}]`;
-    }
-    if (value !== null && typeof value === 'object') {
-        const members = Object.entries(value)
-            .sort(([left], [right]) => (left < right ? -1 : 1))
-            .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`);
-        return `{${members.join(',')}}`;
-    }
-    return JSON.stringify(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
