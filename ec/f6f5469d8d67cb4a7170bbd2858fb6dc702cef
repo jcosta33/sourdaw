@@ -1,0 +1,38 @@
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  s_9e15f5b7ec3308::t_92c9cad6dfd03c 71,96,110
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiResponsesToolCalls.ts
+  s_9e15f5b7ec3308::t_eb09792c372d33 137-139,146
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts
+  s_9e15f5b7ec3308::t_05d6e5c1d911ec 41-45
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiResponsesToolCalls.spec.ts
+  s_9e15f5b7ec3308::t_dd84ab34966c55 148-150
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_9e15f5b7ec3308::t_26dd2453f27076 462-463
+  s_9e15f5b7ec3308::t_bbf658e7bcfdfd 5
+  s_9e15f5b7ec3308::t_8953e1f6e23f32 222-257
+  s_9e15f5b7ec3308::t_cc145e1f49eaf1 502-503
+src/modules/AiRuntime/repositories/providerAdapterRegistry.ts
+  s_9e15f5b7ec3308::t_56505530c8fb70 33-36
+src/modules/AiRuntime/useCases/__tests__/toolChoiceDirectives.spec.ts
+  s_9e15f5b7ec3308::t_b1062bb8e906ca 140
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_9e15f5b7ec3308::t_758140751241ba 1164
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/hostedToolPlan.ts
+  s_9e15f5b7ec3308::t_f691b37d88efa4 25-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ecf6f5469d8d67cb4a7170bbd2858fb6dc702cef",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
