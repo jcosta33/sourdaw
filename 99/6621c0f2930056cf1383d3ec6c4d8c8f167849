@@ -1,0 +1,18 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_1228e573df1f42 2045-2053
+scripts/__tests__/claimTrackerIssue.spec.ts
+  h_1228e573df1f42 5,47,53,124-129,162-175,199,305-309,340-371
+scripts/claimTrackerIssue.ts
+  h_1228e573df1f42 2,4,9-10,60-62,97,124-129,132-137,285,305-328,346-357,360
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "996621c0f2930056cf1383d3ec6c4d8c8f167849",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
