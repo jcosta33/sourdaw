@@ -328,6 +328,11 @@ posts a readable reply carrying one canonical `sourdaw-repair-v1` marker line;
 it never resolves. Re-running the same head and commit posts nothing and reports
 the already-recorded state.
 
+For ancestry `B -> P -> R -> H`, let `B` be the PR base and `R` the root finding's
+reviewed commit. `H` qualifies as the repair even when it is the live head.
+`P` predates the finding, and `R` is the revision that received it; neither
+strictly descends `R`, so neither can be recorded or confirmed as its repair.
+
 The reviewer confirms with `review:confirm`, a distinct identity from the
 author's. It resolves, in one pass with deterministic mutation ids, the threads
 whose author-recorded repair validates: same pull request, same thread, same
