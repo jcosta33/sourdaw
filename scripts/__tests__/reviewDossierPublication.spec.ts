@@ -388,6 +388,29 @@ const BUILD_REFUSALS: readonly BuildRefusalCase[] = [
             /review dossier publication accepted finding 0 scripts\/reviewDossierPublication\.ts:42:LEFT does not match review comment scripts\/reviewDossierPublication\.ts:42:RIGHT/,
     },
     {
+        label: 'a dossier finding on the same line and side but a different path',
+        run: () =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: persistedRecord({
+                    events: [
+                        ...COMPLETED_STANCES,
+                        acceptedFinding({
+                            findingId: 'comment-0',
+                            path: 'scripts/invented.ts',
+                            line: COMMENT.line,
+                            side: COMMENT.side,
+                        }),
+                    ],
+                }),
+                discarded: [],
+                comments: [COMMENT],
+                recommendation: 'request-changes',
+            }),
+        message:
+            /review dossier publication accepted finding 0 scripts\/invented\.ts:42:RIGHT does not match review comment scripts\/reviewDossierPublication\.ts:42:RIGHT/,
+    },
+    {
         label: 'a dossier finding whose id is not the positional comment id',
         run: () =>
             buildReviewDossier({

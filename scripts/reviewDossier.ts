@@ -121,9 +121,12 @@ const UNSAFE_VALUE_SHAPES: readonly { readonly reason: string; readonly pattern:
     { reason: 'an AWS access key id', pattern: /A[KS]IA[0-9A-Z]{16}/u },
     { reason: 'a private key header', pattern: /-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}/u },
     { reason: 'a JSON web token', pattern: /eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/u },
-    { reason: 'a bearer credential', pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]+/u },
-    { reason: 'a serialized assistant turn', pattern: /"role"\s*:\s*"assistant"/u },
-    { reason: 'a serialized user turn', pattern: /"role"\s*:\s*"user"/u },
+    // RFC 6750/7235 auth schemes are case-insensitive, so `bearer` is refused like `Bearer`. The
+    // 16-character floor is a credential shape that separates a token from the word in `bearer token`.
+    { reason: 'a bearer credential', pattern: /\bbearer\s+[A-Za-z0-9._~+/=-]{16,}/iu },
+    // A serialized chat role is a transcript turn whichever role it names, so `[a-z]+` covers
+    // `system`, `tool` and the rest without ever matching prose that merely mentions one.
+    { reason: 'a serialized chat turn', pattern: /"role"\s*:\s*"[a-z]+"/u },
     { reason: 'a transcript role prefix', pattern: /^(?:Human|Assistant|System):/mu },
     { reason: 'a session transcript marker', pattern: /⏺|<session/u },
 ];
