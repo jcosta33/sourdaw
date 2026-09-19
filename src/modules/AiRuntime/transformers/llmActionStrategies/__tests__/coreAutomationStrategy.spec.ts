@@ -261,7 +261,7 @@ describe('coreAutomationStrategy', () => {
         });
     });
 
-    it('evaluates linked nonlinear source lanes before admitting relative decibels', () => {
+    it('refuses new decibel forms on linked followers while preserving the linear form', () => {
         const sourceLane = {
             ...projectContext.automationLanes![0]!,
             id: 'source',
@@ -282,16 +282,22 @@ describe('coreAutomationStrategy', () => {
 
         expect(
             bridge(
-                { name: 'addAutomationPoint', arguments: { laneId: linkedLane.id, beat: 4, deltaDb: 6 } },
+                { name: 'addAutomationPoint', arguments: { laneId: linkedLane.id, beat: 4, value: 1 } },
                 linkedContext
             )
         ).toEqual({
             type: 'addAutomationPoint',
-            payload: { laneId: linkedLane.id, beat: 4, deltaDb: 6 },
+            payload: { laneId: linkedLane.id, beat: 4, value: 1 },
         });
         expectRejected(
             'addAutomationPoint',
-            { laneId: linkedLane.id, beat: 4, deltaDb: 12 },
+            { laneId: linkedLane.id, beat: 4, valueDb: -6 },
+            rejectionReasons.addAutomationPoint,
+            linkedContext
+        );
+        expectRejected(
+            'addAutomationPoint',
+            { laneId: linkedLane.id, beat: 4, deltaDb: -6 },
             rejectionReasons.addAutomationPoint,
             linkedContext
         );

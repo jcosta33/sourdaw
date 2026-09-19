@@ -220,6 +220,27 @@ describe('a level stated in decibels reaches the handler in decibels', () => {
         ).toEqual([]);
     });
 
+    it('grounds a spaced decibel fraction as one complete figure', () => {
+        const result = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: vocals.id, deltaDb: -0.5 } }],
+            'lower Vocals by 1 / 2 dB'
+        );
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: vocals.id, deltaDb: -0.5 } }]);
+    });
+
+    it.each([
+        ['a chained fraction', 'lower Vocals by 1/2/3 dB', -3],
+        ['an incomplete denominator', 'lower Vocals by 1/ dB', -1],
+        ['a signed denominator', 'lower Vocals by 1/-2 dB', -2],
+        ['a repeated decimal boundary', 'lower Vocals by 1.2.3 dB', -0.3],
+        ['a repeated sign boundary', 'lower Vocals by --2 dB', -2],
+    ])('refuses %s instead of grounding a numeric suffix', (_label, prompt, deltaDb) => {
+        const result = bridge([{ name: 'setTrackGain', arguments: { trackId: vocals.id, deltaDb } }], prompt);
+
+        expect(result.actions).toEqual([]);
+    });
+
     it('grounds an absolute track level and refuses the change and amplitude readings', () => {
         const prompt = 'set Vocals volume to -6 dB';
 
