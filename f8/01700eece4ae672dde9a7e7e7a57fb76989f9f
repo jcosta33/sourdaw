@@ -1,0 +1,31 @@
+scripts/reviewerModelDiversity.ts
+  s_9e15f5b7ec3308::t_b09c75b2d72119 4-15,62-63,65,69-73,75-76
+  s_9e15f5b7ec3308::t_18d6f8d8889300 29-35,39,44-45,60-61,64,67,77
+  s_9e15f5b7ec3308::t_e69521a0a112d2 74,82-101
+scripts/publishReview.ts
+  s_9e15f5b7ec3308::t_c379d503735139 308
+scripts/reviewDocumentParser.ts
+  s_9e15f5b7ec3308::t_0d3daf9935d87d 76,99-109,111-115,119-123,125
+  s_9e15f5b7ec3308::t_14e2ff4a77785a 116-118
+scripts/__tests__/publishReview.spec.ts
+  s_9e15f5b7ec3308::t_48310a6255cc14 1266-1300,1319-1321
+  s_9e15f5b7ec3308::t_a8c07a47121351 1301-1318
+scripts/__tests__/reviewerModelDiversity.spec.ts
+  s_9e15f5b7ec3308::t_ef21580b1c3b8b 72-77,81-89,207-234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f801700eece4ae672dde9a7e7e7a57fb76989f9f",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
