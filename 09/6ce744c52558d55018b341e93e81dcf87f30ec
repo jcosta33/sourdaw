@@ -1,0 +1,16 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_1228e573df1f42 5-6,30-31,90-92,285-308
+AGENTS.md
+  h_1228e573df1f42 138-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "096ce744c52558d55018b341e93e81dcf87f30ec",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
