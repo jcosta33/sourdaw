@@ -33,6 +33,21 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Lessons from escapes
 
+### 2026-09-19 — an Anthropic usage fixture mirrored the raw-field mapping (escaped via PR #4393)
+
+PR #4393 normalized Anthropic `input_tokens` directly as total input while also exposing cache-read and
+cache-creation counters. Its fixture reported 50 raw, 5 read, and 8 creation tokens, then asserted 50,
+so the test encoded the faulty mapping instead of the provider's documented 63-token billing total.
+
+Blind spot: the adapter test checked that every wire field reached some result field, but never stated
+which counters are subsets and which normalized counter is inclusive. The later attribution helper
+repeated the production mapping, so it could not expose a dropped field in that mapping.
+
+Probe that would have caught it: use unequal raw, cache-read, and cache-write values; assert their
+inclusive total and separate counters through the real provider producer, protocol accumulator, run
+budget, and cost projection. Make the terminal stream event output-only, and require the initial input
+and cache counters to survive without being added twice.
+
 ### 2026-09-18 — a command whose own spec imported it, and a freshness check that healed the state it asserted (escaped via PR #4356)
 
 `scripts/restampWasmInventory.ts` ended in a bare `run();` with no entry guard, and its spec imported the module for its helpers, so collecting the spec executed the command: running it rewrote `release/open-source-inventory.json`, the spec's "the command reports a current inventory on a fresh committed tree" case then observed the file it had just healed and could never fail on a drifted tree, and on a tree the command would refuse the module-level throw prevented the file's tests from running at all. The same head's refusal also told the reader to run "its wasm:* script", a name that does not exist for every package.
