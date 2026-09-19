@@ -410,9 +410,11 @@ const harness: ProviderProtocolHarness = {
     },
     readCorrelatingIds: (request): ProviderCorrelationObservation => {
         const items = (request.input ?? []) as Record<string, unknown>[];
+        const outputs = items.filter((item) => item.type === 'function_call_output');
         return {
             callIds: items.filter((item) => item.type === 'function_call').map((item) => String(item.call_id)),
-            resultIds: items.filter((item) => item.type === 'function_call_output').map((item) => String(item.call_id)),
+            resultIds: outputs.map((item) => String(item.call_id)),
+            resultPayloads: outputs.map((item) => String(item.output)),
         };
     },
     readWireTool: (tool) => {

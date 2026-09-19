@@ -279,9 +279,15 @@ export type ProviderWireTool = { strict: unknown; parameters: unknown };
  * shape: the ids the restated tool calls carry (Anthropic `tool_use.id`, Responses
  * `function_call.call_id`, chat completions `tool_calls[].id`) and the ids the tool results
  * answer them with (`tool_result.tool_use_id`, `function_call_output.call_id`,
- * `tool_call_id`), each in wire order.
+ * `tool_call_id`), each in wire order, plus the serialised payload each tool result carries
+ * (`tool_result.content`, `function_call_output.output`, the `role: 'tool'` message's `content`)
+ * in that same order, raw as the dialect wrote it.
  */
-export type ProviderCorrelationObservation = { callIds: string[]; resultIds: string[] };
+export type ProviderCorrelationObservation = {
+    callIds: string[];
+    resultIds: string[];
+    resultPayloads: string[];
+};
 
 export type ProviderProtocolHarness = {
     streamText: (scenario: ProviderStreamScenario) => Promise<ProviderStreamObservation>;
@@ -559,6 +565,15 @@ export function describeProviderProtocolConformance(name: string, harness: Provi
             const correlation = harness.readCorrelatingIds(observed.request);
             expect(correlation.callIds).toEqual([...MULTI_CALL_TURN_CALL_IDS]);
             expect(correlation.resultIds).toEqual([...MULTI_CALL_TURN_CALL_IDS]);
+            // The payload each result carries, not just the identifier it answers under: a
+            // dialect serialising one receipt into every result keeps the identifiers correct.
+            const answered = correlation.resultPayloads.map((payload) => {
+                const receipt = JSON.parse(payload) as { callId: unknown; toolName: unknown };
+                return { callId: receipt.callId, toolName: receipt.toolName };
+            });
+            expect(answered).toEqual(
+                PROVIDER_MULTI_CALL_TURN_RECEIPTS.map(({ callId, toolName }) => ({ callId, toolName }))
+            );
             expectToolRequest(observed.request);
         });
 

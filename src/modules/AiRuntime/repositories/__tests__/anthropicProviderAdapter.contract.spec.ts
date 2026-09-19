@@ -392,9 +392,11 @@ const harness: ProviderProtocolHarness = {
         const blocks = messages.flatMap(({ content }) =>
             Array.isArray(content) ? (content as Record<string, unknown>[]) : []
         );
+        const results = blocks.filter((block) => block.type === 'tool_result');
         return {
             callIds: blocks.filter((block) => block.type === 'tool_use').map((block) => String(block.id)),
-            resultIds: blocks.filter((block) => block.type === 'tool_result').map((block) => String(block.tool_use_id)),
+            resultIds: results.map((block) => String(block.tool_use_id)),
+            resultPayloads: results.map((block) => String(block.content)),
         };
     },
     readWireTool: (tool) => {

@@ -397,6 +397,7 @@ const harness: ProviderProtocolHarness = {
     },
     readCorrelatingIds: (request): ProviderCorrelationObservation => {
         const messages = (request.messages ?? []) as Record<string, unknown>[];
+        const results = messages.filter((message) => message.role === 'tool');
         return {
             callIds: messages.flatMap((message) => {
                 if (!Array.isArray(message.tool_calls)) {
@@ -404,9 +405,8 @@ const harness: ProviderProtocolHarness = {
                 }
                 return (message.tool_calls as Record<string, unknown>[]).map((call) => String(call.id));
             }),
-            resultIds: messages
-                .filter((message) => message.role === 'tool')
-                .map((message) => String(message.tool_call_id)),
+            resultIds: results.map((message) => String(message.tool_call_id)),
+            resultPayloads: results.map((message) => String(message.content)),
         };
     },
     readWireTool: (tool) => {
