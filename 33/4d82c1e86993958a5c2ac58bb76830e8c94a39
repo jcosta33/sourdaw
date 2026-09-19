@@ -1,0 +1,36 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/authoredParameterGuidance.spec.ts
+  s_9e15f5b7ec3308::t_981fb2a492f470 312-355
+  s_9e15f5b7ec3308::t_4f0e828d52485f 121-183
+  s_9e15f5b7ec3308::t_fcf29448a6a4e4 311
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptorsGuidance.ts
+  s_9e15f5b7ec3308::t_dcec68517df597 44
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptorsGuidanceTone.ts
+  s_9e15f5b7ec3308::t_ed69c50ca31930 256-257
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_9e15f5b7ec3308::t_28ab3fa735c82d 37
+  s_9e15f5b7ec3308::t_87348784b37712 43
+  s_9e15f5b7ec3308::t_95b15dcb3d4bb4 34
+  s_9e15f5b7ec3308::t_26e26c1d6cbb83 45
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptorsGuidanceTimeAndSpace.ts
+  s_9e15f5b7ec3308::t_2f359e0ded32ea 121,123
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptorsGuidance.ts
+  s_9e15f5b7ec3308::t_3a94ac782bdca7 106
+evidence/agent-campaign/manifest.json
+  s_9e15f5b7ec3308::t_7b65dad2d8234c 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "334d82c1e86993958a5c2ac58bb76830e8c94a39",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
