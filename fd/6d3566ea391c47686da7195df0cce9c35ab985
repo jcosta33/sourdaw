@@ -1,0 +1,21 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_87ab0a2f60ccf8::t_8bf7e3af24215d 61,63,70,3498-3621
+scripts/trustedGithubWriteBootstrap.ts
+  s_87ab0a2f60ccf8::t_bac41cf69c490e 1394-1423,1425-1433,1437-1438
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fd6d3566ea391c47686da7195df0cce9c35ab985",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
