@@ -678,6 +678,33 @@ describe('assertPublicationSafeEvidence', () => {
         ).toThrow(/evidence\[0\]\.observed value at index 0 contains a private key header/);
     });
 
+    it.each([
+        '-----BEGIN PRIVATE KEY-----',
+        '-----BEGIN SECRET KEY-----',
+        '-----BEGIN RSA PRIVATE KEY-----',
+        '-----BEGIN EC PRIVATE KEY-----',
+        '-----BEGIN DSA PRIVATE KEY-----',
+        '-----BEGIN OPENSSH PRIVATE KEY-----',
+        '-----BEGIN ENCRYPTED PRIVATE KEY-----',
+        '-----BEGIN X25519 PRIVATE KEY-----',
+        '-----BEGIN ED25519 PRIVATE KEY-----',
+        '-----BEGIN PGP PRIVATE KEY BLOCK-----',
+        '-----BEGIN X25519 SECRET KEY-----',
+    ])('should refuse the private or secret key armor %s and name the field, index and reason', (armor) => {
+        expect(() => assertPublicationSafeEvidence('evidence[0].observed', [armor])).toThrow(
+            /evidence\[0\]\.observed value at index 0 contains a private key header/
+        );
+    });
+
+    it.each([
+        ['a PGP public key armor block', '-----BEGIN PGP PUBLIC KEY BLOCK-----'],
+        ['a certificate armor block', '-----BEGIN CERTIFICATE-----'],
+        ['prose that mentions a private key', 'the private key must never be committed'],
+        ['a base64 body with no armor header', 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQ'],
+    ])('should pass %s', (_name, value) => {
+        expect(() => assertPublicationSafeEvidence('evidence[0].observed', [value])).not.toThrow();
+    });
+
     it('should pass a PGP public key armor block and prose that mentions a private key', () => {
         expect(() =>
             assertPublicationSafeEvidence('evidence[0].observed', [
