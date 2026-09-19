@@ -1237,6 +1237,17 @@ describe('package scripts and gitignore', () => {
                     ...stackSummarySources,
                 ],
             },
+            {
+                command: 'issue:claim' as const,
+                entry: 'scripts/claimTrackerIssue.ts',
+                required: 'scripts/githubAppIdentity.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/claimTrackerIssue.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                ],
+            },
         ];
 
         for (const { command, entry, required, expected } of cases) {

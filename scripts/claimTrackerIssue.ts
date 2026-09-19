@@ -330,10 +330,35 @@ export function assertTrustedClaimLauncherBinding(input: {
 
 export type ClaimAuthentication = { session: { env: NodeJS.ProcessEnv; dispose: () => void } };
 
-export async function runClaimTrackerIssueCli(
-    args: string[],
-    authenticate: () => ClaimAuthentication = () => authenticateOrchestratorSession()
-): Promise<number> {
+export type ClaimCliDeps = {
+    authenticate: () => ClaimAuthentication;
+    bindLauncher: () => void;
+    createGh: (session: ClaimAuthentication['session']) => Gh;
+    log: (message: string) => void;
+};
+
+function realClaimCliDeps(runtime: TrustedClaimRuntime): ClaimCliDeps {
+    return {
+        authenticate: () => authenticateOrchestratorSession(),
+        bindLauncher: () =>
+            assertTrustedClaimLauncherBinding({
+                resolvedCwd: realpathSync(process.cwd()),
+                resolvedPrimaryRoot: realpathSync(runtime.primaryRoot),
+                executingSource: readFileSync(fileURLToPath(import.meta.url), 'utf8'),
+                originSource: originMainBlob(
+                    'scripts/claimTrackerIssue.ts',
+                    process.cwd(),
+                    githubAuthorizationGitEnv(),
+                    runtime.gitPath,
+                    runtime.originCommit
+                ),
+            }),
+        createGh: (session) => (ghArgs) => spawnCapture('gh', ghArgs, { cwd: runtime.primaryRoot, env: session.env }),
+        log: (message) => console.log(message),
+    };
+}
+
+export async function runClaimTrackerIssueCli(args: string[], deps?: ClaimCliDeps): Promise<number> {
     const parsed = parseClaimArgs(args);
     if (parsed.help) {
         console.log(`Usage: ${CLAIM_USAGE.slice('usage: '.length)}`);
@@ -342,23 +367,12 @@ export async function runClaimTrackerIssueCli(
     if (parsed.issue === undefined) {
         fail(CLAIM_USAGE);
     }
-    const runtime = trustedClaimRuntime();
-    assertTrustedClaimLauncherBinding({
-        resolvedCwd: realpathSync(process.cwd()),
-        resolvedPrimaryRoot: realpathSync(runtime.primaryRoot),
-        executingSource: readFileSync(fileURLToPath(import.meta.url), 'utf8'),
-        originSource: originMainBlob(
-            'scripts/claimTrackerIssue.ts',
-            process.cwd(),
-            githubAuthorizationGitEnv(),
-            runtime.gitPath,
-            runtime.originCommit
-        ),
-    });
-    const auth = authenticate();
+    // Resolved after the help branch so `--help` answers without the launcher environment.
+    const wired = deps ?? realClaimCliDeps(trustedClaimRuntime());
+    wired.bindLauncher();
+    const auth = wired.authenticate();
     try {
-        const gh: Gh = (ghArgs) => spawnCapture('gh', ghArgs, { cwd: runtime.primaryRoot, env: auth.session.env });
-        claimTrackerIssue(parsed.issue, gh, (message) => console.log(message));
+        claimTrackerIssue(parsed.issue, wired.createGh(auth.session), wired.log);
         return 0;
     } finally {
         auth.session.dispose();

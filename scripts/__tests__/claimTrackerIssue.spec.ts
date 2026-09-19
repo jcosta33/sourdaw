@@ -8,9 +8,11 @@ import {
     labelNamesFromRow,
     labelSwapPlan,
     parseClaimArgs,
+    runClaimTrackerIssueCli,
     statusFieldIds,
     trustedClaimRuntime,
     type ClaimBoardItem,
+    type ClaimCliDeps,
     type Gh,
 } from '../claimTrackerIssue.ts';
 
@@ -173,6 +175,11 @@ describe('claim tracker issue', () => {
             'number=7',
         ]);
         expect(boardsCall?.[3]).toContain('query($owner:String!,$name:String!,$number:Int!)');
+        expect(boardsCall?.[3]).toContain('issue(number:$number)');
+        expect(boardsCall?.[3]).toContain('projectItems(first:20){totalCount');
+        expect(boardsCall?.[3]).toContain('... on User{login}');
+        expect(boardsCall?.[3]).toContain('... on Organization{login}');
+        expect(boardsCall?.[3]).toContain('fieldValueByName(name:"Status")');
         expect(callsWith(calls, ['project', 'field-list'])).toHaveLength(2);
         expect(calls).toContainEqual(['project', 'field-list', '3', '--owner', 'jcosta33', '--format', 'json']);
         expect(calls).toContainEqual(['project', 'field-list', '2', '--owner', 'jcosta33', '--format', 'json']);
@@ -369,5 +376,52 @@ describe('claim launcher binding', () => {
         expect(() => assertTrustedClaimLauncherBinding({ ...binding, executingSource: 'mutated' })).toThrow(
             /does not match origin\/main; refusing to run a mutated copy/
         );
+    });
+});
+
+describe('claim cli wiring', () => {
+    function recordingDeps(order: string[], ghResponses: (args: string[]) => string): ClaimCliDeps {
+        return {
+            bindLauncher: () => order.push('bind'),
+            authenticate: () => {
+                order.push('authenticate');
+                return { session: { env: {}, dispose: () => order.push('dispose') } };
+            },
+            createGh: () => (args) => {
+                order.push('gh');
+                return ghResponses(args);
+            },
+            log: () => undefined,
+        };
+    }
+
+    it('binds the launcher, then authenticates, then touches gh, disposing the session last', async () => {
+        const order: string[] = [];
+        const deps = recordingDeps(order, (args) => {
+            if (args[0] === 'issue' && args[1] === 'view') {
+                return JSON.stringify({ labels: [] });
+            }
+            if (args[0] === 'api') {
+                return boardsGraphql([]);
+            }
+            if (args[0] === 'issue' && args[1] === 'edit') {
+                return '';
+            }
+            throw new Error(`unexpected gh call: ${args.join(' ')}`);
+        });
+
+        await expect(runClaimTrackerIssueCli(['9'], deps)).resolves.toBe(0);
+
+        expect(order).toEqual(['bind', 'authenticate', 'gh', 'gh', 'gh', 'dispose']);
+    });
+
+    it('refuses before binding or authentication when the argument is not one issue number', async () => {
+        const order: string[] = [];
+        const deps = recordingDeps(order, () => {
+            throw new Error('gh must not be called');
+        });
+
+        await expect(runClaimTrackerIssueCli(['nonsense'], deps)).rejects.toThrow(/usage: pnpm issue:claim/);
+        expect(order).toEqual([]);
     });
 });
