@@ -315,6 +315,41 @@ fn early_late_defaults_to_the_documented_value() {
 }
 
 // ---------------------------------------------------------------------------
+// diffusion
+// ---------------------------------------------------------------------------
+
+#[test]
+fn out_of_range_diffusion_renders_as_the_clamped_endpoint() {
+    // The input-diffuser gains are derived from the clamped value, not the raw
+    // write, so a knob pushed past the declared 0..1 range must sound exactly
+    // like the endpoint it clamps to — the contract the output stage's cutoffs
+    // already hold. The gains used to track the raw argument, so diffusion 2
+    // drove them to 1.5 and 1.25, past the declared range and away from
+    // anything diffusion 1 renders (and, allpass feedback above 1 being
+    // unbounded, off the finite map entirely).
+    for (out_of_range, endpoint) in [(2.0_f32, 1.0), (-1.0, 0.0)] {
+        let beyond = render(&[("diffusion", out_of_range)]);
+        let at_the_endpoint = render(&[("diffusion", endpoint)]);
+        assert!(
+            identical(&beyond, &at_the_endpoint),
+            "diffusion {out_of_range} must render identically to the clamped \
+             endpoint {endpoint}; peak difference {:e}",
+            max_delta(&beyond, &at_the_endpoint)
+        );
+    }
+
+    // The identity above is only informative because the endpoints themselves
+    // sound different: a diffusion that no longer moved the render at all
+    // would pass it vacuously.
+    let dark = render(&[("diffusion", 0.0)]);
+    let bright = render(&[("diffusion", 1.0)]);
+    assert!(
+        !identical(&dark, &bright),
+        "diffusion 0 renders identically to diffusion 1"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // saturation_type
 // ---------------------------------------------------------------------------
 
