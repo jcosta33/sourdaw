@@ -1,0 +1,16 @@
+scripts/canonicalRecord.ts
+  h_1228e573df1f42 68
+scripts/findingLineage.ts
+  h_1228e573df1f42 343-347,351
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b3c29c2d2e4b9b72f326b362b2630c780b6cec47",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
