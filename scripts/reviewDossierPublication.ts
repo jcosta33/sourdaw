@@ -22,13 +22,13 @@ import {
     serializeReviewDossier,
 } from './reviewDossier.ts';
 
-import type { ReviewDossier, ReviewDossierEvent, ReviewModelTier } from './reviewDossier.ts';
-import type { ReviewRiskPlan, ReviewStanceId } from './reviewRiskPolicy.ts';
+import type { ReviewDossier, ReviewDossierEvent, ReviewDossierStance, ReviewModelTier } from './reviewDossier.ts';
+import type { ReviewRiskPlan } from './reviewRiskPolicy.ts';
 
 export const REVIEW_DOSSIER_INPUT_FORMAT = 'dossier-input-v1';
 
 export type ReviewDossierStanceInput = {
-    stance: ReviewStanceId;
+    stance: ReviewDossierStance;
     reviewerModel: string;
     modelTier: ReviewModelTier;
     outcome: 'blocker-found' | 'clean';
@@ -61,19 +61,10 @@ type ReviewDossierBuildInput = {
 type ReviewDossierPublication = { dossier: ReviewDossier; canonical: string; fromPersisted: boolean };
 
 /**
- * Total maps, so a widened stance, tier or outcome union fails to compile here instead of silently
- * refusing a caller input the record format accepts.
+ * Total maps, so a widened tier or outcome union fails to compile here instead of silently
+ * refusing a caller input the record format accepts. Stance names are free-form safe strings,
+ * so they need no membership map.
  */
-const STANCE_MEMBERSHIP: Record<ReviewStanceId, true> = {
-    correctness: true,
-    'module-boundaries': true,
-    'realtime-audio': true,
-    'project-integrity-undo': true,
-    'security-platform': true,
-    'code-craft': true,
-    'test-validity': true,
-};
-
 const MODEL_TIER_MEMBERSHIP: Record<ReviewModelTier, true> = {
     economy: true,
     standard: true,
@@ -91,10 +82,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function describeValue(value: unknown): string {
     return JSON.stringify(value) ?? typeof value;
-}
-
-function isReviewStanceId(value: string): value is ReviewStanceId {
-    return Object.hasOwn(STANCE_MEMBERSHIP, value);
 }
 
 function isModelTier(value: string): value is ReviewModelTier {
@@ -147,13 +134,13 @@ function readPositiveInteger(label: string, value: unknown): number {
 
 function readStances(value: unknown): ReviewDossierStanceInput[] {
     const stances: ReviewDossierStanceInput[] = [];
-    const seen = new Map<ReviewStanceId, number>();
+    const seen = new Map<ReviewDossierStance, number>();
     for (const [index, entry] of readArray('review dossier input stances', value).entries()) {
         const label = `review dossier input stances[${index}]`;
         if (!isRecord(entry)) {
             fail(`${label} must be an object, found ${describeValue(entry)}`);
         }
-        const stance = readLiteral(`${label}.stance`, entry.stance, isReviewStanceId, 'a known review stance');
+        const stance = readPublicationSafeString(`${label}.stance`, entry.stance);
         const firstIndex = seen.get(stance);
         if (firstIndex !== undefined) {
             fail(`${label}.stance duplicates stances[${firstIndex}].stance: ${stance}`);
@@ -299,10 +286,13 @@ function assertEqualStanceList(label: string, actual: readonly string[], expecte
  * judgement, so the plan's mechanically derived list never gates here; a bundle with no
  * `stances.json` predates the record and is accepted without a stance-completeness constraint.
  */
-function assertStancesMatchRecord(completed: readonly { stance: ReviewStanceId }[], recorded: readonly string[]): void {
+function assertStancesMatchRecord(
+    completed: readonly { stance: ReviewDossierStance }[],
+    recorded: readonly string[]
+): void {
     const dispatched = completed.map((entry) => entry.stance);
     // Recorded stance names are caller-authored strings, so the correspondence compares in the
-    // string domain rather than narrowing the record to the dossier's stance vocabulary.
+    // string domain.
     const dispatchedSet = new Set<string>(dispatched);
     const recordedSet = new Set(recorded);
     const missing = recorded.filter((stance) => !dispatchedSet.has(stance));

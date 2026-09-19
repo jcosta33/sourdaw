@@ -60,6 +60,20 @@ const CODE_CRAFT_STANCE: ReviewDossierStanceInput = {
     outcome: 'clean',
 };
 
+const SECURITY_PLATFORM_STANCE: ReviewDossierStanceInput = {
+    stance: 'security-platform',
+    reviewerModel: 'model-security-platform',
+    modelTier: 'standard',
+    outcome: 'clean',
+};
+
+const GATE_CORRESPONDENCE_STANCE: ReviewDossierStanceInput = {
+    stance: 'gate-correspondence correctness — a dossier entry the record does not carry must never publish',
+    reviewerModel: 'model-gate-correspondence',
+    modelTier: 'standard',
+    outcome: 'clean',
+};
+
 function stanceCompleted(stance: ReviewDossierStanceInput): ReviewDossierEvent {
     return {
         kind: 'stance-completed',
@@ -162,14 +176,30 @@ const INPUT_REFUSALS: readonly InputRefusalCase[] = [
         message: /input stances\[0\] must be an object/,
     },
     {
-        label: 'an unknown stance literal',
-        value: { ...INPUT, stances: [{ ...CORRECTNESS_STANCE, stance: 'vibes' }] },
-        message: /input stances\[0\]\.stance must be a known review stance/,
+        label: 'a blank stance',
+        value: { ...INPUT, stances: [{ ...CORRECTNESS_STANCE, stance: '   ' }] },
+        message: /input stances\[0\]\.stance must be a non-blank string/,
+    },
+    {
+        label: 'an edge-untrimmed stance',
+        value: { ...INPUT, stances: [{ ...CORRECTNESS_STANCE, stance: ' padded stance name' }] },
+        message: /input stances\[0\]\.stance value at index 0 is not edge-trimmed/,
+    },
+    {
+        label: 'a multiline stance',
+        value: { ...INPUT, stances: [{ ...CORRECTNESS_STANCE, stance: 'first line\nsecond line' }] },
+        message: /input stances\[0\]\.stance value at index 0 contains a line separator/,
     },
     {
         label: 'a missing stance field',
         value: { ...INPUT, stances: [{ stance: 'correctness', reviewerModel: 'm', modelTier: 'standard' }] },
         message: /input stances\[0\]\.outcome must be blocker-found or clean/,
+    },
+    {
+        label: 'a duplicate free-form stance',
+        value: { ...INPUT, stances: [GATE_CORRESPONDENCE_STANCE, GATE_CORRESPONDENCE_STANCE] },
+        message:
+            /input stances\[1\]\.stance duplicates stances\[0\]\.stance: gate-correspondence correctness — a dossier entry the record does not carry must never publish/,
     },
     {
         label: 'an unknown model tier',
@@ -212,17 +242,31 @@ type BuildRefusalCase = { label: string; run: () => unknown; message: RegExp };
 
 const BUILD_REFUSALS: readonly BuildRefusalCase[] = [
     {
-        label: 'a dossier omitting a stance the pre-dispatch record carries',
+        label: 'a dossier omitting a free-form stance the pre-dispatch record carries',
         run: () =>
             buildReviewDossier({
                 plan: PLAN,
-                raw: { ...INPUT, stances: [CORRECTNESS_STANCE] },
-                recordedStances: ['correctness', 'test-validity'],
+                raw: { ...INPUT, stances: [GATE_CORRESPONDENCE_STANCE] },
+                recordedStances: [GATE_CORRESPONDENCE_STANCE.stance, TEST_VALIDITY_STANCE.stance],
                 discarded: [],
                 comments: [],
                 recommendation: 'approve',
             }),
         message: /review dossier publication stances do not match stances\.json: missing \[test-validity\], extra \[\]/,
+    },
+    {
+        label: 'a plan-conforming dossier the differing pre-dispatch record does not carry',
+        run: () =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: INPUT,
+                recordedStances: ['correctness', 'security-platform'],
+                discarded: [],
+                comments: [],
+                recommendation: 'approve',
+            }),
+        message:
+            /review dossier publication stances do not match stances\.json: missing \[security-platform\], extra \[test-validity\]/,
     },
     {
         label: 'a dossier stance the pre-dispatch record does not carry',
@@ -762,6 +806,72 @@ describe('buildReviewDossier', () => {
 
         expect(result.fromPersisted).toBe(false);
         expect(completedStances(result.dossier).map((entry) => entry.stance)).toEqual(['correctness', 'test-validity']);
+    });
+
+    it('publishes a dossier whose free-form stances match a free-form pre-dispatch record one-to-one', () => {
+        // The real caller record's shape: free-form risk names, failure-mode admissions and
+        // baseline-probe results the gate never reads, and extra fields beside `stances`.
+        const stancesRecord = {
+            stances: [
+                {
+                    stance: GATE_CORRESPONDENCE_STANCE.stance,
+                    admission: 'a dossier entry the pre-dispatch record does not carry publishes',
+                    baselineProbe: {
+                        spec: 'reviewDossierPublication.spec.ts',
+                        mutation: 'answer the correspondence gate to the plan instead of the record',
+                    },
+                },
+                { stance: TEST_VALIDITY_STANCE.stance, admission: 'a weakened assertion can no longer fail' },
+            ],
+            note: 'failure-mode admissions and probe results are caller evidence the gate never reads',
+        };
+        const recordedStances = parseReviewStancesRecord(stancesRecord, 'bundles/2999-head/stances.json').stances.map(
+            (entry) => entry.stance
+        );
+        const result = buildReviewDossier({
+            plan: PLAN,
+            raw: { ...INPUT, stances: [GATE_CORRESPONDENCE_STANCE, TEST_VALIDITY_STANCE] },
+            recordedStances,
+            discarded: [
+                {
+                    finding: 'discarded-free-form',
+                    stance: GATE_CORRESPONDENCE_STANCE.stance,
+                    reason: 'not reproducible on this head',
+                },
+            ],
+            comments: [COMMENT],
+            recommendation: 'request-changes',
+        });
+
+        expect(result.fromPersisted).toBe(false);
+        expect(result.dossier.requiredStances).toEqual([GATE_CORRESPONDENCE_STANCE.stance, 'test-validity']);
+        expect(discardedDispositions(result.dossier)).toEqual([
+            {
+                findingId: 'discarded-free-form',
+                stance: GATE_CORRESPONDENCE_STANCE.stance,
+                reason: 'not reproducible on this head',
+            },
+        ]);
+        const persisted = parseReviewDossier(JSON.parse(result.canonical));
+        expect(persisted.requiredStances).toEqual([GATE_CORRESPONDENCE_STANCE.stance, 'test-validity']);
+    });
+
+    it('publishes a dossier whose recorded stances differ from the plan menu, answering to the record', () => {
+        const result = buildReviewDossier({
+            plan: PLAN,
+            raw: { ...INPUT, stances: [CORRECTNESS_STANCE, SECURITY_PLATFORM_STANCE] },
+            recordedStances: ['correctness', 'security-platform'],
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+
+        expect(result.fromPersisted).toBe(false);
+        expect(completedStances(result.dossier).map((entry) => entry.stance)).toEqual([
+            'correctness',
+            'security-platform',
+        ]);
+        expect(result.dossier.requiredStances).not.toEqual(PLAN.requiredStances);
     });
 
     it('accepts a dispatched stance the plan menu does not list when the bundle carries no stances.json', () => {

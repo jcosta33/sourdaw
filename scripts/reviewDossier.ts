@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto';
 
 import { fail } from './prContract.ts';
 
-import type { ReviewRiskClass, ReviewRiskPlan, ReviewStanceId } from './reviewRiskPolicy.ts';
+import type { ReviewRiskClass, ReviewRiskPlan } from './reviewRiskPolicy.ts';
 
 export const REVIEW_DOSSIER_FORMAT = 'dossier-v1';
 export const REVIEW_DOSSIER_MAX_BYTES = 32_768;
@@ -23,16 +23,23 @@ export const GENESIS_DIGEST: string = '0'.repeat(64);
 
 export type ReviewModelTier = 'economy' | 'standard' | 'strongest';
 
+/**
+ * A dispatched review stance name: the reviewer's task-derived judgement, not a plan menu id. The
+ * value is caller-authored published evidence, so it carries the same safe single-line rules as the
+ * record's other literal fields, and historical records holding plan menu ids read unchanged.
+ */
+export type ReviewDossierStance = string;
+
 export type ReviewDossierEvent =
     | {
           kind: 'stance-completed';
-          stance: ReviewStanceId;
+          stance: ReviewDossierStance;
           reviewerModel: string;
           modelTier: ReviewModelTier;
           outcome: 'blocker-found' | 'clean';
       }
     | { kind: 'finding-accepted'; findingId: string; path: string; line: number; side: 'LEFT' | 'RIGHT' }
-    | { kind: 'finding-discarded'; findingId: string; stance: ReviewStanceId; reason: string };
+    | { kind: 'finding-discarded'; findingId: string; stance: ReviewDossierStance; reason: string };
 
 export type ReviewDossierEventRecord = ReviewDossierEvent & {
     sequence: number;
@@ -46,7 +53,7 @@ export type ReviewDossier = {
     headSha: string;
     baseSha: string;
     riskClasses: ReviewRiskClass[];
-    requiredStances: ReviewStanceId[];
+    requiredStances: ReviewDossierStance[];
     events: ReviewDossierEventRecord[];
     evidence: { observable: string; verification: string; observed: string }[];
     limitations: string[];
@@ -64,8 +71,9 @@ type DossierPayload = Omit<ReviewDossier, 'format' | 'events' | 'headDigest' | '
 };
 
 /**
- * The known risk classes and review stances, held as total maps so a widened union fails to
- * compile here rather than silently refusing a valid dossier at run time.
+ * The known risk classes, held as a total map so a widened union fails to compile here rather than
+ * silently refusing a valid dossier at run time. Stance names are free-form safe strings, so they
+ * need no membership map.
  */
 const RISK_CLASS_MEMBERSHIP: Record<ReviewRiskClass, true> = {
     small: true,
@@ -75,16 +83,6 @@ const RISK_CLASS_MEMBERSHIP: Record<ReviewRiskClass, true> = {
     'realtime-audio': true,
     'native-security': true,
     undo: true,
-};
-
-const STANCE_MEMBERSHIP: Record<ReviewStanceId, true> = {
-    correctness: true,
-    'module-boundaries': true,
-    'realtime-audio': true,
-    'project-integrity-undo': true,
-    'security-platform': true,
-    'code-craft': true,
-    'test-validity': true,
 };
 
 const MODEL_TIERS: ReadonlySet<string> = new Set(['economy', 'standard', 'strongest']);
@@ -167,10 +165,6 @@ function describeValue(value: unknown): string {
 
 function isReviewRiskClass(value: string): value is ReviewRiskClass {
     return Object.hasOwn(RISK_CLASS_MEMBERSHIP, value);
-}
-
-function isReviewStanceId(value: string): value is ReviewStanceId {
-    return Object.hasOwn(STANCE_MEMBERSHIP, value);
 }
 
 function readLiteral<Value extends string>(
@@ -264,10 +258,10 @@ function readRiskClasses(value: unknown): ReviewRiskClass[] {
     return riskClasses;
 }
 
-function readRequiredStances(value: unknown): ReviewStanceId[] {
-    const requiredStances: ReviewStanceId[] = [];
-    for (const entry of readArray('requiredStances', value)) {
-        requiredStances.push(readLiteral('requiredStances entry', entry, isReviewStanceId, 'a known review stance'));
+function readRequiredStances(value: unknown): ReviewDossierStance[] {
+    const requiredStances: ReviewDossierStance[] = [];
+    for (const [index, entry] of readArray('requiredStances', value).entries()) {
+        requiredStances.push(readPublicationSafeString(`requiredStances[${index}]`, entry));
     }
     assertSortedUnique('requiredStances', requiredStances);
     return requiredStances;
@@ -289,7 +283,7 @@ function readEvent(
     if (kind === 'stance-completed') {
         return {
             kind,
-            stance: readLiteral(`${label} stance`, record.stance, isReviewStanceId, 'a known review stance'),
+            stance: readPublicationSafeString(`${label} stance`, record.stance),
             reviewerModel: readPublicationSafeString(`${label} reviewerModel`, record.reviewerModel),
             modelTier: readLiteral(
                 `${label} modelTier`,
@@ -312,7 +306,7 @@ function readEvent(
     return {
         kind,
         findingId: readPublicationSafeString(`${label} findingId`, record.findingId),
-        stance: readLiteral(`${label} stance`, record.stance, isReviewStanceId, 'a known review stance'),
+        stance: readPublicationSafeString(`${label} stance`, record.stance),
         reason: readPublicationSafeString(`${label} reason`, record.reason),
     };
 }
@@ -362,13 +356,13 @@ function readDiscardedEntry(value: unknown, index: number): ReviewDossierEvent {
     return {
         kind: 'finding-discarded',
         findingId: readPublicationSafeString(`${label} finding`, value.finding),
-        stance: readLiteral(`${label} stance`, value.stance, isReviewStanceId, 'a known review stance'),
+        stance: readPublicationSafeString(`${label} stance`, value.stance),
         reason: readPublicationSafeString(`${label} reason`, value.reason),
     };
 }
 
 function assertTotalMaps(payload: DossierPayload): void {
-    const completed = new Set<ReviewStanceId>();
+    const completed = new Set<ReviewDossierStance>();
     const accepted = new Set<string>();
     const discarded = new Set<string>();
     for (const event of payload.events) {
@@ -639,7 +633,7 @@ export function parseReviewDossier(value: unknown): ReviewDossier {
  * are what the review actually dispatched, and `requiredStances` carries them so the record's own
  * header and event chain cannot disagree. The plan's mechanically derived list is never read here.
  */
-function dispatchedStances(events: readonly ReviewDossierEvent[]): ReviewStanceId[] {
+function dispatchedStances(events: readonly ReviewDossierEvent[]): ReviewDossierStance[] {
     const completed = events.filter(
         (event): event is Extract<ReviewDossierEvent, { kind: 'stance-completed' }> => event.kind === 'stance-completed'
     );
@@ -680,7 +674,12 @@ export function assembleReviewDossier(input: {
 
 export function completedStances(
     dossier: ReviewDossier
-): { stance: ReviewStanceId; reviewerModel: string; modelTier: ReviewModelTier; outcome: 'blocker-found' | 'clean' }[] {
+): {
+    stance: ReviewDossierStance;
+    reviewerModel: string;
+    modelTier: ReviewModelTier;
+    outcome: 'blocker-found' | 'clean';
+}[] {
     return dossier.events
         .filter((event) => event.kind === 'stance-completed')
         .map((event) => ({
@@ -701,7 +700,7 @@ export function acceptedFindings(
 
 export function discardedDispositions(
     dossier: ReviewDossier
-): { findingId: string; stance: ReviewStanceId; reason: string }[] {
+): { findingId: string; stance: ReviewDossierStance; reason: string }[] {
     return dossier.events
         .filter((event) => event.kind === 'finding-discarded')
         .map((event) => ({ findingId: event.findingId, stance: event.stance, reason: event.reason }));

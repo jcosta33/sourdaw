@@ -390,6 +390,32 @@ describe('assembleReviewDossier refusals', () => {
         expect(dossier.requiredStances).toEqual(['code-craft', 'correctness', 'test-validity']);
     });
 
+    it('should assemble and round-trip a free-form dispatched stance the plan menu does not name', () => {
+        const freeFormStance = 'gate-correspondence correctness — a dossier entry the record does not carry refuses';
+        const dossier = assembleWith({
+            events: [
+                {
+                    kind: 'stance-completed',
+                    stance: freeFormStance,
+                    reviewerModel: 'model-gate-correspondence',
+                    modelTier: 'standard',
+                    outcome: 'clean',
+                },
+                {
+                    kind: 'finding-discarded',
+                    findingId: 'finding-7',
+                    stance: freeFormStance,
+                    reason: 'not reproducible on this head',
+                },
+            ],
+        });
+
+        expect(dossier.requiredStances).toEqual([freeFormStance]);
+        const reparsed = parseReviewDossier(JSON.parse(serializeReviewDossier(dossier)));
+        expect(completedStances(reparsed).map((entry) => entry.stance)).toEqual([freeFormStance]);
+        expect(discardedDispositions(reparsed).map((entry) => entry.stance)).toEqual([freeFormStance]);
+    });
+
     it('should refuse a persisted completed stance its required stances do not carry', () => {
         const mutated = cloneDossier();
         mutated.events.push({
@@ -607,6 +633,17 @@ describe('parseReviewDossier refusals', () => {
         expect(() => parseReviewDossier(mutated)).toThrow(
             /event 0 reviewerModel value at index 0 contains a GitHub token/
         );
+    });
+
+    it('should refuse a credential-shaped stance name in a persisted record', () => {
+        const mutated = cloneDossier();
+        const record = recordAt(mutated, 0);
+        if (record.kind !== 'stance-completed') {
+            throw new Error('fixture must start with a stance-completed record');
+        }
+        record.stance = `ghp_${'A'.repeat(24)}`;
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/event 0 stance value at index 0 contains a GitHub token/);
     });
 
     it('should refuse a transcript marker in a persisted accepted path', () => {

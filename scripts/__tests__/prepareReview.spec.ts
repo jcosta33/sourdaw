@@ -321,6 +321,36 @@ describe('review prepare', () => {
         }
     });
 
+    it('preserves a caller-written stances.json across a re-preparation of the same head', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port } = fakePort(root);
+        try {
+            const destination = prepareReview(42, port);
+            writeFileSync(join(destination, 'stances.json'), 'caller stances\n');
+            port.pullRequest = () => pullRequest({ baseRefOid: 'new-main-tip' });
+
+            expect(() => prepareReview(42, port)).not.toThrow();
+            expect(readFileSync(join(destination, 'stances.json'), 'utf8')).toBe('caller stances\n');
+        } finally {
+            removeTempRoot(root);
+        }
+    });
+
+    it('refuses to replace a same-head bundle whose only caller document is stances.json', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port } = fakePort(root);
+        try {
+            const destination = prepareReview(42, port);
+            writeFileSync(join(destination, 'stances.json'), 'caller stances\n');
+            port.mergeBase = () => 'different-merge-base';
+
+            expect(() => prepareReview(42, port)).toThrow('review bundle context changed');
+            expect(readFileSync(join(destination, 'stances.json'), 'utf8')).toBe('caller stances\n');
+        } finally {
+            removeTempRoot(root);
+        }
+    });
+
     it.each([
         ['base branch', { baseRefName: 'parent' }, 'mergebasesha'],
         ['merge-base', {}, 'different-merge-base'],

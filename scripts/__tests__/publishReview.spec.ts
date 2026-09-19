@@ -5235,6 +5235,101 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
+    it('publishes a dossier whose free-form stances match a free-form stances.json one-to-one', () => {
+        const gateStance = 'gate-correspondence correctness — a dossier entry the record does not carry must refuse';
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: {
+                stances: [
+                    {
+                        stance: gateStance,
+                        admission: 'a dossier entry the pre-dispatch record does not carry publishes',
+                        baselineProbe: {
+                            spec: 'publishReview.spec.ts',
+                            mutation: 'answer the correspondence gate to the plan instead of the record',
+                        },
+                    },
+                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
+                ],
+                note: 'failure-mode admissions and probe results are caller evidence the gate never reads',
+            },
+            dossier: dossierInput({
+                stances: [
+                    { stance: gateStance, reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            expect(fixture.writes).toHaveLength(1);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(persisted.requiredStances).toEqual([gateStance, 'test-validity']);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes a dossier whose recorded stances differ from the plan menu, answering to the record', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: {
+                stances: [
+                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
+                    { stance: 'security-platform', admission: 'an ipc boundary ships unvalidated input' },
+                ],
+            },
+            dossier: dossierInput({
+                stances: [
+                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                    {
+                        stance: 'security-platform',
+                        reviewerModel: 'review-model',
+                        modelTier: 'standard',
+                        outcome: 'clean',
+                    },
+                ],
+            }),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(persisted.requiredStances).toEqual(['correctness', 'security-platform']);
+            expect(persisted.requiredStances).not.toEqual(riskPlan().requiredStances);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-conforming dossier the differing pre-dispatch record does not carry and never posts', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: {
+                stances: [
+                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
+                    { stance: 'security-platform', admission: 'an ipc boundary ships unvalidated input' },
+                ],
+            },
+            dossier: dossierInput(),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            // The refusal names the record's hypothesis — missing security-platform, extra
+            // test-validity — which differs from the plan's, so a gate answering to the plan's
+            // requiredStances instead of the record would publish this dossier and turn this red.
+            expect(message).toMatch(
+                /stances do not match stances\.json: missing \[security-platform\], extra \[test-validity\]/u
+            );
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
     it('refuses a stances.json file that exists but does not parse and never posts', () => {
         const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
         writeFileSync(join(fixture.bundle, 'stances.json'), '{ not a stance record');
