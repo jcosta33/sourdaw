@@ -298,6 +298,58 @@ describe('a level stated in decibels reaches the handler in decibels', () => {
         ]);
     });
 
+    it('binds a change stated after a masked reference to the figure, not to the reference connector', () => {
+        const prompt = 'send Vocals to Reverb 4 dB lower';
+
+        const change = bridge(
+            [{ name: 'addSend', arguments: { trackId: vocals.id, busId: reverb.id, deltaDb: -4 } }],
+            prompt
+        );
+        const asDestination = bridge(
+            [{ name: 'addSend', arguments: { trackId: vocals.id, busId: reverb.id, levelDb: -4 } }],
+            prompt
+        );
+
+        expect(change.actions).toEqual([
+            {
+                type: 'addSend',
+                payload: { trackId: vocals.id, busId: reverb.id, deltaDb: -4, expectedAbsent: true },
+            },
+        ]);
+        expect(asDestination.actions).toEqual([]);
+    });
+
+    it('binds a change on an existing send stated after a masked reference', () => {
+        const result = bridge(
+            [{ name: 'setSend', arguments: { trackId: vocals.id, busId: reverb.id, deltaDb: -3 } }],
+            'change send from Vocals to Reverb 3 dB lower',
+            contextWithSend
+        );
+
+        expect(result.actions).toEqual([
+            {
+                type: 'setSend',
+                payload: {
+                    trackId: vocals.id,
+                    busId: reverb.id,
+                    deltaDb: -3,
+                    expectedLevel: 0.5,
+                    expectedPreFader: false,
+                },
+            },
+        ]);
+    });
+
+    it('grounds a change smaller than the stored linear gain', () => {
+        const result = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: vocals.id, deltaDb: 0.5 } }],
+            'raise Vocals 0.5 dB'
+        );
+
+        expect(vocals.gain).toBe(0.8);
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: vocals.id, deltaDb: 0.5 } }]);
+    });
+
     it('grounds an absolute level on a linear gain automation lane', () => {
         const result = bridge(
             [{ name: 'addAutomationPoint', arguments: { laneId: 'lane-vocal-gain', beat: 4, valueDb: -6 } }],

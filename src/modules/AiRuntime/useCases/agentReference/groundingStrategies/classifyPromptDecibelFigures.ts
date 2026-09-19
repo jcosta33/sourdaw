@@ -57,12 +57,23 @@ function namesPhrase(normalizedScope: string, phrase: string): boolean {
     return ` ${normalizedScope} `.includes(` ${phrase} `);
 }
 
+/** The glyph a masked project reference is written in; `maskProjectReferences.ts` owns it. */
+const PROJECT_REFERENCE_MASK_GLYPH = '□';
+
 /**
  * The word the figure follows, with any article between them dropped: "to the
  * -6 dB" states the same connector "to -6 dB" does.
+ *
+ * A masked project reference ends the phrase rather than being read through:
+ * in "send □□ to □□ 4 dB lower" the connector "to" belongs to the reference
+ * behind it, and normalizing the mask away would hand it to the figure.
  */
 function getPrecedingWord(maskedScope: string, number: PromptNumber): string {
-    const words = normalizePromptText(maskedScope.slice(0, number.index)).split(' ');
+    const precedingText = maskedScope.slice(0, number.index);
+    if (precedingText.trimEnd().endsWith(PROJECT_REFERENCE_MASK_GLYPH)) {
+        return '';
+    }
+    const words = normalizePromptText(precedingText).split(' ');
     while (words.length > 0 && ARTICLES.has(words[words.length - 1] ?? '')) {
         words.pop();
     }
