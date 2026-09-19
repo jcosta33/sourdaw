@@ -170,7 +170,8 @@ export type ProviderToolScenario =
     | 'oversized-call-id'
     | 'forced-terminal'
     | 'two-turn-history'
-    | 'foreign-turn-history';
+    | 'foreign-turn-history'
+    | 'synthesised-call-id-history';
 
 /** The receipt the earlier turn earned, answered natively as that dialect's tool result. */
 export const PROVIDER_TURN_HISTORY_RECEIPT: ApplicationToolReceipt = {
@@ -199,6 +200,19 @@ export const PROVIDER_TURN_HISTORY_FIXTURE = {
     budgetNote: 'Remaining budget: 2 turn(s), 6 tool call(s), 40000 receipt byte(s).',
     receipt: PROVIDER_TURN_HISTORY_RECEIPT,
 } as const;
+
+/**
+ * The identifier the loop resolves for a provider call that carried none, in the
+ * `<loopId>:<turn>:<index>` form the loop synthesises. Every dialect must put it on the wire
+ * unchanged, or the receipt answering that call names an identifier no call carries.
+ */
+export const SYNTHESISED_TURN_CALL_ID = 'loop-1:1:0';
+
+/** The same earlier turn, earned by a call the provider never named. */
+export const PROVIDER_SYNTHESISED_TURN_RECEIPT: ApplicationToolReceipt = {
+    ...PROVIDER_TURN_HISTORY_RECEIPT,
+    callId: SYNTHESISED_TURN_CALL_ID,
+};
 
 /** The two tool names every contract spec's `forced-terminal` scenario forces, matching the
  * fixture's own `toolCalls` so the same response body admits under a required directive. */
@@ -239,10 +253,20 @@ export type ProviderToolObservation = {
  * dialect's own wire shape. */
 export type ProviderWireTool = { strict: unknown; parameters: unknown };
 
+/**
+ * The identifiers the replayed conversation correlates by, read out of one dialect's own wire
+ * shape: the ids the restated tool calls carry (Anthropic `tool_use.id`, Responses
+ * `function_call.call_id`, chat completions `tool_calls[].id`) and the ids the tool results
+ * answer them with (`tool_result.tool_use_id`, `function_call_output.call_id`,
+ * `tool_call_id`), each in wire order.
+ */
+export type ProviderCorrelationObservation = { callIds: string[]; resultIds: string[] };
+
 export type ProviderProtocolHarness = {
     streamText: (scenario: ProviderStreamScenario) => Promise<ProviderStreamObservation>;
     planTools: (scenario: ProviderToolScenario) => Promise<ProviderToolObservation>;
     readWireTool: (tool: unknown) => ProviderWireTool;
+    readCorrelatingIds: (request: ProviderRequestObservation) => ProviderCorrelationObservation;
 };
 
 function expectStreamRequest(request: ProviderRequestObservation): void {
@@ -479,6 +503,15 @@ export function describeProviderProtocolConformance(name: string, harness: Provi
             expect(conversation).not.toContain(PROVIDER_TURN_HISTORY_FIXTURE.foreignMarker);
             expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.receipt.callId);
             expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.budgetNote);
+            expectToolRequest(observed.request);
+        });
+
+        it('restates a call the provider never named under the identifier its receipt carries', async () => {
+            const observed = await harness.planTools('synthesised-call-id-history');
+
+            const correlation = harness.readCorrelatingIds(observed.request);
+            expect(correlation.callIds).toEqual([SYNTHESISED_TURN_CALL_ID]);
+            expect(correlation.resultIds).toEqual([SYNTHESISED_TURN_CALL_ID]);
             expectToolRequest(observed.request);
         });
 

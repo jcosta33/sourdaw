@@ -16,7 +16,6 @@ import {
 import { narrowToolSchemasForDirective } from './narrowToolSchemasForDirective';
 import { parseToolCallArguments } from './parseToolCallArguments';
 import { projectOpenAiStrictToolSchema } from './projectOpenAiStrictToolSchema';
-import { readHostedTurnCalls } from './readHostedTurnCalls';
 import { readProviderRequestId } from './readProviderRequestId';
 import { rejectedBatchMessage } from './rejectedBatchMessage';
 import { requestHostedOpenAiProvider } from './requestOpenAiProvider';
@@ -82,14 +81,13 @@ function buildTurnMessages(input: {
         { role: 'user', content: input.userMessage },
     ];
     for (const record of input.history) {
-        const calls = readHostedTurnCalls(record);
         if (record.provider === 'openai-compatible') {
             messages.push(...record.assistantItems);
         } else {
             messages.push({
                 role: 'assistant',
                 content: null,
-                tool_calls: calls.map((call) => ({
+                tool_calls: record.calls.map((call) => ({
                     id: call.id,
                     type: 'function',
                     function: { name: input.encodeToolName(call.name), arguments: JSON.stringify(call.arguments) },

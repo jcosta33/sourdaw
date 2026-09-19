@@ -16,7 +16,12 @@ import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabili
 import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
-import { type HostedProviderTurn, type HostedTurnHistory, type HostedTurnRecord } from '../models/HostedTurnHistory';
+import {
+    type HostedProviderTurn,
+    type HostedTurnCall,
+    type HostedTurnHistory,
+    type HostedTurnRecord,
+} from '../models/HostedTurnHistory';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { SEMANTIC_COMMAND_LIST_MAX_ITEMS } from '../models/SemanticCommandList';
 import { type ToolSchema } from '../models/ToolDefinitions';
@@ -916,11 +921,23 @@ function validateCatalogTerminalCalls(
     return declineValidation;
 }
 
+/** One accepted call of a turn, under the identity the loop resolved for it. */
+type IdentifiedToolCall = { call: ToolCallResult; callId: string };
+
 function resolveCallId(call: ToolCallResult, loopId: string, turn: number, index: number): string | null {
     const callId = call.id ?? `${loopId}:${String(turn)}:${String(index)}`;
     return callId.length > 0 && callId.length <= MAX_CALL_ID_LENGTH && /^[A-Za-z0-9._:-]+$/.test(callId)
         ? callId
         : null;
+}
+
+/**
+ * The record form of a turn's calls. The resolved identity is used rather than the provider's
+ * own optional one, so a call the provider never named is replayed under the same identifier
+ * its receipt carries instead of reaching a request builder without one.
+ */
+function toHostedTurnCalls(identifiedCalls: readonly IdentifiedToolCall[]): HostedTurnCall[] {
+    return identifiedCalls.map(({ call, callId }) => ({ id: callId, name: call.name, arguments: call.arguments }));
 }
 
 function boundReceipt(receipt: ApplicationToolReceipt, maxBytes: number): ApplicationToolReceipt {
@@ -998,7 +1015,8 @@ export async function runApplicationOwnedToolLoop(
     const admitTurnReceipts = (
         turnReceipts: readonly ApplicationToolReceipt[],
         turn: number,
-        outcome: Extract<ApplicationToolPlanningOutcome, { status: 'complete' }>
+        outcome: Extract<ApplicationToolPlanningOutcome, { status: 'complete' }>,
+        identifiedCalls: readonly IdentifiedToolCall[]
     ): { reason: string; receipts: ApplicationToolReceipt[] } | null => {
         const overBudget = 'Application tool receipts exceeded the bounded context budget.';
         const turnBytes = byteLength(serializeReceiptContext(turnReceipts, turn));
@@ -1018,7 +1036,7 @@ export async function runApplicationOwnedToolLoop(
                 turn,
                 provider: outcome.providerTurn.provider,
                 assistantItems: outcome.providerTurn.assistantItems,
-                calls: outcome.toolCalls,
+                calls: toHostedTurnCalls(identifiedCalls),
                 receipts: [...turnReceipts],
             });
         }
@@ -1084,7 +1102,7 @@ export async function runApplicationOwnedToolLoop(
             };
         }
 
-        const identifiedCalls: Array<{ call: ToolCallResult; callId: string }> = [];
+        const identifiedCalls: IdentifiedToolCall[] = [];
         for (const [index, call] of outcome.toolCalls.entries()) {
             const callId = resolveCallId(call, input.loopId, turn, index);
             if (callId === null || seenCallIds.has(callId)) {
@@ -1162,7 +1180,8 @@ export async function runApplicationOwnedToolLoop(
                     ),
                 ],
                 turn,
-                outcome
+                outcome,
+                interpretationCalls
             );
             if (overBudget !== null) {
                 return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
@@ -1248,7 +1267,7 @@ export async function runApplicationOwnedToolLoop(
         );
         recordDisclosedCommandSchemas(safeReadCalls, turnReceipts, disclosedCommandSchemas);
         recordSearchedIntents(safeReadCalls, turnReceipts, searchedIntents);
-        const overBudget = admitTurnReceipts(turnReceipts, turn, outcome);
+        const overBudget = admitTurnReceipts(turnReceipts, turn, outcome, safeReadCalls);
         if (overBudget !== null) {
             return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
         }

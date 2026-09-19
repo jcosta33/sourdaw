@@ -14,7 +14,6 @@ import {
 } from './hostedToolPlan';
 import { narrowToolSchemasForDirective } from './narrowToolSchemasForDirective';
 import { projectAnthropicStrictToolSchema } from './projectAnthropicStrictToolSchema';
-import { readHostedTurnCalls, type ReplayableHostedTurnCall } from './readHostedTurnCalls';
 import { readProviderRequestId } from './readProviderRequestId';
 import { requestAnthropicProvider } from './requestAnthropicProvider';
 
@@ -55,15 +54,11 @@ function buildToolChoiceExtension(directive: HostedToolChoiceDirective): Record<
  * the tool-use blocks those calls amount to), each answered by its receipts as `tool_result`
  * blocks. The remaining-budget note closes the last user block, where alternating roles put it.
  */
-function buildAssistantContent(
-    record: HostedTurnRecord,
-    calls: readonly ReplayableHostedTurnCall[],
-    encodeToolName: (name: string) => string
-): unknown {
+function buildAssistantContent(record: HostedTurnRecord, encodeToolName: (name: string) => string): unknown {
     if (record.provider === 'anthropic') {
         return record.assistantItems;
     }
-    return calls.map((call) => ({
+    return record.calls.map((call) => ({
         type: 'tool_use',
         id: call.id,
         name: encodeToolName(call.name),
@@ -79,10 +74,9 @@ function buildTurnMessages(input: {
 }): unknown[] {
     const messages: unknown[] = [{ role: 'user', content: input.userMessage }];
     for (const [index, record] of input.history.entries()) {
-        const calls = readHostedTurnCalls(record);
         messages.push({
             role: 'assistant',
-            content: buildAssistantContent(record, calls, input.encodeToolName),
+            content: buildAssistantContent(record, input.encodeToolName),
         });
         const content: unknown[] = record.receipts.map((receipt) => ({
             type: 'tool_result',

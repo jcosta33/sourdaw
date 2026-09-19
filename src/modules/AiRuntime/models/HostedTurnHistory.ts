@@ -1,6 +1,5 @@
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type HostedLlmProvider } from './HostedLlmProvider';
-import { type ToolCallResult } from './ToolCallResult';
 
 /** The hosted protocols that can replay their own earlier turns; WebLLM has no wire form. */
 export type HostedTurnProvider = HostedLlmProvider;
@@ -18,12 +17,20 @@ export type HostedProviderTurn = {
     assistantItems: readonly unknown[];
 };
 
+/**
+ * One tool call of an earlier turn, under the identifier the loop resolved for it — the
+ * provider's own when it returned one, the loop's synthesised one otherwise. That is the
+ * identifier the call's receipt is correlated by, so a replay can pair the two whether or
+ * not the provider named the call.
+ */
+export type HostedTurnCall = { id: string; name: string; arguments: Record<string, unknown> };
+
 /** One earlier turn of an application-owned tool loop, with the receipts it earned. */
 export type HostedTurnRecord = {
     turn: number;
     provider: HostedTurnProvider;
     assistantItems: readonly unknown[];
-    calls: readonly ToolCallResult[];
+    calls: readonly HostedTurnCall[];
     receipts: readonly ApplicationToolReceipt[];
 };
 

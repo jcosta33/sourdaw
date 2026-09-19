@@ -16,7 +16,6 @@ import {
 import { narrowToolSchemasForDirective } from './narrowToolSchemasForDirective';
 import { parseToolCallArguments } from './parseToolCallArguments';
 import { projectOpenAiStrictToolSchema } from './projectOpenAiStrictToolSchema';
-import { readHostedTurnCalls } from './readHostedTurnCalls';
 import { readProviderRequestId } from './readProviderRequestId';
 import { rejectedBatchMessage } from './rejectedBatchMessage';
 import { requestHostedOpenAiProvider } from './requestOpenAiProvider';
@@ -146,11 +145,10 @@ function buildTurnInput(input: {
 }): unknown[] {
     const items: unknown[] = [{ role: 'user', content: input.userMessage }];
     for (const record of input.history) {
-        const calls = readHostedTurnCalls(record);
         if (record.provider === 'openai') {
             items.push(...record.assistantItems);
         } else {
-            for (const call of calls) {
+            for (const call of record.calls) {
                 items.push({
                     type: 'function_call',
                     call_id: call.id,

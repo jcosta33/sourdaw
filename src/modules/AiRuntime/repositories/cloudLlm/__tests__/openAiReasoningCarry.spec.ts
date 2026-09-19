@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type ApplicationToolReceipt } from '../../../models/ApplicationOwnedTool';
-import { type HostedTurnHistory } from '../../../models/HostedTurnHistory';
+import { type HostedTurnCall, type HostedTurnHistory } from '../../../models/HostedTurnHistory';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { compileProviderAdapterInstallation, OPENAI_RESPONSES_ADAPTER_ID } from '../../providerAdapterRegistry';
 import { generateOpenAiResponsesToolCalls } from '../cloudInference/generateOpenAiResponsesToolCalls';
@@ -132,6 +132,13 @@ function readBody(index: number): Record<string, unknown> {
     return JSON.parse(sent) as Record<string, unknown>;
 }
 
+/** The record form of a planned turn's calls, each under the identifier its receipt carries. */
+function recordedCalls(
+    calls: readonly { id?: string; name: string; arguments: Record<string, unknown> }[]
+): HostedTurnCall[] {
+    return calls.map((call) => ({ id: call.id ?? RECEIPT.callId, name: call.name, arguments: call.arguments }));
+}
+
 function planTurn(history: HostedTurnHistory): ReturnType<typeof generateOpenAiResponsesToolCalls> {
     return generateOpenAiResponsesToolCalls({
         runtime,
@@ -182,7 +189,7 @@ describe('OpenAI responses reasoning carry-over', () => {
                 turn: 1,
                 provider: 'openai',
                 assistantItems: firstTurn.assistantItems,
-                calls: firstTurn.calls,
+                calls: recordedCalls(firstTurn.calls),
                 receipts: [RECEIPT],
             },
         ]);
@@ -211,7 +218,7 @@ describe('OpenAI responses reasoning carry-over', () => {
                 turn: 1,
                 provider: 'openai',
                 assistantItems: firstTurn.assistantItems,
-                calls: firstTurn.calls,
+                calls: recordedCalls(firstTurn.calls),
                 receipts: [RECEIPT],
             },
         ]);

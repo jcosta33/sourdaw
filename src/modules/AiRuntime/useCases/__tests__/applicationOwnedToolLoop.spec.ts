@@ -1312,6 +1312,33 @@ describe('hosted turn history', () => {
         expect(thirdHistory[1]?.receipts.map((receipt) => receipt.callId)).toEqual(['query-2']);
     });
 
+    it('records an unidentified provider call under the identity its receipt carries', async () => {
+        const assistantItems = [{ type: 'function_call', call_id: 'unnamed' }];
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ name: 'project.query', arguments: { type: 'project-summary' } }],
+                providerTurn: { provider: 'openai' as const, assistantItems },
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-unnamed',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(result).toMatchObject({ status: 'complete' });
+        const record = readTurn(requestTurn, 1).history[0];
+        const recordedId = record?.calls[0]?.id;
+        const receiptId = record?.receipts[0]?.callId;
+        expect(recordedId).toBe('loop-unnamed:1:0');
+        expect(recordedId).toBe(receiptId);
+        expect(recordedId?.length ?? 0).toBeGreaterThan(0);
+        expect(receiptId?.length ?? 0).toBeGreaterThan(0);
+    });
+
     it('records nothing for a turn that reported no provider turn and still serializes the receipts', async () => {
         const requestTurn = vi
             .fn()

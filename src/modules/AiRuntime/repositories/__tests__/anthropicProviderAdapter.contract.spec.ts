@@ -13,7 +13,9 @@ import {
     PROVIDER_CONFORMANCE_FIXTURE as FIXTURE,
     PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
     PROVIDER_TURN_HISTORY_FIXTURE as HISTORY,
+    PROVIDER_SYNTHESISED_TURN_RECEIPT,
     PROVIDER_TURN_HISTORY_RECEIPT,
+    type ProviderCorrelationObservation,
     type ProviderProtocolHarness,
     type ProviderRequestObservation,
     type ProviderStreamObservation,
@@ -224,12 +226,26 @@ const FOREIGN_TURN_HISTORY: HostedTurnHistory = [
     },
 ];
 
+/** A turn whose call the provider never named, recorded under the identity the loop resolved. */
+const SYNTHESISED_ID_TURN_HISTORY: HostedTurnHistory = [
+    {
+        turn: 1,
+        provider: 'openai',
+        assistantItems: [],
+        calls: [{ id: PROVIDER_SYNTHESISED_TURN_RECEIPT.callId, name: 'project.query', arguments: {} }],
+        receipts: [PROVIDER_SYNTHESISED_TURN_RECEIPT],
+    },
+];
+
 function turnHistoryFor(scenario: ProviderToolScenario): { history: HostedTurnHistory; budgetNote: string } | null {
     if (scenario === 'two-turn-history') {
         return { history: OWN_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
     }
     if (scenario === 'foreign-turn-history') {
         return { history: FOREIGN_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
+    }
+    if (scenario === 'synthesised-call-id-history') {
+        return { history: SYNTHESISED_ID_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
     }
     return null;
 }
@@ -337,6 +353,16 @@ const harness: ProviderProtocolHarness = {
                 usage: null,
             };
         }
+    },
+    readCorrelatingIds: (request): ProviderCorrelationObservation => {
+        const messages = (request.messages ?? []) as { content?: unknown }[];
+        const blocks = messages.flatMap(({ content }) =>
+            Array.isArray(content) ? (content as Record<string, unknown>[]) : []
+        );
+        return {
+            callIds: blocks.filter((block) => block.type === 'tool_use').map((block) => String(block.id)),
+            resultIds: blocks.filter((block) => block.type === 'tool_result').map((block) => String(block.tool_use_id)),
+        };
     },
     readWireTool: (tool) => {
         const wireTool = tool as { strict?: unknown; input_schema?: unknown };
