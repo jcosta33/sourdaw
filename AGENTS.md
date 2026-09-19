@@ -98,6 +98,13 @@ baseline probe — the spec it ran, the mutation it applied, the observed result
 orchestrator records these in `stances.json` beside the stances. The orchestrator validates or the
 author repairs in the change's existing lane; reviewers have no writable tree.
 
+Conditional admission is a standing escape in UI specs (#4441, introduced by #1531): a case whose
+whole body sits inside `if (await locator.isVisible().catch(() => false))` reaches its end without
+any assertion when the entry point is absent, renaming its locator, or failing to mount. The
+baseline probe for a UI case must show it fails when its required entry point is unavailable —
+unconditional admission, or removal of the duplicate with the obligation named in the spec that
+owns the behavior.
+
 Dispatch a posture as well as a surface: try to break the change; report the strongest surviving
 finding with concrete failure inputs or state, or report none. Finding nothing is success; never
 manufacture findings. Tell reviewers that hedged findings without a concrete break are discarded.
