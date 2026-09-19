@@ -30,7 +30,7 @@ import {
     type GuardFailureReceipt,
     type ReviewCommentContent,
 } from '../prContract.ts';
-import { assertObservableTestInstructions, commandOnlyTestInstructions } from '../testInstructions.ts';
+import { assertObservableTestInstructions, commandOnlyTestInstructions, COMMAND_HEADS } from '../testInstructions.ts';
 
 const WHAT_HEADING = '### 🎯 What does this PR do?';
 const HOW_HEADING = '### 🧪 How to test';
@@ -724,6 +724,62 @@ describe('product-scope test instructions', () => {
         'pull-request --test for a product-scope change must teach user/reviewer-observable steps and their ' +
         'expected result; automated author or CI check narration is not a substitute';
 
+    /**
+     * The full head inventory, spec-owned on purpose: dropping any head from the production set
+     * reddens the equality pin and the dropped head's behavioral iteration instead of silently
+     * un-gating a tool.
+     */
+    const COMMAND_HEADS_UNDER_TEST = [
+        'bash',
+        'biome',
+        'bun',
+        'cargo',
+        'deno',
+        'docker',
+        'electron',
+        'eslint',
+        'format',
+        'gh',
+        'git',
+        'go',
+        'guard',
+        'jest',
+        'lint',
+        'make',
+        'node',
+        'npm',
+        'npx',
+        'pnpm',
+        'playwright',
+        'prettier',
+        'python',
+        'rustc',
+        'sh',
+        'test:barrel-mocks',
+        'test:e2e',
+        'test:run',
+        'deps:validate',
+        'tsx',
+        'tsc',
+        'typecheck',
+        'vitest',
+        'wasm:all',
+        'wasm-pack',
+        'wasm:verify',
+        'yarn',
+    ];
+
+    it('pins the command-head inventory the narration gate classifies by', () => {
+        expect([...COMMAND_HEADS]).toEqual(COMMAND_HEADS_UNDER_TEST);
+    });
+
+    it.each(COMMAND_HEADS_UNDER_TEST)('refuses the annotation-only inventory line for the %s head', (head) => {
+        const line = `${head} run all (green)`;
+
+        expect(commandOnlyTestInstructions(line)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(line))).toBe(REFUSAL);
+    });
+
     it('refuses a pure command list', () => {
         const list = ['- `pnpm test:run scripts/__tests__/x.spec.ts` (140 passed)', '- `pnpm typecheck` (clean)'].join(
             '\n'
@@ -782,6 +838,60 @@ describe('product-scope test instructions', () => {
         // drops before any cue or vocabulary test sees them, so these stay narration.
         expect(commandOnlyTestInstructions(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a script-name continuation', 'pnpm test:run everything (140 passed)'],
+        ['the same launch quoted', '`pnpm test:run everything` (140 passed)'],
+        ['a spec-file argument', 'pnpm test:run x.spec.ts (140 passed)'],
+    ])('refuses %s', (_label, instructions) => {
+        // The colon-bearing head is the same launch's script name: the argument run continues
+        // through it, so the bare arguments behind it stay narration.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['annotation words leading into a launch', 'Run the suite `pnpm test:run x.spec.ts`'],
+        [
+            'annotation words leading into two launches',
+            'Run the focused suite with `pnpm test:run x.spec.ts` then `pnpm typecheck` (clean)',
+        ],
+    ])('refuses %s', (_label, instructions) => {
+        // Annotation vocabulary between the filler and the launch must not defeat the head check:
+        // a head anywhere in an all-annotation segment narrates it.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('strips see-verb annotations and keeps a see-verb step that carries its own verb', () => {
+        const annotation = '`pnpm test:run x.spec.ts` (expected: 140 passed)';
+        const stripped = '`pnpm typecheck` (see CI)';
+        const step = 'See the channel meter follow the level';
+
+        expect(commandOnlyTestInstructions(annotation)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(annotation))).toBe(REFUSAL);
+        expect(commandOnlyTestInstructions(stripped)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(stripped))).toBe(REFUSAL);
+        // Without a see stem, a see-verb observation is rescued by its leading non-head word.
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a wasm-pack build', 'wasm-pack build crates/audio-engine'],
+        ['a dotted script path', './scripts/seed'],
+        ['a dotted script path behind a launch', 'node ./scripts/seed'],
+    ])('refuses %s', (_label, instructions) => {
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('refuses a launched extension-bearing data file', () => {
+        const line = 'node data.json (green)';
+
+        expect(commandOnlyTestInstructions(line)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(line))).toBe(REFUSAL);
     });
 
     it.each([

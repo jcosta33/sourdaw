@@ -91,13 +91,17 @@ export const PUBLISH_LANE_USAGE =
     'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]';
 
 /**
+ * The source trees whose changes a user runs in the app: a lane touching any of them is product
+ * scope, and its How-to-test section has to teach an observable step, not recite checks. Declared
+ * above the guidance so the printed tree list is derived from it rather than retyped beside it.
+ */
+export const PRODUCT_SCOPE_PREFIXES = ['src/modules/', 'src/components/', 'electron/'] as const;
+
+/**
  * The `--test` contract the usage line has no room to state, printed under it by `--help`. Usage
  * stays one line because refusals embed it verbatim; the rule rides beside it.
  */
-export const PUBLISH_LANE_TEST_GUIDANCE =
-    '--test teaches how a reviewer verifies the change; for product-scope changes ' +
-    '(src/modules/, src/components/, electron/) it must give user/reviewer-observable steps and their ' +
-    'expected result, and CI or author checks do not substitute.';
+export const PUBLISH_LANE_TEST_GUIDANCE = `--test teaches how a reviewer verifies the change; for product-scope changes (${PRODUCT_SCOPE_PREFIXES.join(', ')}) it must give user/reviewer-observable steps and their expected result, and CI or author checks do not substitute.`;
 
 /**
  * The same authoring-model rule `lane:open` enforces, mirrored here rather than imported: the
@@ -538,12 +542,6 @@ export function addPullRequestProjectsArgs(number: number, titles: string[]): st
         ...titles.flatMap((title) => ['--add-project', title]),
     ];
 }
-
-/**
- * The source trees whose changes a user runs in the app: a lane touching any of them is product
- * scope, and its How-to-test section has to teach an observable step, not recite checks.
- */
-export const PRODUCT_SCOPE_PREFIXES = ['src/modules/', 'src/components/', 'electron/'] as const;
 
 /**
  * Product scope means a *handwritten* change under a product tree. Test, docs, and generated paths
