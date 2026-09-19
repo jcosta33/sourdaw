@@ -1,0 +1,19 @@
+scripts/publishLane.ts
+  s_ed5aa36a3ba357::t_c61023d8c19567 537-541,933-938,940-946,949-951,958-960,962-965,969-973,1147,1575-1581,1586-1587,1591-1597,1724-1728
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "76b177074692eb000f4c2f2c41da875359775b88",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
