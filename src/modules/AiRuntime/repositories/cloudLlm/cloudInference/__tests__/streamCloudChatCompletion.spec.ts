@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AiRuntimeConfigurationChangedError } from '../../../../errors/AiRuntimeConfigurationChangedError';
 import { DEFAULT_HOSTED_ANTHROPIC_MODEL } from '../../../../models/HostedAnthropicModels';
+import { streamHostedModelText } from '../../../../useCases/streamHostedModelText';
 import { type HostedOpenAiStreamResult } from '../openAiStreamResult';
 import { type CloudChatCompletionOutcome, streamCloudChatCompletion } from '../streamCloudChatCompletion';
 
@@ -35,7 +36,13 @@ type CloudStreamEvent =
     | {
           type: 'message_delta';
           delta: { stop_reason: string | null; stop_sequence: null };
-          usage?: { output_tokens: number; output_tokens_details?: { thinking_tokens: number } };
+          usage?: {
+              input_tokens?: number;
+              output_tokens: number;
+              cache_creation_input_tokens?: number;
+              cache_read_input_tokens?: number;
+              output_tokens_details?: { thinking_tokens: number };
+          };
       }
     | { type: 'message_stop' }
     | { type: 'other_event' };
@@ -56,6 +63,7 @@ type HostedOpenAiStreamInput = {
 };
 
 const mocks = vi.hoisted(() => ({
+    getCloudProviderInfo: vi.fn(),
     getCloudProviderRuntime: vi.fn(),
     stream: vi.fn<(input: CloudStreamInput) => Promise<void>>(),
     streamOpenAiCompatibleChatCompletion:
@@ -64,6 +72,10 @@ const mocks = vi.hoisted(() => ({
     registerCloudStreamController: vi.fn((controller: AbortController) => controller),
     unregisterCloudStreamController: vi.fn(),
     warn: vi.fn(),
+}));
+
+vi.mock('../../getCloudProviderInfo', () => ({
+    getCloudProviderInfo: mocks.getCloudProviderInfo,
 }));
 
 vi.mock('../../getCloudProviderRuntime', () => ({
@@ -118,6 +130,14 @@ describe('streamCloudChatCompletion', () => {
             authentication: 'api-key',
             session_id: 'provider-session-00000000000000000000000000000000',
             model: 'test-model',
+        });
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'anthropic',
+            authentication: 'api-key',
+            baseUrl: null,
+            model: 'test-model',
+            reasoningEffort: null,
+            thinking: null,
         });
         mocks.streamOpenAiCompatibleChatCompletion.mockResolvedValue({
             finishReason: 'stop',
@@ -250,12 +270,131 @@ describe('streamCloudChatCompletion', () => {
             type: 'usage',
             mode: 'final',
             usage: {
-                inputTokens: null,
+                inputTokens: 17,
                 outputTokens: 4,
-                cachedInputTokens: null,
+                cachedInputTokens: 2,
+                cacheWriteInputTokens: 3,
                 reasoningTokens: null,
             },
             provenance: 'provider-reported',
+        });
+    });
+
+    it.each([
+        {
+            name: 'retains totals on an output-only final event',
+            finalUsage: { output_tokens: 4 },
+            expected: { inputTokens: 17, outputTokens: 4, cachedInputTokens: 2, cacheWriteInputTokens: 3 },
+        },
+        {
+            name: 'retains sparse cache-write totals',
+            finalUsage: { output_tokens: 4, cache_creation_input_tokens: 3 },
+            expected: { inputTokens: 17, outputTokens: 4, cachedInputTokens: 2, cacheWriteInputTokens: 3 },
+        },
+        {
+            name: 'honors an explicit cache-write zero while retaining omitted components',
+            finalUsage: { output_tokens: 4, cache_creation_input_tokens: 0 },
+            expected: { inputTokens: 14, outputTokens: 4, cachedInputTokens: 2, cacheWriteInputTokens: 0 },
+        },
+        {
+            name: 'invalidates an overflowing final input total',
+            finalUsage: {
+                input_tokens: 12,
+                output_tokens: 4,
+                cache_read_input_tokens: 2,
+                cache_creation_input_tokens: Number.MAX_SAFE_INTEGER,
+            },
+            expected: {
+                inputTokens: null,
+                outputTokens: 4,
+                cachedInputTokens: 2,
+                cacheWriteInputTokens: Number.MAX_SAFE_INTEGER,
+            },
+        },
+    ])('$name through the hosted provider result', async ({ finalUsage, expected }) => {
+        installAnthropicEvents([
+            {
+                type: 'message_start',
+                message: {
+                    usage: {
+                        input_tokens: 12,
+                        output_tokens: 0,
+                        cache_creation_input_tokens: 3,
+                        cache_read_input_tokens: 2,
+                    },
+                },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn', stop_sequence: null },
+                usage: finalUsage,
+            },
+            { type: 'message_stop' },
+        ]);
+
+        const result = await streamHostedModelText({
+            correlationId: 'anthropic-cache-usage',
+            messages: [{ role: 'user', content: 'Analyze the mix.' }],
+            maxOutputTokens: 1_000,
+            onToken: vi.fn(),
+        });
+
+        expect(result.usage).toEqual({
+            ...expected,
+            reasoningTokens: null,
+            provenance: 'provider-reported',
+        });
+    });
+
+    it('isolates cumulative Anthropic input state between concurrent hosted requests', async () => {
+        mocks.stream.mockImplementation(async ({ messages, onEvent }) => {
+            const isFirstRequest = messages[0]?.content === 'First request';
+            onEvent({
+                type: 'message_start',
+                message: {
+                    usage: {
+                        input_tokens: isFirstRequest ? 10 : 20,
+                        output_tokens: 0,
+                        cache_read_input_tokens: isFirstRequest ? 2 : 4,
+                        cache_creation_input_tokens: isFirstRequest ? 3 : 5,
+                    },
+                },
+            });
+            await Promise.resolve();
+            onEvent({
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn', stop_sequence: null },
+                usage: { output_tokens: isFirstRequest ? 1 : 2 },
+            });
+            onEvent({ type: 'message_stop' });
+        });
+
+        const [first, second] = await Promise.all([
+            streamHostedModelText({
+                correlationId: 'anthropic-cache-first',
+                messages: [{ role: 'user', content: 'First request' }],
+                maxOutputTokens: 1_000,
+                onToken: vi.fn(),
+            }),
+            streamHostedModelText({
+                correlationId: 'anthropic-cache-second',
+                messages: [{ role: 'user', content: 'Second request' }],
+                maxOutputTokens: 1_000,
+                onToken: vi.fn(),
+            }),
+        ]);
+
+        expect(first.usage).toMatchObject({
+            inputTokens: 15,
+            outputTokens: 1,
+            cachedInputTokens: 2,
+            cacheWriteInputTokens: 3,
+        });
+        expect(second.usage).toMatchObject({
+            inputTokens: 29,
+            outputTokens: 2,
+            cachedInputTokens: 4,
+            cacheWriteInputTokens: 5,
         });
     });
 

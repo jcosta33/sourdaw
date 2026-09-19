@@ -11,6 +11,15 @@ export type ModelProviderModality = 'text' | 'audio' | 'image' | 'video';
 export type ModelProviderUsageProvenance = 'provider-reported' | 'versioned-estimate' | 'unavailable';
 export type ModelProviderPartialOutputDisposition = 'none' | 'preserve' | 'discard';
 
+export const MODEL_PROVIDER_USAGE_COUNTER_NAMES = [
+    'inputTokens',
+    'outputTokens',
+    'cachedInputTokens',
+    'cacheWriteInputTokens',
+    'reasoningTokens',
+] as const;
+export type ModelProviderUsageCounterName = (typeof MODEL_PROVIDER_USAGE_COUNTER_NAMES)[number];
+
 export type ModelProviderCapabilities = {
     text: boolean;
     tools: boolean;
@@ -110,6 +119,8 @@ export type ModelProviderEvent =
           type: 'usage';
           mode: 'delta' | 'cumulative-snapshot' | 'final';
           usage: Omit<ModelProviderUsage, 'provenance'>;
+          /** Counters reported on this event whose value cannot be represented safely. */
+          unavailableCounters?: readonly ModelProviderUsageCounterName[];
           provenance: ModelProviderUsageProvenance;
       }
     | { type: 'unknown'; providerEventType: string };

@@ -9,8 +9,8 @@ import { linkCloudRequestAbort } from '../linkCloudRequestAbort';
 import { registerCloudStreamController } from '../registerCloudStreamController';
 import { unregisterCloudStreamController } from '../unregisterCloudStreamController';
 
+import { accumulateAnthropicInputUsage, type AnthropicInputUsageState } from './accumulateAnthropicInputUsage';
 import { buildAnthropicThinkingBudget } from './buildAnthropicThinkingBudget';
-import { normalizeAnthropicInputUsage } from './normalizeAnthropicUsage';
 import { type HostedOpenAiStreamResult } from './openAiStreamResult';
 import { readProviderRequestId } from './readProviderRequestId';
 import { requestAnthropicStream } from './requestAnthropicStream';
@@ -117,6 +117,7 @@ async function streamAnthropicChatCompletion(
     let sawMessageStop = false;
     let eventCount = 0;
     let streamedBytes = 0;
+    let inputUsageState: AnthropicInputUsageState = {};
     // A chat turn renders its thinking, so it asks for the summarized form.
     const outputBudget = buildAnthropicThinkingBudget({
         thinking: runtime.thinking,
@@ -151,9 +152,10 @@ async function streamAnthropicChatCompletion(
             if (event.type === 'message_start' && isRecord(event.message)) {
                 providerRequestId ??= readProviderRequestId(event.message.id);
             }
-            const usageEvent = readAnthropicUsageEvent(event);
-            if (usageEvent) {
-                options.onUsage?.(usageEvent);
+            const usageReading = readAnthropicUsageEvent(event, inputUsageState);
+            inputUsageState = usageReading.inputUsageState;
+            if (usageReading.event) {
+                options.onUsage?.(usageReading.event);
             }
             if (event.type === 'content_block_delta') {
                 if (!isRecord(event.delta) || typeof event.delta.type !== 'string') {
@@ -306,9 +308,14 @@ function readNonNegativeInteger(value: unknown): number | null {
     return Number.isSafeInteger(value) && typeof value === 'number' && value >= 0 ? value : null;
 }
 
-function readAnthropicUsageEvent(event: unknown): ModelProviderUsageEvent | null {
+type AnthropicUsageReading = {
+    event: ModelProviderUsageEvent | null;
+    inputUsageState: AnthropicInputUsageState;
+};
+
+function readAnthropicUsageEvent(event: unknown, inputUsageState: AnthropicInputUsageState): AnthropicUsageReading {
     if (!isRecord(event) || typeof event.type !== 'string') {
-        return null;
+        return { event: null, inputUsageState };
     }
     let usageContainer: Record<string, unknown> | null = null;
     if (event.type === 'message_start' && isRecord(event.message) && isRecord(event.message.usage)) {
@@ -317,20 +324,33 @@ function readAnthropicUsageEvent(event: unknown): ModelProviderUsageEvent | null
         usageContainer = event.usage;
     }
     if (!usageContainer) {
-        return null;
+        return { event: null, inputUsageState };
     }
-    const inputUsage = normalizeAnthropicInputUsage(usageContainer);
+    const accumulatedInputUsage = accumulateAnthropicInputUsage(inputUsageState, usageContainer);
+    const inputUsage = accumulatedInputUsage.usage;
     const outputTokens = readNonNegativeInteger(usageContainer.output_tokens);
     const reasoningTokens = isRecord(usageContainer.output_tokens_details)
         ? readNonNegativeInteger(usageContainer.output_tokens_details.thinking_tokens)
         : null;
+    const unavailableCounters = [...accumulatedInputUsage.unavailableCounters];
+    if (Object.hasOwn(usageContainer, 'output_tokens') && outputTokens === null) {
+        unavailableCounters.push('outputTokens');
+    }
+    if (
+        isRecord(usageContainer.output_tokens_details) &&
+        Object.hasOwn(usageContainer.output_tokens_details, 'thinking_tokens') &&
+        reasoningTokens === null
+    ) {
+        unavailableCounters.push('reasoningTokens');
+    }
     if (
         inputUsage.inputTokens === null &&
         outputTokens === null &&
         inputUsage.cacheReadInputTokens === null &&
-        inputUsage.cacheWriteInputTokens === null
+        inputUsage.cacheWriteInputTokens === null &&
+        unavailableCounters.length === 0
     ) {
-        return null;
+        return { event: null, inputUsageState: accumulatedInputUsage.state };
     }
     const usage: ModelProviderUsageEvent['usage'] = {
         inputTokens: inputUsage.inputTokens,
@@ -338,13 +358,17 @@ function readAnthropicUsageEvent(event: unknown): ModelProviderUsageEvent | null
         cachedInputTokens: inputUsage.cacheReadInputTokens,
         reasoningTokens,
     };
-    if (Object.hasOwn(usageContainer, 'cache_creation_input_tokens')) {
+    if (Object.hasOwn(accumulatedInputUsage.state, 'cacheWriteInputTokens')) {
         usage.cacheWriteInputTokens = inputUsage.cacheWriteInputTokens;
     }
-    return {
+    const usageEvent: ModelProviderUsageEvent = {
         type: 'usage',
         mode: event.type === 'message_delta' ? 'final' : 'cumulative-snapshot',
         usage,
         provenance: 'provider-reported',
     };
+    if (unavailableCounters.length > 0) {
+        usageEvent.unavailableCounters = unavailableCounters;
+    }
+    return { inputUsageState: accumulatedInputUsage.state, event: usageEvent };
 }
