@@ -1787,6 +1787,13 @@ describe('lane publish', () => {
 
         expect(lines[0]).toBe(PUBLISH_LANE_USAGE.replace('usage:', 'Usage:'));
         expect(lines).toContain(PUBLISH_LANE_TEST_GUIDANCE);
+        // The containment above is tautological against the same constant, so the trees are pinned
+        // as printed prose: dropping one from the guidance string reddens here even if the constant
+        // is edited in step with it.
+        const guidance = lines.find((line) => line.includes('product-scope')) ?? '';
+        for (const prefix of PRODUCT_SCOPE_PREFIXES_UNDER_TEST) {
+            expect(guidance).toContain(prefix);
+        }
     });
 
     it('carries the selected lane path into the port for explicit path resolution', () => {
