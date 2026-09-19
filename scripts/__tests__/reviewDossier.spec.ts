@@ -649,6 +649,7 @@ const LOWERCASE_BEARER_CREDENTIAL = ['bearer', BEARER_TOKEN].join(' ');
 const JSON_WEB_TOKEN = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiIxIn0', 'c2lnbmF0dXJl'].join('.');
 const SHORT_BEARER_CREDENTIAL = ['Bearer', 'abc123'].join(' ');
 const EIGHT_CHARACTER_BEARER_CREDENTIAL = ['Bearer', 'abcdefgh'].join(' ');
+const LONG_BEARER_CREDENTIAL = ['Bearer', 'abcdefghijklmnopqrstuvwx'].join(' ');
 const PROSE_BEARER = ['Bearer', 'token'].join(' ');
 const CAPITALISED_SYSTEM_TURN = '{"role":"System","content":"x"}';
 const BENIGN_ADMIN_TURN = '{"role":"admin"}';
@@ -667,7 +668,7 @@ const UNSAFE_FIXTURES: { name: string; value: string }[] = [
     { name: 'a JSON web token', value: JSON_WEB_TOKEN },
     { name: 'a bearer credential', value: BEARER_CREDENTIAL },
     { name: 'a short digit-bearing bearer credential', value: SHORT_BEARER_CREDENTIAL },
-    { name: 'an eight-character bearer credential', value: EIGHT_CHARACTER_BEARER_CREDENTIAL },
+    { name: 'a twenty-four-character bearer credential', value: LONG_BEARER_CREDENTIAL },
     { name: 'a serialized assistant turn', value: '{"role": "assistant", "content": "review"}' },
     { name: 'a serialized user turn', value: '{"role":"user","content":"review"}' },
     { name: 'a serialized system turn', value: '{"role":"system","content":"review"}' },
@@ -716,7 +717,7 @@ describe('assertPublicationSafeEvidence', () => {
 
     it.each([
         ['a short digit-bearing bearer credential', SHORT_BEARER_CREDENTIAL],
-        ['an eight-character bearer credential', EIGHT_CHARACTER_BEARER_CREDENTIAL],
+        ['a twenty-four-character bearer credential', LONG_BEARER_CREDENTIAL],
     ])('should refuse %s by the bearer rule', (_name, value) => {
         expect(() => assertPublicationSafeEvidence('evidence[0].observed', [value])).toThrow(
             /evidence\[0\]\.observed value at index 0 contains a bearer credential/
@@ -797,6 +798,14 @@ describe('assertPublicationSafeEvidence', () => {
         ['a base64 body with no armor header', 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQ'],
         ['prose that mentions a bearer token', 'send the bearer token in the Authorization header'],
         ['the bare bearer token words', PROSE_BEARER],
+        ['the lowercase bare bearer token words', 'bearer token'],
+        ['a sentence ending on the bearer token words', 'the bearer token.'],
+        ['the bearer certificates word pair', 'bearer certificates'],
+        ['the bearer instruments word pair', 'bearer instruments'],
+        ['a sentence about bearer instruments in the ledger', 'a sentence about bearer instruments in the ledger'],
+        // Eight pure letters cannot be told from a word, so `Bearer abcdefgh` stands as the accepted
+        // trade-off; the credential shape starts at a digit, a non-dot symbol, or twenty-four characters.
+        ['an eight-letter word after bearer', EIGHT_CHARACTER_BEARER_CREDENTIAL],
         ['a benign serialized admin role', BENIGN_ADMIN_TURN],
         ['prose that mentions a system prompt', 'the system prompt is stable on this head'],
         ['an ordinary sentence with the word system', 'the system reports one failing assertion'],

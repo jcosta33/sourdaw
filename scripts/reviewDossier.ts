@@ -114,8 +114,8 @@ const EVENT_KIND_KEYS: Record<ReviewDossierEvent['kind'], readonly string[]> = {
 const EVIDENCE_KEYS = ['observable', 'verification', 'observed'] as const;
 const DISCARDED_KEYS = ['finding', 'stance', 'reason'] as const;
 
-/** A bearer credential reaches eight characters, or carries a digit or symbol; a short word is prose. */
-const BEARER_CREDENTIAL_PATTERN = /\bbearer\s+(?=[A-Za-z0-9._~+/=-]{8}|[A-Za-z0-9._~+/=-]*[0-9._~+/=-])/iu;
+/** A bearer credential is four token characters then a digit or non-dot symbol with a successor, or twenty-four. */
+const BEARER_CREDENTIAL_PATTERN = /\bbearer\s+(?=[\w.~+/=-]{4}(?:[0-9_~+/=-][\w.~+/=-]|[\w.~+/=-]{20}))/iu;
 /** The conventional serialized chat roles, matched case-insensitively so a capitalised one is refused. */
 const CHAT_ROLE_PATTERN = /"role"\s*:\s*"(?:assistant|user|system|tool|function|developer)"/iu;
 
@@ -127,8 +127,10 @@ const UNSAFE_VALUE_SHAPES: readonly { readonly reason: string; readonly pattern:
     { reason: 'a private key header', pattern: /-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}/u },
     { reason: 'a JSON web token', pattern: /eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/u },
     // RFC 6750/7235 auth schemes are case-insensitive, so `bearer` is refused like `Bearer`. The
-    // token shape separates a credential from the word in `bearer token`: eight characters, a digit,
-    // or one of the class's non-letter characters refuses it, while a short pure-letter word stands.
+    // token shape separates a credential from the word in `bearer token`: four token characters then
+    // a digit or one of `_~+/=-` with a token character after it, or twenty-four token characters.
+    // A dot never qualifies on its own and a trailing period is punctuation, so prose stands; an
+    // eight-letter word is indistinguishable from a token.
     { reason: 'a bearer credential', pattern: BEARER_CREDENTIAL_PATTERN },
     // A serialized chat role is a transcript turn whichever role it names; the named set is the
     // conventional serialized roles, so prose that merely mentions a role never matches.
