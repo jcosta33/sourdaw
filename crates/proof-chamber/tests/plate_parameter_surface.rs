@@ -347,6 +347,44 @@ fn out_of_range_diffusion_renders_as_the_clamped_endpoint() {
         !identical(&dark, &bright),
         "diffusion 0 renders identically to diffusion 1"
     );
+
+    // And the clamp's upper endpoint is the endpoint: an interior setting
+    // just below it must still sound different, so a wrong-range clamp that
+    // maps everything above its own bound to one value — passing the identity
+    // legs above while rescaling every setting between that bound and 1 —
+    // fails here.
+    let near_top = render(&[("diffusion", 0.9)]);
+    assert!(
+        !identical(&near_top, &bright),
+        "diffusion 0.9 renders identically to diffusion 1.0"
+    );
+}
+
+#[test]
+fn diffusion_seeds_at_the_constructor_gains() {
+    // The constructor seeds the diffusers at gains 0.750/0.625 — exactly the
+    // formula's output at diffusion 1.0 — while the descriptor declares the
+    // default as 0.75, so an untouched engine does not render as its
+    // documented default (#4430, filed; changing either side is an audible
+    // product decision). This pins today's truth: the untouched render is
+    // bit-exactly the diffusion=1.0 render, so any drift in the seeded gains
+    // fails here instead of silently re-voicing every untouched project.
+    let untouched = render(&[]);
+    let seeded = render(&[("diffusion", 1.0)]);
+    assert!(
+        identical(&untouched, &seeded),
+        "the untouched engine should render as its seeded gains; \
+         peak difference {:e}",
+        max_delta(&untouched, &seeded)
+    );
+
+    // And the seeding is not mid-range: an interior write must differ, which
+    // also keeps the guard above from passing vacuously.
+    let interior = render(&[("diffusion", 0.75)]);
+    assert!(
+        !identical(&untouched, &interior),
+        "the seeded gains render identically to diffusion=0.75"
+    );
 }
 
 // ---------------------------------------------------------------------------
