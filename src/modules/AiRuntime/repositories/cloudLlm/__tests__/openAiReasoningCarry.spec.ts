@@ -208,6 +208,30 @@ describe('OpenAI responses reasoning carry-over', () => {
         expect(secondTurn.calls).toEqual([{ id: 'call_tempo_1', name: 'setTempo', arguments: { bpm: 128 } }]);
     });
 
+    it('restates a turn with no replayable items as a function_call item and carries no reasoning item', async () => {
+        respondWith(SECOND_TURN_RESPONSE);
+
+        await planTurn([
+            {
+                turn: 1,
+                provider: 'openai',
+                assistantItems: null,
+                calls: [{ id: RECEIPT.callId, name: 'project.query', arguments: {} }],
+                receipts: [RECEIPT],
+            },
+        ]);
+
+        const replayed = readBody(0).input as unknown[];
+        expect(replayed).toEqual([
+            { role: 'user', content: FIRST_USER_MESSAGE },
+            { type: 'function_call', call_id: RECEIPT.callId, name: 'project_query', arguments: '{}' },
+            { type: 'function_call_output', call_id: RECEIPT.callId, output: JSON.stringify(RECEIPT) },
+            { role: 'user', content: BUDGET_NOTE },
+        ]);
+        // Nothing of the turn's own thinking survives a turn it cannot replay verbatim.
+        expect(JSON.stringify(replayed)).not.toContain(REASONING_ITEM.id);
+    });
+
     it('keeps the replayed turn request-scoped and asks for no extra response parts', async () => {
         respondWith(FIRST_TURN_RESPONSE);
         respondWith(SECOND_TURN_RESPONSE);

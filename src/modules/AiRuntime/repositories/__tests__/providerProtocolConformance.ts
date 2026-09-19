@@ -171,6 +171,7 @@ export type ProviderToolScenario =
     | 'forced-terminal'
     | 'two-turn-history'
     | 'foreign-turn-history'
+    | 'unidentified-turn-history'
     | 'synthesised-call-id-history';
 
 /** The receipt the earlier turn earned, answered natively as that dialect's tool result. */
@@ -203,10 +204,10 @@ export const PROVIDER_TURN_HISTORY_FIXTURE = {
 
 /**
  * The identifier the loop resolves for a provider call that carried none, in the
- * `<loopId>:<turn>:<index>` form the loop synthesises. Every dialect must put it on the wire
+ * `<loopId>-<turn>-<index>` form the loop synthesises. Every dialect must put it on the wire
  * unchanged, or the receipt answering that call names an identifier no call carries.
  */
-export const SYNTHESISED_TURN_CALL_ID = 'loop-1:1:0';
+export const SYNTHESISED_TURN_CALL_ID = 'loop-1-1-0';
 
 /** The same earlier turn, earned by a call the provider never named. */
 export const PROVIDER_SYNTHESISED_TURN_RECEIPT: ApplicationToolReceipt = {
@@ -512,6 +513,21 @@ export function describeProviderProtocolConformance(name: string, harness: Provi
             const correlation = harness.readCorrelatingIds(observed.request);
             expect(correlation.callIds).toEqual([SYNTHESISED_TURN_CALL_ID]);
             expect(correlation.resultIds).toEqual([SYNTHESISED_TURN_CALL_ID]);
+            expectToolRequest(observed.request);
+        });
+
+        it('restates its own turn from the recorded calls when that turn carries no replayable items', async () => {
+            const observed = await harness.planTools('unidentified-turn-history');
+
+            // Same dialect, but the turn left a call unnamed: its items name an identifier the
+            // receipt cannot answer, so the calls are restated under the loop's identifier and
+            // the tool results still correlate to them.
+            const correlation = harness.readCorrelatingIds(observed.request);
+            expect(correlation.callIds).toEqual([SYNTHESISED_TURN_CALL_ID]);
+            expect(correlation.resultIds).toEqual([SYNTHESISED_TURN_CALL_ID]);
+            const conversation = readConversation(observed.request);
+            expect(conversation).not.toContain(PROVIDER_TURN_HISTORY_FIXTURE.assistantMarker);
+            expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.budgetNote);
             expectToolRequest(observed.request);
         });
 

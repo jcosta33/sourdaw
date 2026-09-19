@@ -65,9 +65,10 @@ function inspectAssistantContent(value: unknown): AssistantContentState {
 
 /**
  * The messages this turn replays: system and first user message, then each earlier turn as the
- * assistant message the provider itself returned (or, for a turn another provider answered, an
- * assistant message restating its calls), each answered by one `tool` message per receipt. The
- * remaining-budget note closes the conversation as its own user message.
+ * assistant message the provider itself returned (or, for a turn another provider answered and
+ * for one whose calls it never named, an assistant message restating its calls), each answered
+ * by one `tool` message per receipt. The remaining-budget note closes the conversation as its
+ * own user message.
  */
 function buildTurnMessages(input: {
     systemPrompt: string;
@@ -81,7 +82,7 @@ function buildTurnMessages(input: {
         { role: 'user', content: input.userMessage },
     ];
     for (const record of input.history) {
-        if (record.provider === 'openai-compatible') {
+        if (record.provider === 'openai-compatible' && record.assistantItems !== null) {
             messages.push(...record.assistantItems);
         } else {
             messages.push({

@@ -62,6 +62,14 @@ const DEFAULT_LIMITS = {
 /** One extra turn so query, search, discovery, interpretation and proposal all fit in one run. */
 const CREATIVE_TURN_ALLOWANCE = 1;
 const MAX_CALL_ID_LENGTH = 256;
+/** What a provider's own call identifier may hold, across the dialects that return one. */
+const PROVIDER_CALL_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
+/**
+ * What a synthesised identifier may hold: the narrowest hosted pattern, Anthropic's
+ * `tool_use.id`. A call the loop names is replayed under that name on every wire, so a
+ * character one dialect refuses would strand the turn that carries it.
+ */
+const SYNTHESISED_CALL_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 const MAX_FILTER_STRING_LENGTH = 256;
 const CATALOG_CURSOR_PATTERN = new RegExp(AGENT_CATALOG_CURSOR_PATTERN, 'u');
 
@@ -925,9 +933,14 @@ function validateCatalogTerminalCalls(
 type IdentifiedToolCall = { call: ToolCallResult; callId: string };
 
 function resolveCallId(call: ToolCallResult, loopId: string, turn: number, index: number): string | null {
-    const callId = call.id ?? `${loopId}:${String(turn)}:${String(index)}`;
-    return callId.length > 0 && callId.length <= MAX_CALL_ID_LENGTH && /^[A-Za-z0-9._:-]+$/.test(callId)
-        ? callId
+    if (call.id === undefined) {
+        const synthesised = `${loopId}-${String(turn)}-${String(index)}`;
+        return synthesised.length <= MAX_CALL_ID_LENGTH && SYNTHESISED_CALL_ID_PATTERN.test(synthesised)
+            ? synthesised
+            : null;
+    }
+    return call.id.length > 0 && call.id.length <= MAX_CALL_ID_LENGTH && PROVIDER_CALL_ID_PATTERN.test(call.id)
+        ? call.id
         : null;
 }
 
@@ -1030,7 +1043,9 @@ export async function runApplicationOwnedToolLoop(
             return { reason: overBudget, receipts };
         }
         // Only a provider that reported its own turn can be handed that turn back; a backend
-        // that plans locally records nothing and keeps reading the text form above.
+        // that plans locally records nothing and keeps reading the text form above. Every hosted
+        // turn is recorded, whether or not its items can be replayed verbatim, so a later turn
+        // never loses the calls and receipts of the turns between it and the last record.
         if (outcome.providerTurn !== undefined) {
             history.push({
                 turn,

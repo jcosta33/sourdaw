@@ -135,7 +135,8 @@ function parseToolPlan(payload: unknown, decodeWireName: (wireName: string) => s
  * output items in the order the response carried them — `reasoning` items included, which is
  * what lets the model continue from the thinking it already did — each followed by its
  * receipts as `function_call_output` items. A turn another provider answered has no items this
- * API accepts, so its calls are restated as `function_call` items instead.
+ * API accepts, and a turn whose calls the provider never named has none the receipts can
+ * answer, so both are restated as `function_call` items instead.
  */
 function buildTurnInput(input: {
     userMessage: string;
@@ -145,7 +146,7 @@ function buildTurnInput(input: {
 }): unknown[] {
     const items: unknown[] = [{ role: 'user', content: input.userMessage }];
     for (const record of input.history) {
-        if (record.provider === 'openai') {
+        if (record.provider === 'openai' && record.assistantItems !== null) {
             items.push(...record.assistantItems);
         } else {
             for (const call of record.calls) {

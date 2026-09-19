@@ -265,10 +265,23 @@ function getApplicationToolReceipts(userMessage: string): unknown[] {
     return parsed.receipts;
 }
 
-function assertDiscoveredCommandSchemas(userMessage: string, names: readonly string[]): void {
-    const discovery = getApplicationToolReceipts(userMessage).find(
-        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
-    );
+/** The receipts a hosted turn replays natively, one `tool` message per receipt, in wire order. */
+function getReplayedToolReceipts(requestBody: string): unknown[] {
+    const request: unknown = JSON.parse(requestBody);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    return request.messages.flatMap((message: unknown) => {
+        if (!isRecord(message) || message.role !== 'tool' || typeof message.content !== 'string') {
+            return [];
+        }
+        const receipt: unknown = JSON.parse(message.content);
+        return [receipt];
+    });
+}
+
+function assertDiscoveredCommandSchemas(receipts: readonly unknown[], names: readonly string[]): void {
+    const discovery = receipts.find((receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover');
     if (
         !isRecord(discovery) ||
         discovery.status !== 'success' ||
@@ -327,7 +340,7 @@ function setProviderPlan(plan: readonly ProviderCall[]): void {
                 JSON.stringify([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
             );
         }
-        assertDiscoveredCommandSchemas(userMessage, names);
+        assertDiscoveredCommandSchemas(getApplicationToolReceipts(userMessage), names);
         return Promise.resolve(JSON.stringify(asCommandBatchProposal(plan)));
     });
     let hostedTurn = 0;
@@ -354,7 +367,7 @@ function setProviderPlan(plan: readonly ProviderCall[]): void {
         if (!isRecord(userMessage) || typeof userMessage.content !== 'string') {
             throw new TypeError('Expected hosted provider user message');
         }
-        assertDiscoveredCommandSchemas(userMessage.content, names);
+        assertDiscoveredCommandSchemas(getReplayedToolReceipts(init.body), names);
         return Promise.resolve(toolCallsResponse(asCommandBatchProposal(plan)));
     });
 }

@@ -50,12 +50,13 @@ function buildToolChoiceExtension(directive: HostedToolChoiceDirective): Record<
 
 /**
  * The conversation this turn replays: the first user message, then each earlier turn as the
- * assistant blocks the provider itself produced (or, for a turn another provider answered,
- * the tool-use blocks those calls amount to), each answered by its receipts as `tool_result`
- * blocks. The remaining-budget note closes the last user block, where alternating roles put it.
+ * assistant blocks the provider itself produced (or, for a turn another provider answered and
+ * for one whose calls it never named, the tool-use blocks those calls amount to), each answered
+ * by its receipts as `tool_result` blocks. The remaining-budget note closes the last user block,
+ * where alternating roles put it.
  */
 function buildAssistantContent(record: HostedTurnRecord, encodeToolName: (name: string) => string): unknown {
-    if (record.provider === 'anthropic') {
+    if (record.provider === 'anthropic' && record.assistantItems !== null) {
         return record.assistantItems;
     }
     return record.calls.map((call) => ({

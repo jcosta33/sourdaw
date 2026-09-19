@@ -66,8 +66,9 @@ type HostedTurnRequest = { firstUserMessage: string; history: HostedTurnHistory;
 /**
  * The protocol record of a replayed hosted turn: the first user message, then every earlier
  * turn as one assistant message and one tool message per receipt, closed by the remaining-budget
- * note. The adapters send each dialect's own wire form; this states the same exchange in the
- * provider-neutral shape the record is read in.
+ * note. A turn with no verbatim items to hand back is stated by its calls, exactly as the
+ * adapters restate it. The adapters send each dialect's own wire form; this states the same
+ * exchange in the provider-neutral shape the record is read in.
  */
 function buildHostedTurnMessages(systemPrompt: string, hostedTurn: HostedTurnRequest): ModelProviderMessage[] {
     const messages: ModelProviderMessage[] = [
@@ -75,7 +76,7 @@ function buildHostedTurnMessages(systemPrompt: string, hostedTurn: HostedTurnReq
         { role: 'user', content: hostedTurn.firstUserMessage },
     ];
     for (const record of hostedTurn.history) {
-        messages.push({ role: 'assistant', content: JSON.stringify(record.assistantItems) });
+        messages.push({ role: 'assistant', content: JSON.stringify(record.assistantItems ?? record.calls) });
         for (const receipt of record.receipts) {
             messages.push({ role: 'tool', content: JSON.stringify(receipt) });
         }
@@ -485,10 +486,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                           })
                         : undefined;
                 const maxOutputTokens = readAgentResourceLimits().maxModelOutputTokens;
-                // Native replay starts at the first recorded turn. Before that there is nothing to
-                // hand back, and the composed user message is the only place the run's receipts
-                // exist: replacing it with the first message there would send a turn carrying no
-                // evidence at all.
+                // Native replay starts at the first recorded turn, which every hosted turn now
+                // becomes: in practice only the run's opening turn arrives with an empty history.
+                // Before that first record there is nothing to hand back, and the composed user
+                // message is the only place the run's receipts exist, so replacing it with the
+                // first message there would send a turn carrying no evidence at all.
                 const replayedTurn = hostedTurn !== undefined && hostedTurn.history.length > 0 ? hostedTurn : undefined;
                 const compiledRequest = providerProtocol.compileRequest({
                     correlationId,
@@ -681,25 +683,26 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         arguments: call.arguments,
                     }));
                     const hostedProvider = backend === 'cloud' ? getCloudProviderInfo()?.provider : undefined;
-                    // The provider's own assistant items are replayed verbatim, and the receipts
-                    // answering them correlate by the identifier the loop resolved. Only a turn
-                    // whose every call the provider itself identified carries that identifier in
-                    // its items; a turn it left unidentified would be replayed with tool results
-                    // naming an identifier no item holds, which every hosted dialect rejects. Such
-                    // a turn reports no replayable provider turn and keeps the text receipt form.
-                    const isReplayableTurn = providerCallIds.every(
+                    // Every hosted turn is reported, so the run's evidence survives in the history
+                    // whatever the provider named its calls. The items themselves are replayed
+                    // verbatim only when the provider identified every call of the turn: the
+                    // receipts answering them correlate by the identifier the loop resolved, and
+                    // items naming an identifier no receipt can answer are rejected by every
+                    // hosted dialect. A turn that left a call unidentified reports null items and
+                    // is restated from its calls under the loop's own identifiers.
+                    const providerIdentifiedEveryCall = providerCallIds.every(
                         (callId) => callId !== undefined && callId.length > 0
                     );
                     outcome = {
                         status: 'complete',
                         toolCalls: normalizedToolCalls,
                         proposal: extractAgentPlanProposal(normalizedToolCalls),
-                        ...(cloudToolPlan === null || hostedProvider === undefined || !isReplayableTurn
+                        ...(cloudToolPlan === null || hostedProvider === undefined
                             ? {}
                             : {
                                   providerTurn: {
                                       provider: hostedProvider,
-                                      assistantItems: cloudToolPlan.assistantItems,
+                                      assistantItems: providerIdentifiedEveryCall ? cloudToolPlan.assistantItems : null,
                                   },
                               }),
                     };

@@ -245,6 +245,17 @@ const SYNTHESISED_ID_TURN_HISTORY: HostedTurnHistory = [
     },
 ];
 
+/** This dialect's own turn, whose call it never named: no items the receipt can answer. */
+const UNIDENTIFIED_TURN_HISTORY: HostedTurnHistory = [
+    {
+        turn: 1,
+        provider: 'openai-compatible',
+        assistantItems: null,
+        calls: [{ id: PROVIDER_SYNTHESISED_TURN_RECEIPT.callId, name: 'project.query', arguments: {} }],
+        receipts: [PROVIDER_SYNTHESISED_TURN_RECEIPT],
+    },
+];
+
 function turnHistoryFor(scenario: ProviderToolScenario): { history: HostedTurnHistory; budgetNote: string } | null {
     if (scenario === 'two-turn-history') {
         return { history: OWN_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
@@ -254,6 +265,9 @@ function turnHistoryFor(scenario: ProviderToolScenario): { history: HostedTurnHi
     }
     if (scenario === 'synthesised-call-id-history') {
         return { history: SYNTHESISED_ID_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
+    }
+    if (scenario === 'unidentified-turn-history') {
+        return { history: UNIDENTIFIED_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
     }
     return null;
 }

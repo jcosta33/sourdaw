@@ -622,7 +622,7 @@ describe('application-owned tool loop', () => {
             terminalToolNames: new Set(['setTempo']),
             requestTurn,
         });
-        expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('loop-generated:1:0');
+        expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('loop-generated-1-0');
     });
 
     it('rejects duplicate call identities across turns', async () => {
@@ -1333,10 +1333,75 @@ describe('hosted turn history', () => {
         const record = readTurn(requestTurn, 1).history[0];
         const recordedId = record?.calls[0]?.id;
         const receiptId = record?.receipts[0]?.callId;
-        expect(recordedId).toBe('loop-unnamed:1:0');
+        expect(recordedId).toBe('loop-unnamed-1-0');
         expect(recordedId).toBe(receiptId);
         expect(recordedId?.length ?? 0).toBeGreaterThan(0);
         expect(receiptId?.length ?? 0).toBeGreaterThan(0);
+    });
+
+    it('records both turns of a mixed run, the unidentified one under null assistant items', async () => {
+        const firstItems = [
+            { type: 'reasoning', id: 'rs_1' },
+            { type: 'function_call', call_id: 'query-1' },
+        ];
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce(queryTurn('query-1', firstItems))
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ name: 'project.query', arguments: { type: 'project-summary' } }],
+                providerTurn: { provider: 'openai' as const, assistantItems: null },
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ id: 'final-1', name: 'setTempo', arguments: { bpm: 128 } }],
+            });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-mixed-run',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(result).toMatchObject({ status: 'complete', turns: 3 });
+        const thirdTurn = readTurn(requestTurn, 2);
+        // The turn the provider left unidentified is recorded too: dropping it would strand its
+        // receipts outside the only replay the third turn gets.
+        expect(thirdTurn.history.map((record) => record.turn)).toEqual([1, 2]);
+        expect(thirdTurn.history[0]?.assistantItems).toEqual(firstItems);
+        expect(thirdTurn.history[1]?.assistantItems).toBeNull();
+        for (const record of thirdTurn.history) {
+            expect(record.calls[0]?.id).toBe(record.receipts[0]?.callId);
+        }
+        expect(thirdTurn.history[1]?.calls[0]?.id).toBe('loop-mixed-run-2-0');
+        expect(thirdTurn.receiptContext).toContain('"callId":"query-1"');
+        expect(thirdTurn.receiptContext).toContain('"callId":"loop-mixed-run-2-0"');
+    });
+
+    it('records no turn for the terminal turn that ends the run', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce(queryTurn('query-1', [{ type: 'function_call', call_id: 'query-1' }]))
+            .mockResolvedValueOnce(queryTurn('query-2', [{ type: 'function_call', call_id: 'query-2' }]))
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ id: 'final-1', name: 'setTempo', arguments: { bpm: 128 } }],
+                providerTurn: { provider: 'openai' as const, assistantItems: [{ type: 'function_call' }] },
+            });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-terminal',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(result).toMatchObject({ status: 'complete', turns: 3 });
+        expect(requestTurn).toHaveBeenCalledTimes(3);
+        // A turn that ends the run earns no receipts, so it is never handed back: the last
+        // record is the last turn that actually read something.
+        const recordedTurns = readTurn(requestTurn, 2).history.map((record) => record.turn);
+        expect(recordedTurns).toEqual([1, 2]);
+        expect(recordedTurns.at(-1)).toBe(2);
     });
 
     it('records nothing for a turn that reported no provider turn and still serializes the receipts', async () => {

@@ -402,6 +402,26 @@ describe('generateToolPlanningOutcome', () => {
         );
     });
 
+    it('reports the hosted turn with no replayable items when the provider left a call unidentified', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            assistantItems: [{ type: 'function_call', call_id: 'provider-call' }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        // The turn is still reported, so its calls and receipts reach the next request; only the
+        // items are withheld, because nothing in them carries the identifier the receipt answers.
+        await expect(generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)).resolves.toMatchObject(
+            {
+                status: 'complete',
+                providerTurn: { provider: 'openai', assistantItems: null },
+            }
+        );
+    });
+
     it('reports no hosted turn for a locally planned batch', async () => {
         mocks.backendChain.value = ['webllm'];
         mocks.generateWebLlmToolCalls.mockResolvedValue({

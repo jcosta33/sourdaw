@@ -253,8 +253,23 @@ function getApplicationToolReceipts(userMessage: string): unknown[] {
     return parsed.receipts;
 }
 
-function assertDiscoveredCommandSchema(userMessage: string): void {
-    const discoveryReceipt = getApplicationToolReceipts(userMessage).find(
+/** The receipts a hosted turn replays natively, one `tool` message per receipt, in wire order. */
+function getReplayedToolReceipts(requestBody: string): unknown[] {
+    const request: unknown = JSON.parse(requestBody);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    return request.messages.flatMap((message: unknown) => {
+        if (!isRecord(message) || message.role !== 'tool' || typeof message.content !== 'string') {
+            return [];
+        }
+        const receipt: unknown = JSON.parse(message.content);
+        return [receipt];
+    });
+}
+
+function assertDiscoveredCommandSchema(receipts: readonly unknown[]): void {
+    const discoveryReceipt = receipts.find(
         (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
     );
     if (
@@ -294,7 +309,7 @@ function createTurnTrackedWebLlmResponder(
         if (turn === 1) {
             return Promise.resolve(JSON.stringify(catalogDiscoveryPlan()));
         }
-        assertDiscoveredCommandSchema(userMessage);
+        assertDiscoveredCommandSchema(getApplicationToolReceipts(userMessage));
         return Promise.resolve(JSON.stringify(asCommandBatchProposal(buildPlan(userMessage))));
     };
 }
@@ -327,11 +342,10 @@ function createTurnTrackedHostedResponder(): (...args: Parameters<typeof fetch>)
         if (turn > 2) {
             throw new Error('Expected exactly two hosted provider turns');
         }
-        const userMessage = getHostedUserMessage(init.body);
         if (turn === 1) {
             return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan()));
         }
-        assertDiscoveredCommandSchema(userMessage);
+        assertDiscoveredCommandSchema(getReplayedToolReceipts(init.body));
         return Promise.resolve(toolCallsResponse(asCommandBatchProposal(providerPlan)));
     };
 }
@@ -547,7 +561,7 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         expect(providerRequests[0]).toContain(PROMPT);
         expect(providerRequests[0]).toContain('user_request:');
         expect(providerRequests[1]).toContain('relevant_evidence:');
-        assertDiscoveredCommandSchema(providerRequests[1] ?? '');
+        assertDiscoveredCommandSchema(getApplicationToolReceipts(providerRequests[1] ?? ''));
 
         const confirmation = getConfirmation();
         expect(confirmation?.actions).toEqual([
@@ -697,17 +711,20 @@ describe('Bass DI compressor parameter prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        const providerRequests = runtimeMocks.fetch.mock.calls.map(([, init]) => {
+        const requestBodies = runtimeMocks.fetch.mock.calls.map(([, init]) => {
             if (typeof init?.body !== 'string') {
                 throw new TypeError('Expected hosted provider request body');
             }
-            return getHostedUserMessage(init.body);
+            return init.body;
         });
+        const providerRequests = requestBodies.map(getHostedUserMessage);
         expect(providerRequests).toHaveLength(2);
         expect(providerRequests[0]).toContain(PROMPT);
         expect(providerRequests[0]).toContain('user_request:');
         expect(providerRequests[1]).toContain('relevant_evidence:');
-        assertDiscoveredCommandSchema(providerRequests[1] ?? '');
+        // The second turn answers the first natively: its receipts ride as tool messages, not
+        // as text folded into the user message.
+        assertDiscoveredCommandSchema(getReplayedToolReceipts(requestBodies[1] ?? ''));
         expect(getConfirmation()?.actions).toEqual(createGuardedActions());
 
         const confirmation = getConfirmation();

@@ -220,10 +220,23 @@ function getApplicationToolReceipts(userMessage: string): unknown[] {
     return parsed.receipts;
 }
 
-function assertDiscoveredCommandSchema(userMessage: string): void {
-    const discovery = getApplicationToolReceipts(userMessage).find(
-        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
-    );
+/** The receipts a hosted turn replays natively, one `tool` message per receipt, in wire order. */
+function getReplayedToolReceipts(requestBody: string): unknown[] {
+    const request: unknown = JSON.parse(requestBody);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    return request.messages.flatMap((message: unknown) => {
+        if (!isRecord(message) || message.role !== 'tool' || typeof message.content !== 'string') {
+            return [];
+        }
+        const receipt: unknown = JSON.parse(message.content);
+        return [receipt];
+    });
+}
+
+function assertDiscoveredCommandSchema(receipts: readonly unknown[]): void {
+    const discovery = receipts.find((receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover');
     if (
         !isRecord(discovery) ||
         discovery.status !== 'success' ||
@@ -332,7 +345,7 @@ function createWebLlmResponder(transformPlan: (plan: ProviderCall[]) => Provider
             );
         }
         awaitingReceipt = false;
-        assertDiscoveredCommandSchema(userMessage);
+        assertDiscoveredCommandSchema(getApplicationToolReceipts(userMessage));
         const plan = transformPlan(createProviderPlan(userMessage));
         return Promise.resolve(
             JSON.stringify(
@@ -360,7 +373,7 @@ function createHostedResponder(
         }
         awaitingReceipt = false;
         const userMessage = getHostedUserMessage(init.body);
-        assertDiscoveredCommandSchema(userMessage);
+        assertDiscoveredCommandSchema(getReplayedToolReceipts(init.body));
         const plan = transformPlan(createProviderPlan(userMessage));
         return Promise.resolve(
             toolCallsResponse(
