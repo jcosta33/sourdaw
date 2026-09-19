@@ -1,0 +1,30 @@
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiResponsesToolCalls.ts
+  s_9e15f5b7ec3308::t_fe65953ade8b4e 134,141-142,147
+  s_9e15f5b7ec3308::t_116acdbade77a2 148-150,183-185,200
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  s_9e15f5b7ec3308::t_65770d176b8686 207-261
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_9e15f5b7ec3308::t_053a0dd655334c 262-329,331
+  s_9e15f5b7ec3308::t_d7db35d6f8c237 15
+  s_9e15f5b7ec3308::t_414e7519a27bf2 16-18,330,332
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiResponsesToolCalls.spec.ts
+  s_9e15f5b7ec3308::t_0f38671b778861 137,140
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  s_9e15f5b7ec3308::t_1fd9f573173a13 116-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5857af0f41986baee3d668623d6147ce8ee31c51",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
