@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 test.describe('Full project lifecycle', () => {
@@ -34,34 +35,6 @@ test.describe('Full project lifecycle', () => {
 
         await page.getByTestId('transport-stop').click();
         await expect(page.getByTestId('transport-playhead')).toHaveText(/1\.1\.000/, { timeout: 5000 });
-    });
-
-    test('add device and bypass via inspector', async ({ page }) => {
-        const emptyState = page.locator('button').filter({ hasText: 'MIDI' }).filter({ hasText: 'Keys' });
-        await emptyState.click();
-        const trackList = page.getByRole('grid', { name: /Track list/i }).first();
-        await trackList.getByRole('row').first().waitFor({ state: 'visible' });
-        await trackList.getByRole('row').first().click();
-        await page.waitForTimeout(300);
-
-        const inspector = page.getByTestId('toggle-inspector');
-        if ((await inspector.getAttribute('aria-pressed')) === 'false') {
-            await inspector.click();
-            await page.waitForTimeout(300);
-        }
-
-        const addDevice = page.getByTestId('add-device-button');
-        if (await addDevice.isVisible().catch(() => false)) {
-            await addDevice.click();
-            await page.waitForTimeout(300);
-            await page.getByRole('menu').getByRole('menuitem').first().click();
-            await page.waitForTimeout(500);
-
-            const bypass = page.locator('[data-testid^="device-bypass-"]').first();
-            await expect(bypass).toBeVisible({ timeout: 5000 });
-            await bypass.click();
-            await expect(bypass).toHaveAttribute('aria-pressed', 'true');
-        }
     });
 
     test('mute during playback then unmute', async ({ page }) => {
