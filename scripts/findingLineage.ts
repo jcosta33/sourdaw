@@ -331,6 +331,74 @@ export function parseFindingLineage(body: string): FindingLineage | undefined {
     return lineage;
 }
 
+/** The index of the `"` closing the JSON string literal that opens at `start`. */
+function endOfJsonString(text: string, start: number): number {
+    let index = start + 1;
+    while (index < text.length && text.charAt(index) !== '"') {
+        index += text.charAt(index) === '\\' ? 2 : 1;
+    }
+    return index;
+}
+
+/** The index of the next non-whitespace character at or after `start`, or `text.length`. */
+function skipJsonWhitespace(text: string, start: number): number {
+    let index = start;
+    while (index < text.length && /\s/u.test(text.charAt(index))) {
+        index += 1;
+    }
+    return index;
+}
+
+/**
+ * The first member key `text` repeats within one object, or `undefined`. `JSON.parse` collapses a
+ * repeated member to its last value before any key check can see it, so the raw bytes are scanned
+ * here: a string followed by `:` is a member key, and the object nesting is tracked so only a repeat
+ * within that same object counts. A key name repeated across entries, which is ordinary JSON, is not
+ * a repetition. Called only on text `JSON.parse` already accepted, so the structure is well formed.
+ */
+function repeatedMemberKey(text: string): string | undefined {
+    const objects: (Set<string> | null)[] = [];
+    let index = 0;
+    while (index < text.length) {
+        const char = text.charAt(index);
+        if (char === '{') {
+            objects.push(new Set());
+            index += 1;
+            continue;
+        }
+        if (char === '[') {
+            objects.push(null);
+            index += 1;
+            continue;
+        }
+        if (char === '}' || char === ']') {
+            objects.pop();
+            index += 1;
+            continue;
+        }
+        if (char !== '"') {
+            index += 1;
+            continue;
+        }
+        const start = index;
+        const end = endOfJsonString(text, start);
+        index = end + 1;
+        if (text.charAt(skipJsonWhitespace(text, index)) !== ':') {
+            continue;
+        }
+        const key: unknown = JSON.parse(text.slice(start, end + 1));
+        const keys = objects.at(-1) ?? null;
+        if (keys === null || typeof key !== 'string') {
+            continue;
+        }
+        if (keys.has(key)) {
+            return key;
+        }
+        keys.add(key);
+    }
+    return undefined;
+}
+
 /** The bare marker payload as a file may carry it, before any marker line is added. */
 function parseBareLineage(text: string): FindingLineage {
     let parsed: unknown;
@@ -338,6 +406,12 @@ function parseBareLineage(text: string): FindingLineage {
         parsed = JSON.parse(text);
     } catch {
         return fail('finding lineage document is neither a marker body nor a JSON object');
+    }
+    const repeated = repeatedMemberKey(text);
+    if (repeated !== undefined) {
+        return fail(
+            `finding lineage document repeats the key ${JSON.stringify(repeated)} instead of reading it last-wins`
+        );
     }
     const lineage = readLineage(parsed);
     assertLineageShape(lineage);

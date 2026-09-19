@@ -557,6 +557,45 @@ describe('pull-request supersession', () => {
             rmSync(directory, { recursive: true, force: true });
         }
     });
+    it('refuses a bare lineage document that repeats a key instead of reading it last-wins', () => {
+        const directory = mkdtempSync(join(tmpdir(), 'sourdaw-lineage-3001-'));
+        try {
+            const duplicated = join(directory, 'duplicated.json');
+            const payload =
+                '{"format":"lineage-v1","oldPr":2244,"replacementPr":2246,"entries":[{"findingId":"1001","disposition":"discarded","disposition":"repaired","replacementPr":2246,"replacementFindingId":"2001","reason":""}]}';
+            writeFileSync(duplicated, payload);
+            expect(JSON.parse(payload)).toEqual(repairedLineage);
+            expect(() => readFindingLineageFile(duplicated)).toThrow(/repeats the key "disposition"/i);
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    });
+    it('accepts a bare lineage document with unique keys in any formatting', () => {
+        const directory = mkdtempSync(join(tmpdir(), 'sourdaw-lineage-3001-'));
+        try {
+            const expected: FindingLineage = {
+                ...repairedLineage,
+                entries: [repairedEntry, { ...repairedEntry, findingId: findingB }],
+            };
+            const formatted = join(directory, 'formatted.json');
+            const unsorted = {
+                entries: expected.entries.map((entry) => ({
+                    reason: entry.reason,
+                    replacementPr: entry.replacementPr,
+                    replacementFindingId: entry.replacementFindingId,
+                    disposition: entry.disposition,
+                    findingId: entry.findingId,
+                })),
+                replacementPr: replacementNumber,
+                oldPr: oldNumber,
+                format: 'lineage-v1',
+            };
+            writeFileSync(formatted, JSON.stringify(unsorted, null, 4));
+            expect(readFindingLineageFile(formatted)).toEqual(expected);
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    });
 
     it.each([
         ['wrong actor', REVIEWER_BOT_NODE_ID, {}],
