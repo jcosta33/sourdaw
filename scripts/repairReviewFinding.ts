@@ -34,6 +34,8 @@ import {
     REVIEW_THREAD_COMMENT_FIELDS,
     assertReviewRepairRecord,
     parseReviewRepairReply,
+    readCommentDatabaseId,
+    readFindingLine,
     renderReviewRepairReply,
     type ReviewRepairEvidence,
     type ReviewRepairRecord,
@@ -408,16 +410,9 @@ type ThreadCommentNode = {
     body?: unknown;
     path?: unknown;
     line?: unknown;
+    originalLine?: unknown;
     author?: unknown;
 };
-
-/** A comment's node `id` is an opaque string; the numeric database id is what a record binds. */
-function readCommentId(value: unknown, label: string): number {
-    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
-        fail(`${label} must be a numeric database id, found ${describeValue(value)}`);
-    }
-    return value;
-}
 
 function readSide(value: unknown, label: string): 'LEFT' | 'RIGHT' {
     if (value !== 'LEFT' && value !== 'RIGHT') {
@@ -428,8 +423,9 @@ function readSide(value: unknown, label: string): 'LEFT' | 'RIGHT' {
 
 /**
  * The root is the first comment of the first page, so its database id is the numeric id already read
- * from that reply; this reads only the file position the record binds beside it. The side comes from
- * the thread's `diffSide`, because GitHub defines no side on a review comment.
+ * from that reply; this reads only the file position the record binds beside it. The position is the
+ * live line, or the original line when GitHub has nulled the live one for an outdated diff. The side
+ * comes from the thread's `diffSide`, because GitHub defines no side on a review comment.
  */
 function readRootComment(
     node: ThreadCommentNode,
@@ -437,16 +433,15 @@ function readRootComment(
     side: 'LEFT' | 'RIGHT',
     label: string
 ): RepairReviewFindingThread['rootComment'] {
-    if (
-        typeof node.path !== 'string' ||
-        node.path.trim() === '' ||
-        typeof node.line !== 'number' ||
-        !Number.isSafeInteger(node.line) ||
-        node.line <= 0
-    ) {
-        fail(`${label} root comment carries no file position`);
+    if (typeof node.path !== 'string' || node.path.trim() === '') {
+        fail(`${label} root comment carries no file path`);
     }
-    return { id, path: node.path, line: node.line, side };
+    return {
+        id,
+        path: node.path,
+        line: readFindingLine(node.line, node.originalLine, `${label} root comment`),
+        side,
+    };
 }
 
 function readThreadReply(node: ThreadCommentNode, label: string): RepairReviewFindingReply {
@@ -455,7 +450,7 @@ function readThreadReply(node: ThreadCommentNode, label: string): RepairReviewFi
     }
     const author = isRecord(node.author) ? node.author : {};
     return {
-        id: readCommentId(node.databaseId, `${label} comment ${node.id} id`),
+        id: readCommentDatabaseId(node.databaseId, `${label} comment ${node.id} id`),
         body: node.body,
         authorNodeId: typeof author.id === 'string' ? author.id : null,
     };

@@ -50,6 +50,7 @@ const THIRD_ROOT_COMMENT_ID = 5_003;
 const FINDING_PATH = ['scripts', 'confirmReviewRepairs.ts'].join('/');
 const SECOND_FINDING_PATH = ['scripts', 'reviewRepair.ts'].join('/');
 const FINDING_LINE = 42;
+const OUTDATED_LINE = 174;
 const SUMMARY = 'Bind the repair to the commit that addresses it.';
 const REFUSED_MESSAGE = `refusing to confirm 1 review thread(s) on PR #${PR}`;
 
@@ -880,6 +881,114 @@ describe('readReviewThreads', () => {
         expect(() => readReviewThreads(PR, gh, [])).toThrow(
             `PR #${PR} review threads diff side must be LEFT or RIGHT, found "UP"`
         );
+    });
+
+    it('should refuse a non-numeric root comment id as a type failure, not a range failure', () => {
+        const { gh } = recordingGh(() =>
+            page(
+                [
+                    threadNode({
+                        comments: {
+                            nodes: [
+                                {
+                                    id: 'PRRC_kwDOconfirmStringId',
+                                    databaseId: '5001',
+                                    body: 'root',
+                                    path: FINDING_PATH,
+                                    line: 1,
+                                    author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
+                                },
+                            ],
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                        },
+                    }),
+                ],
+                { hasNextPage: false, endCursor: null }
+            )
+        );
+        expect(() => readReviewThreads(PR, gh, [])).toThrow(
+            `PR #${PR} review threads root comment id must be a numeric database id, found "5001"`
+        );
+    });
+
+    it('should bind an outdated root to its original line and confirm a repair that names it', () => {
+        const record = recordFor({
+            finding: { commentId: ROOT_COMMENT_ID, path: FINDING_PATH, line: OUTDATED_LINE, side: 'RIGHT' },
+        });
+        const { gh, calls } = recordingGh(() =>
+            page(
+                [
+                    threadNode({
+                        comments: {
+                            nodes: [
+                                {
+                                    id: 'PRRC_kwDOconfirmOutdated',
+                                    databaseId: ROOT_COMMENT_ID,
+                                    body: 'Defect.',
+                                    path: FINDING_PATH,
+                                    // GitHub nulls the live line once the diff moves under the comment.
+                                    line: null,
+                                    originalLine: OUTDATED_LINE,
+                                    author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
+                                },
+                                {
+                                    id: 'PRRC_kwDOconfirmOutdatedRecord',
+                                    databaseId: 9_001,
+                                    body: authorRecordReply(record),
+                                    path: null,
+                                    line: null,
+                                    originalLine: null,
+                                    author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
+                                },
+                            ],
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                        },
+                    }),
+                ],
+                { hasNextPage: false, endCursor: null }
+            )
+        );
+
+        const threads = readReviewThreads(PR, gh, []);
+        expect(threads[0]?.rootLine).toBe(OUTDATED_LINE);
+        expect(calls[0]?.query).toContain('originalLine');
+        expect(confirmReviewRepairs(PR, HEAD, fakePort(HEAD, threads).port)).toEqual({ resolved: [THREAD] });
+    });
+
+    it('should refuse a root comment that carries neither a live nor an original line', () => {
+        for (const [line, originalLine] of [
+            [null, null],
+            [0, -3],
+            [1.5, Number.MAX_SAFE_INTEGER + 1],
+        ] as const) {
+            const { gh } = recordingGh(() =>
+                page(
+                    [
+                        threadNode({
+                            comments: {
+                                nodes: [
+                                    {
+                                        id: 'PRRC_kwDOconfirmNoLine',
+                                        databaseId: ROOT_COMMENT_ID,
+                                        body: 'Defect.',
+                                        path: FINDING_PATH,
+                                        line,
+                                        originalLine,
+                                        author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
+                                    },
+                                ],
+                                pageInfo: { hasNextPage: false, endCursor: null },
+                            },
+                        }),
+                    ],
+                    { hasNextPage: false, endCursor: null }
+                )
+            );
+            expect(
+                () => readReviewThreads(PR, gh, []),
+                `line ${String(line)} and originalLine ${String(originalLine)} must be refused`
+            ).toThrow(`PR #${PR} review threads root comment line must carry a positive line number`);
+        }
     });
 
     it('should read a human comment as a reply no selection acts on and still confirm the author repair', () => {

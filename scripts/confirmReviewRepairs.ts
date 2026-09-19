@@ -36,6 +36,8 @@ import {
     REVIEW_THREAD_COMMENT_FIELDS,
     confirmClientMutationId,
     parseReviewRepairReply,
+    readCommentDatabaseId,
+    readFindingLine,
     renderReviewRepairReply,
     selectEligibleRepairs,
     type ReviewRepairRecord,
@@ -238,14 +240,6 @@ function describeValue(value: unknown): string {
     return JSON.stringify(value) ?? typeof value;
 }
 
-/** A comment's node `id` is an opaque string; the numeric database id is what a record binds. */
-function readCommentId(value: unknown, label: string): number {
-    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
-        fail(`${label} must be a numeric database id, found ${describeValue(value)}`);
-    }
-    return value;
-}
-
 function readSide(value: unknown, label: string): 'LEFT' | 'RIGHT' {
     if (value !== 'LEFT' && value !== 'RIGHT') {
         fail(`${label} must be LEFT or RIGHT, found ${describeValue(value)}`);
@@ -256,13 +250,6 @@ function readSide(value: unknown, label: string): 'LEFT' | 'RIGHT' {
 function readPath(value: unknown, label: string): string {
     if (typeof value !== 'string' || value.trim() === '') {
         fail(`${label} must carry a file path, found ${describeValue(value)}`);
-    }
-    return value;
-}
-
-function readLine(value: unknown, label: string): number {
-    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
-        fail(`${label} must carry a positive line number, found ${describeValue(value)}`);
     }
     return value;
 }
@@ -279,7 +266,7 @@ function readReply(comment: unknown, label: string): ReviewRepairThreadState['re
     if (!isRecord(comment) || typeof comment.id !== 'string' || typeof comment.body !== 'string') {
         fail(`${label} returned an unreadable comment`);
     }
-    const id = readCommentId(comment.databaseId, `${label} comment ${comment.id} id`);
+    const id = readCommentDatabaseId(comment.databaseId, `${label} comment ${comment.id} id`);
     const author = isRecord(comment.author) ? comment.author : {};
     if (author.__typename === 'Bot') {
         if (typeof author.id !== 'string') {
@@ -310,8 +297,9 @@ function readCommentCursor(comments: Record<string, unknown>, label: string): st
 /**
  * The thread as this command needs it: the root comment supplies the finding's database id, path and
  * line, the thread's own `diffSide` supplies its side, and every comment supplies the author identity
- * the selection reads records from. The root must be a numeric database id and carry a position,
- * because a record binds exactly those values.
+ * the selection reads records from. The root must be a numeric database id and carry a position —
+ * the live line, or the original line once GitHub nulls the live one for an outdated diff — because a
+ * record binds exactly those values.
  */
 function readThread(node: unknown, label: string): ListedThread {
     if (!isRecord(node) || typeof node.id !== 'string' || typeof node.isResolved !== 'boolean') {
@@ -329,9 +317,9 @@ function readThread(node: unknown, label: string): ListedThread {
         state: {
             thread: node.id,
             resolved: node.isResolved,
-            rootCommentId: readCommentId(root.databaseId, `${label} root comment id`),
+            rootCommentId: readCommentDatabaseId(root.databaseId, `${label} root comment id`),
             rootPath: readPath(root.path, `${label} root comment path`),
-            rootLine: readLine(root.line, `${label} root comment line`),
+            rootLine: readFindingLine(root.line, root.originalLine, `${label} root comment line`),
             rootSide: readSide(node.diffSide, `${label} diff side`),
             replies: [root, ...rest].map((comment) => readReply(comment, label)),
         },

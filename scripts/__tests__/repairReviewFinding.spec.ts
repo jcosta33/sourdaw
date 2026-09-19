@@ -40,6 +40,9 @@ const ROOT_COMMENT_ID = 5_001;
 const ROOT_COMMENT_NODE_ID = 'PRRC_kwDOrepairRoot';
 const FINDING_PATH = 'scripts/repairReviewFinding.ts';
 const FINDING_LINE = 42;
+const LATER_PAGE_PATH = 'scripts/reviewRepair.ts';
+const LATER_PAGE_LINE = 174;
+const OUTDATED_LINE = 174;
 const SUMMARY = 'Bind the repair to the commit that addresses it.';
 
 const EVIDENCE_ENTRY = {
@@ -669,7 +672,7 @@ describe('readRepairReviewThread', () => {
         expect(calls[0]?.query).toContain('PullRequestReviewThread');
         // The thread carries the side; the comment type has no side field to ask for.
         expect(calls[0]?.query).toContain('id isResolved diffSide');
-        expect(calls[0]?.query).toContain('path line author');
+        expect(calls[0]?.query).toContain('path line originalLine author');
         expect(calls[0]?.query).not.toContain('line side');
         // The record binds the numeric database id, so the fragment must select it beside the node id.
         expect(calls[0]?.query).toContain('nodes{id databaseId body');
@@ -702,8 +705,10 @@ describe('readRepairReviewThread', () => {
                             id: 'PRRC_kwDOrepairReply',
                             databaseId: 5_002,
                             body: 'reply',
-                            path: FINDING_PATH,
-                            line: FINDING_LINE,
+                            // A different position from the first page's root: if the root were read
+                            // from the later page, the binding below would observe it.
+                            path: LATER_PAGE_PATH,
+                            line: LATER_PAGE_LINE,
                             author: null,
                         },
                     ],
@@ -727,6 +732,95 @@ describe('readRepairReviewThread', () => {
             side: 'LEFT',
         });
         expect(calls[1]?.fields.cursor).toBe('CURSOR');
+    });
+
+    it('should bind an outdated root to its original line and record that line', () => {
+        const { gh, calls } = recordingGh(() =>
+            threadNode({
+                comments: {
+                    nodes: [
+                        {
+                            id: ROOT_COMMENT_NODE_ID,
+                            databaseId: ROOT_COMMENT_ID,
+                            body: 'Defect.',
+                            path: FINDING_PATH,
+                            // GitHub nulls the live line once the diff moves under the comment.
+                            line: null,
+                            originalLine: OUTDATED_LINE,
+                            author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
+                        },
+                    ],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                },
+            })
+        );
+
+        const state = readRepairReviewThread(THREAD, gh);
+        expect(state.rootComment).toEqual({
+            id: ROOT_COMMENT_ID,
+            path: FINDING_PATH,
+            line: OUTDATED_LINE,
+            side: 'RIGHT',
+        });
+        expect(calls[0]?.query).toContain('originalLine');
+
+        const { port, posted } = fakePort(state);
+        repairReviewFinding(PR, repairInput(), port);
+        expect(postedRecords(posted)[0]?.finding.line).toBe(OUTDATED_LINE);
+    });
+
+    it('should refuse a root comment that carries neither a live nor an original line', () => {
+        for (const [line, originalLine] of [
+            [null, null],
+            [0, -3],
+            [1.5, Number.MAX_SAFE_INTEGER + 1],
+        ] as const) {
+            const { gh } = recordingGh(() =>
+                threadNode({
+                    comments: {
+                        nodes: [
+                            {
+                                id: ROOT_COMMENT_NODE_ID,
+                                databaseId: ROOT_COMMENT_ID,
+                                body: 'Defect.',
+                                path: FINDING_PATH,
+                                line,
+                                originalLine,
+                                author: null,
+                            },
+                        ],
+                        pageInfo: { hasNextPage: false, endCursor: null },
+                    },
+                })
+            );
+            expect(
+                () => readRepairReviewThread(THREAD, gh),
+                `line ${String(line)} and originalLine ${String(originalLine)} must be refused`
+            ).toThrow(`review thread ${THREAD} root comment must carry a positive line number`);
+        }
+    });
+
+    it('should refuse a non-numeric comment id as a type failure, not a range failure', () => {
+        const { gh } = recordingGh(() =>
+            threadNode({
+                comments: {
+                    nodes: [
+                        {
+                            id: ROOT_COMMENT_NODE_ID,
+                            databaseId: '5001',
+                            body: 'Defect.',
+                            path: FINDING_PATH,
+                            line: FINDING_LINE,
+                            author: null,
+                        },
+                    ],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                },
+            })
+        );
+        expect(() => readRepairReviewThread(THREAD, gh)).toThrow(
+            `comment ${ROOT_COMMENT_NODE_ID} id must be a numeric database id, found "5001"`
+        );
     });
 
     it('should refuse a node that is not a review thread', () => {

@@ -46,10 +46,12 @@ const DIFFERENT_RECORD_CONFIRMATION_REFUSAL = 'thread already carries a confirma
  * sits beside `nodes` rather than inside it; one shared fragment keeps the two readers from drifting.
  * A record binds the numeric `databaseId`; the node `id` is GitHub's opaque string and only names the
  * comment in diagnostics. The comment type carries no side: the side a finding sits on belongs to the
- * thread as `diffSide`, selected by each thread reader beside `isResolved`.
+ * thread as `diffSide`, selected by each thread reader beside `isResolved`. GitHub nulls `line` once a
+ * diff moves under a comment while `originalLine` keeps the position it was written against, so both
+ * positions are read and `readFindingLine` decides which one a finding binds.
  */
 export const REVIEW_THREAD_COMMENT_FIELDS =
-    'nodes{id databaseId body path line author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}';
+    'nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}';
 
 export type ReviewRepairFinding = { commentId: number; path: string; line: number; side: 'LEFT' | 'RIGHT' };
 
@@ -267,6 +269,45 @@ function assertPositiveInteger(label: string, value: number): void {
     if (!Number.isSafeInteger(value) || value <= 0) {
         fail(`review repair ${label} must be a positive safe integer, found ${describeValue(value)}`);
     }
+}
+
+/**
+ * A comment's numeric database id, shared by both thread readers. The type check stands as its own
+ * guard rather than folding into the range check: `Number.isSafeInteger` already refuses every
+ * non-number, so one disjunction would carry a type clause no fixture can distinguish. Kept apart,
+ * a wrong type and a wrong value are separate failures with separate diagnostics.
+ */
+export function readCommentDatabaseId(value: unknown, label: string): number {
+    if (typeof value !== 'number') {
+        fail(`${label} must be a numeric database id, found ${describeValue(value)}`);
+    }
+    if (!Number.isSafeInteger(value) || value <= 0) {
+        fail(`${label} must be a numeric database id that is a positive safe integer, found ${describeValue(value)}`);
+    }
+    return value;
+}
+
+/** A position GitHub reports as a positive safe integer; null and every malformed value carry none. */
+function isPositiveLine(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+/**
+ * The line a finding binds, shared by both thread readers. GitHub nulls a review comment's `line` once
+ * the diff moves under it while `originalLine` keeps the position it was written against, so a finding
+ * binds the live line when GitHub still reports one and the original line otherwise. Only a comment
+ * that carries neither is unreadable; refusing an outdated root would strand its blocking thread.
+ */
+export function readFindingLine(line: unknown, originalLine: unknown, label: string): number {
+    if (isPositiveLine(line)) {
+        return line;
+    }
+    if (isPositiveLine(originalLine)) {
+        return originalLine;
+    }
+    return fail(
+        `${label} must carry a positive line number, found ${describeValue(line)} and original line ${describeValue(originalLine)}`
+    );
 }
 
 export function assertReviewRepairRecord(record: ReviewRepairRecord): void {
