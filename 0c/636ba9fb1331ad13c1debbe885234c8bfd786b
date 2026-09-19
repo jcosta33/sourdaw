@@ -1,0 +1,29 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_9e15f5b7ec3308::t_8f433f842a0abc 907-908,1932-1935
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  s_9e15f5b7ec3308::t_02f823d6cbbd91 707-708,716-717,803-804,822-847,857-858,866-867,879-880,924-925,933-934,949-950,1011-1012,1043-1044,1064-1065,1230-1231
+scripts/__tests__/repairReviewFinding.spec.ts
+  s_9e15f5b7ec3308::t_3f0270220c64f7 40,57,69,114,397,408,611-612,660,669-670,679-680,697-698,718,749,755,767-829,833,835-850
+scripts/__tests__/reviewRepair.spec.ts
+  s_9e15f5b7ec3308::t_28a5d1c416e257 675,678,684,687
+scripts/confirmReviewRepairs.ts
+  s_9e15f5b7ec3308::t_47b11f4dab740e 241,243,246,282,288,290,331
+scripts/reviewRepair.ts
+  s_9e15f5b7ec3308::t_04c0af36ab2ddb 47-48,51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0c636ba9fb1331ad13c1debbe885234c8bfd786b",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
