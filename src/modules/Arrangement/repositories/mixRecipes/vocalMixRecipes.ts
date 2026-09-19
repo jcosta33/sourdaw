@@ -25,7 +25,7 @@ export const vocalMixRecipes: readonly MixRecipe[] = [
             'Skip when the arrangement relies on the vocal to carry the top of the mix.',
         ],
         metrics: [
-            { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'increase' },
+            { metric: 'frequencyBandEnergy', band: 'bass', direction: 'increase' },
             { metric: 'spectralCentroid', direction: 'decrease' },
         ],
         source: 'Warmth in a voice sits in the chest resonance near 150 Hz, so a shallow shelf there adds body without touching the vowel region. The matching half-decibel-scale cut above 9 kHz keeps the perceived balance tilted downward rather than simply louder, which is what moves spectral centroid instead of level.',

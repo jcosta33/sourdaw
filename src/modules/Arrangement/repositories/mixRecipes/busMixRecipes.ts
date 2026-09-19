@@ -25,7 +25,7 @@ export const busMixRecipes: readonly MixRecipe[] = [
             'Skip when the parent chain already applies a tilt in the same direction.',
         ],
         metrics: [
-            { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'increase' },
+            { metric: 'frequencyBandEnergy', band: 'bass', direction: 'increase' },
             { metric: 'spectralCentroid', direction: 'decrease' },
         ],
         source: 'A bus move lands on every source at once, so the amounts stay roughly half of what a single track would take. A shallow tilt in both directions changes character while leaving the internal balance of the group untouched.',

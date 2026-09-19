@@ -26,7 +26,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
         ],
         metrics: [
             { metric: 'spectralCentroid', direction: 'decrease' },
-            { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'increase' },
+            { metric: 'frequencyBandEnergy', band: 'bass', direction: 'increase' },
         ],
         source: 'Master moves land on everything, so a decibel and a half is a large change rather than a small one; anything bigger is a mix problem wearing a master fix. A matched shelf pair tilts the balance without raising the level the limiter then has to remove.',
     },
@@ -78,7 +78,7 @@ export const masterMixRecipes: readonly MixRecipe[] = [
             },
         ],
         prerequisites: [
-            'A limiter of type builtin-limiter already sits last in the master chain; this recipe retunes it rather than adding a second one.',
+            'The master chain already carries a builtin-limiter; this recipe retunes it rather than adding a second one.',
         ],
         contraindications: [
             'Skip when the mix is dense enough that a release under 80 ms produces audible distortion on sustained low notes.',

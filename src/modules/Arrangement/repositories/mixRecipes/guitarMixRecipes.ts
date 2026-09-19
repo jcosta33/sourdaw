@@ -25,7 +25,7 @@ export const guitarMixRecipes: readonly MixRecipe[] = [
             'Skip when the part carries the top of an otherwise dark arrangement.',
         ],
         metrics: [
-            { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'increase' },
+            { metric: 'frequencyBandEnergy', band: 'bass', direction: 'increase' },
             { metric: 'spectralCentroid', direction: 'decrease' },
         ],
         source: 'Guitar body sits between 120 Hz and 180 Hz, above the bass fundamental and below the boxy region, so a shelf there adds weight without either collision. Easing the top at the same time makes the tilt read as warmth rather than as added low end.',

@@ -25,7 +25,7 @@ export const keysMixRecipes: readonly MixRecipe[] = [
             'Skip when the keys carry the top of a dark arrangement.',
         ],
         metrics: [
-            { metric: 'frequencyBandEnergy', band: 'low-mid', direction: 'increase' },
+            { metric: 'frequencyBandEnergy', band: 'bass', direction: 'increase' },
             { metric: 'spectralCentroid', direction: 'decrease' },
         ],
         source: 'The shelf sits slightly above the usual low window because keyboard warmth lives in the left-hand register around 200 Hz rather than in the bass octave below it. Pairing the lift with a small top-end reduction makes the result read as a tilt rather than as added level.',
