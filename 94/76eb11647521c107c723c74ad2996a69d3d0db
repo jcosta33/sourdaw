@@ -1,0 +1,42 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  h_1228e573df1f42 137,1087,1144
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/builtinDeviceAutomationUnits.spec.ts
+  h_1228e573df1f42 11,37,210-236,238-240
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/fermenterOscWaveformOfflineParity.spec.ts
+  h_1228e573df1f42 105
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/laneOvershootBoundParity.spec.ts
+  h_1228e573df1f42 200
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/scheduleTrackAutomationFixture.ts
+  h_1228e573df1f42 1,18-30,49,63-87,107,109,111-113,117,120,122-124
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/unrenderableAutomationRefusal.spec.ts
+  h_1228e573df1f42 1-222
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  h_1228e573df1f42 7,14,26-31,361-374
+src/modules/AudioEngine/repositories/offlineScheduler/refuseUnrenderableAutomation.ts
+  h_1228e573df1f42 1-49
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  h_1228e573df1f42 4,6-7,15,752-880
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  h_1228e573df1f42 356,417,479
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  h_1228e573df1f42 47-56,476
+src/modules/AudioEngine/useCases/offlineRender/__tests__/connectOfflineToasterPadRoutes.spec.ts
+  h_1228e573df1f42 26
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  h_1228e573df1f42 315,347,1400
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  h_1228e573df1f42 269,1392
+src/modules/AudioEngine/useCases/offlineRender/projectStripAutomationWrites.ts
+  h_1228e573df1f42 173-177
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9476eb11647521c107c723c74ad2996a69d3d0db",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
