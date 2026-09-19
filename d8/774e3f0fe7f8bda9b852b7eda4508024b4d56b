@@ -1,0 +1,14 @@
+release/dependency-license-proofs.json
+  h_1228e573df1f42 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d8774e3f0fe7f8bda9b852b7eda4508024b4d56b",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
