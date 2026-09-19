@@ -1,0 +1,27 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_9e15f5b7ec3308::t_ed85448255d7a8 302-314
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  s_9e15f5b7ec3308::t_e6b917361ccc62 570-596,701,790-916,1055-1059
+scripts/__tests__/repairReviewFinding.spec.ts
+  s_9e15f5b7ec3308::t_6c60ffe15ac35d 715-721
+scripts/confirmReviewRepairs.ts
+  s_9e15f5b7ec3308::t_2a320d0751a898 260-265,271-278,281-298,306,319-328,355,376-410,435
+scripts/reviewRepair.ts
+  s_9e15f5b7ec3308::t_702cffd5f3e6c4 73,400-402,410,416-419,422-425
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b1b1d60195e6de5e78e0e6146c6e45dffaf02787",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
