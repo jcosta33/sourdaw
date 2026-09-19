@@ -336,6 +336,16 @@ function appendCursor(fields: string[], cursor: string | undefined): string[] {
 }
 
 /**
+ * The GraphQL argument list every pull request reader sends. `number` is this module's only typed
+ * variable, and it must ride `-F`: `-f` sends a JSON string, which GitHub refuses against the
+ * `Int!` these queries declare, so every reviewer read fails with an invalid-value error. The
+ * repository fields stay on `-f` because `owner` and `name` are `String!`.
+ */
+export function pullRequestNumberArgs(fields: string[], pr: number): string[] {
+    return [...fields, '-F', `number=${pr}`];
+}
+
+/**
  * The thread page selects what `readThread` needs: the thread's own `isResolved` and `diffSide`, and
  * its comment connection, where the shared *comment* fragment nests. Each connection carries its own
  * `pageInfo`, because `ReviewThreadsPageInfo` and `PageInfo` are different selections on different
@@ -431,7 +441,7 @@ export function readReviewThreads(pr: number, gh: Gh, fields: string[]): ReviewR
     let cursor: string | undefined;
     const seen = new Set<string>();
     for (;;) {
-        const input = appendCursor([...fields, '-f', `number=${pr}`], cursor);
+        const input = appendCursor(pullRequestNumberArgs(fields, pr), cursor);
         const response = graphql(gh, threadPage(cursor), input, label) as {
             data?: { repository?: { pullRequest?: unknown } };
         };
@@ -452,7 +462,7 @@ export function readReviewThreads(pr: number, gh: Gh, fields: string[]): ReviewR
 export function readPullRequestHead(pr: number, gh: Gh, fields: string[]): string {
     const label = `PR #${pr} head`;
     const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid}}}`;
-    const response = graphql(gh, query, [...fields, '-f', `number=${pr}`], label) as {
+    const response = graphql(gh, query, pullRequestNumberArgs(fields, pr), label) as {
         data?: { repository?: { pullRequest?: { headRefOid?: unknown } } };
     };
     const head = response.data?.repository?.pullRequest?.headRefOid;
@@ -469,7 +479,7 @@ export function readPullRequestHead(pr: number, gh: Gh, fields: string[]): strin
 export function readPullRequestBase(pr: number, gh: Gh, fields: string[]): string {
     const label = `PR #${pr} base`;
     const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){baseRefOid}}}`;
-    const response = graphql(gh, query, [...fields, '-f', `number=${pr}`], label) as {
+    const response = graphql(gh, query, pullRequestNumberArgs(fields, pr), label) as {
         data?: { repository?: { pullRequest?: { baseRefOid?: unknown } } };
     };
     const base = response.data?.repository?.pullRequest?.baseRefOid;

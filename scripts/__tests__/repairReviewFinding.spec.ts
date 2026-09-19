@@ -43,6 +43,8 @@ const FINDING_LINE = 42;
 const LATER_PAGE_PATH = 'scripts/reviewRepair.ts';
 const LATER_PAGE_LINE = 174;
 const OUTDATED_LINE = 174;
+const MOVED_LINE = 367;
+const ORIGINAL_LINE = 358;
 const SUMMARY = 'Bind the repair to the commit that addresses it.';
 
 const EVIDENCE_ENTRY = {
@@ -732,6 +734,41 @@ describe('readRepairReviewThread', () => {
             side: 'LEFT',
         });
         expect(calls[1]?.fields.cursor).toBe('CURSOR');
+    });
+
+    /**
+     * GitHub keeps reporting the live line a comment moved to while `originalLine` still holds the
+     * position it was written against — `line: 367, originalLine: 358` is the shape on thread
+     * `PRRT_kwDORobapc6j97u1` of this pull request. A root carrying both, positive and different,
+     * must record the live line, so a repaired thread lands on the code that actually carries the
+     * defect. Its counterpart fixture below pins the original line when the live line is null.
+     */
+    it('should record a moved root at its live line, not the line it was originally written against', () => {
+        const { gh } = recordingGh(() =>
+            threadNode({
+                comments: {
+                    nodes: [
+                        {
+                            id: ROOT_COMMENT_NODE_ID,
+                            databaseId: ROOT_COMMENT_ID,
+                            body: 'Defect.',
+                            path: FINDING_PATH,
+                            line: MOVED_LINE,
+                            originalLine: ORIGINAL_LINE,
+                            author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
+                        },
+                    ],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                },
+            })
+        );
+
+        const state = readRepairReviewThread(THREAD, gh);
+        expect(state.rootComment.line).toBe(MOVED_LINE);
+
+        const { port, posted } = fakePort(state);
+        repairReviewFinding(PR, repairInput(), port);
+        expect(postedRecords(posted)[0]?.finding.line).toBe(MOVED_LINE);
     });
 
     it('should bind an outdated root to its original line and record that line', () => {

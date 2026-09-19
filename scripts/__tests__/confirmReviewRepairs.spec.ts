@@ -14,6 +14,7 @@ import {
     isAncestorExitStatus,
     parseConfirmReviewRepairsArgs,
     postConfirmationReply,
+    pullRequestNumberArgs,
     readPullRequestBase,
     readPullRequestHead,
     readReviewThreads,
@@ -50,6 +51,8 @@ const THIRD_ROOT_COMMENT_ID = 5_003;
 const FINDING_PATH = ['scripts', 'confirmReviewRepairs.ts'].join('/');
 const SECOND_FINDING_PATH = ['scripts', 'reviewRepair.ts'].join('/');
 const FINDING_LINE = 42;
+const MOVED_LINE = 367;
+const ORIGINAL_LINE = 358;
 const OUTDATED_LINE = 174;
 const SUMMARY = 'Bind the repair to the commit that addresses it.';
 const REFUSED_MESSAGE = `refusing to confirm 1 review thread(s) on PR #${PR}`;
@@ -748,6 +751,20 @@ describe('readReviewThreads', () => {
         return { gh, calls };
     }
 
+    /**
+     * The number variable is declared `Int!` in every reader query, so `gh api graphql` must receive
+     * it through the typed `-F` flag. `-f` sends a JSON string and GitHub refuses it with "Variable
+     * $number of type Int! was provided invalid value", which is every reviewer read failing. The
+     * string-typed repository variables stay on `-f`; a reverse that puts any of them on `-F` would
+     * coerce a non-numeric owner name and is asserted here too.
+     */
+    it('should send the numeric pull request variable through the typed flag', () => {
+        const args = pullRequestNumberArgs(['-f', 'owner=jcosta33', '-f', 'name=sourdaw'], PR);
+
+        expect(args).toEqual(['-f', 'owner=jcosta33', '-f', 'name=sourdaw', '-F', `number=${PR}`]);
+        expect(args[args.length - 2]).toBe('-F');
+    });
+
     it('should read the thread root comment and every reply in one query', () => {
         const { gh, calls } = recordingGh(() => page([threadNode()], { hasNextPage: false, endCursor: null }));
         expect(readReviewThreads(PR, gh, [])).toEqual([
@@ -767,6 +784,8 @@ describe('readReviewThreads', () => {
         expect(calls).toHaveLength(1);
         expect(calls[0]?.query).toContain('reviewThreads(first:100');
         expect(calls[0]?.fields.number).toBe(String(PR));
+        // The reader's own call site, not only the builder: `-f` here is the reported invalid value.
+        expect(calls[0]?.args.slice(-2)).toEqual(['-F', `number=${PR}`]);
     });
 
     it('should follow thread pagination with the cursor', () => {
@@ -909,6 +928,55 @@ describe('readReviewThreads', () => {
         expect(() => readReviewThreads(PR, gh, [])).toThrow(
             `PR #${PR} review threads root comment id must be a numeric database id, found "5001"`
         );
+    });
+
+    /**
+     * `line: 367, originalLine: 358` on thread `PRRT_kwDORobapc6j97u1` of this pull request is the
+     * live shape: GitHub keeps reporting the line the comment moved to while `originalLine` still
+     * holds the position it was written against. A root with both positive and different must bind
+     * the live line, and the fixture below asserts the live line is what the record is matched on,
+     * so reversing the two branches in `readFindingLine` leaves the repair unconfirmed.
+     */
+    it('should bind a moved root to its live line, not the line it was originally written against', () => {
+        const record = recordFor({
+            finding: { commentId: ROOT_COMMENT_ID, path: FINDING_PATH, line: MOVED_LINE, side: 'RIGHT' },
+        });
+        const { gh } = recordingGh(() =>
+            page(
+                [
+                    threadNode({
+                        comments: {
+                            nodes: [
+                                {
+                                    id: 'PRRC_kwDOconfirmMoved',
+                                    databaseId: ROOT_COMMENT_ID,
+                                    body: 'Defect.',
+                                    path: FINDING_PATH,
+                                    line: MOVED_LINE,
+                                    originalLine: ORIGINAL_LINE,
+                                    author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
+                                },
+                                {
+                                    id: 'PRRC_kwDOconfirmMovedRecord',
+                                    databaseId: 9_001,
+                                    body: authorRecordReply(record),
+                                    path: null,
+                                    line: null,
+                                    originalLine: null,
+                                    author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
+                                },
+                            ],
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                        },
+                    }),
+                ],
+                { hasNextPage: false, endCursor: null }
+            )
+        );
+
+        const threads = readReviewThreads(PR, gh, []);
+        expect(threads[0]?.rootLine).toBe(MOVED_LINE);
+        expect(confirmReviewRepairs(PR, HEAD, fakePort(HEAD, threads).port)).toEqual({ resolved: [THREAD] });
     });
 
     it('should bind an outdated root to its original line and confirm a repair that names it', () => {
@@ -1235,11 +1303,14 @@ describe('readReviewThreads', () => {
 
 describe('readPullRequestHead', () => {
     it('should read the live head of the pull request', () => {
+        const calls: string[][] = [];
         const gh = (args: string[]) => {
             expect(args.join(' ')).toContain('headRefOid');
+            calls.push(args);
             return JSON.stringify({ data: { repository: { pullRequest: { headRefOid: HEAD } } } });
         };
-        expect(readPullRequestHead(PR, gh, [])).toBe(HEAD);
+        expect(readPullRequestHead(PR, gh, ['-f', 'owner=jcosta33', '-f', 'name=sourdaw'])).toBe(HEAD);
+        expect(calls[0]?.slice(-2)).toEqual(['-F', `number=${PR}`]);
     });
 
     it('should refuse a pull request with no readable head', () => {
@@ -1250,11 +1321,14 @@ describe('readPullRequestHead', () => {
 
 describe('readPullRequestBase', () => {
     it('should read the live base of the pull request', () => {
+        const calls: string[][] = [];
         const gh = (args: string[]) => {
             expect(args.join(' ')).toContain('baseRefOid');
+            calls.push(args);
             return JSON.stringify({ data: { repository: { pullRequest: { baseRefOid: BASE } } } });
         };
-        expect(readPullRequestBase(PR, gh, [])).toBe(BASE);
+        expect(readPullRequestBase(PR, gh, ['-f', 'owner=jcosta33', '-f', 'name=sourdaw'])).toBe(BASE);
+        expect(calls[0]?.slice(-2)).toEqual(['-F', `number=${PR}`]);
     });
 
     it('should refuse a pull request with no readable base', () => {
