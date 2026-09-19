@@ -202,7 +202,11 @@ When the harness cannot select subagent models, run each blind stance on another
 harness headlessly: one stance per dispatch, blind, read-only, no credentials, the
 report returned as text for the orchestrator to validate and publish. `reviewerModel`
 records the model actually run; the dispatch never enters the trusted snapshot; the
-harness, model, and invocation are the dispatching session's choice.
+harness, model, and invocation are the dispatching session's choice. When only the
+author's model is available, the same-model review still publishes: `review.json`
+carries `modelExhaustion` (one line naming what made every other model unavailable)
+and the published body names the reviewer model, so the deviation is recorded rather
+than silently accepted.
 
 ## Review document formats
 

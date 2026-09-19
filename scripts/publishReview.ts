@@ -305,11 +305,7 @@ function prepareReviewPublication(
     const document =
         actorNodeId === ORCHESTRATOR_USER_NODE_ID ? parseAcceptanceDocument(parsed) : parseReviewDocument(parsed);
     assertPublicationEvidence(document, head);
-    assertReviewerModelDiversity({
-        actorNodeId,
-        authorLabels: pullRequest.labels ?? [],
-        reviewerModel: document.reviewerModel,
-    });
+    assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document });
     const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {

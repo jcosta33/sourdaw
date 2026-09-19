@@ -1263,6 +1263,62 @@ describe('review publish', () => {
         expect(calls[1]).toBe(`post:headsha:APPROVE:${approvalBody()}`);
     });
 
+    it('posts the same-model fallback through the publish path when exhaustion is recorded', () => {
+        const { port, calls } = fakePort({
+            labels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+            json: {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'Same-model fallback: reviewed on glm-5.3 after every other harness was unavailable.',
+                comments: [],
+                evidence: approvalEvidence(),
+                reviewerModel: 'glm-5.3',
+                modelExhaustion: 'every other harness on this machine is logged out or broken',
+            },
+        });
+
+        expect(publishReview(42, port)).toBe(99);
+        expect(calls[1]).toContain(
+            'APPROVE:Same-model fallback: reviewed on glm-5.3 after every other harness was unavailable.'
+        );
+    });
+
+    it('refuses the same-model fallback on the publish path when the body does not name the model', () => {
+        const { port, calls } = fakePort({
+            labels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+            json: {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'The change held under attack.',
+                comments: [],
+                evidence: approvalEvidence(),
+                reviewerModel: 'glm-5.3',
+                modelExhaustion: 'every other harness on this machine is logged out or broken',
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/naming the reviewer model/u);
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('refuses the same-model fallback when the body names only the longer prefix-sharing model', () => {
+        const { port, calls } = fakePort({
+            labels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+            json: {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'Reviewed on glm-5.3-flash under the same-model fallback.',
+                comments: [],
+                evidence: approvalEvidence(),
+                reviewerModel: 'glm-5.3',
+                modelExhaustion: 'every other harness on this machine is logged out or broken',
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/naming the reviewer model/u);
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
     it('treats a bare label name as descriptive, never as the authoring model', () => {
         // A descriptive label that merely shares a model's name carries no `Authored by `
         // description fence, so it must not trigger the diversity refusal.

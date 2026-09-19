@@ -41,7 +41,8 @@ habit or agent confidence.
 
 For each PR, diversify delegated tasks among equally adequate models at the cheapest adequate tier.
 Assign reviewers a model different from the author's when that set offers one; otherwise reuse the
-author's.
+author's, recording the fallback in the review document: `modelExhaustion` names what made every
+other model unavailable, and the published body names the reviewer model.
 
 Design the whole requested outcome before dispatch, then give each agent one independently safe
 behavior or behavior-preserving preparation with its required tests. Every dispatch includes the
