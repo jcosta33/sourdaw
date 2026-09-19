@@ -26,17 +26,23 @@ function authorModelFromLabel(label: AuthorshipLabel): string | undefined {
     return label.description.slice('Authored by '.length);
 }
 
+/** The review-document fields the diversity rule reads; structural so specs pass plain objects. */
+export type ReviewerModelDocument = {
+    reviewerModel?: string;
+    modelExhaustion?: string;
+    body: string;
+};
+
 export function assertReviewerModelDiversity(input: {
     actorNodeId: string;
     authorLabels: readonly AuthorshipLabel[];
-    reviewerModel: string | undefined;
-    modelExhaustion?: string;
-    body?: string;
+    document: ReviewerModelDocument;
 }): void {
     if (input.actorNodeId === ORCHESTRATOR_USER_NODE_ID) {
         return;
     }
-    if (input.reviewerModel === undefined || input.reviewerModel.trim() === '') {
+    const reviewerModel = input.document.reviewerModel;
+    if (reviewerModel === undefined || reviewerModel.trim() === '') {
         fail(
             'review.json must carry reviewerModel (the model that performed the review stance, ' +
                 'e.g. "glm-5.3-flash"); the reviewer-diversity rule cannot be checked without it'
@@ -51,24 +57,24 @@ export function assertReviewerModelDiversity(input: {
     // Every fenced label is a model some lane publish declared as the author. Metadata edits are
     // add-only, so republishing a lane with a different --model leaves the previous fence on the
     // PR; a reviewer matching any declared author is the collusion this check exists to refuse.
-    const reviewerModel = input.reviewerModel.trim();
-    if (!authorModels.includes(reviewerModel)) {
+    const trimmedModel = reviewerModel.trim();
+    if (!authorModels.includes(trimmedModel)) {
         return;
     }
-    const exhaustion = input.modelExhaustion?.trim();
+    const exhaustion = input.document.modelExhaustion?.trim();
     if (exhaustion === undefined || exhaustion === '') {
         fail(
-            `reviewer model "${input.reviewerModel}" matches one of the PR's authoring models ` +
+            `reviewer model "${reviewerModel}" matches one of the PR's authoring models ` +
                 `(${authorModels.join(', ')}); assign the review stance to a different model ` +
                 '(AGENTS.md: "Assign reviewers a model different from the author\'s when that set offers one"), ' +
                 'or, when no other model is available, carry modelExhaustion with the reason and ' +
                 'name the reviewer model in the published body'
         );
     }
-    if (typeof input.body !== 'string' || !input.body.includes(reviewerModel)) {
+    if (!input.document.body.includes(trimmedModel)) {
         fail(
             `the same-model fallback requires the published review body to record the deviation ` +
-                `by naming the reviewer model "${reviewerModel}"`
+                `by naming the reviewer model "${trimmedModel}"`
         );
     }
 }

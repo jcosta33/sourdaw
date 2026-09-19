@@ -73,15 +73,7 @@ export function parseReviewDocument(value: unknown): ReviewDocument {
     if (record.event === 'APPROVE' && body.trim() === '') {
         fail('APPROVE requires a body stating what was attacked and held');
     }
-    const reviewerModel = extractReviewerModel(record);
-    const modelExhaustion = extractModelExhaustion(record);
-    // Omit the keys entirely when absent: JSON cannot carry `undefined`, and callers
-    // (and spec fixtures) distinguish "document declares no model" from a set value
-    // by key presence.
-    const declaredModel = {
-        ...(reviewerModel === undefined ? {} : { reviewerModel }),
-        ...(modelExhaustion === undefined ? {} : { modelExhaustion }),
-    };
+    const declaredModel = extractDeclaredModelFields(record);
     if ('evidence' in record && record.evidence !== undefined) {
         if (record.event !== 'APPROVE') {
             fail('REQUEST_CHANGES must not carry approval evidence');
@@ -104,22 +96,31 @@ export function parseReviewDocument(value: unknown): ReviewDocument {
     return { event: record.event, body, comments, ...declaredModel };
 }
 
-function extractReviewerModel(record: Record<string, unknown>): string | undefined {
-    return typeof record.reviewerModel === 'string' ? record.reviewerModel : undefined;
-}
-
-function extractModelExhaustion(record: Record<string, unknown>): string | undefined {
-    if (!('modelExhaustion' in record) || record.modelExhaustion === undefined) {
-        return undefined;
+/**
+ * The optional model fields, omitted entirely when absent: JSON cannot carry `undefined`, and
+ * callers (and spec fixtures) distinguish "document declares no model" from a set value by key
+ * presence.
+ */
+function extractDeclaredModelFields(
+    record: Record<string, unknown>
+): Partial<Pick<ReviewDocument, 'reviewerModel' | 'modelExhaustion'>> {
+    const fields: Partial<Pick<ReviewDocument, 'reviewerModel' | 'modelExhaustion'>> = {};
+    if (typeof record.reviewerModel === 'string') {
+        fields.reviewerModel = record.reviewerModel;
     }
-    if (typeof record.modelExhaustion !== 'string') {
-        fail('review.json modelExhaustion must be a string');
+    if (record.modelExhaustion !== undefined) {
+        if (typeof record.modelExhaustion !== 'string') {
+            fail('review.json modelExhaustion must be a string');
+        }
+        const value = record.modelExhaustion.trim();
+        if (value === '' || value.includes('\n')) {
+            fail(
+                'review.json modelExhaustion must be one non-empty line naming what made every other model unavailable'
+            );
+        }
+        fields.modelExhaustion = value;
     }
-    const value = record.modelExhaustion.trim();
-    if (value === '' || value.includes('\n')) {
-        fail('review.json modelExhaustion must be one non-empty line naming what made every other model unavailable');
-    }
-    return value;
+    return fields;
 }
 
 export function assertPublicationEvidence(document: ReviewDocument, head: string): void {

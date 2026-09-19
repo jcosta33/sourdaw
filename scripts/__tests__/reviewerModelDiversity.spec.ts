@@ -80,7 +80,7 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: ORCHESTRATOR_USER_NODE_ID,
                 authorLabels: [authorLabel],
-                reviewerModel: undefined,
+                document: { body: 'The change held.' },
             })
         ).not.toThrow();
     });
@@ -90,7 +90,7 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                reviewerModel: undefined,
+                document: { body: 'The change held.' },
             })
         ).toThrow(/must carry reviewerModel/u);
     });
@@ -100,7 +100,7 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [{ name: 'bug', description: 'Something is broken' }, authorLabel],
-                reviewerModel: ' glm-5.3 ',
+                document: { reviewerModel: ' glm-5.3 ', body: 'The change held.' },
             })
         ).toThrow(/matches one of the PR's authoring models/u);
     });
@@ -116,7 +116,7 @@ describe('assertReviewerModelDiversity', () => {
                     { name: 'bug', description: 'Something is broken' },
                     { name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' },
                 ],
-                reviewerModel: 'glm-5.3-flash',
+                document: { reviewerModel: 'glm-5.3-flash', body: 'The change held.' },
             })
         ).toThrow(/matches one of the PR's authoring models/u);
     });
@@ -126,7 +126,7 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                reviewerModel: 'glm-5.3-flash',
+                document: { reviewerModel: 'glm-5.3-flash', body: 'The change held.' },
             })
         ).not.toThrow();
     });
@@ -136,7 +136,7 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [{ name: 'glm-5.3' }, { name: 'bug', description: 'Something is broken' }],
-                reviewerModel: 'glm-5.3',
+                document: { reviewerModel: 'glm-5.3', body: 'The change held.' },
             })
         ).not.toThrow();
     });
@@ -146,9 +146,11 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                reviewerModel: 'glm-5.3',
-                modelExhaustion: 'every other harness on this machine is logged out or broken',
-                body: 'Reviewed on glm-5.3 under the same-model fallback after every other harness was unavailable.',
+                document: {
+                    reviewerModel: 'glm-5.3',
+                    modelExhaustion: 'every other harness on this machine is logged out or broken',
+                    body: 'Reviewed on glm-5.3 under the same-model fallback after every other harness was unavailable.',
+                },
             })
         ).not.toThrow();
     });
@@ -158,17 +160,14 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                reviewerModel: 'glm-5.3',
-                body: 'Reviewed on glm-5.3.',
+                document: { reviewerModel: 'glm-5.3', body: 'Reviewed on glm-5.3.' },
             })
         ).toThrow(/matches one of the PR's authoring models/u);
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                reviewerModel: 'glm-5.3',
-                modelExhaustion: '   ',
-                body: 'Reviewed on glm-5.3.',
+                document: { reviewerModel: 'glm-5.3', modelExhaustion: '   ', body: 'Reviewed on glm-5.3.' },
             })
         ).toThrow(/matches one of the PR's authoring models/u);
     });
@@ -178,9 +177,11 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                reviewerModel: 'glm-5.3',
-                modelExhaustion: 'every other harness on this machine is logged out or broken',
-                body: 'The change held under attack.',
+                document: {
+                    reviewerModel: 'glm-5.3',
+                    modelExhaustion: 'every other harness on this machine is logged out or broken',
+                    body: 'The change held under attack.',
+                },
             })
         ).toThrow(/naming the reviewer model/u);
     });
@@ -190,9 +191,11 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                reviewerModel: 'glm-5.3-flash',
-                modelExhaustion: 'stale field from an earlier round',
-                body: 'The change held under attack.',
+                document: {
+                    reviewerModel: 'glm-5.3-flash',
+                    modelExhaustion: 'stale field from an earlier round',
+                    body: 'The change held under attack.',
+                },
             })
         ).not.toThrow();
     });
