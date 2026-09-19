@@ -568,6 +568,7 @@ describe('lane publish', () => {
                 'publishLane.ts',
                 'githubAppIdentity.ts',
                 'prContract.ts',
+                'testInstructions.ts',
                 'stackedLanes.ts',
                 'reviewDiffSummary.ts',
                 'wasm-artifacts.ts',
@@ -1269,7 +1270,7 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${COMMAND_ONLY_TEST}`);
     });
 
-    it('fires the gate on exactly the product prefixes the contract names', () => {
+    it('pins the product-scope prefix inventory the gate classifies by', () => {
         expect([...PRODUCT_SCOPE_PREFIXES]).toEqual(PRODUCT_SCOPE_PREFIXES_UNDER_TEST);
     });
 
@@ -2310,7 +2311,9 @@ describe('lane publish', () => {
             const paths = shellPort(session, repository).changedPaths(repository, mainTip, laneHead);
 
             // The merge-base view is the lane's own change alone, so the product path main gained
-            // never reaches the classification — and the two-dot mutation would answer [] here.
+            // never reaches the classification — a two-dot revert answers two records here, the
+            // scripts/fixture.ts addition and that same src/modules deletion entry, and the toEqual
+            // catches both.
             expect(paths).toEqual([
                 { path: 'scripts/fixture.ts', group: 'handwritten', added: 1, deleted: 0, binary: false },
             ]);

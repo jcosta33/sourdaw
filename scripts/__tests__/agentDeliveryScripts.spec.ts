@@ -478,7 +478,7 @@ function trustedPublishFixture(root: string, policy: string): void {
     );
     writeFileSync(join(root, 'scripts/githubAppIdentity.ts'), 'export const publishingPermission = "ordinary";\n');
     writeFileSync(join(root, 'scripts/prContract.ts'), PR_CONTRACT_TRUSTED_ENV_STUB);
-    for (const path of stackSummarySources) {
+    for (const path of [...stackSummarySources, 'scripts/testInstructions.ts']) {
         writeFileSync(join(root, path), 'export {};\n');
     }
     runGit(root, ['init', '-b', 'main']);
@@ -1296,6 +1296,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/publishLane.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
+                    'scripts/testInstructions.ts',
                     ...stackSummarySources,
                 ],
             },
@@ -1414,6 +1415,7 @@ describe('package scripts and gitignore', () => {
             'scripts/publishLane.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
+            'scripts/testInstructions.ts',
             ...stackSummarySources,
         ]);
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-package-'));

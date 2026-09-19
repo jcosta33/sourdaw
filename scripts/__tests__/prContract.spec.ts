@@ -9,11 +9,9 @@ import {
     REVIEW_COMMENT_MAX_BYTES,
     assertConventionalSubject,
     assertLaneSlug,
-    assertObservableTestInstructions,
     assertPullRequestBody,
     canonicalIssueReferenceFromBody,
     canonicalPath,
-    commandOnlyTestInstructions,
     composeDeliveryReceipt,
     composePublishBody,
     composeReviewCommentBody,
@@ -32,6 +30,7 @@ import {
     type GuardFailureReceipt,
     type ReviewCommentContent,
 } from '../prContract.ts';
+import { assertObservableTestInstructions, commandOnlyTestInstructions } from '../testInstructions.ts';
 
 const WHAT_HEADING = '### 🎯 What does this PR do?';
 const HOW_HEADING = '### 🧪 How to test';
@@ -762,6 +761,9 @@ describe('product-scope test instructions', () => {
         ['a bare compiler head', 'tsc --noEmit'],
         ['a tool head with a conjunction', 'lint + format the touched modules'],
         ['a guard invocation', 'guard --profile focused -- pnpm test:run scripts/x.spec.ts'],
+        // The only slash-bearing fixture with no file extension: removing the path rule from
+        // isCommandToken leaves this token as a rescuing word, so the rule is pinned here alone.
+        ['a launch of an extension-less path', 'node ./scripts/seed'],
     ])('refuses %s as the only content', (_label, instructions) => {
         expect(commandOnlyTestInstructions(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
@@ -780,6 +782,71 @@ describe('product-scope test instructions', () => {
         // drops before any cue or vocabulary test sees them, so these stay narration.
         expect(commandOnlyTestInstructions(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a status copula after the launch', '`pnpm typecheck` is clean'],
+        ['a copula pair joined by a semicolon', '`pnpm lint` is green; `pnpm typecheck` is green'],
+    ])('refuses %s', (_label, instructions) => {
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('refuses a bare launch quoted or bare, subcommand and all', () => {
+        // The token after a leading command head is that launch's subcommand, so quoting the
+        // launch cannot change the verdict — and 'pnpm build' refuses the same way.
+        for (const launch of ['pnpm dev', '`pnpm dev`', 'pnpm build']) {
+            expect(commandOnlyTestInstructions(launch)).toBe(true);
+            expect(refusal(() => assertObservableTestInstructions(launch))).toBe(REFUSAL);
+        }
+    });
+
+    it('passes a bare launch whose argument run flows into a step', () => {
+        // 'dev' is the launch's subcommand and drops; the run ends at the vocabulary word 'and',
+        // and the drag cue rescues the rest.
+        const step = 'pnpm dev and drag a clip onto a lane, it lands quantized';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('refuses a launch whose argument run stays annotation', () => {
+        const annotations = 'pnpm lint on every touched file (clean)';
+
+        expect(commandOnlyTestInstructions(annotations)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(annotations))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a git sync sequence', 'git fetch origin; git merge origin/main'],
+        ['a make task pair', 'make test\nmake lint'],
+        ['an electron launch', 'electron .'],
+        ['a node script invocation', 'node scripts/check.ts'],
+    ])('refuses %s', (_label, instructions) => {
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('refuses a filler word joining two commands mid-segment', () => {
+        const joined = 'pnpm typecheck and then pnpm lint';
+
+        expect(commandOnlyTestInstructions(joined)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(joined))).toBe(REFUSAL);
+    });
+
+    it('reads a cue-bearing parenthetical as part of the step and a bare one as annotation', () => {
+        // A parenthetical carrying an observation cue keeps its content in the prose the cue check
+        // reads; a cue-free one is the annotation it looks like and strips away.
+        const teaches = '1. `pnpm dev` (confirm the transport play button toggles)';
+        const watches = '1. `pnpm test:e2e tests/transport.spec.ts` (reviewer watches the headed run)';
+        const annotates = '`pnpm typecheck` (clean)';
+
+        expect(commandOnlyTestInstructions(teaches)).toBe(false);
+        expect(() => assertObservableTestInstructions(teaches)).not.toThrow();
+        expect(commandOnlyTestInstructions(watches)).toBe(false);
+        expect(() => assertObservableTestInstructions(watches)).not.toThrow();
+        expect(commandOnlyTestInstructions(annotates)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(annotates))).toBe(REFUSAL);
     });
 
     it('passes any single prose sentence, including one a filler word opens', () => {

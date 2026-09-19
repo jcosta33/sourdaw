@@ -29,7 +29,6 @@ import {
 import {
     assertConventionalSubject,
     assertIssueNumber,
-    assertObservableTestInstructions,
     AUTHOR_LANE_BRANCH_PREFIX,
     canonicalPath,
     composePublishBody,
@@ -62,6 +61,7 @@ import {
     stackPublicationBase,
     writeLaneStack,
 } from './stackedLanes.ts';
+import { assertObservableTestInstructions } from './testInstructions.ts';
 
 export { canonicalPath, containsPath };
 
@@ -1774,10 +1774,11 @@ export function shellPort(
         },
         // Merge-base range, like reportDiff above: a two-dot range would diff against main's moving
         // tip, so unrelated origin/main movement past the merge base would fabricate product scope
-        // for a lane that never touched it.
+        // for a lane that never touched it. Classified from the lane root like reportDiff, so the
+        // gate and the size report cannot disagree about a linguist-generated marking.
         changedPaths: (lane, baseSha, headSha) =>
             changedReviewPaths(
-                primaryRoot,
+                lane,
                 Buffer.from(
                     spawnCapture(executables.git, ['diff', '--numstat', '-z', `${baseSha}...${headSha}`], {
                         cwd: lane,
