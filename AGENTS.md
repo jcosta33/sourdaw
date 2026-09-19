@@ -135,13 +135,15 @@ A bundle with no `risk-plan.json` predates this contract and publishes exactly a
 review and acceptance documents stay readable unchanged, and `review:accept` takes no dossier.
 
 Post validated blockers BEFORE repair: publish a `REQUEST_CHANGES` review against the reviewed
-head, then dispatch repairs. The author pushes the fixed head, answers each thread through
-`review:resolve`, and obtains a fresh review round. Never repair first and approve in one motion:
-the public record must retain the reviewer identity's findings against the original head and the
-author identity's fixing pushes and `Done` replies. Orchestrator judgement lives in its exclusive
-script calls, `review.json`, `discarded.json`, and the final `acceptance.json`. The reviewer App records
-independent review; the orchestrator records final acceptance through `review:accept`, then merges
-through `deliver` as the verified orchestrator User.
+head, then dispatch repairs. The author pushes the fixed head and records each repair through
+`review:repair`, leaving the thread open; the reviewer App, a distinct identity, resolves only the
+threads whose recorded repair validates through `review:confirm`, and a refusal resolves nothing.
+`review:resolve` keeps its exact `Done` path for legacy roots. Never repair first and approve in
+one motion: the public record must retain the reviewer identity's findings against the original
+head and the author identity's fixing pushes and `Done` replies. Orchestrator judgement lives in its
+exclusive script calls, `review.json`, `discarded.json`, and the final `acceptance.json`. The
+reviewer App records independent review; the orchestrator records final acceptance through
+`review:accept`, then merges through `deliver` as the verified orchestrator User.
 
 For defects reaching `main`, fix under Ownership AND trace the introducing PR and missed stance
 (missing, mis-tiered, or mis-prompted). Edit that stance's tracked dispatch guidance under

@@ -2,7 +2,8 @@
 name: delivery-orchestration
 description: >-
     Operate Sourdaw's trusted review and delivery scripts — lane:publish,
-    review:prepare, review:publish, review:accept, review:resolve, deliver,
+    review:prepare, review:publish, review:accept, review:repair, review:confirm,
+    review:resolve, deliver,
     pr:supersede, branch:prune — with the delivery lock, crash recovery,
     receipts, review and acceptance document formats, thread resolution, and
     the launcher snapshot trust boundary. ALWAYS load when running any review
@@ -26,6 +27,8 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Write the review bundle      | `pnpm review:prepare <pr>`                                                                                                                                                                    |
 | Post `review.json`           | `pnpm review:publish <pr>`                                                                                                                                                                    |
 | Post final `acceptance.json` | `pnpm review:accept <pr>`                                                                                                                                                                     |
+| Record a repair, leave open  | `pnpm review:repair <pr> --thread <thread-id> --head <full-sha> --commit <full-sha> --summary "<one line>" [--evidence <path-to-json>]`                                                       |
+| Confirm repairs, resolve     | `pnpm review:confirm <pr> --head <full-sha>`                                                                                                                                                  |
 | Reply `Done` and resolve     | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                                                                                                         |
 | Squash-merge                 | `pnpm deliver <pr>`                                                                                                                                                                           |
 | Recover a crashed delivery   | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
@@ -84,8 +87,9 @@ The delivery sequence, in order:
 3. Validate every finding, write `review.json` (and `discarded.json` for
    discards), then `review:publish <pr>` — post validated blockers as the
    reviewer App BEFORE dispatching any repair.
-4. After the author pushes a fixed head, `review:resolve <pr> --thread <id>
---head <sha>` per thread, then a fresh review round.
+4. After the author pushes a fixed head, `review:repair` records the repair per
+   thread and leaves the thread open; let the reviewer confirm it with
+   `review:confirm <pr> --head <sha>`, then obtain a fresh review round.
 5. On an APPROVE round, write `acceptance.json` beside `review.json`, then
    `review:accept <pr>` — final acceptance as the orchestrator User.
 6. `deliver <pr>` — squash-merge after both validation points (below).
@@ -278,11 +282,30 @@ acceptance on another person's behalf or claim personal human review.
 
 ## Thread resolution
 
-Push fixes before `review:resolve`, which posts only bare `Done` as author bot
-and resolves against that head. No script writes free-form thread replies;
-wrongly posted findings have no discussion route. Clarify code, not threads.
-Resolve only when the current head addresses the finding, then obtain a new
-review. File out-of-scope feedback; do not grow the PR.
+Push the fix, then record it with `review:repair`, which runs as the author App
+and leaves the thread open. It reads the thread live and refuses one already
+resolved, a `--head` that is not the pull request's live head, or a `--commit`
+that is not an ancestor of that head. It binds the thread's own root comment as
+the finding, plus the commit, one-line summary, bounded evidence, and head, and
+posts a readable reply carrying one canonical `sourdaw-repair-v1` marker line;
+it never resolves. Re-running the same head and commit posts nothing and reports
+the already-recorded state.
+
+The reviewer confirms with `review:confirm`, a distinct identity from the
+author's. It resolves, in one pass with deterministic mutation ids, the threads
+whose author-recorded repair validates: same pull request, same thread, same
+head, finding equal to the thread's root comment, repairing commit an ancestor
+of the head, record well formed, evidence safe. It fails closed — a refused
+record, a duplicate distinct record, a rebound identity, a mismatched finding,
+or a non-ancestor commit resolves nothing and reports the refusal, leaving the
+operator to fix the ambiguity and re-run. Both commands are lock-free and
+idempotent by their deterministic ids, and re-running after a partial pass
+ignores already-resolved threads and completes the remainder. `review:resolve`
+remains for legacy roots, where it posts only its bare `Done` as author bot and
+resolves against that head. No script writes free-form thread replies; wrongly
+posted findings have no discussion route. Clarify code, not threads. Resolve
+only when the current head addresses the finding, then obtain a new review. File
+out-of-scope feedback; do not grow the PR.
 
 ## deliver
 
