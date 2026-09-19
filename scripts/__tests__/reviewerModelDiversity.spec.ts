@@ -421,4 +421,58 @@ describe('assertReviewerModelDiversity per-draw records', () => {
             })
         ).toThrow(/review stance "correctness" drew reviewer model "glm-5\.3"/u);
     });
+
+    it('refuses naming the stance when an off-fence draw refutes the whole-round field', () => {
+        // The document-level field claims every draw fell back, but a dispatched draw on a
+        // non-author model refutes that claim; the bare author-model draw is undisclosed.
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                document: {
+                    reviewerModel: 'glm-5.3',
+                    modelExhaustion: 'every other harness on this machine is logged out or broken',
+                    body: 'Reviewed on glm-5.3 under the whole-round fallback after every other harness was unavailable.',
+                },
+                stanceDraws: [
+                    { stance: 'correctness', reviewerModel: 'glm-5.3' },
+                    { stance: 'test-validity', reviewerModel: 'claude-opus-4.5' },
+                ],
+            })
+        ).toThrow(/review stance "correctness" drew reviewer model "glm-5\.3"/u);
+    });
+
+    it('refuses naming the stance when the whole-round field is stale on a document model off the fence', () => {
+        // The document reviewer model differs from every author, so the document-level field is
+        // inert baggage, not a live whole-round fallback; the bare author-model draw is undisclosed.
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                document: {
+                    reviewerModel: 'claude-opus-4.5',
+                    modelExhaustion: 'every other harness on this machine is logged out or broken',
+                    body: 'The change held under attack.',
+                },
+                stanceDraws: [{ stance: 'correctness', reviewerModel: 'glm-5.3' }],
+            })
+        ).toThrow(/review stance "correctness" drew reviewer model "glm-5\.3"/u);
+    });
+
+    it('refuses naming the stance when a blank field sits on an otherwise whole-round record', () => {
+        // Pins the field conjunct: with the document model fenced and every draw on the fences,
+        // only the blank field keeps the whole-round arm off, so the bare draw is undisclosed.
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                document: {
+                    reviewerModel: 'glm-5.3',
+                    modelExhaustion: '   ',
+                    body: 'The change held under attack.',
+                },
+                stanceDraws: [{ stance: 'correctness', reviewerModel: 'glm-5.3' }],
+            })
+        ).toThrow(/review stance "correctness" drew reviewer model "glm-5\.3"/u);
+    });
 });
