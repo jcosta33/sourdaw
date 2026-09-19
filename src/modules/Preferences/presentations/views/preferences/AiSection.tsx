@@ -14,6 +14,7 @@ import { aiBackendPreferenceStore, hostedLlmProviderStatusStore, llmStatusStore 
 import {
     configureCloudProvider,
     getDefaultHostedAnthropicModel,
+    HOSTED_REASONING_EFFORTS,
     listHostedAnthropicModels,
     removeCloudProvider,
     resolveBackend,
@@ -58,8 +59,14 @@ const DEFAULT_MODELS: Record<HostedProviderSelection, string> = {
     'openai-compatible': '',
 };
 
+type HostedReasoningEffortSelection = (typeof HOSTED_REASONING_EFFORTS)[number];
+
 function isHostedProviderSelection(value: string): value is HostedProviderSelection {
     return value === 'anthropic' || value === 'openai' || value === 'openai-compatible';
+}
+
+function isHostedReasoningEffortSelection(value: string): value is HostedReasoningEffortSelection {
+    return (HOSTED_REASONING_EFFORTS as readonly string[]).includes(value);
 }
 
 function isBackendSelection(value: string): value is BackendSelection {
@@ -108,6 +115,9 @@ export const AiSection = (): ReactElement => {
         configuredProvider?.authentication ?? 'api-key'
     );
     const [apiKey, setApiKey] = useState('');
+    const [reasoningEffort, setReasoningEffort] = useState<HostedReasoningEffortSelection | ''>(
+        configuredProvider?.reasoningEffort ?? ''
+    );
     const [configurationError, setConfigurationError] = useState<string | null>(null);
     const [configurationPending, setConfigurationPending] = useState(false);
     const hostedProvidersAvailable = getPlatformCapabilities().isDesktopApp;
@@ -151,6 +161,7 @@ export const AiSection = (): ReactElement => {
                 baseUrl: provider === 'openai-compatible' ? baseUrl : undefined,
                 authentication,
                 apiKey,
+                reasoningEffort: provider === 'openai' && reasoningEffort !== '' ? reasoningEffort : undefined,
             });
             setConfigurationError(null);
             setApiKey('');
@@ -235,6 +246,7 @@ export const AiSection = (): ReactElement => {
                                 setBaseUrl('');
                                 setAuthentication('api-key');
                                 setApiKey('');
+                                setReasoningEffort('');
                                 setConfigurationError(null);
                             }}
                             className="h-8 rounded-md border border-input bg-background px-2 text-xs"
@@ -290,6 +302,40 @@ export const AiSection = (): ReactElement => {
                             className="h-8 text-xs font-mono mb-1.5"
                             aria-label={`Custom ${getProviderLabel(provider)} model ID`}
                         />
+                    ) : null}
+                    {provider === 'openai' ? (
+                        <div className="mb-1.5">
+                            <label
+                                htmlFor="hosted-ai-reasoning-effort"
+                                className="mb-1 block text-[10px] text-muted-foreground"
+                            >
+                                Reasoning effort
+                            </label>
+                            <DawCompactSelect
+                                id="hosted-ai-reasoning-effort"
+                                value={reasoningEffort}
+                                onChange={(event) => {
+                                    const nextReasoningEffort = event.target.value;
+                                    if (
+                                        nextReasoningEffort !== '' &&
+                                        !isHostedReasoningEffortSelection(nextReasoningEffort)
+                                    ) {
+                                        return;
+                                    }
+                                    setReasoningEffort(nextReasoningEffort);
+                                    setConfigurationError(null);
+                                }}
+                                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                                aria-label="Reasoning effort"
+                            >
+                                <option value="">Provider default</option>
+                                {HOSTED_REASONING_EFFORTS.map((effort) => (
+                                    <option key={effort} value={effort}>
+                                        {effort}
+                                    </option>
+                                ))}
+                            </DawCompactSelect>
+                        </div>
                     ) : null}
                     {provider === 'openai-compatible' ? (
                         <Input
