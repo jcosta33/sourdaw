@@ -797,6 +797,63 @@ describe('sendChatMessage retained-provider selection', () => {
         );
     });
 
+    it('keeps explain model-backed and admits no run when no backend is available', async () => {
+        mocks.resolveBackend.mockReturnValue('none');
+
+        await expect(sendChatMessage('explain this mix', { mode: 'explain' })).rejects.toThrow(
+            'No AI backend available. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.'
+        );
+
+        expect(readAgentRunState().runs).toEqual([]);
+        expect(mocks.planPromptActions).not.toHaveBeenCalled();
+    });
+
+    it('admits prompt planning without a backend and records no model route or provider usage', async () => {
+        mocks.resolveBackend.mockReturnValue('none');
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            result: {
+                actions: [],
+                planningOutcome: {
+                    kind: 'denied',
+                    reason: 'No AI backend is available for this request. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.',
+                },
+            },
+            projectRevision: 'revision-fixture',
+        });
+
+        await expect(sendChatMessage('make the chorus warmer', { mode: 'apply' })).resolves.toBeUndefined();
+
+        expect(mocks.planPromptActions).toHaveBeenCalledWith(
+            expect.objectContaining({
+                prompt: 'make the chorus warmer',
+                providerPlanning: 'disabled',
+                onProviderResult: undefined,
+            })
+        );
+        expect(readAgentRunState().runs).toEqual([
+            expect.objectContaining({
+                modelRoute: expect.objectContaining({ selectedRouteId: null }),
+                providerUsage: [],
+                phase: 'completed',
+                workLeases: [
+                    expect.objectContaining({
+                        workId: 'local-planning',
+                        ownerKind: 'analysis',
+                        terminalState: 'completed',
+                    }),
+                ],
+            }),
+        ]);
+        expect(mocks.appendChatMessage).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                role: 'assistant',
+                content:
+                    'No AI backend is available for this request. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.',
+            })
+        );
+    });
+
     it('preserves provider content while marking an unsettled successful response for restart recovery', async () => {
         const content = 'The mix is ready for a final balance pass.';
         const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');

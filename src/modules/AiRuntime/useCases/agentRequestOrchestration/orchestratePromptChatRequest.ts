@@ -42,7 +42,7 @@ type PromptChatRequestOptions = {
 type PromptChatRequestInput = {
     userText: string;
     requestedRoute: AiBackendPreference;
-    backend: RunnableAiBackend;
+    backend: RunnableAiBackend | 'none';
     interactionMode: Exclude<AgentExecutionMode, 'explain'>;
     options: PromptChatRequestOptions | undefined;
 };
@@ -51,8 +51,9 @@ type AgentApplyReceipt = NonNullable<Awaited<ReturnType<typeof executeImmediateP
 
 type PromptRequestAdmission = {
     runId: string;
-    providerReceiptIdentity: string;
-    providerLease: AgentRunWorkLease;
+    planningReceiptIdentity: string;
+    planningLease: AgentRunWorkLease;
+    providerPlanning: boolean;
 };
 
 type PromptRequestAdmissionResult =
@@ -61,7 +62,7 @@ type PromptRequestAdmissionResult =
 
 type PromptRequestState = {
     assistantMessageId: string | null;
-    providerPlanningLeaseSettled: boolean;
+    planningLeaseSettled: boolean;
     commandExecutionSettlementWarning: string | null;
 };
 
@@ -130,7 +131,10 @@ function admitPromptRequest(input: PromptChatRequestInput): PromptRequestAdmissi
         mode: input.interactionMode,
         createdRevision: settlePendingProjectWritesAndCaptureRevision(),
         requestedRoute: input.requestedRoute,
-        selectedRouteId: `${input.backend}:${getModelProviderName(input.backend)}:${getBackendModelId(input.backend)}`,
+        selectedRouteId:
+            input.backend === 'none'
+                ? null
+                : `${input.backend}:${getModelProviderName(input.backend)}:${getBackendModelId(input.backend)}`,
         scope: input.options?.scope,
         grants: input.options?.grants,
         budgets: input.options?.budgets,
@@ -140,30 +144,39 @@ function admitPromptRequest(input: PromptChatRequestInput): PromptRequestAdmissi
         return { status: 'hard-limit-reached', reason: created.reason };
     }
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
-    const providerReceiptIdentity = `provider:${input.backend}:${runId}`;
-    const providerLeaseResult = agentRunWorkLease.claim({
+    const providerPlanning = input.backend !== 'none';
+    const planningReceiptIdentity = providerPlanning ? `provider:${input.backend}:${runId}` : `local-planning:${runId}`;
+    const planningLeaseResult = agentRunWorkLease.claim({
         runId,
-        workId: 'provider-planning',
-        ownerKind: 'provider',
-        cleanupOwner: 'provider-adapter',
-        idempotencyKey: providerReceiptIdentity,
-        receiptIdentity: providerReceiptIdentity,
+        workId: providerPlanning ? 'provider-planning' : 'local-planning',
+        ownerKind: providerPlanning ? 'provider' : 'analysis',
+        cleanupOwner: providerPlanning ? 'provider-adapter' : 'prompt-planner',
+        idempotencyKey: planningReceiptIdentity,
+        receiptIdentity: planningReceiptIdentity,
         idempotent: false,
         retriable: true,
     });
-    if (providerLeaseResult.status !== 'claimed') {
-        throw new Error(`Agent provider work could not be claimed: ${providerLeaseResult.status}`);
+    if (planningLeaseResult.status !== 'claimed') {
+        const workKind = providerPlanning ? 'provider' : 'local planning';
+        throw new Error(`Agent ${workKind} work could not be claimed: ${planningLeaseResult.status}`);
     }
     try {
         input.options?.onResumedRunAdmitted?.(runId);
     } catch (error) {
         settleAgentRunWorkLeaseSafely({
-            lease: providerLeaseResult.lease,
+            lease: planningLeaseResult.lease,
             terminalState: 'failed',
             evidence: 'none',
             settle: agentRunWorkLease.settle,
             reportFailure: (settlementError) =>
-                logger.error(new Error('Resumed provider work lease settlement failed', { cause: settlementError })),
+                logger.error(
+                    new Error(
+                        providerPlanning
+                            ? 'Resumed provider work lease settlement failed'
+                            : 'Resumed local planning work lease settlement failed',
+                        { cause: settlementError }
+                    )
+                ),
         });
         try {
             agentRunLifecycle.transitionPhase({ runId, phase: 'failed' });
@@ -174,7 +187,12 @@ function admitPromptRequest(input: PromptChatRequestInput): PromptRequestAdmissi
     }
     return {
         status: 'admitted',
-        admission: { runId, providerReceiptIdentity, providerLease: providerLeaseResult.lease },
+        admission: {
+            runId,
+            planningReceiptIdentity,
+            planningLease: planningLeaseResult.lease,
+            providerPlanning,
+        },
     };
 }
 
@@ -196,17 +214,22 @@ function appendPlanRetentionWarning(userText: string, warning: string): void {
     });
 }
 
-function settleCompletedProviderPlanning(input: PromptRequestAdmission, userText: string): boolean {
+function settleCompletedPlanning(input: PromptRequestAdmission, userText: string): boolean {
     const settlement = settleAgentRunWorkLeaseSafely({
-        lease: input.providerLease,
+        lease: input.planningLease,
         terminalState: 'completed',
         evidence: 'none',
         settle: agentRunWorkLease.settle,
         reportFailure: (settlementError) =>
             logger.error(
-                new Error('Completed provider planning work lease settlement failed', {
-                    cause: settlementError,
-                })
+                new Error(
+                    input.providerPlanning
+                        ? 'Completed provider planning work lease settlement failed'
+                        : 'Completed local planning work lease settlement failed',
+                    {
+                        cause: settlementError,
+                    }
+                )
             ),
     });
     if (settlement.accepted && settlement.warning === null) {
@@ -405,7 +428,7 @@ async function mapPromptFailure(input: {
     let settlementWarning: string | null = state.commandExecutionSettlementWarning;
     if (aborter.signal.aborted || configurationChanged || proposalInvalidated) {
         await agentRunCancellation.cancel({ runId: admission.runId, reason });
-    } else if (state.providerPlanningLeaseSettled) {
+    } else if (state.planningLeaseSettled) {
         tryRecordTerminalFailure({
             runId: admission.runId,
             error: normalizeAgentFailure({
@@ -417,15 +440,20 @@ async function mapPromptFailure(input: {
         });
     } else {
         const settlement = settleAgentRunWorkLeaseSafely({
-            lease: admission.providerLease,
+            lease: admission.planningLease,
             terminalState: 'failed',
             evidence: 'none',
             settle: agentRunWorkLease.settle,
             reportFailure: (settlementError) =>
                 logger.error(
-                    new Error('Failed provider planning work lease settlement failed', {
-                        cause: settlementError,
-                    })
+                    new Error(
+                        admission.providerPlanning
+                            ? 'Failed provider planning work lease settlement failed'
+                            : 'Failed local planning work lease settlement failed',
+                        {
+                            cause: settlementError,
+                        }
+                    )
                 ),
         });
         settlementWarning = settlement.warning;
@@ -506,42 +534,48 @@ export async function orchestratePromptChatRequest(
     const aborter = new AbortController();
     const state: PromptRequestState = {
         assistantMessageId: null,
-        providerPlanningLeaseSettled: false,
+        planningLeaseSettled: false,
         commandExecutionSettlementWarning: null,
     };
     setChatGenerating(true);
     setActiveAborter(aborter);
-    const releaseProviderCancellation = agentRunCancellation.bindAbortController({
+    const releasePlanningCancellation = agentRunCancellation.bindAbortController({
         runId: admission.runId,
-        lease: admission.providerLease,
+        lease: admission.planningLease,
         controller: aborter,
-        reason: 'User cancelled the run while provider planning was active.',
+        reason: admission.providerPlanning
+            ? 'User cancelled the run while provider planning was active.'
+            : 'User cancelled the run while local planning was active.',
     });
     try {
         const { context, result, projectRevision } = await planPromptActions({
             prompt: input.userText,
             signal: aborter.signal,
-            onProviderResult: (providerResult) => {
-                recordAgentProviderUsage(admission.runId, providerResult, providerResult.correlationId);
-            },
+            onProviderResult: admission.providerPlanning
+                ? (providerResult) => {
+                      recordAgentProviderUsage(admission.runId, providerResult, providerResult.correlationId);
+                  }
+                : undefined,
             streamIdentity: {
                 runId: admission.runId,
-                requestId: admission.providerReceiptIdentity,
-                cancellationGeneration: admission.providerLease.cancellationGeneration,
+                requestId: admission.planningReceiptIdentity,
+                cancellationGeneration: admission.planningLease.cancellationGeneration,
             },
-            onProviderAttempt: ({ backend, correlationId, estimatedTotalTokens, estimate }) => {
-                const budgetReservation = agentRunLifecycle.reserveBudget({
-                    runId: admission.runId,
-                    attemptId: correlationId,
-                    category: getProviderBudgetCategory(backend),
-                    estimate: estimatedTotalTokens,
-                    provenance: 'versioned-estimate',
-                    estimateMethod: estimate.method,
-                });
-                return budgetReservation.status === 'reserved'
-                    ? { status: 'admitted' as const }
-                    : { status: 'rejected' as const, reason: budgetReservation.reason ?? 'agent budget limit' };
-            },
+            onProviderAttempt: admission.providerPlanning
+                ? ({ backend, correlationId, estimatedTotalTokens, estimate }) => {
+                      const budgetReservation = agentRunLifecycle.reserveBudget({
+                          runId: admission.runId,
+                          attemptId: correlationId,
+                          category: getProviderBudgetCategory(backend),
+                          estimate: estimatedTotalTokens,
+                          provenance: 'versioned-estimate',
+                          estimateMethod: estimate.method,
+                      });
+                      return budgetReservation.status === 'reserved'
+                          ? { status: 'admitted' as const }
+                          : { status: 'rejected' as const, reason: budgetReservation.reason ?? 'agent budget limit' };
+                  }
+                : undefined,
             onLocalWorkAttempt: ({ analysisCount, downloadBytes, storageBytes }) => {
                 const estimates = [
                     ['localAnalysis', analysisCount],
@@ -560,11 +594,12 @@ export async function orchestratePromptChatRequest(
                     }).status === 'reserved'
                 );
             },
+            providerPlanning: admission.providerPlanning ? 'enabled' : 'disabled',
         });
-        if (!settleCompletedProviderPlanning(admission, input.userText)) {
+        if (!settleCompletedPlanning(admission, input.userText)) {
             return undefined;
         }
-        state.providerPlanningLeaseSettled = true;
+        state.planningLeaseSettled = true;
         return await dispatchPromptPlan({
             request: input,
             admission,
@@ -577,7 +612,7 @@ export async function orchestratePromptChatRequest(
     } catch (error) {
         await mapPromptFailure({ request: input, admission, aborter, state, error });
     } finally {
-        releaseProviderCancellation();
+        releasePlanningCancellation();
         setActiveAborter(null);
         setChatGenerating(false);
     }

@@ -28,6 +28,7 @@ type PlanPromptActionsInput = {
     streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>;
     onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult;
     onLocalWorkAttempt?: (input: { analysisCount: number; downloadBytes: number; storageBytes: number }) => boolean;
+    providerPlanning?: 'enabled' | 'disabled';
 };
 
 /**
@@ -190,7 +191,9 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             undefined,
             input.onProviderResult,
             streamIdentity,
-            onProviderAttempt
+            onProviderAttempt,
+            undefined,
+            input.providerPlanning
         );
         const initialCreativeAuthority = result.creativeAuthority ?? null;
         const rejectionEvidence = result.rejectionEvidence;
@@ -266,7 +269,8 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                     // this evidence both a missing and an ambiguous target
                     // arrived as the same bare `agent.resolution` code.
                     rejectionEvidence,
-                }
+                },
+                input.providerPlanning
             );
         }
         if (result.preparationRequest === 'stem-import') {
@@ -301,7 +305,9 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 stemImportScope,
                 input.onProviderResult,
                 streamIdentity,
-                onProviderAttempt
+                onProviderAttempt,
+                undefined,
+                input.providerPlanning
             );
         }
     } catch (error) {

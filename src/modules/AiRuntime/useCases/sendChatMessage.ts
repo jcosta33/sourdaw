@@ -66,9 +66,9 @@ export async function sendChatMessage(
         streaming: interactionMode === 'explain',
     });
 
-    // Regular chat streams from one selected backend. Prompt mode delegates
-    // readiness and provider fallback to generateToolCalls.
-    if (backend === 'none') {
+    // Explain streams from one selected backend. Prompt mode can admit a
+    // deterministic plan even when no provider route is available.
+    if (interactionMode === 'explain' && backend === 'none') {
         throw createAiRuntimeError(
             'No AI backend available. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.'
         );
