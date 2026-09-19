@@ -63,7 +63,7 @@ const SECOND_CORRECTNESS_STANCE: ReviewDossierEvent = {
     outcome: 'clean',
 };
 
-const UNREQUIRED_STANCE: ReviewDossierEvent = {
+const EXTRA_DISPATCHED_STANCE: ReviewDossierEvent = {
     kind: 'stance-completed',
     stance: 'code-craft',
     reviewerModel: 'model-craft',
@@ -377,19 +377,30 @@ describe('assembleReviewDossier refusals', () => {
         );
     });
 
-    it('should refuse a required stance with no completed record', () => {
-        const withoutCorrectness = BASE_EVENTS.filter(
-            (event) => !(event.kind === 'stance-completed' && event.stance === 'correctness')
-        );
+    it('should refuse a persisted required stance with no completed record', () => {
+        const mutated = cloneDossier();
+        mutated.requiredStances = ['code-craft', 'correctness', 'test-validity'];
 
-        expect(() => assembleWith({ events: withoutCorrectness })).toThrow(
-            /has no completed record for required stance: correctness/
-        );
+        expect(() => parseReviewDossier(mutated)).toThrow(/has no completed record for required stance: code-craft/);
     });
 
-    it('should refuse a completed stance the plan did not require', () => {
-        expect(() => assembleWith({ events: [...BASE_EVENTS, UNREQUIRED_STANCE] })).toThrow(
-            /completes a stance the plan did not require: code-craft/
+    it('should assemble a dispatched stance the plan does not list, recording it as the record stances', () => {
+        const dossier = assembleWith({ events: [...BASE_EVENTS, EXTRA_DISPATCHED_STANCE] });
+
+        expect(dossier.requiredStances).toEqual(['code-craft', 'correctness', 'test-validity']);
+    });
+
+    it('should refuse a persisted completed stance its required stances do not carry', () => {
+        const mutated = cloneDossier();
+        mutated.events.push({
+            ...EXTRA_DISPATCHED_STANCE,
+            sequence: mutated.events.length,
+            previousDigest: 'x',
+            digest: 'y',
+        });
+
+        expect(() => parseReviewDossier(mutated)).toThrow(
+            /completes a stance its required stances do not carry: code-craft/
         );
     });
 
@@ -415,10 +426,10 @@ describe('assembleReviewDossier refusals', () => {
         );
     });
 
-    it('should refuse a discard under a stance the plan did not require', () => {
+    it('should refuse a discard under a stance the record does not carry', () => {
         expect(() =>
             assembleWith({ discarded: [{ finding: 'finding-8', stance: 'code-craft', reason: 'out of scope' }] })
-        ).toThrow(/discards a finding under a stance the plan did not require: code-craft/);
+        ).toThrow(/discards a finding under a stance its required stances do not carry: code-craft/);
     });
 
     it('should refuse a blank discard reason', () => {
@@ -427,10 +438,10 @@ describe('assembleReviewDossier refusals', () => {
         ).toThrow(/discarded\[0\] reason must be a non-blank string/);
     });
 
-    it('should refuse unsorted required stances', () => {
-        expect(() => assembleWith({ plan: { ...PLAN, requiredStances: ['test-validity', 'correctness'] } })).toThrow(
-            /requiredStances must be sorted/
-        );
+    it('should ignore the plan stance menu, deriving the record stances from the dispatch', () => {
+        const dossier = assembleWith({ plan: { ...PLAN, requiredStances: ['test-validity', 'correctness'] } });
+
+        expect(dossier.requiredStances).toEqual(['correctness', 'test-validity']);
     });
 
     it('should refuse unsafe evidence and name the offending field', () => {

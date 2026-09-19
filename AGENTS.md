@@ -85,9 +85,9 @@ acceptance.
 Tier reviewers by the criticality of the risk each stance attacks: economy for narrow low-risk
 checks, standard for behavioral and integration risk, strongest for real-time audio, security,
 data loss, irreversible change, or disputed severe findings. Also raise the tier for wide module
-diffusion, heavy churn on defect-prone surfaces, or surfaces touched by many recent lanes. The
-orchestrator may combine two independent
-strongest-tier draws from different models on one stance to expose different findings; this extends
+diffusion, heavy churn on defect-prone surfaces, or surfaces touched by many recent lanes.
+The orchestrator may combine two independent strongest-tier draws from different models on one
+stance to expose different findings; this extends
 model diversity, not the stance count.
 
 Every reviewer carries the baseline posture regardless of stance: establish what must break for
@@ -119,19 +119,20 @@ Blind reviewers report only to the orchestrator. Post only validated findings th
 can resolve it. A wrongly posted finding therefore blocks delivery without a repair to make.
 
 `review:prepare` records the change's risk classes — `small`, `ordinary`, `test-only`,
-`cross-domain`, `realtime-audio`, `native-security`, `undo` — and the stances they earn in the head
-bundle's `risk-plan.json`, derived from the same path classification as the size report beside it so
-the two cannot disagree. Classes union when several fire, and no class may require a stance it did
-not earn: `code-craft` is earned only by `ordinary`.
+`cross-domain`, `realtime-audio`, `native-security`, `undo` — in the head bundle's `risk-plan.json`,
+derived from the same path classification as the size report beside it so the two cannot disagree.
+The plan is an input to the stance enumeration, never a stance requirement: its classes and their
+standing stance mapping name risk surfaces the enumeration must weigh, and the derived stances
+remain the orchestrator's judgement recorded in `stances.json`.
 
 Write the caller-authored `dossier.json` beside `review.json` and `discarded.json`: one entry per
-required stance recording its reviewer model, tier, and outcome, the bounded evidence claims, and the
+dispatched stance recording its reviewer model, tier, and outcome, the bounded evidence claims, and the
 limitations. Accepted findings are not declared there; they are the review document's own inline
 comments. `review:publish` refuses a fresh reviewer publication before any remote write when the
-dossier is missing, malformed, or rebound from the head the plan binds; when it does not complete
-exactly the plan's required stances or claims one the classes did not earn; when its accepted findings
-do not match the document's comments one-to-one; or when its recommendation disagrees with the
-document's event. It then persists the canonical append-only record bound to the head; re-publishing
+dossier is missing, malformed, or rebound from the head the plan binds; when the bundle carries
+`stances.json`, every dossier entry must match a recorded stance and every recorded stance an entry;
+when its accepted findings do not match the document's comments one-to-one; or when its
+recommendation disagrees with the document's event. It then persists the canonical append-only record bound to the head; re-publishing
 the same head replays that record unchanged rather than minting a second one.
 
 Evidence values — dossier evidence, limitations, and approval claims — are single-line, trimmed and

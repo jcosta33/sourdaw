@@ -1,7 +1,7 @@
 /**
  * Durable, head-bound review-dossier record (#2999, spec #2995 AC-009/AC-010).
  *
- * A dossier binds one reviewed head to the stances its risk plan required, the findings the
+ * A dossier binds one reviewed head to the stances its review dispatched, the findings the
  * orchestrator accepted or discarded, and the bounded evidence and limitations it publishes. Events
  * form a hash chain: every record's digest covers its predecessor, and `headDigest` plus the
  * `dossierDigest` over the header, evidence and limitations bind the record's contents. The chain
@@ -64,7 +64,7 @@ type DossierPayload = Omit<ReviewDossier, 'format' | 'events' | 'headDigest' | '
 };
 
 /**
- * The literals the risk policy can earn, held as total maps so a widened policy union fails to
+ * The known risk classes and review stances, held as total maps so a widened union fails to
  * compile here rather than silently refusing a valid dossier at run time.
  */
 const RISK_CLASS_MEMBERSHIP: Record<ReviewRiskClass, true> = {
@@ -377,13 +377,13 @@ function assertTotalMaps(payload: DossierPayload): void {
                 fail(`review dossier completes stance more than once: ${event.stance}`);
             }
             if (!payload.requiredStances.includes(event.stance)) {
-                fail(`review dossier completes a stance the plan did not require: ${event.stance}`);
+                fail(`review dossier completes a stance its required stances do not carry: ${event.stance}`);
             }
             completed.add(event.stance);
             continue;
         }
         if (event.kind === 'finding-discarded' && !payload.requiredStances.includes(event.stance)) {
-            fail(`review dossier discards a finding under a stance the plan did not require: ${event.stance}`);
+            fail(`review dossier discards a finding under a stance its required stances do not carry: ${event.stance}`);
         }
         const own = event.kind === 'finding-accepted' ? accepted : discarded;
         const other = event.kind === 'finding-accepted' ? discarded : accepted;
@@ -634,6 +634,18 @@ export function parseReviewDossier(value: unknown): ReviewDossier {
     return dossier;
 }
 
+/**
+ * The record's stance list is the dispatch, not the risk plan's menu: the stance-completed events
+ * are what the review actually dispatched, and `requiredStances` carries them so the record's own
+ * header and event chain cannot disagree. The plan's mechanically derived list is never read here.
+ */
+function dispatchedStances(events: readonly ReviewDossierEvent[]): ReviewStanceId[] {
+    const completed = events.filter(
+        (event): event is Extract<ReviewDossierEvent, { kind: 'stance-completed' }> => event.kind === 'stance-completed'
+    );
+    return [...new Set(completed.map((event) => event.stance))].sort();
+}
+
 export function assembleReviewDossier(input: {
     plan: ReviewRiskPlan;
     events: readonly ReviewDossierEvent[];
@@ -648,7 +660,7 @@ export function assembleReviewDossier(input: {
         headSha: readNonBlankString('headSha', input.plan.headSha),
         baseSha: readNonBlankString('baseSha', input.plan.baseSha),
         riskClasses: readRiskClasses(input.plan.riskClasses),
-        requiredStances: readRequiredStances(input.plan.requiredStances),
+        requiredStances: dispatchedStances(callerEvents),
         events: [...callerEvents, ...readArray('discarded', input.discarded).map(readDiscardedEntry)],
         evidence: readEvidence(input.evidence),
         limitations: readLimitations(input.limitations),

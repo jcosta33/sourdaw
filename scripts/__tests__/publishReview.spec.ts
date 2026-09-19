@@ -4986,6 +4986,7 @@ describe('fresh reviewer dossier publication', () => {
     function dossierFixture(
         input: {
             plan?: unknown;
+            stances?: unknown;
             dossier?: unknown;
             discarded?: unknown;
             document?: unknown;
@@ -5008,6 +5009,9 @@ describe('fresh reviewer dossier publication', () => {
         );
         if (input.plan !== undefined) {
             writeFileSync(join(bundle, 'risk-plan.json'), JSON.stringify(input.plan));
+        }
+        if (input.stances !== undefined) {
+            writeFileSync(join(bundle, 'stances.json'), JSON.stringify(input.stances));
         }
         if (input.dossier !== undefined) {
             writeFileSync(join(bundle, 'dossier.json'), JSON.stringify(input.dossier));
@@ -5151,7 +5155,102 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('refuses a dossier that omits a required stance and never posts', () => {
+    it('refuses a dossier that omits a recorded stance and never posts', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: {
+                stances: [
+                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
+                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
+                ],
+            },
+            dossier: dossierInput({
+                stances: [
+                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/stances do not match stances\.json: missing \[test-validity\], extra \[\]/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a dossier naming a stance the pre-dispatch record does not carry and never posts', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: {
+                stances: [
+                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
+                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
+                ],
+            },
+            dossier: dossierInput({
+                stances: [
+                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                    { stance: 'code-craft', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/stances do not match stances\.json: missing \[\], extra \[code-craft\]/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes a dossier matching the pre-dispatch stance record one-to-one', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: {
+                stances: [
+                    {
+                        stance: 'correctness',
+                        admission: 'a reordered queue drops a buffered frame',
+                        baselineProbe: { spec: 'queue.spec.ts', mutation: 'revert the ordering guard' },
+                    },
+                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
+                ],
+            },
+            dossier: dossierInput(),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            expect(fixture.writes).toHaveLength(1);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(persisted.requiredStances).toEqual(['correctness', 'test-validity']);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a stances.json file that exists but does not parse and never posts', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
+        writeFileSync(join(fixture.bundle, 'stances.json'), '{ not a stance record');
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/stances\.json/u);
+            expect(message).toMatch(/does not parse/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes a dossier whose dispatched stances differ from the plan menu when no stances.json exists', () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
             dossier: dossierInput({
@@ -5161,11 +5260,11 @@ describe('fresh reviewer dossier publication', () => {
             }),
         });
         try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toMatch(/no completed record for required stance: test-validity/u);
-            expect(fixture.calls).not.toContain('post');
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(persisted.requiredStances).toEqual(['correctness']);
+            expect(persisted.requiredStances).not.toEqual(riskPlan().requiredStances);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }

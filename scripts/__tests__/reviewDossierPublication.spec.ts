@@ -12,6 +12,7 @@ import {
     REVIEW_DOSSIER_INPUT_FORMAT,
     buildReviewDossier,
     parseReviewDossierInput,
+    parseReviewStancesRecord,
 } from '../reviewDossierPublication.ts';
 
 import type { ReviewDossier, ReviewDossierEvent } from '../reviewDossier.ts';
@@ -211,28 +212,30 @@ type BuildRefusalCase = { label: string; run: () => unknown; message: RegExp };
 
 const BUILD_REFUSALS: readonly BuildRefusalCase[] = [
     {
-        label: 'a missing required stance',
+        label: 'a dossier omitting a stance the pre-dispatch record carries',
         run: () =>
             buildReviewDossier({
                 plan: PLAN,
                 raw: { ...INPUT, stances: [CORRECTNESS_STANCE] },
+                recordedStances: ['correctness', 'test-validity'],
                 discarded: [],
                 comments: [],
                 recommendation: 'approve',
             }),
-        message: /review dossier has no completed record for required stance: test-validity/,
+        message: /review dossier publication stances do not match stances\.json: missing \[test-validity\], extra \[\]/,
     },
     {
-        label: 'an extra, unearned stance',
+        label: 'a dossier stance the pre-dispatch record does not carry',
         run: () =>
             buildReviewDossier({
                 plan: PLAN,
                 raw: { ...INPUT, stances: [CORRECTNESS_STANCE, TEST_VALIDITY_STANCE, CODE_CRAFT_STANCE] },
+                recordedStances: ['correctness', 'test-validity'],
                 discarded: [],
                 comments: [],
                 recommendation: 'approve',
             }),
-        message: /review dossier completes a stance the plan did not require: code-craft/,
+        message: /review dossier publication stances do not match stances\.json: missing \[\], extra \[code-craft\]/,
     },
     {
         label: 'a duplicate stance',
@@ -563,6 +566,47 @@ describe('parseReviewDossierInput', () => {
     });
 });
 
+describe('parseReviewStancesRecord', () => {
+    const STANCES_PATH = 'bundles/42-abc/stances.json';
+
+    it('accepts a record whose entries carry free-form admission and probe fields', () => {
+        expect(
+            parseReviewStancesRecord(
+                {
+                    stances: [
+                        {
+                            stance: 'correctness',
+                            admission: 'a reordered queue drops a buffered voice frame',
+                            baselineProbe: { spec: 'queue.spec.ts', mutation: 'revert the ordering guard' },
+                        },
+                        { stance: 'test-validity' },
+                    ],
+                    note: 'floor of three satisfied with a third dispatch below',
+                },
+                STANCES_PATH
+            )
+        ).toEqual({ stances: [{ stance: 'correctness' }, { stance: 'test-validity' }] });
+    });
+
+    it('refuses a non-object record and names the file', () => {
+        expect(() => parseReviewStancesRecord('not a record', STANCES_PATH)).toThrow(
+            /review stances record at bundles\/42-abc\/stances\.json must be an object/
+        );
+    });
+
+    it('refuses a stances field that is not an array and names the file', () => {
+        expect(() => parseReviewStancesRecord({ stances: 'correctness' }, STANCES_PATH)).toThrow(
+            /review stances record at bundles\/42-abc\/stances\.json stances must be an array/
+        );
+    });
+
+    it('refuses an entry without a stance string and names the file and index', () => {
+        expect(() =>
+            parseReviewStancesRecord({ stances: [{ stance: 'correctness' }, { admission: 'x' }] }, STANCES_PATH)
+        ).toThrow(/review stances record at bundles\/42-abc\/stances\.json stances\[1\] must carry a stance string/);
+    });
+});
+
 describe('buildReviewDossier', () => {
     it('assembles the canonical record from the input form, in stance then comment order', () => {
         const result = buildReviewDossier({
@@ -704,6 +748,33 @@ describe('buildReviewDossier', () => {
 
         expect(result.fromPersisted).toBe(true);
         expect(result.canonical).toBe(serializeReviewDossier(parseReviewDossier(persisted)));
+    });
+
+    it('publishes a dossier matching the pre-dispatch stance record one-to-one', () => {
+        const result = buildReviewDossier({
+            plan: PLAN,
+            raw: INPUT,
+            recordedStances: ['test-validity', 'correctness'],
+            discarded: [],
+            comments: [COMMENT],
+            recommendation: 'request-changes',
+        });
+
+        expect(result.fromPersisted).toBe(false);
+        expect(completedStances(result.dossier).map((entry) => entry.stance)).toEqual(['correctness', 'test-validity']);
+    });
+
+    it('accepts a dispatched stance the plan menu does not list when the bundle carries no stances.json', () => {
+        const result = buildReviewDossier({
+            plan: PLAN,
+            raw: { ...INPUT, stances: [CORRECTNESS_STANCE, TEST_VALIDITY_STANCE, CODE_CRAFT_STANCE] },
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+
+        expect(result.fromPersisted).toBe(false);
+        expect(result.dossier.requiredStances).toEqual(['code-craft', 'correctness', 'test-validity']);
     });
 
     it.each(BUILD_REFUSALS)('refuses $label', ({ run, message }) => {
