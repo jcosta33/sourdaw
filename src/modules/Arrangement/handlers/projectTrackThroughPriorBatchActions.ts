@@ -1,7 +1,8 @@
-import { resolveLevelFields, SEND_LEVEL_LAW, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
+import { CLIP_GAIN_LAW, resolveLevelFields, SEND_LEVEL_LAW, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { type Track } from '../stores/trackStore';
+import { clampClipGain } from '../transformers/clampClipGain';
 import { getPlatformPlugins } from '../useCases/getPlatformPlugins';
 
 export function projectTrackThroughPriorBatchActions(track: Track, context: HandlerValidationContext): Track {
@@ -86,6 +87,27 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
                     level: resolved.linear,
                     preFader: action.payload.preFader ?? false,
                 });
+            }
+        } else if (action.type === 'setClipGain') {
+            // A clip payload carries no `trackId`, so the leading skip above never
+            // fires for it; match the clip by id across whichever track holds it.
+            const clip = projected.clips.find((candidate) => candidate.id === action.payload.clipId);
+            if (clip) {
+                const resolved = resolveLevelFields(
+                    {
+                        linear: action.payload.gain,
+                        absoluteDb: action.payload.gainDb,
+                        deltaDb: action.payload.deltaDb,
+                    },
+                    clip.gain,
+                    CLIP_GAIN_LAW
+                );
+                // The writer clamps a resolved gain on write, so the projection must
+                // clamp it too or a later action in the batch would plan against a
+                // gain the store could never actually hold.
+                if (resolved.ok) {
+                    clip.gain = clampClipGain(resolved.linear);
+                }
             }
         } else if (action.type === 'removeSend') {
             projected.sends = projected.sends.filter((send) => send.busId !== action.payload.busId);

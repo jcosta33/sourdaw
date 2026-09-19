@@ -1687,6 +1687,24 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                 'addAutomationPoint',
                 { laneId: 'lane-1', beat: 4, value: 0.5, valueDb: -6 },
             ],
+            ['both decibel forms on the track fader', 'setTrackGain', { trackId: 'track-1', gainDb: 0, deltaDb: -2 }],
+            ['both decibel forms on the master fader', 'setMasterGain', { gainDb: 0, deltaDb: -2 }],
+            ['both decibel forms on the clip', 'setClipGain', { clipId: 'clip-1', gainDb: 0, deltaDb: 3 }],
+            [
+                'both decibel forms on a send',
+                'setSend',
+                { trackId: 'track-1', busId: 'bus-1', levelDb: -6, deltaDb: -3 },
+            ],
+            [
+                'both decibel forms on a created send',
+                'addSend',
+                { trackId: 'track-1', busId: 'bus-1', levelDb: -6, deltaDb: -3 },
+            ],
+            [
+                'both decibel forms on an automation point',
+                'addAutomationPoint',
+                { laneId: 'lane-1', beat: 4, valueDb: -6, deltaDb: -3 },
+            ],
             [
                 'an automation change larger than the law spans',
                 'addAutomationPoint',

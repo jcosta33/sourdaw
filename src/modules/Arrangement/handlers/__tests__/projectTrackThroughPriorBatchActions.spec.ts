@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { dbToGain } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type Clip, type Track, createTrack } from '../../models/Track';
@@ -89,6 +90,19 @@ describe('projectTrackThroughPriorBatchActions', () => {
         projectFor(track, [discardClip('clip-a')]);
 
         expect(track.clips.map((candidate) => candidate.id)).toEqual(['clip-a', 'clip-b']);
+    });
+
+    it('compounds two setClipGain actions in the same batch against the projected clip', () => {
+        // The second action's `deltaDb` must measure from what the first one left
+        // the clip at, not from the clip's live gain before the batch began.
+        const track = trackWithClips('track-1', ['clip-a']);
+
+        const projected = projectFor(track, [
+            { type: 'setClipGain', payload: { clipId: 'clip-a', gainDb: -10 } },
+            { type: 'setClipGain', payload: { clipId: 'clip-a', deltaDb: 3 } },
+        ]);
+
+        expect(projected.clips.find((candidate) => candidate.id === 'clip-a')?.gain).toBeCloseTo(dbToGain(-7), 5);
     });
 
     it('projects the exact earlier automation mode for later expected-state validation', () => {

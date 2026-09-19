@@ -5,6 +5,7 @@ import { type AppAction } from '#/utils/handlerContract';
 import { clampClipGain } from '../../transformers/clampClipGain';
 import { setClipGain } from '../../useCases/clipEditing/setClipGain';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { getPlannedTrackState } from '../getPlannedTrackState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 type SetClipGainAction = Extract<AppAction, { type: 'setClipGain' }>;
@@ -27,8 +28,11 @@ function requestedGain(action: SetClipGainAction, currentGain: number): LevelRes
 
 export const handleSetClipGain = createHandler<'setClipGain'>({
     canReapplyAfterDivergence: (action) => action.payload.expectedGain !== undefined,
-    validate: (action) => {
+    validate: (action, context) => {
         const clip = findClip(action.payload.clipId);
+        // A stale-snapshot check against the store: this must read the live clip,
+        // never the planned one, or a batch could pass a divergence a prior action
+        // in the same batch happens to paper over.
         if (action.payload.expectedGain !== undefined) {
             if (clip === undefined || !Object.is(clip.gain, action.payload.expectedGain)) {
                 return false;
@@ -36,7 +40,19 @@ export const handleSetClipGain = createHandler<'setClipGain'>({
         }
         // The linear form has always been admitted without reading the clip, so
         // it still is; only a decibel request needs a level to resolve against.
-        return action.payload.gain !== undefined || (clip !== undefined && requestedGain(action, clip.gain).ok);
+        if (action.payload.gain !== undefined) {
+            return true;
+        }
+        if (clip === undefined) {
+            return false;
+        }
+        // A decibel request resolves against what an earlier action in this same
+        // batch will leave the clip at, not against the live store: two
+        // `setClipGain` actions on one clip in a batch must compound.
+        const plannedClip = getPlannedTrackState(context, clip.trackId)?.clips.find(
+            (candidate) => candidate.id === clip.id
+        );
+        return plannedClip !== undefined && requestedGain(action, plannedClip.gain).ok;
     },
     execute: (alpha) => {
         const clip = findClip(alpha.payload.clipId);

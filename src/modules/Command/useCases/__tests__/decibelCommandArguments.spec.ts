@@ -13,6 +13,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
+import { dbToGain } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
@@ -20,6 +21,7 @@ import { macroStore } from '../../stores/macroStore';
 import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { clearUndoHistory } from '../clearUndoHistory';
 import { executeAppAction } from '../executeAppAction';
+import { executeAppActionBatch } from '../executeAppActionBatch';
 import { resetActionReplayAuthority } from '../resetActionReplayAuthority';
 
 const engineMocks = vi.hoisted(() => ({
@@ -183,6 +185,16 @@ describe('decibel arguments on level-bearing commands', () => {
         expect(trackGain()).toBe(0.8);
     });
 
+    it('setTrackGain refuses both decibel forms at once', async () => {
+        const refusal = await refusalOf({
+            type: 'setTrackGain',
+            payload: { trackId: TRACK_ID, expectedGain: 0.8, gainDb: 0, deltaDb: -2 },
+        });
+
+        expect(refusal).toContain('exactly once');
+        expect(trackGain()).toBe(0.8);
+    });
+
     it('setTrackGain refuses a relative request against a silent fader', async () => {
         seedProject({ trackGain: 0 });
 
@@ -231,6 +243,44 @@ describe('decibel arguments on level-bearing commands', () => {
         expect(clipGain()).toBe(0.5);
     });
 
+    it('setClipGain refuses both decibel forms at once', async () => {
+        const refusal = await refusalOf({ type: 'setClipGain', payload: { clipId: CLIP_ID, gainDb: 0, deltaDb: 3 } });
+
+        expect(refusal).toContain('exactly once');
+        expect(clipGain()).toBe(0.5);
+    });
+
+    it('setClipGain compounds a batch against the clip an earlier action in it just planned', async () => {
+        // The clip starts at +4 dB; the second action's `deltaDb` must measure from
+        // the -10 dB the first action left it at, not from the +4 dB still on the
+        // live store, or the legal two-step batch would be refused as conflicted.
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => {
+                if (track.id !== TRACK_ID) {
+                    return track;
+                }
+                return {
+                    ...track,
+                    clips: track.clips.map((clip) => {
+                        if (clip.id !== CLIP_ID) {
+                            return clip;
+                        }
+                        return { ...clip, gain: dbToGain(4) };
+                    }),
+                };
+            }),
+        });
+
+        const result = await executeAppActionBatch([
+            { type: 'setClipGain', payload: { clipId: CLIP_ID, gainDb: -10 } },
+            { type: 'setClipGain', payload: { clipId: CLIP_ID, deltaDb: 3 } },
+        ]);
+
+        expect(result.status).toBe('committed');
+        expect(clipGain()).toBeCloseTo(dbToGain(-7), 5);
+    });
+
     it.each([
         { label: 'absolute -6 dB', payload: { levelDb: -6 }, expected: 0.501187 },
         { label: 'relative -6 dB', payload: { deltaDb: -6 }, expected: 0.250594 },
@@ -248,6 +298,16 @@ describe('decibel arguments on level-bearing commands', () => {
         });
 
         expect(refusal).toContain("above this control's ceiling of 0.0 dB");
+        expect(sendLevel()).toBe(0.5);
+    });
+
+    it('setSend refuses both decibel forms at once', async () => {
+        const refusal = await refusalOf({
+            type: 'setSend',
+            payload: { trackId: TRACK_ID, busId: BUS_ID, levelDb: -6, deltaDb: -3 },
+        });
+
+        expect(refusal).toContain('exactly once');
         expect(sendLevel()).toBe(0.5);
     });
 
@@ -297,6 +357,16 @@ describe('decibel arguments on level-bearing commands', () => {
         });
 
         expect(refusal).toContain("above this control's ceiling of 6.0 dB");
+        expect(lanePointValues(LANE_ID)).toHaveLength(1);
+    });
+
+    it('addAutomationPoint refuses both decibel forms at once', async () => {
+        const refusal = await refusalOf({
+            type: 'addAutomationPoint',
+            payload: { laneId: LANE_ID, beat: 1, valueDb: -6, deltaDb: -3 },
+        });
+
+        expect(refusal).toContain('exactly once');
         expect(lanePointValues(LANE_ID)).toHaveLength(1);
     });
 
