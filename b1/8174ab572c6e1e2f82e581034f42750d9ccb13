@@ -1,0 +1,23 @@
+scripts/__tests__/reviewDossier.spec.ts
+  s_9e15f5b7ec3308::t_b2b187e2b843e6 355-370,648,662-664,697-702,760-762
+scripts/__tests__/reviewDossierPublication.spec.ts
+  s_9e15f5b7ec3308::t_97d3f630632e04 390-412
+scripts/reviewDossier.ts
+  s_9e15f5b7ec3308::t_79721c93f8e76f 124-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b18174ab572c6e1e2f82e581034f42750d9ccb13",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
