@@ -1,0 +1,93 @@
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptorsGuidance.ts
+  s_9e15f5b7ec3308::t_3b6af3e3a97e92 311,317-318,321-322
+  s_9e15f5b7ec3308::t_3d97ee9ec03a96 506-507
+  s_9e15f5b7ec3308::t_63a48bda62911b 26-27,32-34
+  s_9e15f5b7ec3308::t_1a2bf9b87da1b7 394-395
+  s_9e15f5b7ec3308::t_cca4b13bc69dea 245
+  s_9e15f5b7ec3308::t_2a880d386c3b28 31
+  s_9e15f5b7ec3308::t_dcec68517df597 44
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptors.ts
+  s_9e15f5b7ec3308::t_0e2747c8a90fc4 4
+  s_9e15f5b7ec3308::t_0be698df8b9456 3
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptorsGuidance.ts
+  s_9e15f5b7ec3308::t_b0f2ab21e5c380 158-159
+  s_9e15f5b7ec3308::t_eefe5ad5cb358d 147-148
+  s_9e15f5b7ec3308::t_a885551a354c1d 179-181,183,190,192-193,227
+  s_9e15f5b7ec3308::t_bfbec74872bac9 194-195,202-203,353-354,366-367
+  s_9e15f5b7ec3308::t_a2494e0a649bfa 316-317
+  s_9e15f5b7ec3308::t_651f8faa06bb4f 150
+  s_9e15f5b7ec3308::t_f78508863f7ac6 228-230,232,234
+  s_9e15f5b7ec3308::t_042a59c4c8cf2c 204,210-211,213
+  s_9e15f5b7ec3308::t_3a94ac782bdca7 106
+release/open-source-inventory.json
+  s_9e15f5b7ec3308::t_25b8920747059e 2376
+  s_9e15f5b7ec3308::t_75612073d625ee 1509
+src/modules/Arrangement/models/PluginDescriptors/__tests__/authoredParameterGuidance.spec.ts
+  s_9e15f5b7ec3308::t_085c33429f89c1 228,232-240
+  s_9e15f5b7ec3308::t_981fb2a492f470 312-355
+  s_9e15f5b7ec3308::t_4f0e828d52485f 121-183
+  s_9e15f5b7ec3308::t_fcf29448a6a4e4 311
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptorsGuidance.ts
+  s_9e15f5b7ec3308::t_2529ad243b2718 4-10,15,18-19,23
+  s_9e15f5b7ec3308::t_345133c9969135 1-3,11-14,16-17,20-22
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptorsGuidanceTimeAndSpace.ts
+  s_9e15f5b7ec3308::t_147b165203ddd8 1-4,8-10,16-19,21-103,170-238,239-299,358-415,571
+  s_9e15f5b7ec3308::t_8039abda68edc1 5-7,11-15,20,104-120,122,124-169,300-357,416-570
+  s_9e15f5b7ec3308::t_2f359e0ded32ea 121,123
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_9e15f5b7ec3308::t_a19414922eee03 35
+  s_9e15f5b7ec3308::t_5aa18b8f358273 33
+  s_9e15f5b7ec3308::t_242678fa0b984f 48
+  s_9e15f5b7ec3308::t_196c07f76a51d7 23
+  s_9e15f5b7ec3308::t_e651a57286db0d 47
+  s_9e15f5b7ec3308::t_76d6703486d3ee 32
+  s_9e15f5b7ec3308::t_cce1af4e004543 53
+  s_9e15f5b7ec3308::t_aa807277055ee0 44
+  s_9e15f5b7ec3308::t_1d12464bdc565b 56
+  s_9e15f5b7ec3308::t_61d087c66d79f6 31
+  s_9e15f5b7ec3308::t_15c3e98f3c1683 29
+  s_9e15f5b7ec3308::t_2f699d5bd04974 55
+  s_9e15f5b7ec3308::t_6d71b1be50d3cd 27
+  s_9e15f5b7ec3308::t_e4f89e2ff9ff1b 25
+  s_9e15f5b7ec3308::t_b3b08df502ff4a 36
+  s_9e15f5b7ec3308::t_1877498ecf7768 26
+  s_9e15f5b7ec3308::t_98938a71177d62 28
+  s_9e15f5b7ec3308::t_acb6ae29425ffd 38
+  s_9e15f5b7ec3308::t_46a918cf01a3e4 40
+  s_9e15f5b7ec3308::t_70f69c91d94e73 50
+  s_9e15f5b7ec3308::t_08fe3a527c1241 24
+  s_9e15f5b7ec3308::t_9235b34773c35f 51
+  s_9e15f5b7ec3308::t_86d01fd91edf9d 46
+  s_9e15f5b7ec3308::t_58f6304d0fa7d0 52
+  s_9e15f5b7ec3308::t_fed1a329436100 30
+  s_9e15f5b7ec3308::t_513f1fde7bd293 22
+  s_9e15f5b7ec3308::t_7eb541b2274e44 39
+  s_9e15f5b7ec3308::t_dc9df2632f8c88 49
+  s_9e15f5b7ec3308::t_28ab3fa735c82d 37
+  s_9e15f5b7ec3308::t_87348784b37712 43
+  s_9e15f5b7ec3308::t_95b15dcb3d4bb4 34
+  s_9e15f5b7ec3308::t_26e26c1d6cbb83 45
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptorsGuidanceDynamics.ts
+  s_9e15f5b7ec3308::t_e80b4766174176 5-7,11-14,19,21,23-31,36-39,42,44,47-51,53,55,58-61,64,66,69-73,75,77,80-84,86,88,91-95,97,99,105,107-110,112-114,120-124,126,128,131-133,135,137,139,142-144,146,148,150,153-157,159,161,164-166,168,170,172,178,180-184,189-192,195,197,200-204,206,208,211-215,217,219,284-309
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptorsGuidanceTone.ts
+  s_9e15f5b7ec3308::t_203bb31e507dc9 1-255,258-286
+  s_9e15f5b7ec3308::t_ed69c50ca31930 256-257
+evidence/agent-campaign/manifest.json
+  s_9e15f5b7ec3308::t_7b65dad2d8234c 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5b1ec435efe3f73fa52099eb20030ecc30d63c70",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
