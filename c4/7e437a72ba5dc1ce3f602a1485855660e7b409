@@ -1,0 +1,19 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_bf18f6aef9ec48::t_43be84af930833 569-570,572,1059-1060,1062,1173-1174,1176,1194-1195,1197,1216-1217,1219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c47e437a72ba5dc1ce3f602a1485855660e7b409",
+  "prompts": {},
+  "sessions": {
+    "s_bf18f6aef9ec48": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a9ab79d8014c7c073",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
