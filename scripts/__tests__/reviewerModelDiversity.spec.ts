@@ -375,7 +375,7 @@ describe('assertReviewerModelDiversity per-draw records', () => {
         ).toThrow(/matches one of the PR's authoring models/u);
     });
 
-    it('keeps the whole-round fallback working when the draws carry no authoring-model draw', () => {
+    it('admits a draw on the authoring model carrying its own exhaustion alongside the document-level field', () => {
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
@@ -390,5 +390,35 @@ describe('assertReviewerModelDiversity per-draw records', () => {
                 ],
             })
         ).not.toThrow();
+    });
+
+    it('admits a bare authoring-model draw only under a present, non-blank document-level whole-round exhaustion', () => {
+        // The document-level whole-round fallback covers every draw, so the draw needs no
+        // exhaustion of its own; a blank field covers nothing and the refusal names the stance.
+        const stanceDraws = [{ stance: 'correctness', reviewerModel: 'glm-5.3' }];
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                document: {
+                    reviewerModel: 'glm-5.3',
+                    modelExhaustion: 'every other harness on this machine is logged out or broken',
+                    body: 'Reviewed on glm-5.3 under the whole-round fallback after every other harness was unavailable.',
+                },
+                stanceDraws,
+            })
+        ).not.toThrow();
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                document: {
+                    reviewerModel: 'claude-opus-4.5',
+                    modelExhaustion: '   ',
+                    body: 'The change held under attack.',
+                },
+                stanceDraws,
+            })
+        ).toThrow(/review stance "correctness" drew reviewer model "glm-5\.3"/u);
     });
 });

@@ -251,15 +251,32 @@ export function recordedReviewStances(
     return read.present ? parseReviewStancesRecord(read.value, path).stances.map((entry) => entry.stance) : undefined;
 }
 
+/** One completed draw's disclosure fields, shared by both dossier shapes. */
+type DossierDrawFields = {
+    stance: string;
+    reviewerModel: string;
+    exhaustion?: string;
+};
+
+function dossierStanceToDraw(record: DossierDrawFields): ReviewerStanceDraw {
+    const draw: ReviewerStanceDraw = { stance: record.stance, reviewerModel: record.reviewerModel };
+    if (record.exhaustion !== undefined) {
+        draw.exhaustion = record.exhaustion;
+    }
+    return draw;
+}
+
 /**
- * The parsed dossier input's stance draws, for the diversity gate's per-draw disclosure. The probe
- * never refuses: every shape it cannot use — a bundle with no risk plan (the legacy path, which
- * must not read or require dossier material at all), an absent dossier, the persisted replay
- * record, a malformed input — yields undefined and keeps exactly the document-level check, with
- * the dossier gate refusing those shapes later, still before any remote write. A persisted replay
- * record replays its original publication's verdict, so the per-draw gate is not re-run against
- * records persisted before per-draw exhaustion existed. The caller passes the publication port's
- * bundle reader structurally; the file names are this module's bundle layout, as in `prepareReview`.
+ * The bundle dossier's stance draws, for the diversity gate's per-draw disclosure, read from either
+ * well-formed file shape: the caller's `dossier-input-v1` stances, or — when the file parses as the
+ * persisted `dossier-v1` canonical record — that record's `stance-completed` events. The per-draw
+ * rule runs on every publication regardless of file form, so a replay reads the same draws the
+ * first publication gated and a mixed round replays unchanged. The probe never refuses: every
+ * shape it cannot use — a bundle with no risk plan (the legacy path, which must not read or require
+ * dossier material at all), an absent dossier, a malformed dossier — yields undefined and keeps
+ * exactly the document-level check, with the dossier gate refusing malformed shapes later, still
+ * before any remote write. The caller passes the publication port's bundle reader structurally; the
+ * file names are this module's bundle layout, as in `prepareReview`.
  */
 export function readDossierStanceDraws(
     port: { readReviewJson: (path: string) => unknown },
@@ -279,19 +296,15 @@ export function readDossierStanceDraws(
         return undefined;
     }
     try {
-        return parseReviewDossierInput(raw).stances.map((stance) => {
-            const draw: ReviewerStanceDraw = {
-                stance: stance.stance,
-                reviewerModel: stance.reviewerModel,
-            };
-            if (stance.exhaustion !== undefined) {
-                draw.exhaustion = stance.exhaustion;
-            }
-            return draw;
-        });
+        return parseReviewDossierInput(raw).stances.map(dossierStanceToDraw);
     } catch {
+        // Not caller input; the persisted canonical record is the only other well-formed shape.
+    }
+    const persisted = tryParsePersistedDossier(raw);
+    if (persisted === undefined) {
         return undefined;
     }
+    return completedStances(persisted).map(dossierStanceToDraw);
 }
 
 /**

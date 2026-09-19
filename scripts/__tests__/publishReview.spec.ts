@@ -47,6 +47,7 @@ import {
     parseReviewDossier,
     serializeReviewDossier,
 } from '../reviewDossier.ts';
+import { buildReviewDossier } from '../reviewDossierPublication.ts';
 import { legacyReviewPublicationIncidents } from '../reviewPublicationLegacyIncidents.ts';
 import { OPERATOR_ABSENT_ATTESTATION, type RecoveryReceipt } from '../reviewPublicationRecoveryReceipt.ts';
 import { exactPublishedReview, inspectReviewPublicationRemote } from '../reviewPublicationRemoteInspection.ts';
@@ -4960,6 +4961,19 @@ describe('fresh reviewer dossier publication', () => {
         };
     }
 
+    /** The canonical persisted record publication itself writes for the given caller input. */
+    function persistedDossier(stances: Record<string, unknown>[]): unknown {
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput({ stances }),
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+        const record: unknown = JSON.parse(canonical);
+        return record;
+    }
+
     const reviewDocument = {
         format: 'compact-v1',
         event: 'APPROVE',
@@ -5410,6 +5424,67 @@ describe('fresh reviewer dossier publication', () => {
         try {
             expect(publishReview(number, fixture.port)).toBe(99);
             expect(fixture.posted.review?.event).toBe('APPROVE');
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a persisted-shaped dossier whose fenced-model draw carries no exhaustion anywhere and never posts', () => {
+        // The canonical record is the only dossier file this publication sees and the document
+        // model differs from every author, so the stance-naming refusal proves the per-draw gate
+        // read its draws from the persisted record's events, not only from caller input.
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+            document: { ...reviewDocument, reviewerModel: 'claude-opus-4.5' },
+            dossier: persistedDossier([
+                { stance: 'correctness', reviewerModel: 'glm-5.3-flash', modelTier: 'strongest', outcome: 'clean' },
+                { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+            ]),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/review stance "correctness" drew reviewer model "glm-5\.3-flash"/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('replays the mixed round from the persisted record without rewriting it', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+            document: {
+                ...reviewDocument,
+                body: 'Mixed round: test-validity ran on review-model; correctness fell back to glm-5.3-flash, the only harness left for it.',
+            },
+            dossier: dossierInput({
+                stances: [
+                    {
+                        stance: 'correctness',
+                        reviewerModel: 'glm-5.3-flash',
+                        modelTier: 'strongest',
+                        outcome: 'clean',
+                        exhaustion: 'every other harness on this machine was committed to another lane',
+                    },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            const first = fixture.readDossier();
+            expect(fixture.writes).toHaveLength(1);
+
+            // The replay derives the draws from the persisted record's events, so the mixed round
+            // publishes again unchanged instead of refusing on draws it can no longer see.
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.writes).toHaveLength(1);
+            expect(fixture.readDossier()).toEqual(first);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(2);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }

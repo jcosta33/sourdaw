@@ -229,10 +229,9 @@ harness, model, and invocation are the dispatching session's choice. When only t
 author's model is available, the same-model review still publishes: `review.json`
 carries `modelExhaustion` (one line naming what made every other model unavailable)
 and the published body names the reviewer model, so the deviation is recorded rather
-than silently accepted. The document-level field covers a whole-round fallback;
-when only some stances fell back, each fallen-back draw records its own exhaustion
-in the dossier instead, and every draw on an authoring model requires that
-per-draw line.
+than silently accepted. A draw on an authoring model records its own exhaustion; a
+document-level whole-round `modelExhaustion` covers every draw; per-draw exhaustion
+excuses the document-level field in a mixed round.
 
 ## Review document formats
 

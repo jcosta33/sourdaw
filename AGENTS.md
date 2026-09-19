@@ -41,10 +41,10 @@ habit or agent confidence.
 
 For each PR, diversify delegated tasks among equally adequate models at the cheapest adequate tier.
 Assign reviewers a model different from the author's when that set offers one; otherwise reuse the
-author's, recording the fallback in the review document: `modelExhaustion` names what made every
-other model unavailable, and the published body names the reviewer model. When only some stances
-fell back, the exhaustion is recorded per draw in the dossier instead; the document-level field
-covers a whole-round fallback.
+author's, recording the fallback in the review document: the published body names the reviewer
+model, and a draw on an authoring model records its own exhaustion; a document-level whole-round
+`modelExhaustion` covers every draw; per-draw exhaustion excuses the document-level field in a
+mixed round.
 
 Design the whole requested outcome before dispatch, then give each agent one independently safe
 behavior or behavior-preserving preparation with its required tests. Every dispatch includes the

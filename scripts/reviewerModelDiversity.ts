@@ -14,12 +14,12 @@
  * unavailable — and the published body must name the reviewer model, so a
  * same-model review always discloses the deviation it rests on.
  *
- * When the parsed dossier input's per-draw records travel with the check, the
- * same disclosure holds per draw: every draw whose model matches an authoring
- * fence carries its own `exhaustion`, and a mixed round — only some stances
- * fell back — is admitted by a draw-level exhaustion without a document-level
- * one. Without per-draw records the document-level rules apply alone, exactly
- * as they always have.
+ * When the dossier's per-draw records travel with the check, the same disclosure
+ * holds per draw: a draw whose model matches an authoring fence is disclosed by
+ * its own `exhaustion`, or by a present document-level `modelExhaustion` — the
+ * whole-round fallback covers every draw — and a mixed round is admitted by
+ * per-draw exhaustion without a document-level one. Without per-draw records
+ * the document-level rules apply alone, exactly as they always have.
  */
 import { ORCHESTRATOR_USER_NODE_ID } from './githubAppIdentity.ts';
 
@@ -49,25 +49,30 @@ export type ReviewerModelDocument = {
 };
 
 /**
- * Per-draw disclosure: a draw on an authoring model without its own exhaustion line is an
- * undisclosed same-model review, whatever the document-level field says — `modelExhaustion` speaks
- * for a whole round, never for one stance's fallback.
+ * Per-draw disclosure: a draw on an authoring model is disclosed by its own exhaustion line, or by
+ * a present, non-blank document-level `modelExhaustion` — the whole-round fallback covers every
+ * draw. With neither, the draw is an undisclosed same-model review, and the refusal names the
+ * stance and model.
  */
 function assertEveryDrawDisclosesAuthorFallback(
     authorModels: readonly string[],
-    stanceDraws: readonly ReviewerStanceDraw[]
+    stanceDraws: readonly ReviewerStanceDraw[],
+    modelExhaustion: string | undefined
 ): void {
+    // The whole-round fallback discloses every draw at once; a blank field discloses nothing.
+    const wholeRoundExhaustion = modelExhaustion?.trim() ?? '';
     for (const draw of stanceDraws) {
         if (!authorModels.includes(draw.reviewerModel.trim())) {
             continue;
         }
-        if ((draw.exhaustion ?? '').trim() === '') {
-            fail(
-                `review stance "${draw.stance}" drew reviewer model "${draw.reviewerModel}", which matches one of ` +
-                    `the PR's authoring models (${authorModels.join(', ')}); assign that draw to a different ` +
-                    'model, or, when no other model is available, record its exhaustion on the dossier draw'
-            );
+        if ((draw.exhaustion ?? '').trim() !== '' || wholeRoundExhaustion !== '') {
+            continue;
         }
+        fail(
+            `review stance "${draw.stance}" drew reviewer model "${draw.reviewerModel}", which matches one of ` +
+                `the PR's authoring models (${authorModels.join(', ')}); assign that draw to a different ` +
+                'model, or, when no other model is available, record its exhaustion on the dossier draw'
+        );
     }
 }
 
@@ -97,7 +102,7 @@ export function assertReviewerModelDiversity(input: {
     // add-only, so republishing a lane with a different --model leaves the previous fence on the
     // PR; a reviewer matching any declared author is the collusion this check exists to refuse.
     const trimmedModel = reviewerModel.trim();
-    assertEveryDrawDisclosesAuthorFallback(authorModels, input.stanceDraws ?? []);
+    assertEveryDrawDisclosesAuthorFallback(authorModels, input.stanceDraws ?? [], input.document.modelExhaustion);
     if (!authorModels.includes(trimmedModel)) {
         return;
     }
