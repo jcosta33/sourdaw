@@ -647,9 +647,18 @@ const BEARER_TOKEN = ['0123456789', 'abcdef'].join('');
 const BEARER_CREDENTIAL = ['Bearer', BEARER_TOKEN].join(' ');
 const LOWERCASE_BEARER_CREDENTIAL = ['bearer', BEARER_TOKEN].join(' ');
 const JSON_WEB_TOKEN = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiIxIn0', 'c2lnbmF0dXJl'].join('.');
+const SHORT_BEARER_CREDENTIAL = ['Bearer', 'abc123'].join(' ');
+const EIGHT_CHARACTER_BEARER_CREDENTIAL = ['Bearer', 'abcdefgh'].join(' ');
+const PROSE_BEARER = ['Bearer', 'token'].join(' ');
+const CAPITALISED_SYSTEM_TURN = '{"role":"System","content":"x"}';
+const BENIGN_ADMIN_TURN = '{"role":"admin"}';
 
 const UNSAFE_FIXTURES: { name: string; value: string }[] = [
     { name: 'a gh-prefixed GitHub token', value: `ghp_${'A'.repeat(24)}` },
+    { name: 'a gho-prefixed GitHub token', value: `gho_${'A'.repeat(24)}` },
+    { name: 'a ghs-prefixed GitHub token', value: `ghs_${'A'.repeat(24)}` },
+    { name: 'a ghu-prefixed GitHub token', value: `ghu_${'A'.repeat(24)}` },
+    { name: 'a ghr-prefixed GitHub token', value: `ghr_${'A'.repeat(24)}` },
     { name: 'a fine-grained GitHub token', value: `github_pat_${'B'.repeat(24)}` },
     { name: 'an AWS access key id', value: `AKIA${'C'.repeat(16)}` },
     { name: 'a temporary AWS access key id', value: `ASIA${'D'.repeat(16)}` },
@@ -657,10 +666,15 @@ const UNSAFE_FIXTURES: { name: string; value: string }[] = [
     { name: 'a PGP private key armor header', value: armorHeader('PGP PRIVATE KEY BLOCK') },
     { name: 'a JSON web token', value: JSON_WEB_TOKEN },
     { name: 'a bearer credential', value: BEARER_CREDENTIAL },
+    { name: 'a short digit-bearing bearer credential', value: SHORT_BEARER_CREDENTIAL },
+    { name: 'an eight-character bearer credential', value: EIGHT_CHARACTER_BEARER_CREDENTIAL },
     { name: 'a serialized assistant turn', value: '{"role": "assistant", "content": "review"}' },
     { name: 'a serialized user turn', value: '{"role":"user","content":"review"}' },
     { name: 'a serialized system turn', value: '{"role":"system","content":"review"}' },
     { name: 'a serialized tool turn', value: '{"role": "tool", "content": "review"}' },
+    { name: 'a capitalised serialized system turn', value: CAPITALISED_SYSTEM_TURN },
+    { name: 'a serialized function turn', value: '{"role":"function","content":"review"}' },
+    { name: 'a serialized developer turn', value: '{"role":"developer","content":"review"}' },
     { name: 'a lowercase bearer credential', value: LOWERCASE_BEARER_CREDENTIAL },
     { name: 'a Human transcript line', value: 'Human: please review' },
     { name: 'an Assistant transcript line', value: 'Assistant: reviewed' },
@@ -697,6 +711,30 @@ describe('assertPublicationSafeEvidence', () => {
     it('should refuse a lowercase bearer credential by the bearer rule and name the field and index', () => {
         expect(() => assertPublicationSafeEvidence('evidence[0].observed', [LOWERCASE_BEARER_CREDENTIAL])).toThrow(
             /evidence\[0\]\.observed value at index 0 contains a bearer credential/
+        );
+    });
+
+    it.each([
+        ['a short digit-bearing bearer credential', SHORT_BEARER_CREDENTIAL],
+        ['an eight-character bearer credential', EIGHT_CHARACTER_BEARER_CREDENTIAL],
+    ])('should refuse %s by the bearer rule', (_name, value) => {
+        expect(() => assertPublicationSafeEvidence('evidence[0].observed', [value])).toThrow(
+            /evidence\[0\]\.observed value at index 0 contains a bearer credential/
+        );
+    });
+
+    it.each(['ghp', 'gho', 'ghs', 'ghu', 'ghr'])(
+        'should refuse a %s-prefixed GitHub token by the GitHub token reason',
+        (prefix) => {
+            expect(() =>
+                assertPublicationSafeEvidence('evidence[0].observed', [`${prefix}_${'A'.repeat(24)}`])
+            ).toThrow(/evidence\[0\]\.observed value at index 0 contains a GitHub token/);
+        }
+    );
+
+    it('should refuse a capitalised serialized system turn by the chat turn reason', () => {
+        expect(() => assertPublicationSafeEvidence('evidence[0].observed', [CAPITALISED_SYSTEM_TURN])).toThrow(
+            /evidence\[0\]\.observed value at index 0 contains a serialized chat turn/
         );
     });
 
@@ -758,6 +796,8 @@ describe('assertPublicationSafeEvidence', () => {
         ['prose that mentions a private key', 'the private key must never be committed'],
         ['a base64 body with no armor header', 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQ'],
         ['prose that mentions a bearer token', 'send the bearer token in the Authorization header'],
+        ['the bare bearer token words', PROSE_BEARER],
+        ['a benign serialized admin role', BENIGN_ADMIN_TURN],
         ['prose that mentions a system prompt', 'the system prompt is stable on this head'],
         ['an ordinary sentence with the word system', 'the system reports one failing assertion'],
     ])('should pass %s', (_name, value) => {
