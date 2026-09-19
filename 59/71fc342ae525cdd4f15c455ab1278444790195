@@ -1,0 +1,16 @@
+scripts/__tests__/repairReviewFinding.spec.ts
+  h_1228e573df1f42 1-920
+scripts/repairReviewFinding.ts
+  h_1228e573df1f42 1-680
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5971fc342ae525cdd4f15c455ab1278444790195",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
