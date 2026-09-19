@@ -1,13 +1,15 @@
-# Review stance: code craft
+# Lesson library: code craft
 
-Dispatch guidance for the code-craft stance: documented convention is a contract, not a hedge.
-A documented convention violation that a lint rule already names is a merge blocker. Personal
-style is not. Per the Review section of `AGENTS.md`, an escape — a defect that reached `main` which
-this stance should have caught — is recorded here as a lesson, and every future dispatch of this
-stance carries this file's lessons.
+Lesson library for code-craft defects: documented convention is a contract, not a hedge. A
+documented convention violation that a lint rule already names is a merge blocker. Personal style
+is not. Per the Review section of `AGENTS.md`, this directory is a lesson library, not a stance
+menu: an escape — a defect that reached `main` whose defect class matches this file — is recorded
+here as a lesson, and every dispatch whose derived stance matches this file carries its lessons.
+Lessons state the escape, the blind spot, and the probe that would have caught it. Keep each
+lesson short enough to paste into a dispatch.
 
-Dispatch this stance when the diff adds or edits TypeScript or JavaScript (especially
-`src/**/presentations/**`, `src/components/**`, and `scripts/`), or when it touches lint config,
+This file's defect class covers diffs that add or edit TypeScript or JavaScript (especially
+`src/**/presentations/**`, `src/components/**`, and `scripts/`), or that touch lint config,
 `docs/07-conventions.md`, or this file. Skip pure Rust/DSP-only diffs unless they also change TS.
 
 ## Standing probes

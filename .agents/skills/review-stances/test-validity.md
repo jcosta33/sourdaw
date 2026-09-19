@@ -1,10 +1,10 @@
-# Review stance: test validity
+# Lesson library: test and evidence validity
 
-Dispatch guidance for the test-validity stance. Per the Review section of `AGENTS.md`, an escape —
-a defect that reached `main` which this stance should have caught — is recorded here as a lesson,
-and every future dispatch of this stance carries this file's lessons. Lessons state the escape, the
-blind spot, and the probe that would have caught it. Keep each lesson short enough to paste into a
-dispatch.
+Lesson library for test and evidence validity. Per the Review section of `AGENTS.md`, this
+directory is a lesson library, not a stance menu: an escape — a defect that reached `main` whose
+defect class matches this file — is recorded here as a lesson, and every dispatch whose derived
+stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
+probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
 ## Standing probes
 

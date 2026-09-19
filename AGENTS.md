@@ -70,23 +70,27 @@ Keep reviewers blind: give each the head, diff, and exactly one stance, never ot
 prose, the author's transcript, or orchestrator reasoning. Prior findings anchor reviewers.
 Reviewers never confer; findings meet only in the orchestrator.
 
-Assign one independent stance per material risk, typically about three per PR, never to meet a
-count. Cover applicable risks: correctness; module boundaries and contracts; real-time audio safety;
-project integrity and undo; security and platform boundaries; code craft and readability (naming,
-complexity, nesting, semantic clarity, `docs/07-conventions.md`); test validity.
+Derive the stances from the task, never from a menu or habit: enumerate the material risks this
+diff creates, then assign one independent stance to each, named for the specific risk it attacks.
+A stance any diff would admit — "correctness" above all — is the baseline every reviewer already
+holds, not a stance. Three is a minimum, not a target: fewer than three named risks means the
+enumeration was too narrow. Record the dispatched set in the bundle's `stances.json` beside
+`review.json`, one line per stance naming the diff evidence that admits it; the caller writes it,
+no script generates it.
 
-Tier reviewers by stance criticality: economy for narrow low-risk checks, standard for behavioral
-and integration risk, strongest for real-time audio, security, data loss, irreversible change, or
-disputed severe findings. Also raise the tier for wide module diffusion, heavy churn on defect-prone
-surfaces, or surfaces touched by many recent lanes. The orchestrator may combine two independent
+Tier reviewers by the criticality of the risk each stance attacks: economy for narrow low-risk
+checks, standard for behavioral and integration risk, strongest for real-time audio, security,
+data loss, irreversible change, or disputed severe findings. Also raise the tier for wide module
+diffusion, heavy churn on defect-prone surfaces, or surfaces touched by many recent lanes. The
+orchestrator may combine two independent
 strongest-tier draws from different models on one stance to expose different findings; this extends
 model diversity, not the stance count.
 
-Test validity is its own stance: establish what must break to fail the check and whether it
-observes what its name claims. A pass alone is not evidence. The reviewer names a mechanical probe:
-revert the behavioral hunk or apply one targeted mutation, then run the named spec; remaining green
-fails the stance. The orchestrator validates or the author repairs in the change's existing lane;
-reviewers have no writable tree.
+Every reviewer carries the baseline posture regardless of stance: establish what must break for
+each existing check to fail and whether it observes what its name claims. A pass alone is not
+evidence. The reviewer names a mechanical probe: revert the behavioral hunk or apply one targeted
+mutation, then run the named spec; remaining green fails. The orchestrator validates or the author
+repairs in the change's existing lane; reviewers have no writable tree.
 
 Dispatch a posture as well as a surface: try to break the change; report the strongest surviving
 finding with concrete failure inputs or state, or report none. Finding nothing is success; never
@@ -94,7 +98,7 @@ manufacture findings. Tell reviewers that hedged findings without a concrete bre
 
 Scale evidence to the claim. Check findings against the live head and surrounding code, not the
 diff alone. Merge-blocking findings require the reproduction's input, state, or mutation and observed
-result. Test-validity findings name the mutation that should have failed the check but did not.
+result. Baseline-probe findings name the mutation that should have failed the check but did not.
 
 The orchestrator validates every finding against live code before acting. Discard incorrect,
 out-of-scope, or personal-style findings; never forward them. Write each discard and its one-line
@@ -118,9 +122,10 @@ independent review; the orchestrator records final acceptance through `review:ac
 through `deliver` as the verified orchestrator User.
 
 For defects reaching `main`, fix under Ownership AND trace the introducing PR and missed stance
-(missing, mis-tiered, or mis-prompted). Edit that stance's tracked dispatch guidance under
-`.agents/skills/` so cold orchestrators inherit the escape lesson. Escapes measure review quality;
-fixing without learning does not prove it.
+(missing, mis-tiered, or mis-prompted). Attach the escape to the standing file under
+`.agents/skills/review-stances/` whose probes would have caught it, or mint a new file for a
+defect class none covers, so cold orchestrators inherit the escape lesson. Escapes measure review
+quality; fixing without learning does not prove it.
 
 ## Docs
 

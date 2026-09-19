@@ -3,6 +3,18 @@
 This directory holds dispatch guidance for each review stance: the probes each reviewer applies,
 the lessons from escapes, and the shared principles that bind them.
 
+## Stance derivation and the lesson library
+
+Stances are derived per task, never selected from this directory. Enumerate the material risks the
+diff creates, name one stance per risk, and record the dispatched set with each stance's admission
+evidence in the bundle's `stances.json`; the root `AGENTS.md` Review section carries the rule.
+
+This directory is a lesson library, not a menu. Each file collects standing probes and escape
+lessons for one defect class. A dispatch whose derived stance matches a file's defect class carries
+that file's probes and lessons in its prompt; a stance matching no file dispatches without one. An
+escape attaches to the file whose probes would have caught it, or mints a new file for a defect
+class none covers.
+
 ## Reviewer isolation
 
 A reviewer holds no writable tree. It reads the head with `git show <sha>:<path>` from the primary checkout and the bundle under `.agents/review-bundles/<pr>-<sha>/`. A reviewer never edits, installs, or runs a check in a live lane; when it must execute code, it works in a scratch clone at the head sha with the primary checkout's `node_modules` symlinked in and never runs `pnpm install` there. Findings go to the orchestrator, never to GitHub.
