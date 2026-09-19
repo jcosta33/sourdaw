@@ -88,6 +88,25 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
                     preFader: action.payload.preFader ?? false,
                 });
             }
+        } else if (action.type === 'setSend') {
+            // A batch that adjusts the same send twice has to compound the same
+            // way a repeated `setTrackGain` does: the second action's `deltaDb` is
+            // relative to what the first one left the send at.
+            const send = projected.sends.find((candidate) => candidate.busId === action.payload.busId);
+            if (send) {
+                const resolved = resolveLevelFields(
+                    {
+                        linear: action.payload.level,
+                        absoluteDb: action.payload.levelDb,
+                        deltaDb: action.payload.deltaDb,
+                    },
+                    send.level,
+                    SEND_LEVEL_LAW
+                );
+                if (resolved.ok) {
+                    send.level = resolved.linear;
+                }
+            }
         } else if (action.type === 'setClipGain') {
             // A clip payload carries no `trackId`, so the leading skip above never
             // fires for it; match the clip by id across whichever track holds it.

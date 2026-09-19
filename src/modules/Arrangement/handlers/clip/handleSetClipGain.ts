@@ -30,11 +30,16 @@ export const handleSetClipGain = createHandler<'setClipGain'>({
     canReapplyAfterDivergence: (action) => action.payload.expectedGain !== undefined,
     validate: (action, context) => {
         const clip = findClip(action.payload.clipId);
-        // A stale-snapshot check against the store: this must read the live clip,
-        // never the planned one, or a batch could pass a divergence a prior action
-        // in the same batch happens to paper over.
+        // A second `setClipGain` on the same clip in one batch must predict from
+        // what an earlier action in it will leave the clip at: `validate` runs for
+        // every action in the batch before any `execute`, so a live-only read
+        // here would reject a legal compounding batch — including a grouped
+        // undo's own atomic replay of two `setClipGain` inverses — as conflicted.
+        const plannedClip =
+            clip && getPlannedTrackState(context, clip.trackId)?.clips.find((candidate) => candidate.id === clip.id);
+        const previousClip = plannedClip ?? clip;
         if (action.payload.expectedGain !== undefined) {
-            if (clip === undefined || !Object.is(clip.gain, action.payload.expectedGain)) {
+            if (previousClip === undefined || !Object.is(previousClip.gain, action.payload.expectedGain)) {
                 return false;
             }
         }
@@ -43,16 +48,10 @@ export const handleSetClipGain = createHandler<'setClipGain'>({
         if (action.payload.gain !== undefined) {
             return true;
         }
-        if (clip === undefined) {
+        if (previousClip === undefined) {
             return false;
         }
-        // A decibel request resolves against what an earlier action in this same
-        // batch will leave the clip at, not against the live store: two
-        // `setClipGain` actions on one clip in a batch must compound.
-        const plannedClip = getPlannedTrackState(context, clip.trackId)?.clips.find(
-            (candidate) => candidate.id === clip.id
-        );
-        return plannedClip !== undefined && requestedGain(action, plannedClip.gain).ok;
+        return requestedGain(action, previousClip.gain).ok;
     },
     execute: (alpha) => {
         const clip = findClip(alpha.payload.clipId);
@@ -72,9 +71,20 @@ export const handleSetClipGain = createHandler<'setClipGain'>({
         }
         return toHandlerExecutionResult(setClipGain(alpha.payload.clipId, requested.linear));
     },
-    describe: (alpha) => {
+    describe: (alpha, context) => {
         const clip = findClip(alpha.payload.clipId);
-        const requested = clip === undefined ? null : requestedGain(alpha, clip.gain);
+        // A second `setClipGain` on the same clip in one batch must predict from
+        // what an earlier action in it will leave the clip at, the same reason
+        // `validate` reads through `getPlannedTrackState` above: `describe` runs
+        // for every action before any `execute`, so a live-only prediction here
+        // would build an inverse whose `expectedGain` the batch's own sequential
+        // execution can never match, and undoing the group would conflict forever.
+        const plannedClip =
+            context && clip
+                ? getPlannedTrackState(context, clip.trackId)?.clips.find((candidate) => candidate.id === clip.id)
+                : undefined;
+        const previousClip = plannedClip ?? clip;
+        const requested = previousClip === undefined ? null : requestedGain(alpha, previousClip.gain);
         return {
             label: 'Set clip gain',
             // The inverse expects the gain this action is about to write, clamped the same way the
@@ -82,12 +92,12 @@ export const handleSetClipGain = createHandler<'setClipGain'>({
             // gain something else moved after the forward action landed. It restores the stored
             // amplitude linearly whatever form the forward action used.
             inverseAction:
-                clip && requested?.ok
+                previousClip && requested?.ok
                     ? {
                           type: 'setClipGain',
                           payload: {
-                              clipId: clip.id,
-                              gain: clip.gain,
+                              clipId: previousClip.id,
+                              gain: previousClip.gain,
                               expectedGain: clampClipGain(requested.linear),
                           },
                       }

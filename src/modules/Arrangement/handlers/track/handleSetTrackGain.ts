@@ -93,8 +93,17 @@ export const handleSetTrackGain = createHandler<'setTrackGain'>({
         }
         return currentGain === writtenGain(action, currentGain);
     },
-    describe: (alpha) => {
-        const previousGain = storedGain(alpha.payload.trackId) ?? alpha.payload.expectedGain;
+    describe: (alpha, context) => {
+        // `executeAppActionBatch` calls every action's `describe` before any
+        // `execute` runs, so a second `setTrackGain` in the same batch must
+        // predict from what the FIRST one will leave the track at, not from the
+        // live pre-batch gain — otherwise the inverse it builds carries an
+        // `expectedGain` the batch's own sequential execution can never produce,
+        // and undoing the group conflicts forever.
+        const previousGain =
+            (context
+                ? getPlannedTrackState(context, alpha.payload.trackId)?.gain
+                : storedGain(alpha.payload.trackId)) ?? alpha.payload.expectedGain;
         // Both replay legs inherit the forward policy: undoing or redoing a
         // static edit is still not a fader ride.
         const automationRecordingPolicy = alpha.payload.automationRecordingPolicy;

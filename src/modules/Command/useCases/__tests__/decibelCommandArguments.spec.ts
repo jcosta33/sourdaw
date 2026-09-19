@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { type Clip, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getArrangementHandlers } from '#/modules/Arrangement/useCases';
@@ -13,8 +14,14 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
-import { dbToGain } from '#/utils/audioLevelLaw';
+import { dbToGain, gainToDb } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { macroStore } from '../../stores/macroStore';
@@ -23,6 +30,7 @@ import { clearUndoHistory } from '../clearUndoHistory';
 import { executeAppAction } from '../executeAppAction';
 import { executeAppActionBatch } from '../executeAppActionBatch';
 import { resetActionReplayAuthority } from '../resetActionReplayAuthority';
+import { undo } from '../undo';
 
 const engineMocks = vi.hoisted(() => ({
     engineRemoveSend: vi.fn(),
@@ -82,6 +90,12 @@ async function refusalOf(action: AppAction): Promise<string | null> {
     }
 }
 
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
 /** A minimal clip for these fixtures; only its gain matters here. */
 function fixtureClip(id: string, trackId: string, gain: number): Clip {
     return {
@@ -115,6 +129,7 @@ function seedProject({ trackGain: gain = 0.8, withSend = true }: { trackGain?: n
 describe('decibel arguments on level-bearing commands', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        setNotificationEventBus(createEventBus<NotificationEvents>());
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('decibel command arguments');
         removeCrdtDoc('root');
@@ -207,6 +222,28 @@ describe('decibel arguments on level-bearing commands', () => {
         expect(trackGain()).toBe(0);
     });
 
+    it('setTrackGain undoes a compounding batch back to the pre-batch gain', async () => {
+        // The fader starts at 0.8; the second action's `deltaDb` must measure from
+        // what the first one left it at (-6 dB, 0.501187), landing at 0.251189, not
+        // from the live pre-batch 0.8 — the describe fix this pin guards.
+        const groupId = 'track-gain-group';
+        const result = await executeAppActionBatch(
+            [
+                { type: 'setTrackGain', payload: { trackId: TRACK_ID, expectedGain: 0.8, gainDb: -6 } },
+                { type: 'setTrackGain', payload: { trackId: TRACK_ID, expectedGain: dbToGain(-6), deltaDb: -6 } },
+            ],
+            { groupId }
+        );
+
+        expect(result.status).toBe('committed');
+        expect(trackGain()).toBeCloseTo(0.251189, 6);
+
+        const undoResult = await undo();
+
+        expect(undoResult.headConsumed).toBe(true);
+        expect(trackGain()).toBe(0.8);
+    });
+
     it.each([
         { label: 'absolute unity', payload: { gainDb: 0 }, expected: 100 },
         { label: 'relative -6 dB', payload: { deltaDb: -6 }, expected: 40.095 },
@@ -220,6 +257,29 @@ describe('decibel arguments on level-bearing commands', () => {
         const refusal = await refusalOf({ type: 'setMasterGain', payload: { gainDb: 12 } });
 
         expect(refusal).toContain("above this control's ceiling of 6.0 dB");
+        expect(transportStore.value?.masterGain).toBe(80);
+    });
+
+    it('setMasterGain undoes a compounding batch back to the pre-batch percent', async () => {
+        // The first action is absolute (unity-referenced), landing at 100 *
+        // dbToGain(-6); the second action's `deltaDb` must measure from that
+        // planned percent, not from the live pre-batch 80 — the projection this
+        // pin guards.
+        const groupId = 'master-gain-group';
+        const result = await executeAppActionBatch(
+            [
+                { type: 'setMasterGain', payload: { gainDb: -6 } },
+                { type: 'setMasterGain', payload: { deltaDb: -6 } },
+            ],
+            { groupId }
+        );
+
+        expect(result.status).toBe('committed');
+        expect(transportStore.value?.masterGain).toBeCloseTo(100 * dbToGain(-12), 3);
+
+        const undoResult = await undo();
+
+        expect(undoResult.headConsumed).toBe(true);
         expect(transportStore.value?.masterGain).toBe(80);
     });
 
@@ -281,6 +341,41 @@ describe('decibel arguments on level-bearing commands', () => {
         expect(clipGain()).toBeCloseTo(dbToGain(-7), 5);
     });
 
+    it('setClipGain undoes a compounding batch back to the pre-batch gain', async () => {
+        // The clip starts at +4 dB; the linear request clamps to the ceiling of 2,
+        // and the second action's `deltaDb` must measure from that clamped 2, not
+        // from the live +4 dB, landing at dbToGain(gainToDb(2) - 6).
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => {
+                if (track.id !== TRACK_ID) {
+                    return track;
+                }
+                return {
+                    ...track,
+                    clips: track.clips.map((clip) => (clip.id !== CLIP_ID ? clip : { ...clip, gain: dbToGain(4) })),
+                };
+            }),
+        });
+
+        const groupId = 'clip-gain-group';
+        const result = await executeAppActionBatch(
+            [
+                { type: 'setClipGain', payload: { clipId: CLIP_ID, gain: 3 } },
+                { type: 'setClipGain', payload: { clipId: CLIP_ID, deltaDb: -6 } },
+            ],
+            { groupId }
+        );
+
+        expect(result.status).toBe('committed');
+        expect(clipGain()).toBeCloseTo(dbToGain(gainToDb(2) - 6), 5);
+
+        const undoResult = await undo();
+
+        expect(undoResult.headConsumed).toBe(true);
+        expect(clipGain()).toBeCloseTo(dbToGain(4), 5);
+    });
+
     it.each([
         { label: 'absolute -6 dB', payload: { levelDb: -6 }, expected: 0.501187 },
         { label: 'relative -6 dB', payload: { deltaDb: -6 }, expected: 0.250594 },
@@ -308,6 +403,28 @@ describe('decibel arguments on level-bearing commands', () => {
         });
 
         expect(refusal).toContain('exactly once');
+        expect(sendLevel()).toBe(0.5);
+    });
+
+    it('setSend undoes a compounding batch back to the pre-batch level', async () => {
+        // The first action is absolute (unity-referenced), landing at
+        // dbToGain(-12); the second action's `deltaDb` must measure from that
+        // planned level, not from the live pre-batch 0.5.
+        const groupId = 'send-level-group';
+        const result = await executeAppActionBatch(
+            [
+                { type: 'setSend', payload: { trackId: TRACK_ID, busId: BUS_ID, levelDb: -12 } },
+                { type: 'setSend', payload: { trackId: TRACK_ID, busId: BUS_ID, deltaDb: 3 } },
+            ],
+            { groupId }
+        );
+
+        expect(result.status).toBe('committed');
+        expect(sendLevel()).toBeCloseTo(dbToGain(-12) * dbToGain(3), 5);
+
+        const undoResult = await undo();
+
+        expect(undoResult.headConsumed).toBe(true);
         expect(sendLevel()).toBe(0.5);
     });
 
