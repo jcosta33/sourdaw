@@ -1,0 +1,29 @@
+AGENTS.md
+  s_87ab0a2f60ccf8::t_087dce9b1e2f1c 88-90,122-126,129,132-135
+scripts/publishReview.ts
+  s_9e15f5b7ec3308::t_e5d57271c6d7fe 56,174,281-288,295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "883f8a6c56b8a0ffc29f2782ca568938c0a422a9",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
