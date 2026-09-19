@@ -640,17 +640,6 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
 
                 if (outcome.status === 'complete') {
                     const providerCallIds = outcome.toolCalls.map((call) => call.id);
-                    for (const [index, call] of outcome.toolCalls.entries()) {
-                        const advertisedTool = providerTools.find((tool) => tool.function.name === call.name);
-                        providerSource.push({
-                            type: 'tool-call',
-                            call: {
-                                id: call.id ?? `${providerRequest.correlationId}:${String(index)}`,
-                                name: call.name,
-                                arguments: admissibleToolCallArguments(call.arguments, advertisedTool),
-                            },
-                        });
-                    }
                     if (cloudToolPlan?.usage) {
                         providerSource.push({
                             type: 'usage',
@@ -663,6 +652,17 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                                 reasoningTokens: cloudToolPlan.usage.reasoningTokens,
                             },
                             provenance: 'provider-reported',
+                        });
+                    }
+                    for (const [index, call] of outcome.toolCalls.entries()) {
+                        const advertisedTool = providerTools.find((tool) => tool.function.name === call.name);
+                        providerSource.push({
+                            type: 'tool-call',
+                            call: {
+                                id: call.id ?? `${providerRequest.correlationId}:${String(index)}`,
+                                name: call.name,
+                                arguments: admissibleToolCallArguments(call.arguments, advertisedTool),
+                            },
                         });
                     }
                     const normalizedResult = providerSource.finish({ reason: 'stop' });

@@ -283,6 +283,80 @@ describe('generateToolPlanningOutcome', () => {
         ]);
     });
 
+    it('retains billed hosted usage when local admission rejects required tool arguments', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'anthropic',
+            model: 'hosted-model',
+            baseUrl: 'https://api.anthropic.com',
+            authentication: 'api-key',
+        });
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: null } }],
+            strictToolSchemas: true,
+            usage: {
+                inputTokens: 63,
+                outputTokens: 9,
+                cacheReadInputTokens: 5,
+                cacheWriteInputTokens: 8,
+                reasoningTokens: 5,
+            },
+        });
+        agentRunLifecycle.create({
+            runId: 'run-locally-rejected-hosted-usage',
+            request: 'mute the first track',
+            mode: 'plan',
+            createdRevision: null,
+            requestedRoute: 'cloud',
+        });
+        const onProviderResult = vi.fn((result: ModelProviderResult) => {
+            recordAgentProviderUsage('run-locally-rejected-hosted-usage', result, 'attempt-local-rejection');
+        });
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                undefined,
+                'mute the first track',
+                onProviderResult
+            )
+        ).rejects.toThrow('The model provider request failed.');
+
+        expect(onProviderResult).toHaveBeenCalledOnce();
+        expect(onProviderResult.mock.calls[0]?.[0]).toMatchObject({
+            status: 'failed',
+            output: { toolCalls: [] },
+            usage: {
+                inputTokens: 63,
+                outputTokens: 9,
+                cachedInputTokens: 5,
+                cacheWriteInputTokens: 8,
+                reasoningTokens: 5,
+                provenance: 'provider-reported',
+            },
+        });
+        expect(agentRunLifecycle.get('run-locally-rejected-hosted-usage')?.providerUsage).toHaveLength(1);
+        expect(agentRunLifecycle.get('run-locally-rejected-hosted-usage')?.providerUsage[0]).toMatchObject({
+            status: 'failed',
+            inputTokens: 63,
+            outputTokens: 9,
+            cachedInputTokens: 5,
+            cacheWriteInputTokens: 8,
+        });
+        expect(getProviderRouteView({ runId: 'run-locally-rejected-hosted-usage', candidates: [] })?.cost).toEqual([
+            {
+                category: 'remoteTokens',
+                reserved: 72,
+                actual: 72,
+                provenance: 'provider-reported',
+                final: true,
+            },
+        ]);
+    });
+
     it('attributes provider-reported usage from a rejected hosted tool plan to the reported result', async () => {
         mocks.backendChain.value = ['cloud'];
         mocks.getCloudProviderInfo.mockReturnValue({

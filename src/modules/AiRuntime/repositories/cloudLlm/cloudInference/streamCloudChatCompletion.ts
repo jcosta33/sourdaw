@@ -329,17 +329,20 @@ function readAnthropicUsageEvent(event: unknown, inputUsageState: AnthropicInput
     const accumulatedInputUsage = accumulateAnthropicInputUsage(inputUsageState, usageContainer);
     const inputUsage = accumulatedInputUsage.usage;
     const outputTokens = readNonNegativeInteger(usageContainer.output_tokens);
-    const reasoningTokens = isRecord(usageContainer.output_tokens_details)
-        ? readNonNegativeInteger(usageContainer.output_tokens_details.thinking_tokens)
+    const reasoningDetails = usageContainer.output_tokens_details;
+    const reasoningTokens = isRecord(reasoningDetails)
+        ? readNonNegativeInteger(reasoningDetails.thinking_tokens)
         : null;
     const unavailableCounters = [...accumulatedInputUsage.unavailableCounters];
     if (Object.hasOwn(usageContainer, 'output_tokens') && outputTokens === null) {
         unavailableCounters.push('outputTokens');
     }
     if (
-        isRecord(usageContainer.output_tokens_details) &&
-        Object.hasOwn(usageContainer.output_tokens_details, 'thinking_tokens') &&
-        reasoningTokens === null
+        Object.hasOwn(usageContainer, 'output_tokens_details') &&
+        (!isRecord(reasoningDetails) ||
+            (isRecord(reasoningDetails) &&
+                Object.hasOwn(reasoningDetails, 'thinking_tokens') &&
+                reasoningTokens === null))
     ) {
         unavailableCounters.push('reasoningTokens');
     }

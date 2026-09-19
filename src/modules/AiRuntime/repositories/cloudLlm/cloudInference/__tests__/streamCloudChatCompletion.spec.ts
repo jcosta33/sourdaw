@@ -26,6 +26,7 @@ type CloudStreamEvent =
                   output_tokens: number;
                   cache_creation_input_tokens?: number;
                   cache_read_input_tokens?: number;
+                  output_tokens_details?: unknown;
               };
           };
       }
@@ -41,7 +42,7 @@ type CloudStreamEvent =
               output_tokens: number;
               cache_creation_input_tokens?: number;
               cache_read_input_tokens?: number;
-              output_tokens_details?: { thinking_tokens: number };
+              output_tokens_details?: unknown;
           };
       }
     | { type: 'message_stop' }
@@ -439,6 +440,95 @@ describe('streamCloudChatCompletion', () => {
             type: 'usage',
             mode: 'final',
             usage: { inputTokens: null, outputTokens: 40, cachedInputTokens: null, reasoningTokens: 12 },
+            provenance: 'provider-reported',
+        });
+    });
+
+    it.each([
+        { name: 'omitted', outputTokensDetails: undefined, expectedReasoningTokens: 5 },
+        { name: 'null', outputTokensDetails: null, expectedReasoningTokens: null },
+        { name: 'a scalar', outputTokensDetails: 'invalid', expectedReasoningTokens: null },
+        { name: 'an array', outputTokensDetails: [], expectedReasoningTokens: null },
+    ])(
+        '$name final reasoning details preserve only an omitted prior count through the hosted result',
+        async ({ outputTokensDetails, expectedReasoningTokens }) => {
+            const finalUsage: { output_tokens: number; output_tokens_details?: unknown } = { output_tokens: 4 };
+            if (outputTokensDetails !== undefined) {
+                finalUsage.output_tokens_details = outputTokensDetails;
+            }
+            installAnthropicEvents([
+                {
+                    type: 'message_start',
+                    message: {
+                        usage: {
+                            input_tokens: 12,
+                            output_tokens: 0,
+                            output_tokens_details: { thinking_tokens: 5 },
+                        },
+                    },
+                },
+                {
+                    type: 'message_delta',
+                    delta: { stop_reason: 'end_turn', stop_sequence: null },
+                    usage: finalUsage,
+                },
+                { type: 'message_stop' },
+            ]);
+
+            const result = await streamHostedModelText({
+                correlationId: `anthropic-reasoning-${String(outputTokensDetails)}`,
+                messages: [{ role: 'user', content: 'Analyze the mix.' }],
+                maxOutputTokens: 1_000,
+                onToken: vi.fn(),
+            });
+
+            expect(result.usage).toEqual({
+                inputTokens: 12,
+                outputTokens: 4,
+                cachedInputTokens: null,
+                reasoningTokens: expectedReasoningTokens,
+                provenance: 'provider-reported',
+            });
+        }
+    );
+
+    it('recovers an unavailable reasoning count from a later valid hosted snapshot', async () => {
+        installAnthropicEvents([
+            {
+                type: 'message_start',
+                message: {
+                    usage: {
+                        input_tokens: 12,
+                        output_tokens: 0,
+                        output_tokens_details: { thinking_tokens: 5 },
+                    },
+                },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: null, stop_sequence: null },
+                usage: { output_tokens: 2, output_tokens_details: null },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn', stop_sequence: null },
+                usage: { output_tokens: 4, output_tokens_details: { thinking_tokens: 7 } },
+            },
+            { type: 'message_stop' },
+        ]);
+
+        const result = await streamHostedModelText({
+            correlationId: 'anthropic-reasoning-recovery',
+            messages: [{ role: 'user', content: 'Analyze the mix.' }],
+            maxOutputTokens: 1_000,
+            onToken: vi.fn(),
+        });
+
+        expect(result.usage).toEqual({
+            inputTokens: 12,
+            outputTokens: 4,
+            cachedInputTokens: null,
+            reasoningTokens: 7,
             provenance: 'provider-reported',
         });
     });
