@@ -77,7 +77,9 @@ test.describe('Timeline Navigation & Editing Surface', () => {
 
     const playheadBeats = async (page: import('@playwright/test').Page): Promise<number> => {
         const text = (await page.getByTestId('transport-playhead').textContent()) ?? '';
-        const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(text.trim());
+        // The readout prefixes the first segment with its unit label ("Bars2.4.000"); the
+        // spec's inverse of the display contract skips it and reads the three numbers.
+        const match = /^\D*(\d+)\.(\d+)\.(\d+)$/.exec(text.trim());
         if (match === null) {
             throw new Error(`playhead readout is not bar.beat.tick: "${text.trim()}"`);
         }
