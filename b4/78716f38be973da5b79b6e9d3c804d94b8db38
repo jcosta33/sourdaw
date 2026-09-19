@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/levelRequestGrounding.spec.ts
+  s_9e15f5b7ec3308::t_645e9d170cfa9d 301-352
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/classifyPromptDecibelFigures.ts
+  s_9e15f5b7ec3308::t_b452913f95ac45 60-62,66-69,72-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b478716f38be973da5b79b6e9d3c804d94b8db38",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
