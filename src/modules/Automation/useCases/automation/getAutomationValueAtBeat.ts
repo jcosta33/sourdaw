@@ -32,7 +32,7 @@ export function getAutomationValueAtBeat(
             _laneByIdCache.set(candidate.id, candidate);
         }
     }
-    return evaluateAutomationLaneAtBeat({
+    return evaluateAutomationLaneAtBeat<AutomationLane>({
         laneId,
         beat,
         getLane: (id) => _laneByIdCache.get(id),
