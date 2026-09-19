@@ -1,0 +1,21 @@
+scripts/__tests__/reviewDossier.spec.ts
+  s_f8dd370c3dbcd5::t_5b58e4faf0e821 267-356,551-587
+scripts/reviewDossier.ts
+  s_f8dd370c3dbcd5::t_781e88b6ba26a8 206-209,211-214,280,293-294,301,303,351,353
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a2191192422d3535a81c0b898e4305298334cc52",
+  "prompts": {},
+  "sessions": {
+    "s_f8dd370c3dbcd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a54ed9e2b334ab4e4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
