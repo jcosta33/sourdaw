@@ -103,7 +103,7 @@ export const NATIVE_DSP_DESCRIPTORS_GUIDANCE = [
                 0.5,
                 0.9,
                 [
-                    'size sets the space this smears within and density sets echo count: raise diffusion after size is set.',
+                    'size sets the space this smears within, and density scales the tank cross-coupling below its neutral default rather than adding echoes: raise diffusion after size is set.',
                 ],
                 ['Low diffusion can leave audible discrete echoes rather than a smooth wash.'],
                 NO_SOURCE_SPECIFIC_MODULATION

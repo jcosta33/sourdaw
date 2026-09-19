@@ -118,6 +118,69 @@ const INSTRUMENT_IDS_EXCLUDED = [
 /** Devices with too few parameters to name a sibling in their interactions. */
 const DEVICES_WITHOUT_A_SIBLING_PARAMETER = new Set(['builtin-gain']);
 
+/**
+ * Every `${descriptor.id}/${parameter.id}` whose authored `typicalRange`
+ * deliberately excludes the parameter's own `defaultValue`, with the one
+ * engineering reason the default sits outside the range musicians actually
+ * dial in. A parameter that starts excluding its default without a row here
+ * fails the census below; a row whose parameter no longer excludes its
+ * default (a stale entry) fails it too.
+ */
+const DEFAULT_EXCLUDING_WINDOWS: ReadonlyMap<string, string> = new Map([
+    [
+        'builtin-reverb/rev-predelay',
+        'The 10 ms default sits near zero separation; deliberately spacing the tail from the source calls for the longer, audible gap the window covers.',
+    ],
+    [
+        'builtin-reverb/rev-lowcut',
+        'The 80 Hz default is a minimal safety cut; carving audible mud out of the tail needs the higher, more deliberate cut the window covers.',
+    ],
+    [
+        'builtin-delay/delay-lowcut',
+        'The 80 Hz default is a minimal safety cut; thinning repeats out over time needs the higher, more deliberate cut the window covers.',
+    ],
+    [
+        'builtin-delay/delay-highcut',
+        'The 12000 Hz default leaves repeats almost unfiltered; deliberately darkening the echo trail for distance needs the lower corner the window covers.',
+    ],
+    [
+        'builtin-distortion/dist-output',
+        '0 dB is the neutral, untrimmed default; trimming only becomes necessary once dist-drive has added level, which is why the window sits below zero.',
+    ],
+    [
+        'builtin-bitcrusher/crush-rate',
+        'A rate of 1 applies no sample-rate reduction at all; any audible crushing starts above 1, which is what the window covers.',
+    ],
+    [
+        'builtin-convolution-reverb/conv-predelay',
+        'The 10 ms default sits near zero separation; deliberately spacing the impulse tail from the source calls for the longer gap the window covers.',
+    ],
+    [
+        'builtin-stereo-widener/width-mono-bass',
+        'The 200 Hz default is a cautious, wide safety net; tighter control over where bass content actually lives needs the lower crossover the window covers.',
+    ],
+    [
+        'builtin-lufs-meter/lufs-window',
+        'The momentary default (index 0) jitters too fast for a reliable read; mixing decisions read short-term or integrated, which is what the window covers.',
+    ],
+    [
+        'faust-zita-rev1-reverb/damping',
+        'The 6000 Hz default leaves the tail nearly unfiltered above the corner; audibly darkening a bright tail needs the lower corner the window covers.',
+    ],
+    [
+        'faust-noise-gate/hold',
+        'The 10 ms default hold is close to the minimum needed to avoid instant re-triggering; taming chatter on a decaying signal needs the longer window.',
+    ],
+    [
+        'faust-stereo-widener/mono_bass',
+        '0 Hz disables mono-bass summing entirely; a stable low end needs the real crossover the window covers.',
+    ],
+    [
+        'dutch-oven/high_cut',
+        'The 12000 Hz default leaves the tail nearly unfiltered; deliberately darkening a bright tail needs the lower, more audible cut the window covers.',
+    ],
+]);
+
 const EFFECT_DESCRIPTORS: readonly PluginDescriptor[] = [
     ...BUILTIN_EFFECT_DESCRIPTORS,
     ...NATIVE_DSP_DESCRIPTORS,
@@ -243,6 +306,51 @@ describe('authoredParameterGuidance', () => {
             }
         }
         expect(violations).toEqual([]);
+    });
+
+    it("every typicalRange that excludes the parameter's declared default is a deliberate, listed exception", () => {
+        const excludersMissingARow: string[] = [];
+        for (const descriptor of EFFECT_DESCRIPTORS) {
+            const guidance = requireGuidance(descriptor);
+            for (const parameter of descriptor.parameters) {
+                const parameterGuidance = guidance.parameters[parameter.id] as DeviceParameterGuidance;
+                const { typicalRange } = parameterGuidance;
+                const excludes =
+                    parameter.defaultValue < typicalRange.minimum || parameter.defaultValue > typicalRange.maximum;
+                if (excludes && !DEFAULT_EXCLUDING_WINDOWS.has(`${descriptor.id}/${parameter.id}`)) {
+                    excludersMissingARow.push(`${descriptor.id}/${parameter.id}`);
+                }
+            }
+        }
+        expect(excludersMissingARow).toEqual([]);
+
+        const parametersById = new Map<string, { descriptor: PluginDescriptor; parameterId: string }>();
+        for (const descriptor of EFFECT_DESCRIPTORS) {
+            for (const parameter of descriptor.parameters) {
+                parametersById.set(`${descriptor.id}/${parameter.id}`, { descriptor, parameterId: parameter.id });
+            }
+        }
+
+        const staleRows: string[] = [];
+        for (const key of DEFAULT_EXCLUDING_WINDOWS.keys()) {
+            const entry = parametersById.get(key);
+            if (!entry) {
+                staleRows.push(`${key}: no such censused parameter`);
+                continue;
+            }
+            const { descriptor, parameterId } = entry;
+            const guidance = requireGuidance(descriptor);
+            const parameter = descriptor.parameters.find((candidate) => candidate.id === parameterId);
+            const parameterGuidance = guidance.parameters[parameterId] as DeviceParameterGuidance;
+            const { typicalRange } = parameterGuidance;
+            const stillExcludes =
+                parameter !== undefined &&
+                (parameter.defaultValue < typicalRange.minimum || parameter.defaultValue > typicalRange.maximum);
+            if (!stillExcludes) {
+                staleRows.push(`${key}: no longer excludes its default`);
+            }
+        }
+        expect(staleRows).toEqual([]);
     });
 
     it('every parameter of every censused effect descriptor with a sibling names that sibling by id in its interactions', () => {

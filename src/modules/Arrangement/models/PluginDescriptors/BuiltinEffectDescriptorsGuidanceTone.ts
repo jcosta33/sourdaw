@@ -253,8 +253,8 @@ export const BUILTIN_EFFECT_DESCRIPTORS_GUIDANCE_TONE = [
             'crush-bits': parameterGuidance(
                 'Bitcrusher bit depth',
                 'Sets the quantization resolution, adding grit as it drops.',
-                3,
-                7,
+                4,
+                8,
                 [
                     'crush-rate sets the other axis of degradation alongside this: lower crush-bits before crush-rate for a controlled lo-fi texture.',
                 ],

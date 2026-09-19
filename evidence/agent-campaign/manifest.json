@@ -7,7 +7,7 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "9ff4ad8d481c1a82106a59b5b54353c9aac85c8b530aba763cc8f177bef79400"
+        "digest": "a36e2b562ae306965c911a4e8182b7ec3daf4644c4efba265c0b06bf2d2ea012"
     },
     "census": {
         "digest": "f61deb440af07e248b43f0ba740592ff0c1f6030bbbedde4d0601c58ed14f1da"

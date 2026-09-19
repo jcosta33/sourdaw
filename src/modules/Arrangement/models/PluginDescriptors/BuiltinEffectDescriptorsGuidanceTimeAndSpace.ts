@@ -118,9 +118,9 @@ export const BUILTIN_EFFECT_DESCRIPTORS_GUIDANCE_TIME_AND_SPACE = [
         {
             'conv-ir': parameterGuidance(
                 'Convolution impulse response selection',
-                'Chooses the captured space that colors the reverb character.',
-                0,
+                'Chooses the captured space that colors the reverb character, spanning the plate through studio-b rooms used most often in mixing.',
                 3,
+                7,
                 [
                     'conv-mix sets how audible this chosen space is: choose conv-ir before tuning conv-mix and the tone filters.',
                 ],

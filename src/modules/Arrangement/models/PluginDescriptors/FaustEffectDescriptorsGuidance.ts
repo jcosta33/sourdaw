@@ -41,7 +41,7 @@ export const FAUST_EFFECT_DESCRIPTORS_GUIDANCE = [
             2000,
             5000,
             [
-                'decay_time sets the overall tail length that damping shapes the brightness of: set decay_time before tuning damping.',
+                'decay_time sets only the low-frequency decay under the fixed 2 s mid-band tail, and damping shapes the brightness above its own corner: set decay_time before tuning damping.',
             ],
             ['High damping frequency on a long decay_time can leave a harsh, bright tail.'],
             NO_SOURCE_SPECIFIC_MODULATION
