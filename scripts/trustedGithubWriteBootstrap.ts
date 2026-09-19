@@ -1391,14 +1391,58 @@ function commandRequiresTrustedPowerShell(
     return platform === 'win32' && commandFencesItsLockOwner(command);
 }
 
-function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
+/**
+ * The launcher's snapshot is only as current as whatever process last fetched the primary's
+ * origin/main ref: run right after a lane merges, a launcher that resolves without fetching
+ * silently executes the pre-merge closure and reproduces failures the merge just fixed (#4436).
+ * Every resolution therefore fetches first, under the operator's ambient environment — the
+ * pre-trust window the delivery skill already treats as trusted — because the scrubbed
+ * read-only environment strips the credential helper a non-anonymous remote needs. A failed
+ * fetch never refuses the run: offline operation keeps working against the local ref, but
+ * never silently — the staleness risk and the fetch error are both reported.
+ */
+export type OriginFetchOutcome = { fresh: true } | { fresh: false; reason: string };
+
+export type OriginFetchSpawn = (
+    command: string,
+    args: string[],
+    options: { cwd: string; env: NodeJS.ProcessEnv }
+) => { status: number | null; stderr: string | undefined };
+
+export function fetchOriginMain(
+    input: { gitPath: string; primaryRoot: string },
+    spawn: OriginFetchSpawn = (command, args, options) => spawnSync(command, args, { ...options, encoding: 'utf8' })
+): OriginFetchOutcome {
+    const result = spawn(input.gitPath, ['fetch', 'origin', 'main'], {
+        cwd: input.primaryRoot,
+        env: process.env,
+    });
+    if (result.status === 0) {
+        return { fresh: true };
+    }
+    const detail = result.stderr?.trim();
+    if (detail !== undefined && detail !== '') {
+        return { fresh: false, reason: detail };
+    }
+    return { fresh: false, reason: `git fetch failed without diagnostics (exit ${result.status ?? 'signal'})` };
+}
+
+export function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
     return {
-        resolveOriginMain: () =>
-            captureGit(binding.primaryRoot, binding.gitPath, [
+        resolveOriginMain: () => {
+            const fetch = fetchOriginMain(binding);
+            if (!fetch.fresh) {
+                console.error(
+                    `cannot fetch origin/main (${fetch.reason}); the trusted snapshot may be stale — ` +
+                        'this run executes whatever refs/remotes/origin/main last fetched'
+                );
+            }
+            return captureGit(binding.primaryRoot, binding.gitPath, [
                 'rev-parse',
                 '--verify',
                 'refs/remotes/origin/main^{commit}',
-            ]).trim(),
+            ]).trim();
+        },
         readOriginSource: (commit, path) =>
             captureGit(binding.primaryRoot, binding.gitPath, ['show', `${commit}:${path}`]),
         executeSnapshot: (command, args, snapshot) =>
