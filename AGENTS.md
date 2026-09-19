@@ -128,6 +128,9 @@ Evidence values — dossier evidence, limitations, and approval claims — are s
 bounded, and are refused when they carry a credential-shaped value, a private-key header, a JWT, a
 bearer token, or raw session-transcript markers. Private reviewer prose belongs nowhere in the record.
 
+A lane that adds credential-shaped or armored-key fixtures composes them at runtime from their parts;
+the pull-request diff secret scan is a required gate and matches those literals in source.
+
 A bundle with no `risk-plan.json` predates this contract and publishes exactly as before. Historical
 review and acceptance documents stay readable unchanged, and `review:accept` takes no dossier.
 

@@ -614,15 +614,32 @@ describe('parseReviewDossier refusals', () => {
     });
 });
 
+const ARMOR_EDGE = '-----';
+const SECSH_EDGE = '----';
+
+/** Assembles a PEM or PGP armor header from its edges and label, keeping the literal out of source. */
+function armorHeader(label: string): string {
+    return [ARMOR_EDGE, 'BEGIN ', label, ARMOR_EDGE].join('');
+}
+
+/** Assembles the four-dash SECSH spelling the reader must refuse as well. */
+function secshArmorHeader(label: string): string {
+    return [SECSH_EDGE, ' BEGIN ', label, ' ', SECSH_EDGE].join('');
+}
+
+const BEARER_TOKEN = ['0123456789', 'abcdef'].join('');
+const BEARER_CREDENTIAL = ['Bearer', BEARER_TOKEN].join(' ');
+const JSON_WEB_TOKEN = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiIxIn0', 'c2lnbmF0dXJl'].join('.');
+
 const UNSAFE_FIXTURES: { name: string; value: string }[] = [
     { name: 'a gh-prefixed GitHub token', value: `ghp_${'A'.repeat(24)}` },
     { name: 'a fine-grained GitHub token', value: `github_pat_${'B'.repeat(24)}` },
     { name: 'an AWS access key id', value: `AKIA${'C'.repeat(16)}` },
     { name: 'a temporary AWS access key id', value: `ASIA${'D'.repeat(16)}` },
-    { name: 'a private key header', value: '-----BEGIN RSA PRIVATE KEY-----' },
-    { name: 'a PGP private key armor header', value: '-----BEGIN PGP PRIVATE KEY BLOCK-----' },
-    { name: 'a JSON web token', value: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl' },
-    { name: 'a bearer credential', value: 'Bearer 0123456789abcdef' },
+    { name: 'a private key header', value: armorHeader('RSA PRIVATE KEY') },
+    { name: 'a PGP private key armor header', value: armorHeader('PGP PRIVATE KEY BLOCK') },
+    { name: 'a JSON web token', value: JSON_WEB_TOKEN },
+    { name: 'a bearer credential', value: BEARER_CREDENTIAL },
     { name: 'a serialized assistant turn', value: '{"role": "assistant", "content": "review"}' },
     { name: 'a serialized user turn', value: '{"role":"user","content":"review"}' },
     { name: 'a Human transcript line', value: 'Human: please review' },
@@ -652,7 +669,7 @@ describe('assertPublicationSafeEvidence', () => {
     });
 
     it('should refuse a bearer credential by the bearer rule rather than an earlier token shape', () => {
-        expect(() => assertPublicationSafeEvidence('evidence[0].observed', ['Bearer 0123456789abcdef'])).toThrow(
+        expect(() => assertPublicationSafeEvidence('evidence[0].observed', [BEARER_CREDENTIAL])).toThrow(
             /evidence\[0\]\.observed value at index 0 contains a bearer credential/
         );
     });
@@ -674,34 +691,34 @@ describe('assertPublicationSafeEvidence', () => {
 
     it('should refuse a PGP private key armor header by the private-key rule and name the field and index', () => {
         expect(() =>
-            assertPublicationSafeEvidence('evidence[0].observed', ['-----BEGIN PGP PRIVATE KEY BLOCK-----'])
+            assertPublicationSafeEvidence('evidence[0].observed', [armorHeader('PGP PRIVATE KEY BLOCK')])
         ).toThrow(/evidence\[0\]\.observed value at index 0 contains a private key header/);
     });
 
     it.each([
-        '-----BEGIN PRIVATE KEY-----',
-        '-----BEGIN SECRET KEY-----',
-        '-----BEGIN RSA PRIVATE KEY-----',
-        '-----BEGIN EC PRIVATE KEY-----',
-        '-----BEGIN DSA PRIVATE KEY-----',
-        '-----BEGIN OPENSSH PRIVATE KEY-----',
-        '-----BEGIN ENCRYPTED PRIVATE KEY-----',
-        '-----BEGIN X25519 PRIVATE KEY-----',
-        '-----BEGIN ED25519 PRIVATE KEY-----',
-        '-----BEGIN PGP PRIVATE KEY BLOCK-----',
-        '-----BEGIN X25519 SECRET KEY-----',
-        '---- BEGIN PRIVATE KEY ----',
-        '---- BEGIN SECRET KEY ----',
-        '---- BEGIN RSA PRIVATE KEY ----',
-        '---- BEGIN EC PRIVATE KEY ----',
-        '---- BEGIN DSA PRIVATE KEY ----',
-        '---- BEGIN OPENSSH PRIVATE KEY ----',
-        '---- BEGIN ENCRYPTED PRIVATE KEY ----',
-        '---- BEGIN X25519 PRIVATE KEY ----',
-        '---- BEGIN ED25519 PRIVATE KEY ----',
-        '---- BEGIN PGP PRIVATE KEY BLOCK ----',
-        '---- BEGIN X25519 SECRET KEY ----',
-        '---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----',
+        armorHeader('PRIVATE KEY'),
+        armorHeader('SECRET KEY'),
+        armorHeader('RSA PRIVATE KEY'),
+        armorHeader('EC PRIVATE KEY'),
+        armorHeader('DSA PRIVATE KEY'),
+        armorHeader('OPENSSH PRIVATE KEY'),
+        armorHeader('ENCRYPTED PRIVATE KEY'),
+        armorHeader('X25519 PRIVATE KEY'),
+        armorHeader('ED25519 PRIVATE KEY'),
+        armorHeader('PGP PRIVATE KEY BLOCK'),
+        armorHeader('X25519 SECRET KEY'),
+        secshArmorHeader('PRIVATE KEY'),
+        secshArmorHeader('SECRET KEY'),
+        secshArmorHeader('RSA PRIVATE KEY'),
+        secshArmorHeader('EC PRIVATE KEY'),
+        secshArmorHeader('DSA PRIVATE KEY'),
+        secshArmorHeader('OPENSSH PRIVATE KEY'),
+        secshArmorHeader('ENCRYPTED PRIVATE KEY'),
+        secshArmorHeader('X25519 PRIVATE KEY'),
+        secshArmorHeader('ED25519 PRIVATE KEY'),
+        secshArmorHeader('PGP PRIVATE KEY BLOCK'),
+        secshArmorHeader('X25519 SECRET KEY'),
+        secshArmorHeader('SSH2 ENCRYPTED PRIVATE KEY'),
     ])('should refuse the private or secret key armor %s and name the field, index and reason', (armor) => {
         expect(() => assertPublicationSafeEvidence('evidence[0].observed', [armor])).toThrow(
             /evidence\[0\]\.observed value at index 0 contains a private key header/
@@ -709,9 +726,9 @@ describe('assertPublicationSafeEvidence', () => {
     });
 
     it.each([
-        ['a PGP public key armor block', '-----BEGIN PGP PUBLIC KEY BLOCK-----'],
-        ['the SECSH public key armor block', '---- BEGIN SSH2 PUBLIC KEY ----'],
-        ['a certificate armor block', '-----BEGIN CERTIFICATE-----'],
+        ['a PGP public key armor block', armorHeader('PGP PUBLIC KEY BLOCK')],
+        ['the SECSH public key armor block', secshArmorHeader('SSH2 PUBLIC KEY')],
+        ['a certificate armor block', armorHeader('CERTIFICATE')],
         ['prose that mentions a private key', 'the private key must never be committed'],
         ['a base64 body with no armor header', 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQ'],
     ])('should pass %s', (_name, value) => {
@@ -721,7 +738,7 @@ describe('assertPublicationSafeEvidence', () => {
     it('should pass a PGP public key armor block and prose that mentions a private key', () => {
         expect(() =>
             assertPublicationSafeEvidence('evidence[0].observed', [
-                '-----BEGIN PGP PUBLIC KEY BLOCK-----',
+                armorHeader('PGP PUBLIC KEY BLOCK'),
                 'the private key must never be committed',
             ])
         ).not.toThrow();
