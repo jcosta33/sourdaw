@@ -10,12 +10,15 @@ import {
     isProcessAlive,
     parsePrepareReviewArgs,
     prepareReview,
+    readReviewBundleContext,
     reviewBundlePath,
     shellPort,
     sweepStaleBundleSiblings,
     type PrepareReviewPort,
     type ReviewPullRequest,
 } from '../prepareReview.ts';
+import { formatReviewDiffSummary, summarizeReviewDiff } from '../reviewDiffSummary.ts';
+import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
 import type { GhSession } from '../githubAppIdentity.ts';
 
@@ -106,6 +109,7 @@ describe('review prepare', () => {
                     'manifest.json',
                     'pr.md',
                     'review-size.json',
+                    'risk-plan.json',
                 ],
             });
             expect(JSON.parse(files['review-size.json'] ?? '{}')).toMatchObject({
@@ -130,6 +134,61 @@ describe('review prepare', () => {
             expect(calls.some((call) => call.includes('worktree') || call.includes('agent-'))).toBe(false);
             expect(JSON.stringify(files)).not.toContain('ghs_');
             expect(JSON.stringify(files)).not.toContain('BEGIN RSA');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('writes a risk plan for the reviewed head and records it as generated', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port } = fakePort(root);
+        try {
+            const destination = prepareReview(42, port);
+            const plan = parseReviewRiskPlan(JSON.parse(readFileSync(join(destination, 'risk-plan.json'), 'utf8')));
+
+            expect(plan.format).toBe('risk-plan-v1');
+            expect(plan.pr).toBe(42);
+            expect(plan.headSha).toBe('headsha');
+            expect(plan.baseSha).toBe('mergebasesha');
+            expect(plan.riskClasses).toEqual(['small']);
+            expect(plan.requiredStances).toEqual(['correctness', 'test-validity']);
+            expect(JSON.parse(readFileSync(join(destination, 'manifest.json'), 'utf8'))).toMatchObject({
+                generated: expect.arrayContaining(['risk-plan.json']),
+            });
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('binds the risk plan to the same pr, headSha, and baseSha the manifest records', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port } = fakePort(root);
+        try {
+            const destination = prepareReview(42, port);
+            const plan = parseReviewRiskPlan(JSON.parse(readFileSync(join(destination, 'risk-plan.json'), 'utf8')));
+            const context = readReviewBundleContext(destination);
+
+            expect({ pr: plan.pr, headSha: plan.headSha, baseSha: plan.baseSha }).toEqual({
+                pr: context.pr,
+                headSha: context.headSha,
+                baseSha: context.baseSha,
+            });
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('leaves review-size.json byte-identical to the diff summary for the same numstat', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port } = fakePort(root);
+        const numstat = Buffer.from(['4\t1\tsrc/app.ts', '2\t2\tscripts/__tests__/app.spec.ts', ''].join('\0'));
+        port.numstat = () => numstat;
+        try {
+            const destination = prepareReview(42, port);
+
+            expect(readFileSync(join(destination, 'review-size.json'), 'utf8')).toBe(
+                `${formatReviewDiffSummary(summarizeReviewDiff(root, numstat))}\n`
+            );
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -218,6 +277,36 @@ describe('review prepare', () => {
 
             expect(() => prepareReview(42, port)).not.toThrow();
             expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller review\n');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves a caller-written dossier.json across a re-preparation of the same head', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port } = fakePort(root);
+        try {
+            const destination = prepareReview(42, port);
+            writeFileSync(join(destination, 'dossier.json'), 'caller dossier\n');
+            port.pullRequest = () => pullRequest({ baseRefOid: 'new-main-tip' });
+
+            expect(() => prepareReview(42, port)).not.toThrow();
+            expect(readFileSync(join(destination, 'dossier.json'), 'utf8')).toBe('caller dossier\n');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses to replace a same-head bundle whose only caller document is dossier.json', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port } = fakePort(root);
+        try {
+            const destination = prepareReview(42, port);
+            writeFileSync(join(destination, 'dossier.json'), 'caller dossier\n');
+            port.mergeBase = () => 'different-merge-base';
+
+            expect(() => prepareReview(42, port)).toThrow('review bundle context changed');
+            expect(readFileSync(join(destination, 'dossier.json'), 'utf8')).toBe('caller dossier\n');
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -362,6 +451,26 @@ describe('review prepare', () => {
 
             expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
             expect(existsSync(join(destination, 'contracts', '.agents', 'decisions', '0027-doomed.md'))).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves a root dossier.json but treats a nested contracts/dossier.json as generated', () => {
+        // dossier.json is a caller document at the bundle root only: the caller names it, but with no
+        // previous manifest recording what a run generated, classification still falls back to
+        // position, so a nested dossier.json is dropped rather than carried forward.
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+        const destination = join(root, '42-head');
+        try {
+            mkdirSync(join(destination, 'contracts'), { recursive: true });
+            writeFileSync(join(destination, 'dossier.json'), 'caller dossier\n');
+            writeFileSync(join(destination, 'contracts', 'dossier.json'), 'nested dossier\n');
+
+            installBundleAtomically(destination, { 'manifest.json': '{"pr":42,"headSha":"new"}\n' });
+
+            expect(readFileSync(join(destination, 'dossier.json'), 'utf8')).toBe('caller dossier\n');
+            expect(existsSync(join(destination, 'contracts', 'dossier.json'))).toBe(false);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
