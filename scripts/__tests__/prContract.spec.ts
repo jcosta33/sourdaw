@@ -975,6 +975,24 @@ describe('product-scope test instructions', () => {
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
+    it('passes a single-quoted leading launch teaching its observation', () => {
+        // The peel must treat both quote kinds as the launch's shell, so the observation after a
+        // single-quoted launch rescues the segment exactly as the backtick spelling does.
+        const step = "'pnpm dev' and drag a clip onto a lane, it lands quantized";
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('passes a reopened argument run that ends at an observation cue', () => {
+        // The reopen rule keeps quoting through a chained head; the run still ends at the first
+        // cue word, so a chained launch teaching a real observation passes.
+        const step = 'pnpm exec playwright open the app and see the mixer render';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
     it('refuses a filler word joining two commands mid-segment', () => {
         const joined = 'pnpm typecheck and then pnpm lint';
 
