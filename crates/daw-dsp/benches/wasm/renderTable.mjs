@@ -78,8 +78,8 @@
  * @property {[string, number][]} audioThread
  * @property {([string, number][] | undefined)} worker
  * @property {number} audioFloorMs
- * @property {number} audioFloorPartialFrom
- * @property {number[]} audioUpperBoundMs
+ * @property {string[]} audioFloorPartialFrom
+ * @property {number} audioUpperBoundMs
  * @property {number} audioWorstQuantumUpperMs
  * @property {number} meanLoad
  * @property {number} workerFloorMs
@@ -90,8 +90,8 @@
  * @typedef {object} TableMachine
  * @property {string} cpu
  * @property {number} logicalCores
- * @property {number} performanceCores
- * @property {number} efficiencyCores
+ * @property {string} performanceCores
+ * @property {string} efficiencyCores
  * @property {number} memoryGb
  * @property {string} hardwareModel
  * @property {string} os
