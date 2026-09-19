@@ -1,0 +1,24 @@
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  h_1228e573df1f42 32,137,158-170,339-359,428-429,441-464
+scripts/__tests__/repairReviewFinding.spec.ts
+  h_1228e573df1f42 444-452
+scripts/__tests__/reviewRepair.spec.ts
+  h_1228e573df1f42 3-4,26,381-445,584-611
+scripts/confirmReviewRepairs.ts
+  h_1228e573df1f42 35,157,159,175,177-183,190-203,302,305
+scripts/repairReviewFinding.ts
+  h_1228e573df1f42 33,359-361,393,395
+scripts/reviewRepair.ts
+  h_1228e573df1f42 41-47,381-383
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3cbb4505b83c535192d5cb8447b9836bec6ce3af",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
