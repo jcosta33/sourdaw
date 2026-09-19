@@ -1,0 +1,21 @@
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  s_9e15f5b7ec3308::t_b1bcc1b54e96de 17,54-55,754-767,787-788,933-981,1306,1309,1312-1313,1324,1327,1330-1331
+scripts/__tests__/repairReviewFinding.spec.ts
+  s_9e15f5b7ec3308::t_b316c979ea56e4 46-47,739-773
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c9d72b054ab0d550a2651ce036b18681c61e3e42",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
