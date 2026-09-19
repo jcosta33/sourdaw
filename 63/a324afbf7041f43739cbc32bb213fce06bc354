@@ -1,0 +1,32 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_1228e573df1f42 173-175,207-209,257-260,262-264
+AGENTS.md
+  h_1228e573df1f42 83-86,93-94,99-102,139-142,146-147
+scripts/__tests__/publishReview.spec.ts
+  h_1228e573df1f42 5009,5043,5289-5431
+scripts/__tests__/reviewDossier.spec.ts
+  h_1228e573df1f42 374-442,498-516,765-819
+scripts/__tests__/reviewDossierPublication.spec.ts
+  h_1228e573df1f42 202,227-242,309,874-958
+scripts/__tests__/reviewerModelDiversity.spec.ts
+  h_1228e573df1f42 279-377,379-393,478
+scripts/publishReview.ts
+  h_1228e573df1f42 56,315-317
+scripts/reviewDossier.ts
+  h_1228e573df1f42 34-43,45,274,286-289,313-318,364,370-375,380,416,423-427,685,693
+scripts/reviewDossierPublication.ts
+  h_1228e573df1f42 9-10,14-15,28,38-39,142,149-154,156,158-159,161,169-173,222-224,269,280-298,300,305-306,308-309,327-339,371-375
+scripts/reviewerModelDiversity.ts
+  h_1228e573df1f42 16,30-37,53,60-62,66,74-77,80,86-88,93,125-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "63a324afbf7041f43739cbc32bb213fce06bc354",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
