@@ -16,6 +16,7 @@ import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+    AUTHOR_BOT_COMMIT_EMAIL,
     AUTHOR_LOCK_REASON,
     GITHUB_HTTPS_REMOTE,
     ORCHESTRATOR_USER_NODE_ID,
@@ -126,13 +127,26 @@ function initializeRepository(path: string): void {
     fixtureGit(path, ['config', 'user.email', 'fixture@example.com']);
 }
 
+/**
+ * A lane a publish accepts is one whose delta the authorship gate passes, so the fixture lanes
+ * commit as the author App — the identity `lane:open` stamps into real lanes.
+ */
 function addLockedLane(primary: string, lane: string, branch: string, changedPath: string): string {
     fixtureGit(primary, ['worktree', 'add', '-b', branch, lane]);
     const target = join(lane, changedPath);
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, 'change\n');
     fixtureGit(lane, ['add', '--', changedPath]);
-    fixtureGit(lane, ['commit', '--no-gpg-sign', '-m', 'fix(delivery): fixture lane']);
+    execFileSync('git', ['commit', '--no-gpg-sign', '-m', 'fix(delivery): fixture lane'], {
+        cwd: lane,
+        env: fixtureGitEnv({
+            GIT_AUTHOR_NAME: 'hplovecraft208[bot]',
+            GIT_AUTHOR_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+            GIT_COMMITTER_NAME: 'hplovecraft208[bot]',
+            GIT_COMMITTER_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+        }),
+        encoding: 'utf8',
+    });
     fixtureGit(primary, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, lane]);
     return fixtureGit(lane, ['rev-parse', 'HEAD']);
 }
@@ -164,6 +178,8 @@ type FakeInput = {
     dirty?: boolean;
     /** `null` stands for a lane with no non-merge commit of its own above `origin/main`. */
     subject?: string | null;
+    /** Author emails the publish delta's `git log --format=%ae` read answers; defaults to the bot. */
+    commitEmails?: string[];
     headSha?: string;
     baseSha?: string;
     remoteSha?: string;
@@ -218,6 +234,7 @@ function fakePort(input: FakeInput = {}) {
         aheadBehind: () => ({ ahead: input.ahead ?? 1, behind: input.behind ?? 0 }),
         dirty: () => dirty,
         laneSubject: () => subject,
+        commitAuthorEmails: () => input.commitEmails ?? [AUTHOR_BOT_COMMIT_EMAIL],
         headSha: () => input.headSha ?? 'abc',
         remoteBranchSha: () => input.remoteSha,
         isAncestor: () => input.ancestor ?? true,
@@ -500,6 +517,11 @@ const REFUSED_PUBLISH_CASES: Array<[string, FakeInput, RegExp]> = [
         /agent\/12\/work carries no non-merge commit above origin\/main/,
     ],
     ['diverged remote', { remoteSha: 'other', ancestor: false }, /refusing non-fast-forward push of agent\/12\/work/],
+    [
+        'a human-authored push delta',
+        { commitEmails: ['fixture-author@example.com'] },
+        /carries commits above base authored as fixture-author@example\.com/,
+    ],
 ];
 
 describe('lane publish', () => {
@@ -3485,5 +3507,146 @@ describe('lane publish', () => {
             expect(calls).toContain('push:agent/12/work');
             expect(calls.some((call) => call.startsWith('create:'))).toBe(true);
         });
+    });
+});
+
+/**
+ * The authorship gate is pinned against real Git so its delta semantics cannot drift from what the
+ * push actually writes: a bare remote stands in for GitHub through `url.<remote>.insteadOf`, the
+ * same substitution the push tests above use, and every git-backed port member is the real
+ * `shellPort` one. Only the GitHub reads and writes are faked.
+ */
+describe('push delta authorship gate', () => {
+    const BRANCH = 'agent/12/authorship';
+    const HUMAN_EMAIL = 'fixture@example.com';
+
+    function commitInLane(lane: string, filename: string, message: string, author: 'bot' | 'human'): string {
+        writeFileSync(join(lane, filename), `${filename}\n`);
+        fixtureGit(lane, ['add', '--', filename]);
+        const overrides: NodeJS.ProcessEnv =
+            author === 'bot'
+                ? {
+                      GIT_AUTHOR_NAME: 'hplovecraft208[bot]',
+                      GIT_AUTHOR_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+                      GIT_COMMITTER_NAME: 'hplovecraft208[bot]',
+                      GIT_COMMITTER_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+                  }
+                : {};
+        execFileSync('git', ['commit', '--no-gpg-sign', '-m', message], {
+            cwd: lane,
+            env: fixtureGitEnv(overrides),
+            encoding: 'utf8',
+        });
+        return fixtureGit(lane, ['rev-parse', 'HEAD']);
+    }
+
+    function authorshipFixture(): {
+        fixtureRoot: string;
+        primary: string;
+        lane: string;
+        remote: string;
+        baseSha: string;
+        port: PublishLanePort;
+        session: GhSession;
+    } {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-authorship-'));
+        const primary = join(fixtureRoot, 'primary');
+        const lane = join(fixtureRoot, 'lane');
+        const remote = join(fixtureRoot, 'remote.git');
+        const systemGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+        mkdirSync(primary, { recursive: true });
+        fixtureGit(primary, ['init', '-b', 'main']);
+        fixtureGit(primary, ['config', 'user.name', 'Fixture']);
+        fixtureGit(primary, ['config', 'user.email', HUMAN_EMAIL]);
+        writeFileSync(join(primary, 'base.txt'), 'base\n');
+        fixtureGit(primary, ['add', 'base.txt']);
+        fixtureGit(primary, ['commit', '--no-gpg-sign', '-m', 'chore: authorship fixture base']);
+        const baseSha = fixtureGit(primary, ['rev-parse', 'HEAD']);
+        fixtureGit(primary, ['worktree', 'add', '-b', BRANCH, lane]);
+        fixtureGit(primary, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, lane]);
+        execFileSync(systemGit, ['init', '--bare', remote], {
+            cwd: fixtureRoot,
+            env: fixtureGitEnv(),
+            encoding: 'utf8',
+        });
+        fixtureGit(primary, ['push', remote, 'main']);
+        fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
+        fixtureGit(primary, ['config', `branch.${BRANCH}.sourdaw-author-model`, 'glm-5.3']);
+        const session = createGhSession('ghs_authorship_marker', { PATH: process.env.PATH });
+        const port: PublishLanePort = {
+            ...shellPort(session, lane, primary, { git: systemGit, gh: 'gh' }),
+            issueExists: () => true,
+            existingOpenPullRequest: () => undefined,
+            createPullRequest: () => 88,
+            updatePullRequest: () => undefined,
+            readPullRequestMergeability: () => 'mergeable',
+            ensureModelLabel: () => undefined,
+            readIssueTrackerMetadata: () => trackerMetadataFromIssueRow({}),
+            openMilestoneTitles: () => [],
+            knownProjectTitles: () => {
+                throw new Error('fixture holds no operator credential');
+            },
+            knownLabels: () => [],
+            readPullRequestMetadata: () => ({ labels: [], fencedAuthorLabels: [] }),
+            readPullRequestProjectTitles: () => [],
+            applyPullRequestMetadata: () => undefined,
+        };
+        return { fixtureRoot, primary, lane, remote, baseSha, port, session };
+    }
+
+    function dispose(fixture: ReturnType<typeof authorshipFixture>): void {
+        fixture.session.dispose();
+        rmSync(fixture.fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+    }
+
+    it('publishes a delta whose every commit is authored as the author App', () => {
+        const f = authorshipFixture();
+        try {
+            commitInLane(f.lane, 'one.txt', 'feat(gate): first bot commit', 'bot');
+            const head = commitInLane(f.lane, 'two.txt', 'feat(gate): second bot commit', 'bot');
+
+            expect(publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            expect(fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toBe(head);
+        } finally {
+            dispose(f);
+        }
+    });
+
+    it('refuses a delta carrying a human-authored commit before anything reaches the remote', () => {
+        const f = authorshipFixture();
+        try {
+            commitInLane(f.lane, 'one.txt', 'feat(gate): bot commit', 'bot');
+            commitInLane(f.lane, 'two.txt', 'feat(gate): human commit', 'human');
+
+            const message = refusalMessage(() =>
+                publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)
+            );
+
+            expect(message).toContain(`authored as ${HUMAN_EMAIL}`);
+            expect(message).toContain('pnpm lane:identity');
+            expect(message).toContain("git rebase --exec 'git commit --amend --reset-author --no-edit'");
+            expect(() => fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toThrow();
+        } finally {
+            dispose(f);
+        }
+    });
+
+    it('publishes when only the new delta is bot-authored and the remote tip holds human commits', () => {
+        const f = authorshipFixture();
+        try {
+            const humanTip = commitInLane(f.lane, 'one.txt', 'feat(gate): human commit', 'human');
+            fixtureGit(f.primary, ['push', f.remote, `${humanTip}:refs/heads/${BRANCH}`]);
+            const head = commitInLane(f.lane, 'two.txt', 'feat(gate): bot commit on top', 'bot');
+            // The full range above origin/main is deliberately not all-bot, so success below can
+            // only come from gating the remote tip..head delta rather than the whole branch.
+            expect(fixtureGit(f.lane, ['log', '--format=%ae', `${f.baseSha}..${head}`])).toContain(HUMAN_EMAIL);
+
+            expect(publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            expect(fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toBe(head);
+        } finally {
+            dispose(f);
+        }
     });
 });

@@ -5,6 +5,8 @@ import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+    AUTHOR_BOT_COMMIT_EMAIL,
+    AUTHOR_BOT_COMMIT_NAME,
     AUTHOR_BOT_NODE_ID,
     AUTHOR_LOCK_REASON,
     GITHUB_HTTPS_REMOTE,
@@ -532,6 +534,8 @@ export type PublishLanePort = {
     aheadBehind: (lane: string, baseSha: string, headSha: string) => { ahead: number; behind: number };
     dirty: (lane: string) => boolean;
     laneSubject: (lane: string, baseSha: string, headSha: string) => string | undefined;
+    /** Author emails of every commit in `base..head`, merges included, read in the lane itself. */
+    commitAuthorEmails: (lane: string, baseSha: string, headSha: string) => string[];
     headSha: (lane: string) => string;
     remoteBranchSha: (branch: string) => string | undefined;
     isAncestor: (ancestorSha: string, descendantSha: string, lane: string) => boolean;
@@ -921,6 +925,32 @@ export const NO_LANE_SUBJECT_FAILURE =
     'carries no non-merge commit above origin/main: commit the lane work with a conventional subject (type(scope): subject) before publishing';
 
 /**
+ * Gate exactly the commits this publication adds to the remote: `remoteTip..head` when the branch
+ * already exists remotely at an ancestor of head, else the same resolved base the lane subject
+ * derives from, so a stack child gates its own delta rather than its parent's. Every commit in the
+ * range, merges included, must carry the author App's commit email — the identity lane worktrees
+ * are stamped with at open — and the refusal names each offending address and the re-authoring
+ * route for commits the remote does not have yet.
+ */
+function assertBotAuthoredDelta(lane: ResolvedLane, deltaBase: string, headSha: string, port: PublishLanePort): void {
+    const offending = [
+        ...new Set(
+            port.commitAuthorEmails(lane.path, deltaBase, headSha).filter((email) => email !== AUTHOR_BOT_COMMIT_EMAIL)
+        ),
+    ];
+    if (offending.length === 0) {
+        return;
+    }
+    fail(
+        `${lane.branch} carries commits above ${deltaBase} authored as ${offending.join(', ')}: lane commits ` +
+            `must be authored as ${AUTHOR_BOT_COMMIT_NAME} <${AUTHOR_BOT_COMMIT_EMAIL}> through the lane ` +
+            "worktree's stamped identity. For commits the remote does not have yet, restamp the lane with " +
+            'pnpm lane:identity, then re-author the delta with ' +
+            `git rebase --exec 'git commit --amend --reset-author --no-edit' ${deltaBase}`
+    );
+}
+
+/**
  * `git merge-tree --write-tree --name-only` writes the merged tree's object id, then one line per
  * conflicted path, then a blank line before its human-readable conflict commentary. Only the path
  * block names conflicts; the commentary repeats them with explanations, so the parse stops at the
@@ -1090,6 +1120,10 @@ export function publishLane(
     if (remoteSha !== undefined && !port.isAncestor(remoteSha, headSha, lane.path)) {
         fail(`refusing non-fast-forward push of ${lane.branch}`);
     }
+    // The refusal above proved a present remote tip an ancestor of head, so the delta is exactly
+    // the remote tip..head when the branch exists remotely, and the lane-subject range otherwise.
+    // This runs before every remote write, with the rest of the pre-push refusal set.
+    assertBotAuthoredDelta(lane, remoteSha ?? comparisonHead, headSha, port);
     if (port.baseSha() !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
     }
@@ -1517,6 +1551,22 @@ function laneSubjectArgs(baseSha: string, headSha: string): string[] {
     return ['log', '-1', '--format=%s', '--no-merges', `${baseSha}..${headSha}`];
 }
 
+/** The authorship gate's read: every commit, merges included, between the delta base and the head. */
+function commitAuthorEmailArgs(baseSha: string, headSha: string): string[] {
+    return ['log', '--format=%ae', `${baseSha}..${headSha}`];
+}
+
+function readCommitAuthorEmails(
+    lane: string,
+    baseSha: string,
+    headSha: string,
+    capture: (args: string[], cwd: string) => string
+): string[] {
+    return capture(commitAuthorEmailArgs(baseSha, headSha), lane)
+        .split('\n')
+        .filter((email) => email !== '');
+}
+
 /**
  * The verified operator credential, opened on its first project read and reused for the rest of the
  * publish. Opening it lazily keeps every publish that touches no board — a legacy lane, an
@@ -1641,6 +1691,10 @@ export function shellPort(
         laneSubject: (lane, baseSha, headSha) =>
             spawnCapture(executables.git, laneSubjectArgs(baseSha, headSha), { cwd: lane, env: session.env }) ||
             undefined,
+        commitAuthorEmails: (lane, baseSha, headSha) =>
+            readCommitAuthorEmails(lane, baseSha, headSha, (args, cwd) =>
+                spawnCapture(executables.git, args, { cwd, env: session.env })
+            ),
         headSha: (lane) => spawnCapture(executables.git, ['rev-parse', 'HEAD'], { cwd: lane, env: session.env }),
         remoteBranchSha: (branch) => {
             const output = git(['ls-remote', GITHUB_HTTPS_REMOTE, `refs/heads/${branch}`], primaryRoot);

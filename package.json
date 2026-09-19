@@ -49,6 +49,7 @@
         "lane:sync-parent": "node scripts/trustedGithubWriteBootstrap.ts lane:sync-parent",
         "lane:remove": "node scripts/removeLane.ts",
         "lane:strand": "node scripts/removeLane.ts --strand",
+        "lane:identity": "node scripts/stampLaneIdentity.ts",
         "lane:prune": "node scripts/pruneLane.ts",
         "review:prepare": "node scripts/prepareReview.ts",
         "review:accept": "node scripts/trustedGithubWriteBootstrap.ts review:accept",
