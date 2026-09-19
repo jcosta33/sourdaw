@@ -1,0 +1,16 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/scheduleTrackAutomationFixture.ts
+  h_1228e573df1f42 63-88,106-113
+tests/e2e/builtinDeviceAutomationOffline.spec.ts
+  h_1228e573df1f42 230-233
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cd262d914c367672362abcbe5eb9b668ec342144",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
