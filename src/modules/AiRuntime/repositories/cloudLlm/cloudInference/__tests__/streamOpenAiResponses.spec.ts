@@ -12,12 +12,12 @@ vi.mock('../requestOpenAiProvider', () => ({
 
 const RESPONSE_ID = 'resp_9f27';
 
-function createRuntime(model: string): OpenAiCloudRuntime {
-    return {
-        provider: 'openai',
+function createRuntime(model: string, reasoningEffort?: OpenAiCloudRuntime['reasoning_effort']): OpenAiCloudRuntime {
+    const runtime = {
+        provider: 'openai' as const,
         model,
         base_url: 'https://api.openai.com/v1',
-        authentication: 'api-key',
+        authentication: 'api-key' as const,
         adapter: compileProviderAdapterInstallation({
             adapterId: OPENAI_RESPONSES_ADAPTER_ID,
             providerId: 'openai',
@@ -27,6 +27,7 @@ function createRuntime(model: string): OpenAiCloudRuntime {
         }),
         session_id: `provider-session-${'0'.repeat(32)}`,
     };
+    return reasoningEffort !== undefined ? { ...runtime, reasoning_effort: reasoningEffort } : runtime;
 }
 
 const runtime = createRuntime('gpt-4-turbo');
@@ -120,22 +121,43 @@ describe('streamOpenAiResponses', () => {
         expect(readSentBody()).not.toHaveProperty('instructions');
     });
 
-    it.each(['gpt-5.6-luna', 'gpt-4-turbo'])('gates reasoning effort on the gpt-5.6 family (%s)', async (model) => {
+    it('defaults reasoning effort to none for the gpt-5.6 family when unconfigured', async () => {
         respondWith([created(), completed()].join(''));
 
         await streamOpenAiResponses({
-            runtime: createRuntime(model),
+            runtime: createRuntime('gpt-5.6-luna'),
             messages: [{ role: 'user', content: 'hi' }],
             onToken: vi.fn(),
             signal: new AbortController().signal,
         });
 
-        const body = readSentBody();
-        if (model === 'gpt-5.6-luna') {
-            expect(body).toMatchObject({ reasoning: { effort: 'none' } });
-        } else {
-            expect(body).not.toHaveProperty('reasoning');
-        }
+        expect(readSentBody()).toMatchObject({ reasoning: { effort: 'none' } });
+    });
+
+    it('sends no reasoning extension for an unconfigured model outside the gpt-5.6 family', async () => {
+        respondWith([created(), completed()].join(''));
+
+        await streamOpenAiResponses({
+            runtime: createRuntime('gpt-4-turbo'),
+            messages: [{ role: 'user', content: 'hi' }],
+            onToken: vi.fn(),
+            signal: new AbortController().signal,
+        });
+
+        expect(readSentBody()).not.toHaveProperty('reasoning');
+    });
+
+    it.each(['gpt-5.6-luna', 'gpt-4-turbo'])('sends the configured reasoning effort override for %s', async (model) => {
+        respondWith([created(), completed()].join(''));
+
+        await streamOpenAiResponses({
+            runtime: createRuntime(model, 'high'),
+            messages: [{ role: 'user', content: 'hi' }],
+            onToken: vi.fn(),
+            signal: new AbortController().signal,
+        });
+
+        expect(readSentBody()).toMatchObject({ reasoning: { effort: 'high' } });
     });
 
     it('captures the provider request id from response.created before any delta arrives', async () => {

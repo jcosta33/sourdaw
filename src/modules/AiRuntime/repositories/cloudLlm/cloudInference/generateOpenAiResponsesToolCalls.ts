@@ -4,6 +4,7 @@ import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type OpenAiCloudRuntime } from '../cloudSession';
 
+import { buildReasoningExtension } from './buildReasoningExtension';
 import { buildWireToolNameCodec } from './buildWireToolNameCodec';
 import {
     type HostedToolChoiceDirective,
@@ -12,7 +13,6 @@ import {
     readHostedTokenCount,
 } from './hostedToolPlan';
 import { narrowToolSchemasForDirective } from './narrowToolSchemasForDirective';
-import { isGpt56FamilyModel } from './openAiModelFamilies';
 import { parseToolCallArguments } from './parseToolCallArguments';
 import { projectOpenAiStrictToolSchema } from './projectOpenAiStrictToolSchema';
 import { readProviderRequestId } from './readProviderRequestId';
@@ -203,7 +203,7 @@ export async function generateOpenAiResponsesToolCalls({
         // The data policy disclosed to users is request-scoped processing, so no
         // request may be retained on the provider side.
         store: false,
-        ...(isGpt56FamilyModel(runtime.model) ? { reasoning: { effort: 'none' } } : {}),
+        ...buildReasoningExtension(runtime),
     });
     const chunks: Uint8Array[] = [];
     const response = await requestHostedOpenAiProvider({

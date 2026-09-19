@@ -1,5 +1,9 @@
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
-import { type HostedLlmAuthentication, type HostedLlmProviderInfo } from '../../models/HostedLlmProvider';
+import {
+    type HostedLlmAuthentication,
+    type HostedLlmProviderInfo,
+    type HostedReasoningEffort,
+} from '../../models/HostedLlmProvider';
 import { hostedLlmProviderStatusStore } from '../../stores/hostedLlmProviderStatusStore';
 import { closeProviderGatewaySession } from '../closeProviderGatewaySession';
 import { type CompiledProviderAdapter } from '../providerAdapterRegistry';
@@ -22,6 +26,11 @@ export type OpenAiCloudRuntime = Readonly<{
     authentication: HostedLlmAuthentication;
     adapter: CompiledProviderAdapter;
     session_id: string;
+    /**
+     * Overrides the per-model reasoning effort default the Responses request
+     * builders otherwise apply. Absent means unconfigured, same as no override.
+     */
+    reasoning_effort?: HostedReasoningEffort;
 }>;
 
 export type OpenAiCompatibleCloudRuntime = Readonly<{

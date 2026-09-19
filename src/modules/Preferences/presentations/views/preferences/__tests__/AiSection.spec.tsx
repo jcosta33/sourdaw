@@ -53,6 +53,7 @@ vi.mock('#/modules/AiRuntime/stores', () => ({
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     configureCloudProvider: mocks.configureCloudProvider,
     getDefaultHostedAnthropicModel: () => mocks.catalogModelA.value,
+    HOSTED_REASONING_EFFORTS: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
     listHostedAnthropicModels: () => [mocks.catalogModelA, mocks.catalogModelB],
     removeCloudProvider: mocks.removeCloudProvider,
     resolveBackend: mocks.resolveBackend,
@@ -158,6 +159,40 @@ describe('AiSection', () => {
             expect(mocks.removeCloudProvider).toHaveBeenCalledOnce();
         });
         expect(apiKey).toHaveValue('');
+    });
+
+    it('shows the reasoning effort selector only for the OpenAI provider', () => {
+        render(<AiSection />);
+
+        expect(screen.queryByLabelText('Reasoning effort')).not.toBeInTheDocument();
+
+        fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai' } });
+        expect(screen.getByLabelText('Reasoning effort')).toHaveValue('');
+        expect(screen.getByRole('option', { name: 'Provider default' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'high' })).toBeInTheDocument();
+
+        fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai-compatible' } });
+        expect(screen.queryByLabelText('Reasoning effort')).not.toBeInTheDocument();
+    });
+
+    it('forwards the chosen reasoning effort override when saving an OpenAI configuration', async () => {
+        render(<AiSection />);
+
+        fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai' } });
+        fireEvent.change(screen.getByLabelText('Reasoning effort'), { target: { value: 'high' } });
+        fireEvent.change(screen.getByLabelText('Hosted AI API key'), { target: { value: 'sk-openai-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+        await waitFor(() => {
+            expect(mocks.configureCloudProvider).toHaveBeenCalledExactlyOnceWith({
+                provider: 'openai',
+                model: 'gpt-5.6-terra',
+                baseUrl: undefined,
+                authentication: 'api-key',
+                apiKey: 'sk-openai-key',
+                reasoningEffort: 'high',
+            });
+        });
     });
 
     it('requires explicit unauthenticated intent for compatible endpoints and enforces the byte limit', async () => {

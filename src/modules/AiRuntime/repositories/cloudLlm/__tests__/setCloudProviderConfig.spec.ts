@@ -168,6 +168,31 @@ describe('setCloudProviderConfig', () => {
         expect(isCloudAvailable()).toBe(true);
     });
 
+    it('carries the configured reasoning effort override on the OpenAI runtime', async () => {
+        await setCloudProviderConfig({
+            provider: 'openai',
+            model: 'gpt-test',
+            baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
+            apiKey: 'sk-test-key',
+            reasoningEffort: 'high',
+        });
+
+        expect(getCloudProviderRuntime()).toMatchObject({ reasoning_effort: 'high' });
+    });
+
+    it('lacks a reasoning_effort key on the OpenAI runtime when unconfigured', async () => {
+        await setCloudProviderConfig({
+            provider: 'openai',
+            model: 'gpt-test',
+            baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
+            apiKey: 'sk-test-key',
+        });
+
+        expect(getCloudProviderRuntime()).not.toHaveProperty('reasoning_effort');
+    });
+
     it('installs the responses adapter for a first-party OpenAI profile', async () => {
         await setCloudProviderConfig({
             provider: 'openai',
