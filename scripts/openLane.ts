@@ -197,6 +197,12 @@ export function openLane(
     // The declaring session sees its own attribution; the path stays the final line because
     // consumers parse it from the tail of the output.
     port.log(`authoring model: ${model}`);
+    // lane:open stays offline by design — no credential is minted or read here — so the claim is
+    // the trusted script the operator runs next, from the protected primary checkout this command
+    // itself ran in.
+    if (issue !== undefined) {
+        port.log(`claim the issue before starting work: pnpm issue:claim ${issue}`);
+    }
     port.log(lanePath);
     return lanePath;
 }

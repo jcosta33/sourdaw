@@ -46,6 +46,56 @@ describe('configureCloudProvider', () => {
         });
     });
 
+    it.each(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const)(
+        'forwards a valid reasoning effort override of %s for the OpenAI provider',
+        async (reasoningEffort) => {
+            await configureCloudProvider({
+                provider: 'openai',
+                model: 'gpt-test',
+                authentication: 'api-key',
+                apiKey: 'sk-test-key',
+                reasoningEffort,
+            });
+
+            expect(mocks.setCloudProviderConfig).toHaveBeenCalledWith({
+                provider: 'openai',
+                model: 'gpt-test',
+                baseUrl: 'https://api.openai.com/v1',
+                authentication: 'api-key',
+                apiKey: 'sk-test-key',
+                reasoningEffort,
+            });
+        }
+    );
+
+    it('refuses a reasoning effort value outside the supported set', async () => {
+        const configurationWithUnsupportedEffort = {
+            provider: 'openai',
+            model: 'gpt-test',
+            authentication: 'api-key',
+            apiKey: 'sk-test-key',
+            reasoningEffort: 'ultra',
+        } as unknown as Parameters<typeof configureCloudProvider>[0];
+
+        await expect(configureCloudProvider(configurationWithUnsupportedEffort)).rejects.toThrow(
+            'Reasoning effort is invalid'
+        );
+        expect(mocks.setCloudProviderConfig).not.toHaveBeenCalled();
+    });
+
+    it('refuses a reasoning effort override on a non-OpenAI provider', async () => {
+        await expect(
+            configureCloudProvider({
+                provider: 'anthropic',
+                model: 'claude-test',
+                authentication: 'api-key',
+                apiKey: 'sk-anthropic-test',
+                reasoningEffort: 'high',
+            })
+        ).rejects.toThrow('Reasoning effort can only be configured for the OpenAI provider');
+        expect(mocks.setCloudProviderConfig).not.toHaveBeenCalled();
+    });
+
     it('accepts an unauthenticated loopback compatible endpoint', async () => {
         await configureCloudProvider({
             provider: 'openai-compatible',

@@ -37,12 +37,12 @@ const tools: ToolSchema[] = [
     },
 ];
 
-function createRuntime(model: string): OpenAiCloudRuntime {
-    return {
-        provider: 'openai',
+function createRuntime(model: string, reasoningEffort?: OpenAiCloudRuntime['reasoning_effort']): OpenAiCloudRuntime {
+    const runtime = {
+        provider: 'openai' as const,
         model,
         base_url: 'https://api.openai.com/v1',
-        authentication: 'api-key',
+        authentication: 'api-key' as const,
         adapter: compileProviderAdapterInstallation({
             adapterId: OPENAI_RESPONSES_ADAPTER_ID,
             providerId: 'openai',
@@ -52,6 +52,7 @@ function createRuntime(model: string): OpenAiCloudRuntime {
         }),
         session_id: `provider-session-${'0'.repeat(32)}`,
     };
+    return reasoningEffort !== undefined ? { ...runtime, reasoning_effort: reasoningEffort } : runtime;
 }
 
 const runtime = createRuntime('gpt-4-turbo');
@@ -175,17 +176,28 @@ describe('generateOpenAiResponsesToolCalls', () => {
         expect(mocks.requestHostedOpenAiProvider).not.toHaveBeenCalled();
     });
 
-    it.each(['gpt-5.6-luna', 'gpt-4-turbo'])('gates reasoning effort on the gpt-5.6 family (%s)', async (model) => {
+    it('defaults reasoning effort to none for the gpt-5.6 family when unconfigured', async () => {
         respondWith({ id: 'resp_1', status: 'completed', output: [] });
 
-        await planTools(createRuntime(model));
+        await planTools(createRuntime('gpt-5.6-luna'));
 
-        const body = readSentBody();
-        if (model === 'gpt-5.6-luna') {
-            expect(body).toMatchObject({ reasoning: { effort: 'none' } });
-        } else {
-            expect(body).not.toHaveProperty('reasoning');
-        }
+        expect(readSentBody()).toMatchObject({ reasoning: { effort: 'none' } });
+    });
+
+    it('sends no reasoning extension for an unconfigured model outside the gpt-5.6 family', async () => {
+        respondWith({ id: 'resp_1', status: 'completed', output: [] });
+
+        await planTools(createRuntime('gpt-4-turbo'));
+
+        expect(readSentBody()).not.toHaveProperty('reasoning');
+    });
+
+    it.each(['gpt-5.6-luna', 'gpt-4-turbo'])('sends the configured reasoning effort override for %s', async (model) => {
+        respondWith({ id: 'resp_1', status: 'completed', output: [] });
+
+        await planTools(createRuntime(model, 'high'));
+
+        expect(readSentBody()).toMatchObject({ reasoning: { effort: 'high' } });
     });
 
     it('preserves call_id order across items the plan does not carry', async () => {

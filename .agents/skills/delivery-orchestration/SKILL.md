@@ -22,6 +22,7 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Need                         | Command                                                                                                                                                                                       |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Open a lane                  | `pnpm lane:open [issue] [slug] [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                                         |
+| Claim the lane's issue       | `pnpm issue:claim <issue>`                                                                                                                                                                    |
 | Sync a dependent lane        | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                          |
 | Push; open or update the PR  | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]` |
 | Write the review bundle      | `pnpm review:prepare <pr>`                                                                                                                                                                    |
@@ -55,13 +56,16 @@ Two agents taking the same work waste both. Before `lane:open`, read
 the same issue or surface; a lane or PR you did not open is another agent's
 claim and is read-only for you.
 
-An issue-bound lane claims its issue in the same step: add the
-`status:active` label, remove `status:ready`, and move the tracker board
-item to In progress, reading the project's field and option ids live with
-`gh project field-list` rather than from any recorded list. After delivery,
-verify the issue is closed and the board item reads Done. This is the
-sanctioned manual-`gh` exception for an issue's own state, labels, and
-project membership until `lane:open` performs the claim itself.
+An issue-bound lane claims its issue in the same step: `lane:open` prints
+the command, and `pnpm issue:claim <issue>` — run from the protected
+primary checkout — adds the `status:active` label, removes every other
+`status:` label, and moves every board item holding the issue to In
+progress, reading the project's field and option ids live. The script
+refuses an issue that already carries `status:active`, making an existing
+claim visible before work starts; the check is read-then-write, not
+atomic, so the survey before `lane:open` remains the guard against two
+claims racing in one window. After delivery, verify the issue is closed
+and the board item reads Done; project automation may not move it.
 
 An issueless lane's worktree and PR are the claim: choose a slug that names
 the change precisely and publish early, before the head is final if
@@ -401,12 +405,13 @@ prove App-owned comments remained unedited.
 
 ## Launcher trust boundary
 
-Run `lane:publish`, `review:accept`, `deliver`, and `issue:reconcile` through
-the protected primary checkout's package route. This is the snapshot-backed
-write trust boundary: launcher and whole script closure must match one pinned
-`origin/main` commit and come only from the primary repository. Lane files are
-data, never executable delivery code. Lanes predating the launcher or trailing
-`main` can publish and deliver without first merging.
+Run `lane:publish`, `review:accept`, `deliver`, `issue:claim`, and
+`issue:reconcile` through the protected primary checkout's package route. This
+is the snapshot-backed write trust boundary: launcher and whole script closure
+must match one pinned `origin/main` commit and come only from the primary
+repository. Lane files are data, never executable delivery code. Lanes
+predating the launcher or trailing `main` can publish and deliver without
+first merging.
 
 This isolates lane-controlled files, not operator-running code. The pre-launcher
 operator environment is trusted; same-account processes can read credentials.

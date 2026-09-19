@@ -133,6 +133,7 @@ describe('setCloudProviderConfig', () => {
             model: 'qwen-local',
             baseUrl: 'http://localhost:1234/v1',
             authentication: 'none',
+            reasoningEffort: null,
         });
     });
 
@@ -166,6 +167,50 @@ describe('setCloudProviderConfig', () => {
             session_id: SESSION_ID,
         });
         expect(isCloudAvailable()).toBe(true);
+    });
+
+    it('carries the configured reasoning effort override on the OpenAI runtime', async () => {
+        await setCloudProviderConfig({
+            provider: 'openai',
+            model: 'gpt-test',
+            baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
+            apiKey: 'sk-test-key',
+            reasoningEffort: 'high',
+        });
+
+        expect(getCloudProviderRuntime()).toMatchObject({ reasoning_effort: 'high' });
+    });
+
+    it('publishes the configured reasoning effort override on the hosted provider status', async () => {
+        await setCloudProviderConfig({
+            provider: 'openai',
+            model: 'gpt-test',
+            baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
+            apiKey: 'sk-test-key',
+            reasoningEffort: 'high',
+        });
+
+        expect(hostedLlmProviderStatusStore.value).toEqual({
+            provider: 'openai',
+            model: 'gpt-test',
+            baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
+            reasoningEffort: 'high',
+        });
+    });
+
+    it('lacks a reasoning_effort key on the OpenAI runtime when unconfigured', async () => {
+        await setCloudProviderConfig({
+            provider: 'openai',
+            model: 'gpt-test',
+            baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
+            apiKey: 'sk-test-key',
+        });
+
+        expect(getCloudProviderRuntime()).not.toHaveProperty('reasoning_effort');
     });
 
     it('installs the responses adapter for a first-party OpenAI profile', async () => {
@@ -305,6 +350,7 @@ describe('setCloudProviderConfig', () => {
             model: 'qwen-local',
             baseUrl: 'http://localhost:1234/v1',
             authentication: 'none',
+            reasoningEffort: null,
         });
         expect(mocks.invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
             sessionId: SESSION_ID,
@@ -359,6 +405,7 @@ describe('setCloudProviderConfig', () => {
             model: 'claude-test',
             baseUrl: null,
             authentication: 'api-key',
+            reasoningEffort: null,
         });
         expect(isCloudAvailable()).toBe(true);
     });
@@ -473,6 +520,7 @@ describe('setCloudProviderConfig', () => {
             model: 'custom-model',
             baseUrl: 'https://models.example.test/v1',
             authentication: 'api-key',
+            reasoningEffort: null,
         });
     });
 
@@ -561,6 +609,7 @@ describe('setCloudProviderConfig', () => {
             model: 'claude-test',
             baseUrl: null,
             authentication: 'api-key',
+            reasoningEffort: null,
         });
         expect(mocks.invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
             sessionId: SESSION_ID,
@@ -644,6 +693,7 @@ describe('setCloudProviderConfig', () => {
                 model: 'claude-test',
                 baseUrl: null,
                 authentication: 'api-key',
+                reasoningEffort: null,
             });
             expect(mocks.invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
                 sessionId: SESSION_ID,

@@ -1,7 +1,7 @@
 import { type ModelProviderEvent } from '../../../models/ModelProviderProtocol';
 import { type OpenAiCloudRuntime } from '../cloudSession';
 
-import { isGpt56FamilyModel } from './openAiModelFamilies';
+import { buildReasoningExtension } from './buildReasoningExtension';
 import { type HostedOpenAiFinishReason, type HostedOpenAiStreamResult } from './openAiStreamResult';
 import { readProviderRequestId } from './readProviderRequestId';
 import { requestHostedOpenAiProvider } from './requestOpenAiProvider';
@@ -198,7 +198,7 @@ export async function streamOpenAiResponses({
         // The data policy disclosed to users is request-scoped processing, so no
         // request may be retained on the provider side.
         store: false,
-        ...(isGpt56FamilyModel(runtime.model) ? { reasoning: { effort: 'none' } } : {}),
+        ...buildReasoningExtension(runtime),
     });
     const decoder = new TextDecoder();
     let buffer = '';
