@@ -113,7 +113,9 @@ function extractDeclaredModelFields(
             fail('review.json modelExhaustion must be a string');
         }
         const value = record.modelExhaustion.trim();
-        if (value === '' || value.includes('\n')) {
+        // The repo's single-line convention (evidenceLine) rejects \r and the Unicode line
+        // separators too, not just \n.
+        if (value === '' || /[\r\n\u2028\u2029]/u.test(value)) {
             fail(
                 'review.json modelExhaustion must be one non-empty line naming what made every other model unavailable'
             );

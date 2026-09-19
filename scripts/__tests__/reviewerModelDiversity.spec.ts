@@ -69,6 +69,21 @@ describe('reviewer-model diversity enforcement', () => {
         expect(() => parseReviewDocument({ ...baseDocument, modelExhaustion: 'first\nsecond' })).toThrow(
             /modelExhaustion must be one non-empty line/u
         );
+        expect(() => parseReviewDocument({ ...baseDocument, modelExhaustion: 'first\rsecond' })).toThrow(
+            /modelExhaustion must be one non-empty line/u
+        );
+        expect(() => parseReviewDocument({ ...baseDocument, modelExhaustion: 'first\u2028second' })).toThrow(
+            /modelExhaustion must be one non-empty line/u
+        );
+    });
+
+    it('refuses a non-string modelExhaustion with the framed message', () => {
+        expect(() => parseReviewDocument({ ...baseDocument, modelExhaustion: 5 })).toThrow(
+            /modelExhaustion must be a string/u
+        );
+        expect(() => parseReviewDocument({ ...baseDocument, modelExhaustion: null })).toThrow(
+            /modelExhaustion must be a string/u
+        );
     });
 });
 
@@ -184,6 +199,34 @@ describe('assertReviewerModelDiversity', () => {
                 },
             })
         ).toThrow(/naming the reviewer model/u);
+    });
+
+    it('refuses the fallback when the body names only a longer model sharing the prefix', () => {
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                document: {
+                    reviewerModel: 'glm-5.3',
+                    modelExhaustion: 'every other harness on this machine is logged out or broken',
+                    body: 'Reviewed on glm-5.3-flash under the same-model fallback.',
+                },
+            })
+        ).toThrow(/naming the reviewer model/u);
+    });
+
+    it('admits the fallback when the body names the reviewer model as a standalone token', () => {
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                document: {
+                    reviewerModel: 'glm-5.3',
+                    modelExhaustion: 'every other harness on this machine is logged out or broken',
+                    body: 'Same-model fallback: reviewed on glm-5.3, with glm-5.3-flash unavailable.',
+                },
+            })
+        ).not.toThrow();
     });
 
     it('ignores a recorded exhaustion when the reviewer model already differs', () => {

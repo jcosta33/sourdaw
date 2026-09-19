@@ -71,12 +71,32 @@ export function assertReviewerModelDiversity(input: {
                 'name the reviewer model in the published body'
         );
     }
-    if (!input.document.body.includes(trimmedModel)) {
+    if (!bodyNamesModel(input.document.body, trimmedModel)) {
         fail(
             `the same-model fallback requires the published review body to record the deviation ` +
                 `by naming the reviewer model "${trimmedModel}"`
         );
     }
+}
+
+/**
+ * The model named as a standalone token, not a substring: model tokens share a charset
+ * (`a-z0-9.+-`, the lane `--model` grammar), so a body naming only `glm-5.3-flash` must not
+ * count as naming `glm-5.3` — the flank characters prove a different, longer token.
+ */
+function bodyNamesModel(body: string, model: string): boolean {
+    const tokenCharacter = /[a-z0-9.+-]/u;
+    for (let index = body.indexOf(model); index !== -1; index = body.indexOf(model, index + 1)) {
+        const before = index > 0 ? body[index - 1] : undefined;
+        const after = index + model.length < body.length ? body[index + model.length] : undefined;
+        if (
+            (before === undefined || !tokenCharacter.test(before)) &&
+            (after === undefined || !tokenCharacter.test(after))
+        ) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function fail(message: string): never {
