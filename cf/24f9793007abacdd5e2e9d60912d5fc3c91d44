@@ -14,6 +14,11 @@ scripts/githubAppIdentity.ts
   "git_ai_version": "1.7.4",
   "base_commit_sha": "cf24f9793007abacdd5e2e9d60912d5fc3c91d44",
   "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  },
   "sessions": {
     "s_9e15f5b7ec3308": {
       "agent_id": {

@@ -1,0 +1,40 @@
+crates/proof-chamber/src/proof_chamber.rs
+  s_9e15f5b7ec3308::t_3b50db0b90f955 982-990
+crates/proof-chamber/tests/plate_parameter_surface.rs
+  s_87ab0a2f60ccf8::t_092d05a33caffe 317-349,398-399
+  s_9e15f5b7ec3308::t_e09543aa24cf8c 361-370
+public/wasm/manifest.json
+  s_9e15f5b7ec3308::t_e3b79d00e9448a 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_9e15f5b7ec3308::t_fde1a106b72ea2 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_9e15f5b7ec3308::t_6a924d953ed8c2 1
+release/open-source-inventory.json
+  s_87ab0a2f60ccf8::t_12a2e8f7707eca 1339,1343,1725
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_9e15f5b7ec3308::t_085cdd4cc96a65 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e09f39856b31ec2a48cd475b266f5ddeb9c4d3ea",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
