@@ -552,6 +552,127 @@ ${relatedTickets}
     return body;
 }
 
+/**
+ * The refusal for a product-scope publish whose `--test` is nothing but command narration. Reviewers
+ * verify a product change in the app, so the section has to teach steps they can perform and the
+ * result they should observe; the checks an author or CI already ran prove nothing a reviewer can see.
+ */
+const COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL =
+    'pull-request --test for a product-scope change must teach user/reviewer-observable steps and their ' +
+    'expected result; automated author or CI check narration is not a substitute';
+
+/** Leading list markers a How-to-test bullet may carry: dash, asterisk, bullet, `1.`, `1)`, `a)`. */
+const LEADING_LIST_MARKER = /^(?:[-*•]\s+|[0-9]+[.)]\s+|[a-z][.)]\s+)/i;
+
+/** Filler words that precede a command without making the segment anything but narration. */
+const LEADING_FILLER_WORD = /^(?:run|runs|ran|execute|executes|executed|same|for|ditto|then|and|also|again)\s+/i;
+
+/** Edge punctuation a first token may trail or lead with (`vitest:`, `pnpm,`). */
+const TOKEN_EDGE_PUNCTUATION = /^[,;:]+|[,;:]+$/g;
+
+/** The command heads whose mention alone reads as CI or author check narration, not an app step. */
+const COMMAND_HEADS = new Set([
+    'pnpm',
+    'npm',
+    'yarn',
+    'npx',
+    'vitest',
+    'jest',
+    'tsc',
+    'eslint',
+    'prettier',
+    'biome',
+    'cargo',
+    'rustc',
+    'gh',
+    'playwright',
+    'typecheck',
+    'lint',
+    'format',
+    'guard',
+    'test:run',
+    'test:e2e',
+    'test:barrel-mocks',
+    'deps:validate',
+    'wasm:all',
+    'wasm:verify',
+]);
+
+function stripRepeated(value: string, pattern: RegExp): string {
+    let rest = value;
+    while (pattern.test(rest)) {
+        rest = rest.replace(pattern, '');
+    }
+    return rest;
+}
+
+/** The content of a leading terminated backtick span, or the value unchanged when it has none. */
+function leadingBacktickSpanContent(value: string): string {
+    if (!value.startsWith('`')) {
+        return value;
+    }
+    const closing = value.indexOf('`', 1);
+    return closing > 1 ? value.slice(1, closing) : value;
+}
+
+/**
+ * The first token a segment would be classified by, after its list markers, any leading backtick
+ * span, and every leading filler word are peeled away. Unwrapping and filler stripping alternate
+ * because each can expose the other (`1. Run `pnpm test:run x``) and both strictly shorten the
+ * remainder, so the loop always terminates.
+ */
+function leadingCommandToken(segment: string): string {
+    let rest = stripRepeated(segment, LEADING_LIST_MARKER);
+    for (;;) {
+        const stripped = stripRepeated(leadingBacktickSpanContent(rest), LEADING_FILLER_WORD);
+        if (stripped === rest) {
+            return stripped;
+        }
+        rest = stripped;
+    }
+}
+
+/** Whether one segment reads as a tool invocation rather than a step a reviewer can perform. */
+function isCommandNarration(segment: string): boolean {
+    const token = leadingCommandToken(segment).split(/\s+/)[0] ?? '';
+    return COMMAND_HEADS.has(token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase());
+}
+
+/**
+ * Segments a How-to-test value the way a reader does: per line, and per sentence or semicolon
+ * clause. Only a `.` or `;` followed by whitespace or the end ends a segment, so version numbers
+ * and dotted paths never split a command; empty pieces from separators and blank lines drop. List
+ * markers leave the line before that split, because a numbered marker's own dot would otherwise be
+ * read as a sentence boundary and strand a bare `1` segment that no command list deserves.
+ * Callers guarantee non-emptiness (`composePublishBody` refuses an empty section first).
+ */
+function testInstructionSegments(text: string): string[] {
+    const marked = text.split(/\r?\n/).map((line) => stripRepeated(line.trim(), LEADING_LIST_MARKER));
+    const clauses = marked.flatMap((line) => line.split(/[.;](?:\s+|$)/));
+    return clauses.map((segment) => segment.trim()).filter((segment) => segment !== '');
+}
+
+/**
+ * Whether every segment of `text` narrates a command. Deliberately fail-open at the margins: any
+ * prose segment — "Open the app and …", "No user-visible change; …", even `None.` — makes this
+ * false, and only a list that is nothing but commands reads as narration.
+ */
+export function commandOnlyTestInstructions(text: string): boolean {
+    const segments = testInstructionSegments(text);
+    return segments.length > 0 && segments.every(isCommandNarration);
+}
+
+/**
+ * The contract gate for a product-scope change's How-to-test section: a value that only recites
+ * commands the author or CI already ran is refused, because it teaches a reviewer nothing they can
+ * perform in the app. One prose sentence anywhere in the value satisfies it.
+ */
+export function assertObservableTestInstructions(text: string): void {
+    if (commandOnlyTestInstructions(text)) {
+        fail(COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL);
+    }
+}
+
 export function isIssueArgument(value: string): boolean {
     return ISSUE_NUMBER_PATTERN.test(value);
 }

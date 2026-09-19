@@ -9,9 +9,11 @@ import {
     REVIEW_COMMENT_MAX_BYTES,
     assertConventionalSubject,
     assertLaneSlug,
+    assertObservableTestInstructions,
     assertPullRequestBody,
     canonicalIssueReferenceFromBody,
     canonicalPath,
+    commandOnlyTestInstructions,
     composeDeliveryReceipt,
     composePublishBody,
     composeReviewCommentBody,
@@ -715,6 +717,86 @@ describe('pull-request contract', () => {
         expect(() => composeReviewCommentBody({ defect, consequence, done })).toThrow(
             new RegExp(`exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`)
         );
+    });
+});
+
+describe('product-scope test instructions', () => {
+    const REFUSAL =
+        'pull-request --test for a product-scope change must teach user/reviewer-observable steps and their ' +
+        'expected result; automated author or CI check narration is not a substitute';
+
+    it('refuses a pure command list', () => {
+        const list = ['- `pnpm test:run scripts/__tests__/x.spec.ts` (140 passed)', '- `pnpm typecheck` (clean)'].join(
+            '\n'
+        );
+
+        expect(commandOnlyTestInstructions(list)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(list))).toBe(REFUSAL);
+    });
+
+    it('refuses one semicolon-joined line of commands', () => {
+        const line = 'pnpm test:run src/x.spec.ts; pnpm typecheck; pnpm lint';
+
+        expect(commandOnlyTestInstructions(line)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(line))).toBe(REFUSAL);
+    });
+
+    it('refuses numbered lines whose commands ride in backticks behind a filler word', () => {
+        // "Run" is filler and the backtick span is the classified content, so `1. Run `pnpm …``
+        // is narration like the bare command would be — the markers never rescue it.
+        const steps = ['1. Run `pnpm test:run x`', '2. Run `pnpm typecheck`'].join('\n');
+
+        expect(commandOnlyTestInstructions(steps)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(steps))).toBe(REFUSAL);
+    });
+
+    it('refuses filler-led segments alongside command-led ones', () => {
+        const mixed = ['- `pnpm lint` (clean)', '- same for pnpm typecheck:test (OK)'].join('\n');
+
+        expect(commandOnlyTestInstructions(mixed)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(mixed))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a bare tool head with a colon', 'vitest: run every suite'],
+        ['a bare compiler head', 'tsc --noEmit'],
+        ['a tool head with a conjunction', 'lint + format the touched modules'],
+        ['a guard invocation', 'guard --profile focused -- pnpm test:run scripts/x.spec.ts'],
+    ])('refuses %s as the only content', (_label, instructions) => {
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('passes any single prose sentence, including one a filler word opens', () => {
+        // "Run" leads the existing fixtures' own How-to-test sentence: filler stripping must stop
+        // at the command list, not read the sentence's next word as one.
+        const prose = 'Run the focused publisher specs and confirm they pass.';
+
+        expect(commandOnlyTestInstructions(prose)).toBe(false);
+        expect(() => assertObservableTestInstructions(prose)).not.toThrow();
+        expect(commandOnlyTestInstructions('Open the arrangement view and confirm the new clip handle appears.')).toBe(
+            false
+        );
+    });
+
+    it('passes None.', () => {
+        expect(commandOnlyTestInstructions('None.')).toBe(false);
+        expect(() => assertObservableTestInstructions('None.')).not.toThrow();
+    });
+
+    it('passes when any segment is prose, even inside an otherwise command-only list', () => {
+        expect(
+            commandOnlyTestInstructions('- `pnpm lint` (clean)\n- No user-visible change; this only touches scripts.')
+        ).toBe(false);
+    });
+
+    it('drops empty segments from separators and blank lines instead of counting them', () => {
+        // Whitespace-only text has no segment at all, so it is not command narration — the emptiness
+        // gate lives in composePublishBody, not here.
+        expect(commandOnlyTestInstructions('   \n\t  ')).toBe(false);
+        expect(commandOnlyTestInstructions('  `pnpm typecheck`  \n')).toBe(true);
+        expect(commandOnlyTestInstructions('pnpm typecheck; ; ;')).toBe(true);
+        expect(commandOnlyTestInstructions('pnpm typecheck.\n\n')).toBe(true);
     });
 });
 

@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
     AUTHOR_LOCK_REASON,
@@ -38,6 +38,7 @@ import {
     descriptiveLabelNames,
     ensureModelLabelArgs,
     existingOpenPullRequestArgs,
+    isProductScopeChange,
     issueProjectItemsArgs,
     issueTrackerMetadataArgs,
     labelListArgs,
@@ -47,6 +48,7 @@ import {
     openMilestoneTitlesArgs,
     openMilestoneTitlesFromRows,
     operatorSessionAccess,
+    PRODUCT_SCOPE_PREFIXES,
     projectListArgs,
     projectTitlesFromListing,
     projectTitlesFromRow,
@@ -54,6 +56,7 @@ import {
     pullRequestMetadataArgs,
     pullRequestLabelMetadataFromRow,
     pullRequestProjectItemsArgs,
+    runPublishLaneCli,
     trackerMetadataFromIssueRow,
     updatePullRequestArgs,
     issueExistsFromLookup,
@@ -63,6 +66,8 @@ import {
     mergeabilityFromPullRequestRow,
     parsePublishLaneArgs,
     parsePublishWorktrees,
+    PUBLISH_LANE_TEST_GUIDANCE,
+    PUBLISH_LANE_USAGE,
     publishLane,
     resolveAuthorLane,
     shellPort,
@@ -74,6 +79,8 @@ import {
     type PublishWorktree,
 } from '../publishLane.ts';
 
+import type { ReviewChangedPath } from '../reviewDiffSummary.ts';
+
 const PRIMARY_ROOT = '/repo';
 const DEFAULT_SUBJECT = 'feat(vcs): add identities';
 const DEFAULT_SUMMARY = 'Keep VCS identity records so each authored change names who wrote it.';
@@ -82,6 +89,19 @@ const ISSUE_LANE = '/repo/.agents/worktrees/agent-12-work';
 const CLEANUP_LANE = '/repo/.agents/worktrees/agent--cleanup';
 const LEGACY_LANE = '/repo/.agents/worktrees/collab-sync-state';
 const LEGACY_BRANCH = 'fix/collab-sync-state-2039';
+/** A How-to-test value that is nothing but CI narration: exactly what the product-scope gate refuses. */
+const COMMAND_ONLY_TEST =
+    '- `pnpm test:run scripts/__tests__/publishLane.spec.ts` (140 passed)\n- `pnpm typecheck` (clean)';
+const COMMAND_ONLY_TEST_REFUSAL =
+    'pull-request --test for a product-scope change must teach user/reviewer-observable steps and their ' +
+    'expected result; automated author or CI check narration is not a substitute';
+const PRODUCT_SCOPE_PATH: ReviewChangedPath = {
+    path: 'src/modules/AiRuntime/x.ts',
+    group: 'handwritten',
+    added: 1,
+    deleted: 0,
+    binary: false,
+};
 
 /**
  * Fixture Git runs without the ambient global and system configuration. That configuration can wire
@@ -177,6 +197,8 @@ type FakeInput = {
     mergeability?: PullRequestMergeability;
     /** Conflicting paths the lane's trial merge answers; defaults to none. */
     conflictingPaths?: string[];
+    /** Classified changed paths the lane's diff read answers; defaults to no paths at all. */
+    changedPaths?: ReviewChangedPath[];
     issueExists?: boolean;
     guardFailureReceipt?: GuardFailureReceipt;
     guardFailure?: (laneName: string) => GuardFailureReceipt | undefined;
@@ -233,6 +255,7 @@ function fakePort(input: FakeInput = {}) {
             calls.push(`conflicts:${base}:${head}`);
             return input.conflictingPaths ?? [];
         },
+        changedPaths: () => input.changedPaths ?? [],
         // The queried branch is the entire authorization decision on the legacy path, so it goes
         // into the ledger: a fake that discarded it would stay green if resolution asked about a
         // sibling lane's branch, or a constant.
@@ -1188,6 +1211,65 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).not.toContain(TEST_INSTRUCTIONS);
     });
 
+    it('refuses a product-scope publish whose --test only narrates commands, before any remote write', () => {
+        const { port, calls } = fakePort({ changedPaths: [PRODUCT_SCOPE_PATH] });
+
+        expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toThrow(
+            COMMAND_ONLY_TEST_REFUSAL
+        );
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
+    });
+
+    it('publishes a product-scope change whose --test teaches an observable step', () => {
+        const { port, calls, bodies } = fakePort({ changedPaths: [PRODUCT_SCOPE_PATH] });
+        const observable = 'Open the arrangement view and confirm the new clip handle renders.';
+
+        expect(publishLane(12, port, undefined, observable, DEFAULT_SUMMARY)).toBe(88);
+
+        expect(calls).toContain('push:agent/12/work');
+        expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${observable}`);
+    });
+
+    it('refuses an explicit command-only --test on a product-scope update of an existing pull request', () => {
+        const { port, calls } = fakePort({ existing: 41, changedPaths: [PRODUCT_SCOPE_PATH] });
+
+        expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST)).toThrow(COMMAND_ONLY_TEST_REFUSAL);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
+    it('preserves a body verbatim through a product-scope update without re-judging it', () => {
+        const { port, calls, bodies } = fakePort({ existing: 41, changedPaths: [PRODUCT_SCOPE_PATH] });
+
+        expect(publishLane(12, port)).toBe(41);
+
+        expect(calls).toContain('edit:41');
+        expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${TEST_INSTRUCTIONS}`);
+    });
+
+    it('skips the gate for test files under a product tree', () => {
+        const { port, calls } = fakePort({
+            changedPaths: [
+                { path: 'src/modules/AiRuntime/x.spec.ts', group: 'tests', added: 1, deleted: 0, binary: false },
+            ],
+        });
+
+        expect(publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toBe(88);
+        expect(calls).toContain('push:agent/12/work');
+    });
+
+    it('skips the gate for docs under a product tree', () => {
+        const { port, calls } = fakePort({
+            changedPaths: [{ path: 'electron/README.md', group: 'docs', added: 1, deleted: 0, binary: false }],
+        });
+
+        expect(publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toBe(88);
+        expect(calls).toContain('push:agent/12/work');
+    });
+
     it('updates the existing What section when --summary is supplied', () => {
         const updatedSummary = 'Describe the change for a teammate who was not in the session.';
         const { port, bodies } = fakePort({
@@ -1654,6 +1736,20 @@ describe('lane publish', () => {
         expect(() => parsePublishLaneArgs(['12', '--milestone', 'v1.2', '--milestone', 'v1.3'])).toThrow(/usage/);
     });
 
+    it('prints the --test guidance under the usage line on --help', async () => {
+        const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+        let lines: string[] = [];
+        try {
+            await expect(runPublishLaneCli(['--help'])).resolves.toBe(0);
+            lines = log.mock.calls.map((call) => call.map((part) => String(part)).join(' '));
+        } finally {
+            log.mockRestore();
+        }
+
+        expect(lines[0]).toBe(PUBLISH_LANE_USAGE.replace('usage:', 'Usage:'));
+        expect(lines).toContain(PUBLISH_LANE_TEST_GUIDANCE);
+    });
+
     it('carries the selected lane path into the port for explicit path resolution', () => {
         const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => undefined };
         const here = import.meta.dirname;
@@ -2077,6 +2173,49 @@ describe('lane publish', () => {
             expect(port.conflictingPaths(repository, base, head)).toEqual(['conflicted.txt']);
             // A clean trial merge names nothing, so the report can never invent a path from it.
             expect(port.conflictingPaths(repository, base, base)).toEqual([]);
+        } finally {
+            rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    /**
+     * The classification the `--test` gate consumes must come from the repository, not a guess, so
+     * this measures the port's own numstat read against a real commit: a fake can prove only which
+     * port member is called, never that a `src/modules/` change classifies as product scope.
+     */
+    it('classifies a real lane commit touching src/modules as product scope', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-publish-changed-paths-'));
+        const session: GhSession = {
+            configDir: '/tmp/sourdaw-gh',
+            env: { PATH: process.env.PATH, ...HERMETIC_GIT_CONFIG },
+            dispose: () => undefined,
+        };
+        const git = (args: string[]) => fixtureGit(repository, args);
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            writeFileSync(join(repository, 'base.txt'), 'base\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'chore(fixture): base']);
+            const base = git(['rev-parse', 'HEAD']);
+
+            const moduleFile = join(PRODUCT_SCOPE_PREFIXES[0], 'engine.ts');
+            mkdirSync(join(repository, dirname(moduleFile)), { recursive: true });
+            writeFileSync(join(repository, moduleFile), 'export const engine = 1;\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'feat(audio): fixture product change']);
+
+            const paths = shellPort(session, repository).changedPaths(repository, base, 'HEAD');
+
+            expect(paths).toContainEqual({
+                path: moduleFile,
+                group: 'handwritten',
+                added: 1,
+                deleted: 0,
+                binary: false,
+            });
+            expect(isProductScopeChange(paths)).toBe(true);
         } finally {
             rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }

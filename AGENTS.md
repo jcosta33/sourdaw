@@ -46,7 +46,9 @@ author's.
 Design the whole requested outcome before dispatch, then give each agent one independently safe
 behavior or behavior-preserving preparation with its required tests. Every dispatch includes the
 objective, lane, branch, paths, exclusions, dependencies, applicable preservation guarantees,
-acceptance conditions, integration observable, and exact checks. Before writing it, trace each
+acceptance conditions, integration observable, and exact checks, and, when the change touches
+product scope (`src/modules/`, `src/components/`, `electron/`), the user-observable verification
+steps the pull request's How to test must teach. Before writing it, trace each
 acceptance observable (event, counter, or caller-read figure) to its producing line, and each
 prescribed mechanism to every required code route. Unemitted observables and partially covered routes
 are orchestrator defects. Derive the concise PR what/why from the bounded outcome; do not copy path,
