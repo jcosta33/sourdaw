@@ -4,6 +4,8 @@ import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+    AUTHOR_BOT_COMMIT_EMAIL,
+    AUTHOR_BOT_COMMIT_NAME,
     AUTHOR_LOCK_REASON,
     assertTrustedExecutingBlob,
     originMainBlob,
@@ -49,6 +51,37 @@ export function normalizeAuthorModel(token: string): string {
     return normalized;
 }
 
+/**
+ * The config writes that aim a lane worktree's commits at the author App. `extensions.worktreeConfig`
+ * must be on before any `--worktree` read or write works; it lives in the primary checkout's common
+ * config, shared by every worktree, so enabling it from one lane covers them all and the write is
+ * idempotent. The rest land in the lane's own `config.worktree`. `commit.gpgsign false` is
+ * deliberate: the App holds no signing key, and the operator's personal key must never sign
+ * bot-authored commits, so the lane disables signing rather than inheriting it — no signingkey is set.
+ */
+export function authorIdentityExtensionArgs(): string[] {
+    return ['config', 'extensions.worktreeConfig', 'true'];
+}
+
+export function authorIdentityWorktreeArgs(): string[][] {
+    return [
+        ['config', '--worktree', 'user.name', AUTHOR_BOT_COMMIT_NAME],
+        ['config', '--worktree', 'user.email', AUTHOR_BOT_COMMIT_EMAIL],
+        ['config', '--worktree', 'commit.gpgsign', 'false'],
+    ];
+}
+
+/** Applies the whole stamp to one lane through the caller's runner. */
+export function runAuthorIdentityStamp(
+    lanePath: string,
+    run: (command: string, args: string[], options: { cwd: string }) => void
+): void {
+    run('git', authorIdentityExtensionArgs(), { cwd: lanePath });
+    for (const args of authorIdentityWorktreeArgs()) {
+        run('git', args, { cwd: lanePath });
+    }
+}
+
 export type OpenLanePort = {
     primaryRoot: () => string;
     pathExists: (path: string) => boolean;
@@ -56,6 +89,8 @@ export type OpenLanePort = {
     ensureWorktreeParent: (path: string) => void;
     fetchMain: () => void;
     worktreeAdd: (path: string, branch: string, reservedBranch?: boolean) => void;
+    /** Stamps the lane worktree's git config so its commits author as the author App. */
+    stampAuthorIdentity: (lanePath: string) => void;
     /** Records `branch.<branch>.sourdaw-author-model` in the primary checkout's git config. */
     saveAuthorModel: (branch: string, model: string) => void;
     stackParent?: (path: string, childBranch: string) => LaneStack;
@@ -174,6 +209,9 @@ export function openLane(
     } else {
         port.worktreeAdd(lanePath, branch);
     }
+    // The stamp precedes the model record and the lock, so a failure here leaves the worktree
+    // created but unlocked — the same refusal-before-lock shape as the node_modules check below.
+    port.stampAuthorIdentity(lanePath);
     // The branch records its authoring model the same way it records stack lineage: in the primary
     // checkout's git config, where lane:publish reads it back at publication time.
     port.saveAuthorModel(branch, model);
@@ -244,6 +282,9 @@ export function shellPort(
             } else {
                 run('git', ['worktree', 'add', '-b', branch, path, 'origin/main'], { cwd: primaryRoot });
             }
+        },
+        stampAuthorIdentity: (path) => {
+            runAuthorIdentityStamp(path, run);
         },
         saveAuthorModel: (branch, model) => {
             run('git', ['config', `branch.${branch}.sourdaw-author-model`, model], { cwd: primaryRoot });

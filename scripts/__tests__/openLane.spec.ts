@@ -99,6 +99,7 @@ function fakePort(exists = false, nodeModulesLinkTarget?: (lanePath: string) => 
         ensureWorktreeParent: (path) => calls.push(`mkdir:${path}`),
         fetchMain: () => calls.push('fetch'),
         worktreeAdd: (path, branch) => calls.push(`add:${path}:${branch}`),
+        stampAuthorIdentity: (path) => calls.push(`stamp:${path}`),
         saveAuthorModel: (branch, model) => calls.push(`model:${branch}:${model}`),
         reserveStackBranch: (branch, head) => {
             calls.push(`reserve:${branch}:${head}`);
@@ -160,7 +161,7 @@ function creationFixture(beforeRun: (args: string[], git: (...args: string[]) =>
         root
     );
     port.log = () => undefined;
-    return { root, git, parentPath, head, port, writes };
+    return { root, git, gitAt, parentPath, head, port, writes };
 }
 
 describe('real Git stack creation reservation', () => {
@@ -418,6 +419,7 @@ describe('lane open', () => {
             'mkdir:/repo/.agents/worktrees/agent--cleanup',
             'fetch',
             'add:/repo/.agents/worktrees/agent--cleanup:agent/cleanup',
+            'stamp:/repo/.agents/worktrees/agent--cleanup',
             'model:agent/cleanup:glm-5.3-flash',
             'lock:/repo/.agents/worktrees/agent--cleanup',
         ]);
@@ -496,6 +498,86 @@ describe('lane open', () => {
             'active:sourdaw-author',
             '/repo/.agents/worktrees/agent--cleanup',
         ]);
+    });
+
+    it('stamps the author App identity after the worktree exists and before the model and the lock', () => {
+        const { port, calls } = fakePort();
+
+        openLane(12, 'work', 'glm-5.3', port);
+
+        const add = calls.findIndex((call) => call.startsWith('add:'));
+        const stamp = calls.indexOf('stamp:/repo/.agents/worktrees/agent-12-work');
+        const model = calls.findIndex((call) => call.startsWith('model:'));
+        const lock = calls.findIndex((call) => call.startsWith('lock:'));
+        expect(stamp).toBe(add + 1);
+        expect(model).toBe(stamp + 1);
+        expect(lock).toBeGreaterThan(stamp);
+    });
+
+    it('stamps a stack child at creation too', () => {
+        const { port, calls } = fakePort();
+        port.stackParent = (_path, childBranch) => ({
+            version: 1,
+            childBranch,
+            parentBranch: 'agent/parent',
+            forkHead: 'a'.repeat(40),
+            parentHead: 'a'.repeat(40),
+        });
+        port.saveStack = () => {
+            calls.push('descriptor');
+        };
+        port.worktreeAdd = (_path, _branch, reservedBranch) => {
+            calls.push(`reserved:${reservedBranch}`);
+        };
+
+        openLane(undefined, 'child', 'glm-5.3', port, '/repo/parent');
+
+        const reserved = calls.indexOf('reserved:true');
+        const stamp = calls.indexOf('stamp:/repo/.agents/worktrees/agent--child');
+        const lock = calls.findIndex((call) => call.startsWith('lock:'));
+        expect(reserved).toBeGreaterThanOrEqual(0);
+        expect(stamp).toBe(reserved + 1);
+        expect(lock).toBeGreaterThan(stamp);
+    });
+
+    /**
+     * The port-level ledger above proves only that a method ran; the config writes themselves are
+     * built in `shellPort`, so driving that with a fake runner is what puts the exact argv — and
+     * the lane path as every command's working directory — under assertion.
+     */
+    it('emits the exact identity config sequence, in the lane path, for every command', () => {
+        const commands: string[][] = [];
+        const cwds: (string | undefined)[] = [];
+        const run = (command: string, args: string[], options?: { cwd?: string }) => {
+            commands.push([command, ...args]);
+            cwds.push(options?.cwd);
+        };
+
+        spawnRecorder.record((recorded) => {
+            const port = shellPort(() => `${process.cwd()}/.git`, run, process.cwd());
+            port.stampAuthorIdentity('/repo/.agents/worktrees/agent--cleanup');
+            return recorded;
+        });
+
+        expect(commands).toEqual([
+            ['git', 'config', 'extensions.worktreeConfig', 'true'],
+            ['git', 'config', '--worktree', 'user.name', 'hplovecraft208[bot]'],
+            ['git', 'config', '--worktree', 'user.email', '318698904+hplovecraft208[bot]@users.noreply.github.com'],
+            ['git', 'config', '--worktree', 'commit.gpgsign', 'false'],
+        ]);
+        expect(cwds.every((cwd) => cwd === '/repo/.agents/worktrees/agent--cleanup')).toBe(true);
+    });
+
+    it('stamps values real git reads back in the opened lane', () => {
+        const f = creationFixture();
+
+        const lanePath = openLane(undefined, 'solo', 'glm-5.3', f.port);
+
+        expect(f.gitAt(lanePath, ['config', 'user.name'])).toBe('hplovecraft208[bot]');
+        expect(f.gitAt(lanePath, ['config', 'user.email'])).toBe(
+            '318698904+hplovecraft208[bot]@users.noreply.github.com'
+        );
+        expect(f.gitAt(lanePath, ['config', 'commit.gpgsign'])).toBe('false');
     });
 
     it('does not modify a primary checkout path', () => {
