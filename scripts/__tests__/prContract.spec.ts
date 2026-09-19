@@ -827,6 +827,22 @@ describe('product-scope test instructions', () => {
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
     });
 
+    it('passes a manual step whose leading verb is also a command head', () => {
+        // 'Format' names a command head, so the argument-run scan opens — and must close at the
+        // first word a reader reads, leaving the step's nouns to rescue the segment as usual.
+        const step = 'Format the disk name in the export dialog';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('passes a comma-joined observation no conjunction introduces', () => {
+        const step = 'pnpm dev, drag a clip onto a lane, it lands quantized';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
     it('refuses a filler word joining two commands mid-segment', () => {
         const joined = 'pnpm typecheck and then pnpm lint';
 
