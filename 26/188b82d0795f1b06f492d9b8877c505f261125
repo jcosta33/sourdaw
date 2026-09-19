@@ -1,0 +1,52 @@
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_9e15f5b7ec3308::t_a19414922eee03 35
+  s_9e15f5b7ec3308::t_5aa18b8f358273 33
+  s_9e15f5b7ec3308::t_242678fa0b984f 48
+  s_9e15f5b7ec3308::t_196c07f76a51d7 23
+  s_9e15f5b7ec3308::t_e651a57286db0d 47
+  s_9e15f5b7ec3308::t_76d6703486d3ee 32
+  s_9e15f5b7ec3308::t_cc148c3ba8e649 43
+  s_9e15f5b7ec3308::t_cce1af4e004543 53
+  s_9e15f5b7ec3308::t_aa807277055ee0 44
+  s_9e15f5b7ec3308::t_1d12464bdc565b 56
+  s_9e15f5b7ec3308::t_61d087c66d79f6 31
+  s_9e15f5b7ec3308::t_15c3e98f3c1683 29
+  s_9e15f5b7ec3308::t_2f699d5bd04974 55
+  s_9e15f5b7ec3308::t_6d71b1be50d3cd 27
+  s_9e15f5b7ec3308::t_e4f89e2ff9ff1b 25
+  s_9e15f5b7ec3308::t_b3b08df502ff4a 36
+  s_9e15f5b7ec3308::t_1877498ecf7768 26
+  s_9e15f5b7ec3308::t_3b49cf1dcbdeab 37
+  s_9e15f5b7ec3308::t_98938a71177d62 28
+  s_9e15f5b7ec3308::t_acb6ae29425ffd 38
+  s_9e15f5b7ec3308::t_46a918cf01a3e4 40
+  s_9e15f5b7ec3308::t_eabb97b28b5475 45
+  s_9e15f5b7ec3308::t_70f69c91d94e73 50
+  s_9e15f5b7ec3308::t_08fe3a527c1241 24
+  s_9e15f5b7ec3308::t_9235b34773c35f 51
+  s_9e15f5b7ec3308::t_86d01fd91edf9d 46
+  s_9e15f5b7ec3308::t_58f6304d0fa7d0 52
+  s_9e15f5b7ec3308::t_fed1a329436100 30
+  s_9e15f5b7ec3308::t_7c92d44f59fc03 34
+  s_9e15f5b7ec3308::t_513f1fde7bd293 22
+  s_9e15f5b7ec3308::t_fb96fa71fa2df5 49
+  s_9e15f5b7ec3308::t_7eb541b2274e44 39
+evidence/agent-campaign/manifest.json
+  s_9e15f5b7ec3308::t_d3b45e54a636e7 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "26188b82d0795f1b06f492d9b8877c505f261125",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
