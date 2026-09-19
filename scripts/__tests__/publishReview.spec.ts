@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -187,6 +187,7 @@ function fakePort(
             }
             return json;
         },
+        bundleFileExists: (path) => existsSync(path),
         readBundleDiff: () =>
             input.diff ??
             [
@@ -1038,6 +1039,7 @@ describe('review publish', () => {
                             reviewerModel: 'glm-5.3-flash',
                         };
                     },
+                    bundleFileExists: (path) => existsSync(path),
                     readBundleDiff: () => '',
                     postReview: () => {
                         const oid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
@@ -4968,6 +4970,7 @@ describe('fresh reviewer dossier publication', () => {
                 calls.push(`read:${path}`);
                 return readJsonFile(path);
             },
+            bundleFileExists: (path) => existsSync(path),
             readBundleDiff: () => '',
             postReview: (review) => {
                 calls.push('post');
@@ -5170,6 +5173,62 @@ describe('fresh reviewer dossier publication', () => {
             expect(fixture.posted.review?.event).toBe('APPROVE');
             expect(fixture.writes).toEqual([]);
             expect(fixture.calls.some((call) => call.endsWith('dossier.json'))).toBe(false);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes a legacy bundle whose manifest generated list omits the risk plan', () => {
+        const fixture = dossierFixture({
+            manifest: {
+                pr: number,
+                baseRefName: 'main',
+                baseSha: base,
+                headSha: head,
+                generated: ['diff.patch', 'manifest.json', 'pr.md', 'review-size.json'],
+            },
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            expect(fixture.writes).toEqual([]);
+            expect(fixture.calls.some((call) => call.endsWith('dossier.json'))).toBe(false);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a risk plan file that exists but does not parse and never posts', () => {
+        const fixture = dossierFixture({ plan: riskPlan() });
+        writeFileSync(join(fixture.bundle, 'risk-plan.json'), '{ not a risk plan');
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/risk-plan\.json/u);
+            expect(message).toMatch(/does not parse/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a manifest that records generating the risk plan while the file is absent', () => {
+        const fixture = dossierFixture({
+            manifest: {
+                pr: number,
+                baseRefName: 'main',
+                baseSha: base,
+                headSha: head,
+                generated: ['diff.patch', 'manifest.json', 'risk-plan.json'],
+            },
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/missing review risk plan at .*risk-plan\.json/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }

@@ -2323,6 +2323,7 @@ describe('package scripts and gitignore', () => {
                 assertApprovalContext: () => ({ pr: 2495, headSha: head, baseRefName: 'main', baseSha: 'base' }),
                 pullRequest: () => ({ state: 'OPEN', head }),
                 readReviewJson: (path: string) => JSON.parse(readFileSync(path, 'utf8')),
+                bundleFileExists: (path: string) => existsSync(path),
                 readBundleDiff: (path: string) => readFileSync(path, 'utf8'),
                 postReview: () => expect.fail('review creation should not start'),
                 log: () => undefined,

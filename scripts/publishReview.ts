@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -15,7 +15,12 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { composeReviewCommentBody, fail, PR_STATE } from './prContract.ts';
-import { readReviewBundleContext, reviewBundlePath, type ReviewBundleContext } from './prepareReview.ts';
+import {
+    readBundleGeneratedSet,
+    readReviewBundleContext,
+    reviewBundlePath,
+    type ReviewBundleContext,
+} from './prepareReview.ts';
 import {
     type PullRequestRemoteMutationBoundary,
     type PullRequestReviewPublicationMutationBoundary,
@@ -79,6 +84,7 @@ export type PublishReviewPort = {
     primaryRoot: () => string;
     pullRequest: (number: number) => { state: string; head: string; labels?: AuthorshipLabel[] };
     readReviewJson: (path: string) => unknown;
+    bundleFileExists: (path: string) => boolean;
     readBundleDiff: (path: string) => string;
     writeBundleText?: (path: string, contents: string) => void;
     assertApprovalContext?: (number: number, head: string, bundle: string) => ReviewBundleContext;
@@ -171,14 +177,17 @@ const REVIEW_DISCARDED_NAME = 'discarded.json';
 type BundleFileRead = { present: true; value: unknown } | { present: false };
 
 /**
- * The publication port signals an absent bundle file by throwing, which is also how a file that
- * does not parse arrives. Both are handled here as "not usable", so a probe reads this result
- * rather than catching at each call site.
+ * The publication port signals an absent bundle file by throwing, and a file that does not parse
+ * arrives the same way. The port's own existence probe tells the two apart, so a file that is
+ * present but unparseable is refused here instead of being mistaken for an absent legacy artifact.
  */
 function readBundleFile(port: PublishReviewPort, path: string): BundleFileRead {
     try {
         return { present: true, value: port.readReviewJson(path) };
     } catch {
+        if (port.bundleFileExists(path)) {
+            fail(`review bundle file at ${path} does not parse`);
+        }
         return { present: false };
     }
 }
@@ -245,12 +254,18 @@ function prepareReviewDossierPublication(input: {
     document: ReviewDocument;
     port: PublishReviewPort;
 }): void {
-    const planRead = readBundleFile(input.port, join(input.bundle, REVIEW_RISK_PLAN_NAME));
+    const planPath = join(input.bundle, REVIEW_RISK_PLAN_NAME);
+    const planRead = readBundleFile(input.port, planPath);
     if (!planRead.present) {
-        // Legacy compatibility: a bundle prepared before `review:prepare` wrote risk plans predates
-        // the dossier contract, so it publishes exactly as before instead of being refused for a
-        // record it was never prepared with.
-        return;
+        // Legacy compatibility: a bundle whose manifest was prepared before `review:prepare` wrote
+        // risk plans records no such generated file, so it publishes exactly as before instead of
+        // being refused for a record it was never prepared with. A manifest that does record the
+        // plan is asserting the bundle carries one, so an absent file is a refusal, not a legacy
+        // bundle.
+        if (readBundleGeneratedSet(input.bundle)?.has(REVIEW_RISK_PLAN_NAME) !== true) {
+            return;
+        }
+        fail(`missing review risk plan at ${planPath}; the bundle manifest records generating it`);
     }
     const plan = parseReviewRiskPlan(planRead.value);
     assertReviewRiskPlanBindsBundle(input.number, input.head, plan, input.bundle);
@@ -458,6 +473,7 @@ export function shellPort(
         },
         reviewState: (number, head) => readPullRequestReviewState(number, head, REQUIRED_REPOSITORY, gh),
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
+        bundleFileExists: (path) => existsSync(path),
         readBundleDiff: (path) => readFileSync(path, 'utf8'),
         writeBundleText: (path, contents) => writeFileSync(path, contents),
         assertApprovalContext: (number, head, bundle) =>

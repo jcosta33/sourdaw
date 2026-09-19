@@ -189,13 +189,13 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
 }
 
 /**
- * The `generated` list a previous install recorded in its own `manifest.json`, or `undefined` when
- * that record is unavailable: no manifest, an unparseable one, one whose `generated` field is
- * missing, or one whose `generated` field holds something other than an array of strings.
- * `undefined` means the previous generated set is unknown, not empty — `preserveCallerFiles` treats
- * those two differently; see its doc comment.
+ * The `generated` list a bundle's own `manifest.json` records, or `undefined` when that record is
+ * unavailable: no manifest, an unparseable one, one whose `generated` field is missing, or one whose
+ * `generated` field holds something other than an array of strings. `undefined` means the generated
+ * set is unknown, not empty — `preserveCallerFiles` treats those two differently, and the dossier
+ * gate reads a manifest without the entry as a bundle that predates risk plans entirely.
  */
-function previousGeneratedSet(destination: string): ReadonlySet<string> | undefined {
+export function readBundleGeneratedSet(destination: string): ReadonlySet<string> | undefined {
     try {
         const manifest = JSON.parse(readFileSync(join(destination, 'manifest.json'), 'utf8')) as {
             generated?: unknown;
@@ -315,7 +315,7 @@ export function installBundleAtomically(
             writeFileSync(target, contents);
         }
         if (existsSync(destination)) {
-            const previousGenerated = previousGeneratedSet(destination);
+            const previousGenerated = readBundleGeneratedSet(destination);
             const generated = new Set([...(previousGenerated ?? []), ...Object.keys(files)]);
             preserveCallerFiles(destination, staging, generated, previousGenerated === undefined);
             renameSync(destination, previous);

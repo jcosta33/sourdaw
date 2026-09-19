@@ -139,6 +139,13 @@ describe('review dossier chain', () => {
         expect(baseline).toMatch(/^[0-9a-f]{64}$/u);
         expect(reviewDossierEventDigest({ ...event, sequence: 1, previousDigest: GENESIS_DIGEST })).not.toBe(baseline);
         expect(reviewDossierEventDigest({ ...event, sequence: 0, previousDigest: 'f'.repeat(64) })).not.toBe(baseline);
+        const rewrittenPayload = reviewDossierEventDigest({
+            ...event,
+            reviewerModel: 'model-b',
+            sequence: 0,
+            previousDigest: GENESIS_DIGEST,
+        });
+        expect(rewrittenPayload).not.toBe(baseline);
     });
 });
 
@@ -232,6 +239,28 @@ describe('assembleReviewDossier discarded input', () => {
         expect(() => assembleWith({ discarded: { finding: 'finding-3' } })).toThrow(
             /review dossier discarded must be an array/
         );
+    });
+
+    it('should refuse a credential-shaped discard reason and name the reason field', () => {
+        expect(() =>
+            assembleWith({
+                discarded: [
+                    { finding: 'finding-3', stance: 'correctness', reason: 'cannot reproduce on this head' },
+                    { finding: 'finding-4', stance: 'correctness', reason: `ghp_${'A'.repeat(24)}` },
+                ],
+            })
+        ).toThrow(/discarded\[1\] reason value at index 0 contains a GitHub token/);
+    });
+
+    it('should assemble a safe discard reason unchanged', () => {
+        const dossier = assembleWith({
+            discarded: [{ finding: 'finding-3', stance: 'correctness', reason: 'cannot reproduce on this head' }],
+        });
+
+        expect(discardedDispositions(dossier)).toEqual([
+            { findingId: 'finding-2', stance: 'correctness', reason: 'stale diff context' },
+            { findingId: 'finding-3', stance: 'correctness', reason: 'cannot reproduce on this head' },
+        ]);
     });
 });
 
@@ -418,6 +447,17 @@ describe('parseReviewDossier refusals', () => {
         expect(() => parseReviewDossier(mutated)).toThrow(new RegExp(`exceeds ${REVIEW_DOSSIER_MAX_BYTES} bytes`));
     });
 
+    it('should refuse a credential-shaped reason in a persisted discard event', () => {
+        const mutated = cloneDossier();
+        const record = recordAt(mutated, 2);
+        if (record.kind !== 'finding-discarded') {
+            throw new Error('fixture must carry a discard at index 2');
+        }
+        record.reason = `ghp_${'A'.repeat(24)}`;
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/event 2 reason value at index 0 contains a GitHub token/);
+    });
+
     it('should accept a bounded, safe dossier', () => {
         expect(() => parseReviewDossier(validDossier())).not.toThrow();
         expect(Buffer.byteLength(serializeReviewDossier(validDossier()), 'utf8')).toBeLessThanOrEqual(
@@ -432,7 +472,7 @@ const UNSAFE_FIXTURES: { name: string; value: string }[] = [
     { name: 'an AWS access key id', value: `AKIA${'C'.repeat(16)}` },
     { name: 'a private key header', value: '-----BEGIN RSA PRIVATE KEY-----' },
     { name: 'a JSON web token', value: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl' },
-    { name: 'a bearer credential', value: 'Bearer ghp_abcdefghijklmnop' },
+    { name: 'a bearer credential', value: 'Bearer 0123456789abcdef' },
     { name: 'a serialized assistant turn', value: '{"role": "assistant", "content": "review"}' },
     { name: 'a serialized user turn', value: '{"role":"user","content":"review"}' },
     { name: 'a Human transcript line', value: 'Human: please review' },
@@ -456,6 +496,12 @@ describe('assertPublicationSafeEvidence', () => {
     it('should name the offending index of a value list', () => {
         expect(() => assertPublicationSafeEvidence('limitations', ['safe value', `ghp_${'A'.repeat(24)}`])).toThrow(
             /limitations value at index 1/
+        );
+    });
+
+    it('should refuse a bearer credential by the bearer rule rather than an earlier token shape', () => {
+        expect(() => assertPublicationSafeEvidence('evidence[0].observed', ['Bearer 0123456789abcdef'])).toThrow(
+            /evidence\[0\]\.observed value at index 0 contains a bearer credential/
         );
     });
 

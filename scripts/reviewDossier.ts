@@ -202,12 +202,15 @@ function readNonBlankString(label: string, value: unknown): string {
     return value;
 }
 
-function readSingleLineString(label: string, value: unknown): string {
-    const text = readNonBlankString(label, value);
-    if (text.includes('\n') || text.includes('\r')) {
-        fail(`review dossier ${label} must be a single line, found ${describeValue(value)}`);
-    }
-    return text;
+/**
+ * Discard reasons are published evidence like any other recorded value, so a reason carries the
+ * same single-line, trimmed, bounded and credential-refusing rules. The non-blank read runs first
+ * so a blank reason still names itself rather than the safety rule that also catches it.
+ */
+function readDiscardReason(label: string, value: unknown): string {
+    const reason = readNonBlankString(label, value);
+    assertPublicationSafeEvidence(label, [reason]);
+    return reason;
 }
 
 function readPositiveInteger(label: string, value: unknown): number {
@@ -296,7 +299,7 @@ function readEvent(
         kind,
         findingId: readNonBlankString(`${label} findingId`, record.findingId),
         stance: readLiteral(`${label} stance`, record.stance, isReviewStanceId, 'a known review stance'),
-        reason: readSingleLineString(`${label} reason`, record.reason),
+        reason: readDiscardReason(`${label} reason`, record.reason),
     };
 }
 
@@ -346,7 +349,7 @@ function readDiscardedEntry(value: unknown, index: number): ReviewDossierEvent {
         kind: 'finding-discarded',
         findingId: readNonBlankString(`${label} finding`, value.finding),
         stance: readLiteral(`${label} stance`, value.stance, isReviewStanceId, 'a known review stance'),
-        reason: readSingleLineString(`${label} reason`, value.reason),
+        reason: readDiscardReason(`${label} reason`, value.reason),
     };
 }
 
