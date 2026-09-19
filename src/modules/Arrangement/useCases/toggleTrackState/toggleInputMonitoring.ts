@@ -34,7 +34,7 @@ export function toggleInputMonitoring(trackId: string): void {
     // track only (auto is engine-driven by arm/record state, not a live
     // always-on monitor here). Other tracks' monitor edges are untouched.
     if (newValue === 'on') {
-        void startInputMonitoring(trackId);
+        void startInputMonitoring(trackId, track.inputId);
     } else {
         stopTrackInputMonitoring(trackId);
     }

@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type InputMonitoring } from '../../../models/Track';
+import { type InputMonitoring, type Track } from '../../../models/Track';
 import { INPUT_MONITORING_CYCLE, toggleInputMonitoring } from '../toggleInputMonitoring';
+
+const inputTwoTrack = {
+    id: 't1',
+    kind: 'audio',
+    inputMonitoring: 'auto',
+    inputId: 'input-2',
+} satisfies Pick<Track, 'id' | 'kind' | 'inputMonitoring' | 'inputId'>;
 
 const mocks = vi.hoisted(() => ({
     getTrackById: vi.fn(),
@@ -27,7 +34,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 }));
 
 describe('toggleInputMonitoring', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => vi.resetAllMocks());
 
     it('should do nothing when the track does not exist', () => {
         mocks.getTrackById.mockReturnValue(undefined);
@@ -46,7 +53,7 @@ describe('toggleInputMonitoring', () => {
     });
 
     function advance(from: InputMonitoring): InputMonitoring {
-        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', inputMonitoring: from });
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', inputMonitoring: from, inputId: 'input-2' });
         toggleInputMonitoring('t1');
         const patch = mocks.updateTrack.mock.calls.at(-1)![1] as (t: { inputMonitoring: InputMonitoring }) => {
             inputMonitoring: InputMonitoring;
@@ -56,7 +63,7 @@ describe('toggleInputMonitoring', () => {
 
     it('advances auto → on and starts the engine path', () => {
         expect(advance('auto')).toBe('on');
-        expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1');
+        expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1', 'input-2');
         expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
     });
 
@@ -80,13 +87,13 @@ describe('toggleInputMonitoring', () => {
     it('rejects a dormant VCA toggle without writing or stopping another monitoring session', () => {
         mocks.getTrackById.mockImplementation((trackId: string) => {
             if (trackId === 'audio-1') {
-                return { id: 'audio-1', kind: 'audio', inputMonitoring: 'auto' };
+                return { id: 'audio-1', kind: 'audio', inputMonitoring: 'auto', inputId: 'input-2' };
             }
             return { id: 'vca-1', kind: 'vca', inputMonitoring: 'auto' };
         });
 
         toggleInputMonitoring('audio-1');
-        expect(mocks.startInputMonitoring).toHaveBeenCalledWith('audio-1');
+        expect(mocks.startInputMonitoring).toHaveBeenCalledWith('audio-1', 'input-2');
         mocks.updateTrack.mockClear();
         mocks.startInputMonitoring.mockClear();
 
@@ -95,5 +102,21 @@ describe('toggleInputMonitoring', () => {
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
         expect(mocks.stopTrackInputMonitoring).not.toHaveBeenCalled();
+    });
+
+    it('starts monitoring on the track’s own selected input when the toggle enables it', () => {
+        mocks.getTrackById.mockReturnValue(inputTwoTrack);
+
+        toggleInputMonitoring('t1');
+
+        expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1', 'input-2');
+    });
+
+    it('starts monitoring on the default capture when the track has no explicit selection', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', inputMonitoring: 'auto', inputId: null });
+
+        toggleInputMonitoring('t1');
+
+        expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1', null);
     });
 });
