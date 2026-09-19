@@ -650,6 +650,8 @@ const JSON_WEB_TOKEN = ['eyJhbGciOiJIUzI1NiJ9', 'eyJzdWIiOiIxIn0', 'c2lnbmF0dXJl
 const SHORT_BEARER_CREDENTIAL = ['Bearer', 'abc123'].join(' ');
 const EIGHT_CHARACTER_BEARER_CREDENTIAL = ['Bearer', 'abcdefgh'].join(' ');
 const LONG_BEARER_CREDENTIAL = ['Bearer', 'abcdefghijklmnopqrstuvwx'].join(' ');
+const SYMBOL_BEARER_CREDENTIAL = ['Bearer', ['abcd', 'ef'].join('_')].join(' ');
+const LATE_DIGIT_BEARER_CREDENTIAL = ['Bearer', ['abcdef', '12345'].join('')].join(' ');
 const PROSE_BEARER = ['Bearer', 'token'].join(' ');
 const CAPITALISED_SYSTEM_TURN = '{"role":"System","content":"x"}';
 const BENIGN_ADMIN_TURN = '{"role":"admin"}';
@@ -668,6 +670,8 @@ const UNSAFE_FIXTURES: { name: string; value: string }[] = [
     { name: 'a JSON web token', value: JSON_WEB_TOKEN },
     { name: 'a bearer credential', value: BEARER_CREDENTIAL },
     { name: 'a short digit-bearing bearer credential', value: SHORT_BEARER_CREDENTIAL },
+    { name: 'a non-dot-symbol bearer credential', value: SYMBOL_BEARER_CREDENTIAL },
+    { name: 'a late-digit bearer credential', value: LATE_DIGIT_BEARER_CREDENTIAL },
     { name: 'a twenty-four-character bearer credential', value: LONG_BEARER_CREDENTIAL },
     { name: 'a serialized assistant turn', value: '{"role": "assistant", "content": "review"}' },
     { name: 'a serialized user turn', value: '{"role":"user","content":"review"}' },
@@ -717,6 +721,8 @@ describe('assertPublicationSafeEvidence', () => {
 
     it.each([
         ['a short digit-bearing bearer credential', SHORT_BEARER_CREDENTIAL],
+        ['a non-dot-symbol bearer credential', SYMBOL_BEARER_CREDENTIAL],
+        ['a late-digit bearer credential', LATE_DIGIT_BEARER_CREDENTIAL],
         ['a twenty-four-character bearer credential', LONG_BEARER_CREDENTIAL],
     ])('should refuse %s by the bearer rule', (_name, value) => {
         expect(() => assertPublicationSafeEvidence('evidence[0].observed', [value])).toThrow(
