@@ -1,5 +1,6 @@
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import {
+    HOSTED_ANTHROPIC_THINKING_MIN_BUDGET_TOKENS,
     HOSTED_REASONING_EFFORTS,
     type HostedLlmConfiguration,
     type HostedLlmProvider,
@@ -50,6 +51,27 @@ function assertValidReasoningEffort(configuration: HostedLlmConfiguration): void
     }
 }
 
+function assertValidThinking(configuration: HostedLlmConfiguration): void {
+    const thinking = configuration.thinking;
+    if (thinking === undefined) {
+        return;
+    }
+    if (configuration.provider !== 'anthropic') {
+        throw createAiRuntimeError('Extended thinking can only be configured for the Anthropic provider');
+    }
+    if (thinking.type !== 'enabled') {
+        return;
+    }
+    if (
+        !Number.isSafeInteger(thinking.budgetTokens) ||
+        thinking.budgetTokens < HOSTED_ANTHROPIC_THINKING_MIN_BUDGET_TOKENS
+    ) {
+        throw createAiRuntimeError(
+            `Thinking budget must be an integer of at least ${String(HOSTED_ANTHROPIC_THINKING_MIN_BUDGET_TOKENS)} tokens`
+        );
+    }
+}
+
 export async function configureCloudProvider(configuration: HostedLlmConfiguration): Promise<void> {
     const model = configuration.model.trim();
     if (!model) {
@@ -68,6 +90,7 @@ export async function configureCloudProvider(configuration: HostedLlmConfigurati
     }
 
     assertValidReasoningEffort(configuration);
+    assertValidThinking(configuration);
 
     const normalizedBaseUrl = normalizeBaseUrl(configuration.provider, configuration.baseUrl);
     if (
@@ -93,6 +116,7 @@ export async function configureCloudProvider(configuration: HostedLlmConfigurati
         apiKey,
         strictToolSchemas: configuration.strictToolSchemas,
         reasoningEffort: configuration.reasoningEffort,
+        thinking: configuration.thinking,
     });
 
     if (llmStatusStore.value?.state === 'ready' && llmStatusStore.value.backend === 'cloud') {

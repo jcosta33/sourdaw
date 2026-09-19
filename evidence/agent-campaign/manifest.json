@@ -407,7 +407,7 @@
                 },
                 {
                     "path": "src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx",
-                    "digest": "a5a73b81c8eb6fa69daf3eb786aa17243f18ab4478f36ea2824c27be8702f8e4"
+                    "digest": "4a6939aafc1ab0dd8ad92ae6cce8a324b279ad99b9b6d700c9f3827bbdc8d316"
                 }
             ]
         },
@@ -431,7 +431,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/anthropicProviderAdapter.contract.spec.ts",
-                    "digest": "1157fdcb1d102b828434dadc2f2222ec92bc46fe139cdfa6d44d7995e36d4fac"
+                    "digest": "a7ec69849750bd0be8ab12f89180fa056275a617364440e892668c291077648d"
                 }
             ]
         },

@@ -132,8 +132,8 @@ export const setCloudProviderConfig = inject({ logger })(
                     if (!isDesktopRuntime()) {
                         throw new Error('Hosted providers are available in desktop builds only');
                     }
-                    runtime = {
-                        provider: 'anthropic',
+                    const anthropicRuntime = {
+                        provider: 'anthropic' as const,
                         model: configuration.model,
                         authentication: configuration.authentication,
                         session_id: await openProviderGatewaySession(
@@ -142,6 +142,10 @@ export const setCloudProviderConfig = inject({ logger })(
                             configuration.apiKey
                         ),
                     };
+                    runtime =
+                        configuration.thinking !== undefined
+                            ? { ...anthropicRuntime, thinking: configuration.thinking }
+                            : anthropicRuntime;
                 } else {
                     if (configuration.provider === 'openai' && configuration.authentication !== 'api-key') {
                         throw new Error('OpenAI requires API-key authentication');

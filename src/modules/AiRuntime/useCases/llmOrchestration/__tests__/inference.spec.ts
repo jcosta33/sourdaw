@@ -195,7 +195,13 @@ describe('generateToolPlanningOutcome', () => {
             providerRequestId: null,
             calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
             strictToolSchemas: true,
-            usage: { inputTokens: 21, outputTokens: 6, cacheReadInputTokens: 3, cacheWriteInputTokens: 8 },
+            usage: {
+                inputTokens: 21,
+                outputTokens: 6,
+                cacheReadInputTokens: 3,
+                cacheWriteInputTokens: 8,
+                reasoningTokens: null,
+            },
         });
         const onProviderResult = vi.fn();
 
@@ -232,6 +238,7 @@ describe('generateToolPlanningOutcome', () => {
                 outputTokens: 8,
                 cacheReadInputTokens: 100,
                 cacheWriteInputTokens: null,
+                reasoningTokens: null,
             })
         );
         const onProviderResult = vi.fn();

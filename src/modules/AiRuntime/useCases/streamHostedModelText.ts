@@ -139,6 +139,7 @@ export async function streamHostedModelText(input: StreamHostedModelTextInput): 
                 signal: input.signal,
                 onUsage: (event) => writer.push(event),
                 onUnknownEvent: (providerEventType) => writer.push({ type: 'unknown', providerEventType }),
+                onReasoning: (text) => writer.push({ type: 'reasoning', mode: 'delta', text }),
             }
         );
         if (outcome.status === 'complete') {

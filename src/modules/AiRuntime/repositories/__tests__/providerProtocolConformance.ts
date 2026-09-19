@@ -165,6 +165,12 @@ export type ProviderStreamScenario =
 
 export type ProviderToolScenario =
     | 'tool-batch'
+    /**
+     * A reply whose tool calls are preceded by the provider's own thinking output, where
+     * the dialect has one. A dialect without it answers with its plain tool batch: either
+     * way the caller must read the same calls, never a rejection.
+     */
+    | 'thinking-preface-batch'
     | 'empty-batch'
     | 'malformed-arguments'
     | 'oversized-call-id'
@@ -459,6 +465,20 @@ export function describeProviderProtocolConformance(name: string, harness: Provi
                 outputTokens: PROVIDER_CONFORMANCE_FIXTURE.toolUsage.outputTokens,
                 cacheReadInputTokens: PROVIDER_CONFORMANCE_FIXTURE.toolUsage.cacheReadInputTokens,
             });
+        });
+
+        it('reads the same tool calls from a reply whose thinking precedes them', async () => {
+            const observed = await harness.planTools('thinking-preface-batch');
+
+            expect(observed.calls).toEqual(
+                PROVIDER_CONFORMANCE_FIXTURE.toolCalls.map((call) => ({
+                    id: call.id,
+                    name: call.name,
+                    arguments: call.arguments,
+                }))
+            );
+            expect(observed.failure).toBeUndefined();
+            expectToolRequest(observed.request);
         });
 
         it('accepts an empty tool-call batch as no calls', async () => {

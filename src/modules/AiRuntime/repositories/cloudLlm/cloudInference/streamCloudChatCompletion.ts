@@ -9,6 +9,7 @@ import { linkCloudRequestAbort } from '../linkCloudRequestAbort';
 import { registerCloudStreamController } from '../registerCloudStreamController';
 import { unregisterCloudStreamController } from '../unregisterCloudStreamController';
 
+import { buildAnthropicThinkingBudget } from './buildAnthropicThinkingBudget';
 import { type HostedOpenAiStreamResult } from './openAiStreamResult';
 import { readProviderRequestId } from './readProviderRequestId';
 import { requestAnthropicStream } from './requestAnthropicStream';
@@ -77,6 +78,8 @@ type HostedStreamOptions = {
     maxTokens?: number;
     onUsage?: (event: ModelProviderUsageEvent) => void;
     onUnknownEvent?: (providerEventType: string) => void;
+    /** Summarized thinking text, streamed apart from the answer's own tokens. */
+    onReasoning?: (text: string) => void;
 };
 
 function readHostedOpenAiOutcome(result: HostedOpenAiStreamResult): CloudChatCompletionOutcome {
@@ -113,10 +116,17 @@ async function streamAnthropicChatCompletion(
     let sawMessageStop = false;
     let eventCount = 0;
     let streamedBytes = 0;
+    // A chat turn renders its thinking, so it asks for the summarized form.
+    const outputBudget = buildAnthropicThinkingBudget({
+        thinking: runtime.thinking,
+        display: 'summarized',
+        maxOutputTokens: options.maxTokens ?? 2048,
+    });
     await requestAnthropicStream({
         sessionId: runtime.session_id,
         model: runtime.model || DEFAULT_HOSTED_ANTHROPIC_MODEL,
-        maxTokens: options.maxTokens ?? 2048,
+        maxTokens: outputBudget.maxTokens,
+        thinking: outputBudget.thinking,
         system: systemMessage?.content ?? 'You are a helpful music production assistant embedded in a DAW.',
         messages: chatMessages,
         signal,
@@ -153,6 +163,13 @@ async function streamAnthropicChatCompletion(
                         throw new TypeError('Hosted AI chat stream returned invalid text');
                     }
                     onToken(event.delta.text);
+                    return;
+                }
+                if (event.delta.type === 'thinking_delta') {
+                    if (typeof event.delta.thinking !== 'string') {
+                        throw new TypeError('Hosted AI chat stream returned invalid thinking text');
+                    }
+                    options.onReasoning?.(event.delta.thinking);
                 }
                 return;
             }
@@ -206,6 +223,7 @@ export async function streamCloudChatCompletion(
         signal?: AbortSignal;
         onUsage?: (event: ModelProviderUsageEvent) => void;
         onUnknownEvent?: (providerEventType: string) => void;
+        onReasoning?: (text: string) => void;
     }
 ): Promise<CloudChatCompletionOutcome> {
     const runtime = getCloudProviderRuntime();
@@ -224,13 +242,10 @@ export async function streamCloudChatCompletion(
     try {
         switch (runtime.provider) {
             case 'anthropic':
-                return await streamAnthropicChatCompletion(
-                    runtime,
-                    messages,
-                    onToken,
-                    controller.signal,
-                    streamOptions
-                );
+                return await streamAnthropicChatCompletion(runtime, messages, onToken, controller.signal, {
+                    ...streamOptions,
+                    onReasoning: options?.onReasoning,
+                });
             case 'openai': {
                 const result = await streamOpenAiResponses({
                     runtime,
@@ -307,6 +322,9 @@ function readAnthropicUsageEvent(event: unknown): ModelProviderUsageEvent | null
     const outputTokens = readNonNegativeInteger(usageContainer.output_tokens);
     const cacheCreationInputTokens = readNonNegativeInteger(usageContainer.cache_creation_input_tokens);
     const cacheReadInputTokens = readNonNegativeInteger(usageContainer.cache_read_input_tokens);
+    const reasoningTokens = isRecord(usageContainer.output_tokens_details)
+        ? readNonNegativeInteger(usageContainer.output_tokens_details.thinking_tokens)
+        : null;
     const cachedInputTokens =
         cacheCreationInputTokens === null && cacheReadInputTokens === null
             ? null
@@ -323,7 +341,7 @@ function readAnthropicUsageEvent(event: unknown): ModelProviderUsageEvent | null
             inputTokens: totalInputTokens,
             outputTokens,
             cachedInputTokens,
-            reasoningTokens: null,
+            reasoningTokens,
         },
         provenance: 'provider-reported',
     };

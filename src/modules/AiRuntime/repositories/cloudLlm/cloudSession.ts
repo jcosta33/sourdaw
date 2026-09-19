@@ -1,5 +1,6 @@
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import {
+    type HostedAnthropicThinking,
     type HostedLlmAuthentication,
     type HostedLlmProviderInfo,
     type HostedReasoningEffort,
@@ -13,6 +14,11 @@ export type AnthropicCloudRuntime = Readonly<{
     model: string;
     authentication: HostedLlmAuthentication;
     session_id: string;
+    /**
+     * Extended thinking every request on this runtime carries. Absent means
+     * unconfigured, and leaves the request body free of any `thinking` object.
+     */
+    thinking?: HostedAnthropicThinking;
 }>;
 
 /**
@@ -127,6 +133,7 @@ class CloudSession {
             baseUrl: runtime.provider === 'anthropic' ? null : runtime.base_url,
             authentication: runtime.authentication,
             reasoningEffort: runtime.provider === 'openai' ? (runtime.reasoning_effort ?? null) : null,
+            thinking: runtime.provider === 'anthropic' ? (runtime.thinking ?? null) : null,
         };
         hostedLlmProviderStatusStore.set(providerInfo);
     }

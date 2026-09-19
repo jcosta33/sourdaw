@@ -321,6 +321,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             outputTokens: 3,
             cacheReadInputTokens: 2,
             cacheWriteInputTokens: null,
+            reasoningTokens: null,
         });
     });
 
