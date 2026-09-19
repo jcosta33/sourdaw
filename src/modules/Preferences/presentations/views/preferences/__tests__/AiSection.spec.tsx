@@ -50,15 +50,15 @@ vi.mock('#/modules/AiRuntime/stores', () => ({
     llmStatusStore: {},
 }));
 
-vi.mock('#/modules/AiRuntime/useCases', async () => {
-    // Imports the models file directly (not the heavy useCases barrel) so this mock
-    // renders the same reasoning-effort literal set the real component ships, instead
-    // of a copy that can silently drift from it.
-    const { HOSTED_REASONING_EFFORTS } = await import('#/modules/AiRuntime/models/HostedLlmProvider');
+vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => {
+    // Reads HOSTED_REASONING_EFFORTS from the real barrel instead of a transcribed
+    // literal, so this mock renders the same reasoning-effort set the real component
+    // ships and cannot silently drift from it.
+    const actual = await importOriginal<typeof import('#/modules/AiRuntime/useCases')>();
     return {
         configureCloudProvider: mocks.configureCloudProvider,
         getDefaultHostedAnthropicModel: () => mocks.catalogModelA.value,
-        HOSTED_REASONING_EFFORTS,
+        HOSTED_REASONING_EFFORTS: actual.HOSTED_REASONING_EFFORTS,
         listHostedAnthropicModels: () => [mocks.catalogModelA, mocks.catalogModelB],
         removeCloudProvider: mocks.removeCloudProvider,
         resolveBackend: mocks.resolveBackend,
