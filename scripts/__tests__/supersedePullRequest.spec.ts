@@ -659,7 +659,7 @@ describe('pull-request supersession', () => {
             /finding lineage marker line is not the canonical key-sorted, whitespace-free JSON record/i
         );
     });
-    it('rejects a lineage rendering that is valid JSON but not the promised form', () => {
+    it('pins the serializer byte form as key-sorted, whitespace-free bytes that re-encode to themselves', () => {
         const payload = lineagePayloadOf(renderFindingLineage(repairedLineage));
         const parsed: unknown = JSON.parse(payload);
         expect(canonicalJson(parsed)).toBe(payload);
@@ -676,6 +676,21 @@ describe('pull-request supersession', () => {
         expect(whitespaceOutsideStrings(indented)).not.toEqual([]);
         expect(canonicalJson(indentedValue)).not.toBe(indented);
         expect(canonicalJson(unsortedValue)).not.toBe(unsorted);
+    });
+    it('refuses a lineage marker whose payload is valid JSON but not the canonical byte form', () => {
+        const payload = lineagePayloadOf(renderFindingLineage(repairedLineage));
+        const parsed: unknown = JSON.parse(payload);
+        // The marker grammar reads one line, so the pretty bytes ride it with their breaks folded to spaces.
+        const indented = `${LINEAGE_MARKER} ${JSON.stringify(parsed, null, 2).replaceAll('\n', ' ')}`;
+        const unsorted = `${LINEAGE_MARKER} {"format":"lineage-v1","oldPr":2244,"replacementPr":2246,"entries":[{"findingId":"1001","disposition":"repaired","replacementPr":2246,"replacementFindingId":"2001","reason":""}]}`;
+        expect(JSON.parse(indented.slice(LINEAGE_MARKER.length))).toEqual(repairedLineage);
+        expect(JSON.parse(unsorted.slice(LINEAGE_MARKER.length))).toEqual(repairedLineage);
+        expect(() => parseFindingLineage(indented)).toThrow(
+            /finding lineage marker line is not the canonical key-sorted, whitespace-free JSON record/i
+        );
+        expect(() => parseFindingLineage(unsorted)).toThrow(
+            /finding lineage marker line is not the canonical key-sorted, whitespace-free JSON record/i
+        );
     });
 
     it.each([

@@ -357,22 +357,21 @@ function skipJsonWhitespace(text: string, start: number): number {
  * a repetition. Called only on text `JSON.parse` already accepted, so the structure is well formed.
  */
 function repeatedMemberKey(text: string): string | undefined {
-    const objects: (Set<string> | null)[] = [];
+    const objectKeys: Set<string>[] = [];
     let index = 0;
     while (index < text.length) {
         const char = text.charAt(index);
         if (char === '{') {
-            objects.push(new Set());
+            objectKeys.push(new Set());
             index += 1;
             continue;
         }
-        if (char === '[') {
-            objects.push(null);
+        if (char === '}') {
+            objectKeys.pop();
             index += 1;
             continue;
         }
-        if (char === '}' || char === ']') {
-            objects.pop();
+        if (char === '[' || char === ']') {
             index += 1;
             continue;
         }
@@ -387,8 +386,8 @@ function repeatedMemberKey(text: string): string | undefined {
             continue;
         }
         const key: unknown = JSON.parse(text.slice(start, end + 1));
-        const keys = objects.at(-1) ?? null;
-        if (keys === null || typeof key !== 'string') {
+        const keys = objectKeys.at(-1);
+        if (keys === undefined || typeof key !== 'string') {
             continue;
         }
         if (keys.has(key)) {
