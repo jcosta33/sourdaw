@@ -869,6 +869,7 @@ const BUILTIN_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        characterTags: ['bitcrush'],
         parameters: [
             {
                 id: 'crush-bits',

@@ -161,6 +161,16 @@ export type PluginDescriptorGuidance = {
     parameters: Readonly<Record<string, DeviceParameterGuidance>>;
 };
 
+/**
+ * Characters a device algorithm may declare for catalog discovery.
+ *
+ * These describe the algorithm the descriptor owns. A preset may use the
+ * same word as a descriptive association without granting it to a device.
+ */
+export const DEVICE_CHARACTER_TAGS = ['plate', 'hall', 'room', 'spring', 'tape', 'tube', 'bitcrush'] as const;
+
+export type DeviceCharacterTag = (typeof DEVICE_CHARACTER_TAGS)[number];
+
 export type PluginDescriptor = {
     id: string;
     name: string;
@@ -184,4 +194,6 @@ export type PluginDescriptor = {
     capabilities?: PluginDescriptorCapabilities;
     /** Owner-authored operating guidance. Agent projections must not infer it. */
     guidance?: PluginDescriptorGuidance;
+    /** Owner-authored algorithm characters for bounded catalog discovery. */
+    characterTags?: readonly DeviceCharacterTag[];
 };

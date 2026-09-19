@@ -114,18 +114,30 @@ describe('built-in descriptor manifest law', () => {
         if (!eq || !sidechain) {
             throw new Error('Expected EQ and sidechain compressor descriptors');
         }
+        const eqPresets = getFactoryPresets().filter((preset) =>
+            preset.devices.some((device) => device.type === 'builtin-eq')
+        );
         expect(eq?.presetVersion).toMatch(/^preset-v1:[a-f0-9]{8}$/);
         expect(sidechain?.presetVersion).toMatch(/^preset-v1:[a-f0-9]{8}$/);
         expect(eq?.presetVersion).not.toBe(sidechain?.presetVersion);
         expect(eq.presetVersion).toBe(
-            `preset-v1:${getStableContractFingerprint({ availability: eq.presets.availability, identities: eq.presets.identities })}`
+            `preset-v1:${getStableContractFingerprint({ availability: eq.presets.availability, presets: eqPresets })}`
         );
         expect(eq.presetVersion).not.toBe(
             `preset-v1:${getStableContractFingerprint({
                 availability: eq.presets.availability,
-                identities: eq.presets.identities.filter((identity) => identity.id !== 'fx-eq-vocal-presence'),
+                presets: eqPresets.filter((preset) => preset.id !== 'fx-eq-vocal-presence'),
             })}`
         );
+    });
+
+    it('publishes only descriptor-authored character associations', () => {
+        const manifest = getAgentBuiltinDeviceFactoryManifest();
+
+        expect(manifest.find((device) => device.type === 'dutch-oven')?.characterTags).toEqual(['plate', 'spring']);
+        expect(manifest.find((device) => device.type === 'faust-tape-delay')?.characterTags).toEqual(['tape']);
+        expect(manifest.find((device) => device.type === 'builtin-bitcrusher')?.characterTags).toEqual(['bitcrush']);
+        expect(manifest.find((device) => device.type === 'builtin-distortion')?.characterTags).toEqual([]);
     });
 
     it('publishes complete owner-authored safety and operating guidance without inferred boilerplate', () => {

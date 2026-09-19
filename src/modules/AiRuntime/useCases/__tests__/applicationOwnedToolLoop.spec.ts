@@ -1167,6 +1167,43 @@ describe('project discovery tool', () => {
         expect(receipt?.revision).toEqual(expect.any(String));
     });
 
+    it('forwards the owner-published preset character receipt with its concrete stable id', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'discover-tube-preset',
+                        name: 'project.discover',
+                        arguments: { domain: 'preset', filters: { text: 'tube' } },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-discovery-tube-preset',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+        const receipt = result.receipts.find((entry) => entry.callId === 'discover-tube-preset');
+
+        expect(receipt).toMatchObject({
+            toolName: 'project.discover',
+            status: 'success',
+            data: {
+                domain: 'preset',
+                items: [
+                    {
+                        id: 'fx-dist-warm-overdrive',
+                        evidence: { tags: expect.arrayContaining(['tube']) },
+                    },
+                ],
+            },
+        });
+    });
+
     it.each([
         {
             label: 'a domain no owner publishes',

@@ -28,6 +28,7 @@ type AgentBuiltinDeviceDescriptor = {
     type: string;
     descriptorVersion: string;
     presetVersion: string;
+    characterTags: readonly NonNullable<PluginDescriptor['characterTags']>[number][];
     capabilities: NonNullable<PluginDescriptor['capabilities']>;
     guidance: Omit<NonNullable<PluginDescriptor['guidance']>, 'parameters'>;
     vendor: string;
@@ -102,6 +103,7 @@ export function getAgentBuiltinDeviceFactoryManifest(): readonly AgentBuiltinDev
             type: descriptor.id,
             descriptorVersion,
             presetVersion: presetContract.presetVersion,
+            characterTags: descriptor.characterTags ?? [],
             capabilities: descriptor.capabilities,
             guidance: {
                 usage: descriptor.guidance.usage,

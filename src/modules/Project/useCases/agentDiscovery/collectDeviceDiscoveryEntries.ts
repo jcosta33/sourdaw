@@ -29,6 +29,7 @@ function toBuiltinCandidate(descriptor: BuiltinDescriptor, runtime: BuiltinRunti
     })();
     return {
         kind: 'builtin',
+        searchTerms: descriptor.characterTags,
         entry: {
             id: descriptor.type,
             name: descriptor.name,
@@ -46,6 +47,7 @@ function toBuiltinCandidate(descriptor: BuiltinDescriptor, runtime: BuiltinRunti
                 presetVersion: descriptor.presetVersion,
                 runtimeVersion,
                 presets: descriptor.presets,
+                characterTags: descriptor.characterTags,
             },
         },
     };
