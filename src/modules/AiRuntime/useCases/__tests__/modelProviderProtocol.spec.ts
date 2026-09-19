@@ -173,7 +173,13 @@ describe('model provider protocol', () => {
             eventEnvelope(request, 1, {
                 type: 'usage',
                 mode: 'cumulative-snapshot',
-                usage: { inputTokens: 30, outputTokens: null, cachedInputTokens: null, reasoningTokens: null },
+                usage: {
+                    inputTokens: 17,
+                    outputTokens: 0,
+                    cachedInputTokens: 2,
+                    cacheWriteInputTokens: 3,
+                    reasoningTokens: null,
+                },
                 provenance: 'provider-reported',
             })
         );
@@ -181,16 +187,23 @@ describe('model provider protocol', () => {
             eventEnvelope(request, 2, {
                 type: 'usage',
                 mode: 'final',
-                usage: { inputTokens: 31, outputTokens: 12, cachedInputTokens: null, reasoningTokens: null },
+                usage: {
+                    inputTokens: null,
+                    outputTokens: 4,
+                    cachedInputTokens: null,
+                    cacheWriteInputTokens: null,
+                    reasoningTokens: null,
+                },
                 provenance: 'provider-reported',
             })
         );
         const result = session.finish(finishEnvelope(request, 3, { reason: 'stop' }));
 
         expect(result.usage).toEqual({
-            inputTokens: 31,
-            outputTokens: 12,
-            cachedInputTokens: null,
+            inputTokens: 17,
+            outputTokens: 4,
+            cachedInputTokens: 2,
+            cacheWriteInputTokens: 3,
             reasoningTokens: null,
             provenance: 'provider-reported',
         });
@@ -208,6 +221,28 @@ describe('model provider protocol', () => {
             reasoningTokens: null,
             provenance: 'unavailable',
         });
+    });
+
+    it('rejects a malformed optional cache-write counter', () => {
+        const { protocol, request } = readyRequest();
+        const session = protocol.start(request);
+
+        expect(() =>
+            session.push(
+                eventEnvelope(request, 0, {
+                    type: 'usage',
+                    mode: 'final',
+                    usage: {
+                        inputTokens: 1,
+                        outputTokens: 1,
+                        cachedInputTokens: 0,
+                        cacheWriteInputTokens: -1,
+                        reasoningTokens: null,
+                    },
+                    provenance: 'provider-reported',
+                })
+            )
+        ).toThrow('Provider stream event has an invalid runtime shape.');
     });
 
     it.each(FINISH_TABLE)('$name', ({ pushOutput, exceedsBudget, finish, expected }) => {

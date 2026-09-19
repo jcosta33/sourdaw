@@ -90,13 +90,24 @@ describe('streamHostedModelText', () => {
             options?.onUsage?.({
                 type: 'usage',
                 mode: 'cumulative-snapshot',
-                usage: { inputTokens: 17, outputTokens: 0, cachedInputTokens: 5, reasoningTokens: null },
+                usage: {
+                    inputTokens: 17,
+                    outputTokens: 0,
+                    cachedInputTokens: 2,
+                    cacheWriteInputTokens: 3,
+                    reasoningTokens: null,
+                },
                 provenance: 'provider-reported',
             });
             options?.onUsage?.({
                 type: 'usage',
                 mode: 'final',
-                usage: { inputTokens: null, outputTokens: 4, cachedInputTokens: null, reasoningTokens: null },
+                usage: {
+                    inputTokens: null,
+                    outputTokens: 4,
+                    cachedInputTokens: null,
+                    reasoningTokens: null,
+                },
                 provenance: 'provider-reported',
             });
             return { status: 'complete' as const };
@@ -112,7 +123,8 @@ describe('streamHostedModelText', () => {
         expect(result.usage).toMatchObject({
             inputTokens: 17,
             outputTokens: 4,
-            cachedInputTokens: 5,
+            cachedInputTokens: 2,
+            cacheWriteInputTokens: 3,
             provenance: 'provider-reported',
         });
     });

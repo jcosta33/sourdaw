@@ -10,6 +10,7 @@ import { registerCloudStreamController } from '../registerCloudStreamController'
 import { unregisterCloudStreamController } from '../unregisterCloudStreamController';
 
 import { buildAnthropicThinkingBudget } from './buildAnthropicThinkingBudget';
+import { normalizeAnthropicInputUsage } from './normalizeAnthropicUsage';
 import { type HostedOpenAiStreamResult } from './openAiStreamResult';
 import { readProviderRequestId } from './readProviderRequestId';
 import { requestAnthropicStream } from './requestAnthropicStream';
@@ -318,31 +319,32 @@ function readAnthropicUsageEvent(event: unknown): ModelProviderUsageEvent | null
     if (!usageContainer) {
         return null;
     }
-    const inputTokens = readNonNegativeInteger(usageContainer.input_tokens);
+    const inputUsage = normalizeAnthropicInputUsage(usageContainer);
     const outputTokens = readNonNegativeInteger(usageContainer.output_tokens);
-    const cacheCreationInputTokens = readNonNegativeInteger(usageContainer.cache_creation_input_tokens);
-    const cacheReadInputTokens = readNonNegativeInteger(usageContainer.cache_read_input_tokens);
     const reasoningTokens = isRecord(usageContainer.output_tokens_details)
         ? readNonNegativeInteger(usageContainer.output_tokens_details.thinking_tokens)
         : null;
-    const cachedInputTokens =
-        cacheCreationInputTokens === null && cacheReadInputTokens === null
-            ? null
-            : (cacheCreationInputTokens ?? 0) + (cacheReadInputTokens ?? 0);
-    if (inputTokens === null && outputTokens === null && cachedInputTokens === null) {
+    if (
+        inputUsage.inputTokens === null &&
+        outputTokens === null &&
+        inputUsage.cacheReadInputTokens === null &&
+        inputUsage.cacheWriteInputTokens === null
+    ) {
         return null;
     }
-    const totalInputTokens =
-        inputTokens === null && cachedInputTokens === null ? null : (inputTokens ?? 0) + (cachedInputTokens ?? 0);
+    const usage: ModelProviderUsageEvent['usage'] = {
+        inputTokens: inputUsage.inputTokens,
+        outputTokens,
+        cachedInputTokens: inputUsage.cacheReadInputTokens,
+        reasoningTokens,
+    };
+    if (Object.hasOwn(usageContainer, 'cache_creation_input_tokens')) {
+        usage.cacheWriteInputTokens = inputUsage.cacheWriteInputTokens;
+    }
     return {
         type: 'usage',
         mode: event.type === 'message_delta' ? 'final' : 'cumulative-snapshot',
-        usage: {
-            inputTokens: totalInputTokens,
-            outputTokens,
-            cachedInputTokens,
-            reasoningTokens,
-        },
+        usage,
         provenance: 'provider-reported',
     };
 }

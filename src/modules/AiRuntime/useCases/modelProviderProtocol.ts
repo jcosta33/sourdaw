@@ -348,6 +348,7 @@ function assertProviderEventShape(value: unknown): asserts value is ModelProvide
             !isUsageCounter(value.usage.inputTokens) ||
             !isUsageCounter(value.usage.outputTokens) ||
             !isUsageCounter(value.usage.cachedInputTokens) ||
+            (value.usage.cacheWriteInputTokens !== undefined && !isUsageCounter(value.usage.cacheWriteInputTokens)) ||
             !isUsageCounter(value.usage.reasoningTokens) ||
             (value.provenance !== 'provider-reported' &&
                 value.provenance !== 'versioned-estimate' &&
@@ -629,6 +630,22 @@ function createSession(input: {
         next: Omit<ModelProviderUsage, 'provenance'>,
         provenance: ModelProviderUsage['provenance']
     ): void {
+        const foldCacheWriteInputTokens = (): number | null | undefined => {
+            const currentWasReported = Object.hasOwn(usage, 'cacheWriteInputTokens');
+            const nextWasReported = Object.hasOwn(next, 'cacheWriteInputTokens');
+            const nextValue = next.cacheWriteInputTokens;
+            if (!nextWasReported || nextValue === undefined) {
+                return usage.cacheWriteInputTokens;
+            }
+            if (nextValue === null) {
+                return currentWasReported ? usage.cacheWriteInputTokens : null;
+            }
+            if (mode === 'delta') {
+                return (usage.cacheWriteInputTokens ?? 0) + nextValue;
+            }
+            return nextValue;
+        };
+        const cacheWriteInputTokens = foldCacheWriteInputTokens();
         if (mode === 'delta') {
             const addCounter = (current: number | null, delta: number | null): number | null =>
                 delta === null ? current : (current ?? 0) + delta;
@@ -636,6 +653,7 @@ function createSession(input: {
                 inputTokens: addCounter(usage.inputTokens, next.inputTokens),
                 outputTokens: addCounter(usage.outputTokens, next.outputTokens),
                 cachedInputTokens: addCounter(usage.cachedInputTokens, next.cachedInputTokens),
+                ...(cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens }),
                 reasoningTokens: addCounter(usage.reasoningTokens, next.reasoningTokens),
                 provenance,
             };
@@ -645,6 +663,7 @@ function createSession(input: {
             inputTokens: next.inputTokens ?? usage.inputTokens,
             outputTokens: next.outputTokens ?? usage.outputTokens,
             cachedInputTokens: next.cachedInputTokens ?? usage.cachedInputTokens,
+            ...(cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens }),
             reasoningTokens: next.reasoningTokens ?? usage.reasoningTokens,
             provenance,
         };
