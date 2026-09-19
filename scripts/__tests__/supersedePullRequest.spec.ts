@@ -570,6 +570,21 @@ describe('pull-request supersession', () => {
             rmSync(directory, { recursive: true, force: true });
         }
     });
+    it('refuses a space-before-colon bare lineage document that repeats a key instead of reading it last-wins', () => {
+        const directory = mkdtempSync(join(tmpdir(), 'sourdaw-lineage-3001-'));
+        try {
+            const duplicated = join(directory, 'duplicated-spaced.json');
+            const payload =
+                '{"format" : "lineage-v1", "oldPr" : 2244, "replacementPr" : 2246, "entries" : [{"findingId" : "1001", "disposition" : "discarded", "disposition" : "repaired", "replacementPr" : 2246, "replacementFindingId" : "2001", "reason" : ""}]}';
+            writeFileSync(duplicated, payload);
+            expect(JSON.parse(payload)).toEqual(repairedLineage);
+            expect(() => readFindingLineageFile(duplicated)).toThrow(
+                /repeats the key "disposition" instead of reading it last-wins/i
+            );
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    });
     it('accepts a bare lineage document with unique keys in any formatting', () => {
         const directory = mkdtempSync(join(tmpdir(), 'sourdaw-lineage-3001-'));
         try {
