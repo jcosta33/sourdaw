@@ -178,7 +178,7 @@ type FakeInput = {
     dirty?: boolean;
     /** `null` stands for a lane with no non-merge commit of its own above `origin/main`. */
     subject?: string | null;
-    /** Author emails the publish delta's `git log --format=%ae` read answers; defaults to the bot. */
+    /** Author emails the publish delta's authorship read answers; defaults to the bot. */
     commitEmails?: string[];
     headSha?: string;
     baseSha?: string;
@@ -234,7 +234,8 @@ function fakePort(input: FakeInput = {}) {
         aheadBehind: () => ({ ahead: input.ahead ?? 1, behind: input.behind ?? 0 }),
         dirty: () => dirty,
         laneSubject: () => subject,
-        commitAuthorEmails: () => input.commitEmails ?? [AUTHOR_BOT_COMMIT_EMAIL],
+        commitAuthorEmails: () =>
+            (input.commitEmails ?? [AUTHOR_BOT_COMMIT_EMAIL]).map((email, index) => ({ sha: `sha${index}`, email })),
         headSha: () => input.headSha ?? 'abc',
         remoteBranchSha: () => input.remoteSha,
         isAncestor: () => input.ancestor ?? true,
@@ -1583,6 +1584,17 @@ describe('lane publish', () => {
         expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(message);
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+    });
+
+    it('caps the refusal at eight named offending commits and counts the tail', () => {
+        const { port } = fakePort({ commitEmails: Array.from({ length: 10 }, () => 'fixture-author@example.com') });
+
+        const message = refusalMessage(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY));
+
+        expect(message).toContain('authored as fixture-author@example.com');
+        expect(message).toContain('sha7 fixture-author@example.com');
+        expect(message).toContain('+2 more');
+        expect(message).not.toContain('sha8');
     });
 
     it('parses porcelain worktrees and argv', () => {
@@ -3625,7 +3637,9 @@ describe('push delta authorship gate', () => {
 
             expect(message).toContain(`authored as ${HUMAN_EMAIL}`);
             expect(message).toContain('pnpm lane:identity');
-            expect(message).toContain("git rebase --exec 'git commit --amend --reset-author --no-edit'");
+            expect(message).toContain(
+                `git rebase --rebase-merges --exec 'git commit --amend --reset-author --no-edit' ${f.baseSha}`
+            );
             expect(() => fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toThrow();
         } finally {
             dispose(f);
@@ -3723,6 +3737,117 @@ describe('push delta authorship gate', () => {
             expect(message).toContain(`authored as ${HUMAN_EMAIL}`);
             expect(message).not.toContain(FOREIGN_EMAIL);
             expect(fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toBe(remoteTip);
+        } finally {
+            dispose(f);
+        }
+    });
+
+    it('publishes a stack child whose merged main-side commit only the main exclusion clears', () => {
+        const f = authorshipFixture();
+        try {
+            const parentBranch = 'agent/11/parent';
+            // The parent head sits at the main tip the parent branched from; the foreign advance
+            // below moves origin/main past it, so only the main exclusion — never the parent head —
+            // reaches the main-side commit the child merged.
+            f.port.stackBase = () => ({
+                branch: parentBranch,
+                head: f.baseSha,
+                parentNumber: 11,
+                parentState: 'OPEN',
+                parentHead: f.baseSha,
+            });
+            f.port.pinStackParent = () => undefined;
+            let created = false;
+            f.port.createPullRequest = () => {
+                created = true;
+                return 88;
+            };
+            const remoteTip = commitInLane(f.lane, 'one.txt', 'feat(gate): first bot commit', 'bot');
+            fixtureGit(f.primary, ['push', f.remote, `${remoteTip}:refs/heads/${BRANCH}`]);
+            commitForeignMainAdvance(f.primary, f.remote);
+            mergeMainAsBot(f.lane);
+            const head = commitInLane(f.lane, 'two.txt', 'feat(gate): bot commit on merged main', 'bot');
+            const mainSha = fixtureGit(f.primary, ['rev-parse', 'main']);
+            f.port.existingOpenPullRequest = () =>
+                created
+                    ? {
+                          number: 88,
+                          title: 'feat(gate): bot commit on merged main',
+                          body: '',
+                          baseRefName: parentBranch,
+                          headRefOid: head,
+                      }
+                    : undefined;
+            // With only the parent head excluded, the gated range still condemns the merged
+            // main-side commit; both resolved bases together are what clear it.
+            const emails = (excluded: string[]) =>
+                f.port.commitAuthorEmails(f.lane, remoteTip, excluded, head).map((commit) => commit.email);
+            expect(emails([f.baseSha])).toContain(FOREIGN_EMAIL);
+            expect(emails([f.baseSha, mainSha])).not.toContain(FOREIGN_EMAIL);
+
+            expect(publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            expect(fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toBe(head);
+        } finally {
+            dispose(f);
+        }
+    });
+
+    it('refuses a replace-grafted bot clone, so the push cannot carry the human-authored original', () => {
+        const f = authorshipFixture();
+        try {
+            commitInLane(f.lane, 'one.txt', 'feat(gate): bot commit', 'bot');
+            const humanHead = commitInLane(f.lane, 'two.txt', 'feat(gate): human commit', 'human');
+            // A same-tree, same-parent clone authored as the App, grafted over the human commit:
+            // plain reads follow the replacement and see only the bot author, while `git push`
+            // packs the original object — the split the gate's read must not fall into.
+            const tree = fixtureGit(f.lane, ['rev-parse', `${humanHead}^{tree}`]);
+            const parent = fixtureGit(f.lane, ['rev-parse', `${humanHead}^`]);
+            const clone = execFileSync('git', ['commit-tree', tree, '-p', parent, '-m', 'feat(gate): human commit'], {
+                cwd: f.lane,
+                env: fixtureGitEnv({
+                    GIT_AUTHOR_NAME: 'hplovecraft208[bot]',
+                    GIT_AUTHOR_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+                    GIT_COMMITTER_NAME: 'hplovecraft208[bot]',
+                    GIT_COMMITTER_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+                }),
+                encoding: 'utf8',
+            }).trim();
+            fixtureGit(f.lane, ['replace', humanHead, clone]);
+            expect(fixtureGit(f.lane, ['log', '--format=%ae', `${f.baseSha}..${humanHead}`])).not.toContain(
+                HUMAN_EMAIL
+            );
+
+            const message = refusalMessage(() =>
+                publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)
+            );
+
+            expect(message).toContain(`${fixtureGit(f.lane, ['rev-parse', '--short', humanHead])} ${HUMAN_EMAIL}`);
+            expect(() => fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toThrow();
+        } finally {
+            dispose(f);
+        }
+    });
+
+    it('refuses the merged-main repair push with a remedy never rooted at the remote tip', () => {
+        const f = authorshipFixture();
+        try {
+            const remoteTip = commitInLane(f.lane, 'one.txt', 'feat(gate): first bot commit', 'bot');
+            fixtureGit(f.primary, ['push', f.remote, `${remoteTip}:refs/heads/${BRANCH}`]);
+            commitForeignMainAdvance(f.primary, f.remote);
+            mergeMainAsBot(f.lane);
+            const head = commitInLane(f.lane, 'two.txt', 'feat(gate): human commit on merged main', 'human');
+            const shortSha = fixtureGit(f.lane, ['rev-parse', '--short', head]);
+
+            const message = refusalMessage(() =>
+                publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)
+            );
+
+            expect(message).toContain(`${shortSha} ${HUMAN_EMAIL}`);
+            expect(message).toContain('pnpm lane:identity');
+            // The remote branch already holds lane commits, so no rewrite command is offered at
+            // all: the old remote-tip-rooted rebase replayed base-side commits as the App.
+            expect(message).not.toContain('git rebase');
         } finally {
             dispose(f);
         }

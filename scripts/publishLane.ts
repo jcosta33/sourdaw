@@ -526,6 +526,12 @@ export function addPullRequestProjectsArgs(number: number, titles: string[]): st
     ];
 }
 
+/** One commit the authorship gate read named: its short sha and the email it is authored as. */
+export type CommitAuthorEmail = {
+    sha: string;
+    email: string;
+};
+
 export type PublishLanePort = {
     baseSha: () => string;
     worktrees: () => PublishWorktree[];
@@ -535,10 +541,16 @@ export type PublishLanePort = {
     dirty: (lane: string) => boolean;
     laneSubject: (lane: string, baseSha: string, headSha: string) => string | undefined;
     /**
-     * Author emails of every commit reachable from `headSha` but from neither `deltaBaseSha` nor
-     * `excludedBaseSha`, merges included, read in the lane itself.
+     * Author email of every commit reachable from `headSha` but from neither `deltaBaseSha` nor any
+     * `excludedBaseSha`, merges included, read in the lane itself without replacement objects, so
+     * the gate sees exactly the objects a push would send.
      */
-    commitAuthorEmails: (lane: string, deltaBaseSha: string, excludedBaseSha: string, headSha: string) => string[];
+    commitAuthorEmails: (
+        lane: string,
+        deltaBaseSha: string,
+        excludedBaseShas: string[],
+        headSha: string
+    ) => CommitAuthorEmail[];
     headSha: (lane: string) => string;
     remoteBranchSha: (branch: string) => string | undefined;
     isAncestor: (ancestorSha: string, descendantSha: string, lane: string) => boolean;
@@ -931,38 +943,68 @@ export const NO_LANE_SUBJECT_FAILURE =
  * Gate exactly the commits this publication adds to the remote: `remoteTip..head` when the branch
  * already exists remotely at an ancestor of head, else the same resolved base the lane subject
  * derives from, so a stack child gates its own delta rather than its parent's — always excluding
- * what the resolved comparison base reaches, because commits main or the stack parent already
- * carries are not the lane's to author. Every remaining commit, merges included, must carry the
- * author App's commit email — the identity lane worktrees are stamped with at open — and the
- * refusal names each offending address and the re-authoring route for commits the remote does not
- * have yet.
+ * everything the resolved bases (origin/main and any stack parent head) reach, because base-side
+ * commits a lane merged are not the lane's to author; the bases' own publications gate them. Every
+ * remaining commit, merges included, must carry the author App's commit email — the identity lane
+ * worktrees are stamped with at open — and the refusal names each offending commit and prescribes
+ * only a remedy that cannot rewrite base-side history.
  */
 function assertBotAuthoredDelta(
     lane: ResolvedLane,
-    deltaBase: string,
+    remoteSha: string | undefined,
     comparisonHead: string,
+    baseSha: string,
     headSha: string,
     port: PublishLanePort
 ): void {
-    const offending = [
-        ...new Set(
-            port
-                .commitAuthorEmails(lane.path, deltaBase, comparisonHead, headSha)
-                .filter((email) => email !== AUTHOR_BOT_COMMIT_EMAIL)
-        ),
-    ];
+    const deltaBase = remoteSha ?? comparisonHead;
+    const offending = port
+        .commitAuthorEmails(lane.path, deltaBase, [comparisonHead, baseSha], headSha)
+        .filter((commit) => commit.email !== AUTHOR_BOT_COMMIT_EMAIL);
     if (offending.length === 0) {
         return;
     }
-    fail(
-        `${lane.branch} carries commits above ${deltaBase} authored as ${offending
-            .map(displayCommitAuthorEmail)
-            .join(', ')}: lane commits ` +
-            `must be authored as ${AUTHOR_BOT_COMMIT_NAME} <${AUTHOR_BOT_COMMIT_EMAIL}> through the lane ` +
-            "worktree's stamped identity. Commits the comparison base already reaches are not the lane's " +
-            'to author and are excluded here. Restamp the lane with pnpm lane:identity, then re-author the ' +
-            "lane's own commits with " +
-            `git rebase --exec 'git commit --amend --reset-author --no-edit' --rebase-merges ${deltaBase}`
+    fail(authorshipRefusal(lane.branch, deltaBase, comparisonHead, offending, remoteSha === undefined));
+}
+
+/** At most this many offending commits are named one by one before the refusal counts the rest. */
+const MAX_NAMED_OFFENDING_COMMITS = 8;
+
+/**
+ * The refusal names each offending commit and each distinct offending email, states the base-side
+ * exclusion, and prescribes only remedies that cannot replace history the lane does not own: the
+ * rebase is rooted at the comparison base and offered exactly when the remote branch holds none of
+ * the lane's commits; with a pushed lane history, the named commits must be re-created. A rewrite
+ * rooted at the remote tip would replay base-side commits the lane merged and re-author them as
+ * the App, so the remote tip never roots one.
+ */
+function authorshipRefusal(
+    branch: string,
+    deltaBase: string,
+    comparisonHead: string,
+    offending: CommitAuthorEmail[],
+    remoteHoldsNoLaneCommits: boolean
+): string {
+    const distinctEmails = [...new Set(offending.map((commit) => commit.email))]
+        .map(displayCommitAuthorEmail)
+        .join(', ');
+    const namedCommits = offending
+        .slice(0, MAX_NAMED_OFFENDING_COMMITS)
+        .map((commit) => `${commit.sha} ${displayCommitAuthorEmail(commit.email)}`);
+    const more = offending.length - namedCommits.length;
+    if (more > 0) {
+        namedCommits.push(`+${more} more`);
+    }
+    const remedy = remoteHoldsNoLaneCommits
+        ? `git rebase --rebase-merges --exec 'git commit --amend --reset-author --no-edit' ${comparisonHead}`
+        : 're-create the listed offending commits with the stamped identity';
+    return (
+        `${branch} carries commits above ${deltaBase} authored as ${distinctEmails}; offending commits: ` +
+        `${namedCommits.join(', ')}. Lane commits must be authored as ${AUTHOR_BOT_COMMIT_NAME} ` +
+        `<${AUTHOR_BOT_COMMIT_EMAIL}> through the lane worktree's stamped identity. Commits the resolved ` +
+        "bases (origin/main and any stack parent head) already reach are not the lane's to author and are " +
+        'excluded here. Restamp the lane with pnpm lane:identity, then ' +
+        remedy
     );
 }
 
@@ -1144,7 +1186,7 @@ export function publishLane(
     // The refusal above proved a present remote tip an ancestor of head, so the delta is exactly
     // the remote tip..head when the branch exists remotely, and the lane-subject range otherwise.
     // This runs before every remote write, with the rest of the pre-push refusal set.
-    assertBotAuthoredDelta(lane, remoteSha ?? comparisonHead, comparisonHead, headSha, port);
+    assertBotAuthoredDelta(lane, remoteSha, comparisonHead, baseSha, headSha, port);
     if (port.baseSha() !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
     }
@@ -1574,27 +1616,43 @@ function laneSubjectArgs(baseSha: string, headSha: string): string[] {
 
 /**
  * The authorship gate's read: every commit, merges included, between the delta base and the head,
- * excluding everything the comparison base reaches — base-side commits are not the lane's to
- * author, and the base's own publication gates them.
+ * excluding everything the resolved bases reach — base-side commits are not the lane's to author,
+ * and the bases' own publications gate them. `--no-replace-objects` leads the argv because `git
+ * log` honors `refs/replace/*` while `git push` packs the original objects, so a read that honors
+ * replacements could pass a bot-authored clone while the remote receives the human original.
  */
-function commitAuthorEmailArgs(deltaBaseSha: string, excludedBaseSha: string, headSha: string): string[] {
-    return ['log', '--format=%ae', `${deltaBaseSha}..${headSha}`, `^${excludedBaseSha}`];
+function commitAuthorEmailArgs(deltaBaseSha: string, excludedBaseShas: string[], headSha: string): string[] {
+    return [
+        '--no-replace-objects',
+        'log',
+        '--format=%h %ae',
+        `${deltaBaseSha}..${headSha}`,
+        ...[...new Set(excludedBaseShas)].map((sha) => `^${sha}`),
+    ];
 }
 
 function readCommitAuthorEmails(
     lane: string,
     deltaBaseSha: string,
-    excludedBaseSha: string,
+    excludedBaseShas: string[],
     headSha: string,
     capture: (args: string[], cwd: string) => string
-): string[] {
-    const emails = capture(commitAuthorEmailArgs(deltaBaseSha, excludedBaseSha, headSha), lane).split('\n');
+): CommitAuthorEmail[] {
+    const lines = capture(commitAuthorEmailArgs(deltaBaseSha, excludedBaseShas, headSha), lane).split('\n');
     // The capture ends in exactly one blank line; strip only that one, so a commit whose author
     // email is genuinely empty survives as an offending value instead of vanishing with a filter.
-    if (emails[emails.length - 1] === '') {
-        emails.pop();
+    if (lines[lines.length - 1] === '') {
+        lines.pop();
     }
-    return emails;
+    return lines.map(parseCommitAuthorEmail);
+}
+
+/** `%h %ae` splits on the first space; a genuinely empty email leaves the email part empty. */
+function parseCommitAuthorEmail(line: string): CommitAuthorEmail {
+    const separator = line.indexOf(' ');
+    return separator === -1
+        ? { sha: line, email: '' }
+        : { sha: line.slice(0, separator), email: line.slice(separator + 1) };
 }
 
 /**
@@ -1721,8 +1779,8 @@ export function shellPort(
         laneSubject: (lane, baseSha, headSha) =>
             spawnCapture(executables.git, laneSubjectArgs(baseSha, headSha), { cwd: lane, env: session.env }) ||
             undefined,
-        commitAuthorEmails: (lane, deltaBaseSha, excludedBaseSha, headSha) =>
-            readCommitAuthorEmails(lane, deltaBaseSha, excludedBaseSha, headSha, (args, cwd) =>
+        commitAuthorEmails: (lane, deltaBaseSha, excludedBaseShas, headSha) =>
+            readCommitAuthorEmails(lane, deltaBaseSha, excludedBaseShas, headSha, (args, cwd) =>
                 // Untrimmed: the parse strips exactly one trailing blank itself, so a genuinely
                 // empty author email line survives the read instead of vanishing into the trim.
                 spawnCapture(executables.git, args, { cwd, env: session.env, trim: false })
