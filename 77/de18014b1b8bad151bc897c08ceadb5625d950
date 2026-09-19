@@ -1,0 +1,16 @@
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  h_1228e573df1f42 1-864
+scripts/confirmReviewRepairs.ts
+  h_1228e573df1f42 1-505
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "77de18014b1b8bad151bc897c08ceadb5625d950",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
