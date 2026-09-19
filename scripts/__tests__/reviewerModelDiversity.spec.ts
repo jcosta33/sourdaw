@@ -75,6 +75,9 @@ describe('reviewer-model diversity enforcement', () => {
         expect(() => parseReviewDocument({ ...baseDocument, modelExhaustion: 'first\u2028second' })).toThrow(
             /modelExhaustion must be one non-empty line/u
         );
+        expect(() => parseReviewDocument({ ...baseDocument, modelExhaustion: 'first\u2029second' })).toThrow(
+            /modelExhaustion must be one non-empty line/u
+        );
     });
 
     it('refuses a non-string modelExhaustion with the framed message', () => {
@@ -227,6 +230,36 @@ describe('assertReviewerModelDiversity', () => {
                 },
             })
         ).not.toThrow();
+    });
+
+    it('admits the fallback when the standalone naming follows an embedded occurrence', () => {
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                document: {
+                    reviewerModel: 'glm-5.3',
+                    modelExhaustion: 'every other harness on this machine is logged out or broken',
+                    body: 'glm-5.3-flash was unavailable; fell back to glm-5.3 for this review',
+                },
+            })
+        ).not.toThrow();
+    });
+
+    it('refuses the fallback when the only occurrence extends the model with a token character', () => {
+        for (const body of ['only glm-5.3.1 was named', 'only glm-5.3+edge was named', 'only xglm-5.3 was named']) {
+            expect(() =>
+                assertReviewerModelDiversity({
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    authorLabels: [authorLabel],
+                    document: {
+                        reviewerModel: 'glm-5.3',
+                        modelExhaustion: 'every other harness on this machine is logged out or broken',
+                        body,
+                    },
+                })
+            ).toThrow(/naming the reviewer model/u);
+        }
     });
 
     it('ignores a recorded exhaustion when the reviewer model already differs', () => {
