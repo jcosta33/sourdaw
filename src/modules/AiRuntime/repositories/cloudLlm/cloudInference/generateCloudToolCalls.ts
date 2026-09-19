@@ -12,7 +12,7 @@ import { unregisterCloudStreamController } from '../unregisterCloudStreamControl
 import { generateAnthropicToolCalls } from './generateAnthropicToolCalls';
 import { generateOpenAiCompatibleToolCalls } from './generateOpenAiCompatibleToolCalls';
 import { generateOpenAiResponsesToolCalls } from './generateOpenAiResponsesToolCalls';
-import { type HostedToolPlan } from './hostedToolPlan';
+import { type HostedToolChoiceDirective, type HostedToolPlan } from './hostedToolPlan';
 
 const CLOUD_SYSTEM_PROMPT = `You are a professional music production AI integrated into a DAW (Digital Audio Workstation). Use the provided tools to execute all user requests. Never describe actions — execute them via tools. You understand music theory, mixing, mastering, and arrangement.
 
@@ -30,6 +30,7 @@ export const generateCloudToolCalls = inject({ logger })(
             userMessage: string,
             toolSchemas: readonly ToolSchema[],
             maxOutputTokens: number,
+            directive: HostedToolChoiceDirective,
             signal?: AbortSignal
         ): Promise<HostedToolPlan> {
             const runtime = getCloudProviderRuntime();
@@ -50,6 +51,7 @@ export const generateCloudToolCalls = inject({ logger })(
                             userMessage,
                             toolSchemas,
                             maxOutputTokens,
+                            directive,
                             signal: controller.signal,
                         });
                         break;
@@ -60,6 +62,7 @@ export const generateCloudToolCalls = inject({ logger })(
                             userMessage,
                             toolSchemas,
                             maxOutputTokens,
+                            directive,
                             signal: controller.signal,
                         });
                         break;
@@ -70,6 +73,7 @@ export const generateCloudToolCalls = inject({ logger })(
                             userMessage,
                             toolSchemas,
                             maxOutputTokens,
+                            directive,
                             signal: controller.signal,
                         });
                         break;

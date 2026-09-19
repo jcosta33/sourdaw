@@ -2,11 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
 import { generateAnthropicToolCalls } from '../cloudLlm/cloudInference/generateAnthropicToolCalls';
+import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../cloudLlm/cloudInference/hostedToolPlan';
 import { streamCloudChatCompletion } from '../cloudLlm/cloudInference/streamCloudChatCompletion';
 import { type AnthropicCloudRuntime } from '../cloudLlm/cloudSession';
 
 import {
     describeProviderProtocolConformance,
+    FORCED_TERMINAL_TOOL_NAMES,
     PROVIDER_CONFORMANCE_FIXTURE as FIXTURE,
     PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
     type ProviderRequestObservation,
@@ -128,6 +130,13 @@ function streamFixture(scenario: ProviderStreamScenario): string {
     return [messageStart(), textDelta(firstDelta ?? ''), textDelta(secondDelta ?? ''), END_TURN, MESSAGE_STOP].join('');
 }
 
+function directiveFor(scenario: ProviderToolScenario): HostedToolChoiceDirective {
+    if (scenario === 'forced-terminal') {
+        return { mode: 'required', toolNames: FORCED_TERMINAL_TOOL_NAMES };
+    }
+    return AUTO_TOOL_CHOICE;
+}
+
 function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
     if (scenario === 'empty-batch') {
         return { id: FIXTURE.providerRequestId, content: [], stop_reason: 'end_turn' };
@@ -196,7 +205,7 @@ function readRequest(): ProviderRequestObservation {
         throw new Error('Expected the adapter to send a JSON request body');
     }
     const body = JSON.parse(sent) as Record<string, unknown>;
-    return { model: body.model, stream: body.stream, tools: body.tools };
+    return { model: body.model, stream: body.stream, tools: body.tools, toolChoice: body.tool_choice };
 }
 
 function readSafeMessage(error: unknown): string {
@@ -254,6 +263,7 @@ describeProviderProtocolConformance('Anthropic messages', {
                 userMessage: 'mute drums',
                 toolSchemas: PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
                 maxOutputTokens: 8_192,
+                directive: directiveFor(scenario),
                 signal: new AbortController().signal,
             });
             return {
@@ -304,6 +314,7 @@ describe('generateAnthropicToolCalls usage admission', () => {
             userMessage: 'mute drums',
             toolSchemas: PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
             maxOutputTokens: 8_192,
+            directive: AUTO_TOOL_CHOICE,
             signal: new AbortController().signal,
         });
 

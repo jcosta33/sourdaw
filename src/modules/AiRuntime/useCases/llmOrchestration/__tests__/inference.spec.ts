@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
+import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../../models/AgentResourceLimits';
 import {
     CREATIVE_INTERPRETATION_TOOL_NAME,
@@ -11,6 +12,10 @@ import {
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
+import {
+    AUTO_TOOL_CHOICE,
+    type HostedToolChoiceDirective,
+} from '../../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
@@ -218,6 +223,113 @@ describe('generateToolPlanningOutcome', () => {
         });
     });
 
+    it('attributes provider-reported usage from a rejected hosted tool plan to the reported result', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockRejectedValue(
+            new ToolPlanningRejectedError('Hosted AI returned a non-tool response instead of a tool-call batch', {
+                inputTokens: 120,
+                outputTokens: 8,
+                cacheReadInputTokens: 100,
+                cacheWriteInputTokens: null,
+            })
+        );
+        const onProviderResult = vi.fn();
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                undefined,
+                'mute the first track',
+                onProviderResult
+            )
+        ).resolves.toMatchObject({ status: 'rejected' });
+
+        expect(onProviderResult).toHaveBeenCalledOnce();
+        expect(onProviderResult.mock.calls[0]?.[0]).toMatchObject({
+            status: 'failed',
+            finishReason: 'error',
+            usage: {
+                inputTokens: 120,
+                outputTokens: 8,
+                cachedInputTokens: 100,
+                provenance: 'provider-reported',
+            },
+        });
+    });
+
+    it('forwards a required directive verbatim to generateCloudToolCalls with no abort signal supplied', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+        const directive: HostedToolChoiceDirective = { mode: 'required', toolNames: ['muteTrack', 'soloTrack'] };
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                undefined,
+                'mute the first track',
+                undefined,
+                undefined,
+                undefined,
+                directive
+            )
+        ).resolves.toMatchObject({ status: 'complete' });
+
+        expect(mocks.generateCloudToolCalls.mock.calls[0]?.[4]).toStrictEqual(directive);
+    });
+
+    it('forwards a required directive verbatim to generateCloudToolCalls with an abort signal supplied', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+        const directive: HostedToolChoiceDirective = { mode: 'required', toolNames: ['muteTrack', 'soloTrack'] };
+        const controller = new AbortController();
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                controller.signal,
+                'mute the first track',
+                undefined,
+                undefined,
+                undefined,
+                directive
+            )
+        ).resolves.toMatchObject({ status: 'complete' });
+
+        expect(mocks.generateCloudToolCalls.mock.calls[0]?.[4]).toStrictEqual(directive);
+    });
+
+    it('forwards the default auto directive to generateCloudToolCalls when no directive is supplied', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        await expect(generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)).resolves.toMatchObject(
+            { status: 'complete' }
+        );
+
+        expect(mocks.generateCloudToolCalls.mock.calls[0]?.[4]).toStrictEqual(AUTO_TOOL_CHOICE);
+    });
+
     it('admits a tool-call reply carrying null for an argument the source schema leaves optional', async () => {
         mocks.backendChain.value = ['cloud'];
         const addDeviceToolSchema: ToolSchema = {
@@ -422,7 +534,8 @@ describe('generateToolPlanningOutcome', () => {
             expect.anything(),
             expect.anything(),
             expect.anything(),
-            TOOL_PLAN_MAX_OUTPUT_TOKENS
+            TOOL_PLAN_MAX_OUTPUT_TOKENS,
+            expect.anything()
         );
     });
 
@@ -461,7 +574,8 @@ describe('generateToolPlanningOutcome', () => {
             expect.anything(),
             expect.anything(),
             expect.anything(),
-            1_024
+            1_024,
+            expect.anything()
         );
     });
 

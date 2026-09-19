@@ -5,7 +5,13 @@ import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type AnthropicCloudRuntime } from '../cloudSession';
 
 import { buildWireToolNameCodec } from './buildWireToolNameCodec';
-import { type HostedToolPlan, type HostedToolPlanUsage, readHostedTokenCount } from './hostedToolPlan';
+import {
+    type HostedToolChoiceDirective,
+    type HostedToolPlan,
+    type HostedToolPlanUsage,
+    readHostedTokenCount,
+} from './hostedToolPlan';
+import { narrowToolSchemasForDirective } from './narrowToolSchemasForDirective';
 import { projectAnthropicStrictToolSchema } from './projectAnthropicStrictToolSchema';
 import { readProviderRequestId } from './readProviderRequestId';
 import { requestAnthropicProvider } from './requestAnthropicProvider';
@@ -30,6 +36,17 @@ function readUsage(payload: Record<string, unknown>): HostedToolPlanUsage | null
     };
 }
 
+function buildToolChoiceExtension(directive: HostedToolChoiceDirective): Record<string, unknown> {
+    if (directive.mode === 'required') {
+        // No `disable_parallel_tool_use`: the workflow terminal shape is two calls in one
+        // turn (`selectWorkflowCapability` beside `command.batch.propose`), so capping the
+        // forced turn at one call would strand the batch call out of its workflow scope.
+        // `maxCallsPerTurn` already bounds how many calls one turn may contain.
+        return { tool_choice: { type: 'any' } };
+    }
+    return {};
+}
+
 export async function generateAnthropicToolCalls(input: {
     runtime: AnthropicCloudRuntime;
     systemPrompt: string;
@@ -39,17 +56,19 @@ export async function generateAnthropicToolCalls(input: {
     // truth for this budget — see models/HostedToolPlanLimits.ts. The wire request must use
     // exactly what was admitted, not a constant of its own, or the two can silently drift.
     maxOutputTokens: number;
+    directive: HostedToolChoiceDirective;
     signal: AbortSignal;
 }): Promise<HostedToolPlan> {
     const chunks: Uint8Array[] = [];
     let responseBytes = 0;
     const codec = buildWireToolNameCodec(input.toolSchemas);
-    const lastToolIndex = input.toolSchemas.length - 1;
+    const wireToolSchemas = narrowToolSchemasForDirective(input.toolSchemas, input.directive);
+    const lastToolIndex = wireToolSchemas.length - 1;
     const body = JSON.stringify({
         model: input.runtime.model,
         max_tokens: input.maxOutputTokens,
         system: [{ type: 'text', text: input.systemPrompt, cache_control: CACHE_CONTROL }],
-        tools: input.toolSchemas.map((schema, index) => {
+        tools: wireToolSchemas.map((schema, index) => {
             const strictSchema = projectAnthropicStrictToolSchema(schema);
             return {
                 name: codec.encode(strictSchema.function.name),
@@ -60,6 +79,7 @@ export async function generateAnthropicToolCalls(input: {
             };
         }),
         messages: [{ role: 'user', content: input.userMessage }],
+        ...buildToolChoiceExtension(input.directive),
     });
     const response = await requestAnthropicProvider({
         sessionId: input.runtime.session_id,
@@ -94,19 +114,22 @@ export async function generateAnthropicToolCalls(input: {
     } catch {
         throw new ToolPlanningRejectedError('Hosted AI returned invalid tool-planning JSON');
     }
+    // Read before any rejection below so a refusal or a malformed batch still attributes
+    // whatever usage figure the provider reported for the turn that produced it.
+    const usage = isRecord(payload) ? readUsage(payload) : null;
     if (!isRecord(payload) || !Array.isArray(payload.content)) {
-        throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
+        throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response', usage);
     }
 
     const results: ToolCallResult[] = [];
     let hasNonToolText = false;
     for (const block of payload.content) {
         if (!isRecord(block)) {
-            throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
+            throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response', usage);
         }
         if (block.type === 'text') {
             if (typeof block.text !== 'string') {
-                throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
+                throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response', usage);
             }
             hasNonToolText ||= block.text.trim().length > 0;
             continue;
@@ -118,7 +141,8 @@ export async function generateAnthropicToolCalls(input: {
             throw new ToolPlanningRejectedError(
                 callId === null
                     ? 'Hosted AI returned an invalid tool-call batch'
-                    : `Hosted AI returned an invalid tool-call batch for call ${callId}`
+                    : `Hosted AI returned an invalid tool-call batch for call ${callId}`,
+                usage
             );
         }
         results.push({
@@ -128,7 +152,7 @@ export async function generateAnthropicToolCalls(input: {
         });
     }
     if (payload.stop_reason === 'max_tokens') {
-        throw new ToolPlanningRejectedError('Hosted AI tool plan was truncated at the token limit');
+        throw new ToolPlanningRejectedError('Hosted AI tool plan was truncated at the token limit', usage);
     }
     const hasValidToolStop = payload.stop_reason === 'tool_use' && results.length > 0;
     const hasValidEmptyStop = payload.stop_reason === 'end_turn' && results.length === 0 && !hasNonToolText;
@@ -136,13 +160,14 @@ export async function generateAnthropicToolCalls(input: {
         throw new ToolPlanningRejectedError(
             hasNonToolText
                 ? 'Hosted AI returned a non-tool response instead of a tool-call batch'
-                : 'Hosted AI returned an incomplete tool-call batch'
+                : 'Hosted AI returned an incomplete tool-call batch',
+            usage
         );
     }
     return {
         providerRequestId: readProviderRequestId(payload.id),
         calls: results,
         strictToolSchemas: true,
-        usage: readUsage(payload),
+        usage,
     };
 }

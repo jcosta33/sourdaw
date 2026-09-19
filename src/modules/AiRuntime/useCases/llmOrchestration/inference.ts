@@ -28,7 +28,11 @@ import { MODEL_TEXT_MAX_INPUT_TOKENS } from '../../models/ModelTextRequestLimits
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
-import { type HostedToolPlan } from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
+import {
+    AUTO_TOOL_CHOICE,
+    type HostedToolChoiceDirective,
+    type HostedToolPlan,
+} from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { initWebLlmEngine } from '../../repositories/webLlm/initWebLlmEngine';
 import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
@@ -343,7 +347,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         toolSelectionPrompt: string = userMessage,
         onProviderResult?: (result: ModelProviderResult) => void,
         streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>,
-        onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult
+        onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult,
+        // WebLLM plans locally with no provider wire form, so it has no tool-choice concept and
+        // ignores this; only the cloud backend below translates it for its provider.
+        directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain({ operation: 'tools', modality: 'text', streaming: false });
         const reportProviderResult = (result: ModelProviderResult): void => {
@@ -540,7 +547,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             providerSystemPrompt,
                             providerUserMessage,
                             providerTools,
-                            providerRequest.limits.maxOutputTokens
+                            providerRequest.limits.maxOutputTokens,
+                            directive
                         );
                     } else {
                         cloudInference = generateCloudToolCalls(
@@ -548,6 +556,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             providerUserMessage,
                             providerTools,
                             providerRequest.limits.maxOutputTokens,
+                            directive,
                             signal
                         );
                     }
@@ -660,6 +669,22 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     if (isAiRuntimeConfigurationChangedError(error) || isExplicitAbort || signal?.aborted) {
                         failedResult = providerSource.finish({ reason: 'cancelled' });
                     } else if (isTerminalModelRejection) {
+                        // A rejected turn can still be a provider answer the provider billed for
+                        // (a refusal, prose with no tool call); attribute that usage the same way
+                        // a completed turn does, before the terminal `finish` closes the stream.
+                        if (error.usage) {
+                            providerSource.push({
+                                type: 'usage',
+                                mode: 'final',
+                                usage: {
+                                    inputTokens: error.usage.inputTokens,
+                                    outputTokens: error.usage.outputTokens,
+                                    cachedInputTokens: error.usage.cacheReadInputTokens,
+                                    reasoningTokens: null,
+                                },
+                                provenance: 'provider-reported',
+                            });
+                        }
                         failedResult = providerSource.finish({
                             reason: 'error',
                             failure: {

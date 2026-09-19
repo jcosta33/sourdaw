@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
 import { generateAnthropicToolCalls } from '../generateAnthropicToolCalls';
+import { AUTO_TOOL_CHOICE } from '../hostedToolPlan';
 
 const requestProvider = vi.hoisted(() => vi.fn());
 
@@ -54,6 +55,7 @@ describe('generateAnthropicToolCalls', () => {
                 userMessage: 'faster',
                 toolSchemas,
                 maxOutputTokens: 8192,
+                directive: AUTO_TOOL_CHOICE,
                 signal: new AbortController().signal,
             })
         ).resolves.toMatchObject({ calls: [{ id: 'tool-1', name: 'setTempo', arguments: { bpm: 120 } }] });
@@ -63,6 +65,120 @@ describe('generateAnthropicToolCalls', () => {
                 body: expect.stringContaining('"setTempo"'),
             })
         );
+    });
+
+    it('narrows the wire tools and forces tool_choice on a required directive', async () => {
+        const twoTools = [
+            toolSchemas[0]!,
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setVolume',
+                    description: 'Set volume',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { db: { type: 'number' } },
+                        required: ['db'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        returnPayload({
+            content: [{ type: 'tool_use', id: 'tool-1', name: 'setTempo', input: { bpm: 120 } }],
+            stop_reason: 'tool_use',
+        });
+
+        await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'faster',
+            toolSchemas: twoTools,
+            maxOutputTokens: 8192,
+            directive: { mode: 'required', toolNames: ['setTempo'] },
+            signal: new AbortController().signal,
+        });
+
+        const request = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        if (!request) {
+            throw new Error('Expected a recorded provider request');
+        }
+        const body = JSON.parse(request.body) as {
+            tool_choice: unknown;
+            tools: Array<{ name: string; cache_control?: { type: string } }>;
+        };
+        expect(body.tool_choice).toEqual({ type: 'any' });
+        expect(body.tools).toHaveLength(1);
+        expect(body.tools[0]?.name).toBe('setTempo');
+        expect(body.tools[0]?.cache_control).toEqual({ type: 'ephemeral' });
+    });
+
+    it('narrows to exactly the directive-named tools, in their advertised order, dropping an unnamed one', async () => {
+        const threeTools = [
+            toolSchemas[0]!,
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setVolume',
+                    description: 'Set volume',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { db: { type: 'number' } },
+                        required: ['db'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setPan',
+                    description: 'Set pan',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { pan: { type: 'number' } },
+                        required: ['pan'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        returnPayload({
+            content: [{ type: 'tool_use', id: 'tool-1', name: 'setVolume', input: { db: -3 } }],
+            stop_reason: 'tool_use',
+        });
+
+        await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'quieter and centered',
+            toolSchemas: threeTools,
+            maxOutputTokens: 8192,
+            directive: { mode: 'required', toolNames: ['setVolume', 'setPan'] },
+            signal: new AbortController().signal,
+        });
+
+        const request = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        if (!request) {
+            throw new Error('Expected a recorded provider request');
+        }
+        const body = JSON.parse(request.body) as { tools: Array<{ name: string }> };
+        expect(body.tools.map((tool) => tool.name)).toEqual(['setVolume', 'setPan']);
+    });
+
+    it('throws before any network call when a required directive names no tool', async () => {
+        await expect(
+            generateAnthropicToolCalls({
+                runtime,
+                systemPrompt: 'system',
+                userMessage: 'faster',
+                toolSchemas,
+                maxOutputTokens: 8192,
+                directive: { mode: 'required', toolNames: ['doesNotExist'] },
+                signal: new AbortController().signal,
+            })
+        ).rejects.toThrow('Hosted AI tool-choice directive named an empty tool set');
+        expect(requestProvider).not.toHaveBeenCalled();
     });
 
     it('marks the system prompt and only the last tool as cacheable', async () => {
@@ -110,6 +226,7 @@ describe('generateAnthropicToolCalls', () => {
             userMessage: 'faster',
             toolSchemas: multiToolSchemas,
             maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
             signal: new AbortController().signal,
         });
 
@@ -143,6 +260,7 @@ describe('generateAnthropicToolCalls', () => {
             userMessage: 'faster',
             toolSchemas,
             maxOutputTokens: 4096,
+            directive: AUTO_TOOL_CHOICE,
             signal: new AbortController().signal,
         });
 
@@ -167,6 +285,7 @@ describe('generateAnthropicToolCalls', () => {
                 userMessage: 'faster',
                 toolSchemas,
                 maxOutputTokens: 8192,
+                directive: AUTO_TOOL_CHOICE,
                 signal: new AbortController().signal,
             })
         ).rejects.toThrow('Hosted AI tool plan was truncated at the token limit');
@@ -181,6 +300,7 @@ describe('generateAnthropicToolCalls', () => {
                 userMessage: 'nothing',
                 toolSchemas,
                 maxOutputTokens: 8192,
+                directive: AUTO_TOOL_CHOICE,
                 signal: new AbortController().signal,
             })
         ).resolves.toMatchObject({ calls: [] });
@@ -195,9 +315,33 @@ describe('generateAnthropicToolCalls', () => {
                 userMessage: 'faster',
                 toolSchemas,
                 maxOutputTokens: 8192,
+                directive: AUTO_TOOL_CHOICE,
                 signal: new AbortController().signal,
             })
         ).rejects.toThrow('non-tool response');
+    });
+
+    it('attributes provider-reported usage to a rejected non-tool reply', async () => {
+        returnPayload({
+            content: [{ type: 'text', text: 'I cannot do that.' }],
+            stop_reason: 'end_turn',
+            usage: { input_tokens: 30, output_tokens: 12, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+        });
+
+        const error = await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'faster',
+            toolSchemas,
+            maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
+            signal: new AbortController().signal,
+        }).catch((error: unknown) => error);
+
+        expect(error).toMatchObject({
+            name: 'ToolPlanningRejectedError',
+            usage: { inputTokens: 30, outputTokens: 12, cacheReadInputTokens: 0, cacheWriteInputTokens: 0 },
+        });
     });
 
     it('reports only the provider status on failure', async () => {
@@ -208,6 +352,7 @@ describe('generateAnthropicToolCalls', () => {
             userMessage: 'faster',
             toolSchemas,
             maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
             signal: new AbortController().signal,
         }).catch((error: unknown) => error);
 
@@ -231,6 +376,7 @@ describe('generateAnthropicToolCalls', () => {
                 userMessage: 'faster',
                 toolSchemas,
                 maxOutputTokens: 8192,
+                directive: AUTO_TOOL_CHOICE,
                 signal: new AbortController().signal,
             })
         ).rejects.toThrow('invalid tool-planning content type');
@@ -264,6 +410,7 @@ describe('generateAnthropicToolCalls', () => {
             userMessage: 'faster',
             toolSchemas: boundedSchemas,
             maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
             signal: new AbortController().signal,
         });
 
@@ -312,6 +459,7 @@ describe('generateAnthropicToolCalls', () => {
             userMessage: 'what tracks exist',
             toolSchemas: dottedSchemas,
             maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
             signal: new AbortController().signal,
         });
 

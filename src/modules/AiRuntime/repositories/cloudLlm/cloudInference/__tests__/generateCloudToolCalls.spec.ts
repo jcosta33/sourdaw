@@ -8,7 +8,7 @@ import {
     type OpenAiCompatibleCloudRuntime,
 } from '../../cloudSession';
 import { generateCloudToolCalls } from '../generateCloudToolCalls';
-import { type HostedToolPlan } from '../hostedToolPlan';
+import { AUTO_TOOL_CHOICE, type HostedToolPlan } from '../hostedToolPlan';
 
 const tools: ToolSchema[] = [
     {
@@ -58,13 +58,13 @@ describe('generateCloudToolCalls', () => {
 
     it('rejects an unconfigured cloud runtime', async () => {
         mocks.getRuntime.mockReturnValue(null);
-        await expect(generateCloudToolCalls('state', 'message', tools, 8192)).rejects.toThrow(
+        await expect(generateCloudToolCalls('state', 'message', tools, 8192, AUTO_TOOL_CHOICE)).rejects.toThrow(
             'Hosted AI is not configured'
         );
     });
 
     it('dispatches Anthropic planning through the native provider path', async () => {
-        const result = await generateCloudToolCalls('state', 'message', tools, 8192);
+        const result = await generateCloudToolCalls('state', 'message', tools, 8192, AUTO_TOOL_CHOICE);
 
         expect(mocks.generateAnthropic).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -99,7 +99,7 @@ describe('generateCloudToolCalls', () => {
             usage: null,
         });
 
-        await expect(generateCloudToolCalls('state', 'message', tools, 8192)).resolves.toEqual(
+        await expect(generateCloudToolCalls('state', 'message', tools, 8192, AUTO_TOOL_CHOICE)).resolves.toEqual(
             expect.objectContaining({ calls: [{ name: 'addTrack', arguments: {} }] })
         );
         expect(mocks.generateOpenAi).toHaveBeenCalledWith(
@@ -137,7 +137,7 @@ describe('generateCloudToolCalls', () => {
             usage: null,
         });
 
-        await expect(generateCloudToolCalls('state', 'message', tools, 8192)).resolves.toEqual(
+        await expect(generateCloudToolCalls('state', 'message', tools, 8192, AUTO_TOOL_CHOICE)).resolves.toEqual(
             expect.objectContaining({ calls: [{ name: 'addTrack', arguments: {} }] })
         );
         expect(mocks.generateOpenAiResponses).toHaveBeenCalledWith(

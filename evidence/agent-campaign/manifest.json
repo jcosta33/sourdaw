@@ -419,7 +419,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/openAiProviderAdapter.contract.spec.ts",
-                    "digest": "ca00658519c67c7733508ca4cf8a925dae2a93df8db72c610dcf1b501519079b"
+                    "digest": "342fcccef68ff72c29f2715e8de906af69e1fa0bf0f415c6e249ab95391d60f6"
                 }
             ]
         },
@@ -431,7 +431,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/anthropicProviderAdapter.contract.spec.ts",
-                    "digest": "5c412e7769297945aa33324c47068b928b734802d0c451dbee9a0f1ef9851966"
+                    "digest": "f0300d45f054fa81f52df7ebad24b05785167483edc170a3d9be6bab0a977392"
                 }
             ]
         },
@@ -443,7 +443,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts",
-                    "digest": "41cc40efebba7528df06a9d79d814c3973620c37d02a5d5ee0705cd6cf87b2b6"
+                    "digest": "eca5e631c6bbd0b54aeb874a21aa717a7663021b20b3a8f120ffe8db3518d438"
                 }
             ]
         },

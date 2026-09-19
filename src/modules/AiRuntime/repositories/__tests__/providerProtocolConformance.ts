@@ -162,10 +162,15 @@ export type ProviderStreamScenario =
     | 'malformed-event'
     | 'oversized-request-id';
 
-export type ProviderToolScenario = 'tool-batch' | 'empty-batch' | 'malformed-arguments' | 'oversized-call-id';
+export type ProviderToolScenario =
+    'tool-batch' | 'empty-batch' | 'malformed-arguments' | 'oversized-call-id' | 'forced-terminal';
+
+/** The two tool names every contract spec's `forced-terminal` scenario forces, matching the
+ * fixture's own `toolCalls` so the same response body admits under a required directive. */
+export const FORCED_TERMINAL_TOOL_NAMES = ['project.query', 'muteTrack'] as const;
 
 /** What the adapter put on the wire, read back from the transport the harness stubbed. */
-export type ProviderRequestObservation = { model: unknown; stream: unknown; tools: unknown };
+export type ProviderRequestObservation = { model: unknown; stream: unknown; tools: unknown; toolChoice?: unknown };
 
 export type ProviderStreamObservation = {
     text: string;
@@ -394,6 +399,21 @@ export function describeProviderProtocolConformance(name: string, harness: Provi
             expect(observed.providerRequestId).toBeNull();
             expect(observed.finish).toBe('stop');
             expectStreamRequest(observed.request);
+        });
+
+        it('forces the terminal tool choice on the wire and still admits the reply', async () => {
+            const observed = await harness.planTools('forced-terminal');
+
+            expect(observed.calls).toEqual(
+                PROVIDER_CONFORMANCE_FIXTURE.toolCalls.map((call) => ({
+                    id: call.id,
+                    name: call.name,
+                    arguments: call.arguments,
+                }))
+            );
+            expectToolRequest(observed.request);
+            expect(observed.request.toolChoice).not.toBeUndefined();
+            expect(observed.request.toolChoice).not.toBe('auto');
         });
     });
 }

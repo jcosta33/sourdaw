@@ -5,6 +5,7 @@ import { type ToolSchema } from '../../../../models/ToolDefinitions';
 import { compileProviderAdapterInstallation, OPENAI_RESPONSES_ADAPTER_ID } from '../../../providerAdapterRegistry';
 import { type OpenAiCloudRuntime } from '../../cloudSession';
 import { generateOpenAiResponsesToolCalls } from '../generateOpenAiResponsesToolCalls';
+import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../hostedToolPlan';
 
 const mocks = vi.hoisted(() => ({ requestHostedOpenAiProvider: vi.fn() }));
 
@@ -69,13 +70,17 @@ function respondWith(payload: unknown, status = 200): void {
     );
 }
 
-function planTools(targetRuntime: OpenAiCloudRuntime = runtime) {
+function planTools(
+    targetRuntime: OpenAiCloudRuntime = runtime,
+    directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE
+) {
     return generateOpenAiResponsesToolCalls({
         runtime: targetRuntime,
         systemPrompt: 'system',
         userMessage: 'mute drums',
         toolSchemas: tools,
         maxOutputTokens: 8_192,
+        directive,
     });
 }
 
@@ -127,6 +132,47 @@ describe('generateOpenAiResponsesToolCalls', () => {
             stream: false,
             store: false,
         });
+    });
+
+    it('forces the allowed-tools set on a required directive while leaving the advertised tools list full, dropping a directive name with no advertised schema', async () => {
+        respondWith({ id: 'resp_1', status: 'completed', output: [] });
+
+        await planTools(runtime, { mode: 'required', toolNames: ['muteTrack', 'deleteEverything'] });
+
+        const body = readSentBody();
+        expect(body.tool_choice).toEqual({
+            type: 'allowed_tools',
+            mode: 'required',
+            tools: [{ type: 'function', name: 'muteTrack' }],
+        });
+        // `allowed_tools` restricts the choice set without capping the call count, so
+        // parallel tool calls stay enabled on the forced turn.
+        expect(body.parallel_tool_calls).toBe(true);
+        // The full advertised set stays on the wire; `allowed_tools` restricts the
+        // model's choice without dropping the other tool from what it can see.
+        expect(body.tools).toEqual([
+            {
+                type: 'function',
+                name: 'project_query',
+                description: 'Query the project',
+                parameters: tools[0]?.function.parameters,
+                strict: true,
+            },
+            {
+                type: 'function',
+                name: 'muteTrack',
+                description: 'Mute a track',
+                parameters: tools[1]?.function.parameters,
+                strict: true,
+            },
+        ]);
+    });
+
+    it('throws before any network call when a required directive names no tool', async () => {
+        await expect(planTools(runtime, { mode: 'required', toolNames: [] })).rejects.toThrow(
+            'Hosted AI tool-choice directive named an empty tool set'
+        );
+        expect(mocks.requestHostedOpenAiProvider).not.toHaveBeenCalled();
     });
 
     it.each(['gpt-5.6-luna', 'gpt-4-turbo'])('gates reasoning effort on the gpt-5.6 family (%s)', async (model) => {
@@ -189,6 +235,22 @@ describe('generateOpenAiResponsesToolCalls', () => {
 
         expect(error).toBeInstanceOf(Error);
         expect((error as Error).message).toBe('Hosted AI refused tool planning');
+    });
+
+    it('attributes provider-reported usage to a refused turn', async () => {
+        respondWith({
+            id: 'resp_1',
+            status: 'completed',
+            output: [{ type: 'message', content: [{ type: 'refusal', refusal: 'refusal-body-text' }] }],
+            usage: { input_tokens: 22, output_tokens: 4, input_tokens_details: { cached_tokens: 0 } },
+        });
+
+        const error = await planTools().catch((error: unknown) => error);
+
+        expect(error).toMatchObject({
+            name: 'ToolPlanningRejectedError',
+            usage: { inputTokens: 22, outputTokens: 4, cacheReadInputTokens: 0, cacheWriteInputTokens: null },
+        });
     });
 
     it('rejects a prose answer that carries no tool call', async () => {
