@@ -1,0 +1,71 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_9e15f5b7ec3308::t_1ce43345124cc1 25,59-68,408-414
+AGENTS.md
+  s_9e15f5b7ec3308::t_8d58772ca92b1e 285-287,352-354,367-370,391-393
+evidence/agent-campaign/manifest.json
+  s_9e15f5b7ec3308::t_0b04c58b5c5e2d 410
+package.json
+  s_9e15f5b7ec3308::t_4ab8344e027826 63
+release/dependency-license-proofs.json
+  s_9e15f5b7ec3308::t_bf2571afc5dacb 64
+release/open-source-inventory.json
+  s_9e15f5b7ec3308::t_539bc5ed3d8950 169,1696
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_9e15f5b7ec3308::t_46f0ae23bddeaa 913,1300-1310,2075,2104,2116-2124
+scripts/__tests__/claimTrackerIssue.spec.ts
+  s_9e15f5b7ec3308::t_6e4fd339ace39b 1-448
+scripts/__tests__/openLane.spec.ts
+  s_9e15f5b7ec3308::t_2633d44134f14e 335-339,342-353
+scripts/claimTrackerIssue.ts
+  s_9e15f5b7ec3308::t_bbd107e5bf9177 1-387
+scripts/openLane.ts
+  s_9e15f5b7ec3308::t_3a3b5ad61a3c32 200-205
+scripts/trustedGithubWriteBootstrap.ts
+  s_9e15f5b7ec3308::t_3d1e0ca050558c 31,162-167,305,1407,1421
+src/modules/AiRuntime/models/HostedLlmProvider.ts
+  s_9e15f5b7ec3308::t_8780bd3f394e22 4-6,10,26-31,39-40
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/setCloudProviderConfig.spec.ts
+  s_9e15f5b7ec3308::t_9982bcf6c4c7aa 136,172-215,353,408,523,612,696
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiResponsesToolCalls.spec.ts
+  s_9e15f5b7ec3308::t_89f2c0ec70e05c 40-42,45,55,179,182,184-200
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamOpenAiResponses.spec.ts
+  s_9e15f5b7ec3308::t_a5aa18b2d5c67e 15-17,20,30,124,128,134-160
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/buildReasoningExtension.ts
+  s_9e15f5b7ec3308::t_ada01973798965 1-18
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiResponsesToolCalls.ts
+  s_9e15f5b7ec3308::t_d8034ebacdb7a4 7,206
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamOpenAiResponses.ts
+  s_9e15f5b7ec3308::t_b06c668b2c8c01 4,201
+src/modules/AiRuntime/repositories/cloudLlm/cloudSession.ts
+  s_9e15f5b7ec3308::t_9d2936334502f9 2-6,29-33,129
+src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts
+  s_9e15f5b7ec3308::t_02ccc39078e3d7 179-202
+src/modules/AiRuntime/useCases/aiRuntimeQueries/hostedReasoningEfforts.ts
+  s_9e15f5b7ec3308::t_52826ccbed2d49 1-3
+src/modules/AiRuntime/useCases/cloudApiManagement/__tests__/configureCloudProvider.spec.ts
+  s_9e15f5b7ec3308::t_ad9fa9424d0c23 49-98
+src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts
+  s_9e15f5b7ec3308::t_f62a8ebb5bc39b 2-6,41-52,70-71,95
+src/modules/AiRuntime/useCases/index.ts
+  s_9e15f5b7ec3308::t_8aa76db565d5e6 17
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_9e15f5b7ec3308::t_53fd24cff7f879 17,62-63,68-71,118-120,164,249,306-339
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_9e15f5b7ec3308::t_d2ca999ff9d109 53-54,58,148,167-246,282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "26afffb2cc1e50c7d31b748dd359f987b629b4e3",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
