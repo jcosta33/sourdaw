@@ -28,7 +28,13 @@ function fixtureGit(repository: string, args: string[]): string {
     }).trim();
 }
 
-function primaryFixture(): { root: string; authorLane: string; scratchLane: string } {
+function primaryFixture(): {
+    root: string;
+    authorLane: string;
+    scratchLane: string;
+    foreignLockLane: string;
+    strayLockLane: string;
+} {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-lane-identity-')));
     scratchRoots.push(root);
     fixtureGit(root, ['init', '-b', 'main']);
@@ -42,7 +48,16 @@ function primaryFixture(): { root: string; authorLane: string; scratchLane: stri
     fixtureGit(root, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, authorLane]);
     const scratchLane = join(root, '.agents', 'worktrees', 'scratch');
     fixtureGit(root, ['worktree', 'add', '-b', 'scratch-branch', scratchLane]);
-    return { root, authorLane, scratchLane };
+    // One negative per `authorLanes` predicate, so deleting any single predicate turns the spec
+    // red: this one is branch-shaped but locked for a different purpose.
+    const foreignLockLane = join(root, '.agents', 'worktrees', 'agent-13-foreign-lock');
+    fixtureGit(root, ['worktree', 'add', '-b', 'agent/13/foreign-lock', foreignLockLane]);
+    fixtureGit(root, ['worktree', 'lock', '--reason', 'lane-remove:12345', foreignLockLane]);
+    // And this one carries the exact author lock but on a non-agent branch.
+    const strayLockLane = join(root, '.agents', 'worktrees', 'stray-author-lock');
+    fixtureGit(root, ['worktree', 'add', '-b', 'collab/session', strayLockLane]);
+    fixtureGit(root, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, strayLockLane]);
+    return { root, authorLane, scratchLane, foreignLockLane, strayLockLane };
 }
 
 /** The per-worktree config file a `--worktree` write lands in; its existence is the scoped state. */
@@ -62,6 +77,8 @@ describe('lane identity stamping', () => {
         expect(fixtureGit(f.authorLane, ['config', 'commit.gpgsign'])).toBe('false');
         expect(existsSync(worktreeConfigFile(f.root, 'agent-12-work'))).toBe(true);
         expect(existsSync(worktreeConfigFile(f.root, 'scratch'))).toBe(false);
+        expect(existsSync(worktreeConfigFile(f.root, 'agent-13-foreign-lock'))).toBe(false);
+        expect(existsSync(worktreeConfigFile(f.root, 'stray-author-lock'))).toBe(false);
     });
 
     it('reports a stamped lane as already carrying the identity on a second run', () => {

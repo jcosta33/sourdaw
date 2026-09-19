@@ -287,7 +287,7 @@ your lane. Claim the work when you open the lane: `pnpm issue:claim <issue>` swa
 `status:active` and moves its board items to In progress; `lane:open` prints the command. The
 issue-bound and issueless procedures are in [delivery-orchestration]. Lane worktrees carry the
 author App's git commit identity (stamped at `lane:open`, restamped by `pnpm lane:identity`), and
-`lane:publish` refuses lane-owned commits authored otherwise — commits the comparison base already reaches are not the lane's to author.
+`lane:publish` refuses lane-owned commits authored otherwise — commits the resolved bases (origin/main and any stack parent head) already reach are not the lane's to author.
 
 A lane records its authoring model when opened: `--model <model>`, the lowercase public name of
 the model itself, keeping every qualifier that distinguishes capability or edition within the
