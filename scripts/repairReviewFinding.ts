@@ -36,6 +36,8 @@ import {
     parseReviewRepairReply,
     readCommentDatabaseId,
     readFindingLine,
+    readFindingReviewedHead,
+    reviewRepairCommitRefusal,
     renderReviewRepairReply,
     type ReviewRepairEvidence,
     type ReviewRepairRecord,
@@ -59,7 +61,7 @@ export type RepairReviewFindingThread = {
     pullRequestNumber: number;
     head: string;
     base: string;
-    rootComment: { id: number; path: string; line: number; side: 'LEFT' | 'RIGHT' };
+    rootComment: { id: number; path: string; line: number; side: 'LEFT' | 'RIGHT'; reviewedHead: string };
     replies: RepairReviewFindingReply[];
 };
 
@@ -359,16 +361,15 @@ export function repairReviewFinding(
         fail(`GitHub returned thread ${state.threadId} for requested thread ${input.threadId}`);
     }
     assertThreadPrecondition(state, number, input.head);
-    if (input.commit === input.head) {
-        fail(`commit ${input.commit} is not a distinct commit from head ${input.head}`);
-    }
-    // Inside the reviewed range `base..head`: every base commit is an ancestor of the head, so the
-    // head ancestry check alone would accept the merge base or any pre-pull-request commit.
-    if (!port.isAncestor(input.commit, input.head)) {
-        fail(`commit ${input.commit} is not an ancestor of head ${input.head}`);
-    }
-    if (port.isAncestor(input.commit, state.base)) {
-        fail(`commit ${input.commit} is an ancestor of the pull request base ${state.base}`);
+    const refusal = reviewRepairCommitRefusal({
+        commit: input.commit,
+        head: input.head,
+        base: state.base,
+        reviewedHead: state.rootComment.reviewedHead,
+        isAncestor: port.isAncestor,
+    });
+    if (refusal !== undefined) {
+        fail(refusal);
     }
     const record = buildRepairReviewRecord(number, input, state, loadRepairEvidence(input.evidencePath, port));
     if (isRepairAlreadyRecorded(state, record)) {
@@ -411,6 +412,7 @@ type ThreadCommentNode = {
     path?: unknown;
     line?: unknown;
     originalLine?: unknown;
+    pullRequestReview?: unknown;
     author?: unknown;
 };
 
@@ -441,6 +443,7 @@ function readRootComment(
         path: node.path,
         line: readFindingLine(node.line, node.originalLine, `${label} root comment`),
         side,
+        reviewedHead: readFindingReviewedHead(node.pullRequestReview, `${label} root comment`),
     };
 }
 

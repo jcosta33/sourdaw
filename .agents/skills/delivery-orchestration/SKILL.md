@@ -323,20 +323,34 @@ acceptance on another person's behalf or claim personal human review.
 Push the fix, then record it with `review:repair`, which runs as the author App
 and leaves the thread open. It reads the thread live and refuses one already
 resolved, a `--head` that is not the pull request's live head, or a `--commit`
-outside the reviewed range `base..head`: an ancestor of that head and not of the
-pull request's `baseRefOid`, so the merge base and every pre-pull-request commit
-are refused. It binds the thread's own root comment as
+outside `base..head`: an ancestor of or equal to that head and not an ancestor
+of the pull request's `baseRefOid`, so the merge base and every pre-pull-request
+commit are refused. The repair must also strictly descend the reviewed commit
+from the thread root's live `pullRequestReview.commit.oid`; it may equal the
+live head. The reviewed commit itself, its predecessors, and commits that do
+not descend it are refused. Missing or malformed root review provenance and
+unavailable ancestry comparisons fail closed before posting. It binds the
+thread's own root comment as
 the finding, plus the commit, one-line summary, bounded evidence, and head, and
 posts a readable reply carrying one canonical `sourdaw-repair-v1` marker line;
 it never resolves. Re-running the same head and commit posts nothing and reports
 the already-recorded state.
 
+For ancestry `B -> P -> R -> H`, let `B` be the PR base and `R` the root finding's
+reviewed commit. `H` qualifies as the repair even when it is the live head.
+`P` predates the finding, and `R` is the revision that received it; neither
+strictly descends `R`, so neither can be recorded or confirmed as its repair.
+
 The reviewer confirms with `review:confirm`, a distinct identity from the
 author's. It resolves, in one pass with deterministic mutation ids, the threads
 whose author-recorded repair validates: same pull request, same thread, same
-head, finding equal to the thread's root comment, repairing commit inside the
-reviewed range `base..head`, record well formed, evidence safe. It fails closed
-— a refused record, a duplicate distinct record, a thread already carrying a
+head, finding equal to the thread's root comment, repairing commit inside
+`base..head` and strictly descending the thread root's live associated review
+commit (`pullRequestReview.commit.oid`), record well formed, evidence safe.
+The repairing commit may equal the live head. Missing or malformed root review
+provenance or an unavailable ancestry comparison fails closed for the whole
+batch before any confirmation or resolution. It also fails closed — a refused
+record, a duplicate distinct record, a thread already carrying a
 confirmation for a different record or a duplicated identical confirmation, a
 rebound identity, a mismatched finding, or a commit outside the reviewed range
 resolves nothing and reports the refusal, leaving the operator to fix the

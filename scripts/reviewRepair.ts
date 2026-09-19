@@ -49,10 +49,12 @@ const DIFFERENT_RECORD_CONFIRMATION_REFUSAL = 'thread already carries a confirma
  * comment in diagnostics. The comment type carries no side: the side a finding sits on belongs to the
  * thread as `diffSide`, selected by each thread reader beside `isResolved`. GitHub nulls `line` once a
  * diff moves under a comment while `originalLine` keeps the position it was written against, so both
- * positions are read and `readFindingLine` decides which one a finding binds.
+ * positions are read and `readFindingLine` decides which one a finding binds. The root comment's
+ * associated review commit is the revision that received the finding; a comment's live commit may
+ * move with the diff, and a later reply belongs to a different review.
  */
 export const REVIEW_THREAD_COMMENT_FIELDS =
-    'nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}';
+    'nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}';
 
 export type ReviewRepairFinding = { commentId: number; path: string; line: number; side: 'LEFT' | 'RIGHT' };
 
@@ -76,6 +78,7 @@ export type ReviewRepairThreadState = {
     rootPath: string;
     rootLine: number;
     rootSide: 'LEFT' | 'RIGHT';
+    rootReviewedHead: string;
     replies: { id: number; body: string; authorNodeId: string | null }[];
 };
 
@@ -262,6 +265,40 @@ export function readFindingLine(line: unknown, originalLine: unknown, label: str
     );
 }
 
+/** Read provenance from the root's live review association, never from a repair reply. */
+export function readFindingReviewedHead(review: unknown, label: string): string {
+    const commit = isRecord(review) ? review.commit : undefined;
+    const oid = isRecord(commit) ? commit.oid : undefined;
+    if (typeof oid !== 'string' || !FORTY_LOWER_HEX.test(oid)) {
+        fail(`${label} reviewed head must be forty lowercase hex characters, found ${describeValue(oid)}`);
+    }
+    return oid;
+}
+
+/** Both identities require a post-finding commit in base..head; the repair may be the tip itself. */
+export function reviewRepairCommitRefusal(input: {
+    commit: string;
+    head: string;
+    base: string;
+    reviewedHead: string;
+    isAncestor: (commit: string, head: string) => boolean;
+}): string | undefined {
+    const { commit, head, base, reviewedHead, isAncestor } = input;
+    if (typeof reviewedHead !== 'string' || !FORTY_LOWER_HEX.test(reviewedHead)) {
+        return 'finding reviewed head must be forty lowercase hex characters';
+    }
+    if (!isAncestor(commit, head)) {
+        return `commit ${commit} is not an ancestor of head ${head}`;
+    }
+    if (isAncestor(commit, base)) {
+        return `commit ${commit} is an ancestor of the pull request base ${base}`;
+    }
+    if (commit === reviewedHead || !isAncestor(reviewedHead, commit)) {
+        return `commit ${commit} must strictly descend the finding reviewed head ${reviewedHead}`;
+    }
+    return undefined;
+}
+
 export function assertReviewRepairRecord(record: ReviewRepairRecord): void {
     if (record.format !== REVIEW_REPAIR_FORMAT) {
         fail(`review repair format must be ${REVIEW_REPAIR_FORMAT}, found ${describeValue(record.format)}`);
@@ -378,16 +415,13 @@ function confirmationRefusal(
     if (finding !== undefined) {
         return finding;
     }
-    if (record.commit === record.head) {
-        return `commit ${record.commit} is not a distinct commit from head ${record.head}`;
-    }
-    if (!confirmation.isAncestor(record.commit, confirmation.head)) {
-        return `commit ${record.commit} is not an ancestor of head ${confirmation.head}`;
-    }
-    if (confirmation.isAncestor(record.commit, confirmation.base)) {
-        return `commit ${record.commit} is an ancestor of the pull request base ${confirmation.base}`;
-    }
-    return undefined;
+    return reviewRepairCommitRefusal({
+        commit: record.commit,
+        head: confirmation.head,
+        base: confirmation.base,
+        reviewedHead: thread.rootReviewedHead,
+        isAncestor: confirmation.isAncestor,
+    });
 }
 
 /**
