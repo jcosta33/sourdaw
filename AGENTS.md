@@ -447,6 +447,14 @@ last push, resolved threads, and `Gate` on the PR head. It is non-strict: unrela
 movement requires no merge; take `main` only for real conflicts or mergeability, and the new head
 then requires fresh `Gate` and review.
 
+Dismissing stale reviews on push and requiring approval of the last push are ruleset configuration,
+and the live `main` ruleset carries both; either changes only through the trusted ruleset command,
+and only after a canary proves the change against a throwaway ruleset. The reviewer's shadow status
+is deliberately non-required: it attests only immutable commit facts about the exact head, never a
+verdict that another commit or a later push can inherit. No wave may make a CI context or a shadow
+status context required, because a required context converts an observation into merge authority —
+for the shadow status, that would erase the reason it exists.
+
 For committed wasm artifacts, consult `scripts/wasm-artifacts.ts` for package and build-script
 names; they cannot be derived from crate names. Any non-test edit in a package's
 path-dependency closure, including comments, changes its hash: rebuild the package, rewrite the

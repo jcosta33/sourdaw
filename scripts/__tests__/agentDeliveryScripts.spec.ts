@@ -55,6 +55,8 @@ import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
 import { runRepairReviewFindingCli } from '../repairReviewFinding.ts';
 import { runResolveReviewThreadCli } from '../resolveThread.ts';
+import { runReviewShadowStatusCli } from '../reviewShadowStatus.ts';
+import { runRulesetHardeningCli } from '../rulesetHardening.ts';
 import {
     BOOTSTRAP_PATH,
     assertTrustedSourceGraph,
@@ -911,6 +913,10 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['review:repair']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:repair');
         expect(pkg.scripts['review:confirm']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:confirm');
         expect(pkg.scripts['review:resolve']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:resolve');
+        expect(pkg.scripts['review:shadow-status']).toBe(
+            'node scripts/trustedGithubWriteBootstrap.ts review:shadow-status'
+        );
+        expect(pkg.scripts['ruleset:harden']).toBe('node scripts/trustedGithubWriteBootstrap.ts ruleset:harden');
         expect(pkg.scripts['review:resolve:recover']).toBeUndefined();
         expect(pkg.scripts['deliver:recover-lock']).toBeUndefined();
         expect(pkg.scripts['pr:supersede']).toBe('node scripts/supersedePullRequest.ts');
@@ -1292,6 +1298,29 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/resolveThread.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                ],
+            },
+            {
+                command: 'review:shadow-status' as const,
+                entry: 'scripts/reviewShadowStatus.ts',
+                required: 'scripts/githubAppIdentity.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/reviewShadowStatus.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                ],
+            },
+            {
+                command: 'ruleset:harden' as const,
+                entry: 'scripts/rulesetHardening.ts',
+                required: 'scripts/canonicalRecord.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/rulesetHardening.ts',
+                    'scripts/canonicalRecord.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                 ],
@@ -1941,7 +1970,7 @@ describe('package scripts and gitignore', () => {
                 expect(result.stderr).toMatch(/usage: trustedGithubWriteBootstrap\.ts/i);
                 // The usage must name every command `parseCommand` accepts, not a subset of them.
                 expect(result.stderr).toContain(
-                    'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve>'
+                    'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|ruleset:harden>'
                 );
                 expect(result.stderr).not.toMatch(/trusted ps executable|protected primary checkout/i);
             } finally {
@@ -2102,6 +2131,8 @@ describe('package scripts and gitignore', () => {
         'review:publish',
         'review:publish:recover',
         'review:resolve',
+        'review:shadow-status',
+        'ruleset:harden',
     ] as const)('reads no gating workflow for %s', async (command) => {
         const originReads: string[] = [];
         let gateWorkflow: unknown = 'unset';
@@ -2132,6 +2163,8 @@ describe('package scripts and gitignore', () => {
             'review:publish',
             'review:publish:recover',
             'review:resolve',
+            'review:shadow-status',
+            'ruleset:harden',
         ] as const) {
             expect(trustedDependencyPaths(command)).toContain(BOOTSTRAP_PATH);
         }
@@ -2284,6 +2317,18 @@ describe('package scripts and gitignore', () => {
             runner: 'runResolveReviewThreadCli',
             args: ['3239', '--thread', 'PRRT_example', '--head', 'a'.repeat(40)],
         },
+        {
+            command: 'review:shadow-status' as const,
+            entry: 'scripts/reviewShadowStatus.ts',
+            runner: 'runReviewShadowStatusCli',
+            args: ['3239', '--head', 'a'.repeat(40)],
+        },
+        {
+            command: 'ruleset:harden' as const,
+            entry: 'scripts/rulesetHardening.ts',
+            runner: 'runRulesetHardeningCli',
+            args: ['--apply'],
+        },
     ])('imports the $command entry and forwards its exact arguments', async ({ command, entry, runner, args }) => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-review-entry-'));
         const recordPath = join(fixtureRoot, 'args.json');
@@ -2309,6 +2354,8 @@ describe('package scripts and gitignore', () => {
                 'review:repair': runRepairReviewFindingCli,
                 'review:confirm': runConfirmReviewRepairsCli,
                 'review:resolve': runResolveReviewThreadCli,
+                'review:shadow-status': runReviewShadowStatusCli,
+                'ruleset:harden': runRulesetHardeningCli,
             } as const;
             expect(importedRunners[command]).toBeTypeOf('function');
         } finally {
