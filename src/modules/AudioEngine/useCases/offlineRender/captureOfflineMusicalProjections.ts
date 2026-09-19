@@ -8,15 +8,21 @@ import { type OfflineRenderProjectSource } from './OfflineRenderSource';
 
 function captureLiveProjections(tracks: TrackStoreState | null) {
     const ports = offlineRenderCapturePorts;
+    let processYeastMidi;
+    if (ports.createYeastProcessor) {
+        processYeastMidi = ports.createYeastProcessor({ tracks: tracks?.tracks ?? [] });
+    } else {
+        processYeastMidi = offlineYeastMidiProcessorState.createProcessor?.() ?? null;
+    }
+    let evaluateAutomationValue = offlineMidiEventProjectorState.evaluateAutomationValue;
+    if (ports.createAutomationEvaluator) {
+        evaluateAutomationValue = ports.createAutomationEvaluator();
+    }
     return {
         projectMidiEvents: offlineMidiEventProjectorState.createProjector?.() ?? null,
         projectChordPitch: offlineMidiEventProjectorState.createChordPitchProjector?.() ?? null,
-        processYeastMidi: ports.createYeastProcessor
-            ? ports.createYeastProcessor({ tracks: tracks?.tracks ?? [] })
-            : (offlineYeastMidiProcessorState.createProcessor?.() ?? null),
-        evaluateAutomationValue: ports.createAutomationEvaluator
-            ? ports.createAutomationEvaluator()
-            : offlineMidiEventProjectorState.evaluateAutomationValue,
+        processYeastMidi,
+        evaluateAutomationValue,
     };
 }
 
