@@ -1,0 +1,19 @@
+package.json
+  s_9e15f5b7ec3308::t_b8a956238abf62 57-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7c7359d4c74f29f25a442449f74a1b7a4b8c381b",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
