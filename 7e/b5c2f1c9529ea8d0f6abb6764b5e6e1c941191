@@ -1,0 +1,23 @@
+scripts/publishReview.ts
+  s_9e15f5b7ec3308::t_c379d503735139 308
+scripts/reviewDocumentParser.ts
+  s_9e15f5b7ec3308::t_0d3daf9935d87d 76,99-109,111-121,123
+scripts/reviewerModelDiversity.ts
+  s_9e15f5b7ec3308::t_18d6f8d8889300 29-35,39,44-45,60-61,64,67,74,77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7eb5c2f1c9529ea8d0f6abb6764b5e6e1c941191",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
