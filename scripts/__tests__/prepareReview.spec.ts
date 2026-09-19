@@ -22,6 +22,15 @@ import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
 import type { GhSession } from '../githubAppIdentity.ts';
 
+/**
+ * Fixture teardown. `rmSync` retries because the real-git case's tree can still be settling when the
+ * case ends: macOS intermittently reports ENOTEMPTY for a directory it just unlinked, and an
+ * unretried recursive remove then fails the case from `finally` without touching its assertions.
+ */
+function removeTempRoot(root: string): void {
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+}
+
 function git(root: string, ...args: string[]): string {
     return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 }
@@ -135,7 +144,7 @@ describe('review prepare', () => {
             expect(JSON.stringify(files)).not.toContain('ghs_');
             expect(JSON.stringify(files)).not.toContain('BEGIN RSA');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -156,7 +165,7 @@ describe('review prepare', () => {
                 generated: expect.arrayContaining(['risk-plan.json']),
             });
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -174,7 +183,7 @@ describe('review prepare', () => {
                 baseSha: context.baseSha,
             });
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -190,7 +199,7 @@ describe('review prepare', () => {
                 `${formatReviewDiffSummary(summarizeReviewDiff(root, numstat))}\n`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -226,7 +235,7 @@ describe('review prepare', () => {
                 'base .agents/decisions/0026-ownership-by-exception.md\n'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -263,7 +272,7 @@ describe('review prepare', () => {
                 groups: { handwritten: { files: 1, added: 2, deleted: 0 } },
             });
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -278,7 +287,7 @@ describe('review prepare', () => {
             expect(() => prepareReview(42, port)).not.toThrow();
             expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller review\n');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -293,7 +302,7 @@ describe('review prepare', () => {
             expect(() => prepareReview(42, port)).not.toThrow();
             expect(readFileSync(join(destination, 'dossier.json'), 'utf8')).toBe('caller dossier\n');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -308,7 +317,7 @@ describe('review prepare', () => {
             expect(() => prepareReview(42, port)).toThrow('review bundle context changed');
             expect(readFileSync(join(destination, 'dossier.json'), 'utf8')).toBe('caller dossier\n');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -331,7 +340,7 @@ describe('review prepare', () => {
                 baseSha: 'mergebasesha',
             });
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -350,7 +359,7 @@ describe('review prepare', () => {
             expect(() => prepareReview(42, port)).toThrow('review bundle context changed');
             expect(readFileSync(join(destination, 'acceptance.json'), 'utf8')).toBe('caller acceptance\n');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -367,7 +376,7 @@ describe('review prepare', () => {
             expect(readFileSync(join(destination, 'manifest.json'), 'utf8')).toContain('new');
             expect(readFileSync(join(destination, 'diff.patch'), 'utf8')).toBe('x\n');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -390,7 +399,7 @@ describe('review prepare', () => {
                 '{"event":"APPROVE","body":"ok","comments":[]}\n'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -405,7 +414,7 @@ describe('review prepare', () => {
 
             expect(readFileSync(join(destination, 'manifest.json'), 'utf8')).toBe('{"pr":42,"headSha":"new"}\n');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -429,7 +438,7 @@ describe('review prepare', () => {
 
             expect(readFileSync(join(destination, 'notes', 'caller-note.md'), 'utf8')).toBe('keep me\n');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -452,7 +461,7 @@ describe('review prepare', () => {
             expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
             expect(existsSync(join(destination, 'contracts', '.agents', 'decisions', '0027-doomed.md'))).toBe(false);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -472,7 +481,7 @@ describe('review prepare', () => {
             expect(readFileSync(join(destination, 'dossier.json'), 'utf8')).toBe('caller dossier\n');
             expect(existsSync(join(destination, 'contracts', 'dossier.json'))).toBe(false);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -487,7 +496,7 @@ describe('review prepare', () => {
 
             expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -503,7 +512,7 @@ describe('review prepare', () => {
 
             expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -528,7 +537,7 @@ describe('review prepare', () => {
             expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
             expect(existsSync(join(destination, 'contracts', 'nested.md'))).toBe(false);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -548,7 +557,7 @@ describe('review prepare', () => {
             expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
             expect(readdirSync(root)).toEqual(['42-head']);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -574,7 +583,7 @@ describe('review prepare', () => {
             expect(readFileSync(join(destination, 'contracts'), 'utf8')).toBe('not a directory\n');
             expect(readdirSync(root)).toEqual(['42-head']);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -607,7 +616,7 @@ describe('review prepare', () => {
             expect(existsSync(join(destination, 'contracts', '0027-old.md'))).toBe(false);
             expect(readFileSync(join(destination, 'review.json'), 'utf8')).toBe('caller content\n');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -622,7 +631,7 @@ describe('review prepare', () => {
 
             expect(readdirSync(root)).toEqual(['42-head']);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 
@@ -657,7 +666,7 @@ describe('review prepare', () => {
                 expect(existsSync(deadStaging)).toBe(false);
                 expect(existsSync(deadPrevious)).toBe(false);
             } finally {
-                rmSync(root, { recursive: true, force: true });
+                removeTempRoot(root);
             }
         });
 
@@ -675,7 +684,7 @@ describe('review prepare', () => {
                 expect(existsSync(activeStaging)).toBe(true);
                 expect(existsSync(activePrevious)).toBe(true);
             } finally {
-                rmSync(root, { recursive: true, force: true });
+                removeTempRoot(root);
             }
         });
 
@@ -700,7 +709,7 @@ describe('review prepare', () => {
                 expect(existsSync(otherFile)).toBe(true);
                 expect(existsSync(nonMatchingDir)).toBe(true);
             } finally {
-                rmSync(root, { recursive: true, force: true });
+                removeTempRoot(root);
             }
         });
 
@@ -734,7 +743,7 @@ describe('review prepare', () => {
             expect(existsSync(destination)).toBe(true);
             expect(readFileSync(join(destination, 'manifest.json'), 'utf8')).toContain('new');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTempRoot(root);
         }
     });
 });
