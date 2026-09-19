@@ -131,17 +131,23 @@ function hasErrorName(value: unknown, name: string): boolean {
 
 function buildToolChoiceExtension(
     directive: HostedToolChoiceDirective,
+    narrowedSchemas: readonly ToolSchema[],
     codec: ReturnType<typeof buildWireToolNameCodec>
 ): Record<string, unknown> {
     if (directive.mode === 'required') {
         // `allowed_tools` restricts the choice set without capping the call count: the
         // workflow terminal shape is two calls in one turn (`selectWorkflowCapability`
         // beside `command.batch.propose`), so `parallel_tool_calls` stays true here too.
+        // The allowed set is read from the narrowed schema list, not the raw directive
+        // names, so a terminal name with no matching advertised schema cannot reach the wire.
         return {
             tool_choice: {
                 type: 'allowed_tools',
                 mode: 'required',
-                tools: directive.toolNames.map((name) => ({ type: 'function', name: codec.encode(name) })),
+                tools: narrowedSchemas.map((schema) => ({
+                    type: 'function',
+                    name: codec.encode(schema.function.name),
+                })),
             },
             parallel_tool_calls: true,
         };
@@ -174,8 +180,9 @@ export async function generateOpenAiResponsesToolCalls({
 }: GenerateOpenAiResponsesToolCallsInput): Promise<HostedToolPlan> {
     const codec = buildWireToolNameCodec(toolSchemas);
     // `allowed_tools` restricts the model's choice without dropping any tool from the
-    // advertised set below, so only the shared empty-set validation applies here.
-    narrowToolSchemasForDirective(toolSchemas, directive);
+    // advertised set below, so only the narrowed name list feeds the tool-choice
+    // extension; the shared empty-set validation still applies here.
+    const narrowedSchemas = narrowToolSchemasForDirective(toolSchemas, directive);
     const body = JSON.stringify({
         model: runtime.model,
         instructions: systemPrompt,
@@ -190,7 +197,7 @@ export async function generateOpenAiResponsesToolCalls({
                 strict: true,
             };
         }),
-        ...buildToolChoiceExtension(directive, codec),
+        ...buildToolChoiceExtension(directive, narrowedSchemas, codec),
         max_output_tokens: maxOutputTokens,
         stream: false,
         // The data policy disclosed to users is request-scoped processing, so no

@@ -204,6 +204,61 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         expect(body).not.toHaveProperty('parallel_tool_calls');
     });
 
+    it('narrows to exactly the directive-named tools, in their advertised order, dropping an unnamed one', async () => {
+        const threeTools = [
+            tools[0]!,
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setVolume',
+                    description: 'Set volume',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { db: { type: 'number' } },
+                        required: ['db'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setPan',
+                    description: 'Set pan',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { pan: { type: 'number' } },
+                        required: ['pan'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }] }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            })
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        await generateOpenAiCompatibleToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'quieter and centered',
+            toolSchemas: threeTools,
+            maxOutputTokens: 8192,
+            directive: { mode: 'required', toolNames: ['setVolume', 'setPan'] },
+        });
+
+        const request = fetchMock.mock.calls[0]?.[1];
+        if (!request || typeof request.body !== 'string') {
+            throw new Error('Expected a JSON request body');
+        }
+        const body = JSON.parse(request.body) as { tools: Array<{ function: { name: string } }> };
+        expect(body.tools.map((tool) => tool.function.name)).toEqual(['setVolume', 'setPan']);
+    });
+
     it('throws before any network call when a required directive names no tool', async () => {
         const fetchMock = vi.fn<typeof fetch>();
         vi.stubGlobal('fetch', fetchMock);

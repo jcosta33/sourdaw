@@ -113,6 +113,59 @@ describe('generateAnthropicToolCalls', () => {
         expect(body.tools[0]?.cache_control).toEqual({ type: 'ephemeral' });
     });
 
+    it('narrows to exactly the directive-named tools, in their advertised order, dropping an unnamed one', async () => {
+        const threeTools = [
+            toolSchemas[0]!,
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setVolume',
+                    description: 'Set volume',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { db: { type: 'number' } },
+                        required: ['db'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setPan',
+                    description: 'Set pan',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { pan: { type: 'number' } },
+                        required: ['pan'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        returnPayload({
+            content: [{ type: 'tool_use', id: 'tool-1', name: 'setVolume', input: { db: -3 } }],
+            stop_reason: 'tool_use',
+        });
+
+        await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'quieter and centered',
+            toolSchemas: threeTools,
+            maxOutputTokens: 8192,
+            directive: { mode: 'required', toolNames: ['setVolume', 'setPan'] },
+            signal: new AbortController().signal,
+        });
+
+        const request = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        if (!request) {
+            throw new Error('Expected a recorded provider request');
+        }
+        const body = JSON.parse(request.body) as { tools: Array<{ name: string }> };
+        expect(body.tools.map((tool) => tool.name)).toEqual(['setVolume', 'setPan']);
+    });
+
     it('throws before any network call when a required directive names no tool', async () => {
         await expect(
             generateAnthropicToolCalls({

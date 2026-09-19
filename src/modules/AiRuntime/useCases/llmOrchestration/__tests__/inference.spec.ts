@@ -12,6 +12,10 @@ import {
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
+import {
+    AUTO_TOOL_CHOICE,
+    type HostedToolChoiceDirective,
+} from '../../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
@@ -253,6 +257,77 @@ describe('generateToolPlanningOutcome', () => {
                 provenance: 'provider-reported',
             },
         });
+    });
+
+    it('forwards a required directive verbatim to generateCloudToolCalls with no abort signal supplied', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+        const directive: HostedToolChoiceDirective = { mode: 'required', toolNames: ['muteTrack', 'soloTrack'] };
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                undefined,
+                'mute the first track',
+                undefined,
+                undefined,
+                undefined,
+                directive
+            )
+        ).resolves.toMatchObject({ status: 'complete' });
+
+        expect(mocks.generateCloudToolCalls.mock.calls[0]?.[4]).toStrictEqual(directive);
+    });
+
+    it('forwards a required directive verbatim to generateCloudToolCalls with an abort signal supplied', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+        const directive: HostedToolChoiceDirective = { mode: 'required', toolNames: ['muteTrack', 'soloTrack'] };
+        const controller = new AbortController();
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                controller.signal,
+                'mute the first track',
+                undefined,
+                undefined,
+                undefined,
+                directive
+            )
+        ).resolves.toMatchObject({ status: 'complete' });
+
+        expect(mocks.generateCloudToolCalls.mock.calls[0]?.[4]).toStrictEqual(directive);
+    });
+
+    it('forwards the default auto directive to generateCloudToolCalls when no directive is supplied', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        await expect(generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)).resolves.toMatchObject(
+            { status: 'complete' }
+        );
+
+        expect(mocks.generateCloudToolCalls.mock.calls[0]?.[4]).toStrictEqual(AUTO_TOOL_CHOICE);
     });
 
     it('admits a tool-call reply carrying null for an argument the source schema leaves optional', async () => {

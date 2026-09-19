@@ -134,10 +134,10 @@ describe('generateOpenAiResponsesToolCalls', () => {
         });
     });
 
-    it('forces the allowed-tools set on a required directive while leaving the advertised tools list full', async () => {
+    it('forces the allowed-tools set on a required directive while leaving the advertised tools list full, dropping a directive name with no advertised schema', async () => {
         respondWith({ id: 'resp_1', status: 'completed', output: [] });
 
-        await planTools(runtime, { mode: 'required', toolNames: ['muteTrack'] });
+        await planTools(runtime, { mode: 'required', toolNames: ['muteTrack', 'deleteEverything'] });
 
         const body = readSentBody();
         expect(body.tool_choice).toEqual({
