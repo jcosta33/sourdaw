@@ -14,6 +14,7 @@ import {
     isAncestorExitStatus,
     parseConfirmReviewRepairsArgs,
     postConfirmationReply,
+    readPullRequestBase,
     readPullRequestHead,
     readReviewThreads,
     renderConfirmationReply,
@@ -39,6 +40,7 @@ const THREAD = 'PRRT_kwDOconfirm';
 const SECOND_THREAD = 'PRRT_kwDOconfirm2';
 const THIRD_THREAD = 'PRRT_kwDOconfirm3';
 const HEAD = 'a'.repeat(40);
+const BASE = 'f'.repeat(40);
 const MOVED_HEAD = 'c'.repeat(40);
 const COMMIT = 'b'.repeat(40);
 const OTHER_COMMIT = 'd'.repeat(40);
@@ -129,7 +131,7 @@ type Mutation = { kind: 'post' | 'resolve'; thread: string; clientMutationId: st
 function fakePort(
     initialHead: string = HEAD,
     initialThreads: ReviewRepairThreadState[] = cleanThreads(),
-    isAncestor: (commit: string, head: string) => boolean = () => true
+    isAncestor: (commit: string, head: string) => boolean = (_commit, target) => target === HEAD
 ) {
     const calls: string[] = [];
     const logs: string[] = [];
@@ -143,6 +145,10 @@ function fakePort(
         pullRequestHead: (pr) => {
             calls.push(`head:${pr}`);
             return initialHead;
+        },
+        pullRequestBase: (pr) => {
+            calls.push(`base:${pr}`);
+            return BASE;
         },
         readThreads: (pr) => {
             calls.push(`threads:${pr}`);
@@ -258,9 +264,12 @@ describe('confirmReviewRepairs', () => {
         expect(confirmReviewRepairs(PR, HEAD, port)).toEqual({ resolved: [THREAD, SECOND_THREAD] });
         expect(calls).toEqual([
             `head:${PR}`,
+            `base:${PR}`,
             `threads:${PR}`,
             `isAncestor:${COMMIT}:${HEAD}`,
+            `isAncestor:${COMMIT}:${BASE}`,
             `isAncestor:${COMMIT}:${HEAD}`,
+            `isAncestor:${COMMIT}:${BASE}`,
             `post:${THREAD}`,
             `resolve:${THREAD}`,
             `post:${SECOND_THREAD}`,
@@ -453,7 +462,9 @@ describe('confirmReviewRepairs', () => {
             threads: batch,
             pr: PR,
             head: HEAD,
+            base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
+            reviewerNodeId: REVIEWER_BOT_NODE_ID,
             isAncestor,
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
@@ -465,6 +476,95 @@ describe('confirmReviewRepairs', () => {
         expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(REFUSED_MESSAGE);
         expect(mutations).toEqual([]);
         expect(calls).toContain(`isAncestor:${COMMIT}:${HEAD}`);
+    });
+
+    it('should fail closed on a record whose commit is the pull request base', () => {
+        // BASE is the pull request base and also an ancestor of the head, which is exactly what the
+        // ancestry-only gate accepted before the reviewed range was enforced.
+        const threads = cleanThreads();
+        const baseRecord = recordFor({
+            thread: SECOND_THREAD,
+            commit: BASE,
+            finding: {
+                commentId: SECOND_ROOT_COMMENT_ID,
+                path: SECOND_FINDING_PATH,
+                line: FINDING_LINE,
+                side: 'RIGHT',
+            },
+        });
+        const batch = [
+            threads[0]!,
+            {
+                ...threads[1]!,
+                replies: [
+                    threads[1]!.replies[0]!,
+                    { id: 9_010, body: authorRecordReply(baseRecord), authorNodeId: AUTHOR_BOT_NODE_ID },
+                ],
+            },
+        ];
+        const isAncestor = (commit: string, target: string) =>
+            commit === BASE || (target === HEAD && commit === COMMIT);
+        const selection = selectEligibleRepairs({
+            threads: batch,
+            pr: PR,
+            head: HEAD,
+            base: BASE,
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            isAncestor,
+        });
+        expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
+        expect(selection.refused).toEqual([
+            { thread: SECOND_THREAD, reason: `commit ${BASE} is an ancestor of the pull request base ${BASE}` },
+        ]);
+
+        const { port, mutations } = fakePort(HEAD, batch, isAncestor);
+        expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(REFUSED_MESSAGE);
+        expect(mutations).toEqual([]);
+    });
+
+    it('should refuse a rerun whose thread carries a confirmation for a different record', () => {
+        const { port: base, threads } = fakePort(HEAD, [subjectThread()]);
+        let resolveFails = true;
+        const port: ConfirmReviewRepairsPort = {
+            ...base,
+            resolve: (thread, clientMutationId) => {
+                if (resolveFails) {
+                    resolveFails = false;
+                    throw new Error(`resolve exploded on ${thread}`);
+                }
+                base.resolve(thread, clientMutationId);
+            },
+        };
+        expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(`resolve exploded on ${THREAD}`);
+
+        // The author edits the recorded repair in place to a different record on the same head and
+        // commit, leaving the partial pass's confirmation naming the record the reviewer read.
+        const current = threads.get(THREAD);
+        if (current === undefined) {
+            throw new Error('the partial pass must leave the subject thread in place');
+        }
+        const edited = recordFor({ summary: 'A rewritten summary for the same finding and commit.' });
+        threads.set(THREAD, {
+            ...current,
+            replies: current.replies.map((reply) =>
+                reply.authorNodeId === AUTHOR_BOT_NODE_ID ? { ...reply, body: authorRecordReply(edited) } : reply
+            ),
+        });
+
+        const selection = selectEligibleRepairs({
+            threads: Array.from(threads.values(), (thread) => ({ ...thread, replies: [...thread.replies] })),
+            pr: PR,
+            head: HEAD,
+            base: BASE,
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            isAncestor: (_commit, target) => target === HEAD,
+        });
+        expect(selection.refused).toEqual([
+            { thread: THREAD, reason: 'thread already carries a confirmation for a different record' },
+        ]);
+        expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(REFUSED_MESSAGE);
     });
 
     it('should fail closed on a record bound to another head', () => {
@@ -677,6 +777,21 @@ describe('readPullRequestHead', () => {
     });
 });
 
+describe('readPullRequestBase', () => {
+    it('should read the live base of the pull request', () => {
+        const gh = (args: string[]) => {
+            expect(args.join(' ')).toContain('baseRefOid');
+            return JSON.stringify({ data: { repository: { pullRequest: { baseRefOid: BASE } } } });
+        };
+        expect(readPullRequestBase(PR, gh, [])).toBe(BASE);
+    });
+
+    it('should refuse a pull request with no readable base', () => {
+        const gh = () => JSON.stringify({ data: { repository: { pullRequest: {} } } });
+        expect(() => readPullRequestBase(PR, gh, [])).toThrow(`PR #${PR} base is not a readable pull request base`);
+    });
+});
+
 describe('postConfirmationReply and resolveConfirmedThread', () => {
     it('should reply with the confirmation body and resolve through the named mutations', () => {
         const calls: { query: string; fields: Record<string, string> }[] = [];
@@ -762,6 +877,9 @@ describe('shellPort', () => {
                 if (query.includes('headRefOid')) {
                     return JSON.stringify({ data: { repository: { pullRequest: { headRefOid: HEAD } } } });
                 }
+                if (query.includes('baseRefOid')) {
+                    return JSON.stringify({ data: { repository: { pullRequest: { baseRefOid: BASE } } } });
+                }
                 if (query.includes('reviewThreads')) {
                     return JSON.stringify({
                         data: {
@@ -797,6 +915,7 @@ describe('shellPort', () => {
                 return '';
             });
             expect(port.pullRequestHead(PR)).toBe(HEAD);
+            expect(port.pullRequestBase(PR)).toBe(BASE);
             expect(port.readThreads(PR).map((thread) => thread.thread)).toEqual([THREAD]);
             const ghCall = commands.find((entry) => entry.command === 'gh');
             expect(ghCall?.cwd).toBe(root);

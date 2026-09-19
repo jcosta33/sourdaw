@@ -32,6 +32,7 @@ const PR = 3_000;
 const THREAD = 'PRRT_kwDOrepair';
 const OTHER_THREAD = 'PRRT_kwDOother';
 const HEAD = 'a'.repeat(40);
+const BASE = 'f'.repeat(40);
 const MOVED_HEAD = 'c'.repeat(40);
 const COMMIT = 'b'.repeat(40);
 const OTHER_COMMIT = 'd'.repeat(40);
@@ -62,6 +63,7 @@ function threadState(overrides: Partial<RepairReviewFindingThread> = {}): Repair
         isResolved: false,
         pullRequestNumber: PR,
         head: HEAD,
+        base: BASE,
         rootComment: { id: ROOT_COMMENT_ID, path: FINDING_PATH, line: FINDING_LINE, side: 'RIGHT' },
         replies: [repairReply('PRRC_root', 'Defect. Consequence. Fix.')],
         ...overrides,
@@ -116,7 +118,9 @@ function fakePort(
         },
         isAncestor: (commit, head) => {
             calls.push(`isAncestor:${commit}:${head}`);
-            return true;
+            // The reviewed range: the head reaches the base through its own commits, and the base is
+            // not inside its own review range.
+            return head === current.head;
         },
         log: (message) => {
             logs.push(message);
@@ -328,6 +332,7 @@ describe('repairReviewFinding', () => {
         expect(calls).toEqual([
             `read:${THREAD}`,
             `isAncestor:${COMMIT}:${HEAD}`,
+            `isAncestor:${COMMIT}:${BASE}`,
             `postReply:${THREAD}:${recordClientMutationId(PR, THREAD, HEAD, COMMIT)}`,
         ]);
         expect(postedRecords(posted)).toEqual([recordFor()]);
@@ -439,6 +444,34 @@ describe('repairReviewFinding', () => {
             `commit ${COMMIT} is not an ancestor of head ${HEAD}`
         );
         expect(calls).toEqual([`read:${THREAD}`]);
+    });
+
+    it('should refuse a commit that is the pull request base', () => {
+        // The base is an ancestor of the head, so before the reviewed range it recorded and confirmed.
+        const { port, calls, posted } = fakePort();
+        const atBase = {
+            ...port,
+            isAncestor: (commit: string, target: string) => port.isAncestor(commit, target) || commit === BASE,
+        };
+        expect(() => repairReviewFinding(PR, repairInput({ commit: BASE }), atBase)).toThrow(
+            `commit ${BASE} is an ancestor of the pull request base ${BASE}`
+        );
+        expect(calls).toEqual([`read:${THREAD}`, `isAncestor:${BASE}:${HEAD}`, `isAncestor:${BASE}:${BASE}`]);
+        expect(posted).toEqual([]);
+    });
+
+    it('should refuse a pre-pull-request commit below the base', () => {
+        const mergeBase = '2'.repeat(40);
+        const { port, calls, posted } = fakePort();
+        const onBase = {
+            ...port,
+            isAncestor: (commit: string, target: string) => port.isAncestor(commit, target) || commit === mergeBase,
+        };
+        expect(() => repairReviewFinding(PR, repairInput({ commit: mergeBase }), onBase)).toThrow(
+            `commit ${mergeBase} is an ancestor of the pull request base ${BASE}`
+        );
+        expect(calls).toEqual([`read:${THREAD}`, `isAncestor:${mergeBase}:${HEAD}`, `isAncestor:${mergeBase}:${BASE}`]);
+        expect(posted).toEqual([]);
     });
 
     it('should refuse a commit that is the head itself', () => {
@@ -558,7 +591,7 @@ type ThreadNodeFixture = {
         node: {
             id: string;
             isResolved: boolean;
-            pullRequest: { number: number; headRefOid: string };
+            pullRequest: { number: number; headRefOid: string; baseRefOid: string };
             comments: { nodes: unknown[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } };
         };
     };
@@ -570,7 +603,7 @@ function threadNode(overrides: Record<string, unknown> = {}): ThreadNodeFixture 
             node: {
                 id: THREAD,
                 isResolved: false,
-                pullRequest: { number: PR, headRefOid: HEAD },
+                pullRequest: { number: PR, headRefOid: HEAD, baseRefOid: BASE },
                 comments: {
                     nodes: [
                         {
@@ -618,6 +651,7 @@ describe('readRepairReviewThread', () => {
             isResolved: false,
             pullRequestNumber: PR,
             head: HEAD,
+            base: BASE,
             rootComment: { id: ROOT_COMMENT_ID, path: FINDING_PATH, line: FINDING_LINE, side: 'RIGHT' },
             replies: [
                 {

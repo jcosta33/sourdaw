@@ -5,8 +5,9 @@
  * The author records a repair without resolving the thread (`review:repair`); only a head that
  * addresses a finding may resolve it. This command is the reviewer's half: in ONE transaction it
  * resolves exactly those review threads whose recorded repair validates against the live head — the
- * finding must be the thread's own root comment, the repairing commit must be an ancestor of that
- * head, and every record must pass the contract's validation. A thread the selection refuses makes
+ * finding must be the thread's own root comment, the repairing commit must lie inside the reviewed
+ * range (an ancestor of that head and not of the pull request's base), and every record must pass the
+ * contract's validation. A thread the selection refuses makes
  * the transaction refuse whole: one ambiguous thread means nothing is resolved, and a re-run is what
  * retries. A failure mid-pass stops at once and leaves earlier resolutions standing, so a re-run
  * ignores the resolved threads and completes the remainder.
@@ -58,6 +59,7 @@ export type ConfirmReviewRepairsAuthentication = {
 
 export type ConfirmReviewRepairsPort = {
     pullRequestHead(pr: number): string;
+    pullRequestBase(pr: number): string;
     readThreads(pr: number): ReviewRepairThreadState[];
     postConfirmation(thread: string, body: string, clientMutationId: string): void;
     resolve(thread: string, clientMutationId: string): void;
@@ -154,12 +156,15 @@ export function confirmReviewRepairs(
     if (live !== head) {
         fail(`head moved: ${live} is not ${head}`);
     }
+    const base = port.pullRequestBase(number);
     const threads = port.readThreads(number);
     const selection: ReviewRepairSelection = selectEligibleRepairs({
         threads,
         pr: number,
         head,
+        base,
         authorNodeId: AUTHOR_BOT_NODE_ID,
+        reviewerNodeId: REVIEWER_BOT_NODE_ID,
         isAncestor: port.isAncestor,
     });
     logReasons('repair-ignored', number, selection.ignored, port.log);
@@ -299,10 +304,18 @@ function appendCursor(fields: string[], cursor: string | undefined): string[] {
     return [...fields, '-f', `cursor=${cursor}`];
 }
 
+/**
+ * The thread page selects what `readThread` needs: the thread's own `isResolved` and its comment
+ * connection, where the shared *comment* fragment nests. Each connection carries its own `pageInfo`,
+ * because `ReviewThreadsPageInfo` and `PageInfo` are different selections on different connections.
+ */
 export function threadPage(cursor: string | undefined): string {
-    const connection = `reviewThreads(first:${GRAPHQL_PAGE_SIZE}${cursor === undefined ? '' : ',after:$cursor'})`;
-    const variables = `$owner:String!,$name:String!,$number:Int!${cursor === undefined ? '' : ',$cursor:String!'}`;
-    const pullRequest = `pullRequest(number:$number){${connection}{${REVIEW_THREAD_COMMENT_FIELDS}}}`;
+    const paged = cursor !== undefined;
+    const connection = `reviewThreads(first:${GRAPHQL_PAGE_SIZE}${paged ? ',after:$cursor' : ''})`;
+    const variables = `$owner:String!,$name:String!,$number:Int!${paged ? ',$cursor:String!' : ''}`;
+    const comments = `comments(first:${GRAPHQL_PAGE_SIZE}){${REVIEW_THREAD_COMMENT_FIELDS}}`;
+    const threadFields = `nodes{id isResolved ${comments}} pageInfo{hasNextPage endCursor}`;
+    const pullRequest = `pullRequest(number:$number){${connection}{${threadFields}}}`;
     return `query(${variables}){repository(owner:$owner,name:$name){${pullRequest}}}`;
 }
 
@@ -375,6 +388,23 @@ export function readPullRequestHead(pr: number, gh: Gh, fields: string[]): strin
         fail(`${label} is not a readable pull request head`);
     }
     return head;
+}
+
+/**
+ * The pull request's live base. A repairing commit outside `base..head` is a pre-pull-request commit
+ * (the merge base and anything below it), so the recorder and the selection refuse it.
+ */
+export function readPullRequestBase(pr: number, gh: Gh, fields: string[]): string {
+    const label = `PR #${pr} base`;
+    const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){baseRefOid}}}`;
+    const response = graphql(gh, query, [...fields, '-f', `number=${pr}`], label) as {
+        data?: { repository?: { pullRequest?: { baseRefOid?: unknown } } };
+    };
+    const base = response.data?.repository?.pullRequest?.baseRefOid;
+    if (typeof base !== 'string') {
+        fail(`${label} is not a readable pull request base`);
+    }
+    return base;
 }
 
 /**
@@ -462,6 +492,7 @@ export function shellPort(
     const fields = repositoryFields(gh);
     return {
         pullRequestHead: (pr) => readPullRequestHead(pr, gh, fields),
+        pullRequestBase: (pr) => readPullRequestBase(pr, gh, fields),
         readThreads: (pr) => readReviewThreads(pr, gh, fields),
         postConfirmation: (thread, body, clientMutationId) => postConfirmationReply(thread, body, clientMutationId, gh),
         resolve: (thread, clientMutationId) => resolveConfirmedThread(thread, clientMutationId, gh),

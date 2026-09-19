@@ -285,7 +285,9 @@ acceptance on another person's behalf or claim personal human review.
 Push the fix, then record it with `review:repair`, which runs as the author App
 and leaves the thread open. It reads the thread live and refuses one already
 resolved, a `--head` that is not the pull request's live head, or a `--commit`
-that is not an ancestor of that head. It binds the thread's own root comment as
+outside the reviewed range `base..head`: an ancestor of that head and not of the
+pull request's `baseRefOid`, so the merge base and every pre-pull-request commit
+are refused. It binds the thread's own root comment as
 the finding, plus the commit, one-line summary, bounded evidence, and head, and
 posts a readable reply carrying one canonical `sourdaw-repair-v1` marker line;
 it never resolves. Re-running the same head and commit posts nothing and reports
@@ -294,11 +296,12 @@ the already-recorded state.
 The reviewer confirms with `review:confirm`, a distinct identity from the
 author's. It resolves, in one pass with deterministic mutation ids, the threads
 whose author-recorded repair validates: same pull request, same thread, same
-head, finding equal to the thread's root comment, repairing commit an ancestor
-of the head, record well formed, evidence safe. It fails closed — a refused
-record, a duplicate distinct record, a rebound identity, a mismatched finding,
-or a non-ancestor commit resolves nothing and reports the refusal, leaving the
-operator to fix the ambiguity and re-run. Both commands are lock-free and
+head, finding equal to the thread's root comment, repairing commit inside the
+reviewed range `base..head`, record well formed, evidence safe. It fails closed
+— a refused record, a duplicate distinct record, a thread already carrying a
+confirmation for a different record, a rebound identity, a mismatched finding,
+or a commit outside the reviewed range resolves nothing and reports the refusal,
+leaving the operator to fix the ambiguity and re-run. Both commands are lock-free and
 idempotent by their deterministic ids, and re-running after a partial pass
 ignores already-resolved threads and completes the remainder. `review:resolve`
 remains for legacy roots, where it posts only its bare `Done` as author bot and

@@ -56,6 +56,7 @@ export type RepairReviewFindingThread = {
     isResolved: boolean;
     pullRequestNumber: number;
     head: string;
+    base: string;
     rootComment: { id: number; path: string; line: number; side: 'LEFT' | 'RIGHT' };
     replies: RepairReviewFindingReply[];
 };
@@ -359,8 +360,13 @@ export function repairReviewFinding(
     if (input.commit === input.head) {
         fail(`commit ${input.commit} is not a distinct commit from head ${input.head}`);
     }
+    // Inside the reviewed range `base..head`: every base commit is an ancestor of the head, so the
+    // head ancestry check alone would accept the merge base or any pre-pull-request commit.
     if (!port.isAncestor(input.commit, input.head)) {
         fail(`commit ${input.commit} is not an ancestor of head ${input.head}`);
+    }
+    if (port.isAncestor(input.commit, state.base)) {
+        fail(`commit ${input.commit} is an ancestor of the pull request base ${state.base}`);
     }
     const record = buildRepairReviewRecord(number, input, state, loadRepairEvidence(input.evidencePath, port));
     if (isRepairAlreadyRecorded(state, record)) {
@@ -386,13 +392,13 @@ function graphql(gh: Gh, query: string, fields: string[], label: string): unknow
 type ThreadNode = {
     id?: unknown;
     isResolved?: unknown;
-    pullRequest?: { number?: unknown; headRefOid?: unknown };
+    pullRequest?: { number?: unknown; headRefOid?: unknown; baseRefOid?: unknown };
     comments?: { nodes?: unknown; pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } };
 };
 
 export function threadQuery(paged: boolean): string {
     const connection = paged ? 'comments(first:100,after:$cursor)' : 'comments(first:100)';
-    return `query($threadId:ID!${paged ? ',$cursor:String!' : ''}){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number headRefOid} ${connection}{${REVIEW_THREAD_COMMENT_FIELDS}}}}}`;
+    return `query($threadId:ID!${paged ? ',$cursor:String!' : ''}){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number headRefOid baseRefOid} ${connection}{${REVIEW_THREAD_COMMENT_FIELDS}}}}}`;
 }
 
 type ThreadCommentNode = {
@@ -449,6 +455,7 @@ type ReadThreadPage = {
     isResolved: boolean;
     pullRequestNumber: number;
     head: string;
+    base: string;
     nodes: ThreadCommentNode[];
     hasNextPage: boolean;
     endCursor: string | null;
@@ -470,6 +477,7 @@ function readThreadPage(node: ThreadNode | null | undefined): ReadThreadPage | u
         typeof node.isResolved !== 'boolean' ||
         typeof pullRequest?.number !== 'number' ||
         typeof pullRequest.headRefOid !== 'string' ||
+        typeof pullRequest.baseRefOid !== 'string' ||
         !Array.isArray(comments?.nodes) ||
         typeof pageInfo?.hasNextPage !== 'boolean'
     ) {
@@ -480,6 +488,7 @@ function readThreadPage(node: ThreadNode | null | undefined): ReadThreadPage | u
         isResolved: node.isResolved,
         pullRequestNumber: pullRequest.number,
         head: pullRequest.headRefOid,
+        base: pullRequest.baseRefOid,
         nodes: comments.nodes as ThreadCommentNode[],
         hasNextPage: pageInfo.hasNextPage,
         endCursor: typeof pageInfo.endCursor === 'string' ? pageInfo.endCursor : null,
@@ -514,6 +523,7 @@ export function readRepairReviewThread(threadId: string, gh: Gh): RepairReviewFi
                 isResolved: page.isResolved,
                 pullRequestNumber: page.pullRequestNumber,
                 head: page.head,
+                base: page.base,
                 rootComment: readRootComment(root, label),
                 replies,
             };

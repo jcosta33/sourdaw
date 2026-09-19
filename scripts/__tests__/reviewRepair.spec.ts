@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { threadPage } from '../confirmReviewRepairs.ts';
+import { renderConfirmationReply, threadPage } from '../confirmReviewRepairs.ts';
 import { threadQuery } from '../repairReviewFinding.ts';
 import {
     REVIEW_REPAIR_FORMAT,
@@ -20,6 +20,8 @@ const AUTHOR_NODE_ID = 'BOT_author';
 const FOREIGN_NODE_ID = 'BOT_reviewer';
 const PR = 3_000;
 const HEAD = 'a'.repeat(40);
+const BASE = 'f'.repeat(40);
+const MERGE_BASE = '1'.repeat(40);
 const COMMIT = 'b'.repeat(40);
 const STALE_HEAD = 'c'.repeat(40);
 const THREAD = 'PRRT_kwDOrepair';
@@ -82,11 +84,28 @@ function threadState(overrides: Partial<ReviewRepairThreadState> = {}): ReviewRe
     };
 }
 
+/**
+ * The spec's ancestry oracle: `COMMIT` is inside the reviewed range, `BASE` is the pull request base
+ * itself, so a commit that reaches the head through the base is exactly the case the range refuses.
+ */
+function inReviewedRange(commit: string, target: string): boolean {
+    return commit === BASE || commit === MERGE_BASE || (target === HEAD && commit === COMMIT);
+}
+
 function selectRepairs(
     threads: readonly ReviewRepairThreadState[],
-    isAncestor: (commit: string, head: string) => boolean = () => true
+    isAncestor: (commit: string, head: string) => boolean = inReviewedRange,
+    base: string = BASE
 ): ReviewRepairSelection {
-    return selectEligibleRepairs({ threads, pr: PR, head: HEAD, authorNodeId: AUTHOR_NODE_ID, isAncestor });
+    return selectEligibleRepairs({
+        threads,
+        pr: PR,
+        head: HEAD,
+        base,
+        authorNodeId: AUTHOR_NODE_ID,
+        reviewerNodeId: FOREIGN_NODE_ID,
+        isAncestor,
+    });
 }
 
 function markerLineOf(body: string): string {
@@ -470,6 +489,67 @@ describe('selectEligibleRepairs', () => {
         expect(ancestorCalls).toEqual([[COMMIT, HEAD]]);
     });
 
+    it('should refuse the merge base as a repairing commit, naming it and the base', () => {
+        const record = repairRecord({ commit: MERGE_BASE });
+        const selection = selectRepairs([threadState({ replies: [repairReply(11, record)] })]);
+
+        expect(selection).toEqual({
+            eligible: [],
+            refused: [
+                {
+                    thread: THREAD,
+                    reason: `commit ${MERGE_BASE} is an ancestor of the pull request base ${BASE}`,
+                },
+            ],
+            ignored: [],
+        });
+    });
+
+    it('should refuse a record whose commit is the pull request base itself', () => {
+        const record = repairRecord({ commit: BASE });
+        const selection = selectRepairs([threadState({ replies: [repairReply(11, record)] })]);
+
+        expect(selection).toEqual({
+            eligible: [],
+            refused: [{ thread: THREAD, reason: `commit ${BASE} is an ancestor of the pull request base ${BASE}` }],
+            ignored: [],
+        });
+    });
+
+    it('should refuse a thread whose reviewer confirmed a different record', () => {
+        const record = repairRecord();
+        const confirmed = repairRecord({ commit: 'd'.repeat(40), summary: 'The record the reviewer accepted.' });
+        const selection = selectRepairs([
+            threadState({
+                replies: [
+                    repairReply(11, record),
+                    { id: 12, body: renderConfirmationReply(confirmed), authorNodeId: FOREIGN_NODE_ID },
+                ],
+            }),
+        ]);
+
+        expect(selection).toEqual({
+            eligible: [],
+            refused: [{ thread: THREAD, reason: 'thread already carries a confirmation for a different record' }],
+            ignored: [],
+        });
+    });
+
+    it('should keep a record whose reviewer confirmed the identical record eligible', () => {
+        const record = repairRecord();
+        const selection = selectRepairs([
+            threadState({
+                replies: [
+                    repairReply(11, record),
+                    { id: 12, body: renderConfirmationReply(record), authorNodeId: FOREIGN_NODE_ID },
+                ],
+            }),
+        ]);
+
+        expect(selection.eligible.map((entry) => entry.replyId)).toEqual([11]);
+        expect(selection.refused).toEqual([]);
+    });
+
     it('should refuse a thread whose author recorded two distinct records', () => {
         const first = repairRecord();
         const second = repairRecord({ commit: 'd'.repeat(40) });
@@ -583,29 +663,28 @@ describe('confirmClientMutationId', () => {
 });
 
 /**
- * The exact text both thread readers send. `pageInfo` is a member of the comment connection, so it
- * belongs beside `nodes`; the expectation is written out independently of the shared fragment, so a
- * nested `pageInfo` in either module reddens this spec.
+ * The exact text both thread readers send, written out literally rather than assembled from the shared
+ * fragment. The repair reader nests the comment fragment under its comment connection; the confirm
+ * reader must select the thread's own `isResolved` and nest that same fragment under `comments`, with
+ * each connection carrying its own `pageInfo`. Re-nesting the fragment directly under `reviewThreads`
+ * or moving `pageInfo` inside `nodes` changes these bytes and reddens this pin.
  */
 describe('review thread queries', () => {
-    const COMMENT_FIELDS =
-        'nodes{id body path line side author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}';
-
-    it('should ask for the repair thread and its comments with pageInfo beside nodes', () => {
+    it('should ask for the repair thread and its comment page with pageInfo beside nodes', () => {
         expect(threadQuery(false)).toBe(
-            `query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number headRefOid} comments(first:100){${COMMENT_FIELDS}}}}}`
+            'query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number headRefOid baseRefOid} comments(first:100){nodes{id body path line side author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}'
         );
         expect(threadQuery(true)).toBe(
-            `query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number headRefOid} comments(first:100,after:$cursor){${COMMENT_FIELDS}}}}}`
+            'query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number headRefOid baseRefOid} comments(first:100,after:$cursor){nodes{id body path line side author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}'
         );
     });
 
     it('should ask for the review threads with pageInfo beside nodes in both page forms', () => {
         expect(threadPage(undefined)).toBe(
-            `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){${COMMENT_FIELDS}}}}}`
+            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:100){nodes{id body path line side author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
         );
         expect(threadPage('CURSOR')).toBe(
-            `query($owner:String!,$name:String!,$number:Int!,$cursor:String!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){${COMMENT_FIELDS}}}}}`
+            'query($owner:String!,$name:String!,$number:Int!,$cursor:String!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved comments(first:100){nodes{id body path line side author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
         );
     });
 });

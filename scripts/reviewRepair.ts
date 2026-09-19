@@ -38,6 +38,9 @@ const FINDING_KEYS = ['commentId', 'path', 'line', 'side'] as const;
  */
 const SUMMARY_BYTE_LIMIT = Math.min(REVIEW_REPAIR_SUMMARY_MAX_BYTES, REVIEW_EVIDENCE_FIELD_MAX_BYTES);
 
+/** A thread already accepted one record; a second, different one would accept bytes no reviewer read. */
+const DIFFERENT_RECORD_CONFIRMATION_REFUSAL = 'thread already carries a confirmation for a different record';
+
 /**
  * The comment fields both thread readers select. `pageInfo` belongs to the comment connection, so it
  * sits beside `nodes` rather than inside it; one shared fragment keeps the two readers from drifting.
@@ -86,6 +89,7 @@ type AuthorRepairRecords =
 type RepairConfirmation = {
     pr: number;
     head: string;
+    base: string;
     isAncestor: (commit: string, head: string) => boolean;
 };
 
@@ -384,6 +388,32 @@ function confirmationRefusal(
     if (!confirmation.isAncestor(record.commit, confirmation.head)) {
         return `commit ${record.commit} is not an ancestor of head ${confirmation.head}`;
     }
+    if (confirmation.isAncestor(record.commit, confirmation.base)) {
+        return `commit ${record.commit} is an ancestor of the pull request base ${confirmation.base}`;
+    }
+    return undefined;
+}
+
+/**
+ * A confirmation names exactly the record it accepted. A reviewer reply that parses to any other
+ * record means the author rewrote the repair after the confirmation landed, so resolving would accept
+ * a record no reviewer read; refusing keeps the thread open for a fresh confirmation.
+ */
+function reviewerConfirmationRefusal(
+    thread: ReviewRepairThreadState,
+    record: ReviewRepairRecord,
+    reviewerNodeId: string
+): string | undefined {
+    const accepted = renderReviewRepairReply(record);
+    for (const reply of thread.replies) {
+        if (reply.authorNodeId !== reviewerNodeId) {
+            continue;
+        }
+        const posted = parseReviewRepairReply(reply.body);
+        if (posted !== undefined && renderReviewRepairReply(posted) !== accepted) {
+            return DIFFERENT_RECORD_CONFIRMATION_REFUSAL;
+        }
+    }
     return undefined;
 }
 
@@ -391,7 +421,9 @@ export function selectEligibleRepairs(input: {
     threads: readonly ReviewRepairThreadState[];
     pr: number;
     head: string;
+    base: string;
     authorNodeId: string;
+    reviewerNodeId: string;
     isAncestor: (commit: string, head: string) => boolean;
 }): ReviewRepairSelection {
     const eligible: ReviewRepairSelection['eligible'] = [];
@@ -413,7 +445,9 @@ export function selectEligibleRepairs(input: {
             continue;
         }
         assertReviewRepairRecord(found.candidate.record);
-        const reason = confirmationRefusal(input, thread, found.candidate.record);
+        const reason =
+            confirmationRefusal(input, thread, found.candidate.record) ??
+            reviewerConfirmationRefusal(thread, found.candidate.record, input.reviewerNodeId);
         if (reason !== undefined) {
             refused.push({ thread: thread.thread, reason });
             continue;
