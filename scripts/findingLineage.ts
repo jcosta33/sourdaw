@@ -340,10 +340,15 @@ function endOfJsonString(text: string, start: number): number {
     return index;
 }
 
+/** JSON's four whitespace characters: space, tab, line feed, carriage return. */
+function isJsonWhitespace(char: string): boolean {
+    return char === ' ' || char === '\t' || char === '\n' || char === '\r';
+}
+
 /** The index of the next non-whitespace character at or after `start`, or `text.length`. */
 function skipJsonWhitespace(text: string, start: number): number {
     let index = start;
-    while (index < text.length && /\s/u.test(text.charAt(index))) {
+    while (index < text.length && isJsonWhitespace(text.charAt(index))) {
         index += 1;
     }
     return index;

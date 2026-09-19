@@ -65,7 +65,7 @@ function isJsonValue(value: unknown): value is JsonValue {
  * member to its last occurrence, so `Object.keys` can no longer see the repetition: re-encoding the
  * parsed value and holding it against the raw bytes is what refuses a duplicate key, a reordered key
  * or stray whitespace. A hand-edited payload therefore cannot be read last-wins into a record whose
- * bytes this crate never printed.
+ * bytes this script never printed.
  */
 export function parseMarkerPayload(payload: string, label: string): unknown {
     let parsed: unknown;
