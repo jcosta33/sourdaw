@@ -78,8 +78,7 @@ import {
     type PublishLanePort,
     type PublishWorktree,
 } from '../publishLane.ts';
-
-import type { ReviewChangedPath } from '../reviewDiffSummary.ts';
+import { changedReviewPaths, type ReviewChangedPath } from '../reviewDiffSummary.ts';
 
 const PRIMARY_ROOT = '/repo';
 const DEFAULT_SUBJECT = 'feat(vcs): add identities';
@@ -2258,6 +2257,65 @@ describe('lane publish', () => {
             expect(isProductScopeChange(paths)).toBe(true);
         } finally {
             rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    /**
+     * The lane-root half of the classification, unpinnable while both real-git fixtures share one
+     * root: the gate must read the LANE's .gitattributes, like reportDiff, so a lane that marks its
+     * own product-tree file linguist-generated keeps the gate silent even when an alternative root
+     * (the primary checkout, say) without that marking would classify the same numstat handwritten.
+     */
+    it('classifies generated markings from the lane root, not an alternative root', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-publish-lane-attributes-'));
+        const alternativeRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-alt-attributes-'));
+        const session: GhSession = {
+            configDir: '/tmp/sourdaw-gh',
+            env: { PATH: process.env.PATH, ...HERMETIC_GIT_CONFIG },
+            dispose: () => undefined,
+        };
+        const git = (args: string[]) => fixtureGit(repository, args);
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            writeFileSync(join(repository, 'base.txt'), 'base\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'chore(fixture): base']);
+            const base = git(['rev-parse', 'HEAD']);
+
+            const moduleFile = join(PRODUCT_SCOPE_PREFIXES[0], 'generated.ts');
+            mkdirSync(join(repository, dirname(moduleFile)), { recursive: true });
+            writeFileSync(join(repository, moduleFile), 'export const generated = 1;\n');
+            writeFileSync(join(repository, '.gitattributes'), `${moduleFile} linguist-generated=true\n`);
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'feat(audio): fixture generated product change']);
+
+            const lanePaths = shellPort(session, repository).changedPaths(repository, base, 'HEAD');
+            expect(lanePaths).toContainEqual({
+                path: moduleFile,
+                group: 'generated',
+                added: 1,
+                deleted: 0,
+                binary: false,
+            });
+            expect(isProductScopeChange(lanePaths)).toBe(false);
+
+            const alternativePaths = changedReviewPaths(
+                alternativeRoot,
+                Buffer.from(git(['diff', '--numstat', '-z', `${base}...HEAD`]))
+            );
+            expect(alternativePaths).toContainEqual({
+                path: moduleFile,
+                group: 'handwritten',
+                added: 1,
+                deleted: 0,
+                binary: false,
+            });
+            expect(isProductScopeChange(alternativePaths)).toBe(true);
+        } finally {
+            rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+            rmSync(alternativeRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
     });
 
