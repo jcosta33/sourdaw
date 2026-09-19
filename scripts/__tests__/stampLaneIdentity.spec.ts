@@ -32,6 +32,8 @@ function primaryFixture(): { root: string; authorLane: string; scratchLane: stri
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-lane-identity-')));
     scratchRoots.push(root);
     fixtureGit(root, ['init', '-b', 'main']);
+    fixtureGit(root, ['config', 'user.name', 'Fixture']);
+    fixtureGit(root, ['config', 'user.email', 'fixture@example.com']);
     writeFileSync(join(root, '.gitignore'), '.agents/\n');
     fixtureGit(root, ['add', '.gitignore']);
     fixtureGit(root, ['commit', '--no-gpg-sign', '-m', 'chore: base']);
