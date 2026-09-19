@@ -567,6 +567,33 @@ describe('confirmReviewRepairs', () => {
         expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(REFUSED_MESSAGE);
     });
 
+    it('should refuse a thread that already carries two identical confirmations', () => {
+        const confirmation = renderConfirmationReply(recordFor());
+        const thread = subjectThread({
+            replies: [
+                ...subjectThread().replies,
+                { id: 9_101, body: confirmation, authorNodeId: REVIEWER_BOT_NODE_ID },
+                { id: 9_102, body: confirmation, authorNodeId: REVIEWER_BOT_NODE_ID },
+            ],
+        });
+        const selection = selectEligibleRepairs({
+            threads: [thread],
+            pr: PR,
+            head: HEAD,
+            base: BASE,
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            isAncestor: (_commit, target) => target === HEAD,
+        });
+        expect(selection.refused).toEqual([
+            { thread: THREAD, reason: 'thread already carries 2 identical confirmations' },
+        ]);
+
+        const { port, mutations } = fakePort(HEAD, [thread]);
+        expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(REFUSED_MESSAGE);
+        expect(mutations).toEqual([]);
+    });
+
     it('should fail closed on a record bound to another head', () => {
         const threads = cleanThreads();
         const staleRecord = recordFor({ head: MOVED_HEAD });
@@ -671,7 +698,7 @@ describe('readReviewThreads', () => {
                         path: null,
                         line: null,
                         side: null,
-                        author: { id: AUTHOR_BOT_NODE_ID },
+                        author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
                     },
                 ],
                 pageInfo: { hasNextPage: false, endCursor: null },
@@ -759,6 +786,133 @@ describe('readReviewThreads', () => {
             )
         );
         expect(() => readReviewThreads(PR, gh, [])).toThrow('carries no author node id');
+    });
+
+    it('should read a human comment as a reply no selection acts on and still confirm the author repair', () => {
+        const record = recordFor();
+        const { gh } = recordingGh(() =>
+            page(
+                [
+                    threadNode({
+                        comments: {
+                            nodes: [
+                                {
+                                    id: String(ROOT_COMMENT_ID),
+                                    body: 'Defect. Consequence. Fix.',
+                                    path: FINDING_PATH,
+                                    line: FINDING_LINE,
+                                    side: 'RIGHT',
+                                    author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
+                                },
+                                {
+                                    id: '9000',
+                                    // A distinct repair-shaped record: if a non-Bot author were read as an
+                                    // author repair, this second record would refuse the thread as ambiguous.
+                                    body: authorRecordReply(
+                                        recordFor({ commit: OTHER_COMMIT, summary: 'A person pasted this.' })
+                                    ),
+                                    path: null,
+                                    line: null,
+                                    side: null,
+                                    author: { __typename: 'User', login: 'jcosta33' },
+                                },
+                                {
+                                    id: '9001',
+                                    body: authorRecordReply(record),
+                                    path: null,
+                                    line: null,
+                                    side: null,
+                                    author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
+                                },
+                            ],
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                        },
+                    }),
+                ],
+                { hasNextPage: false, endCursor: null }
+            )
+        );
+
+        const threads = readReviewThreads(PR, gh, []);
+        expect(threads[0]?.replies.map((reply) => reply.authorNodeId)).toEqual([
+            REVIEWER_BOT_NODE_ID,
+            null,
+            AUTHOR_BOT_NODE_ID,
+        ]);
+        const selection = selectEligibleRepairs({
+            threads,
+            pr: PR,
+            head: HEAD,
+            base: BASE,
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            isAncestor: (_commit, target) => target === HEAD,
+        });
+        expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
+        expect(selection.refused).toEqual([]);
+    });
+
+    it('should find an author repair recorded past the first comment page', () => {
+        const record = recordFor();
+        const { gh, calls } = recordingGh((call) => {
+            if (call.query.includes('node(id:$threadId)')) {
+                return {
+                    data: {
+                        node: {
+                            comments: {
+                                nodes: [
+                                    {
+                                        id: '9002',
+                                        body: authorRecordReply(record),
+                                        path: null,
+                                        line: null,
+                                        side: null,
+                                        author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
+                                    },
+                                ],
+                                pageInfo: { hasNextPage: false, endCursor: null },
+                            },
+                        },
+                    },
+                };
+            }
+            return page(
+                [
+                    threadNode({
+                        comments: {
+                            nodes: [
+                                {
+                                    id: String(ROOT_COMMENT_ID),
+                                    body: 'Defect. Consequence. Fix.',
+                                    path: FINDING_PATH,
+                                    line: FINDING_LINE,
+                                    side: 'RIGHT',
+                                    author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
+                                },
+                            ],
+                            pageInfo: { hasNextPage: true, endCursor: 'COMMENT_CURSOR' },
+                        },
+                    }),
+                ],
+                { hasNextPage: false, endCursor: null }
+            );
+        });
+
+        const threads = readReviewThreads(PR, gh, []);
+        expect(calls).toHaveLength(2);
+        expect(calls[1]?.fields.threadId).toBe(THREAD);
+        expect(calls[1]?.fields.cursor).toBe('COMMENT_CURSOR');
+        const selection = selectEligibleRepairs({
+            threads,
+            pr: PR,
+            head: HEAD,
+            base: BASE,
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            reviewerNodeId: REVIEWER_BOT_NODE_ID,
+            isAncestor: (_commit, target) => target === HEAD,
+        });
+        expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
+        expect(selection.ignored).toEqual([]);
     });
 });
 
@@ -898,7 +1052,11 @@ describe('shellPort', () => {
                                                             path: FINDING_PATH,
                                                             line: FINDING_LINE,
                                                             side: 'RIGHT',
-                                                            author: { id: REVIEWER_BOT_NODE_ID },
+                                                            author: {
+                                                                __typename: 'Bot',
+                                                                login: 'r',
+                                                                id: REVIEWER_BOT_NODE_ID,
+                                                            },
                                                         },
                                                     ],
                                                     pageInfo: { hasNextPage: false, endCursor: null },

@@ -70,7 +70,7 @@ export type ReviewRepairThreadState = {
     rootPath: string;
     rootLine: number;
     rootSide: 'LEFT' | 'RIGHT';
-    replies: { id: number; body: string; authorNodeId: string }[];
+    replies: { id: number; body: string; authorNodeId: string | null }[];
 };
 
 export type ReviewRepairSelection = {
@@ -397,7 +397,9 @@ function confirmationRefusal(
 /**
  * A confirmation names exactly the record it accepted. A reviewer reply that parses to any other
  * record means the author rewrote the repair after the confirmation landed, so resolving would accept
- * a record no reviewer read; refusing keeps the thread open for a fresh confirmation.
+ * a record no reviewer read; refusing keeps the thread open for a fresh confirmation. Two byte-identical
+ * confirmations are refused too: a rerun may skip a single already-posted reply, but resolving a
+ * duplicated one would settle a thread that carries two confirmations for the same record.
  */
 function reviewerConfirmationRefusal(
     thread: ReviewRepairThreadState,
@@ -405,14 +407,22 @@ function reviewerConfirmationRefusal(
     reviewerNodeId: string
 ): string | undefined {
     const accepted = renderReviewRepairReply(record);
+    let confirmations = 0;
     for (const reply of thread.replies) {
         if (reply.authorNodeId !== reviewerNodeId) {
             continue;
         }
         const posted = parseReviewRepairReply(reply.body);
-        if (posted !== undefined && renderReviewRepairReply(posted) !== accepted) {
+        if (posted === undefined) {
+            continue;
+        }
+        if (renderReviewRepairReply(posted) !== accepted) {
             return DIFFERENT_RECORD_CONFIRMATION_REFUSAL;
         }
+        confirmations += 1;
+    }
+    if (confirmations > 1) {
+        return `thread already carries ${confirmations} identical confirmations`;
     }
     return undefined;
 }

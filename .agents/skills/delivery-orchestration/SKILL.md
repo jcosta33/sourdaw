@@ -299,16 +299,19 @@ whose author-recorded repair validates: same pull request, same thread, same
 head, finding equal to the thread's root comment, repairing commit inside the
 reviewed range `base..head`, record well formed, evidence safe. It fails closed
 — a refused record, a duplicate distinct record, a thread already carrying a
-confirmation for a different record, a rebound identity, a mismatched finding,
-or a commit outside the reviewed range resolves nothing and reports the refusal,
-leaving the operator to fix the ambiguity and re-run. Both commands are lock-free and
-idempotent by their deterministic ids, and re-running after a partial pass
-ignores already-resolved threads and completes the remainder. `review:resolve`
-remains for legacy roots, where it posts only its bare `Done` as author bot and
-resolves against that head. No script writes free-form thread replies; wrongly
-posted findings have no discussion route. Clarify code, not threads. Resolve
-only when the current head addresses the finding, then obtain a new review. File
-out-of-scope feedback; do not grow the PR.
+confirmation for a different record or a duplicated identical confirmation, a
+rebound identity, a mismatched finding, or a commit outside the reviewed range
+resolves nothing and reports the refusal, leaving the operator to fix the
+ambiguity and re-run. Both commands are lock-free and idempotent by their
+deterministic ids, and re-running after a partial pass ignores already-resolved
+threads and completes the remainder. `review:resolve` remains only for legacy
+roots, where it posts only its bare `Done` as author bot and resolves against
+that head; using it on a thread a reviewer blocked reintroduces bare author-side
+resolution, which is what `review:repair` and `review:confirm` exist to replace.
+No script writes free-form thread replies; wrongly posted findings have no
+discussion route. Clarify code, not threads. Resolve only when the current head
+addresses the finding, then obtain a new review. File out-of-scope feedback; do
+not grow the PR.
 
 ## deliver
 

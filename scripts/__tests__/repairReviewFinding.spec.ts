@@ -712,6 +712,13 @@ describe('readRepairReviewThread', () => {
         );
     });
 
+    it('should refuse a thread whose pull request carries no base commit', () => {
+        const { gh } = recordingGh(() => threadNode({ pullRequest: { number: PR, headRefOid: HEAD } }));
+        expect(() => readRepairReviewThread(THREAD, gh)).toThrow(
+            `review thread ${THREAD} is not a readable pull-request review thread`
+        );
+    });
+
     it('should refuse a thread that carries no root comment', () => {
         const { gh } = recordingGh(() =>
             threadNode({ comments: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } } })

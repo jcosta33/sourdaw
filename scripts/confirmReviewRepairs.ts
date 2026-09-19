@@ -257,15 +257,45 @@ function readLine(value: unknown, label: string): number {
     return value;
 }
 
+/**
+ * Only a Bot comment can be an author or reviewer reply. A person's actor node carries no id in the
+ * shared fragment, and reading that prose as an agent reply would let a human comment become a repair
+ * record, so a non-Bot author is read as a reply no selection acts on. A Bot comment without an id
+ * still refuses, because the selection tells the two agent identities apart by exactly that id.
+ */
 function readReply(comment: unknown, label: string): ReviewRepairThreadState['replies'][number] {
     if (!isRecord(comment) || typeof comment.id !== 'string' || typeof comment.body !== 'string') {
         fail(`${label} returned an unreadable comment`);
     }
     const author = isRecord(comment.author) ? comment.author : {};
-    if (typeof author.id !== 'string') {
+    const isBot = author.__typename === 'Bot';
+    if (isBot) {
+        if (typeof author.id !== 'string') {
+            fail(`${label} comment ${comment.id} carries no author node id`);
+        }
+        return { id: Number(comment.id), body: comment.body, authorNodeId: author.id };
+    }
+    if (typeof author.__typename !== 'string') {
         fail(`${label} comment ${comment.id} carries no author node id`);
     }
-    return { id: Number(comment.id), body: comment.body, authorNodeId: author.id };
+    return { id: Number(comment.id), body: comment.body, authorNodeId: null };
+}
+
+/** A listed thread plus the cursor of its unread comment pages, when the first page was truncated. */
+type ListedThread = { state: ReviewRepairThreadState; commentCursor: string | null };
+
+function readCommentCursor(comments: Record<string, unknown>, label: string): string | null {
+    const pageInfo = comments.pageInfo;
+    if (!isRecord(pageInfo) || typeof pageInfo.hasNextPage !== 'boolean') {
+        fail(`${label} carries no comment page info`);
+    }
+    if (!pageInfo.hasNextPage) {
+        return null;
+    }
+    if (typeof pageInfo.endCursor !== 'string' || pageInfo.endCursor === '') {
+        fail(`${label} returned invalid comment pagination`);
+    }
+    return pageInfo.endCursor;
 }
 
 /**
@@ -273,7 +303,7 @@ function readReply(comment: unknown, label: string): ReviewRepairThreadState['re
  * and every comment supplies the author identity the selection reads records from. The root must be a
  * numeric database id and carry a position, because a record binds exactly those values.
  */
-function readThread(node: unknown, label: string): ReviewRepairThreadState {
+function readThread(node: unknown, label: string): ListedThread {
     if (!isRecord(node) || typeof node.id !== 'string' || typeof node.isResolved !== 'boolean') {
         fail(`${label} is not a readable pull-request review thread`);
     }
@@ -286,13 +316,16 @@ function readThread(node: unknown, label: string): ReviewRepairThreadState {
         fail(`${label} carries no root comment`);
     }
     return {
-        thread: node.id,
-        resolved: node.isResolved,
-        rootCommentId: readCommentId(root.id, `${label} root comment id`),
-        rootPath: readPath(root.path, `${label} root comment path`),
-        rootLine: readLine(root.line, `${label} root comment line`),
-        rootSide: readSide(root.side, `${label} root comment side`),
-        replies: [root, ...rest].map((comment) => readReply(comment, label)),
+        state: {
+            thread: node.id,
+            resolved: node.isResolved,
+            rootCommentId: readCommentId(root.id, `${label} root comment id`),
+            rootPath: readPath(root.path, `${label} root comment path`),
+            rootLine: readLine(root.line, `${label} root comment line`),
+            rootSide: readSide(root.side, `${label} root comment side`),
+            replies: [root, ...rest].map((comment) => readReply(comment, label)),
+        },
+        commentCursor: readCommentCursor(comments, label),
     };
 }
 
@@ -319,7 +352,7 @@ export function threadPage(cursor: string | undefined): string {
     return `query(${variables}){repository(owner:$owner,name:$name){${pullRequest}}}`;
 }
 
-type ThreadPage = { threads: ReviewRepairThreadState[]; hasNextPage: boolean; endCursor: string | null };
+type ThreadPage = { threads: ListedThread[]; hasNextPage: boolean; endCursor: string | null };
 
 function readThreadPage(pullRequest: unknown, label: string): ThreadPage {
     if (!isRecord(pullRequest) || !isRecord(pullRequest.reviewThreads)) {
@@ -338,6 +371,41 @@ function readThreadPage(pullRequest: unknown, label: string): ThreadPage {
         hasNextPage: pageInfo.hasNextPage,
         endCursor: typeof pageInfo.endCursor === 'string' ? pageInfo.endCursor : null,
     };
+}
+
+/**
+ * The single-thread query that drains a thread whose comment connection exceeds one page. It names
+ * the thread node directly — the same connection the author-side reader paginates — because the
+ * repository listing already carried that thread's first comment page.
+ */
+export function threadCommentsPage(): string {
+    return `query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{comments(first:${GRAPHQL_PAGE_SIZE},after:$cursor){${REVIEW_THREAD_COMMENT_FIELDS}}}}}`;
+}
+
+/**
+ * Reads a thread's remaining comment pages before the selection sees it. A repair recorded past the
+ * hundredth comment would otherwise make the thread look like it recorded none, so the connection is
+ * drained rather than truncated.
+ */
+function drainComments(listed: ListedThread, gh: Gh, label: string): ReviewRepairThreadState {
+    const replies = [...listed.state.replies];
+    const seen = new Set<string>();
+    let cursor = listed.commentCursor;
+    while (cursor !== null) {
+        if (seen.has(cursor)) {
+            fail(`${label} returned invalid comment pagination`);
+        }
+        seen.add(cursor);
+        const input = ['-f', `threadId=${listed.state.thread}`, '-f', `cursor=${cursor}`];
+        const response = graphql(gh, threadCommentsPage(), input, label);
+        const node = isRecord(response) && isRecord(response.data) ? response.data.node : undefined;
+        if (!isRecord(node) || !isRecord(node.comments) || !isUnknownArray(node.comments.nodes)) {
+            fail(`${label} carries no comment connection`);
+        }
+        replies.push(...node.comments.nodes.map((comment) => readReply(comment, label)));
+        cursor = readCommentCursor(node.comments, label);
+    }
+    return { ...listed.state, replies };
 }
 
 /**
@@ -364,7 +432,7 @@ export function readReviewThreads(pr: number, gh: Gh, fields: string[]): ReviewR
             data?: { repository?: { pullRequest?: unknown } };
         };
         const page = readThreadPage(response.data?.repository?.pullRequest, label);
-        threads.push(...page.threads);
+        threads.push(...page.threads.map((listed) => drainComments(listed, gh, label)));
         if (!page.hasNextPage) {
             return threads;
         }
