@@ -1,0 +1,58 @@
+src/modules/Command/useCases/__tests__/decibelCommandArguments.spec.ts
+  s_9e15f5b7ec3308::t_0beee68e8c1f52 3
+  s_9e15f5b7ec3308::t_62d9aba9959e01 98
+  s_9e15f5b7ec3308::t_25e20e704b0b19 233
+  s_9e15f5b7ec3308::t_a550f3c87e79b1 132
+  s_9e15f5b7ec3308::t_d9e80ae702c06f 264-267,278
+  s_9e15f5b7ec3308::t_d2be089e72ab6b 410-412,423
+  s_9e15f5b7ec3308::t_9332471a1e792a 17,33
+  s_9e15f5b7ec3308::t_ef9adfbaf64645 19-24
+  s_9e15f5b7ec3308::t_e9bba43112f345 93-97
+  s_9e15f5b7ec3308::t_04557806a95ef4 263,268-277,279-285
+  s_9e15f5b7ec3308::t_b058c3857623fa 409,413-422,424-430
+  s_9e15f5b7ec3308::t_73a575a62cef36 225-232,234-246
+  s_9e15f5b7ec3308::t_11077cf9aaea8c 344-378
+src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts
+  s_9e15f5b7ec3308::t_1d3eb9ec05fcff 91-109
+src/modules/Arrangement/handlers/track/handleSetTrackGain.ts
+  s_9e15f5b7ec3308::t_6abdeae64d256c 103
+  s_9e15f5b7ec3308::t_cf8361742db898 96-102
+  s_9e15f5b7ec3308::t_7a412968121f2d 104-106
+src/modules/Transport/handlers/transport/handleSetMasterGain.ts
+  s_9e15f5b7ec3308::t_56ed91c89f512e 30-48
+  s_9e15f5b7ec3308::t_9da5aebc6f6aad 8
+  s_9e15f5b7ec3308::t_d0b05d379f3578 70-72,77-79
+  s_9e15f5b7ec3308::t_0e7daccff70dff 68-69,73-76
+src/modules/Arrangement/handlers/clip/handleSetClipGain.ts
+  s_9e15f5b7ec3308::t_3f7f95659c898f 33-40,42,51,54
+  s_9e15f5b7ec3308::t_5e93a59d340938 74,76-87,95,99-100
+src/modules/Arrangement/handlers/device/handleSetSend.ts
+  s_9e15f5b7ec3308::t_4f5fa726bf1e87 109,122-127,130
+  s_9e15f5b7ec3308::t_e9802607038452 19-41,43-53
+  s_9e15f5b7ec3308::t_0c29f9415dd087 42
+  s_9e15f5b7ec3308::t_9b0a86bb1136d6 128-129
+  s_9e15f5b7ec3308::t_7da7fad21c022d 8
+src/modules/Transport/handlers/transport/handleRestoreMasterGain.ts
+  s_9e15f5b7ec3308::t_eb39671dd56ba0 6,11-22
+src/modules/Transport/handlers/transport/projectMasterGainThroughPriorBatchActions.ts
+  s_9e15f5b7ec3308::t_79090af50c9429 1-6,14-21,23
+  s_9e15f5b7ec3308::t_362cf14804a68a 22
+  s_9e15f5b7ec3308::t_ece18057abd893 7-13
+  s_9e15f5b7ec3308::t_67c3abed4ace6d 24-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0e46b9b2ab4b61a4ad27796cd69dce84acedc931",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
