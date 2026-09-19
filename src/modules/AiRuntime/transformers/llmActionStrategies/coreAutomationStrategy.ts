@@ -53,6 +53,9 @@ function admitsAutomationLevel(
     if (!drawsLinearGain(lane)) {
         return false;
     }
+    if (lane.linkedLaneId !== undefined) {
+        return false;
+    }
     if ('deltaDb' in argument) {
         const current = evaluateAutomationLaneAtBeat({
             laneId: lane.id,
