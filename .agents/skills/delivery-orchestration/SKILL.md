@@ -159,8 +159,8 @@ interface. Exclude session diaries, unpublished rounds, and mutation tables.
 
 `review:prepare` prints a primary-root bundle path containing `manifest.json`,
 `diff.patch`, `review-size.json`, `risk-plan.json`, `pr.md`, and merge-base
-`contracts/`. The manifest binds PR, base branch, merge-base, and head. The diff
-and deterministic size report use the actual base/head merge-base; handwritten,
+`contracts/`. The manifest binds PR, base branch, merge-base, and head. The diff and
+deterministic size report use the actual base/head merge-base; handwritten,
 test, documentation, and generated changes (including lockfiles) remain visible
 as separate groups, and unknown paths count as handwritten. Paths are keyed by
 head sha. Re-preparing the same head replaces generated files and preserves
@@ -168,13 +168,21 @@ caller files only while the bound base name and merge-base context match; a
 populated legacy bundle without base identity cannot be reused. Unrelated
 movement of the base tip is allowed when that context is unchanged.
 
+The caller writes `stances.json` into that bundle in two phases: before
+dispatch it holds the derived stance set, one entry per stance naming the
+failure mode that admits it; as each dispatch reports, the reviewer's
+baseline-probe result is recorded into the same file. It sits alongside the
+later `dossier.json`, `review.json`, `discarded.json`, and `acceptance.json`.
+
 `risk-plan.json` records `format: 'risk-plan-v1'`, the `pr`/`headSha`/`baseSha`
 it is bound to, the change's `riskClasses`, the `requiredStances` those classes
 earn, and the `triggers` that fired. It is derived from the same path
 classification as `review-size.json`, so the stances and the printed size
-summary cannot disagree. Classes union when several fire, and no class may
-require a stance it did not earn: that is the proportionality rule, and
-`code-craft` is required only by `ordinary`.
+summary cannot disagree. The plan is an input to the caller's stance
+enumeration, never a stance requirement: the dispatched stances are the
+reviewer's task-derived judgement, recorded in `stances.json`. Classes union
+when several fire, and no class may require a stance it did not earn: that is
+the proportionality rule, and `code-craft` is required only by `ordinary`.
 
 - `small` (no specialist surface, handwritten change within the small-change
   budget) — correctness, test-validity.
@@ -193,9 +201,10 @@ can neither widen nor narrow its own review.
 GitHub's live head matches the bundle; fresh approvals also require matching
 base context. Fresh reviewer publication also carries the head-bound dossier and
 refuses before any remote write when the plan or dossier is missing, malformed,
-or rebound from the head/base/pr it must bind; when the dossier does not
-complete exactly the plan's required stances or claims one the classes did not
-earn; when its accepted findings do not match the document's comments
+or rebound from the head/base/pr it must bind; when the bundle carries
+`stances.json` and the dossier's `stances` entries do not correspond to that
+record one-to-one — one entry per dispatched stance, no more and no fewer; when
+its accepted findings do not match the document's comments
 one-to-one; or when its recommendation disagrees with the document's event. It
 then persists the canonical record, `format: 'dossier-v1'`: an append-only event
 chain (`stance-completed`, `finding-accepted`, `finding-discarded`) whose records
@@ -240,10 +249,12 @@ report.
 
 The orchestrator writes the caller-authored `dossier.json` beside `review.json`
 and `discarded.json`, in input form `format: 'dossier-input-v1'`: the same
-`pr`/`headSha`/`baseSha`, one `stances` entry per required stance (`stance`,
-`reviewerModel`, `modelTier` of `economy`/`standard`/`strongest`, `outcome` of
-`blocker-found`/`clean`), the bounded `evidence` claims, and `limitations`. The
-accepted findings are not declared there: they are the review document's own
+`pr`/`headSha`/`baseSha`, one `stances` entry per dispatched stance — the names
+the bundle's `stances.json` records, plan menu ids or free-form risk names
+alike — each with its `reviewerModel`, `modelTier` of
+`economy`/`standard`/`strongest`, and `outcome` of
+`blocker-found`/`clean`, plus the bounded `evidence` claims, and `limitations`.
+The accepted findings are not declared there: they are the review document's own
 inline comments. `discarded.json` is the orchestrator's discard record and is
 now actually read: an array of `{ finding, stance, reason }`, one entry per
 discarded candidate, each with a one-line reason.

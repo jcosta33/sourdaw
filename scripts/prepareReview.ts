@@ -101,13 +101,14 @@ export function readReviewBundleContext(destination: string): ReviewBundleContex
 }
 
 /**
- * Whether the caller has already put a document of their own at the bundle root: `review.json` and
- * `discarded.json` from the review round, `acceptance.json` from acceptance, or `dossier.json` from
- * the durable head-bound dossier. Any of them means the bundle records a judgement about a specific
- * head and must not be silently replaced by one about a different base or head.
+ * Whether the caller has already put a document of their own at the bundle root: `stances.json` from
+ * stance dispatch, `review.json` and `discarded.json` from the review round, `acceptance.json` from
+ * acceptance, or `dossier.json` from the durable head-bound dossier. Any of them means the bundle
+ * records a judgement about a specific head and must not be silently replaced by one about a
+ * different base or head.
  */
 function hasCallerReviewDocuments(destination: string): boolean {
-    return ['review.json', 'discarded.json', 'acceptance.json', 'dossier.json'].some((name) =>
+    return ['stances.json', 'review.json', 'discarded.json', 'acceptance.json', 'dossier.json'].some((name) =>
         existsSync(join(destination, name))
     );
 }

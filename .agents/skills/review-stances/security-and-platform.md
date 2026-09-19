@@ -1,11 +1,12 @@
-# Review stance: security and platform boundaries
+# Lesson library: security and platform boundaries
 
-Dispatch guidance for the stance that attacks native authority, renderer trust, platform
-capabilities, IPC exposure, filesystem access, secrets, or operating-system integration. Per the
-Review section of `AGENTS.md`, an escape — a defect that reached `main` which this stance should
-have caught — is recorded here as a lesson, and every future dispatch of this stance carries this
-file's lessons. Lessons state the escape, the blind spot, and the probe that would have caught it.
-Keep each lesson short enough to paste into a dispatch.
+Lesson library for defects in native authority, renderer trust, platform capabilities, IPC
+exposure, filesystem access, secrets, or operating-system integration. Per the Review section of
+`AGENTS.md`, this directory is a lesson library, not a stance menu: an escape — a defect that
+reached `main` whose defect class matches this file — is recorded here as a lesson, and every
+dispatch whose derived stance matches this file carries its lessons. Lessons state the escape, the
+blind spot, and the probe that would have caught it. Keep each lesson short enough to paste into a
+dispatch.
 
 ## Standing probes
 
