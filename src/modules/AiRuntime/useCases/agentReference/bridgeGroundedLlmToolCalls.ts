@@ -74,6 +74,7 @@ import {
     type SyncopatedArpeggioRequestScope,
 } from './getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
+import { classifyPromptDecibelFigures, type PromptNumber } from './groundingStrategies/classifyPromptDecibelFigures';
 import {
     collectClearSolosRestrictionClauses,
     type ClearSolosRestrictionActionSpan,
@@ -1731,12 +1732,6 @@ function hasExactGlueClipPair(assertedClipIds: unknown, expectedClipIds: [string
 
 type GroundingValueRule = GroundingRules['valueRules'][number];
 
-type PromptNumber = {
-    end: number;
-    index: number;
-    raw: string;
-};
-
 function findConnectorBoundNumber(maskedScope: string, numbers: readonly PromptNumber[]): PromptNumber | null {
     let boundNumber: PromptNumber | null = null;
     for (const connector of maskedScope.matchAll(/\b(?:to|at|position|index|value|level|bpm|tempo)\b/giu)) {
@@ -1890,6 +1885,45 @@ function normalizePromptNumber(
     return value;
 }
 
+/**
+ * Every number one scope states. A leading `+` is part of the figure: "+3 dB"
+ * is a change upward, and reading it as an unsigned 3 loses the only thing that
+ * says which way.
+ */
+function findPromptNumbers(maskedScope: string): PromptNumber[] {
+    return [...maskedScope.matchAll(/[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?%?/gu)].map(
+        (match) => ({
+            end: match.index + match[0].length,
+            index: match.index,
+            raw: match[0],
+        })
+    );
+}
+
+/** The decibel figures the request states in the form this rule accepts, and no others. */
+function getStatedDecibelFigures(
+    maskedScope: string,
+    numbers: readonly PromptNumber[],
+    levelForm: 'absolute-decibel' | 'relative-decibel'
+): number[] {
+    const statedForm = levelForm === 'absolute-decibel' ? 'absolute' : 'relative';
+    return classifyPromptDecibelFigures(maskedScope, numbers)
+        .filter((figure) => figure.form === statedForm)
+        .map((figure) => figure.db)
+        .filter((db): db is number => db !== null);
+}
+
+/**
+ * Whether the request put a decibel figure on this action at all.
+ *
+ * A level stated in decibels is not an amplitude the caller may convert on the
+ * model's behalf: the conversion is the acceptor's, and a provider answering
+ * "-6 dB" with `0.5` has done arithmetic nobody can check against the request.
+ */
+function statesDecibelFigure(maskedScope: string): boolean {
+    return classifyPromptDecibelFigures(maskedScope, findPromptNumbers(maskedScope)).length > 0;
+}
+
 function getExpectedNumbers(
     actionScope: ActionPromptScope,
     valueRule: GroundingValueRule,
@@ -1898,18 +1932,15 @@ function getExpectedNumbers(
     if (valueRule.kind !== 'number-if-present') {
         return [];
     }
-    const numbers = [
-        ...actionScope.masked.matchAll(/-?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?%?/gu),
-    ].map((match) => ({
-        end: match.index + match[0].length,
-        index: match.index,
-        raw: match[0],
-    }));
+    const numbers = findPromptNumbers(actionScope.masked);
     if (numbers.length === 0) {
         return [];
     }
     if (numbers.length > 1 && /\b(?:either|or)\b/iu.test(actionScope.masked)) {
         return null;
+    }
+    if (valueRule.levelForm === 'absolute-decibel' || valueRule.levelForm === 'relative-decibel') {
+        return getStatedDecibelFigures(actionScope.masked, numbers, valueRule.levelForm);
     }
     if (valueRule.unit === 'stretch-ratio') {
         const ratioNumbers = findStretchRatioNumbers(actionScope.masked, numbers);
@@ -2204,12 +2235,32 @@ function containsPromptPhrase(actionScope: ActionPromptScope, phrases: readonly 
     return containsPhraseInMaskedText(actionScope.masked, phrases);
 }
 
+/**
+ * A change in decibels carries its own direction in its sign, so the words the
+ * request used are checked against that sign rather than against the level the
+ * track sits at: +0.5 dB is louder than wherever it is now, however small the
+ * figure looks beside a stored amplitude.
+ */
+function validateRelativeLevelDirection(assertedValue: number, actionScope: ActionPromptScope): boolean {
+    if (containsPromptPhrase(actionScope, ['louder', 'raise', 'turn up'])) {
+        return assertedValue > 0;
+    }
+    if (containsPromptPhrase(actionScope, ['quieter', 'lower', 'turn down'])) {
+        return assertedValue < 0;
+    }
+    return true;
+}
+
 function validateTrackGainDirection(
+    valueRule: NumberValueRule,
     assertedValue: number,
     actionScope: ActionPromptScope,
     groundedArguments: Record<string, unknown>,
     context: ProjectContext
 ): boolean {
+    if (valueRule.levelForm === 'relative-decibel') {
+        return validateRelativeLevelDirection(assertedValue, actionScope);
+    }
     const track = context.tracks.find((candidate) => candidate.id === groundedArguments.trackId);
     if (!track) {
         return false;
@@ -2423,7 +2474,7 @@ function validateQualitativeNumberDirection(
     context: ProjectContext
 ): boolean {
     if (valueRule.qualitativeDirection === 'track-gain') {
-        return validateTrackGainDirection(assertedValue, actionScope, groundedArguments, context);
+        return validateTrackGainDirection(valueRule, assertedValue, actionScope, groundedArguments, context);
     }
     if (valueRule.qualitativeDirection === 'track-pan') {
         return validateTrackPanDirection(assertedValue, actionScope);
@@ -2464,6 +2515,9 @@ function validateNumberValue(
     groundedArguments: Record<string, unknown>,
     context: ProjectContext
 ): string | null {
+    if (valueRule.levelForm === 'linear' && statesDecibelFigure(actionScope.masked)) {
+        return `Provider value ${valueRule.argument} must use the decibel form the request states`;
+    }
     const automationLane = getAutomationLaneValueRange(valueRule, groundedArguments, context);
     if (automationLane === null) {
         return getValueMismatchReason(valueRule.argument);
@@ -2888,6 +2942,33 @@ function validateGroundedValue(
     }
 }
 
+/**
+ * Whether another form of the same level is the one the call stated.
+ *
+ * A control offers its level in several forms and takes exactly one, so the
+ * rules for the forms the call left out have nothing to judge: holding them to
+ * the request would reject every call for not stating a level three ways.
+ */
+function statesLevelInAnotherForm(
+    valueRule: GroundingValueRule,
+    groundingRules: GroundingRules,
+    groundedArguments: Record<string, unknown>
+): boolean {
+    if (valueRule.kind !== 'number-if-present' || valueRule.levelForm === undefined) {
+        return false;
+    }
+    if (groundedArguments[valueRule.argument] !== undefined) {
+        return false;
+    }
+    return groundingRules.valueRules.some(
+        (candidate) =>
+            candidate.kind === 'number-if-present' &&
+            candidate.levelForm !== undefined &&
+            candidate.argument !== valueRule.argument &&
+            groundedArguments[candidate.argument] !== undefined
+    );
+}
+
 function validateGroundedValues(
     actionName: string,
     groundingRules: GroundingRules,
@@ -2898,6 +2979,9 @@ function validateGroundedValues(
     admitsCreativeCall: boolean
 ): string | null {
     for (const valueRule of groundingRules.valueRules) {
+        if (statesLevelInAnotherForm(valueRule, groundingRules, groundedArguments)) {
+            continue;
+        }
         const assertedValue = groundedArguments[valueRule.argument];
         let valueRejection: string | null;
         const renameCarrier = actionName === 'renameClip' && valueRule.argument === 'name' ? clipRenameCarrier : null;

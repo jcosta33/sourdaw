@@ -4443,3 +4443,141 @@ describe('bridgeLlmToolCalls', () => {
         });
     });
 });
+
+/**
+ * A level in decibels is carried to the handler, not converted on the way.
+ *
+ * The strategies see a context, not the project: they cannot apply a taper, and
+ * a linear amplitude computed here would be a second answer to a question the
+ * handler already answers against the live value. What they owe the caller is
+ * the arithmetic-free part — exactly one form, and a level the control's law
+ * admits.
+ */
+describe('level arguments in decibels', () => {
+    const contextWithoutVocalSends: ProjectContext = {
+        ...projectContext,
+        tracks: projectContext.tracks.map((track) => (track.id === 'track-vocals' ? { ...track, sends: [] } : track)),
+    };
+
+    it('carries an absolute track level through untouched', () => {
+        const result = bridge({
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', gainDb: -6 } }],
+        });
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 'track-vocals', gainDb: -6 } }]);
+    });
+
+    it('carries a relative track level through untouched', () => {
+        const result = bridge({
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', deltaDb: -2 } }],
+        });
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 'track-vocals', deltaDb: -2 } }]);
+    });
+
+    it('carries an absolute master level through untouched', () => {
+        const result = bridge({ calls: [{ name: 'setMasterGain', arguments: { gainDb: -3 } }] });
+
+        expect(result.actions).toEqual([{ type: 'setMasterGain', payload: { gainDb: -3 } }]);
+    });
+
+    it('carries an absolute clip level through untouched', () => {
+        const result = bridge({ calls: [{ name: 'setClipGain', arguments: { clipId: 'clip-verse', gainDb: -6 } }] });
+
+        expect(result.actions).toEqual([{ type: 'setClipGain', payload: { clipId: 'clip-verse', gainDb: -6 } }]);
+    });
+
+    it('carries an absolute level onto a new send, with the send state it expects', () => {
+        const result = bridge({
+            calls: [{ name: 'addSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', levelDb: -10 } }],
+            context: contextWithoutVocalSends,
+        });
+
+        expect(result.actions).toEqual([
+            {
+                type: 'addSend',
+                payload: { trackId: 'track-vocals', busId: 'bus-reverb', levelDb: -10, expectedAbsent: true },
+            },
+        ]);
+    });
+
+    it('carries a relative level onto an existing send, with the send state it expects', () => {
+        const result = bridge({
+            calls: [{ name: 'setSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', deltaDb: -2 } }],
+        });
+
+        expect(result.actions).toEqual([
+            {
+                type: 'setSend',
+                payload: {
+                    trackId: 'track-vocals',
+                    busId: 'bus-reverb',
+                    deltaDb: -2,
+                    expectedLevel: 0.2,
+                    expectedPreFader: true,
+                },
+            },
+        ]);
+    });
+
+    it('carries an absolute level onto a gain automation point', () => {
+        const result = bridge({
+            calls: [{ name: 'addAutomationPoint', arguments: { laneId: 'lane-vocal-gain', beat: 8, valueDb: -6 } }],
+        });
+
+        expect(result.actions).toEqual([
+            { type: 'addAutomationPoint', payload: { laneId: 'lane-vocal-gain', beat: 8, valueDb: -6 } },
+        ]);
+    });
+
+    it('refuses two level forms at once', () => {
+        const result = bridge({
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', gainDb: -6, deltaDb: -2 } }],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toBe(
+            `Expected an available trackId and finite gain from 0 through ${FADER_MAX_GAIN}`
+        );
+    });
+
+    it('refuses an absolute level above the control ceiling', () => {
+        const result = bridge({
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', gainDb: 12 } }],
+        });
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('refuses a change that lands above the control ceiling', () => {
+        // The track sits at 0.8, about -1.9 dB, so +12 dB lands well past the
+        // fader's headroom even though the change itself is a small number.
+        const result = bridge({
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', deltaDb: 12 } }],
+        });
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('refuses a relative level on a send that does not exist yet', () => {
+        const result = bridge({
+            calls: [{ name: 'addSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', deltaDb: -6 } }],
+            context: contextWithoutVocalSends,
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toBe(
+            'Expected an available source, a distinct bus without an existing send, and a finite level from 0 through 1'
+        );
+    });
+
+    it('refuses a decibel level on a lane that measures something else', () => {
+        const panLane = { ...projectContext.automationLanes![0]!, id: 'lane-vocal-pan', parameterId: 'pan' };
+        const result = bridge({
+            calls: [{ name: 'addAutomationPoint', arguments: { laneId: 'lane-vocal-pan', beat: 8, valueDb: -6 } }],
+            context: { ...projectContext, automationLanes: [panLane] },
+        });
+
+        expect(result.actions).toEqual([]);
+    });
+});

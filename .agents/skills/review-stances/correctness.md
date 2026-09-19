@@ -284,3 +284,23 @@ each backend's advertisement path to the request body actually sent, and read th
 body under the backend's cap with more action tools than the cap admits. A tool the system prompt
 demands must be in the mandatory set of every backend, and the first end-to-end case must run below
 the mock that hides the backend.
+
+### 2026-09-19 — an argument form accepted by the handler but not by the planner path (escaped via PR #4392; fixed in the second task of #4366)
+
+The decibel level forms landed as a handler contract: `handleSetTrackGain` and its siblings resolved
+`gainDb`, `levelDb`, `valueDb` and `deltaDb`, the AiRuntime payload validators admitted them, and the
+system-prompt schemas in `models/Tools/*.ts` advertised them. The planner never sent one. The
+executable registry the planner is actually handed, `getExecutableAppActionToolSchemas()`, still
+advertised the linear key alone and marked it required; the grounding value rules knew no decibel
+unit; and each bridge strategy demanded an exact key set naming the linear key. A model asked for a
+level in decibels therefore had to convert to a linear amplitude against a fader curve it cannot see,
+and every handler spec stayed green while the form was unreachable from a prompt.
+
+Blind spot: the stance read the acceptor the diff touched and treated the new form as accepted, rather
+than asking who else has to admit it before a request can reach that acceptor.
+
+Probe that would have caught it: for every claim that a command accepts a new argument form, list each
+acceptor on the provider path — the handler, the payload validator, the executable registry schema and
+its `required`, the strategy's key set, and the grounding value rules — and drive one call carrying the
+new form through the real planner path end to end. A green handler spec is not evidence for the planner
+path; the narrow acceptor is the one the diff did not touch.

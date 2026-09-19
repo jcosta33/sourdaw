@@ -1,4 +1,12 @@
-import { FADER_GAIN_RANGE_DESCRIPTION, FADER_MAX_GAIN_LABEL } from '#/utils/audioLevelLaw';
+import {
+    CLIP_GAIN_LAW,
+    CLIP_MAX_GAIN,
+    describeLevelLawDb,
+    FADER_GAIN_RANGE_DESCRIPTION,
+    FADER_MAX_GAIN_LABEL,
+    SEND_LEVEL_LAW,
+    TRACK_FADER_LAW,
+} from '#/utils/audioLevelLaw';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
@@ -93,6 +101,7 @@ export type ExecutableAppActionValueRule =
           connector?: 'from' | 'to' | 'beat';
           keywords?: readonly string[];
           scale?: 'unit-interval' | 'percentage-only' | 'automation-lane-range';
+          levelForm?: 'linear' | 'absolute-decibel' | 'relative-decibel';
           direction?: 'pan';
           qualitativeDirection?: 'track-gain' | 'track-pan' | 'device-parameter';
           unit?: 'beat-duration' | 'stretch-ratio';
@@ -622,13 +631,34 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'setClipGain',
         risk: 'bounded-reversible',
-        description: 'Set an existing clip gain from 0.0 through 2.0.',
+        description: `Set clip volume in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(CLIP_GAIN_LAW)}.`,
         intentPhrases: ['set clip gain', 'clip gain', 'set clip volume'],
         targetRules: editableClipTargetRules,
-        valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
+        valueRules: [
+            { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'deltaDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'relative-decibel' },
+            {
+                argument: 'gain',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                scale: 'percentage-only',
+                levelForm: 'linear',
+            },
+        ],
         parameters: {
-            properties: { clipId: { type: 'string' }, gain: { type: 'number', description: '0.0 to 2.0' } },
-            required: ['clipId', 'gain'],
+            properties: {
+                clipId: { type: 'string' },
+                gainDb: { type: 'number', description: `Absolute level. ${describeLevelLawDb(CLIP_GAIN_LAW)}` },
+                deltaDb: {
+                    type: 'number',
+                    description: `Change relative to the clip's current gain, in decibels (negative is quieter). The result must land within ${describeLevelLawDb(CLIP_GAIN_LAW)}`,
+                },
+                gain: {
+                    type: 'number',
+                    description: `Deprecated linear amplitude; prefer gainDb (absolute dB) or deltaDb (relative dB). 0.0 to ${String(CLIP_MAX_GAIN)}`,
+                },
+            },
+            required: ['clipId'],
         },
     },
     {
@@ -1424,23 +1454,40 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'setTrackGain',
         risk: 'bounded-reversible',
-        description: `Set track volume. 0.0=silence, 0.8=default, 1.0=unity, ${FADER_MAX_GAIN_LABEL}=max.`,
+        description: `Set track volume in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(TRACK_FADER_LAW)}.`,
         intentPhrases: ['gain', 'volume', 'louder', 'quieter', 'raise', 'lower', 'turn up', 'turn down'],
         targetRules: trackTargetRules,
         valueRules: [
+            { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            {
+                argument: 'deltaDb',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                levelForm: 'relative-decibel',
+                qualitativeDirection: 'track-gain',
+            },
             {
                 argument: 'gain',
                 kind: 'number-if-present',
                 scale: 'unit-interval',
+                levelForm: 'linear',
                 qualitativeDirection: 'track-gain',
             },
         ],
         parameters: {
             properties: {
                 trackId: { type: 'string' },
-                gain: { type: 'number', description: FADER_GAIN_RANGE_DESCRIPTION },
+                gainDb: { type: 'number', description: `Absolute level. ${describeLevelLawDb(TRACK_FADER_LAW)}` },
+                deltaDb: {
+                    type: 'number',
+                    description: `Change relative to the track's current level, in decibels (negative is quieter). The result must land within ${describeLevelLawDb(TRACK_FADER_LAW)}`,
+                },
+                gain: {
+                    type: 'number',
+                    description: `Deprecated linear amplitude; prefer gainDb (absolute dB) or deltaDb (relative dB). ${FADER_GAIN_RANGE_DESCRIPTION}, ${FADER_MAX_GAIN_LABEL}=max`,
+                },
             },
-            required: ['trackId', 'gain'],
+            required: ['trackId'],
         },
     },
     {
@@ -1859,7 +1906,7 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'setMasterGain',
         risk: 'authority-sensitive',
-        description: `Set master output gain from 0.0 through about ${FADER_MAX_GAIN_LABEL} (1.0 = unity, 0.8 = default).`,
+        description: `Set the master output volume in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(TRACK_FADER_LAW)}.`,
         intentPhrases: [
             'set master gain',
             'set the master gain',
@@ -1869,10 +1916,30 @@ export const executableAppActionDescriptors = [
             'change master volume',
         ],
         targetRules: [],
-        valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
+        valueRules: [
+            { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'deltaDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'relative-decibel' },
+            {
+                argument: 'gain',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                scale: 'percentage-only',
+                levelForm: 'linear',
+            },
+        ],
         parameters: {
-            properties: { gain: { type: 'number', description: FADER_GAIN_RANGE_DESCRIPTION } },
-            required: ['gain'],
+            properties: {
+                gainDb: { type: 'number', description: `Absolute level. ${describeLevelLawDb(TRACK_FADER_LAW)}` },
+                deltaDb: {
+                    type: 'number',
+                    description: `Change relative to the master's current level, in decibels (negative is quieter). The result must land within ${describeLevelLawDb(TRACK_FADER_LAW)}`,
+                },
+                gain: {
+                    type: 'number',
+                    description: `Deprecated linear amplitude; prefer gainDb (absolute dB) or deltaDb (relative dB). ${FADER_GAIN_RANGE_DESCRIPTION}`,
+                },
+            },
+            required: [],
         },
     },
     {
@@ -2056,34 +2123,57 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'addSend',
         risk: 'authority-sensitive',
-        description: "Route a copy of a track's signal to a bus (parallel processing).",
+        description: `Route a copy of a track's signal to a bus (parallel processing). Exactly one of levelDb or level. ${describeLevelLawDb(SEND_LEVEL_LAW)}.`,
         intentPhrases: ['add send', 'create send', 'send'],
         targetRules: sendTargetRules,
-        valueRules: [{ argument: 'level', kind: 'number-if-present', scale: 'unit-interval' }],
+        valueRules: [
+            { argument: 'levelDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'level', kind: 'number-if-present', scale: 'unit-interval', levelForm: 'linear' },
+        ],
         parameters: {
             properties: {
                 trackId: { type: 'string' },
                 busId: { type: 'string' },
-                level: { type: 'number', description: 'Send level 0.0–1.0' },
+                levelDb: {
+                    type: 'number',
+                    description: `Absolute send level, the only decibel form a new send takes: it has no current level to move from. ${describeLevelLawDb(SEND_LEVEL_LAW)}`,
+                },
+                level: {
+                    type: 'number',
+                    description: 'Deprecated linear amplitude; prefer levelDb (absolute dB). Send level 0.0–1.0',
+                },
                 preFader: { type: 'boolean', description: 'False for a post-fader send; true for pre-fader' },
             },
-            required: ['trackId', 'busId', 'level'],
+            required: ['trackId', 'busId'],
         },
     },
     {
         actionType: 'setSend',
         risk: 'authority-sensitive',
-        description: 'Adjust the send level from a track to a bus.',
+        description: `Adjust the send level from a track to a bus. Exactly one of levelDb, deltaDb, or level. ${describeLevelLawDb(SEND_LEVEL_LAW)}.`,
         intentPhrases: ['adjust send', 'set send', 'change send'],
         targetRules: sendTargetRules,
-        valueRules: [{ argument: 'level', kind: 'number-if-present', scale: 'unit-interval' }],
+        valueRules: [
+            { argument: 'levelDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'deltaDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'relative-decibel' },
+            { argument: 'level', kind: 'number-if-present', scale: 'unit-interval', levelForm: 'linear' },
+        ],
         parameters: {
             properties: {
                 trackId: { type: 'string' },
                 busId: { type: 'string' },
-                level: { type: 'number' },
+                levelDb: { type: 'number', description: `Absolute send level. ${describeLevelLawDb(SEND_LEVEL_LAW)}` },
+                deltaDb: {
+                    type: 'number',
+                    description: `Change relative to the send's current level, in decibels (negative is quieter). The result must land within ${describeLevelLawDb(SEND_LEVEL_LAW)}`,
+                },
+                level: {
+                    type: 'number',
+                    description:
+                        'Deprecated linear amplitude; prefer levelDb (absolute dB) or deltaDb (relative dB). Send level 0.0–1.0',
+                },
             },
-            required: ['trackId', 'busId', 'level'],
+            required: ['trackId', 'busId'],
         },
     },
     {
@@ -2332,12 +2422,21 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'addAutomationPoint',
         risk: 'bounded-reversible',
-        description: 'Add a value at an explicit beat on an existing track automation lane.',
+        description:
+            'Add a value at an explicit beat on an existing track automation lane. Exactly one of valueDb, deltaDb, or value; the decibel forms are accepted only on a gain lane, whose minValueDb and maxValueDb state its window.',
         intentPhrases: ['add automation point', 'create automation point', 'set automation point'],
         targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
         valueRules: [
             { argument: 'beat', kind: 'number-if-present', requiredInPrompt: true, connector: 'beat' },
-            { argument: 'value', kind: 'number-if-present', requiredInPrompt: true, scale: 'automation-lane-range' },
+            { argument: 'valueDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'deltaDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'relative-decibel' },
+            {
+                argument: 'value',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                scale: 'automation-lane-range',
+                levelForm: 'linear',
+            },
             {
                 argument: 'curve',
                 kind: 'enum-if-present',
@@ -2348,6 +2447,15 @@ export const executableAppActionDescriptors = [
             properties: {
                 laneId: { type: 'string', description: 'Existing track automation lane ID' },
                 beat: { type: 'number', description: 'Non-negative project beat' },
+                valueDb: {
+                    type: 'number',
+                    description: `Absolute level, gain lanes only. Within the lane's own minValueDb and maxValueDb; ${describeLevelLawDb(TRACK_FADER_LAW)}`,
+                },
+                deltaDb: {
+                    type: 'number',
+                    description:
+                        "Change relative to the level the gain lane already draws at this beat, in decibels (negative is quieter). Gain lanes only; the result must land within the lane's own minValueDb and maxValueDb",
+                },
                 value: {
                     type: 'number',
                     description: 'Value within the selected lane minValue and maxValue bounds',
@@ -2358,7 +2466,7 @@ export const executableAppActionDescriptors = [
                     description: 'Interpolation from this point to the next',
                 },
             },
-            required: ['laneId', 'beat', 'value'],
+            required: ['laneId', 'beat'],
         },
     },
     {

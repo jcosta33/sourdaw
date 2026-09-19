@@ -1,3 +1,4 @@
+import { type LevelArgument, SEND_LEVEL_LAW } from '#/utils/audioLevelLaw';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
 import { type ProjectContext } from '../../models/ProjectContext';
@@ -13,11 +14,22 @@ import {
     findSupportedSidechainDevices,
     findTrack,
     hasExactKeys,
-    isFiniteNumber,
     isProviderRoutableSource,
+    readResolvedLevelArgument,
     rejection,
 } from './bridgeArgumentGuards';
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
+
+/** The send level in the form the request stated, for the handler to resolve. */
+function toSendLevelPayload(trackId: string, busId: string, argument: LevelArgument) {
+    if ('linear' in argument) {
+        return { trackId, busId, level: argument.linear };
+    }
+    if ('absoluteDb' in argument) {
+        return { trackId, busId, levelDb: argument.absoluteDb };
+    }
+    return { trackId, busId, deltaDb: argument.deltaDb };
+}
 
 export const routingActionNames = [
     'createBus',
@@ -71,15 +83,18 @@ const routingStrategyDefinitions = [
             const source = findTrack(context, args.trackId);
             const bus = findProviderOutputTarget(context, args.busId);
             const existing = findSend(context, args.trackId, args.busId);
+            const level = readResolvedLevelArgument(
+                args,
+                { linear: 'level', absolute: 'levelDb', relative: 'deltaDb' },
+                { current: existing?.level, law: SEND_LEVEL_LAW, linearBounds: { min: 0, max: 1 } }
+            );
             if (
-                !hasExactKeys(args, ['trackId', 'busId', 'level']) ||
+                level === null ||
+                !hasExactKeys(args, ['trackId', 'busId', level.statedKey]) ||
                 !isProviderRoutableSource(source) ||
                 bus?.kind !== 'bus' ||
                 source.id === bus.id ||
-                !existing ||
-                !isFiniteNumber(args.level) ||
-                args.level < 0 ||
-                args.level > 1
+                !existing
             ) {
                 return rejection(
                     index,
@@ -90,9 +105,7 @@ const routingStrategyDefinitions = [
             return {
                 type: 'setSend',
                 payload: {
-                    trackId: source.id,
-                    busId: bus.id,
-                    level: args.level,
+                    ...toSendLevelPayload(source.id, bus.id, level.argument),
                     expectedLevel: existing.level,
                     expectedPreFader: existing.preFader,
                 },
@@ -106,15 +119,18 @@ const routingStrategyDefinitions = [
             const source = findTrack(context, args.trackId);
             const bus = findProviderOutputTarget(context, args.busId);
             const existing = findSend(context, args.trackId, args.busId);
+            const level = readResolvedLevelArgument(
+                args,
+                { linear: 'level', absolute: 'levelDb' },
+                { current: undefined, law: SEND_LEVEL_LAW, linearBounds: { min: 0, max: 1 } }
+            );
             if (
-                !hasExactKeys(args, ['trackId', 'busId', 'level']) ||
+                level === null ||
+                !hasExactKeys(args, ['trackId', 'busId', level.statedKey]) ||
                 !isProviderRoutableSource(source) ||
                 bus?.kind !== 'bus' ||
                 source.id === bus.id ||
-                existing ||
-                !isFiniteNumber(args.level) ||
-                args.level < 0 ||
-                args.level > 1
+                existing
             ) {
                 return rejection(
                     index,
@@ -134,7 +150,7 @@ const routingStrategyDefinitions = [
             }
             return {
                 type: 'addSend',
-                payload: { trackId: source.id, busId: bus.id, level: args.level, expectedAbsent: true },
+                payload: { ...toSendLevelPayload(source.id, bus.id, level.argument), expectedAbsent: true },
             };
         },
     },
