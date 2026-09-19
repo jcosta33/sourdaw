@@ -142,10 +142,12 @@ for registered stack children.
 
 Publishing gates authorship on exactly the commits it adds to the remote: the
 remote tip when the branch already exists there at an ancestor of the head,
-otherwise the same base the title derives from. Every commit in that range,
-merges included, must carry the author App's commit identity; a refusal names
-each offending email and the remedy — restamp with `pnpm lane:identity`, then
-`git rebase --exec 'git commit --amend --reset-author --no-edit' <base>`.
+otherwise the same base the title derives from — always excluding what that
+resolved base reaches, because origin/main or stack-parent commits are not the
+lane's to author. Every remaining commit, merges included, must carry the
+author App's commit identity; a refusal names each offending email and the
+remedy — restamp with `pnpm lane:identity`, then
+`git rebase --exec 'git commit --amend --reset-author --no-edit' --rebase-merges <base>`.
 
 Labels and milestone are written by the author App. Project membership is not:
 installation tokens cannot reach user-owned Projects v2, so the project listing,

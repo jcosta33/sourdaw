@@ -3649,4 +3649,109 @@ describe('push delta authorship gate', () => {
             dispose(f);
         }
     });
+
+    const FOREIGN_EMAIL = 'dependabot[bot]@users.noreply.github.com';
+
+    /** Advances the fixture's `main` with one foreign-authored commit and pushes it to the remote. */
+    function commitForeignMainAdvance(primary: string, remote: string): void {
+        writeFileSync(join(primary, 'main-side.txt'), 'main-side\n');
+        fixtureGit(primary, ['add', 'main-side.txt']);
+        execFileSync('git', ['commit', '--no-gpg-sign', '-m', 'chore: foreign main advance'], {
+            cwd: primary,
+            env: fixtureGitEnv({
+                GIT_AUTHOR_NAME: 'dependabot[bot]',
+                GIT_AUTHOR_EMAIL: FOREIGN_EMAIL,
+                GIT_COMMITTER_NAME: 'dependabot[bot]',
+                GIT_COMMITTER_EMAIL: FOREIGN_EMAIL,
+            }),
+            encoding: 'utf8',
+        });
+        fixtureGit(primary, ['push', remote, 'main']);
+    }
+
+    /** Merges the advanced `origin/main` into the lane as a merge commit the stamped lane authored. */
+    function mergeMainAsBot(lane: string): void {
+        fixtureGit(lane, ['fetch', GITHUB_HTTPS_REMOTE, '+refs/heads/main:refs/remotes/origin/main']);
+        execFileSync('git', ['merge', '--no-edit', 'origin/main'], {
+            cwd: lane,
+            env: fixtureGitEnv({
+                GIT_AUTHOR_NAME: 'hplovecraft208[bot]',
+                GIT_AUTHOR_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+                GIT_COMMITTER_NAME: 'hplovecraft208[bot]',
+                GIT_COMMITTER_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+            }),
+            encoding: 'utf8',
+        });
+    }
+
+    it('publishes a lane that merged a foreign-authored main while a remote tip exists', () => {
+        const f = authorshipFixture();
+        try {
+            const remoteTip = commitInLane(f.lane, 'one.txt', 'feat(gate): first bot commit', 'bot');
+            fixtureGit(f.primary, ['push', f.remote, `${remoteTip}:refs/heads/${BRANCH}`]);
+            commitForeignMainAdvance(f.primary, f.remote);
+            mergeMainAsBot(f.lane);
+            const head = commitInLane(f.lane, 'two.txt', 'feat(gate): bot commit on merged main', 'bot');
+            // The remote-tip..head delta holds the merged foreign commit, so success below can
+            // only come from excluding the resolved base's side, never from gating that raw range.
+            expect(fixtureGit(f.lane, ['log', '--format=%ae', `${remoteTip}..${head}`])).toContain(FOREIGN_EMAIL);
+
+            expect(publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            expect(fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toBe(head);
+        } finally {
+            dispose(f);
+        }
+    });
+
+    it('refuses a lane that merged a foreign-authored main while naming only the lane-owned human commit', () => {
+        const f = authorshipFixture();
+        try {
+            const remoteTip = commitInLane(f.lane, 'one.txt', 'feat(gate): first bot commit', 'bot');
+            fixtureGit(f.primary, ['push', f.remote, `${remoteTip}:refs/heads/${BRANCH}`]);
+            commitForeignMainAdvance(f.primary, f.remote);
+            mergeMainAsBot(f.lane);
+            const head = commitInLane(f.lane, 'two.txt', 'feat(gate): human commit on merged main', 'human');
+            // The foreign commit sits inside the raw remote-tip..head range, so a refusal naming
+            // only the lane's own commit proves the base side was excluded, not rewritten.
+            expect(fixtureGit(f.lane, ['log', '--format=%ae', `${remoteTip}..${head}`])).toContain(FOREIGN_EMAIL);
+
+            const message = refusalMessage(() =>
+                publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)
+            );
+
+            expect(message).toContain(`authored as ${HUMAN_EMAIL}`);
+            expect(message).not.toContain(FOREIGN_EMAIL);
+            expect(fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toBe(remoteTip);
+        } finally {
+            dispose(f);
+        }
+    });
+
+    it('refuses a commit whose author email is empty instead of pushing it silently', () => {
+        const f = authorshipFixture();
+        try {
+            commitInLane(f.lane, 'one.txt', 'feat(gate): bot commit', 'bot');
+            writeFileSync(join(f.lane, 'empty.txt'), 'empty\n');
+            fixtureGit(f.lane, ['add', '--', 'empty.txt']);
+            execFileSync(
+                'git',
+                ['commit', '--no-gpg-sign', '--author=Jose <>', '-m', 'feat(gate): empty author email'],
+                {
+                    cwd: f.lane,
+                    env: fixtureGitEnv(),
+                    encoding: 'utf8',
+                }
+            );
+
+            const message = refusalMessage(() =>
+                publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)
+            );
+
+            expect(message).toContain('(empty author email)');
+            expect(() => fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toThrow();
+        } finally {
+            dispose(f);
+        }
+    });
 });
