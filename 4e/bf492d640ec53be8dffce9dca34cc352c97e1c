@@ -1,0 +1,35 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_9e15f5b7ec3308::t_797c7dea600c8e 24,56-63,322-328
+AGENTS.md
+  s_9e15f5b7ec3308::t_af5552f267a587 257-259,337-340,361-363
+package.json
+  s_9e15f5b7ec3308::t_e792b98e0ffe6d 61
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_9e15f5b7ec3308::t_9282eb3b19ce7e 901,2004,2033
+scripts/__tests__/claimTrackerIssue.spec.ts
+  s_9e15f5b7ec3308::t_0f226e862ae67e 1-316
+scripts/__tests__/openLane.spec.ts
+  s_9e15f5b7ec3308::t_2f7a869d903c95 335-339,342-353
+scripts/claimTrackerIssue.ts
+  s_9e15f5b7ec3308::t_82dabbb4e106b5 1-325
+scripts/openLane.ts
+  s_9e15f5b7ec3308::t_191c7488394d71 200-205
+scripts/trustedGithubWriteBootstrap.ts
+  s_9e15f5b7ec3308::t_d4d317f289ee14 31,160-165,268,1368,1380
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4ebf492d640ec53be8dffce9dca34cc352c97e1c",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
