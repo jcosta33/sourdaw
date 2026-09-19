@@ -1,0 +1,16 @@
+scripts/__tests__/reviewDossier.spec.ts
+  h_1228e573df1f42 693-704,713
+scripts/reviewDossier.ts
+  h_1228e573df1f42 122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f6aa841577500c961e9619e6b11e11b21b9b3bd8",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
