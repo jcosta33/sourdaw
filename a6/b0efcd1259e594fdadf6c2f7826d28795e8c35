@@ -1,0 +1,16 @@
+scripts/__tests__/reviewRiskPolicy.spec.ts
+  h_1228e573df1f42 1-282
+scripts/reviewRiskPolicy.ts
+  h_1228e573df1f42 1-311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a6b0efcd1259e594fdadf6c2f7826d28795e8c35",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
