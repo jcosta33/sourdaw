@@ -2,12 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
 import { generateOpenAiResponsesToolCalls } from '../cloudLlm/cloudInference/generateOpenAiResponsesToolCalls';
+import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../cloudLlm/cloudInference/hostedToolPlan';
 import { streamCloudChatCompletion } from '../cloudLlm/cloudInference/streamCloudChatCompletion';
 import { type OpenAiCloudRuntime } from '../cloudLlm/cloudSession';
 import { compileProviderAdapterInstallation, OPENAI_RESPONSES_ADAPTER_ID } from '../providerAdapterRegistry';
 
 import {
     describeProviderProtocolConformance,
+    FORCED_TERMINAL_TOOL_NAMES,
     PROVIDER_CONFORMANCE_FIXTURE as FIXTURE,
     PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
     type ProviderRequestObservation,
@@ -150,6 +152,13 @@ function functionCall(
     return { type: 'function_call', id: 'fc-item', call_id: id, name: wireName, arguments: arguments_ };
 }
 
+function directiveFor(scenario: ProviderToolScenario): HostedToolChoiceDirective {
+    if (scenario === 'forced-terminal') {
+        return { mode: 'required', toolNames: FORCED_TERMINAL_TOOL_NAMES };
+    }
+    return AUTO_TOOL_CHOICE;
+}
+
 function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
     if (scenario === 'empty-batch') {
         return {
@@ -219,7 +228,7 @@ function readRequest(): ProviderRequestObservation {
         throw new Error('Expected the adapter to send a JSON request body');
     }
     const body = JSON.parse(sent) as Record<string, unknown>;
-    return { model: body.model, stream: body.stream, tools: body.tools };
+    return { model: body.model, stream: body.stream, tools: body.tools, toolChoice: body.tool_choice };
 }
 
 function readSafeMessage(error: unknown): string {
@@ -278,6 +287,7 @@ describeProviderProtocolConformance('OpenAI responses', {
                 userMessage: 'mute drums',
                 toolSchemas: PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
                 maxOutputTokens: 8_192,
+                directive: directiveFor(scenario),
             });
             return {
                 calls: plan.calls,
@@ -326,6 +336,7 @@ describe('generateOpenAiResponsesToolCalls usage admission', () => {
             userMessage: 'mute drums',
             toolSchemas: PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
             maxOutputTokens: 8_192,
+            directive: AUTO_TOOL_CHOICE,
         });
 
         expect(plan.usage).toMatchObject({ inputTokens: null, outputTokens: FIXTURE.toolUsage.outputTokens });

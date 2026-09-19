@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
 
 import { generateOpenAiCompatibleToolCalls } from '../cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
+import { AUTO_TOOL_CHOICE } from '../cloudLlm/cloudInference/hostedToolPlan';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../webLlm/generateWebLlmCompletion';
 import { generateWebLlmToolCalls } from '../webLlm/toolCalling';
@@ -65,6 +66,7 @@ describe('drum bus provider plan conformance', () => {
             userMessage: 'request',
             toolSchemas: tools,
             maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
         });
 
         expect(webLlm).toEqual({ status: 'complete', toolCalls: normalizedPlan, proposal: null });

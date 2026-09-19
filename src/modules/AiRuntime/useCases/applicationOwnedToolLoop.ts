@@ -19,6 +19,10 @@ import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { SEMANTIC_COMMAND_LIST_MAX_ITEMS } from '../models/SemanticCommandList';
 import { type ToolSchema } from '../models/ToolDefinitions';
+import {
+    AUTO_TOOL_CHOICE,
+    type HostedToolChoiceDirective,
+} from '../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { parseCommandBatchDecline } from '../transformers/parseCommandBatchDecline';
 import { type ToolCallResult } from '../transformers/toolCallParser';
@@ -119,6 +123,8 @@ type RunApplicationOwnedToolLoopInput = {
             calls: number;
             receiptBytes: number;
         };
+        /** `required`, restricted to the terminal tool set, only on the loop's final allowed turn. */
+        directive: HostedToolChoiceDirective;
     }) => Promise<ApplicationToolPlanningOutcome>;
     terminalToolNames: ReadonlySet<string>;
     signal?: AbortSignal;
@@ -980,6 +986,12 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn - 1,
             };
         }
+        const isFinalTurn = turn === maxTurns();
+        // Forcing the terminal tool set only on the final allowed turn keeps every earlier
+        // turn free to read, discover, or interpret before the loop must land on an action.
+        const directive: HostedToolChoiceDirective = isFinalTurn
+            ? { mode: 'required', toolNames: [...input.terminalToolNames] }
+            : AUTO_TOOL_CHOICE;
         let outcome: ApplicationToolPlanningOutcome;
         try {
             outcome = await input.requestTurn({
@@ -990,6 +1002,7 @@ export async function runApplicationOwnedToolLoop(
                     calls: limits.maxTotalCalls - totalCalls,
                     receiptBytes: limits.maxTotalReceiptBytes - totalReceiptBytes,
                 },
+                directive,
             });
         } catch (error) {
             throw new ApplicationOwnedToolLoopRequestError(error, receipts, turn);
@@ -1143,6 +1156,16 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
             };
         }
+        // The final turn forces a terminal tool call; a reply that carries none there is never
+        // accepted as an implicit no-op, unlike the same shape on an earlier turn.
+        if (isFinalTurn && outcome.toolCalls.length === 0) {
+            return {
+                status: 'rejected',
+                reason: 'Provider returned no tool call on the forced final application tool-loop turn.',
+                receipts,
+                turns: turn,
+            };
+        }
         if (terminalCalls.length > 0 || outcome.toolCalls.length === 0) {
             return {
                 status: 'complete',
@@ -1155,7 +1178,7 @@ export async function runApplicationOwnedToolLoop(
                 interpretation,
             };
         }
-        if (turn === maxTurns()) {
+        if (isFinalTurn) {
             return {
                 status: 'rejected',
                 reason: 'Provider exhausted the bounded application tool-loop turns.',

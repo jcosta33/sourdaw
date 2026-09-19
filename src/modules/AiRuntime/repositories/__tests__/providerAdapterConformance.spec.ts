@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { closeProviderGatewaySession } from '../closeProviderGatewaySession';
 import { generateOpenAiCompatibleToolCalls } from '../cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
+import { AUTO_TOOL_CHOICE } from '../cloudLlm/cloudInference/hostedToolPlan';
 import { streamOpenAiCompatibleChatCompletion } from '../cloudLlm/cloudInference/streamOpenAiCompatibleChatCompletion';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudLlm/cloudSession';
 import { normalizeProviderCapabilityProbe } from '../normalizeProviderCapabilityProbe';
@@ -544,6 +545,7 @@ describe('provider adapter conformance', () => {
                     },
                 ],
                 maxOutputTokens: 8192,
+                directive: AUTO_TOOL_CHOICE,
             })
         ).resolves.toMatchObject({
             calls: [{ id: 'call-1', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],

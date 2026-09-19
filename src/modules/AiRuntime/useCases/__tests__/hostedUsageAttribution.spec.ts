@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
-import { type HostedToolPlan } from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
+import { type ModelProviderName } from '../../models/ModelProviderProtocol';
+import {
+    type HostedToolPlan,
+    type HostedToolPlanUsage,
+} from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
@@ -67,6 +71,56 @@ function reportHostedToolPlan(plan: HostedToolPlan): void {
     };
 
     recordAgentProviderUsage(RUN_ID, reportedResult, BUDGET_ATTEMPT_ID);
+}
+
+/**
+ * What `useCases/llmOrchestration/inference.ts` does when a hosted turn is rejected after
+ * the provider answered: push the `ToolPlanningRejectedError`'s carried usage as a `final`,
+ * `provider-reported` event before `finish({reason:'error', ...})`, so the run's cost
+ * projection still reflects the tokens the provider actually spent on the refused turn.
+ */
+function reportRejectedToolPlan(provider: ModelProviderName, usage: HostedToolPlanUsage | null): void {
+    const { protocol, request } = readyRequest({
+        provider,
+        operation: 'tools',
+        dataPolicy: 'remote-allowed',
+        dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
+        remoteDisclosure: buildRemoteDisclosure(),
+    });
+    const session = protocol.start(request);
+    const source = createModelProviderStreamWriter(request, session);
+
+    agentRunLifecycle.reserveBudget({
+        runId: RUN_ID,
+        attemptId: BUDGET_ATTEMPT_ID,
+        category: 'remoteTokens',
+        estimate: 0,
+        provenance: 'versioned-estimate',
+    });
+
+    if (usage) {
+        source.push({
+            type: 'usage',
+            mode: 'final',
+            usage: {
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                cachedInputTokens: usage.cacheReadInputTokens,
+                reasoningTokens: null,
+            },
+            provenance: 'provider-reported',
+        });
+    }
+    const failedResult = source.finish({
+        reason: 'error',
+        failure: {
+            code: 'tool-planning-rejected',
+            retryable: false,
+            safeMessage: 'The model provider rejected tool planning.',
+        },
+    });
+
+    recordAgentProviderUsage(RUN_ID, failedResult, BUDGET_ATTEMPT_ID);
 }
 
 describe('hosted tool-planning usage attribution', () => {
@@ -140,4 +194,36 @@ describe('hosted tool-planning usage attribution', () => {
         // figure the provider never sent.
         expect(run?.providerUsage[0]?.provenance).toBe('unavailable');
     });
+
+    it.each<[ModelProviderName, HostedToolPlanUsage]>([
+        ['anthropic', { inputTokens: 30, outputTokens: 12, cacheReadInputTokens: 0, cacheWriteInputTokens: 0 }],
+        ['openai', { inputTokens: 40, outputTokens: 7, cacheReadInputTokens: 12, cacheWriteInputTokens: null }],
+        [
+            'openai-compatible',
+            { inputTokens: 18, outputTokens: 5, cacheReadInputTokens: 0, cacheWriteInputTokens: null },
+        ],
+    ])(
+        'attributes %s usage from a refused turn to the run even though the outcome is a rejection',
+        (provider, usage) => {
+            agentRunLifecycle.create({
+                runId: RUN_ID,
+                request: 'set the tempo',
+                mode: 'plan',
+                createdRevision: null,
+                requestedRoute: 'cloud',
+            });
+
+            reportRejectedToolPlan(provider, usage);
+
+            const run = agentRunLifecycle.get(RUN_ID);
+            expect(run).not.toBeNull();
+            expect(run?.providerUsage[0]).toMatchObject({
+                provider,
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                cachedInputTokens: usage.cacheReadInputTokens,
+                provenance: 'provider-reported',
+            });
+        }
+    );
 });
