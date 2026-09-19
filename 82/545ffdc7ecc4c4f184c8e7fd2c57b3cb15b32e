@@ -1,0 +1,63 @@
+evidence/agent-campaign/manifest.json
+  s_9e15f5b7ec3308::t_d576ddcb1d59d1 374,422,434
+src/modules/AiRuntime/models/HostedTurnHistory.ts
+  s_9e15f5b7ec3308::t_c79d8d175b8d1e 1-31
+src/modules/AiRuntime/models/ToolCallResult.ts
+  s_9e15f5b7ec3308::t_28e558a784ae1b 1-6
+src/modules/AiRuntime/repositories/__tests__/anthropicProviderAdapter.contract.spec.ts
+  s_9e15f5b7ec3308::t_93753ab3daae20 3,15-17,192-236,257-263,274,322,345-398
+src/modules/AiRuntime/repositories/__tests__/openAiCompatibleProviderAdapter.contract.spec.ts
+  s_9e15f5b7ec3308::t_904e08dfba2a3f 3,15-17,193-244,265-271,283,331,353-394
+src/modules/AiRuntime/repositories/__tests__/openAiProviderAdapter.contract.spec.ts
+  s_9e15f5b7ec3308::t_42a14794d509df 3,16-18,206-248,278-284,296,344,366-401
+src/modules/AiRuntime/repositories/__tests__/providerProtocolConformance.ts
+  s_9e15f5b7ec3308::t_0c99f625e28c98 3,167-201,207-216,258-265,455-484
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/openAiReasoningCarry.spec.ts
+  s_9e15f5b7ec3308::t_bcda1657b53c1a 1-223
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateCloudToolCalls.spec.ts
+  s_9e15f5b7ec3308::t_c066d26eab62de 54,99,138
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiResponsesToolCalls.spec.ts
+  s_9e15f5b7ec3308::t_733b073b2a2fd4 204-210,218-219,347
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts
+  s_9e15f5b7ec3308::t_c4b960fdc4650b 3,17,52-100,111-114,136-141,230
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateCloudToolCalls.ts
+  s_9e15f5b7ec3308::t_5992ae89fe12c1 6,35-38,45,60,72,84
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls.ts
+  s_9e15f5b7ec3308::t_eaf4e071bb324a 4,19,31-34,67-108,187-188,195-201,264,270-278
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiResponsesToolCalls.ts
+  s_9e15f5b7ec3308::t_ec2ad498c68c8f 3,19,31-34,134-171,223-224,235-240,300-302
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/hostedToolPlan.ts
+  s_9e15f5b7ec3308::t_e3d05a9dec7dcd 12-15,20
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/readHostedTurnCalls.ts
+  s_9e15f5b7ec3308::t_107f952cc1c46e 1-19
+src/modules/AiRuntime/transformers/strictToolPlanningParser.ts
+  s_9e15f5b7ec3308::t_fc8431cd1256b5 2-3,7-11,13-19
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_9e15f5b7ec3308::t_f2b1f45906f8d5 5,154-160,1234-1356
+src/modules/AiRuntime/useCases/__tests__/hostedUsageAttribution.spec.ts
+  s_9e15f5b7ec3308::t_7dd9d8ec8de7fc 143,184
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_9e15f5b7ec3308::t_701da463a89165 19,68-74,128-131,940-945,949,954-969,983,1000-1001,1011-1025,1045-1050,1054-1057,1164-1165,1251
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_9e15f5b7ec3308::t_c6fa874c156abe 13,318-417,639-641,681-683
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_9e15f5b7ec3308::t_df150f663358ae 13,23,63-88,381-385,493-499,586-588,597-598,678,683-690
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_9e15f5b7ec3308::t_4e49bf9bdb163c 514,529-533
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "82545ffdc7ecc4c4f184c8e7fd2c57b3cb15b32e",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
