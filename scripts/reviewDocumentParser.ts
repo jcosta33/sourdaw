@@ -37,6 +37,14 @@ export type ReviewDocument = {
      * authoring-model label when the two are comparable.
      */
     reviewerModel?: string;
+    /**
+     * Present only when the reviewer model equals an authoring model because no
+     * other harness model was available (the contract's otherwise-reuse arm):
+     * one non-empty line naming what was unavailable. Its presence is the
+     * deliberate fallback assertion, and the published body must still name the
+     * reviewer model so the deviation is recorded in the review itself.
+     */
+    modelExhaustion?: string;
 };
 
 export function parseReviewDocument(value: unknown): ReviewDocument {
@@ -66,10 +74,14 @@ export function parseReviewDocument(value: unknown): ReviewDocument {
         fail('APPROVE requires a body stating what was attacked and held');
     }
     const reviewerModel = extractReviewerModel(record);
-    // Omit the key entirely when absent: JSON cannot carry `undefined`, and callers
+    const modelExhaustion = extractModelExhaustion(record);
+    // Omit the keys entirely when absent: JSON cannot carry `undefined`, and callers
     // (and spec fixtures) distinguish "document declares no model" from a set value
     // by key presence.
-    const declaredModel = reviewerModel === undefined ? {} : { reviewerModel };
+    const declaredModel = {
+        ...(reviewerModel === undefined ? {} : { reviewerModel }),
+        ...(modelExhaustion === undefined ? {} : { modelExhaustion }),
+    };
     if ('evidence' in record && record.evidence !== undefined) {
         if (record.event !== 'APPROVE') {
             fail('REQUEST_CHANGES must not carry approval evidence');
@@ -94,6 +106,20 @@ export function parseReviewDocument(value: unknown): ReviewDocument {
 
 function extractReviewerModel(record: Record<string, unknown>): string | undefined {
     return typeof record.reviewerModel === 'string' ? record.reviewerModel : undefined;
+}
+
+function extractModelExhaustion(record: Record<string, unknown>): string | undefined {
+    if (!('modelExhaustion' in record) || record.modelExhaustion === undefined) {
+        return undefined;
+    }
+    if (typeof record.modelExhaustion !== 'string') {
+        fail('review.json modelExhaustion must be a string');
+    }
+    const value = record.modelExhaustion.trim();
+    if (value === '' || value.includes('\n')) {
+        fail('review.json modelExhaustion must be one non-empty line naming what made every other model unavailable');
+    }
+    return value;
 }
 
 export function assertPublicationEvidence(document: ReviewDocument, head: string): void {

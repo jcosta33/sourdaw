@@ -309,6 +309,8 @@ function prepareReviewPublication(
         actorNodeId,
         authorLabels: pullRequest.labels ?? [],
         reviewerModel: document.reviewerModel,
+        modelExhaustion: document.modelExhaustion,
+        body: document.body,
     });
     const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));

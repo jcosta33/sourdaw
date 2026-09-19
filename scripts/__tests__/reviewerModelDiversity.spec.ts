@@ -51,6 +51,25 @@ describe('reviewer-model diversity enforcement', () => {
         });
         expect(document.reviewerModel).toBe('glm-5.3-flash');
     });
+
+    it('carries a single-line modelExhaustion through parsing and omits it when absent', () => {
+        const document = parseReviewDocument({
+            ...baseDocument,
+            reviewerModel: 'glm-5.3',
+            modelExhaustion: ' every other harness is logged out ',
+        });
+        expect(document.modelExhaustion).toBe('every other harness is logged out');
+        expect(parseReviewDocument(baseDocument).modelExhaustion).toBeUndefined();
+    });
+
+    it('refuses a blank or multi-line modelExhaustion instead of trimming it silent', () => {
+        expect(() => parseReviewDocument({ ...baseDocument, modelExhaustion: '   ' })).toThrow(
+            /modelExhaustion must be one non-empty line/u
+        );
+        expect(() => parseReviewDocument({ ...baseDocument, modelExhaustion: 'first\nsecond' })).toThrow(
+            /modelExhaustion must be one non-empty line/u
+        );
+    });
 });
 
 describe('assertReviewerModelDiversity', () => {
@@ -118,6 +137,62 @@ describe('assertReviewerModelDiversity', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [{ name: 'glm-5.3' }, { name: 'bug', description: 'Something is broken' }],
                 reviewerModel: 'glm-5.3',
+            })
+        ).not.toThrow();
+    });
+
+    it('admits the same-model fallback when exhaustion is recorded and the body names the reviewer model', () => {
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                reviewerModel: 'glm-5.3',
+                modelExhaustion: 'every other harness on this machine is logged out or broken',
+                body: 'Reviewed on glm-5.3 under the same-model fallback after every other harness was unavailable.',
+            })
+        ).not.toThrow();
+    });
+
+    it('refuses the same-model review without a recorded exhaustion', () => {
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                reviewerModel: 'glm-5.3',
+                body: 'Reviewed on glm-5.3.',
+            })
+        ).toThrow(/matches one of the PR's authoring models/u);
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                reviewerModel: 'glm-5.3',
+                modelExhaustion: '   ',
+                body: 'Reviewed on glm-5.3.',
+            })
+        ).toThrow(/matches one of the PR's authoring models/u);
+    });
+
+    it('refuses the fallback when the published body does not name the reviewer model', () => {
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                reviewerModel: 'glm-5.3',
+                modelExhaustion: 'every other harness on this machine is logged out or broken',
+                body: 'The change held under attack.',
+            })
+        ).toThrow(/naming the reviewer model/u);
+    });
+
+    it('ignores a recorded exhaustion when the reviewer model already differs', () => {
+        expect(() =>
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [authorLabel],
+                reviewerModel: 'glm-5.3-flash',
+                modelExhaustion: 'stale field from an earlier round',
+                body: 'The change held under attack.',
             })
         ).not.toThrow();
     });
