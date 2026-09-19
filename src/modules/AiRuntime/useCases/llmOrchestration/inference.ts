@@ -10,6 +10,7 @@ import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedEr
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../models/CreativeInterpretation';
+import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import {
@@ -19,6 +20,7 @@ import {
 import {
     type ModelProviderName,
     type ModelProviderFailure,
+    type ModelProviderMessage,
     type ModelProviderRequest,
     type ModelProviderResult,
     type ModelProviderSession,
@@ -57,6 +59,32 @@ import { getBackendChain } from './backendResolution/getBackendChain';
 // The mandatory planning contract (workflow selector, six application tools, the workflow action
 // tools) plus one prompt-selected slot; the budget bounds browser prompt size, not a provider limit.
 export const WEBLLM_TOOL_BUDGET = 31;
+
+/** What one hosted turn replays: the run's first user message, the turns behind it, and the note closing them. */
+type HostedTurnRequest = { firstUserMessage: string; history: HostedTurnHistory; budgetNote: string };
+
+/**
+ * The protocol record of a replayed hosted turn: the first user message, then every earlier
+ * turn as one assistant message and one tool message per receipt, closed by the remaining-budget
+ * note. The adapters send each dialect's own wire form; this states the same exchange in the
+ * provider-neutral shape the record is read in.
+ */
+function buildHostedTurnMessages(systemPrompt: string, hostedTurn: HostedTurnRequest): ModelProviderMessage[] {
+    const messages: ModelProviderMessage[] = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: hostedTurn.firstUserMessage },
+    ];
+    for (const record of hostedTurn.history) {
+        messages.push({ role: 'assistant', content: JSON.stringify(record.assistantItems) });
+        for (const receipt of record.receipts) {
+            messages.push({ role: 'tool', content: JSON.stringify(receipt) });
+        }
+    }
+    if (hostedTurn.history.length > 0) {
+        messages.push({ role: 'user', content: hostedTurn.budgetNote });
+    }
+    return messages;
+}
 
 function createToolPlanningAbortError(): Error {
     const error = new Error('AI tool planning aborted');
@@ -350,7 +378,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult,
         // WebLLM plans locally with no provider wire form, so it has no tool-choice concept and
         // ignores this; only the cloud backend below translates it for its provider.
-        directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE
+        directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE,
+        // The application-owned loop's turn so far. A hosted backend replays it natively and
+        // sends `firstUserMessage` unchanged on every turn; WebLLM keeps reading `userMessage`,
+        // which already carries the same receipts as text.
+        hostedTurn?: HostedTurnRequest
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain({ operation: 'tools', modality: 'text', streaming: false });
         const reportProviderResult = (result: ModelProviderResult): void => {
@@ -458,10 +490,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     ...(streamIdentity ?? {}),
                     operation: 'tools',
                     modality: 'text',
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userMessage },
-                    ],
+                    messages:
+                        backend === 'cloud' && hostedTurn !== undefined
+                            ? buildHostedTurnMessages(systemPrompt, hostedTurn)
+                            : [
+                                  { role: 'system', content: systemPrompt },
+                                  { role: 'user', content: userMessage },
+                              ],
                     tools: providerTools.map((tool) => ({
                         name: tool.function.name,
                         description: tool.function.description ?? '',
@@ -548,7 +583,9 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             providerUserMessage,
                             providerTools,
                             providerRequest.limits.maxOutputTokens,
-                            directive
+                            directive,
+                            undefined,
+                            hostedTurn
                         );
                     } else {
                         cloudInference = generateCloudToolCalls(
@@ -557,7 +594,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             providerTools,
                             providerRequest.limits.maxOutputTokens,
                             directive,
-                            signal
+                            signal,
+                            hostedTurn
                         );
                     }
                     const plan = await waitForInference(cloudInference, signal);
@@ -637,10 +675,19 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         name: call.name,
                         arguments: call.arguments,
                     }));
+                    const hostedProvider = backend === 'cloud' ? getCloudProviderInfo()?.provider : undefined;
                     outcome = {
                         status: 'complete',
                         toolCalls: normalizedToolCalls,
                         proposal: extractAgentPlanProposal(normalizedToolCalls),
+                        ...(cloudToolPlan === null || hostedProvider === undefined
+                            ? {}
+                            : {
+                                  providerTurn: {
+                                      provider: hostedProvider,
+                                      assistantItems: cloudToolPlan.assistantItems,
+                                  },
+                              }),
                     };
                 } else {
                     const rejectedResult = providerSource.finish({

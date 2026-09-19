@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
 import { generateAnthropicToolCalls } from '../cloudLlm/cloudInference/generateAnthropicToolCalls';
 import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../cloudLlm/cloudInference/hostedToolPlan';
@@ -11,6 +12,9 @@ import {
     FORCED_TERMINAL_TOOL_NAMES,
     PROVIDER_CONFORMANCE_FIXTURE as FIXTURE,
     PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
+    PROVIDER_TURN_HISTORY_FIXTURE as HISTORY,
+    PROVIDER_TURN_HISTORY_RECEIPT,
+    type ProviderProtocolHarness,
     type ProviderRequestObservation,
     type ProviderStreamObservation,
     type ProviderStreamScenario,
@@ -185,6 +189,51 @@ function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
     };
 }
 
+/** Turn one as this provider itself reported it: a thinking block beside the tool use. */
+const OWN_TURN_ASSISTANT_ITEMS = [
+    { type: 'text', text: HISTORY.assistantMarker },
+    { type: 'tool_use', id: PROVIDER_TURN_HISTORY_RECEIPT.callId, name: 'project_query', input: {} },
+];
+
+const OWN_TURN_HISTORY: HostedTurnHistory = [
+    {
+        turn: 1,
+        provider: 'anthropic',
+        assistantItems: OWN_TURN_ASSISTANT_ITEMS,
+        calls: [{ id: PROVIDER_TURN_HISTORY_RECEIPT.callId, name: 'project.query', arguments: {} }],
+        receipts: [PROVIDER_TURN_HISTORY_RECEIPT],
+    },
+];
+
+/** The same turn as another dialect reported it; none of those items belong on this wire. */
+const FOREIGN_TURN_HISTORY: HostedTurnHistory = [
+    {
+        turn: 1,
+        provider: 'openai',
+        assistantItems: [
+            { type: 'reasoning', id: HISTORY.foreignMarker, summary: [] },
+            {
+                type: 'function_call',
+                call_id: PROVIDER_TURN_HISTORY_RECEIPT.callId,
+                name: 'project_query',
+                arguments: '{}',
+            },
+        ],
+        calls: [{ id: PROVIDER_TURN_HISTORY_RECEIPT.callId, name: 'project.query', arguments: {} }],
+        receipts: [PROVIDER_TURN_HISTORY_RECEIPT],
+    },
+];
+
+function turnHistoryFor(scenario: ProviderToolScenario): { history: HostedTurnHistory; budgetNote: string } | null {
+    if (scenario === 'two-turn-history') {
+        return { history: OWN_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
+    }
+    if (scenario === 'foreign-turn-history') {
+        return { history: FOREIGN_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
+    }
+    return null;
+}
+
 let sentRequestBodies: string[] = [];
 
 function installProviderResponse(body: string, contentType: string): void {
@@ -205,7 +254,13 @@ function readRequest(): ProviderRequestObservation {
         throw new Error('Expected the adapter to send a JSON request body');
     }
     const body = JSON.parse(sent) as Record<string, unknown>;
-    return { model: body.model, stream: body.stream, tools: body.tools, toolChoice: body.tool_choice };
+    return {
+        model: body.model,
+        stream: body.stream,
+        tools: body.tools,
+        toolChoice: body.tool_choice,
+        messages: body.messages,
+    };
 }
 
 function readSafeMessage(error: unknown): string {
@@ -216,7 +271,7 @@ afterEach(() => {
     vi.clearAllMocks();
 });
 
-describeProviderProtocolConformance('Anthropic messages', {
+const harness: ProviderProtocolHarness = {
     streamText: async (scenario: ProviderStreamScenario): Promise<ProviderStreamObservation> => {
         installProviderResponse(streamFixture(scenario), 'text/event-stream');
         let text = '';
@@ -264,6 +319,7 @@ describeProviderProtocolConformance('Anthropic messages', {
                 toolSchemas: PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
                 maxOutputTokens: 8_192,
                 directive: directiveFor(scenario),
+                ...(turnHistoryFor(scenario) ?? {}),
                 signal: new AbortController().signal,
             });
             return {
@@ -286,6 +342,60 @@ describeProviderProtocolConformance('Anthropic messages', {
         const wireTool = tool as { strict?: unknown; input_schema?: unknown };
         return { strict: wireTool.strict, parameters: wireTool.input_schema };
     },
+};
+
+describeProviderProtocolConformance('Anthropic messages', harness);
+
+describe('generateAnthropicToolCalls turn history', () => {
+    afterEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it("replays the provider's own turn-one blocks and answers them with tool results", async () => {
+        const observed = await harness.planTools('two-turn-history');
+
+        expect(observed.request.messages).toEqual([
+            { role: 'user', content: 'mute drums' },
+            { role: 'assistant', content: OWN_TURN_ASSISTANT_ITEMS },
+            {
+                role: 'user',
+                content: [
+                    {
+                        type: 'tool_result',
+                        tool_use_id: PROVIDER_TURN_HISTORY_RECEIPT.callId,
+                        content: JSON.stringify(PROVIDER_TURN_HISTORY_RECEIPT),
+                    },
+                    { type: 'text', text: HISTORY.budgetNote },
+                ],
+            },
+        ]);
+    });
+
+    it('sends the same first user message a first turn sends', async () => {
+        const firstTurn = await harness.planTools('tool-batch');
+        const secondTurn = await harness.planTools('two-turn-history');
+
+        const firstMessages = firstTurn.request.messages as unknown[];
+        const secondMessages = secondTurn.request.messages as unknown[];
+        expect(secondMessages[0]).toEqual(firstMessages[0]);
+    });
+
+    it('restates a turn another dialect answered as tool_use blocks only', async () => {
+        const observed = await harness.planTools('foreign-turn-history');
+
+        const messages = observed.request.messages as unknown[];
+        expect(messages[1]).toEqual({
+            role: 'assistant',
+            content: [
+                {
+                    type: 'tool_use',
+                    id: PROVIDER_TURN_HISTORY_RECEIPT.callId,
+                    name: 'project_query',
+                    input: {},
+                },
+            ],
+        });
+    });
 });
 
 describe('generateAnthropicToolCalls usage admission', () => {

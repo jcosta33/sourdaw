@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
 import { generateOpenAiCompatibleToolCalls } from '../cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
 import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../cloudLlm/cloudInference/hostedToolPlan';
@@ -11,6 +12,9 @@ import {
     FORCED_TERMINAL_TOOL_NAMES,
     PROVIDER_CONFORMANCE_FIXTURE as FIXTURE,
     PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
+    PROVIDER_TURN_HISTORY_FIXTURE as HISTORY,
+    PROVIDER_TURN_HISTORY_RECEIPT,
+    type ProviderProtocolHarness,
     type ProviderRequestObservation,
     type ProviderStreamObservation,
     type ProviderStreamScenario,
@@ -186,6 +190,58 @@ function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
     };
 }
 
+/** Turn one as this dialect itself reported it: the assistant message, verbatim. */
+const OWN_TURN_ASSISTANT_MESSAGE = {
+    role: 'assistant',
+    content: HISTORY.assistantMarker,
+    tool_calls: [
+        {
+            id: PROVIDER_TURN_HISTORY_RECEIPT.callId,
+            type: 'function',
+            function: { name: 'project_query', arguments: '{}' },
+        },
+    ],
+};
+
+const OWN_TURN_HISTORY: HostedTurnHistory = [
+    {
+        turn: 1,
+        provider: 'openai-compatible',
+        assistantItems: [OWN_TURN_ASSISTANT_MESSAGE],
+        calls: [{ id: PROVIDER_TURN_HISTORY_RECEIPT.callId, name: 'project.query', arguments: {} }],
+        receipts: [PROVIDER_TURN_HISTORY_RECEIPT],
+    },
+];
+
+/** The same turn as another dialect reported it; none of those items belong on this wire. */
+const FOREIGN_TURN_HISTORY: HostedTurnHistory = [
+    {
+        turn: 1,
+        provider: 'openai',
+        assistantItems: [
+            { type: 'reasoning', id: HISTORY.foreignMarker, summary: [] },
+            {
+                type: 'function_call',
+                call_id: PROVIDER_TURN_HISTORY_RECEIPT.callId,
+                name: 'project_query',
+                arguments: '{}',
+            },
+        ],
+        calls: [{ id: PROVIDER_TURN_HISTORY_RECEIPT.callId, name: 'project.query', arguments: {} }],
+        receipts: [PROVIDER_TURN_HISTORY_RECEIPT],
+    },
+];
+
+function turnHistoryFor(scenario: ProviderToolScenario): { history: HostedTurnHistory; budgetNote: string } | null {
+    if (scenario === 'two-turn-history') {
+        return { history: OWN_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
+    }
+    if (scenario === 'foreign-turn-history') {
+        return { history: FOREIGN_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
+    }
+    return null;
+}
+
 let sentRequestBodies: string[] = [];
 
 function installProviderResponse(body: string, contentType: string): void {
@@ -206,7 +262,13 @@ function readRequest(): ProviderRequestObservation {
         throw new Error('Expected the adapter to send a JSON request body');
     }
     const body = JSON.parse(sent) as Record<string, unknown>;
-    return { model: body.model, stream: body.stream, tools: body.tools, toolChoice: body.tool_choice };
+    return {
+        model: body.model,
+        stream: body.stream,
+        tools: body.tools,
+        toolChoice: body.tool_choice,
+        messages: body.messages,
+    };
 }
 
 function readSafeMessage(error: unknown): string {
@@ -218,7 +280,7 @@ afterEach(() => {
     vi.clearAllMocks();
 });
 
-describeProviderProtocolConformance('OpenAI-compatible chat completions', {
+const harness: ProviderProtocolHarness = {
     streamText: async (scenario: ProviderStreamScenario): Promise<ProviderStreamObservation> => {
         installProviderResponse(streamFixture(scenario), 'text/event-stream');
         let text = '';
@@ -266,6 +328,7 @@ describeProviderProtocolConformance('OpenAI-compatible chat completions', {
                 toolSchemas: PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
                 maxOutputTokens: 8_192,
                 directive: directiveFor(scenario),
+                ...(turnHistoryFor(scenario) ?? {}),
             });
             return {
                 calls: plan.calls,
@@ -287,6 +350,48 @@ describeProviderProtocolConformance('OpenAI-compatible chat completions', {
         const wireTool = tool as { function?: { strict?: unknown; parameters?: unknown } };
         return { strict: wireTool.function?.strict, parameters: wireTool.function?.parameters };
     },
+};
+
+describeProviderProtocolConformance('OpenAI-compatible chat completions', harness);
+
+describe('generateOpenAiCompatibleToolCalls turn history', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.clearAllMocks();
+    });
+
+    it('replays the assistant message it received and answers it with tool messages', async () => {
+        const observed = await harness.planTools('two-turn-history');
+
+        expect(observed.request.messages).toEqual([
+            { role: 'system', content: 'system' },
+            { role: 'user', content: 'mute drums' },
+            OWN_TURN_ASSISTANT_MESSAGE,
+            {
+                role: 'tool',
+                tool_call_id: PROVIDER_TURN_HISTORY_RECEIPT.callId,
+                content: JSON.stringify(PROVIDER_TURN_HISTORY_RECEIPT),
+            },
+            { role: 'user', content: HISTORY.budgetNote },
+        ]);
+    });
+
+    it('restates a turn another dialect answered as an assistant tool-call message only', async () => {
+        const observed = await harness.planTools('foreign-turn-history');
+
+        const messages = observed.request.messages as unknown[];
+        expect(messages[2]).toEqual({
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+                {
+                    id: PROVIDER_TURN_HISTORY_RECEIPT.callId,
+                    type: 'function',
+                    function: { name: 'project_query', arguments: '{}' },
+                },
+            ],
+        });
+    });
 });
 
 describe('generateOpenAiCompatibleToolCalls usage admission', () => {

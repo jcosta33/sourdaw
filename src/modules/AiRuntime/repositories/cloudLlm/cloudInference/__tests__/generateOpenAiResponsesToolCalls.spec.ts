@@ -201,16 +201,13 @@ describe('generateOpenAiResponsesToolCalls', () => {
     });
 
     it('preserves call_id order across items the plan does not carry', async () => {
-        respondWith({
-            id: 'resp_1',
-            status: 'completed',
-            output: [
-                functionCall('call_a', 'project_query', '{}'),
-                { type: 'reasoning', summary: [] },
-                { type: 'message', content: [{ type: 'output_text', text: '' }] },
-                functionCall('call_b', 'muteTrack', '{"trackId":"track-1"}'),
-            ],
-        });
+        const output = [
+            functionCall('call_a', 'project_query', '{}'),
+            { type: 'reasoning', summary: [] },
+            { type: 'message', content: [{ type: 'output_text', text: '' }] },
+            functionCall('call_b', 'muteTrack', '{"trackId":"track-1"}'),
+        ];
+        respondWith({ id: 'resp_1', status: 'completed', output });
 
         await expect(planTools()).resolves.toEqual({
             providerRequestId: 'resp_1',
@@ -218,6 +215,8 @@ describe('generateOpenAiResponsesToolCalls', () => {
                 { id: 'call_a', name: 'project.query', arguments: {} },
                 { id: 'call_b', name: 'muteTrack', arguments: { trackId: 'track-1' } },
             ],
+            // Every output item is kept, reasoning included, so a later turn can replay it.
+            assistantItems: output,
             strictToolSchemas: true,
             usage: null,
         });
@@ -345,6 +344,7 @@ describe('generateOpenAiResponsesToolCalls', () => {
         await expect(planTools()).resolves.toEqual({
             providerRequestId: null,
             calls: [],
+            assistantItems: [],
             strictToolSchemas: true,
             usage: null,
         });

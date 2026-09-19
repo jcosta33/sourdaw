@@ -1,5 +1,6 @@
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isToolPlanningRejectedError, ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
+import { type HostedTurnHistory } from '../../../models/HostedTurnHistory';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type OpenAiCloudRuntime } from '../cloudSession';
@@ -15,6 +16,7 @@ import {
 import { narrowToolSchemasForDirective } from './narrowToolSchemasForDirective';
 import { parseToolCallArguments } from './parseToolCallArguments';
 import { projectOpenAiStrictToolSchema } from './projectOpenAiStrictToolSchema';
+import { readHostedTurnCalls } from './readHostedTurnCalls';
 import { readProviderRequestId } from './readProviderRequestId';
 import { rejectedBatchMessage } from './rejectedBatchMessage';
 import { requestHostedOpenAiProvider } from './requestOpenAiProvider';
@@ -26,6 +28,10 @@ type GenerateOpenAiResponsesToolCallsInput = {
     toolSchemas: readonly ToolSchema[];
     maxOutputTokens: number;
     directive: HostedToolChoiceDirective;
+    /** The loop's earlier turns, replayed natively; empty on the first turn of a run. */
+    history?: HostedTurnHistory;
+    /** What the loop still allows, stated once at the end of the replayed conversation. */
+    budgetNote?: string;
     signal?: AbortSignal;
 };
 
@@ -125,6 +131,44 @@ function parseToolPlan(payload: unknown, decodeWireName: (wireName: string) => s
     return results;
 }
 
+/**
+ * The input items this turn replays: the first user message, then each earlier turn's own
+ * output items in the order the response carried them — `reasoning` items included, which is
+ * what lets the model continue from the thinking it already did — each followed by its
+ * receipts as `function_call_output` items. A turn another provider answered has no items this
+ * API accepts, so its calls are restated as `function_call` items instead.
+ */
+function buildTurnInput(input: {
+    userMessage: string;
+    history: HostedTurnHistory;
+    budgetNote: string;
+    encodeToolName: (name: string) => string;
+}): unknown[] {
+    const items: unknown[] = [{ role: 'user', content: input.userMessage }];
+    for (const record of input.history) {
+        const calls = readHostedTurnCalls(record);
+        if (record.provider === 'openai') {
+            items.push(...record.assistantItems);
+        } else {
+            for (const call of calls) {
+                items.push({
+                    type: 'function_call',
+                    call_id: call.id,
+                    name: input.encodeToolName(call.name),
+                    arguments: JSON.stringify(call.arguments),
+                });
+            }
+        }
+        for (const receipt of record.receipts) {
+            items.push({ type: 'function_call_output', call_id: receipt.callId, output: JSON.stringify(receipt) });
+        }
+    }
+    if (input.history.length > 0 && input.budgetNote.length > 0) {
+        items.push({ role: 'user', content: input.budgetNote });
+    }
+    return items;
+}
+
 function hasErrorName(value: unknown, name: string): boolean {
     return isRecord(value) && value.name === name;
 }
@@ -176,6 +220,8 @@ export async function generateOpenAiResponsesToolCalls({
     toolSchemas,
     maxOutputTokens,
     directive,
+    history,
+    budgetNote,
     signal,
 }: GenerateOpenAiResponsesToolCallsInput): Promise<HostedToolPlan> {
     const codec = buildWireToolNameCodec(toolSchemas);
@@ -186,7 +232,12 @@ export async function generateOpenAiResponsesToolCalls({
     const body = JSON.stringify({
         model: runtime.model,
         instructions: systemPrompt,
-        input: [{ role: 'user', content: userMessage }],
+        input: buildTurnInput({
+            userMessage,
+            history: history ?? [],
+            budgetNote: budgetNote ?? '',
+            encodeToolName: codec.encode,
+        }),
         tools: toolSchemas.map((schema) => {
             const strictSchema = projectOpenAiStrictToolSchema(schema);
             return {
@@ -246,6 +297,9 @@ export async function generateOpenAiResponsesToolCalls({
     return {
         providerRequestId: isRecord(payload) ? readProviderRequestId(payload.id) : null,
         calls,
+        // Every output item, so a later turn hands this turn's reasoning items back unchanged;
+        // only `function_call` and `message` items decided the plan above.
+        assistantItems: isRecord(payload) && Array.isArray(payload.output) ? payload.output : [],
         strictToolSchemas: true,
         usage,
     };

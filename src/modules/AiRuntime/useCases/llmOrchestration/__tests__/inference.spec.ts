@@ -10,6 +10,7 @@ import {
     type CreativeInterpretationCatalog,
 } from '../../../models/CreativeInterpretation';
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
+import { type HostedTurnHistory } from '../../../models/HostedTurnHistory';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
 import {
@@ -314,6 +315,106 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.generateCloudToolCalls.mock.calls[0]?.[4]).toStrictEqual(directive);
     });
 
+    it('sends the first user message and replays the hosted turns behind it', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            assistantItems: [{ type: 'function_call', call_id: 'provider-call' }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+        const history: HostedTurnHistory = [
+            {
+                turn: 1,
+                provider: 'openai',
+                assistantItems: [{ type: 'reasoning', id: 'rs_1' }],
+                calls: [{ id: 'query-1', name: 'project.query', arguments: {} }],
+                receipts: [
+                    {
+                        schema: 'sourdaw.application-tool-receipt',
+                        schemaVersion: 1,
+                        callId: 'query-1',
+                        toolName: 'project.query',
+                        turn: 1,
+                        status: 'success',
+                        revision: 'revision-2',
+                        data: { items: [] },
+                        summary: 'Queried the project.',
+                        warnings: [],
+                        error: null,
+                    },
+                ],
+            },
+        ];
+        const onProviderAttempt = vi.fn((_input: ProviderAttemptAdmission) => ({ status: 'admitted' as const }));
+
+        const outcome = await generateToolPlanningOutcome(
+            'system',
+            'receipts folded into the prompt',
+            toolSchemas,
+            undefined,
+            'mute the first track',
+            undefined,
+            undefined,
+            onProviderAttempt,
+            AUTO_TOOL_CHOICE,
+            { firstUserMessage: 'mute the first track', history, budgetNote: 'Remaining budget: 2 turn(s).' }
+        );
+
+        expect(outcome).toMatchObject({ status: 'complete' });
+        // The hosted turn sends the run's first message, never the receipt-folded text form.
+        expect(mocks.generateCloudToolCalls.mock.calls[0]?.[1]).toBe('mute the first track');
+        expect(mocks.generateCloudToolCalls.mock.calls[0]?.[6]).toMatchObject({
+            history,
+            budgetNote: 'Remaining budget: 2 turn(s).',
+        });
+        // The protocol record states the same exchange: the earlier turn and its receipts
+        // stand between the first user message and the note that closes them.
+        expect(onProviderAttempt.mock.calls[0]?.[0].request.messages).toEqual([
+            { role: 'system', content: 'system' },
+            { role: 'user', content: 'mute the first track' },
+            { role: 'assistant', content: JSON.stringify(history[0]?.assistantItems) },
+            { role: 'tool', content: JSON.stringify(history[0]?.receipts[0]) },
+            { role: 'user', content: 'Remaining budget: 2 turn(s).' },
+        ]);
+    });
+
+    it('reports the hosted turn the cloud plan produced so a later turn can replay it', async () => {
+        mocks.backendChain.value = ['cloud'];
+        const assistantItems = [
+            { type: 'reasoning', id: 'rs_2' },
+            { type: 'function_call', call_id: 'provider-call' },
+        ];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            assistantItems,
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        await expect(generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)).resolves.toMatchObject(
+            {
+                status: 'complete',
+                providerTurn: { provider: 'openai', assistantItems },
+            }
+        );
+    });
+
+    it('reports no hosted turn for a locally planned batch', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.generateWebLlmToolCalls.mockResolvedValue({
+            status: 'complete',
+            toolCalls: [{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+        });
+
+        const outcome = await generateToolPlanningOutcome('system', 'mute the first track', toolSchemas);
+
+        expect(outcome).toMatchObject({ status: 'complete' });
+        expect(outcome.status === 'complete' ? outcome.providerTurn : 'unreached').toBeUndefined();
+    });
+
     it('forwards the default auto directive to generateCloudToolCalls when no directive is supplied', async () => {
         mocks.backendChain.value = ['cloud'];
         mocks.generateCloudToolCalls.mockResolvedValue({
@@ -535,7 +636,9 @@ describe('generateToolPlanningOutcome', () => {
             expect.anything(),
             expect.anything(),
             TOOL_PLAN_MAX_OUTPUT_TOKENS,
-            expect.anything()
+            expect.anything(),
+            undefined,
+            undefined
         );
     });
 
@@ -575,7 +678,9 @@ describe('generateToolPlanningOutcome', () => {
             expect.anything(),
             expect.anything(),
             1_024,
-            expect.anything()
+            expect.anything(),
+            undefined,
+            undefined
         );
     });
 

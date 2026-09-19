@@ -140,6 +140,7 @@ describe('hosted tool-planning usage attribution', () => {
         reportHostedToolPlan({
             providerRequestId: 'msg_1',
             calls: [],
+            assistantItems: [],
             strictToolSchemas: true,
             usage: { inputTokens: 120, outputTokens: 30, cacheReadInputTokens: 40, cacheWriteInputTokens: 8 },
         });
@@ -180,6 +181,7 @@ describe('hosted tool-planning usage attribution', () => {
         reportHostedToolPlan({
             providerRequestId: 'chatcmpl_1',
             calls: [],
+            assistantItems: [],
             strictToolSchemas: false,
             usage: null,
         });

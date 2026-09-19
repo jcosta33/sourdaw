@@ -3,6 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { FADER_GAIN_RANGE_DESCRIPTION } from '#/utils/audioLevelLaw';
 
 import { isAiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
+import { type HostedTurnHistory } from '../../../models/HostedTurnHistory';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { getCloudProviderRuntime } from '../getCloudProviderRuntime';
 import { linkCloudRequestAbort } from '../linkCloudRequestAbort';
@@ -31,13 +32,17 @@ export const generateCloudToolCalls = inject({ logger })(
             toolSchemas: readonly ToolSchema[],
             maxOutputTokens: number,
             directive: HostedToolChoiceDirective,
-            signal?: AbortSignal
+            signal?: AbortSignal,
+            // The loop's earlier turns and what it still allows. Every dialect replays them in
+            // its own wire form; omitting them is the first turn of a run.
+            hostedTurn?: { history: HostedTurnHistory; budgetNote: string }
         ): Promise<HostedToolPlan> {
             const runtime = getCloudProviderRuntime();
             if (!runtime) {
                 throw new Error('Hosted AI is not configured');
             }
 
+            const turnHistory = { history: hostedTurn?.history ?? [], budgetNote: hostedTurn?.budgetNote ?? '' };
             const controller = registerCloudStreamController(new AbortController());
             const unlinkCallerAbort = linkCloudRequestAbort(signal, controller);
 
@@ -52,6 +57,7 @@ export const generateCloudToolCalls = inject({ logger })(
                             toolSchemas,
                             maxOutputTokens,
                             directive,
+                            ...turnHistory,
                             signal: controller.signal,
                         });
                         break;
@@ -63,6 +69,7 @@ export const generateCloudToolCalls = inject({ logger })(
                             toolSchemas,
                             maxOutputTokens,
                             directive,
+                            ...turnHistory,
                             signal: controller.signal,
                         });
                         break;
@@ -74,6 +81,7 @@ export const generateCloudToolCalls = inject({ logger })(
                             toolSchemas,
                             maxOutputTokens,
                             directive,
+                            ...turnHistory,
                             signal: controller.signal,
                         });
                         break;

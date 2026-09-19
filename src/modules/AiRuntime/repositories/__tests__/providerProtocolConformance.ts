@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
@@ -163,14 +164,56 @@ export type ProviderStreamScenario =
     | 'oversized-request-id';
 
 export type ProviderToolScenario =
-    'tool-batch' | 'empty-batch' | 'malformed-arguments' | 'oversized-call-id' | 'forced-terminal';
+    | 'tool-batch'
+    | 'empty-batch'
+    | 'malformed-arguments'
+    | 'oversized-call-id'
+    | 'forced-terminal'
+    | 'two-turn-history'
+    | 'foreign-turn-history';
+
+/** The receipt the earlier turn earned, answered natively as that dialect's tool result. */
+export const PROVIDER_TURN_HISTORY_RECEIPT: ApplicationToolReceipt = {
+    schema: 'sourdaw.application-tool-receipt',
+    schemaVersion: 1,
+    callId: 'call-alpha',
+    toolName: 'project.query',
+    turn: 1,
+    status: 'success',
+    revision: 'revision-2',
+    data: { items: [] },
+    summary: 'Queried the project.',
+    warnings: [],
+    error: null,
+};
+
+/**
+ * The earlier turn every dialect replays in the two history scenarios. Each contract spec
+ * renders `assistantMarker` into its own dialect's turn-one assistant items and tags the
+ * foreign record's items with `foreignMarker`, so the shared assertions below can tell a
+ * verbatim replay from a synthesised one without knowing the dialect's wire shape.
+ */
+export const PROVIDER_TURN_HISTORY_FIXTURE = {
+    assistantMarker: 'turn-one-assistant-item-marker',
+    foreignMarker: 'foreign-dialect-item-marker',
+    budgetNote: 'Remaining budget: 2 turn(s), 6 tool call(s), 40000 receipt byte(s).',
+    receipt: PROVIDER_TURN_HISTORY_RECEIPT,
+} as const;
 
 /** The two tool names every contract spec's `forced-terminal` scenario forces, matching the
  * fixture's own `toolCalls` so the same response body admits under a required directive. */
 export const FORCED_TERMINAL_TOOL_NAMES = ['project.query', 'muteTrack'] as const;
 
-/** What the adapter put on the wire, read back from the transport the harness stubbed. */
-export type ProviderRequestObservation = { model: unknown; stream: unknown; tools: unknown; toolChoice?: unknown };
+/** What the adapter put on the wire, read back from the transport the harness stubbed. The
+ * conversation is `messages` or `input`, whichever the dialect names it. */
+export type ProviderRequestObservation = {
+    model: unknown;
+    stream: unknown;
+    tools: unknown;
+    toolChoice?: unknown;
+    messages?: unknown;
+    input?: unknown;
+};
 
 export type ProviderStreamObservation = {
     text: string;
@@ -210,6 +253,14 @@ function expectStreamRequest(request: ProviderRequestObservation): void {
 function expectToolRequest(request: ProviderRequestObservation): void {
     expect(request.model).toBe(PROVIDER_CONFORMANCE_FIXTURE.model);
     expect(request.stream).not.toBe(true);
+}
+
+/** The conversation the adapter sent, serialized so a shared assertion can read it without
+ * knowing whether the dialect carries items as `messages` or as `input`. */
+function readConversation(request: ProviderRequestObservation): string {
+    const conversation = request.messages ?? request.input;
+    expect(conversation).not.toBeUndefined();
+    return JSON.stringify(conversation);
 }
 
 function expectNoProviderBodyText(safeMessage: string | undefined): void {
@@ -399,6 +450,36 @@ export function describeProviderProtocolConformance(name: string, harness: Provi
             expect(observed.providerRequestId).toBeNull();
             expect(observed.finish).toBe('stop');
             expectStreamRequest(observed.request);
+        });
+
+        it('replays the earlier turn natively and closes the conversation with the budget note', async () => {
+            const observed = await harness.planTools('two-turn-history');
+
+            expect(observed.calls).toEqual(
+                PROVIDER_CONFORMANCE_FIXTURE.toolCalls.map((call) => ({
+                    id: call.id,
+                    name: call.name,
+                    arguments: call.arguments,
+                }))
+            );
+            const conversation = readConversation(observed.request);
+            // The provider's own items from turn one, the receipt that answered them, and the
+            // remaining-budget note that closes them — never the receipts folded into a prompt.
+            expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.assistantMarker);
+            expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.receipt.callId);
+            expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.receipt.summary);
+            expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.budgetNote);
+            expectToolRequest(observed.request);
+        });
+
+        it('restates a turn another dialect answered as tool calls instead of replaying its items', async () => {
+            const observed = await harness.planTools('foreign-turn-history');
+
+            const conversation = readConversation(observed.request);
+            expect(conversation).not.toContain(PROVIDER_TURN_HISTORY_FIXTURE.foreignMarker);
+            expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.receipt.callId);
+            expect(conversation).toContain(PROVIDER_TURN_HISTORY_FIXTURE.budgetNote);
+            expectToolRequest(observed.request);
         });
 
         it('forces the terminal tool choice on the wire and still admits the reply', async () => {
