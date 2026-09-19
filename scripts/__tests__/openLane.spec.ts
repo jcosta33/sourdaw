@@ -332,8 +332,24 @@ describe('lane open', () => {
         expect(calls).toContain('add:/repo/.agents/worktrees/agent-12-work:agent/12/work');
         expect(calls).toContain('model:agent/12/work:glm-5.3');
         expect(calls).toContain('lock:/repo/.agents/worktrees/agent-12-work');
-        expect(logs).toEqual(['authoring model: glm-5.3', path]);
+        expect(logs).toEqual([
+            'authoring model: glm-5.3',
+            'claim the issue before starting work: pnpm issue:claim 12',
+            path,
+        ]);
         expect(calls.some((call) => call.includes('gh'))).toBe(false);
+    });
+
+    it('prints the claim command for an issue lane and stays silent for an issueless lane', () => {
+        const issueLane = fakePort();
+        openLane(34, 'beat', 'glm-5.3', issueLane.port);
+        const path = issueLane.logs.at(-1);
+        expect(path).toBe('/repo/.agents/worktrees/agent-34-beat');
+        expect(issueLane.logs).toContain('claim the issue before starting work: pnpm issue:claim 34');
+
+        const issuelessLane = fakePort();
+        openLane(undefined, 'cleanup', 'glm-5.3', issuelessLane.port);
+        expect(issuelessLane.logs.some((line) => line.includes('issue:claim'))).toBe(false);
     });
 
     it('uses the provided slug instead of work', () => {

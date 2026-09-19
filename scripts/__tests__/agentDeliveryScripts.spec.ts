@@ -20,6 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 
 import { runAcceptReviewCli } from '../acceptReview.ts';
+import { runConfirmReviewRepairsCli } from '../confirmReviewRepairs.ts';
 import {
     DeliveryMergeRejectedError,
     coordinateDelivery,
@@ -52,6 +53,7 @@ import {
 import { withPullRequestReviewPublicationMutationLock } from '../pullRequestMutationLock.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
+import { runRepairReviewFindingCli } from '../repairReviewFinding.ts';
 import { runResolveReviewThreadCli } from '../resolveThread.ts';
 import {
     BOOTSTRAP_PATH,
@@ -566,7 +568,17 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
         'recoverPublishReviewLock.ts',
         'reviewCommentDiffPreflight.ts',
         'reviewDocumentParser.ts',
+        'reviewDossier.ts',
+        'reviewDossierPublication.ts',
         'reviewerModelDiversity.ts',
+        'reviewRiskPolicy.ts',
+        'reviewRepair.ts',
+        'repairReviewFinding.ts',
+        'confirmReviewRepairs.ts',
+        'reviewDiffSummary.ts',
+        'wasm-artifacts.ts',
+        'wasmToolchainPins.ts',
+        'workspaceManifestFingerprint.ts',
         'reviewPublicationRecoveryReceipt.ts',
         'reviewPublicationRemoteInspection.ts',
         'pullRequestReviewState.ts',
@@ -892,12 +904,15 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['review:publish:recover']).toBe(
             'node scripts/trustedGithubWriteBootstrap.ts review:publish:recover'
         );
+        expect(pkg.scripts['review:repair']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:repair');
+        expect(pkg.scripts['review:confirm']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:confirm');
         expect(pkg.scripts['review:resolve']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:resolve');
         expect(pkg.scripts['review:resolve:recover']).toBeUndefined();
         expect(pkg.scripts['deliver:recover-lock']).toBeUndefined();
         expect(pkg.scripts['pr:supersede']).toBe('node scripts/supersedePullRequest.ts');
         expect(pkg.scripts['branch:prune']).toBe('node scripts/pruneRemoteBranches.ts');
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
+        expect(pkg.scripts['issue:claim']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:claim');
         expect(pkg.scripts['lane:remove']).toBe('node scripts/removeLane.ts');
         expect(pkg.scripts.deliver).toBe('node scripts/trustedGithubWriteBootstrap.ts deliver');
     });
@@ -1053,7 +1068,10 @@ describe('package scripts and gitignore', () => {
             'scripts/pullRequestReviewState.ts',
             'scripts/reviewCommentDiffPreflight.ts',
             'scripts/reviewDocumentParser.ts',
+            'scripts/reviewDossier.ts',
+            'scripts/reviewDossierPublication.ts',
             'scripts/reviewerModelDiversity.ts',
+            'scripts/reviewRiskPolicy.ts',
             'scripts/reviewPublicationLegacyIncidents.ts',
             'scripts/reviewPublicationRecoveryReceipt.ts',
             'scripts/reviewPublicationRemoteInspection.ts',
@@ -1164,7 +1182,10 @@ describe('package scripts and gitignore', () => {
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
+                    'scripts/reviewDossier.ts',
+                    'scripts/reviewDossierPublication.ts',
                     'scripts/reviewerModelDiversity.ts',
+                    'scripts/reviewRiskPolicy.ts',
                     'scripts/prepareReview.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
@@ -1182,7 +1203,10 @@ describe('package scripts and gitignore', () => {
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
+                    'scripts/reviewDossier.ts',
+                    'scripts/reviewDossierPublication.ts',
                     'scripts/reviewerModelDiversity.ts',
+                    'scripts/reviewRiskPolicy.ts',
                     'scripts/prepareReview.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
@@ -1201,7 +1225,10 @@ describe('package scripts and gitignore', () => {
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
+                    'scripts/reviewDossier.ts',
+                    'scripts/reviewDossierPublication.ts',
                     'scripts/reviewerModelDiversity.ts',
+                    'scripts/reviewRiskPolicy.ts',
                     'scripts/reviewPublicationLegacyIncidents.ts',
                     'scripts/reviewPublicationRecoveryReceipt.ts',
                     'scripts/reviewPublicationRemoteInspection.ts',
@@ -1210,6 +1237,42 @@ describe('package scripts and gitignore', () => {
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                     ...approvalSources,
+                ],
+            },
+            {
+                command: 'review:repair' as const,
+                entry: 'scripts/repairReviewFinding.ts',
+                required: 'scripts/reviewRepair.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/repairReviewFinding.ts',
+                    'scripts/reviewRepair.ts',
+                    'scripts/reviewDossier.ts',
+                    'scripts/reviewRiskPolicy.ts',
+                    'scripts/reviewDiffSummary.ts',
+                    'scripts/wasm-artifacts.ts',
+                    'scripts/wasmToolchainPins.ts',
+                    'scripts/workspaceManifestFingerprint.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                ],
+            },
+            {
+                command: 'review:confirm' as const,
+                entry: 'scripts/confirmReviewRepairs.ts',
+                required: 'scripts/reviewRepair.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/confirmReviewRepairs.ts',
+                    'scripts/reviewRepair.ts',
+                    'scripts/reviewDossier.ts',
+                    'scripts/reviewRiskPolicy.ts',
+                    'scripts/reviewDiffSummary.ts',
+                    'scripts/wasm-artifacts.ts',
+                    'scripts/wasmToolchainPins.ts',
+                    'scripts/workspaceManifestFingerprint.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
                 ],
             },
             {
@@ -1234,6 +1297,17 @@ describe('package scripts and gitignore', () => {
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                     ...stackSummarySources,
+                ],
+            },
+            {
+                command: 'issue:claim' as const,
+                entry: 'scripts/claimTrackerIssue.ts',
+                required: 'scripts/githubAppIdentity.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/claimTrackerIssue.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
                 ],
             },
         ];
@@ -1855,6 +1929,10 @@ describe('package scripts and gitignore', () => {
                 );
                 expect(result.status).toBe(1);
                 expect(result.stderr).toMatch(/usage: trustedGithubWriteBootstrap\.ts/i);
+                // The usage must name every command `parseCommand` accepts, not a subset of them.
+                expect(result.stderr).toContain(
+                    'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve>'
+                );
                 expect(result.stderr).not.toMatch(/trusted ps executable|protected primary checkout/i);
             } finally {
                 removeTemporaryDirectory(fixtureRoot);
@@ -2000,6 +2078,7 @@ describe('package scripts and gitignore', () => {
      */
     it.each([
         'lane:publish',
+        'issue:claim',
         'issue:reconcile',
         'review:accept',
         'review:publish',
@@ -2028,6 +2107,7 @@ describe('package scripts and gitignore', () => {
     it('keeps the loader inside its own trusted closure', () => {
         for (const command of [
             'deliver',
+            'issue:claim',
             'issue:reconcile',
             'lane:publish',
             'review:accept',
@@ -2037,6 +2117,15 @@ describe('package scripts and gitignore', () => {
         ] as const) {
             expect(trustedDependencyPaths(command)).toContain(BOOTSTRAP_PATH);
         }
+    });
+
+    it('pins the issue:claim trusted closure exactly', () => {
+        expect(trustedDependencyPaths('issue:claim')).toEqual([
+            'scripts/trustedGithubWriteBootstrap.ts',
+            'scripts/claimTrackerIssue.ts',
+            'scripts/githubAppIdentity.ts',
+            'scripts/prContract.ts',
+        ]);
     });
 
     it('should import the snapshot entry without direct execution and invoke its runner once with exact args', async () => {
@@ -2150,6 +2239,28 @@ describe('package scripts and gitignore', () => {
             args: ['3344', '--owner', 'b'.repeat(40)],
         },
         {
+            command: 'review:repair' as const,
+            entry: 'scripts/repairReviewFinding.ts',
+            runner: 'runRepairReviewFindingCli',
+            args: [
+                '3239',
+                '--thread',
+                'PRRT_example',
+                '--head',
+                'a'.repeat(40),
+                '--commit',
+                'b'.repeat(40),
+                '--summary',
+                'Fixed the guard.',
+            ],
+        },
+        {
+            command: 'review:confirm' as const,
+            entry: 'scripts/confirmReviewRepairs.ts',
+            runner: 'runConfirmReviewRepairsCli',
+            args: ['3239', '--head', 'a'.repeat(40)],
+        },
+        {
             command: 'review:resolve' as const,
             entry: 'scripts/resolveThread.ts',
             runner: 'runResolveReviewThreadCli',
@@ -2177,6 +2288,8 @@ describe('package scripts and gitignore', () => {
                 'review:accept': runAcceptReviewCli,
                 'review:publish': runPublishReviewCli,
                 'review:publish:recover': runRecoverPublishReviewLockCli,
+                'review:repair': runRepairReviewFindingCli,
+                'review:confirm': runConfirmReviewRepairsCli,
                 'review:resolve': runResolveReviewThreadCli,
             } as const;
             expect(importedRunners[command]).toBeTypeOf('function');
@@ -2323,6 +2436,7 @@ describe('package scripts and gitignore', () => {
                 assertApprovalContext: () => ({ pr: 2495, headSha: head, baseRefName: 'main', baseSha: 'base' }),
                 pullRequest: () => ({ state: 'OPEN', head }),
                 readReviewJson: (path: string) => JSON.parse(readFileSync(path, 'utf8')),
+                bundleFileExists: (path: string) => existsSync(path),
                 readBundleDiff: (path: string) => readFileSync(path, 'utf8'),
                 postReview: () => expect.fail('review creation should not start'),
                 log: () => undefined,

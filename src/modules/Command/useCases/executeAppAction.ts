@@ -114,7 +114,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     return;
                 }
                 if (runtime_result?.status === 'conflict') {
-                    throw new AppActionConflictError(action.type);
+                    throw new AppActionConflictError(action.type, runtime_result.reason);
                 }
 
                 const committed_failures: unknown[] = [];
@@ -253,9 +253,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 return;
             }
             if (execution_result?.status === 'conflict') {
+                const refusal = execution_result.reason;
                 storage_transaction.abort();
                 clearSemanticContext();
-                throw new AppActionConflictError(action.type);
+                throw new AppActionConflictError(action.type, refusal);
             }
 
             try {

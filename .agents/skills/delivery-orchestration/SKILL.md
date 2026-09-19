@@ -2,7 +2,8 @@
 name: delivery-orchestration
 description: >-
     Operate Sourdaw's trusted review and delivery scripts — lane:publish,
-    review:prepare, review:publish, review:accept, review:resolve, deliver,
+    review:prepare, review:publish, review:accept, review:repair, review:confirm,
+    review:resolve, deliver,
     pr:supersede, branch:prune — with the delivery lock, crash recovery,
     receipts, review and acceptance document formats, thread resolution, and
     the launcher snapshot trust boundary. ALWAYS load when running any review
@@ -21,11 +22,14 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Need                         | Command                                                                                                                                                                                       |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Open a lane                  | `pnpm lane:open [issue] [slug] [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                                         |
+| Claim the lane's issue       | `pnpm issue:claim <issue>`                                                                                                                                                                    |
 | Sync a dependent lane        | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                          |
 | Push; open or update the PR  | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]` |
 | Write the review bundle      | `pnpm review:prepare <pr>`                                                                                                                                                                    |
 | Post `review.json`           | `pnpm review:publish <pr>`                                                                                                                                                                    |
 | Post final `acceptance.json` | `pnpm review:accept <pr>`                                                                                                                                                                     |
+| Record a repair, leave open  | `pnpm review:repair <pr> --thread <thread-id> --head <full-sha> --commit <full-sha> --summary "<one line>" [--evidence <path-to-json>]`                                                       |
+| Confirm repairs, resolve     | `pnpm review:confirm <pr> --head <full-sha>`                                                                                                                                                  |
 | Reply `Done` and resolve     | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                                                                                                         |
 | Squash-merge                 | `pnpm deliver <pr>`                                                                                                                                                                           |
 | Recover a crashed delivery   | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
@@ -52,13 +56,16 @@ Two agents taking the same work waste both. Before `lane:open`, read
 the same issue or surface; a lane or PR you did not open is another agent's
 claim and is read-only for you.
 
-An issue-bound lane claims its issue in the same step: add the
-`status:active` label, remove `status:ready`, and move the tracker board
-item to In progress, reading the project's field and option ids live with
-`gh project field-list` rather than from any recorded list. After delivery,
-verify the issue is closed and the board item reads Done. This is the
-sanctioned manual-`gh` exception for an issue's own state, labels, and
-project membership until `lane:open` performs the claim itself.
+An issue-bound lane claims its issue in the same step: `lane:open` prints
+the command, and `pnpm issue:claim <issue>` — run from the protected
+primary checkout — adds the `status:active` label, removes every other
+`status:` label, and moves every board item holding the issue to In
+progress, reading the project's field and option ids live. The script
+refuses an issue that already carries `status:active`, making an existing
+claim visible before work starts; the check is read-then-write, not
+atomic, so the survey before `lane:open` remains the guard against two
+claims racing in one window. After delivery, verify the issue is closed
+and the board item reads Done; project automation may not move it.
 
 An issueless lane's worktree and PR are the claim: choose a slug that names
 the change precisely and publish early, before the head is final if
@@ -84,8 +91,9 @@ The delivery sequence, in order:
 3. Validate every finding, write `review.json` (and `discarded.json` for
    discards), then `review:publish <pr>` — post validated blockers as the
    reviewer App BEFORE dispatching any repair.
-4. After the author pushes a fixed head, `review:resolve <pr> --thread <id>
---head <sha>` per thread, then a fresh review round.
+4. After the author pushes a fixed head, `review:repair` records the repair per
+   thread and leaves the thread open; let the reviewer confirm it with
+   `review:confirm <pr> --head <sha>`, then obtain a fresh review round.
 5. On an APPROVE round, write `acceptance.json` beside `review.json`, then
    `review:accept <pr>` — final acceptance as the orchestrator User.
 6. `deliver <pr>` — squash-merge after both validation points (below).
@@ -139,14 +147,8 @@ interface. Exclude session diaries, unpublished rounds, and mutation tables.
 ## Review bundles and publication
 
 `review:prepare` prints a primary-root bundle path containing `manifest.json`,
-`diff.patch`, `review-size.json`, `pr.md`, and merge-base `contracts/`.
-
-The caller writes `stances.json` into that bundle before dispatch — the derived stance set, one
-line per stance naming the failure mode that admits it, plus each reviewer's baseline-probe
-result — alongside the later `review.json`, `discarded.json`, and `acceptance.json`.
-
-The
-manifest binds PR, base branch, merge-base, and head. The diff and
+`diff.patch`, `review-size.json`, `risk-plan.json`, `pr.md`, and merge-base
+`contracts/`. The manifest binds PR, base branch, merge-base, and head. The diff and
 deterministic size report use the actual base/head merge-base; handwritten,
 test, documentation, and generated changes (including lockfiles) remain visible
 as separate groups, and unknown paths count as handwritten. Paths are keyed by
@@ -155,9 +157,48 @@ caller files only while the bound base name and merge-base context match; a
 populated legacy bundle without base identity cannot be reused. Unrelated
 movement of the base tip is allowed when that context is unchanged.
 
+The caller writes `stances.json` into that bundle before dispatch — the derived stance set, one
+line per stance naming the failure mode that admits it, plus each reviewer's baseline-probe
+result — alongside the later `dossier.json`, `review.json`, `discarded.json`, and `acceptance.json`.
+
+`risk-plan.json` records `format: 'risk-plan-v1'`, the `pr`/`headSha`/`baseSha`
+it is bound to, the change's `riskClasses`, the `requiredStances` those classes
+earn, and the `triggers` that fired. It is derived from the same path
+classification as `review-size.json`, so the stances and the printed size
+summary cannot disagree. Classes union when several fire, and no class may
+require a stance it did not earn: that is the proportionality rule, and
+`code-craft` is required only by `ordinary`.
+
+- `small` (no specialist surface, handwritten change within the small-change
+  budget) — correctness, test-validity.
+- `ordinary` (no specialist surface, over that budget) — correctness,
+  code-craft, module-boundaries, test-validity.
+- `test-only` — test-validity.
+- `cross-domain` — correctness, module-boundaries, test-validity.
+- `realtime-audio` — correctness, realtime-audio, test-validity.
+- `native-security` — correctness, security-platform, test-validity.
+- `undo` — correctness, project-integrity-undo, test-validity.
+
+Parsing recomputes the stance union from `riskClasses`, so a hand-edited plan
+can neither widen nor narrow its own review.
+
 `review:publish` prints the review id and posts as reviewer App only if
 GitHub's live head matches the bundle; fresh approvals also require matching
-base context.
+base context. Fresh reviewer publication also carries the head-bound dossier and
+refuses before any remote write when the plan or dossier is missing, malformed,
+or rebound from the head/base/pr it must bind; when the dossier does not
+complete exactly the plan's required stances or claims one the classes did not
+earn; when its accepted findings do not match the document's comments
+one-to-one; or when its recommendation disagrees with the document's event. It
+then persists the canonical record, `format: 'dossier-v1'`: an append-only event
+chain (`stance-completed`, `finding-accepted`, `finding-discarded`) whose records
+carry `sequence`, `previousDigest`, and `digest`, plus `headDigest` and a
+`dossierDigest` over the header identity, evidence and limitations.
+Re-publication of the same head replays that persisted record unchanged rather
+than minting a second one.
+
+Legacy tolerance: a bundle with no `risk-plan.json` predates this contract and
+publishes exactly as before.
 
 ### Headless reviewer dispatch
 
@@ -165,7 +206,11 @@ When the harness cannot select subagent models, run each blind stance on another
 harness headlessly: one stance per dispatch, blind, read-only, no credentials, the
 report returned as text for the orchestrator to validate and publish. `reviewerModel`
 records the model actually run; the dispatch never enters the trusted snapshot; the
-harness, model, and invocation are the dispatching session's choice.
+harness, model, and invocation are the dispatching session's choice. When only the
+author's model is available, the same-model review still publishes: `review.json`
+carries `modelExhaustion` (one line naming what made every other model unavailable)
+and the published body names the reviewer model, so the deviation is recorded rather
+than silently accepted.
 
 ## Review document formats
 
@@ -183,6 +228,26 @@ comment must fit 600 bytes, not characters; there is no minimum.
 Request changes when this head must not merge, and post every blocking comment
 with that review. The summary is a short pointer to those comments, not a
 report.
+
+### Dossier input and discard record
+
+The orchestrator writes the caller-authored `dossier.json` beside `review.json`
+and `discarded.json`, in input form `format: 'dossier-input-v1'`: the same
+`pr`/`headSha`/`baseSha`, one `stances` entry per required stance (`stance`,
+`reviewerModel`, `modelTier` of `economy`/`standard`/`strongest`, `outcome` of
+`blocker-found`/`clean`), the bounded `evidence` claims, and `limitations`. The
+accepted findings are not declared there: they are the review document's own
+inline comments. `discarded.json` is the orchestrator's discard record and is
+now actually read: an array of `{ finding, stance, reason }`, one entry per
+discarded candidate, each with a one-line reason.
+
+Dossier evidence, limitations, and approval-claim values must be single-line,
+trimmed and bounded, and are refused when they carry a credential-shaped value,
+a private-key header, a JWT, a bearer token, or raw session-transcript markers.
+Private reviewer prose belongs nowhere in the record.
+
+Readers of historical review and acceptance documents are unchanged, and
+`review:accept` takes no dossier.
 
 ### APPROVE: compact-v1 evidence
 
@@ -229,11 +294,36 @@ acceptance on another person's behalf or claim personal human review.
 
 ## Thread resolution
 
-Push fixes before `review:resolve`, which posts only bare `Done` as author bot
-and resolves against that head. No script writes free-form thread replies;
-wrongly posted findings have no discussion route. Clarify code, not threads.
-Resolve only when the current head addresses the finding, then obtain a new
-review. File out-of-scope feedback; do not grow the PR.
+Push the fix, then record it with `review:repair`, which runs as the author App
+and leaves the thread open. It reads the thread live and refuses one already
+resolved, a `--head` that is not the pull request's live head, or a `--commit`
+outside the reviewed range `base..head`: an ancestor of that head and not of the
+pull request's `baseRefOid`, so the merge base and every pre-pull-request commit
+are refused. It binds the thread's own root comment as
+the finding, plus the commit, one-line summary, bounded evidence, and head, and
+posts a readable reply carrying one canonical `sourdaw-repair-v1` marker line;
+it never resolves. Re-running the same head and commit posts nothing and reports
+the already-recorded state.
+
+The reviewer confirms with `review:confirm`, a distinct identity from the
+author's. It resolves, in one pass with deterministic mutation ids, the threads
+whose author-recorded repair validates: same pull request, same thread, same
+head, finding equal to the thread's root comment, repairing commit inside the
+reviewed range `base..head`, record well formed, evidence safe. It fails closed
+— a refused record, a duplicate distinct record, a thread already carrying a
+confirmation for a different record or a duplicated identical confirmation, a
+rebound identity, a mismatched finding, or a commit outside the reviewed range
+resolves nothing and reports the refusal, leaving the operator to fix the
+ambiguity and re-run. Both commands are lock-free and idempotent by their
+deterministic ids, and re-running after a partial pass ignores already-resolved
+threads and completes the remainder. `review:resolve` remains only for legacy
+roots, where it posts only its bare `Done` as author bot and resolves against
+that head; using it on a thread a reviewer blocked reintroduces bare author-side
+resolution, which is what `review:repair` and `review:confirm` exist to replace.
+No script writes free-form thread replies; wrongly posted findings have no
+discussion route. Clarify code, not threads. Resolve only when the current head
+addresses the finding, then obtain a new review. File out-of-scope feedback; do
+not grow the PR.
 
 ## deliver
 
@@ -323,12 +413,13 @@ prove App-owned comments remained unedited.
 
 ## Launcher trust boundary
 
-Run `lane:publish`, `review:accept`, `deliver`, and `issue:reconcile` through
-the protected primary checkout's package route. This is the snapshot-backed
-write trust boundary: launcher and whole script closure must match one pinned
-`origin/main` commit and come only from the primary repository. Lane files are
-data, never executable delivery code. Lanes predating the launcher or trailing
-`main` can publish and deliver without first merging.
+Run `lane:publish`, `review:accept`, `deliver`, `issue:claim`, and
+`issue:reconcile` through the protected primary checkout's package route. This
+is the snapshot-backed write trust boundary: launcher and whole script closure
+must match one pinned `origin/main` commit and come only from the primary
+repository. Lane files are data, never executable delivery code. Lanes
+predating the launcher or trailing `main` can publish and deliver without
+first merging.
 
 This isolates lane-controlled files, not operator-running code. The pre-launcher
 operator environment is trusted; same-account processes can read credentials.

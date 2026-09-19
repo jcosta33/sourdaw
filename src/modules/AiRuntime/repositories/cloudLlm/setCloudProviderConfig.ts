@@ -165,6 +165,7 @@ export const setCloudProviderConfig = inject({ logger })(
                             authentication: configuration.authentication,
                             adapter: null,
                             session_id: null,
+                            strict_tool_schemas: configuration.strictToolSchemas ?? false,
                         };
                     } else {
                         if (!isDesktopRuntime()) {
@@ -175,24 +176,30 @@ export const setCloudProviderConfig = inject({ logger })(
                             configuration.provider,
                             configuration.apiKey
                         );
-                        runtime =
-                            configuration.provider === 'openai'
-                                ? {
-                                      provider: 'openai',
-                                      model: configuration.model,
-                                      base_url: baseUrl,
-                                      authentication: configuration.authentication,
-                                      adapter,
-                                      session_id: sessionId,
-                                  }
-                                : {
-                                      provider: 'openai-compatible',
-                                      model: configuration.model,
-                                      base_url: baseUrl,
-                                      authentication: configuration.authentication,
-                                      adapter,
-                                      session_id: sessionId,
-                                  };
+                        if (configuration.provider === 'openai') {
+                            const openAiRuntime = {
+                                provider: 'openai' as const,
+                                model: configuration.model,
+                                base_url: baseUrl,
+                                authentication: configuration.authentication,
+                                adapter,
+                                session_id: sessionId,
+                            };
+                            runtime =
+                                configuration.reasoningEffort !== undefined
+                                    ? { ...openAiRuntime, reasoning_effort: configuration.reasoningEffort }
+                                    : openAiRuntime;
+                        } else {
+                            runtime = {
+                                provider: 'openai-compatible',
+                                model: configuration.model,
+                                base_url: baseUrl,
+                                authentication: configuration.authentication,
+                                adapter,
+                                session_id: sessionId,
+                                strict_tool_schemas: configuration.strictToolSchemas ?? false,
+                            };
+                        }
                     }
                 }
 

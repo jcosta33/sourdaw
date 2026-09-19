@@ -511,7 +511,7 @@ const planPromptIntent = inject({ logger })(
                             };
                         },
                     },
-                    requestTurn: async ({ receiptContext }) => {
+                    requestTurn: async ({ receiptContext, directive }) => {
                         const planningContext =
                             receiptContext === null ? initialPlanningContext : buildPlanningContext(receiptContext);
                         if (!planningContext.authorityComplete) {
@@ -525,7 +525,8 @@ const planPromptIntent = inject({ logger })(
                             prompt,
                             onProviderResult,
                             streamIdentity,
-                            onProviderAttempt
+                            onProviderAttempt,
+                            directive
                         );
                     },
                 });

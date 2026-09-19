@@ -7,18 +7,39 @@ import {
 } from '#/modules/Arrangement/stores';
 import { getGlueEligibleClipPairs, getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
+import { getAutomationLaneCeiling, isLinearGainAutomationLane } from '#/modules/Automation/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { projectStore } from '#/modules/Project/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { gainLaneLevelLaw, toLevelDb } from '#/utils/audioLevelLaw';
 import { MIN_CLIP_LOOP_LENGTH_BEATS, projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
-import { type ProjectContext } from '../models/ProjectContext';
+import { PROJECT_CONTEXT_LEVEL_LAW, type ProjectContext } from '../models/ProjectContext';
 import { projectDeviceDescriptorParameters } from '../transformers/projectDeviceDescriptorParameters';
+
+/**
+ * The decibel window a gain automation lane draws inside.
+ *
+ * Empty for every other lane: a pan position or a filter cutoff measures
+ * something decibels do not describe, and advertising a window there would
+ * invite a request in the wrong unit.
+ */
+function gainLaneDbRange(lane: {
+    parameterId: string;
+    minValue: number;
+    maxValue: number;
+    clipId?: string;
+}): { minValueDb: number; maxValueDb: number } | Record<string, never> {
+    if (!isLinearGainAutomationLane(lane)) {
+        return {};
+    }
+    const law = gainLaneLevelLaw({ minValue: lane.minValue, maxValue: getAutomationLaneCeiling(lane) });
+    return { minValueDb: law.floorDb, maxValueDb: law.ceilingDb };
+}
 
 export type {
     ProjectContext,
@@ -132,6 +153,8 @@ export function getProjectContext(): ProjectContext {
         metronomeEnabled: transportState?.metronomeEnabled ?? false,
         metronomeVolume: transportState?.metronomeVolume ?? 0.5,
         masterGain: (transportState?.masterGain ?? 80) / 100,
+        masterGainDb: toLevelDb((transportState?.masterGain ?? 80) / 100),
+        levelLaw: PROJECT_CONTEXT_LEVEL_LAW,
         availableDeviceTypes: getPlatformPlugins()
             .filter((plugin) => plugin.id !== 'crust')
             .map((plugin) => ({
@@ -152,6 +175,7 @@ export function getProjectContext(): ProjectContext {
             color: layer.color,
         })),
         automationLanes: (automationState?.lanes ?? []).map((lane) => ({
+            ...gainLaneDbRange(lane),
             id: lane.id,
             trackId: lane.trackId,
             ...(lane.clipId === undefined ? {} : { clipId: lane.clipId }),
@@ -205,6 +229,7 @@ export function getProjectContext(): ProjectContext {
             armed: time.armed,
             frozen: time.frozen,
             gain: time.gain,
+            gainDb: toLevelDb(time.gain),
             pan: time.pan,
             automationMode: time.automationMode,
             vcaGroupId: time.vcaGroupId ?? null,
@@ -219,6 +244,7 @@ export function getProjectContext(): ProjectContext {
                 startBeat: context.startBeat,
                 endBeat: context.endBeat,
                 gain: context.gain,
+                gainDb: context.gain === undefined ? undefined : toLevelDb(context.gain),
                 locked: context.locked,
                 muted: context.muted,
                 color: context.color,
@@ -251,6 +277,7 @@ export function getProjectContext(): ProjectContext {
             sends: time.sends.map((send) => ({
                 busId: send.busId,
                 level: send.level,
+                levelDb: toLevelDb(send.level),
                 preFader: send.preFader,
             })),
         })),

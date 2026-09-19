@@ -27,19 +27,42 @@ describe('automation tool schemas', () => {
     });
 
     it('publishes bounded point and lane-enabled tool arguments', () => {
+        // Bounds belong to the lane the point lands in, not to the schema: the
+        // window a gain lane honours is its own minValue/maxValue, so a keyword
+        // bound here would be a second, blind ceiling.
+        const pointProperties = JSON.stringify(getAutomationTool('addAutomationPoint')?.function.parameters.properties);
+        expect(pointProperties, 'addAutomationPoint states a keyword bound').not.toMatch(/"(minimum|maximum)":/);
         expect(getAutomationTool('addAutomationPoint')?.function.parameters).toEqual({
             type: 'object',
             properties: {
                 laneId: { type: 'string' },
                 beat: { type: 'number' },
-                value: { type: 'number', description: 'Within the selected lane minValue and maxValue bounds' },
+                valueDb: {
+                    type: 'number',
+                    description:
+                        "Absolute level, gain lanes only. Within the lane's own minValueDb and maxValueDb; -60 dB (floor) to 6 dB (ceiling); 0 dB is unity",
+                },
+                deltaDb: {
+                    type: 'number',
+                    description:
+                        "Change relative to the level the gain lane already draws at this beat, in decibels (negative is quieter). Gain lanes only; the result must land within the lane's own minValueDb and maxValueDb",
+                },
+                value: {
+                    type: 'number',
+                    description:
+                        "Deprecated linear amplitude on a gain lane; prefer valueDb (absolute dB) or deltaDb (relative dB). On every other lane this is the value in the lane's own units, within its minValue and maxValue bounds",
+                },
                 curve: {
                     type: 'string',
                     enum: ['linear', 'step', 'exponential', 's-curve', 'stairs', 'smooth', 'bezier'],
                     description: 'Interpolation between this point and the next',
                 },
             },
-            required: ['laneId', 'beat', 'value'],
+            // A level is stated in one of three mutually exclusive fields, so no
+            // single one of them can be required: the payload validator decides
+            // which combination lands, and a required key here would refuse the
+            // decibel forms before the model could reach them.
+            required: ['laneId', 'beat'],
         });
         expect(getAutomationTool('setAutomationLaneEnabled')?.function.parameters).toEqual({
             type: 'object',

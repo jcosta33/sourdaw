@@ -28,12 +28,15 @@ import {
 
 export type TrustedGithubWriteCommand =
     | 'deliver'
+    | 'issue:claim'
     | 'issue:reconcile'
     | 'lane:publish'
     | 'lane:sync-parent'
     | 'review:accept'
     | 'review:publish'
     | 'review:publish:recover'
+    | 'review:repair'
+    | 'review:confirm'
     | 'review:resolve';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
@@ -156,6 +159,12 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
+    'issue:claim': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/claimTrackerIssue.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
     'issue:reconcile': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/reconcileTrackerIssue.ts',
@@ -193,7 +202,10 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/pullRequestReviewState.ts',
         'scripts/reviewCommentDiffPreflight.ts',
         'scripts/reviewDocumentParser.ts',
+        'scripts/reviewDossier.ts',
+        'scripts/reviewDossierPublication.ts',
         'scripts/reviewerModelDiversity.ts',
+        'scripts/reviewRiskPolicy.ts',
         'scripts/prepareReview.ts',
         'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',
@@ -212,7 +224,10 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/pullRequestReviewState.ts',
         'scripts/reviewCommentDiffPreflight.ts',
         'scripts/reviewDocumentParser.ts',
+        'scripts/reviewDossier.ts',
+        'scripts/reviewDossierPublication.ts',
         'scripts/reviewerModelDiversity.ts',
+        'scripts/reviewRiskPolicy.ts',
         'scripts/prepareReview.ts',
         'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',
@@ -232,7 +247,10 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/pullRequestReviewState.ts',
         'scripts/reviewCommentDiffPreflight.ts',
         'scripts/reviewDocumentParser.ts',
+        'scripts/reviewDossier.ts',
+        'scripts/reviewDossierPublication.ts',
         'scripts/reviewerModelDiversity.ts',
+        'scripts/reviewRiskPolicy.ts',
         'scripts/reviewPublicationLegacyIncidents.ts',
         'scripts/reviewPublicationRecoveryReceipt.ts',
         'scripts/reviewPublicationRemoteInspection.ts',
@@ -248,6 +266,32 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/wasmToolchainPins.ts',
         'scripts/workspaceManifestFingerprint.ts',
     ],
+    'review:repair': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/repairReviewFinding.ts',
+        'scripts/reviewRepair.ts',
+        'scripts/reviewDossier.ts',
+        'scripts/reviewRiskPolicy.ts',
+        'scripts/reviewDiffSummary.ts',
+        'scripts/wasm-artifacts.ts',
+        'scripts/wasmToolchainPins.ts',
+        'scripts/workspaceManifestFingerprint.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
+    'review:confirm': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/confirmReviewRepairs.ts',
+        'scripts/reviewRepair.ts',
+        'scripts/reviewDossier.ts',
+        'scripts/reviewRiskPolicy.ts',
+        'scripts/reviewDiffSummary.ts',
+        'scripts/wasm-artifacts.ts',
+        'scripts/wasmToolchainPins.ts',
+        'scripts/workspaceManifestFingerprint.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
     'review:resolve': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/resolveThread.ts',
@@ -258,12 +302,15 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
 
 const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: string }> = {
     deliver: { path: 'scripts/deliverPullRequest.ts', runner: 'runDeliverCli' },
+    'issue:claim': { path: 'scripts/claimTrackerIssue.ts', runner: 'runClaimTrackerIssueCli' },
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
     'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
     'lane:sync-parent': { path: 'scripts/syncParentLane.ts', runner: 'runSyncParentCli' },
     'review:accept': { path: 'scripts/acceptReview.ts', runner: 'runAcceptReviewCli' },
     'review:publish': { path: 'scripts/publishReview.ts', runner: 'runPublishReviewCli' },
     'review:publish:recover': { path: 'scripts/recoverPublishReviewLock.ts', runner: 'runRecoverPublishReviewLockCli' },
+    'review:repair': { path: 'scripts/repairReviewFinding.ts', runner: 'runRepairReviewFindingCli' },
+    'review:confirm': { path: 'scripts/confirmReviewRepairs.ts', runner: 'runConfirmReviewRepairsCli' },
     'review:resolve': { path: 'scripts/resolveThread.ts', runner: 'runResolveReviewThreadCli' },
 };
 
@@ -1357,18 +1404,21 @@ function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
 function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
     if (
         value === 'deliver' ||
+        value === 'issue:claim' ||
         value === 'issue:reconcile' ||
         value === 'lane:publish' ||
         value === 'lane:sync-parent' ||
         value === 'review:accept' ||
         value === 'review:publish' ||
         value === 'review:publish:recover' ||
+        value === 'review:repair' ||
+        value === 'review:confirm' ||
         value === 'review:resolve'
     ) {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:accept|review:publish|review:publish:recover|review:resolve> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve> [args...]'
     );
 }
 

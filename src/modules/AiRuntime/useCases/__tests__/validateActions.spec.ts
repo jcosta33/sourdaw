@@ -36,6 +36,15 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return { groups: arrangementState.groups };
         },
     },
+    // Reached only transitively, through the Automation use-case barrel the
+    // validator imports its gain-lane rule from. The validator never reads
+    // either of these.
+    markerStore: {
+        get value() {
+            return null;
+        },
+    },
+    resolveEligibleDeviceWriteTarget: () => null,
 }));
 
 describe('validateActions', () => {

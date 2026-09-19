@@ -1,4 +1,4 @@
-import { FADER_GAIN_RANGE_DESCRIPTION } from '#/utils/audioLevelLaw';
+import { describeLevelLawDb, FADER_GAIN_RANGE_DESCRIPTION, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 
 import { tool, type ToolSchema } from './Types';
 
@@ -43,11 +43,18 @@ export const transportTools: readonly ToolSchema[] = [
     ),
     tool(
         'setMasterGain',
-        'Set the master output volume.',
+        `Set the master output volume in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(TRACK_FADER_LAW)}.`,
         {
-            gain: { type: 'number', description: FADER_GAIN_RANGE_DESCRIPTION },
-        },
-        ['gain']
+            gainDb: { type: 'number', description: `Absolute level. ${describeLevelLawDb(TRACK_FADER_LAW)}` },
+            deltaDb: {
+                type: 'number',
+                description: `Change relative to the current master level, in decibels (negative is quieter). The result must land within ${describeLevelLawDb(TRACK_FADER_LAW)}`,
+            },
+            gain: {
+                type: 'number',
+                description: `Deprecated linear amplitude; prefer gainDb (absolute dB) or deltaDb (relative dB). ${FADER_GAIN_RANGE_DESCRIPTION}`,
+            },
+        }
     ),
     tool('setPunchIn', 'Set the punch-in point for recording.', { beat: { type: 'number' } }, ['beat']),
     tool('setPunchOut', 'Set the punch-out point for recording.', { beat: { type: 'number' } }, ['beat']),

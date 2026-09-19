@@ -1,6 +1,12 @@
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { getAppActionExecutionPolicy } from '#/modules/Command/useCases';
-import { formatGainDb } from '#/utils/audioLevelLaw';
+import {
+    formatGainDb,
+    resolveLevelFields,
+    resolveSendLevelFields,
+    SEND_LEVEL_LAW,
+    TRACK_FADER_LAW,
+} from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../models/ProjectContext';
@@ -56,6 +62,24 @@ function formatDescriptorParameterValue(value: number, unit: string, choices?: r
  */
 function formatDecibelsFromGain(value: number): string {
     return `${formatGainDb(value, { fractionDigits: 2, trimTrailingZeros: true })} dB`;
+}
+
+/**
+ * A level a command asked for in one of three forms, as the decibel figure it
+ * lands on. The request is resolved against the level it is measured from —
+ * the same measurement the handler makes — because a relative request states
+ * a change, not a destination, and a confirmation that echoed the change as
+ * though it were the destination would name a level the user never gets.
+ * `null` when the request cannot land at all, so the caller can say what it
+ * knows rather than invent a figure.
+ */
+function formatRequestedLevel(
+    fields: { linear?: number; absoluteDb?: number; deltaDb?: number },
+    current: number,
+    law: typeof TRACK_FADER_LAW
+): string | null {
+    const requested = resolveLevelFields(fields, current, law);
+    return requested.ok ? formatDecibelsFromGain(requested.linear) : null;
 }
 
 function resolveActionTrackName(trackId: string, actions: readonly AppAction[], context: ProjectContext): string {
@@ -208,14 +232,29 @@ function describeExactAction(action: AppAction, actions: readonly AppAction[], c
         const sourceName = resolveActionTrackName(action.payload.trackId, actions, context);
         const busName = resolveActionTrackName(action.payload.busId, actions, context);
         const tap = action.payload.preFader === true ? 'pre-fader' : 'post-fader';
-        return `Create ${tap} send from "${sourceName}" (${action.payload.trackId}) to "${busName}" (${action.payload.busId}) at ${formatDecibelsFromGain(action.payload.level)}`;
+        // The send does not exist yet, so a relative request is measured from
+        // the full copy of the signal it taps, as the handler measures it.
+        const level = resolveSendLevelFields(action.payload, SEND_LEVEL_LAW.unity);
+        const at = level.ok ? ` at ${formatDecibelsFromGain(level.linear)}` : '';
+        return `Create ${tap} send from "${sourceName}" (${action.payload.trackId}) to "${busName}" (${action.payload.busId})${at}`;
     }
     if (action.type === 'setTrackGain') {
         const createdTrack = actions.find(
             (candidate) => candidate.type === 'createBus' && candidate.payload.busId === action.payload.trackId
         );
         if (createdTrack?.type === 'createBus') {
-            return `Set "${createdTrack.payload.name}" (${action.payload.trackId}) fader from ${formatDecibelsFromGain(action.payload.expectedGain)} to ${formatDecibelsFromGain(action.payload.gain)}`;
+            const landing = formatRequestedLevel(
+                {
+                    linear: action.payload.gain,
+                    absoluteDb: action.payload.gainDb,
+                    deltaDb: action.payload.deltaDb,
+                },
+                action.payload.expectedGain,
+                TRACK_FADER_LAW
+            );
+            if (landing !== null) {
+                return `Set "${createdTrack.payload.name}" (${action.payload.trackId}) fader from ${formatDecibelsFromGain(action.payload.expectedGain)} to ${landing}`;
+            }
         }
     }
     if (action.type === 'automateSendRanges' && action.payload.ranges && action.payload.expectedTracks) {

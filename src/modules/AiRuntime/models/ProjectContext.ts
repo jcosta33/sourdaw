@@ -1,3 +1,5 @@
+import { CLIP_GAIN_LAW, SEND_LEVEL_LAW, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
+
 export type ProjectContext = {
     productionBrief?: ProjectContextProductionBrief;
     tempo: number;
@@ -13,6 +15,23 @@ export type ProjectContext = {
     metronomeEnabled: boolean;
     metronomeVolume: number;
     masterGain: number;
+    /**
+     * {@link masterGain} in decibels; `null` at silence, which has no finite
+     * reading. Optional like every other decibel figure here: it is a reading
+     * of the linear value beside it rather than a second source of truth, so a
+     * caller assembling a context by hand may leave it out and a reader can
+     * always take it from {@link masterGain} instead.
+     */
+    masterGainDb?: number | null;
+    /**
+     * The decibel windows every level in this context lives inside, stated once
+     * at the root rather than repeated beside each level. A reader that knows a
+     * track sits at −1.9 dB still cannot ask for −3 dB without knowing how far
+     * the control goes. The windows are constants — {@link
+     * PROJECT_CONTEXT_LEVEL_LAW} — not project state, so a context without them
+     * is missing nothing a reader cannot recover.
+     */
+    levelLaw?: ProjectContextLevelLaw;
     availableDeviceTypes?: ProjectContextAvailableDeviceType[];
     adjustmentLayers?: ProjectContextAdjustmentLayer[];
     automationLanes?: ProjectContextAutomationLane[];
@@ -26,6 +45,35 @@ export type ProjectContext = {
     glueEligibleClipPairs?: Array<[string, string]>;
     activeView: 'arrange' | 'automation' | 'clip' | 'mix';
     playheadPosition: number;
+};
+
+export type ProjectContextLevelLaw = {
+    /** Floor of a track, master, or clip level, in decibels. */
+    floorDb: number;
+    /** Unity gain. Always `0` — it is the reference every other figure here is read against. */
+    unityDb: 0;
+    /** Ceiling of a track or master fader, in decibels: the headroom above unity. */
+    ceilingDb: number;
+    /** Floor of a send level, in decibels. */
+    sendFloorDb: number;
+    /** A send taps a copy of the signal rather than amplifying it, so it stops at unity. */
+    sendCeilingDb: 0;
+    /** Ceiling of a clip's own gain trim, in decibels. */
+    clipCeilingDb: number;
+};
+
+/**
+ * The one set of decibel windows a project context ever reports. The controls'
+ * laws do not vary with the project, so this is assembled from them once
+ * rather than measured per context.
+ */
+export const PROJECT_CONTEXT_LEVEL_LAW: ProjectContextLevelLaw = {
+    floorDb: TRACK_FADER_LAW.floorDb,
+    unityDb: 0,
+    ceilingDb: TRACK_FADER_LAW.ceilingDb,
+    sendFloorDb: SEND_LEVEL_LAW.floorDb,
+    sendCeilingDb: 0,
+    clipCeilingDb: CLIP_GAIN_LAW.ceilingDb,
 };
 
 export type ProjectContextProductionBriefScope =
@@ -143,6 +191,11 @@ export type ProjectContextAutomationLane = {
     enabled: boolean;
     minValue: number;
     maxValue: number;
+    /** {@link minValue} in decibels, on a gain lane only — every other lane measures
+     *  something decibels do not describe. */
+    minValueDb?: number;
+    /** {@link maxValue} in decibels, on a gain lane only. */
+    maxValueDb?: number;
     points: ProjectContextAutomationPoint[];
 };
 
@@ -170,6 +223,8 @@ export type ProjectContextClip = {
     startBeat: number;
     endBeat: number;
     gain?: number;
+    /** {@link gain} in decibels; `null` at silence, which has no finite reading. */
+    gainDb?: number | null;
     locked?: boolean;
     muted?: boolean;
     color?: string;
@@ -220,6 +275,8 @@ export type ProjectContextDeviceParameter = {
 export type ProjectContextSend = {
     busId: string;
     level: number;
+    /** {@link level} in decibels; `null` at silence, which has no finite reading. */
+    levelDb?: number | null;
     preFader: boolean;
 };
 
@@ -233,6 +290,8 @@ export type ProjectContextTrack = {
     armed: boolean;
     frozen?: boolean;
     gain: number;
+    /** {@link gain} in decibels; `null` at silence, which has no finite reading. */
+    gainDb?: number | null;
     pan: number;
     automationMode: 'read' | 'write' | 'touch' | 'latch' | 'off';
     vcaGroupId?: string | null;

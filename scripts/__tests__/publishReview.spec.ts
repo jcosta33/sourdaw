@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -41,9 +41,17 @@ import {
     writePullRequestMutationLockReceipt,
 } from '../pullRequestMutationLock.ts';
 import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
+import {
+    acceptedFindings,
+    discardedDispositions,
+    parseReviewDossier,
+    serializeReviewDossier,
+} from '../reviewDossier.ts';
 import { legacyReviewPublicationIncidents } from '../reviewPublicationLegacyIncidents.ts';
 import { OPERATOR_ABSENT_ATTESTATION, type RecoveryReceipt } from '../reviewPublicationRecoveryReceipt.ts';
 import { exactPublishedReview, inspectReviewPublicationRemote } from '../reviewPublicationRemoteInspection.ts';
+
+import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
 const validComment = {
     path: 'scripts/deliverPullRequest.ts',
@@ -154,6 +162,13 @@ function fakePort(
             return { state: currentState, head: current, labels: input.labels };
         },
         readReviewJson: (path) => {
+            // A plain fake bundle carries only the review or acceptance document: the publication's
+            // dossier probes (risk plan, canonical record, discards) must see them absent, exactly
+            // as a bundle prepared before those files existed does. Those probes stay out of `calls`
+            // because existing cases pin that log to the document read followed by the POST.
+            if (!/(?:^|[/\\])(?:review|acceptance)\.json$/u.test(path)) {
+                throw new Error('ENOENT');
+            }
             calls.push(`read:${path}`);
             if (input.missing === true) {
                 throw new Error('ENOENT');
@@ -172,6 +187,7 @@ function fakePort(
             }
             return json;
         },
+        bundleFileExists: (path) => existsSync(path),
         readBundleDiff: () =>
             input.diff ??
             [
@@ -1010,14 +1026,20 @@ describe('review publish', () => {
                     primaryRoot: () => root,
                     assertApprovalContext: (number, head) => approvalContext(head, number),
                     pullRequest: () => ({ state: 'OPEN', head: 'a'.repeat(40) }),
-                    readReviewJson: () => ({
-                        format: 'compact-v1',
-                        event: 'APPROVE',
-                        body: 'Attacked; held.',
-                        comments: [],
-                        evidence: approvalEvidence('a'.repeat(40)),
-                        reviewerModel: 'glm-5.3-flash',
-                    }),
+                    readReviewJson: (path) => {
+                        if (path.endsWith('/risk-plan.json')) {
+                            throw new Error('ENOENT');
+                        }
+                        return {
+                            format: 'compact-v1',
+                            event: 'APPROVE',
+                            body: 'Attacked; held.',
+                            comments: [],
+                            evidence: approvalEvidence('a'.repeat(40)),
+                            reviewerModel: 'glm-5.3-flash',
+                        };
+                    },
+                    bundleFileExists: (path) => existsSync(path),
                     readBundleDiff: () => '',
                     postReview: () => {
                         const oid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
@@ -1239,6 +1261,62 @@ describe('review publish', () => {
 
         expect(publishReview(42, port)).toBe(99);
         expect(calls[1]).toBe(`post:headsha:APPROVE:${approvalBody()}`);
+    });
+
+    it('posts the same-model fallback through the publish path when exhaustion is recorded', () => {
+        const { port, calls } = fakePort({
+            labels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+            json: {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'Same-model fallback: reviewed on glm-5.3 after every other harness was unavailable.',
+                comments: [],
+                evidence: approvalEvidence(),
+                reviewerModel: 'glm-5.3',
+                modelExhaustion: 'every other harness on this machine is logged out or broken',
+            },
+        });
+
+        expect(publishReview(42, port)).toBe(99);
+        expect(calls[1]).toContain(
+            'APPROVE:Same-model fallback: reviewed on glm-5.3 after every other harness was unavailable.'
+        );
+    });
+
+    it('refuses the same-model fallback on the publish path when the body does not name the model', () => {
+        const { port, calls } = fakePort({
+            labels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+            json: {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'The change held under attack.',
+                comments: [],
+                evidence: approvalEvidence(),
+                reviewerModel: 'glm-5.3',
+                modelExhaustion: 'every other harness on this machine is logged out or broken',
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/naming the reviewer model/u);
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('refuses the same-model fallback when the body names only the longer prefix-sharing model', () => {
+        const { port, calls } = fakePort({
+            labels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+            json: {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'Reviewed on glm-5.3-flash under the same-model fallback.',
+                comments: [],
+                evidence: approvalEvidence(),
+                reviewerModel: 'glm-5.3',
+                modelExhaustion: 'every other harness on this machine is logged out or broken',
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/naming the reviewer model/u);
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
     });
 
     it('treats a bare label name as descriptive, never as the authoring model', () => {
@@ -4836,6 +4914,489 @@ describe('orchestrator acceptance', () => {
                 await expect(recovery).resolves.toBe(0);
                 expect(inspect).toHaveBeenCalledTimes(2);
             }
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+});
+
+describe('fresh reviewer dossier publication', () => {
+    const head = 'c'.repeat(40);
+    const base = 'd'.repeat(40);
+    const number = 42;
+
+    function riskPlan(overrides: Partial<ReviewRiskPlan> = {}): ReviewRiskPlan {
+        return {
+            format: 'risk-plan-v1',
+            pr: number,
+            headSha: head,
+            baseSha: base,
+            riskClasses: ['small'],
+            requiredStances: ['correctness', 'test-validity'],
+            triggers: ['small:handwritten-lines<=200'],
+            ...overrides,
+        };
+    }
+
+    function dossierInput(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+        return {
+            format: 'dossier-input-v1',
+            pr: number,
+            headSha: head,
+            baseSha: base,
+            stances: [
+                { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+            ],
+            evidence: [
+                {
+                    observable: 'the canonical dossier is persisted beside review.json',
+                    verification: 'pnpm test:run scripts/__tests__/publishReview.spec.ts',
+                    observed: 'one canonical dossier.json on disk',
+                },
+            ],
+            limitations: [],
+            ...overrides,
+        };
+    }
+
+    const reviewDocument = {
+        format: 'compact-v1',
+        event: 'APPROVE',
+        body: 'Attacked the dossier gate; it held.',
+        comments: [],
+        evidence: approvalEvidence(head),
+        reviewerModel: 'glm-5.3-flash',
+    };
+
+    function readJsonFile(path: string): unknown {
+        const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+        return parsed;
+    }
+
+    function refusalMessage(run: () => unknown): string {
+        try {
+            run();
+        } catch (error) {
+            return error instanceof Error ? error.message : String(error);
+        }
+        throw new Error('expected the publication to refuse');
+    }
+
+    function dossierFixture(
+        input: {
+            plan?: unknown;
+            dossier?: unknown;
+            discarded?: unknown;
+            document?: unknown;
+            documentName?: string;
+            manifest?: Record<string, unknown>;
+            writable?: boolean;
+        } = {}
+    ) {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-dossier-'));
+        const bundle = join(root, '.agents', 'review-bundles', `${number}-${head}`);
+        mkdirSync(bundle, { recursive: true });
+        writeFileSync(
+            join(bundle, 'manifest.json'),
+            JSON.stringify(input.manifest ?? { pr: number, baseRefName: 'main', baseSha: base, headSha: head })
+        );
+        writeFileSync(join(bundle, 'diff.patch'), '');
+        writeFileSync(
+            join(bundle, input.documentName ?? 'review.json'),
+            JSON.stringify(input.document ?? reviewDocument)
+        );
+        if (input.plan !== undefined) {
+            writeFileSync(join(bundle, 'risk-plan.json'), JSON.stringify(input.plan));
+        }
+        if (input.dossier !== undefined) {
+            writeFileSync(join(bundle, 'dossier.json'), JSON.stringify(input.dossier));
+        }
+        if (input.discarded !== undefined) {
+            writeFileSync(join(bundle, 'discarded.json'), JSON.stringify(input.discarded));
+        }
+        const calls: string[] = [];
+        const writes: { path: string; contents: string }[] = [];
+        const posted: { review?: Parameters<PublishReviewPort['postReview']>[0] } = {};
+        const port: PublishReviewPort = {
+            primaryRoot: () => root,
+            assertApprovalContext: (publishedNumber, publishedHead) => approvalContext(publishedHead, publishedNumber),
+            pullRequest: () => ({ state: 'OPEN', head }),
+            readReviewJson: (path) => {
+                calls.push(`read:${path}`);
+                return readJsonFile(path);
+            },
+            bundleFileExists: (path) => existsSync(path),
+            readBundleDiff: () => '',
+            postReview: (review) => {
+                calls.push('post');
+                posted.review = review;
+                return { id: 99, actorNodeId: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' };
+            },
+            log: () => undefined,
+        };
+        if (input.writable !== false) {
+            port.writeBundleText = (path: string, contents: string) => {
+                writes.push({ path, contents });
+                writeFileSync(path, contents);
+            };
+        }
+        return {
+            root,
+            bundle,
+            port,
+            calls,
+            writes,
+            posted,
+            readDossier: () => readJsonFile(join(bundle, 'dossier.json')),
+        };
+    }
+
+    type PlanDisagreement = {
+        label: string;
+        plan: ReviewRiskPlan;
+        manifest?: Record<string, unknown>;
+        message: RegExp;
+    };
+
+    const PLAN_DISAGREEMENTS: readonly PlanDisagreement[] = [
+        {
+            label: 'pr against the pull request',
+            plan: riskPlan({ pr: 43 }),
+            message: /review risk plan pr 43 does not match pull request 42/u,
+        },
+        {
+            label: 'headSha against the live head',
+            plan: riskPlan({ headSha: 'e'.repeat(40) }),
+            message: /review risk plan headSha e{40} does not match the live head c{40}/u,
+        },
+        {
+            label: 'pr against the manifest',
+            plan: riskPlan(),
+            manifest: { pr: 43, baseRefName: 'main', baseSha: base, headSha: head },
+            message: /review risk plan pr 42 does not match the bundle manifest pr 43/u,
+        },
+        {
+            label: 'headSha against the manifest',
+            plan: riskPlan(),
+            manifest: { pr: number, baseRefName: 'main', baseSha: base, headSha: 'f'.repeat(40) },
+            message: /review risk plan headSha c{40} does not match the bundle manifest headSha f{40}/u,
+        },
+        {
+            label: 'baseSha against the manifest',
+            plan: riskPlan(),
+            manifest: { pr: number, baseRefName: 'main', baseSha: 'a'.repeat(40), headSha: head },
+            message: /review risk plan baseSha d{40} does not match the bundle manifest baseSha a{40}/u,
+        },
+    ];
+
+    it('publishes a matching plan and dossier, writing the canonical record beside review.json', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            discarded: [{ finding: 'blind-1', stance: 'correctness', reason: 'not reproducible on this head' }],
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            expect(fixture.writes).toHaveLength(1);
+            expect(fixture.writes[0]?.path).toBe(join(fixture.bundle, 'dossier.json'));
+
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(persisted.headSha).toBe(head);
+            expect(persisted.baseSha).toBe(base);
+            expect(persisted.recommendation).toBe('approve');
+            expect(persisted.requiredStances).toEqual(['correctness', 'test-validity']);
+            // An APPROVE carries no inline comments, so it accepts no findings.
+            expect(acceptedFindings(persisted)).toEqual([]);
+            expect(discardedDispositions(persisted)).toEqual([
+                { findingId: 'blind-1', stance: 'correctness', reason: 'not reproducible on this head' },
+            ]);
+            expect(fixture.writes[0]?.contents).toBe(serializeReviewDossier(persisted));
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('replays the persisted canonical record on a second publication without rewriting it', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            const first = fixture.readDossier();
+            expect(fixture.writes).toHaveLength(1);
+
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.writes).toHaveLength(1);
+            expect(fixture.readDossier()).toEqual(first);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(2);
+            expect(parseReviewDossier(fixture.readDossier()).dossierDigest).toBe(
+                parseReviewDossier(first).dossierDigest
+            );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a matching plan with no dossier beside review.json and never posts', () => {
+        const fixture = dossierFixture({ plan: riskPlan() });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/missing review dossier at .*dossier\.json/u);
+            expect(message).toContain(`for head ${head}`);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a dossier that omits a required stance and never posts', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput({
+                stances: [
+                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/no completed record for required stance: test-validity/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it.each(['observable', 'verification', 'observed'] as const)(
+        'refuses an approval evidence claim carrying a credential in %s and never posts',
+        (field) => {
+            const claim = {
+                observable: 'the evidence gate refuses a credential',
+                verification: 'pnpm test:run scripts/__tests__/publishReview.spec.ts',
+                observed: 'no POST and no journal',
+                [field]: `ghp_${'A'.repeat(24)}`,
+            };
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput(),
+                document: {
+                    ...reviewDocument,
+                    evidence: { headSha: head, claims: [claim] },
+                },
+            });
+            try {
+                const message = refusalMessage(() => publishReview(number, fixture.port));
+                expect(message).toMatch(
+                    new RegExp(`review evidence claim\\[0\\]\\.${field} value at index 0 contains a GitHub token`, 'u')
+                );
+                expect(fixture.calls).not.toContain('post');
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toEqual([]);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        }
+    );
+
+    it.each(PLAN_DISAGREEMENTS)(
+        'refuses a plan whose $label disagrees and never posts',
+        ({ plan, manifest, message }) => {
+            const bundleInput: { plan: unknown; dossier: unknown; manifest?: Record<string, unknown> } = {
+                plan,
+                dossier: dossierInput(),
+            };
+            if (manifest !== undefined) {
+                bundleInput.manifest = manifest;
+            }
+            const fixture = dossierFixture(bundleInput);
+            try {
+                expect(refusalMessage(() => publishReview(number, fixture.port))).toMatch(message);
+                expect(fixture.calls).not.toContain('post');
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toEqual([]);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        }
+    );
+
+    type DossierInputDisagreement = { label: string; dossier: Record<string, unknown>; message: RegExp };
+
+    const DOSSIER_INPUT_DISAGREEMENTS: readonly DossierInputDisagreement[] = [
+        {
+            label: 'pr against the plan',
+            dossier: dossierInput({ pr: number + 1 }),
+            message: /review dossier input pr mismatch: record has 43, expected 42/u,
+        },
+        {
+            label: 'headSha against the plan',
+            dossier: dossierInput({ headSha: 'e'.repeat(40) }),
+            message: /review dossier input headSha mismatch: record has "e{40}", expected "c{40}"/u,
+        },
+        {
+            label: 'baseSha against the plan',
+            dossier: dossierInput({ baseSha: 'a'.repeat(40) }),
+            message: /review dossier input baseSha mismatch: record has "a{40}", expected "d{40}"/u,
+        },
+    ];
+
+    it.each(DOSSIER_INPUT_DISAGREEMENTS)(
+        'refuses a fresh dossier whose $label disagrees and never posts',
+        ({ dossier, message }) => {
+            const fixture = dossierFixture({ plan: riskPlan(), dossier });
+            try {
+                expect(refusalMessage(() => publishReview(number, fixture.port))).toMatch(message);
+                expect(fixture.calls).not.toContain('post');
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toEqual([]);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        }
+    );
+
+    it('publishes a bundle with no risk plan exactly as before and writes no dossier', () => {
+        const fixture = dossierFixture();
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            expect(fixture.writes).toEqual([]);
+            expect(fixture.calls.some((call) => call.endsWith('dossier.json'))).toBe(false);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes a legacy bundle whose manifest generated list omits the risk plan', () => {
+        const fixture = dossierFixture({
+            manifest: {
+                pr: number,
+                baseRefName: 'main',
+                baseSha: base,
+                headSha: head,
+                generated: ['diff.patch', 'manifest.json', 'pr.md', 'review-size.json'],
+            },
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            expect(fixture.writes).toEqual([]);
+            expect(fixture.calls.some((call) => call.endsWith('dossier.json'))).toBe(false);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a risk plan file that exists but does not parse and never posts', () => {
+        const fixture = dossierFixture({ plan: riskPlan() });
+        writeFileSync(join(fixture.bundle, 'risk-plan.json'), '{ not a risk plan');
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/risk-plan\.json/u);
+            expect(message).toMatch(/does not parse/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a manifest that records generating the risk plan while the file is absent', () => {
+        const fixture = dossierFixture({
+            manifest: {
+                pr: number,
+                baseRefName: 'main',
+                baseSha: base,
+                headSha: head,
+                generated: ['diff.patch', 'manifest.json', 'risk-plan.json'],
+            },
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/missing review risk plan at .*risk-plan\.json/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a fresh dossier it cannot persist rather than skipping the durable record', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput(), writable: false });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/cannot write .*dossier\.json: the port has no bundle writer/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('leaves orchestrator acceptance unaffected by a plan with no dossier', async () => {
+        const acceptanceDocument = {
+            format: 'compact-v1',
+            event: 'APPROVE',
+            body: 'Final contract held.',
+            evidence: approvalEvidence(head),
+        };
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            document: acceptanceDocument,
+            documentName: 'acceptance.json',
+        });
+        const accepted: string[] = [];
+        try {
+            const port: PublishReviewPort = {
+                ...fixture.port,
+                reviewState: () => ({
+                    latestReviewerStateOnHead: 'APPROVED',
+                    orchestratorAcceptedAfterReviewer: false,
+                    unresolvedThreads: 0,
+                }),
+                postReview: (review) => {
+                    accepted.push(review.body);
+                    return {
+                        id: 99,
+                        actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                        login: 'jcosta33',
+                        actorType: 'User',
+                        commitId: head,
+                    };
+                },
+            };
+            const dependencies: AcceptReviewCoordinatorDependencies = {
+                primaryRoot: () => fixture.root,
+                authenticateOrchestrator: async () => ({
+                    minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
+                    session: { configDir: '/tmp/user', env: {}, dispose: () => undefined },
+                }),
+                repositoryName: () => 'jcosta33/sourdaw',
+                reviewPort: () => port,
+                serializeMutation: async (_root, _number, operation) =>
+                    operation({
+                        ownerOid: 'f'.repeat(40),
+                        journalReviewPublication: () => undefined,
+                        markRemoteMutationAttempt: () => undefined,
+                        markDefinitiveNoMutationHttpStatus: () => undefined,
+                        registerSuccessfulCompletion: () => undefined,
+                    }),
+                publish: publishPreparedAcceptance,
+            };
+
+            await coordinateAcceptReview(number, dependencies);
+
+            expect(accepted).toEqual(['Final contract held.']);
+            expect(fixture.writes).toEqual([]);
+            expect(fixture.calls.filter((call) => call.startsWith('read:'))).toEqual([
+                `read:${join(fixture.bundle, 'acceptance.json')}`,
+            ]);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }

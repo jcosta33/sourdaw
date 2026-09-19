@@ -8,7 +8,7 @@ import {
     type OpenAiCompatibleCloudRuntime,
 } from '../../cloudSession';
 import { generateCloudToolCalls } from '../generateCloudToolCalls';
-import { type HostedToolPlan } from '../hostedToolPlan';
+import { AUTO_TOOL_CHOICE, type HostedToolPlan } from '../hostedToolPlan';
 
 const tools: ToolSchema[] = [
     {
@@ -51,18 +51,20 @@ describe('generateCloudToolCalls', () => {
         mocks.generateAnthropic.mockResolvedValue({
             providerRequestId: 'msg_anthropic_1',
             calls: [{ name: 'addTrack', arguments: { name: 'Vocals' } }],
+            strictToolSchemas: true,
+            usage: null,
         });
     });
 
     it('rejects an unconfigured cloud runtime', async () => {
         mocks.getRuntime.mockReturnValue(null);
-        await expect(generateCloudToolCalls('state', 'message', tools, 8192)).rejects.toThrow(
+        await expect(generateCloudToolCalls('state', 'message', tools, 8192, AUTO_TOOL_CHOICE)).rejects.toThrow(
             'Hosted AI is not configured'
         );
     });
 
     it('dispatches Anthropic planning through the native provider path', async () => {
-        const result = await generateCloudToolCalls('state', 'message', tools, 8192);
+        const result = await generateCloudToolCalls('state', 'message', tools, 8192, AUTO_TOOL_CHOICE);
 
         expect(mocks.generateAnthropic).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -73,7 +75,9 @@ describe('generateCloudToolCalls', () => {
                 signal: expect.any(AbortSignal),
             })
         );
-        expect(result).toEqual([{ name: 'addTrack', arguments: { name: 'Vocals' } }]);
+        expect(result).toEqual(
+            expect.objectContaining({ calls: [{ name: 'addTrack', arguments: { name: 'Vocals' } }] })
+        );
         expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('addTrack'));
         expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('msg_anthropic_1'));
     });
@@ -85,16 +89,19 @@ describe('generateCloudToolCalls', () => {
             model: 'gpt-test',
             base_url: 'http://localhost:1234/v1',
             session_id: null,
+            strict_tool_schemas: false,
         };
         mocks.getRuntime.mockReturnValue(runtime);
         mocks.generateOpenAi.mockResolvedValue({
             providerRequestId: 'chatcmpl-1',
             calls: [{ name: 'addTrack', arguments: {} }],
+            strictToolSchemas: false,
+            usage: null,
         });
 
-        await expect(generateCloudToolCalls('state', 'message', tools, 8192)).resolves.toEqual([
-            { name: 'addTrack', arguments: {} },
-        ]);
+        await expect(generateCloudToolCalls('state', 'message', tools, 8192, AUTO_TOOL_CHOICE)).resolves.toEqual(
+            expect.objectContaining({ calls: [{ name: 'addTrack', arguments: {} }] })
+        );
         expect(mocks.generateOpenAi).toHaveBeenCalledWith(
             expect.objectContaining({
                 runtime,
@@ -126,11 +133,13 @@ describe('generateCloudToolCalls', () => {
         mocks.generateOpenAiResponses.mockResolvedValue({
             providerRequestId: 'resp_1',
             calls: [{ name: 'addTrack', arguments: {} }],
+            strictToolSchemas: true,
+            usage: null,
         });
 
-        await expect(generateCloudToolCalls('state', 'message', tools, 8192)).resolves.toEqual([
-            { name: 'addTrack', arguments: {} },
-        ]);
+        await expect(generateCloudToolCalls('state', 'message', tools, 8192, AUTO_TOOL_CHOICE)).resolves.toEqual(
+            expect.objectContaining({ calls: [{ name: 'addTrack', arguments: {} }] })
+        );
         expect(mocks.generateOpenAiResponses).toHaveBeenCalledWith(
             expect.objectContaining({
                 runtime,

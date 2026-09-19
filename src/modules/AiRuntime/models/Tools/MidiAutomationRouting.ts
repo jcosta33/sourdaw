@@ -1,3 +1,5 @@
+import { describeLevelLawDb, SEND_LEVEL_LAW, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
+
 import { tool, type ToolSchema } from './Types';
 
 export const midiTools: readonly ToolSchema[] = [
@@ -80,18 +82,31 @@ export const automationTools: readonly ToolSchema[] = [
     ),
     tool(
         'addAutomationPoint',
-        'Add a point to an automation lane.',
+        'Add a point to an automation lane. Exactly one of valueDb, deltaDb, or value; the decibel forms are accepted only on a gain lane, whose minValueDb and maxValueDb state its window.',
         {
             laneId: { type: 'string' },
             beat: { type: 'number' },
-            value: { type: 'number', description: 'Within the selected lane minValue and maxValue bounds' },
+            valueDb: {
+                type: 'number',
+                description: `Absolute level, gain lanes only. Within the lane's own minValueDb and maxValueDb; ${describeLevelLawDb(TRACK_FADER_LAW)}`,
+            },
+            deltaDb: {
+                type: 'number',
+                description:
+                    "Change relative to the level the gain lane already draws at this beat, in decibels (negative is quieter). Gain lanes only; the result must land within the lane's own minValueDb and maxValueDb",
+            },
+            value: {
+                type: 'number',
+                description:
+                    "Deprecated linear amplitude on a gain lane; prefer valueDb (absolute dB) or deltaDb (relative dB). On every other lane this is the value in the lane's own units, within its minValue and maxValue bounds",
+            },
             curve: {
                 type: 'string',
                 enum: ['linear', 'step', 'exponential', 's-curve', 'stairs', 'smooth', 'bezier'],
                 description: 'Interpolation between this point and the next',
             },
         },
-        ['laneId', 'beat', 'value']
+        ['laneId', 'beat']
     ),
     tool(
         'setAutomationLaneEnabled',
@@ -170,23 +185,41 @@ export const routingTools: readonly ToolSchema[] = [
     ),
     tool(
         'addSend',
-        "Route a copy of a track's signal to a bus (parallel processing).",
+        `Route a copy of a track's signal to a bus (parallel processing). Exactly one of levelDb, deltaDb, or level. ${describeLevelLawDb(SEND_LEVEL_LAW)}.`,
         {
             trackId: { type: 'string' },
             busId: { type: 'string' },
-            level: { type: 'number', description: 'Send level 0.0–1.0' },
+            levelDb: { type: 'number', description: `Absolute send level. ${describeLevelLawDb(SEND_LEVEL_LAW)}` },
+            deltaDb: {
+                type: 'number',
+                description: `Send level relative to unity, in decibels (negative is quieter), since the send does not exist yet. The result must land within ${describeLevelLawDb(SEND_LEVEL_LAW)}`,
+            },
+            level: {
+                type: 'number',
+                description:
+                    'Deprecated linear amplitude; prefer levelDb (absolute dB) or deltaDb (relative dB). Send level 0.0–1.0',
+            },
         },
-        ['trackId', 'busId', 'level']
+        ['trackId', 'busId']
     ),
     tool(
         'setSend',
-        'Adjust the send level from a track to a bus.',
+        `Adjust the send level from a track to a bus. Exactly one of levelDb, deltaDb, or level. ${describeLevelLawDb(SEND_LEVEL_LAW)}.`,
         {
             trackId: { type: 'string' },
             busId: { type: 'string' },
-            level: { type: 'number' },
+            levelDb: { type: 'number', description: `Absolute send level. ${describeLevelLawDb(SEND_LEVEL_LAW)}` },
+            deltaDb: {
+                type: 'number',
+                description: `Change relative to the send's current level, in decibels (negative is quieter). The result must land within ${describeLevelLawDb(SEND_LEVEL_LAW)}`,
+            },
+            level: {
+                type: 'number',
+                description:
+                    'Deprecated linear amplitude; prefer levelDb (absolute dB) or deltaDb (relative dB). Send level 0.0–1.0',
+            },
         },
-        ['trackId', 'busId', 'level']
+        ['trackId', 'busId']
     ),
     tool(
         'removeSend',

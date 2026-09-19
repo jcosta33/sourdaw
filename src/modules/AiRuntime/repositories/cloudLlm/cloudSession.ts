@@ -1,5 +1,9 @@
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
-import { type HostedLlmAuthentication, type HostedLlmProviderInfo } from '../../models/HostedLlmProvider';
+import {
+    type HostedLlmAuthentication,
+    type HostedLlmProviderInfo,
+    type HostedReasoningEffort,
+} from '../../models/HostedLlmProvider';
 import { hostedLlmProviderStatusStore } from '../../stores/hostedLlmProviderStatusStore';
 import { closeProviderGatewaySession } from '../closeProviderGatewaySession';
 import { type CompiledProviderAdapter } from '../providerAdapterRegistry';
@@ -22,6 +26,11 @@ export type OpenAiCloudRuntime = Readonly<{
     authentication: HostedLlmAuthentication;
     adapter: CompiledProviderAdapter;
     session_id: string;
+    /**
+     * Overrides the per-model reasoning effort default the Responses request
+     * builders otherwise apply. Absent means unconfigured, same as no override.
+     */
+    reasoning_effort?: HostedReasoningEffort;
 }>;
 
 export type OpenAiCompatibleCloudRuntime = Readonly<{
@@ -31,6 +40,14 @@ export type OpenAiCompatibleCloudRuntime = Readonly<{
     authentication: HostedLlmAuthentication;
     adapter?: CompiledProviderAdapter | null;
     session_id: string | null;
+    /**
+     * Whether this endpoint accepts OpenAI's strict tool-calling dialect
+     * (`strict: true` plus a bound-free, all-required schema). An OpenAI-compatible
+     * endpoint's dialect support is not self-describing, so this is a per-connection
+     * configuration choice rather than a capability the runtime can detect. Absent
+     * means not opted in, same as `false`.
+     */
+    strict_tool_schemas?: boolean;
 }>;
 
 export type CloudProviderRuntime = AnthropicCloudRuntime | OpenAiCloudRuntime | OpenAiCompatibleCloudRuntime;
@@ -109,6 +126,7 @@ class CloudSession {
             model: runtime.model,
             baseUrl: runtime.provider === 'anthropic' ? null : runtime.base_url,
             authentication: runtime.authentication,
+            reasoningEffort: runtime.provider === 'openai' ? (runtime.reasoning_effort ?? null) : null,
         };
         hostedLlmProviderStatusStore.set(providerInfo);
     }

@@ -1,12 +1,14 @@
-import { afterEach, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
 import { generateOpenAiCompatibleToolCalls } from '../cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
+import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../cloudLlm/cloudInference/hostedToolPlan';
 import { streamCloudChatCompletion } from '../cloudLlm/cloudInference/streamCloudChatCompletion';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudLlm/cloudSession';
 
 import {
     describeProviderProtocolConformance,
+    FORCED_TERMINAL_TOOL_NAMES,
     PROVIDER_CONFORMANCE_FIXTURE as FIXTURE,
     PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
     type ProviderRequestObservation,
@@ -34,6 +36,7 @@ const runtime: OpenAiCompatibleCloudRuntime = {
     session_id: null,
     model: FIXTURE.model,
     base_url: 'http://localhost:1234/v1',
+    strict_tool_schemas: true,
 };
 
 const [firstDelta, secondDelta] = FIXTURE.textDeltas;
@@ -103,6 +106,13 @@ function streamFixture(scenario: ProviderStreamScenario): string {
     return [delta(firstDelta ?? ''), delta(secondDelta ?? ''), finish('stop'), DONE].join('');
 }
 
+function directiveFor(scenario: ProviderToolScenario): HostedToolChoiceDirective {
+    if (scenario === 'forced-terminal') {
+        return { mode: 'required', toolNames: FORCED_TERMINAL_TOOL_NAMES };
+    }
+    return AUTO_TOOL_CHOICE;
+}
+
 function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
     if (scenario === 'empty-batch') {
         return { id: FIXTURE.providerRequestId, choices: [{ finish_reason: 'stop', message: { content: '' } }] };
@@ -168,6 +178,11 @@ function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
                 },
             },
         ],
+        usage: {
+            prompt_tokens: FIXTURE.toolUsage.inputTokens,
+            completion_tokens: FIXTURE.toolUsage.outputTokens,
+            prompt_tokens_details: { cached_tokens: FIXTURE.toolUsage.cacheReadInputTokens },
+        },
     };
 }
 
@@ -191,7 +206,7 @@ function readRequest(): ProviderRequestObservation {
         throw new Error('Expected the adapter to send a JSON request body');
     }
     const body = JSON.parse(sent) as Record<string, unknown>;
-    return { model: body.model, stream: body.stream };
+    return { model: body.model, stream: body.stream, tools: body.tools, toolChoice: body.tool_choice };
 }
 
 function readSafeMessage(error: unknown): string {
@@ -250,11 +265,13 @@ describeProviderProtocolConformance('OpenAI-compatible chat completions', {
                 userMessage: 'mute drums',
                 toolSchemas: PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
                 maxOutputTokens: 8_192,
+                directive: directiveFor(scenario),
             });
             return {
                 calls: plan.calls,
                 providerRequestId: plan.providerRequestId,
                 request: readRequest(),
+                usage: plan.usage,
             };
         } catch (error) {
             return {
@@ -262,7 +279,58 @@ describeProviderProtocolConformance('OpenAI-compatible chat completions', {
                 providerRequestId: null,
                 failure: { safeMessage: readSafeMessage(error) },
                 request: readRequest(),
+                usage: null,
             };
         }
     },
+    readWireTool: (tool) => {
+        const wireTool = tool as { function?: { strict?: unknown; parameters?: unknown } };
+        return { strict: wireTool.function?.strict, parameters: wireTool.function?.parameters };
+    },
+});
+
+describe('generateOpenAiCompatibleToolCalls usage admission', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.clearAllMocks();
+    });
+
+    it('reads a fractional usage figure as null instead of destroying an admitted plan', async () => {
+        installProviderResponse(
+            JSON.stringify({
+                id: FIXTURE.providerRequestId,
+                choices: [
+                    {
+                        finish_reason: 'tool_calls',
+                        message: {
+                            tool_calls: [
+                                {
+                                    id: dottedCall?.id,
+                                    function: {
+                                        name: dottedCall?.wireName,
+                                        arguments: JSON.stringify(dottedCall?.arguments),
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                ],
+                // A sampled or averaged `prompt_tokens` is not a safe non-negative integer;
+                // it must not throw out of `admitEvent`'s usage guard.
+                usage: { prompt_tokens: 12.5, completion_tokens: FIXTURE.toolUsage.outputTokens },
+            }),
+            'application/json'
+        );
+
+        const plan = await generateOpenAiCompatibleToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'mute drums',
+            toolSchemas: PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
+            maxOutputTokens: 8_192,
+            directive: AUTO_TOOL_CHOICE,
+        });
+
+        expect(plan.usage).toMatchObject({ inputTokens: null, outputTokens: FIXTURE.toolUsage.outputTokens });
+    });
 });

@@ -28,6 +28,11 @@ import { MODEL_TEXT_MAX_INPUT_TOKENS } from '../../models/ModelTextRequestLimits
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
+import {
+    AUTO_TOOL_CHOICE,
+    type HostedToolChoiceDirective,
+    type HostedToolPlan,
+} from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { initWebLlmEngine } from '../../repositories/webLlm/initWebLlmEngine';
 import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
@@ -86,6 +91,53 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isUnknownArray(value: unknown): value is unknown[] {
     return Array.isArray(value);
+}
+
+/**
+ * Drops `null`-valued arguments for properties the advertised (unprojected) tool
+ * schema leaves optional, before a tool-call event reaches `admitEvent`'s
+ * `matchesJsonSchema` check. OpenAI's strict projection (`projectOpenAiStrictToolSchema.ts`)
+ * forces every optional property into `required` and nullable AT EVERY NESTING DEPTH, so a
+ * conforming strict reply carries an explicit `null` for an argument the caller never meant
+ * to set — including inside array-of-object properties like `command.batch.propose`'s
+ * `items` — but `admitEvent` validates against the source schema's non-nullable type, which
+ * rejects `null`. This walk mirrors `matchesJsonSchema`'s own recursion into `properties` and
+ * `items` so the drop happens everywhere that validator will look. Only an optional
+ * property's `null` is dropped; a `null` on a property the enclosing source object requires
+ * is left in place so the existing validator still rejects it, and values the schema does not
+ * describe (no matching `properties` or `items` entry) are returned unchanged.
+ */
+function admissibleSchemaValue(value: unknown, schema: unknown): unknown {
+    if (!isRecord(schema)) {
+        return value;
+    }
+    if (isUnknownArray(value) && schema.items !== undefined) {
+        return value.map((item) => admissibleSchemaValue(item, schema.items));
+    }
+    if (isRecord(value) && isRecord(schema.properties)) {
+        const requiredProperties = new Set(Array.isArray(schema.required) ? schema.required : []);
+        const admissible: Record<string, unknown> = {};
+        for (const [key, item] of Object.entries(value)) {
+            if (item === null && !requiredProperties.has(key)) {
+                continue;
+            }
+            const propertySchema = schema.properties[key];
+            admissible[key] = propertySchema === undefined ? item : admissibleSchemaValue(item, propertySchema);
+        }
+        return admissible;
+    }
+    return value;
+}
+
+function admissibleToolCallArguments(
+    args: Record<string, unknown>,
+    advertisedTool: ToolSchema | undefined
+): Record<string, unknown> {
+    if (advertisedTool === undefined) {
+        return args;
+    }
+    const admissible = admissibleSchemaValue(args, advertisedTool.function.parameters);
+    return isRecord(admissible) ? admissible : args;
 }
 
 function normalizeGeneratedToolPlanningOutcome(value: unknown): ToolPlanningOutcome {
@@ -295,7 +347,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         toolSelectionPrompt: string = userMessage,
         onProviderResult?: (result: ModelProviderResult) => void,
         streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>,
-        onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult
+        onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult,
+        // WebLLM plans locally with no provider wire form, so it has no tool-choice concept and
+        // ignores this; only the cloud backend below translates it for its provider.
+        directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain({ operation: 'tools', modality: 'text', streaming: false });
         const reportProviderResult = (result: ModelProviderResult): void => {
@@ -328,6 +383,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             let providerSession: ModelProviderSession | null = null;
             let providerSource: ReturnType<typeof createModelProviderStreamWriter> | null = null;
             let providerSessionSettled = false;
+            let cloudToolPlan: HostedToolPlan | null = null;
             try {
                 if (signal?.aborted) {
                     throw createToolPlanningAbortError();
@@ -485,13 +541,14 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 let outcome: ToolPlanningOutcome;
 
                 if (backend === 'cloud') {
-                    let cloudInference: Promise<ToolCallResult[]>;
+                    let cloudInference: Promise<HostedToolPlan>;
                     if (signal === undefined) {
                         cloudInference = generateCloudToolCalls(
                             providerSystemPrompt,
                             providerUserMessage,
                             providerTools,
-                            providerRequest.limits.maxOutputTokens
+                            providerRequest.limits.maxOutputTokens,
+                            directive
                         );
                     } else {
                         cloudInference = generateCloudToolCalls(
@@ -499,10 +556,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             providerUserMessage,
                             providerTools,
                             providerRequest.limits.maxOutputTokens,
+                            directive,
                             signal
                         );
                     }
-                    const toolCalls = await waitForInference(cloudInference, signal);
+                    const plan = await waitForInference(cloudInference, signal);
+                    cloudToolPlan = plan;
+                    const toolCalls = plan.calls;
                     outcome = { status: 'complete', toolCalls, proposal: extractAgentPlanProposal(toolCalls) };
                 } else if (backend === 'webllm') {
                     if (!isWebLlmLoaded()) {
@@ -536,18 +596,39 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 if (outcome.status === 'complete') {
                     const providerCallIds = outcome.toolCalls.map((call) => call.id);
                     for (const [index, call] of outcome.toolCalls.entries()) {
+                        const advertisedTool = providerTools.find((tool) => tool.function.name === call.name);
                         providerSource.push({
                             type: 'tool-call',
                             call: {
                                 id: call.id ?? `${providerRequest.correlationId}:${String(index)}`,
                                 name: call.name,
-                                arguments: call.arguments,
+                                arguments: admissibleToolCallArguments(call.arguments, advertisedTool),
                             },
+                        });
+                    }
+                    if (cloudToolPlan?.usage) {
+                        providerSource.push({
+                            type: 'usage',
+                            mode: 'final',
+                            usage: {
+                                inputTokens: cloudToolPlan.usage.inputTokens,
+                                outputTokens: cloudToolPlan.usage.outputTokens,
+                                cachedInputTokens: cloudToolPlan.usage.cacheReadInputTokens,
+                                reasoningTokens: null,
+                            },
+                            provenance: 'provider-reported',
                         });
                     }
                     const normalizedResult = providerSource.finish({ reason: 'stop' });
                     providerSessionSettled = true;
-                    reportProviderResult(normalizedResult);
+                    const reportedResult: ModelProviderResult = cloudToolPlan
+                        ? {
+                              ...normalizedResult,
+                              strictToolSchemas: cloudToolPlan.strictToolSchemas,
+                              cacheWriteInputTokens: cloudToolPlan.usage?.cacheWriteInputTokens ?? null,
+                          }
+                        : normalizedResult;
+                    reportProviderResult(reportedResult);
                     logger.info(
                         `[AI Engine] (${backend}) ${String(outcome.toolCalls.length)} tool call(s): ${outcome.toolCalls.map((call) => call.name).join(', ')}`
                     );
@@ -588,6 +669,22 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     if (isAiRuntimeConfigurationChangedError(error) || isExplicitAbort || signal?.aborted) {
                         failedResult = providerSource.finish({ reason: 'cancelled' });
                     } else if (isTerminalModelRejection) {
+                        // A rejected turn can still be a provider answer the provider billed for
+                        // (a refusal, prose with no tool call); attribute that usage the same way
+                        // a completed turn does, before the terminal `finish` closes the stream.
+                        if (error.usage) {
+                            providerSource.push({
+                                type: 'usage',
+                                mode: 'final',
+                                usage: {
+                                    inputTokens: error.usage.inputTokens,
+                                    outputTokens: error.usage.outputTokens,
+                                    cachedInputTokens: error.usage.cacheReadInputTokens,
+                                    reasoningTokens: null,
+                                },
+                                provenance: 'provider-reported',
+                            });
+                        }
                         failedResult = providerSource.finish({
                             reason: 'error',
                             failure: {

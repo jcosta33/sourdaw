@@ -27,7 +27,14 @@
  * transient AI lifecycle events. The line is "would a malformed payload
  * cause data loss, persistent corruption, or an exploit".
  */
-import { FADER_MAX_GAIN, VCA_MAX_GAIN } from '#/utils/audioLevelLaw';
+import {
+    CLIP_GAIN_LAW,
+    CLIP_MAX_GAIN,
+    FADER_MAX_GAIN,
+    SEND_LEVEL_LAW,
+    TRACK_FADER_LAW,
+    VCA_MAX_GAIN,
+} from '#/utils/audioLevelLaw';
 import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/utils/clipLoopProjection';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 
@@ -105,6 +112,27 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
 
 function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
     return Reflect.ownKeys(value).every((key) => typeof key === 'string' && keys.includes(key));
+}
+
+/**
+ * The widest relative level change a single command may ask for.
+ *
+ * A fader's whole useful travel is 60 dB, so a larger step is never an edit
+ * anybody meant: it is a misplaced decimal point, and one that would otherwise
+ * be reported only as "out of range" after the arithmetic ran.
+ */
+const MAX_LEVEL_DELTA_DB = 60;
+
+function isLevelDelta(value: unknown): value is number {
+    return isInRange(value, -MAX_LEVEL_DELTA_DB, MAX_LEVEL_DELTA_DB);
+}
+
+/**
+ * A level is stated once. Two forms in one payload are a contradiction rather
+ * than a preference, and none at all leaves nothing to write.
+ */
+function statesLevelOnce(param: Record<string, unknown>, linearKey: string, absoluteKey: string): boolean {
+    return [linearKey, absoluteKey, 'deltaDb'].filter((key) => Object.hasOwn(param, key)).length === 1;
 }
 
 function isAutomationCurve(
@@ -439,7 +467,14 @@ const validators = {
     // (≈1.9953), the fraction that maps to the percent field's own
     // `MAX_MASTER_GAIN` ceiling, not `MAX_MASTER_GAIN` itself.
     setMasterGain: (param): param is PayloadOf<'setMasterGain'> =>
-        isObj(param) && hasExactKeys(param, ['gain']) && isInRange(param.gain, 0, FADER_MAX_GAIN),
+        isObj(param) &&
+        hasOnlyKeys(param, ['gain', 'gainDb', 'deltaDb']) &&
+        statesLevelOnce(param, 'gain', 'gainDb') &&
+        isOptionalOwn(param, 'gain', (value): value is number => isInRange(value, 0, FADER_MAX_GAIN)) &&
+        isOptionalOwn(param, 'gainDb', (value): value is number =>
+            isInRange(value, TRACK_FADER_LAW.floorDb, TRACK_FADER_LAW.ceilingDb)
+        ) &&
+        isOptionalOwn(param, 'deltaDb', isLevelDelta),
     setMetronomeVolume: (param): param is PayloadOf<'setMetronomeVolume'> =>
         isObj(param) && hasExactKeys(param, ['volume']) && isInRange(param.volume, 0, 1),
     setLoopEnabled: (param): param is PayloadOf<'setLoopEnabled'> =>
@@ -500,15 +535,34 @@ const validators = {
         hasExactKeys(param, ['sectionIds']) &&
         isUniqueNonEmptyStringArray(param.sectionIds) &&
         param.sectionIds.length <= 16,
+    // The decibel forms carry no lane here — a payload validator sees only the
+    // payload — so the range they are judged against is the fader law's, and
+    // `validateActions` is where the lane itself must turn out to hold gain
+    // amplitudes at all.
     addAutomationPoint: (param): param is PayloadOf<'addAutomationPoint'> =>
         isObj(param) &&
-        hasOnlyKeys(param, ['laneId', 'beat', 'value', 'curve', 'tension', 'stairSteps', 'cp1', 'cp2']) &&
+        hasOnlyKeys(param, [
+            'laneId',
+            'beat',
+            'value',
+            'valueDb',
+            'deltaDb',
+            'curve',
+            'tension',
+            'stairSteps',
+            'cp1',
+            'cp2',
+        ]) &&
         Object.hasOwn(param, 'laneId') &&
         Object.hasOwn(param, 'beat') &&
-        Object.hasOwn(param, 'value') &&
         isNonEmptyString(param.laneId) &&
         isNonNegativeNumber(param.beat) &&
-        isNumber(param.value) &&
+        statesLevelOnce(param, 'value', 'valueDb') &&
+        isOptionalOwn(param, 'value', isNumber) &&
+        isOptionalOwn(param, 'valueDb', (value): value is number =>
+            isInRange(value, TRACK_FADER_LAW.floorDb, TRACK_FADER_LAW.ceilingDb)
+        ) &&
+        isOptionalOwn(param, 'deltaDb', isLevelDelta) &&
         isOptional(param.curve, isAutomationCurve) &&
         isOptional(param.tension, (value): value is number => isInRange(value, -1, 1)) &&
         isOptional(param.stairSteps, (value): value is number => isInRange(value, 2, 32) && Number.isInteger(value)) &&
@@ -710,9 +764,14 @@ const validators = {
         Number.isInteger(param.newIndex),
     setTrackGain: (param): param is PayloadOf<'setTrackGain'> =>
         isObj(param) &&
-        hasExactKeys(param, ['trackId', 'gain']) &&
+        hasOnlyKeys(param, ['trackId', 'gain', 'gainDb', 'deltaDb']) &&
         isNonEmptyString(param.trackId) &&
-        isInRange(param.gain, 0, FADER_MAX_GAIN),
+        statesLevelOnce(param, 'gain', 'gainDb') &&
+        isOptionalOwn(param, 'gain', (value): value is number => isInRange(value, 0, FADER_MAX_GAIN)) &&
+        isOptionalOwn(param, 'gainDb', (value): value is number =>
+            isInRange(value, TRACK_FADER_LAW.floorDb, TRACK_FADER_LAW.ceilingDb)
+        ) &&
+        isOptionalOwn(param, 'deltaDb', isLevelDelta),
     setTrackPan: (param): param is PayloadOf<'setTrackPan'> =>
         isObj(param) &&
         hasExactKeys(param, ['trackId', 'pan']) &&
@@ -807,9 +866,14 @@ const validators = {
     pasteClip: 'unchecked',
     setClipGain: (param): param is PayloadOf<'setClipGain'> =>
         isObj(param) &&
-        hasExactKeys(param, ['clipId', 'gain']) &&
+        hasOnlyKeys(param, ['clipId', 'gain', 'gainDb', 'deltaDb']) &&
         isNonEmptyString(param.clipId) &&
-        isInRange(param.gain, 0, 2),
+        statesLevelOnce(param, 'gain', 'gainDb') &&
+        isOptionalOwn(param, 'gain', (value): value is number => isInRange(value, 0, CLIP_MAX_GAIN)) &&
+        isOptionalOwn(param, 'gainDb', (value): value is number =>
+            isInRange(value, CLIP_GAIN_LAW.floorDb, CLIP_GAIN_LAW.ceilingDb)
+        ) &&
+        isOptionalOwn(param, 'deltaDb', isLevelDelta),
     setClipColor: (param): param is PayloadOf<'setClipColor'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'color']) &&
@@ -914,26 +978,34 @@ const validators = {
     createFolder: 'unchecked',
     setSend: (param): param is PayloadOf<'setSend'> =>
         isObj(param) &&
-        hasOnlyKeys(param, ['trackId', 'busId', 'level', 'expectedLevel', 'expectedPreFader']) &&
+        hasOnlyKeys(param, ['trackId', 'busId', 'level', 'levelDb', 'deltaDb', 'expectedLevel', 'expectedPreFader']) &&
         Object.hasOwn(param, 'trackId') &&
         Object.hasOwn(param, 'busId') &&
-        Object.hasOwn(param, 'level') &&
         isNonEmptyString(param.trackId) &&
         isNonEmptyString(param.busId) &&
         param.trackId !== param.busId &&
-        isInRange(param.level, 0, 1) &&
+        statesLevelOnce(param, 'level', 'levelDb') &&
+        isOptionalOwn(param, 'level', (value): value is number => isInRange(value, 0, 1)) &&
+        isOptionalOwn(param, 'levelDb', (value): value is number =>
+            isInRange(value, SEND_LEVEL_LAW.floorDb, SEND_LEVEL_LAW.ceilingDb)
+        ) &&
+        isOptionalOwn(param, 'deltaDb', isLevelDelta) &&
         isOptionalOwn(param, 'expectedLevel', (value): value is number => isInRange(value, 0, 1)) &&
         isOptionalOwn(param, 'expectedPreFader', (value): value is boolean => typeof value === 'boolean'),
     addSend: (param): param is PayloadOf<'addSend'> =>
         isObj(param) &&
-        hasOnlyKeys(param, ['trackId', 'busId', 'level', 'preFader', 'expectedAbsent']) &&
+        hasOnlyKeys(param, ['trackId', 'busId', 'level', 'levelDb', 'deltaDb', 'preFader', 'expectedAbsent']) &&
         Object.hasOwn(param, 'trackId') &&
         Object.hasOwn(param, 'busId') &&
-        Object.hasOwn(param, 'level') &&
         isNonEmptyString(param.trackId) &&
         isNonEmptyString(param.busId) &&
         param.trackId !== param.busId &&
-        isInRange(param.level, 0, 1) &&
+        statesLevelOnce(param, 'level', 'levelDb') &&
+        isOptionalOwn(param, 'level', (value): value is number => isInRange(value, 0, 1)) &&
+        isOptionalOwn(param, 'levelDb', (value): value is number =>
+            isInRange(value, SEND_LEVEL_LAW.floorDb, SEND_LEVEL_LAW.ceilingDb)
+        ) &&
+        isOptionalOwn(param, 'deltaDb', isLevelDelta) &&
         isOptionalOwn(param, 'preFader', (value): value is boolean => typeof value === 'boolean') &&
         isOptionalOwn(param, 'expectedAbsent', (value): value is true => value === true),
     removeSend: (param): param is PayloadOf<'removeSend'> =>

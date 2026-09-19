@@ -5,6 +5,7 @@ import { type ToolSchema } from '../../../../models/ToolDefinitions';
 import { compileProviderAdapterInstallation, OPENAI_RESPONSES_ADAPTER_ID } from '../../../providerAdapterRegistry';
 import { type OpenAiCloudRuntime } from '../../cloudSession';
 import { generateOpenAiResponsesToolCalls } from '../generateOpenAiResponsesToolCalls';
+import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../hostedToolPlan';
 
 const mocks = vi.hoisted(() => ({ requestHostedOpenAiProvider: vi.fn() }));
 
@@ -36,12 +37,12 @@ const tools: ToolSchema[] = [
     },
 ];
 
-function createRuntime(model: string): OpenAiCloudRuntime {
-    return {
-        provider: 'openai',
+function createRuntime(model: string, reasoningEffort?: OpenAiCloudRuntime['reasoning_effort']): OpenAiCloudRuntime {
+    const runtime = {
+        provider: 'openai' as const,
         model,
         base_url: 'https://api.openai.com/v1',
-        authentication: 'api-key',
+        authentication: 'api-key' as const,
         adapter: compileProviderAdapterInstallation({
             adapterId: OPENAI_RESPONSES_ADAPTER_ID,
             providerId: 'openai',
@@ -51,6 +52,7 @@ function createRuntime(model: string): OpenAiCloudRuntime {
         }),
         session_id: `provider-session-${'0'.repeat(32)}`,
     };
+    return reasoningEffort !== undefined ? { ...runtime, reasoning_effort: reasoningEffort } : runtime;
 }
 
 const runtime = createRuntime('gpt-4-turbo');
@@ -69,13 +71,17 @@ function respondWith(payload: unknown, status = 200): void {
     );
 }
 
-function planTools(targetRuntime: OpenAiCloudRuntime = runtime) {
+function planTools(
+    targetRuntime: OpenAiCloudRuntime = runtime,
+    directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE
+) {
     return generateOpenAiResponsesToolCalls({
         runtime: targetRuntime,
         systemPrompt: 'system',
         userMessage: 'mute drums',
         toolSchemas: tools,
         maxOutputTokens: 8_192,
+        directive,
     });
 }
 
@@ -111,14 +117,14 @@ describe('generateOpenAiResponsesToolCalls', () => {
                     name: 'project_query',
                     description: 'Query the project',
                     parameters: tools[0]?.function.parameters,
-                    strict: false,
+                    strict: true,
                 },
                 {
                     type: 'function',
                     name: 'muteTrack',
                     description: 'Mute a track',
                     parameters: tools[1]?.function.parameters,
-                    strict: false,
+                    strict: true,
                 },
             ],
             tool_choice: 'auto',
@@ -129,17 +135,69 @@ describe('generateOpenAiResponsesToolCalls', () => {
         });
     });
 
-    it.each(['gpt-5.6-luna', 'gpt-4-turbo'])('gates reasoning effort on the gpt-5.6 family (%s)', async (model) => {
+    it('forces the allowed-tools set on a required directive while leaving the advertised tools list full, dropping a directive name with no advertised schema', async () => {
         respondWith({ id: 'resp_1', status: 'completed', output: [] });
 
-        await planTools(createRuntime(model));
+        await planTools(runtime, { mode: 'required', toolNames: ['muteTrack', 'deleteEverything'] });
 
         const body = readSentBody();
-        if (model === 'gpt-5.6-luna') {
-            expect(body).toMatchObject({ reasoning: { effort: 'none' } });
-        } else {
-            expect(body).not.toHaveProperty('reasoning');
-        }
+        expect(body.tool_choice).toEqual({
+            type: 'allowed_tools',
+            mode: 'required',
+            tools: [{ type: 'function', name: 'muteTrack' }],
+        });
+        // `allowed_tools` restricts the choice set without capping the call count, so
+        // parallel tool calls stay enabled on the forced turn.
+        expect(body.parallel_tool_calls).toBe(true);
+        // The full advertised set stays on the wire; `allowed_tools` restricts the
+        // model's choice without dropping the other tool from what it can see.
+        expect(body.tools).toEqual([
+            {
+                type: 'function',
+                name: 'project_query',
+                description: 'Query the project',
+                parameters: tools[0]?.function.parameters,
+                strict: true,
+            },
+            {
+                type: 'function',
+                name: 'muteTrack',
+                description: 'Mute a track',
+                parameters: tools[1]?.function.parameters,
+                strict: true,
+            },
+        ]);
+    });
+
+    it('throws before any network call when a required directive names no tool', async () => {
+        await expect(planTools(runtime, { mode: 'required', toolNames: [] })).rejects.toThrow(
+            'Hosted AI tool-choice directive named an empty tool set'
+        );
+        expect(mocks.requestHostedOpenAiProvider).not.toHaveBeenCalled();
+    });
+
+    it('defaults reasoning effort to none for the gpt-5.6 family when unconfigured', async () => {
+        respondWith({ id: 'resp_1', status: 'completed', output: [] });
+
+        await planTools(createRuntime('gpt-5.6-luna'));
+
+        expect(readSentBody()).toMatchObject({ reasoning: { effort: 'none' } });
+    });
+
+    it('sends no reasoning extension for an unconfigured model outside the gpt-5.6 family', async () => {
+        respondWith({ id: 'resp_1', status: 'completed', output: [] });
+
+        await planTools(createRuntime('gpt-4-turbo'));
+
+        expect(readSentBody()).not.toHaveProperty('reasoning');
+    });
+
+    it.each(['gpt-5.6-luna', 'gpt-4-turbo'])('sends the configured reasoning effort override for %s', async (model) => {
+        respondWith({ id: 'resp_1', status: 'completed', output: [] });
+
+        await planTools(createRuntime(model, 'high'));
+
+        expect(readSentBody()).toMatchObject({ reasoning: { effort: 'high' } });
     });
 
     it('preserves call_id order across items the plan does not carry', async () => {
@@ -160,6 +218,8 @@ describe('generateOpenAiResponsesToolCalls', () => {
                 { id: 'call_a', name: 'project.query', arguments: {} },
                 { id: 'call_b', name: 'muteTrack', arguments: { trackId: 'track-1' } },
             ],
+            strictToolSchemas: true,
+            usage: null,
         });
     });
 
@@ -187,6 +247,22 @@ describe('generateOpenAiResponsesToolCalls', () => {
 
         expect(error).toBeInstanceOf(Error);
         expect((error as Error).message).toBe('Hosted AI refused tool planning');
+    });
+
+    it('attributes provider-reported usage to a refused turn', async () => {
+        respondWith({
+            id: 'resp_1',
+            status: 'completed',
+            output: [{ type: 'message', content: [{ type: 'refusal', refusal: 'refusal-body-text' }] }],
+            usage: { input_tokens: 22, output_tokens: 4, input_tokens_details: { cached_tokens: 0 } },
+        });
+
+        const error = await planTools().catch((error: unknown) => error);
+
+        expect(error).toMatchObject({
+            name: 'ToolPlanningRejectedError',
+            usage: { inputTokens: 22, outputTokens: 4, cacheReadInputTokens: 0, cacheWriteInputTokens: null },
+        });
     });
 
     it('rejects a prose answer that carries no tool call', async () => {
@@ -245,9 +321,32 @@ describe('generateOpenAiResponsesToolCalls', () => {
         expect(error.message).not.toContain('sk-secret');
     });
 
+    it('reads provider-reported usage off the response and reports no cache-write figure', async () => {
+        respondWith({
+            id: 'resp_1',
+            status: 'completed',
+            output: [],
+            usage: { input_tokens: 40, output_tokens: 7, input_tokens_details: { cached_tokens: 12 } },
+        });
+
+        const result = await planTools();
+
+        expect(result.usage).toEqual({
+            inputTokens: 40,
+            outputTokens: 7,
+            cacheReadInputTokens: 12,
+            cacheWriteInputTokens: null,
+        });
+    });
+
     it('drops an unusable provider request id instead of reporting it', async () => {
         respondWith({ id: 'x'.repeat(5_000), status: 'completed', output: [] });
 
-        await expect(planTools()).resolves.toEqual({ providerRequestId: null, calls: [] });
+        await expect(planTools()).resolves.toEqual({
+            providerRequestId: null,
+            calls: [],
+            strictToolSchemas: true,
+            usage: null,
+        });
     });
 });

@@ -30,8 +30,10 @@ const OPENAI_COMPATIBLE_CAPABILITIES: ModelProviderCapabilities = Object.freeze(
 });
 
 /**
- * `generateOpenAiResponsesToolCalls.ts` sends `parallel_tool_calls: true` on the wire, so this
- * first-party adapter reports the capability the compatible adapter above cannot promise.
+ * `generateOpenAiResponsesToolCalls.ts` always sends `parallel_tool_calls: true` on the wire —
+ * on the forced final turn too, since `allowed_tools` restricts which tools the model may call
+ * without capping the call count — so this first-party adapter reports the capability the
+ * compatible adapter above cannot promise.
  */
 const OPENAI_RESPONSES_CAPABILITIES: ModelProviderCapabilities = Object.freeze({
     ...OPENAI_COMPATIBLE_CAPABILITIES,

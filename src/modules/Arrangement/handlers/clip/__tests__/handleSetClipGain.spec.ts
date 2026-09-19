@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { dbToGain, gainToDb } from '#/utils/audioLevelLaw';
+
 import { handleSetClipGain } from '../handleSetClipGain';
 
 const mocks = vi.hoisted(() => ({
@@ -68,6 +70,28 @@ describe('handleSetClipGain', () => {
         expect(desc.inverseAction).toEqual({
             type: 'setClipGain',
             payload: { clipId: 'c1', gain: 0.8, expectedGain: 2 },
+        });
+    });
+
+    it('clamps the stored gain on both replay legs when the store holds a gain outside the writer range', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1', gain: 3 }] }],
+        });
+
+        const desc = handleSetClipGain.describe({
+            type: 'setClipGain',
+            payload: { clipId: 'c1', deltaDb: -6 },
+        });
+
+        const resolved = dbToGain(gainToDb(3) - 6);
+
+        expect(desc.inverseAction).toEqual({
+            type: 'setClipGain',
+            payload: { clipId: 'c1', gain: 2, expectedGain: resolved },
+        });
+        expect(desc.redoAction).toEqual({
+            type: 'setClipGain',
+            payload: { clipId: 'c1', gain: resolved, expectedGain: 2 },
         });
     });
 

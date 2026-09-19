@@ -1,13 +1,20 @@
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { HostedToolCallingProtocolError } from '../../../errors/HostedToolCallingProtocolError';
-import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
+import { isToolPlanningRejectedError, ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
 
 import { buildWireToolNameCodec } from './buildWireToolNameCodec';
-import { type HostedToolPlan } from './hostedToolPlan';
+import {
+    type HostedToolChoiceDirective,
+    type HostedToolPlan,
+    type HostedToolPlanUsage,
+    readHostedTokenCount,
+} from './hostedToolPlan';
+import { narrowToolSchemasForDirective } from './narrowToolSchemasForDirective';
 import { parseToolCallArguments } from './parseToolCallArguments';
+import { projectOpenAiStrictToolSchema } from './projectOpenAiStrictToolSchema';
 import { readProviderRequestId } from './readProviderRequestId';
 import { rejectedBatchMessage } from './rejectedBatchMessage';
 import { requestHostedOpenAiProvider } from './requestOpenAiProvider';
@@ -18,6 +25,7 @@ type GenerateOpenAiCompatibleToolCallsInput = {
     userMessage: string;
     toolSchemas: readonly ToolSchema[];
     maxOutputTokens: number;
+    directive: HostedToolChoiceDirective;
     signal?: AbortSignal;
 };
 
@@ -127,23 +135,34 @@ export async function generateOpenAiCompatibleToolCalls({
     userMessage,
     toolSchemas,
     maxOutputTokens,
+    directive,
     signal,
 }: GenerateOpenAiCompatibleToolCallsInput): Promise<HostedToolPlan> {
     const codec = buildWireToolNameCodec(toolSchemas);
+    const wireToolSchemas = narrowToolSchemasForDirective(toolSchemas, directive);
     const body = JSON.stringify({
         model: runtime.model,
         messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage },
         ],
-        tools: toolSchemas.map((schema) => ({
-            ...schema,
-            function: {
-                ...schema.function,
-                name: codec.encode(schema.function.name),
-            },
-        })),
-        tool_choice: 'auto',
+        tools: wireToolSchemas.map((schema) => {
+            const useStrictSchema = runtime.strict_tool_schemas === true;
+            const wireSchema = useStrictSchema ? projectOpenAiStrictToolSchema(schema) : schema;
+            return {
+                ...wireSchema,
+                function: {
+                    ...wireSchema.function,
+                    name: codec.encode(wireSchema.function.name),
+                    // Chat Completions defines `strict` inside `function`, beside `name` and
+                    // `parameters` — not as a sibling of `function` on the tool wrapper.
+                    ...(useStrictSchema ? { strict: true } : {}),
+                },
+            };
+        }),
+        // This dialect declares no `parallel_tool_calls` capability, so a forced choice omits
+        // it rather than sending a field the adapter's own capability contract disowns.
+        tool_choice: directive.mode === 'required' ? 'required' : 'auto',
         n: 1,
         stream: false,
         max_tokens: maxOutputTokens,
@@ -177,12 +196,37 @@ export async function generateOpenAiCompatibleToolCalls({
         }
         throw error;
     }
+    // Read before any rejection below so a refusal or a malformed batch still attributes
+    // whatever usage figure the provider reported for the turn that produced it.
+    const usage = isRecord(payload) ? readUsage(payload) : null;
+    let calls: ToolCallResult[];
+    try {
+        calls = parseToolCalls(payload, codec.decode);
+    } catch (error) {
+        throw isToolPlanningRejectedError(error) ? new ToolPlanningRejectedError(error.message, usage) : error;
+    }
     return {
         providerRequestId: isRecord(payload) ? readProviderRequestId(payload.id) : null,
-        calls: parseToolCalls(payload, codec.decode),
+        calls,
+        strictToolSchemas: runtime.strict_tool_schemas === true,
+        usage,
     };
 }
 
 function hasErrorName(value: unknown, name: string): boolean {
     return isRecord(value) && value.name === name;
+}
+
+function readUsage(payload: Record<string, unknown>): HostedToolPlanUsage | null {
+    if (!isRecord(payload.usage)) {
+        return null;
+    }
+    const details = isRecord(payload.usage.prompt_tokens_details) ? payload.usage.prompt_tokens_details : null;
+    return {
+        inputTokens: readHostedTokenCount(payload.usage.prompt_tokens),
+        outputTokens: readHostedTokenCount(payload.usage.completion_tokens),
+        cacheReadInputTokens: readHostedTokenCount(details?.cached_tokens),
+        // The chat-completions dialect reports no separate cache-write figure.
+        cacheWriteInputTokens: null,
+    };
 }

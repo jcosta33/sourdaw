@@ -1,5 +1,6 @@
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { transportStore } from '#/modules/Transport/stores';
+import { resolveSendLevelFields, SEND_LEVEL_LAW } from '#/utils/audioLevelLaw';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -55,14 +56,19 @@ function getPlannedSend(trackId: string, busId: string, priorActions: readonly A
     let send = track?.sends.find((candidate) => candidate.busId === busId);
     for (const action of priorActions) {
         if (action.type === 'addSend' && action.payload.trackId === trackId && action.payload.busId === busId) {
-            send = {
-                busId,
-                level: action.payload.level,
-                preFader: action.payload.preFader ?? false,
-            };
+            // A send the batch cannot land leaves the plan as it was: the
+            // decibel forms answer to the send law like the handler's do, and a
+            // refused request creates nothing to plan against.
+            const level = resolveSendLevelFields(action.payload, SEND_LEVEL_LAW.unity);
+            if (level.ok) {
+                send = { busId, level: level.linear, preFader: action.payload.preFader ?? false };
+            }
         }
         if (action.type === 'setSend' && action.payload.trackId === trackId && action.payload.busId === busId && send) {
-            send = { ...send, level: action.payload.level };
+            const level = resolveSendLevelFields(action.payload, send.level);
+            if (level.ok) {
+                send = { ...send, level: level.linear };
+            }
         }
         if (action.type === 'removeSend' && action.payload.trackId === trackId && action.payload.busId === busId) {
             send = undefined;

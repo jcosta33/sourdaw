@@ -1186,13 +1186,26 @@ export type AppAction =
     | {
           type: 'setMasterGain';
           /**
+           * Exactly one level form: the stored linear fraction `gain`, an absolute
+           * `gainDb`, or a `deltaDb` relative to the live master level. The handler
+           * converts the decibel forms against the live value; the transport store
+           * keeps its linear percent either way.
+           *
            * `expectedPercent` is the master percent the caller measured before it
            * derived `gain`. When present the handler conflicts instead of writing
            * if the live percent has moved, so a fader change that lands between a
            * caller's snapshot and command admission is never silently clobbered.
            * Omit it for a direct, absolute set that should always win.
            */
-          payload: { gain: number; expectedPercent?: number };
+          payload: {
+              /** Stored linear fraction. Exactly one of `gain`, `gainDb`, `deltaDb`. */
+              gain?: number;
+              /** Absolute master level in decibels. */
+              gainDb?: number;
+              /** Change relative to the live master level, in decibels. */
+              deltaDb?: number;
+              expectedPercent?: number;
+          };
       }
     | {
           type: 'restoreMasterGain';
@@ -1456,10 +1469,22 @@ export type AppAction =
       }
     | {
           type: 'setSend';
+          /**
+           * Exactly one level form is stated. The decibel forms are resolved by the
+           * handler against the live value; the store keeps a linear amplitude
+           * whichever form asked. Two forms at once is a contradiction rather than a
+           * preference, and none at all leaves nothing to write, so both are refused
+           * by the handler and by the AiRuntime payload validator.
+           */
           payload: {
               trackId: string;
               busId: string;
-              level: number;
+              /** Stored linear amplitude. Exactly one of `level`, `levelDb`, `deltaDb`. */
+              level?: number;
+              /** Absolute send level in decibels. */
+              levelDb?: number;
+              /** Change relative to the send's live level, in decibels. */
+              deltaDb?: number;
               expectedLevel?: number;
               expectedPreFader?: boolean;
           };
@@ -1636,17 +1661,33 @@ export type AppAction =
     | { type: 'setAutomationLaneEnabled'; payload: { laneId: string; enabled: boolean } }
     | {
           type: 'addAutomationPoint';
+          /**
+           * Exactly one level form is stated. The decibel forms are resolved by the
+           * handler against the live value; the store keeps a linear amplitude
+           * whichever form asked. Two forms at once is a contradiction rather than a
+           * preference, and none at all leaves nothing to write, so both are refused
+           * by the handler and by the AiRuntime payload validator.
+           *
+           * `valueDb` and `deltaDb` are legal only on a lane whose values *are* linear
+           * gain amplitudes; every other lane measures something decibels do not
+           * describe.
+           */
           payload: {
               laneId: string;
               /** Command-owned stable identity for exact undo/redo. AiRuntime rejects provider input. */
               pointId?: string;
               beat: number;
-              value: number;
               curve?: 'linear' | 'step' | 'exponential' | 's-curve' | 'stairs' | 'smooth' | 'bezier';
               tension?: number;
               stairSteps?: number;
               cp1?: { x: number; y: number };
               cp2?: { x: number; y: number };
+              /** The lane's own units. Exactly one of `value`, `valueDb`, `deltaDb`. */
+              value?: number;
+              /** Absolute level in decibels, gain lanes only. */
+              valueDb?: number;
+              /** Change relative to the level the gain lane already draws at this beat. */
+              deltaDb?: number;
           };
       }
     | {
@@ -1746,9 +1787,25 @@ export type AppAction =
     | { type: 'setAllVelocities'; payload: { clipId: string; velocity: number } }
     | {
           type: 'setTrackGain';
+          /**
+           * Exactly one level form is stated. The decibel forms are resolved by the
+           * handler against the live value; the store keeps a linear amplitude
+           * whichever form asked. Two forms at once is a contradiction rather than a
+           * preference, and none at all leaves nothing to write, so both are refused
+           * by the handler and by the AiRuntime payload validator.
+           *
+           * `expectedGain` stays required whichever form asked: every internal caller
+           * measures before it writes, and a provider-sourced action is stamped with
+           * the live gain during state-guard materialization.
+           */
           payload: {
               trackId: string;
-              gain: number;
+              /** Stored linear amplitude. Exactly one of `gain`, `gainDb`, `deltaDb`. */
+              gain?: number;
+              /** Absolute fader level in decibels. */
+              gainDb?: number;
+              /** Change relative to the track's live gain, in decibels. */
+              deltaDb?: number;
               expectedGain: number;
               automationRecordingPolicy?: AutomationRecordingPolicy;
           };
@@ -1887,9 +1944,21 @@ export type AppAction =
       }
     | {
           type: 'setClipGain';
+          /**
+           * Exactly one level form is stated. The decibel forms are resolved by the
+           * handler against the live value; the store keeps a linear amplitude
+           * whichever form asked. Two forms at once is a contradiction rather than a
+           * preference, and none at all leaves nothing to write, so both are refused
+           * by the handler and by the AiRuntime payload validator.
+           */
           payload: {
               clipId: string;
-              gain: number;
+              /** Stored linear amplitude. Exactly one of `gain`, `gainDb`, `deltaDb`. */
+              gain?: number;
+              /** Absolute clip level in decibels. */
+              gainDb?: number;
+              /** Change relative to the clip's live gain, in decibels. */
+              deltaDb?: number;
               /** Application-owned replay guard. AiRuntime payload validation rejects this field. */
               expectedGain?: number;
           };
@@ -1931,7 +2000,25 @@ export type AppAction =
       }
     | {
           type: 'addSend';
-          payload: { trackId: string; busId: string; level: number; preFader?: boolean; expectedAbsent?: true };
+          /**
+           * Exactly one level form is stated. The decibel forms are resolved by the
+           * handler against the live value; the store keeps a linear amplitude
+           * whichever form asked. Two forms at once is a contradiction rather than a
+           * preference, and none at all leaves nothing to write, so both are refused
+           * by the handler and by the AiRuntime payload validator.
+           */
+          payload: {
+              trackId: string;
+              busId: string;
+              /** Stored linear amplitude. Exactly one of `level`, `levelDb`, `deltaDb`. */
+              level?: number;
+              /** Absolute send level in decibels. */
+              levelDb?: number;
+              /** Change relative to unity, in decibels: the send does not exist yet. */
+              deltaDb?: number;
+              preFader?: boolean;
+              expectedAbsent?: true;
+          };
       }
     | {
           type: 'removeSend';
@@ -2697,6 +2784,11 @@ type HandlerDeferredEffects =
 
 export type HandlerExecutionResult = {
     status: 'written' | 'no-write' | 'conflict';
+    /** Why a refusal refused, when the handler knows something the caller cannot
+     *  read off the document — an argument outside the control's own law, say.
+     *  Carried into the conflict the dispatcher raises so the caller learns the
+     *  bound rather than only that the write did not happen. */
+    reason?: string;
 } & HandlerDeferredEffects;
 
 export type HandlerValidationContext = {

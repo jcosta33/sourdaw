@@ -9,7 +9,14 @@ import {
 type DescriptorGuidanceDeclaration = {
     deviceId: string;
     guidance: Omit<PluginDescriptorGuidance, 'parameters'> & { capabilities: PluginDescriptorCapabilities };
-    parameterFallback: (parameter: DeviceParameter) => DeviceParameterGuidance;
+    /**
+     * Omitted when `parameterOverrides` authors every one of the device's
+     * parameters by hand — an effect descriptor with full per-parameter
+     * coverage has no generic text left to fall back to. `applyDescriptorGuidance`
+     * still throws its own "Missing guidance" error if a parameter reaches
+     * neither source, so an incomplete override table cannot fall silent.
+     */
+    parameterFallback?: (parameter: DeviceParameter) => DeviceParameterGuidance;
     parameterOverrides?: Readonly<Record<string, DeviceParameterGuidance>>;
 };
 
@@ -92,10 +99,14 @@ export function applyDescriptorGuidance(
         const guidance = {
             ...deviceGuidance,
             parameters: Object.fromEntries(
-                descriptor.parameters.map((parameter) => [
-                    parameter.id,
-                    declaration.parameterOverrides?.[parameter.id] ?? declaration.parameterFallback(parameter),
-                ])
+                descriptor.parameters.map((parameter) => {
+                    const parameterGuidanceValue =
+                        declaration.parameterOverrides?.[parameter.id] ?? declaration.parameterFallback?.(parameter);
+                    if (!parameterGuidanceValue) {
+                        throw new Error(`Missing guidance for ${descriptor.id}/${parameter.id}`);
+                    }
+                    return [parameter.id, parameterGuidanceValue];
+                })
             ),
         };
         const unknownOverrides = Object.keys(declaration.parameterOverrides ?? {}).filter(

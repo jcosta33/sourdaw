@@ -1,13 +1,20 @@
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
-import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
+import { isToolPlanningRejectedError, ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type OpenAiCloudRuntime } from '../cloudSession';
 
+import { buildReasoningExtension } from './buildReasoningExtension';
 import { buildWireToolNameCodec } from './buildWireToolNameCodec';
-import { type HostedToolPlan } from './hostedToolPlan';
-import { isGpt56FamilyModel } from './openAiModelFamilies';
+import {
+    type HostedToolChoiceDirective,
+    type HostedToolPlan,
+    type HostedToolPlanUsage,
+    readHostedTokenCount,
+} from './hostedToolPlan';
+import { narrowToolSchemasForDirective } from './narrowToolSchemasForDirective';
 import { parseToolCallArguments } from './parseToolCallArguments';
+import { projectOpenAiStrictToolSchema } from './projectOpenAiStrictToolSchema';
 import { readProviderRequestId } from './readProviderRequestId';
 import { rejectedBatchMessage } from './rejectedBatchMessage';
 import { requestHostedOpenAiProvider } from './requestOpenAiProvider';
@@ -18,6 +25,7 @@ type GenerateOpenAiResponsesToolCallsInput = {
     userMessage: string;
     toolSchemas: readonly ToolSchema[];
     maxOutputTokens: number;
+    directive: HostedToolChoiceDirective;
     signal?: AbortSignal;
 };
 
@@ -121,34 +129,81 @@ function hasErrorName(value: unknown, name: string): boolean {
     return isRecord(value) && value.name === name;
 }
 
+function buildToolChoiceExtension(
+    directive: HostedToolChoiceDirective,
+    narrowedSchemas: readonly ToolSchema[],
+    codec: ReturnType<typeof buildWireToolNameCodec>
+): Record<string, unknown> {
+    if (directive.mode === 'required') {
+        // `allowed_tools` restricts the choice set without capping the call count: the
+        // workflow terminal shape is two calls in one turn (`selectWorkflowCapability`
+        // beside `command.batch.propose`), so `parallel_tool_calls` stays true here too.
+        // The allowed set is read from the narrowed schema list, not the raw directive
+        // names, so a terminal name with no matching advertised schema cannot reach the wire.
+        return {
+            tool_choice: {
+                type: 'allowed_tools',
+                mode: 'required',
+                tools: narrowedSchemas.map((schema) => ({
+                    type: 'function',
+                    name: codec.encode(schema.function.name),
+                })),
+            },
+            parallel_tool_calls: true,
+        };
+    }
+    return { tool_choice: 'auto', parallel_tool_calls: true };
+}
+
+function readUsage(payload: Record<string, unknown>): HostedToolPlanUsage | null {
+    if (!isRecord(payload.usage)) {
+        return null;
+    }
+    const details = isRecord(payload.usage.input_tokens_details) ? payload.usage.input_tokens_details : null;
+    return {
+        inputTokens: readHostedTokenCount(payload.usage.input_tokens),
+        outputTokens: readHostedTokenCount(payload.usage.output_tokens),
+        cacheReadInputTokens: readHostedTokenCount(details?.cached_tokens),
+        // The Responses API reports no separate cache-write figure.
+        cacheWriteInputTokens: null,
+    };
+}
+
 export async function generateOpenAiResponsesToolCalls({
     runtime,
     systemPrompt,
     userMessage,
     toolSchemas,
     maxOutputTokens,
+    directive,
     signal,
 }: GenerateOpenAiResponsesToolCallsInput): Promise<HostedToolPlan> {
     const codec = buildWireToolNameCodec(toolSchemas);
+    // `allowed_tools` restricts the model's choice without dropping any tool from the
+    // advertised set below, so only the narrowed name list feeds the tool-choice
+    // extension; the shared empty-set validation still applies here.
+    const narrowedSchemas = narrowToolSchemasForDirective(toolSchemas, directive);
     const body = JSON.stringify({
         model: runtime.model,
         instructions: systemPrompt,
         input: [{ role: 'user', content: userMessage }],
-        tools: toolSchemas.map((schema) => ({
-            type: 'function',
-            name: codec.encode(schema.function.name),
-            description: schema.function.description,
-            parameters: schema.function.parameters,
-            strict: false,
-        })),
-        tool_choice: 'auto',
-        parallel_tool_calls: true,
+        tools: toolSchemas.map((schema) => {
+            const strictSchema = projectOpenAiStrictToolSchema(schema);
+            return {
+                type: 'function',
+                name: codec.encode(strictSchema.function.name),
+                description: strictSchema.function.description,
+                parameters: strictSchema.function.parameters,
+                strict: true,
+            };
+        }),
+        ...buildToolChoiceExtension(directive, narrowedSchemas, codec),
         max_output_tokens: maxOutputTokens,
         stream: false,
         // The data policy disclosed to users is request-scoped processing, so no
         // request may be retained on the provider side.
         store: false,
-        ...(isGpt56FamilyModel(runtime.model) ? { reasoning: { effort: 'none' } } : {}),
+        ...buildReasoningExtension(runtime),
     });
     const chunks: Uint8Array[] = [];
     const response = await requestHostedOpenAiProvider({
@@ -179,8 +234,19 @@ export async function generateOpenAiResponsesToolCalls({
         }
         throw error;
     }
+    // Read before any rejection below so a refusal or a malformed batch still attributes
+    // whatever usage figure the provider reported for the turn that produced it.
+    const usage = isRecord(payload) ? readUsage(payload) : null;
+    let calls: ToolCallResult[];
+    try {
+        calls = parseToolPlan(payload, codec.decode);
+    } catch (error) {
+        throw isToolPlanningRejectedError(error) ? new ToolPlanningRejectedError(error.message, usage) : error;
+    }
     return {
         providerRequestId: isRecord(payload) ? readProviderRequestId(payload.id) : null,
-        calls: parseToolPlan(payload, codec.decode),
+        calls,
+        strictToolSchemas: true,
+        usage,
     };
 }

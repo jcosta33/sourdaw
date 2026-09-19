@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { dbToGain } from '#/utils/audioLevelLaw';
+
 import { handleSetSend } from '../handleSetSend';
 
 const mocks = vi.hoisted(() => ({
@@ -125,6 +127,45 @@ describe('handleSetSend', () => {
         });
 
         expect(isNoop).toBe(true);
+    });
+
+    it('detects an unchanged send level stated in decibels as a semantic no-op', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', kind: 'audio', sends: [{ busId: 'bus-1', level: dbToGain(-6), preFader: false }] }],
+        });
+
+        const isNoop = handleSetSend.isNoop?.({
+            type: 'setSend',
+            payload: { trackId: 't1', busId: 'bus-1', levelDb: -6 },
+        });
+
+        expect(isNoop).toBe(true);
+    });
+
+    it('does not treat a relative decibel request against the same send as a no-op', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', kind: 'audio', sends: [{ busId: 'bus-1', level: dbToGain(-6), preFader: false }] }],
+        });
+
+        const isNoop = handleSetSend.isNoop?.({
+            type: 'setSend',
+            payload: { trackId: 't1', busId: 'bus-1', deltaDb: -3 },
+        });
+
+        expect(isNoop).toBe(false);
+    });
+
+    it('does not treat a differing decibel level as a no-op', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', kind: 'audio', sends: [{ busId: 'bus-1', level: dbToGain(-6), preFader: false }] }],
+        });
+
+        const isNoop = handleSetSend.isNoop?.({
+            type: 'setSend',
+            payload: { trackId: 't1', busId: 'bus-1', levelDb: -3 },
+        });
+
+        expect(isNoop).toBe(false);
     });
 
     it('executes a conditional level restore when the expected send still matches', () => {

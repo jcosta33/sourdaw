@@ -1,5 +1,9 @@
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
-import { type HostedLlmConfiguration, type HostedLlmProvider } from '../../models/HostedLlmProvider';
+import {
+    HOSTED_REASONING_EFFORTS,
+    type HostedLlmConfiguration,
+    type HostedLlmProvider,
+} from '../../models/HostedLlmProvider';
 import { setCloudProviderConfig } from '../../repositories/cloudLlm/setCloudProviderConfig';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 
@@ -34,6 +38,18 @@ function normalizeBaseUrl(provider: HostedLlmProvider, baseUrl: string | undefin
     return parsed.toString().replace(/\/$/u, '');
 }
 
+function assertValidReasoningEffort(configuration: HostedLlmConfiguration): void {
+    if (configuration.reasoningEffort === undefined) {
+        return;
+    }
+    if (configuration.provider !== 'openai') {
+        throw createAiRuntimeError('Reasoning effort can only be configured for the OpenAI provider');
+    }
+    if (!HOSTED_REASONING_EFFORTS.includes(configuration.reasoningEffort)) {
+        throw createAiRuntimeError('Reasoning effort is invalid');
+    }
+}
+
 export async function configureCloudProvider(configuration: HostedLlmConfiguration): Promise<void> {
     const model = configuration.model.trim();
     if (!model) {
@@ -50,6 +66,8 @@ export async function configureCloudProvider(configuration: HostedLlmConfigurati
     if (configuration.authentication === 'none' && apiKey !== '') {
         throw createAiRuntimeError('Remove the API key before connecting without authentication');
     }
+
+    assertValidReasoningEffort(configuration);
 
     const normalizedBaseUrl = normalizeBaseUrl(configuration.provider, configuration.baseUrl);
     if (
@@ -73,6 +91,8 @@ export async function configureCloudProvider(configuration: HostedLlmConfigurati
         baseUrl: normalizedBaseUrl,
         authentication: configuration.authentication,
         apiKey,
+        strictToolSchemas: configuration.strictToolSchemas,
+        reasoningEffort: configuration.reasoningEffort,
     });
 
     if (llmStatusStore.value?.state === 'ready' && llmStatusStore.value.backend === 'cloud') {

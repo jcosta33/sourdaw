@@ -37,6 +37,19 @@ import type {
 import type { ActionUndoEntry } from '../../models/UndoEntry';
 import type { ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 
+/**
+ * The linear amplitude a fixture action states. Level commands accept decibel
+ * forms too, so the field is optional on the payload; these fixtures always
+ * state an amplitude, and a missing one is a broken fixture rather than a
+ * silent zero.
+ */
+function statedLinearGain(payload: { gain?: number }): number {
+    if (payload.gain === undefined) {
+        throw new Error('Expected the action to state a linear amplitude');
+    }
+    return payload.gain;
+}
+
 type CrdtStoresModule = typeof import('#/modules/CrdtDocument/stores');
 type SetSemanticContextInput = Parameters<CrdtStoresModule['setSemanticContext']>[0];
 type CommitUndoEntryModule = typeof import('../commitUndoEntry');
@@ -482,7 +495,7 @@ describe('executeAppAction', () => {
         registerHandlerMap({
             setTrackGain: create_mock_handler<SetTrackGainAction>({
                 execute: async (action) => {
-                    storage.set({ value: action.payload.gain });
+                    storage.set({ value: statedLinearGain(action.payload) });
                     executionCount++;
                     if (executionCount === 1) {
                         markHandlerStarted?.();
@@ -497,7 +510,7 @@ describe('executeAppAction', () => {
                         payload: {
                             trackId: action.payload.trackId,
                             gain: action.payload.expectedGain,
-                            expectedGain: action.payload.gain,
+                            expectedGain: statedLinearGain(action.payload),
                         },
                     },
                 }),

@@ -4,7 +4,6 @@ import { FADER_GAIN_RANGE_DESCRIPTION } from '#/utils/audioLevelLaw';
 
 import { isAiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
-import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { getCloudProviderRuntime } from '../getCloudProviderRuntime';
 import { linkCloudRequestAbort } from '../linkCloudRequestAbort';
 import { registerCloudStreamController } from '../registerCloudStreamController';
@@ -13,7 +12,7 @@ import { unregisterCloudStreamController } from '../unregisterCloudStreamControl
 import { generateAnthropicToolCalls } from './generateAnthropicToolCalls';
 import { generateOpenAiCompatibleToolCalls } from './generateOpenAiCompatibleToolCalls';
 import { generateOpenAiResponsesToolCalls } from './generateOpenAiResponsesToolCalls';
-import { type HostedToolPlan } from './hostedToolPlan';
+import { type HostedToolChoiceDirective, type HostedToolPlan } from './hostedToolPlan';
 
 const CLOUD_SYSTEM_PROMPT = `You are a professional music production AI integrated into a DAW (Digital Audio Workstation). Use the provided tools to execute all user requests. Never describe actions — execute them via tools. You understand music theory, mixing, mastering, and arrangement.
 
@@ -31,8 +30,9 @@ export const generateCloudToolCalls = inject({ logger })(
             userMessage: string,
             toolSchemas: readonly ToolSchema[],
             maxOutputTokens: number,
+            directive: HostedToolChoiceDirective,
             signal?: AbortSignal
-        ): Promise<ToolCallResult[]> {
+        ): Promise<HostedToolPlan> {
             const runtime = getCloudProviderRuntime();
             if (!runtime) {
                 throw new Error('Hosted AI is not configured');
@@ -51,6 +51,7 @@ export const generateCloudToolCalls = inject({ logger })(
                             userMessage,
                             toolSchemas,
                             maxOutputTokens,
+                            directive,
                             signal: controller.signal,
                         });
                         break;
@@ -61,6 +62,7 @@ export const generateCloudToolCalls = inject({ logger })(
                             userMessage,
                             toolSchemas,
                             maxOutputTokens,
+                            directive,
                             signal: controller.signal,
                         });
                         break;
@@ -71,6 +73,7 @@ export const generateCloudToolCalls = inject({ logger })(
                             userMessage,
                             toolSchemas,
                             maxOutputTokens,
+                            directive,
                             signal: controller.signal,
                         });
                         break;
@@ -84,7 +87,7 @@ export const generateCloudToolCalls = inject({ logger })(
                     `[Cloud AI] ${runtime.provider} request ${plan.providerRequestId ?? 'unreported'} returned ${String(plan.calls.length)} tool call(s): ${plan.calls.map((call) => call.name).join(', ')}`
                 );
 
-                return plan.calls;
+                return plan;
             } catch (error) {
                 if (isAiRuntimeConfigurationChangedError(controller.signal.reason)) {
                     throw controller.signal.reason;

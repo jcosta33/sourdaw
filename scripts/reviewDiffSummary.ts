@@ -16,6 +16,14 @@ export type ReviewDiffSummary = ReviewDiffCount & {
     groups: Record<ReviewDiffGroup, ReviewDiffCount>;
 };
 
+export type ReviewChangedPath = {
+    path: string;
+    group: ReviewDiffGroup;
+    added: number;
+    deleted: number;
+    binary: boolean;
+};
+
 type NumstatEntry = {
     added: number;
     deleted: number;
@@ -118,11 +126,22 @@ function classifyPath(path: string, generatedPaths: ReadonlySet<string>): Review
     return 'handwritten';
 }
 
-function addEntry(count: ReviewDiffCount, entry: NumstatEntry): void {
+function addEntry(count: ReviewDiffCount, entry: { added: number; deleted: number; binary: boolean }): void {
     count.files += 1;
     count.added += entry.added;
     count.deleted += entry.deleted;
     count.binaryFiles += entry.binary ? 1 : 0;
+}
+
+export function changedReviewPaths(root: string, numstat: Buffer): ReviewChangedPath[] {
+    const generatedPaths = new Set([...attributeGeneratedPaths(root), ...wasmGeneratedPaths()]);
+    return parseNumstat(numstat).map((entry) => ({
+        path: entry.path,
+        group: classifyPath(entry.path, generatedPaths),
+        added: entry.added,
+        deleted: entry.deleted,
+        binary: entry.binary,
+    }));
 }
 
 export function summarizeReviewDiff(root: string, numstat: Buffer): ReviewDiffSummary {
@@ -133,10 +152,9 @@ export function summarizeReviewDiff(root: string, numstat: Buffer): ReviewDiffSu
         generated: emptyCount(),
     };
     const summary: ReviewDiffSummary = { ...emptyCount(), groups };
-    const generatedPaths = new Set([...attributeGeneratedPaths(root), ...wasmGeneratedPaths()]);
-    for (const entry of parseNumstat(numstat)) {
+    for (const entry of changedReviewPaths(root, numstat)) {
         addEntry(summary, entry);
-        addEntry(groups[classifyPath(entry.path, generatedPaths)], entry);
+        addEntry(groups[entry.group], entry);
     }
     return summary;
 }

@@ -4,6 +4,7 @@ import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatus
 import { ToolPlanningRejectedError } from '../../../../errors/ToolPlanningRejectedError';
 import { type OpenAiCompatibleCloudRuntime } from '../../cloudSession';
 import { generateOpenAiCompatibleToolCalls } from '../generateOpenAiCompatibleToolCalls';
+import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../hostedToolPlan';
 
 const runtime: OpenAiCompatibleCloudRuntime = {
     provider: 'openai-compatible',
@@ -11,6 +12,7 @@ const runtime: OpenAiCompatibleCloudRuntime = {
     session_id: null,
     model: 'gpt-5.2',
     base_url: 'http://localhost:1234/v1',
+    strict_tool_schemas: false,
 };
 
 const tools = [
@@ -29,17 +31,21 @@ const tools = [
     },
 ];
 
-function generateToolCalls() {
+function generateToolCalls(directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE) {
     return generateOpenAiCompatibleToolCalls({
         runtime,
         systemPrompt: 'system',
         userMessage: 'mute drums',
         toolSchemas: tools,
         maxOutputTokens: 8192,
+        directive,
     });
 }
 
-async function requestBodyFor(targetRuntime: OpenAiCompatibleCloudRuntime): Promise<Record<string, unknown>> {
+async function requestBodyFor(
+    targetRuntime: OpenAiCompatibleCloudRuntime,
+    directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE
+): Promise<Record<string, unknown>> {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
         new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }] }), {
             status: 200,
@@ -53,6 +59,7 @@ async function requestBodyFor(targetRuntime: OpenAiCompatibleCloudRuntime): Prom
         userMessage: 'mute drums',
         toolSchemas: tools,
         maxOutputTokens: 8192,
+        directive,
     });
     const request = fetchMock.mock.calls[0]?.[1];
     if (!request || typeof request.body !== 'string') {
@@ -125,6 +132,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             userMessage: 'mute drums',
             toolSchemas: tools,
             maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
         });
 
         expect(result.calls).toEqual([{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }]);
@@ -146,6 +154,220 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         expect(body.tool_choice).toBe('auto');
         expect(body.n).toBe(1);
         expect(body).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('narrows the wire tools to the required directive and never sends parallel_tool_calls', async () => {
+        const twoTools = [
+            tools[0]!,
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setTempo',
+                    description: 'Set tempo',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { bpm: { type: 'number' } },
+                        required: ['bpm'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }] }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            })
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        await generateOpenAiCompatibleToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'mute drums',
+            toolSchemas: twoTools,
+            maxOutputTokens: 8192,
+            directive: { mode: 'required', toolNames: ['muteTrack'] },
+        });
+
+        const request = fetchMock.mock.calls[0]?.[1];
+        if (!request || typeof request.body !== 'string') {
+            throw new Error('Expected a JSON request body');
+        }
+        const body = JSON.parse(request.body) as {
+            tools: Array<{ function: { name: string } }>;
+            tool_choice: unknown;
+        };
+        expect(body.tool_choice).toBe('required');
+        expect(body.tools).toHaveLength(1);
+        expect(body.tools[0]?.function.name).toBe('muteTrack');
+        expect(body).not.toHaveProperty('parallel_tool_calls');
+    });
+
+    it('narrows to exactly the directive-named tools, in their advertised order, dropping an unnamed one', async () => {
+        const threeTools = [
+            tools[0]!,
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setVolume',
+                    description: 'Set volume',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { db: { type: 'number' } },
+                        required: ['db'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setPan',
+                    description: 'Set pan',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { pan: { type: 'number' } },
+                        required: ['pan'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }] }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            })
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        await generateOpenAiCompatibleToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'quieter and centered',
+            toolSchemas: threeTools,
+            maxOutputTokens: 8192,
+            directive: { mode: 'required', toolNames: ['setVolume', 'setPan'] },
+        });
+
+        const request = fetchMock.mock.calls[0]?.[1];
+        if (!request || typeof request.body !== 'string') {
+            throw new Error('Expected a JSON request body');
+        }
+        const body = JSON.parse(request.body) as { tools: Array<{ function: { name: string } }> };
+        expect(body.tools.map((tool) => tool.function.name)).toEqual(['setVolume', 'setPan']);
+    });
+
+    it('throws before any network call when a required directive names no tool', async () => {
+        const fetchMock = vi.fn<typeof fetch>();
+        vi.stubGlobal('fetch', fetchMock);
+
+        await expect(generateToolCalls({ mode: 'required', toolNames: [] })).rejects.toThrow(
+            'Hosted AI tool-choice directive named an empty tool set'
+        );
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('projects a strict, bound-free wire schema only when the runtime opts in', async () => {
+        const strictRuntime: OpenAiCompatibleCloudRuntime = { ...runtime, strict_tool_schemas: true };
+        const boundedTools = [
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setTempo',
+                    description: 'Set tempo',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { bpm: { type: 'number', minimum: 20, maximum: 300 } },
+                        required: ['bpm'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }],
+                    usage: { prompt_tokens: 11, completion_tokens: 3, prompt_tokens_details: { cached_tokens: 2 } },
+                }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+            )
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await generateOpenAiCompatibleToolCalls({
+            runtime: strictRuntime,
+            systemPrompt: 'system',
+            userMessage: 'faster',
+            toolSchemas: boundedTools,
+            maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
+        });
+
+        const request = fetchMock.mock.calls[0]?.[1];
+        if (!request || typeof request.body !== 'string') {
+            throw new Error('Expected a JSON request body');
+        }
+        const body = JSON.parse(request.body) as {
+            tools: Array<{ function: { strict?: boolean; parameters: Record<string, unknown> } }>;
+        };
+        expect(body.tools[0]?.function.strict).toBe(true);
+        expect(body.tools[0]?.function.parameters).not.toHaveProperty(['properties', 'bpm', 'minimum']);
+        expect(result.strictToolSchemas).toBe(true);
+        expect(result.usage).toEqual({
+            inputTokens: 11,
+            outputTokens: 3,
+            cacheReadInputTokens: 2,
+            cacheWriteInputTokens: null,
+        });
+    });
+
+    it('sends an unprojected schema and no strict flag for a non-strict runtime', async () => {
+        const boundedTools = [
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setTempo',
+                    description: 'Set tempo',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { bpm: { type: 'number', minimum: 20, maximum: 300 } },
+                        required: ['bpm'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }] }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            })
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await generateOpenAiCompatibleToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'faster',
+            toolSchemas: boundedTools,
+            maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
+        });
+
+        const request = fetchMock.mock.calls[0]?.[1];
+        if (!request || typeof request.body !== 'string') {
+            throw new Error('Expected a JSON request body');
+        }
+        const body = JSON.parse(request.body) as {
+            tools: Array<{ function: { strict?: boolean; parameters: Record<string, unknown> } }>;
+        };
+        expect(body.tools[0]?.function.strict).toBeUndefined();
+        expect(body.tools[0]).not.toHaveProperty('strict');
+        expect(body.tools[0]?.function.parameters).toHaveProperty(['properties', 'bpm', 'minimum'], 20);
+        expect(result.strictToolSchemas).toBe(false);
     });
 
     it('sends max_tokens for openai-compatible provider', async () => {
@@ -213,6 +435,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
                 userMessage: 'mute drums',
                 toolSchemas: tools,
                 maxOutputTokens: 8192,
+                directive: AUTO_TOOL_CHOICE,
             })
         ).rejects.toThrow('Hosted AI returned an invalid tool-call batch');
     });
@@ -226,6 +449,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             userMessage: 'mute drums',
             toolSchemas: tools,
             maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
         }).catch((error: unknown) => error);
 
         expect(isHostedAiHttpStatusError(error)).toBe(true);
@@ -272,6 +496,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
                 userMessage: 'mute drums',
                 toolSchemas: tools,
                 maxOutputTokens: 8192,
+                directive: AUTO_TOOL_CHOICE,
             })
         ).rejects.toThrow('Hosted AI tool plan was truncated at the token limit');
     });
@@ -310,6 +535,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
                 userMessage: 'mute drums',
                 toolSchemas: tools,
                 maxOutputTokens: 8192,
+                directive: AUTO_TOOL_CHOICE,
             })
         ).rejects.toThrow('Hosted AI returned an inconsistent tool-call batch');
     });
@@ -334,6 +560,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
                 userMessage: 'mute drums',
                 toolSchemas: tools,
                 maxOutputTokens: 8192,
+                directive: AUTO_TOOL_CHOICE,
             })
         ).rejects.toThrow('Hosted AI tool plan was truncated at the token limit');
     });
@@ -381,11 +608,34 @@ describe('generateOpenAiCompatibleToolCalls', () => {
                 userMessage: 'mute drums',
                 toolSchemas: tools,
                 maxOutputTokens: 8192,
+                directive: AUTO_TOOL_CHOICE,
             })
         ).rejects.toThrow('Hosted AI refused tool planning');
 
         fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ choices: [] }), { status: 200 }));
         await expect(generateToolCalls()).rejects.toMatchObject({ name: 'HostedToolCallingProtocolError' });
+    });
+
+    it('attributes provider-reported usage to a refused turn', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn<typeof fetch>().mockResolvedValue(
+                new Response(
+                    JSON.stringify({
+                        choices: [{ finish_reason: 'stop', message: { refusal: 'cannot comply' } }],
+                        usage: { prompt_tokens: 18, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 0 } },
+                    }),
+                    { status: 200 }
+                )
+            )
+        );
+
+        const error = await generateToolCalls().catch((error: unknown) => error);
+
+        expect(error).toMatchObject({
+            name: 'ToolPlanningRejectedError',
+            usage: { inputTokens: 18, outputTokens: 5, cacheReadInputTokens: 0, cacheWriteInputTokens: null },
+        });
     });
 
     it.each([
@@ -457,6 +707,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             session_id: null,
             model: 'local-model',
             base_url: 'http://localhost:1234/v1',
+            strict_tool_schemas: false,
         };
         const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
             new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }] }), {
@@ -472,6 +723,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             userMessage: 'mute drums',
             toolSchemas: tools,
             maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
         });
 
         expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
@@ -525,6 +777,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             userMessage: 'what tracks exist',
             toolSchemas: dottedTools,
             maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
         });
 
         const request = fetchMock.mock.calls[0]?.[1];

@@ -1,6 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
+import { automationStore } from '#/modules/Automation/stores';
+import { isLinearGainAutomationLane } from '#/modules/Automation/useCases';
 
 import {
     RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS,
@@ -37,6 +39,25 @@ function hasOnlyInitiatingPayloadKeys(action: RuntimeAction): boolean {
 
     const allowedKeys: readonly string[] = RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS[action.type];
     return Reflect.ownKeys(payload).every((key) => typeof key === 'string' && allowedKeys.includes(key));
+}
+
+/**
+ * Decibels describe a gain amplitude and nothing else. A lane holding pan
+ * positions, a cutoff in hertz, or a time in milliseconds has no decibel
+ * reading, and a lane whose gain is *already* stored in decibels would take the
+ * conversion twice. Only the payload validator's own view is too narrow to see
+ * which of those a `laneId` names, so the lane is resolved here, where the
+ * stores are.
+ */
+function addressesGainLaneForDecibels(action: RuntimeAction): boolean {
+    if (action.type !== 'addAutomationPoint') {
+        return true;
+    }
+    if (action.payload.valueDb === undefined && action.payload.deltaDb === undefined) {
+        return true;
+    }
+    const lane = automationStore.value?.lanes.find((candidate) => candidate.id === action.payload.laneId);
+    return lane !== undefined && isLinearGainAutomationLane(lane);
 }
 
 const UNAWAITED_AI_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set([
@@ -117,6 +138,11 @@ export const validateActions = inject({ logger })(
 
                 if (!hasAvailableVcaTargets(action)) {
                     logger.warn(`Unavailable target for action ${action.type}`);
+                    return false;
+                }
+
+                if (!addressesGainLaneForDecibels(action)) {
+                    logger.warn(`Decibel value rejected for a non-gain automation lane: ${action.type}`);
                     return false;
                 }
 

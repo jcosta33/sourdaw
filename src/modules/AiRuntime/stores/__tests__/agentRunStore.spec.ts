@@ -319,4 +319,68 @@ describe('agentRunStore', () => {
             }),
         ]);
     });
+
+    describe('readProviderUsage round-trip', () => {
+        function buildRunWithValidProviderUsage(runId: string) {
+            agentRunLifecycle.create({
+                runId,
+                request: 'set the tempo',
+                mode: 'plan',
+                createdRevision: null,
+                requestedRoute: 'cloud',
+            });
+            agentRunLifecycle.recordProviderUsage({
+                runId,
+                usage: {
+                    provider: 'anthropic',
+                    model: 'model-1',
+                    inputTokens: 10,
+                    outputTokens: 5,
+                    provenance: 'provider-reported',
+                    strictToolSchemas: true,
+                    cacheWriteInputTokens: 8,
+                },
+            });
+            const state = readAgentRunState();
+            expect(state.runs).toHaveLength(1);
+            expect(state.runs[0]?.providerUsage[0]).toMatchObject({
+                strictToolSchemas: true,
+                cacheWriteInputTokens: 8,
+            });
+            return state;
+        }
+
+        /** Corrupts the one field under test on the persisted-shape clone, off the store's own valid state, never a hand-built fixture. */
+        function corruptFirstRunProviderUsageField(
+            state: ReturnType<typeof readAgentRunState>,
+            key: string,
+            value: unknown
+        ) {
+            const clone = structuredClone(state) as unknown as {
+                runs: Array<{ providerUsage: Array<Record<string, unknown>> }>;
+            };
+            const usage = clone.runs[0]?.providerUsage[0];
+            if (usage === undefined) {
+                throw new Error('Expected a provider-usage entry to corrupt');
+            }
+            usage[key] = value;
+            return clone;
+        }
+
+        it('drops the whole run when a provider-usage entry carries a non-boolean strictToolSchemas', () => {
+            const validState = buildRunWithValidProviderUsage('usage-run-strict');
+
+            const corrupted = corruptFirstRunProviderUsageField(validState, 'strictToolSchemas', 'yes');
+
+            expect(sanitizeAgentRunState(corrupted).runs).toHaveLength(0);
+        });
+
+        it('drops the whole run when a provider-usage entry carries a malformed cacheWriteInputTokens', () => {
+            const validState = buildRunWithValidProviderUsage('usage-run-cache-write');
+
+            const corrupted = corruptFirstRunProviderUsageField(validState, 'cacheWriteInputTokens', -1);
+
+            expect(sanitizeAgentRunState(corrupted).runs).toHaveLength(0);
+        });
+    });
 });

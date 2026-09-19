@@ -3,8 +3,80 @@ import { describe, expect, it } from 'vitest';
 import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
+import { type HostedToolPlanUsage } from '../cloudLlm/cloudInference/hostedToolPlan';
 
 type ModelProviderUsageEvent = Extract<ModelProviderEvent, { type: 'usage' }>;
+
+const BOUND_KEYWORDS = [
+    'minimum',
+    'maximum',
+    'exclusiveMinimum',
+    'exclusiveMaximum',
+    'multipleOf',
+    'minLength',
+    'maxLength',
+    'pattern',
+    'format',
+    'maxItems',
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * True when a wire property schema admits `null` through either mechanism the OpenAI
+ * strict projection uses: a widened `type` array, or an `anyOf` branch typed `null`
+ * (the shape `makeNullable` builds for a property whose own schema was not a plain
+ * `type`, e.g. `enum`).
+ */
+function isNullableWireSchema(schema: unknown): boolean {
+    if (!isRecord(schema)) {
+        return false;
+    }
+    if (Array.isArray(schema.type)) {
+        return schema.type.includes('null');
+    }
+    if (Array.isArray(schema.anyOf)) {
+        return schema.anyOf.some((branch) => isRecord(branch) && branch.type === 'null');
+    }
+    return false;
+}
+
+/**
+ * Recursively collects every occurrence of a stripped bound keyword still present as a
+ * schema node's own keyword. Schema-structure-aware rather than a blind key walk, matching
+ * the walker in `anthropicStrictSchemaProjection.spec.ts`/`openAiStrictSchemaProjection.spec.ts`:
+ * only `properties`, `items`, and the composition keywords carry nested schema nodes, so a
+ * tool argument named e.g. "pattern" is never mistaken for the JSON Schema keyword.
+ */
+export function findBoundKeywords(node: unknown, found: string[] = []): string[] {
+    if (Array.isArray(node)) {
+        for (const entry of node) {
+            findBoundKeywords(entry, found);
+        }
+        return found;
+    }
+    if (typeof node !== 'object' || node === null) {
+        return found;
+    }
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+        if ((BOUND_KEYWORDS as readonly string[]).includes(key)) {
+            found.push(key);
+            continue;
+        }
+        if (key === 'properties' && typeof value === 'object' && value !== null) {
+            for (const propertySchema of Object.values(value as Record<string, unknown>)) {
+                findBoundKeywords(propertySchema, found);
+            }
+            continue;
+        }
+        if (key === 'items' || key === 'anyOf' || key === 'oneOf' || key === 'allOf') {
+            findBoundKeywords(value, found);
+        }
+    }
+    return found;
+}
 
 /**
  * One logical exchange every hosted protocol must reproduce. Each contract spec
@@ -16,6 +88,10 @@ export const PROVIDER_CONFORMANCE_FIXTURE = {
     providerRequestId: 'provider-request-9f27',
     textDeltas: ['Lower ', 'the vocals'],
     usage: { inputTokens: 11, outputTokens: 4 },
+    // Base fields every dialect reports for a tool-planning call; a provider-specific
+    // cache-write figure (Anthropic only) is asserted by that provider's own contract
+    // spec, not by this shared harness.
+    toolUsage: { inputTokens: 21, outputTokens: 6, cacheReadInputTokens: 3 },
     unknownEventType: 'future_event',
     providerBodyText: 'provider-body-text-that-must-not-escape',
     toolCalls: [
@@ -53,6 +129,27 @@ export const PROVIDER_CONFORMANCE_TOOL_SCHEMAS: readonly ToolSchema[] = [
             },
         },
     },
+    // Carries a bound keyword (min/max) and an optional property so the shared
+    // 'tool-batch' assertion below exercises both strict-schema behaviours every
+    // hosted dialect must reproduce: bounds move off the wire, and an optional
+    // property is admitted through whichever mechanism the dialect uses (left out
+    // of `required` for Anthropic, made required-and-nullable for OpenAI dialects).
+    {
+        type: 'function',
+        function: {
+            name: 'setTempo',
+            description: 'Set tempo',
+            parameters: {
+                type: 'object',
+                properties: {
+                    bpm: { type: 'number', minimum: 20, maximum: 300, description: 'Beats per minute.' },
+                    label: { type: 'string' },
+                },
+                required: ['bpm'],
+                additionalProperties: false,
+            },
+        },
+    },
 ];
 
 export type ProviderStreamScenario =
@@ -65,10 +162,15 @@ export type ProviderStreamScenario =
     | 'malformed-event'
     | 'oversized-request-id';
 
-export type ProviderToolScenario = 'tool-batch' | 'empty-batch' | 'malformed-arguments' | 'oversized-call-id';
+export type ProviderToolScenario =
+    'tool-batch' | 'empty-batch' | 'malformed-arguments' | 'oversized-call-id' | 'forced-terminal';
+
+/** The two tool names every contract spec's `forced-terminal` scenario forces, matching the
+ * fixture's own `toolCalls` so the same response body admits under a required directive. */
+export const FORCED_TERMINAL_TOOL_NAMES = ['project.query', 'muteTrack'] as const;
 
 /** What the adapter put on the wire, read back from the transport the harness stubbed. */
-export type ProviderRequestObservation = { model: unknown; stream: unknown };
+export type ProviderRequestObservation = { model: unknown; stream: unknown; tools: unknown; toolChoice?: unknown };
 
 export type ProviderStreamObservation = {
     text: string;
@@ -85,11 +187,19 @@ export type ProviderToolObservation = {
     providerRequestId: string | null;
     failure?: { safeMessage: string };
     request: ProviderRequestObservation;
+    usage: HostedToolPlanUsage | null;
 };
+
+/** The strict flag and JSON-Schema parameters read off one raw wire tool object, in whichever
+ * shape that dialect carries them (Anthropic: `input_schema`; OpenAI dialects: `parameters` or
+ * `function.parameters`). Lets the shared assertions below walk the schema without knowing the
+ * dialect's own wire shape. */
+export type ProviderWireTool = { strict: unknown; parameters: unknown };
 
 export type ProviderProtocolHarness = {
     streamText: (scenario: ProviderStreamScenario) => Promise<ProviderStreamObservation>;
     planTools: (scenario: ProviderToolScenario) => Promise<ProviderToolObservation>;
+    readWireTool: (tool: unknown) => ProviderWireTool;
 };
 
 function expectStreamRequest(request: ProviderRequestObservation): void {
@@ -211,6 +321,42 @@ export function describeProviderProtocolConformance(name: string, harness: Provi
             );
             expect(observed.providerRequestId).toBe(PROVIDER_CONFORMANCE_FIXTURE.providerRequestId);
             expectToolRequest(observed.request);
+
+            expect(Array.isArray(observed.request.tools)).toBe(true);
+            const tools = observed.request.tools as unknown[];
+            expect(tools.length).toBeGreaterThan(0);
+            let checkedOptionalProperty = false;
+            for (const tool of tools) {
+                const { strict, parameters } = harness.readWireTool(tool);
+                expect(strict).toBe(true);
+                expect(findBoundKeywords(parameters)).toEqual([]);
+
+                // `setTempo` carries `label`, the fixture's one optional property, so its
+                // wire shape exercises the dialect's own optional-property mechanism: left
+                // out of `required` for Anthropic, or forced into `required` and made
+                // nullable for the OpenAI dialects. Read from the wire tool itself rather
+                // than branching on the dialect's name, so the assertion holds regardless
+                // of which harness supplies it.
+                const properties = isRecord(parameters) ? parameters.properties : undefined;
+                if (!isRecord(properties) || !('label' in properties)) {
+                    continue;
+                }
+                checkedOptionalProperty = true;
+                const propertyKeys = Object.keys(properties);
+                const required = isRecord(parameters) && Array.isArray(parameters.required) ? parameters.required : [];
+                if (required.includes('label')) {
+                    expect(new Set(required)).toEqual(new Set(propertyKeys));
+                    expect(isNullableWireSchema(properties.label)).toBe(true);
+                } else {
+                    expect(required).not.toContain('label');
+                }
+            }
+            expect(checkedOptionalProperty).toBe(true);
+            expect(observed.usage).toMatchObject({
+                inputTokens: PROVIDER_CONFORMANCE_FIXTURE.toolUsage.inputTokens,
+                outputTokens: PROVIDER_CONFORMANCE_FIXTURE.toolUsage.outputTokens,
+                cacheReadInputTokens: PROVIDER_CONFORMANCE_FIXTURE.toolUsage.cacheReadInputTokens,
+            });
         });
 
         it('accepts an empty tool-call batch as no calls', async () => {
@@ -253,6 +399,21 @@ export function describeProviderProtocolConformance(name: string, harness: Provi
             expect(observed.providerRequestId).toBeNull();
             expect(observed.finish).toBe('stop');
             expectStreamRequest(observed.request);
+        });
+
+        it('forces the terminal tool choice on the wire and still admits the reply', async () => {
+            const observed = await harness.planTools('forced-terminal');
+
+            expect(observed.calls).toEqual(
+                PROVIDER_CONFORMANCE_FIXTURE.toolCalls.map((call) => ({
+                    id: call.id,
+                    name: call.name,
+                    arguments: call.arguments,
+                }))
+            );
+            expectToolRequest(observed.request);
+            expect(observed.request.toolChoice).not.toBeUndefined();
+            expect(observed.request.toolChoice).not.toBe('auto');
         });
     });
 }
