@@ -1,0 +1,78 @@
+src/utils/handlerContract.ts
+  s_ed5aa36a3ba357::t_2976592a60f5bb 12,1419-1420
+src/modules/Command/useCases/resolveVersionedCommandBatchBindings.ts
+  s_ed5aa36a3ba357::t_d24f27bc8a3b0f 56
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  s_ed5aa36a3ba357::t_d24f27bc8a3b0f 220,226,277-283
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  s_ed5aa36a3ba357::t_eae521c723233b 77-127,426-456
+  s_ed5aa36a3ba357::t_821d4245e27197 457
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_ed5aa36a3ba357::t_e2fafe0ff4b64c 2719-2748
+  s_ed5aa36a3ba357::t_295a77f7fe1893 2773
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_ed5aa36a3ba357::t_bb8c93676fd9a6 39,435,445-447
+  s_ed5aa36a3ba357::t_8c211b2294fe96 448-449
+src/modules/AiRuntime/models/Tools/ClipAndDevice.ts
+  s_ed5aa36a3ba357::t_68eb54f755a5ec 235,238-246
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_9de9d78968642b 2633,2642-2648,2734,2751
+  s_ed5aa36a3ba357::t_157fb93a77552c 3,2654,2714-2715,2717-2719,2730,2737-2740,2745-2748,2792,6169-6241,6247-6248,6272
+  s_ed5aa36a3ba357::t_9b5b4b624fea4e 2716,2720-2722,2725-2729,2735-2736,2749-2750
+  s_ed5aa36a3ba357::t_ee5be2eaf84f63 2655-2670,2672-2684,2686-2703,2706-2713
+  s_ed5aa36a3ba357::t_6ee382c3106cbf 2790-2791,6057-6168,6242-6243,6252-6253,6257-6258,6262-6263,6267-6268
+  s_ed5aa36a3ba357::t_61a506a56134f3 2731-2733,2778-2780,2784,2789,6010,6027,6054-6056,6244-6246,6249-6251,6254-6256,6259-6261,6264-6266,6269-6271
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_ed5aa36a3ba357::t_bb8c93676fd9a6 295
+src/modules/Command/useCases/createExecutionCommandEnvelope.ts
+  s_ed5aa36a3ba357::t_d24f27bc8a3b0f 70
+src/modules/AiRuntime/models/Tools/__tests__/ClipAndDevice.spec.ts
+  s_ed5aa36a3ba357::t_692f56a87f0fec 38-50
+src/utils/deviceParameterValueUnit.ts
+  s_ed5aa36a3ba357::t_2976592a60f5bb 1-25
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_ed5aa36a3ba357::t_c5c840c271ac91 4,36-82,125,132
+  s_ed5aa36a3ba357::t_4885a23b717a12 101,194,241,283,306,329
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_ed5aa36a3ba357::t_68eb54f755a5ec 108-111,2068-2069,2079-2086,2092-2097
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ed5aa36a3ba357::t_668552cccab626 1900-1918
+  s_ed5aa36a3ba357::t_00fbe15b15df1e 1951-1953
+  s_ed5aa36a3ba357::t_c41e7311bba49f 2517-2529,2531-2551
+  s_ed5aa36a3ba357::t_b6c336e393c431 2530
+  s_ed5aa36a3ba357::t_d640500b87192d 3051-3061,3063-3064,3068-3075,3930-3938
+  s_ed5aa36a3ba357::t_b7022b4f485ae1 8,23
+  s_ed5aa36a3ba357::t_157fb93a77552c 3062,3065-3067
+src/modules/Command/useCases/__tests__/parameterUnitValidation.spec.ts
+  s_ed5aa36a3ba357::t_cdec1c15c12254 1-3,5-20,24-95
+  s_ed5aa36a3ba357::t_6679341f3bf2e6 4
+  s_ed5aa36a3ba357::t_d9a23445e75c08 21-23
+scripts/resourceGuard.ts
+  s_ed5aa36a3ba357::t_9659524a7860a3 108
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_ed5aa36a3ba357::t_692f56a87f0fec 1057,1060-1068,2493-2499
+  s_ed5aa36a3ba357::t_9f94b8c7f60d98 2500
+src/modules/Command/useCases/commandArgumentMetadata.ts
+  s_ed5aa36a3ba357::t_d24f27bc8a3b0f 1-2,107-108,116-124
+src/modules/AiRuntime/transformers/llmActionStrategies/deviceStrategy.ts
+  s_ed5aa36a3ba357::t_9659524a7860a3 123
+  s_ed5aa36a3ba357::t_bb8c93676fd9a6 1-2,130
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_ed5aa36a3ba357::t_069703045bba83 1773-1799,1810,1818,1830,1846,1854,1886,1897,1934,1939,1982,1987,2073,2096-2097,2120,2139,2147,2156,2167-2169,2183-2185,2216,2222,2231,2242,2250,2261-2262,2276-2277,2302-2303,2361,2369,2430,2448,2454,2502,2510,2519,2528-2529,2534-2539,2574,2581,2597,2605,2665-2666,2739,2750,2790,2796,2846,2861,2866,2884-2885,2905,2919-2920,2929,2931,2943-2944,2952-2953,2970,2980-2981,2993-2994,3036-3037,3113-3114,3194-3195,3321,3332,3413-3414,3441-3442,3464,3478,3487,3509,3523,3530,3537-3539,3580-3583,3605,3610,3622,3629,3634,3636,3642,3647,3649-3650,3669,3676,3684-3685,3691,3694,3738-3739,3748-3749,3812,3818-3819,3832-3833,3855-3856,3890,3897,3902-3903,3919,3924-3925,3937,3947,3954,3960,3965,3974-3975,3996,4001-4002,4039-4040,4060,4074-4075,4083-4084,4173,4180,4186-4187,4194,4208,4223,4237,4242-4245,4274,4280,4294,4300,4345,4347,4362,4371-4372,4374,4387-4388,4391,4398,4403,4430,4435,4530,4537,4565,4573,4579,4587-4588,4628,4639,4647,4653,4660,4665,4673-4674,4885,4901,4918,4925-4926,4929,4960,4973-4976,4986-4987,5032,5046,5051,5053,5101,5106,5124,5129,5153,5158,5225,5234,5246,5258,5279,5291,5297,5303-5304,5329,5335-5336,5400,5406,5416,5421,5423,5432,5434,5443,5529-5536,5543-5573,5576-5581,5585,5587-5606,5609,5611-5621,5623-5624,5632-5664,5670-5671,5674-5678,5680-5681,5683,5685-5695,5699-5701,5703-5707,5709-5710,5712-5714,5716-5728,5730,5732-5734,5739,5742-5745,5749-5754,5759,5761-5762,5764-5765,5768-5780,5784-5788,5790-5792,5796-5797,5799-5806
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "77ab98413cbb5d33b43aec92b20a539644645737",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
