@@ -593,8 +593,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // trips the closure.
         // The shared offline scheduler names its pure compilers four times in
         // code; it schedules runtime events but does not write project device
-        // state.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 4,
+        // state. Count provenance (#4437): measured 6, was 4 — the two added
+        // occurrences are the offline limiter-ceiling curve write, one
+        // `applyLimiterCeilingWrite` call re-anchoring the region-start seed
+        // when compensation shifts the lane and one per compiled automation
+        // point, both routed through the shared frame scheduler. Each of those
+        // writes the ceiling gain and the rebuilt `WaveShaper` clip curve, the
+        // offline counterpart of the static applier write, and neither reaches
+        // project truth. The four compiler references are unchanged.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 6,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts': 3,
