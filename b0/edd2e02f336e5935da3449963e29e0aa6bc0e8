@@ -1,0 +1,40 @@
+src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts
+  s_9e15f5b7ec3308::t_f18e8951ba2db1 1,5
+  s_9e15f5b7ec3308::t_a21cd3ecc99c20 91-111
+src/modules/Command/useCases/__tests__/decibelCommandArguments.spec.ts
+  s_9e15f5b7ec3308::t_2291145323d982 246-252
+  s_9e15f5b7ec3308::t_944882987f816a 16,24
+  s_9e15f5b7ec3308::t_664714be7d5013 253-258,273-283
+  s_9e15f5b7ec3308::t_49e84127a1eefa 363-372
+  s_9e15f5b7ec3308::t_5342db84e8db9e 188-197
+  s_9e15f5b7ec3308::t_669502fa23ea1f 259-272
+  s_9e15f5b7ec3308::t_6aad83a990f395 304-313
+src/modules/Arrangement/handlers/__tests__/projectTrackThroughPriorBatchActions.spec.ts
+  s_9e15f5b7ec3308::t_df56fa3f988276 3
+  s_9e15f5b7ec3308::t_eca3b30a0197a8 95-107
+src/modules/Arrangement/handlers/device/__tests__/handleSetSend.spec.ts
+  s_9e15f5b7ec3308::t_223b4660fb5cfd 3-4
+  s_9e15f5b7ec3308::t_7610ba37a1687f 132-170
+src/modules/Arrangement/handlers/clip/handleSetClipGain.ts
+  s_9e15f5b7ec3308::t_02354a8023f213 31
+  s_9e15f5b7ec3308::t_cb74bc42ad71e3 33-35,43-55
+  s_9e15f5b7ec3308::t_c546a49d27c828 8
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_9e15f5b7ec3308::t_7efc3d3ff39dfc 1690-1707
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b0edd2e02f336e5935da3449963e29e0aa6bc0e8",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
