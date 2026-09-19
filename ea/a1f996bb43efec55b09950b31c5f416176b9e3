@@ -1,0 +1,18 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 145-154
+scripts/__tests__/publishLane.spec.ts
+  h_beb54bf43b47b7 181,237-238,1589-1599,3640-3642,3745-3855
+scripts/publishLane.ts
+  h_beb54bf43b47b7 529-534,544-546,548-553,946-950,954,956,960-963,967-1007,1189,1619-1622,1624-1631,1637,1640-1641,1644-1645,1647-1655,1782-1783
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "eaa1f996bb43efec55b09950b31c5f416176b9e3",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
