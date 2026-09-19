@@ -1161,7 +1161,7 @@ export async function runApplicationOwnedToolLoop(
         if (isFinalTurn && outcome.toolCalls.length === 0) {
             return {
                 status: 'rejected',
-                reason: 'Provider returned no tool call on the forced final application tool-loop turn.',
+                reason: 'Provider returned no tool call on the final application tool-loop turn.',
                 receipts,
                 turns: turn,
             };

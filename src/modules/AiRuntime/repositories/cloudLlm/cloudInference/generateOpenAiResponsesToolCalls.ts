@@ -134,13 +134,16 @@ function buildToolChoiceExtension(
     codec: ReturnType<typeof buildWireToolNameCodec>
 ): Record<string, unknown> {
     if (directive.mode === 'required') {
+        // `allowed_tools` restricts the choice set without capping the call count: the
+        // workflow terminal shape is two calls in one turn (`selectWorkflowCapability`
+        // beside `command.batch.propose`), so `parallel_tool_calls` stays true here too.
         return {
             tool_choice: {
                 type: 'allowed_tools',
                 mode: 'required',
                 tools: directive.toolNames.map((name) => ({ type: 'function', name: codec.encode(name) })),
             },
-            parallel_tool_calls: false,
+            parallel_tool_calls: true,
         };
     }
     return { tool_choice: 'auto', parallel_tool_calls: true };

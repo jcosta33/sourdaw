@@ -145,7 +145,9 @@ describe('generateOpenAiResponsesToolCalls', () => {
             mode: 'required',
             tools: [{ type: 'function', name: 'muteTrack' }],
         });
-        expect(body.parallel_tool_calls).toBe(false);
+        // `allowed_tools` restricts the choice set without capping the call count, so
+        // parallel tool calls stay enabled on the forced turn.
+        expect(body.parallel_tool_calls).toBe(true);
         // The full advertised set stays on the wire; `allowed_tools` restricts the
         // model's choice without dropping the other tool from what it can see.
         expect(body.tools).toEqual([

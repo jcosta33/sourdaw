@@ -22,8 +22,10 @@ export type HostedToolPlan = {
 /**
  * What one hosted tool-planning turn tells the provider about choosing a tool. `auto` leaves
  * the choice — and whether to call more than one tool — to the provider's own default. `required`
- * forces the model to call exactly one tool from `toolNames` and disables parallel tool calls, so
- * the loop's final allowed turn cannot end in prose or an unbounded batch.
+ * forces the model to call at least one tool from `toolNames`, so the loop's final allowed turn
+ * cannot end in prose. It does not cap the turn at one call: a workflow's terminal shape is two
+ * calls in the same turn (`selectWorkflowCapability` beside `command.batch.propose`), and the
+ * turn's call count stays bounded by `maxCallsPerTurn` instead.
  */
 export type HostedToolChoiceDirective = { mode: 'auto' } | { mode: 'required'; toolNames: readonly string[] };
 

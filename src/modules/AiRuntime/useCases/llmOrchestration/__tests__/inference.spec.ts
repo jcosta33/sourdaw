@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
+import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../../models/AgentResourceLimits';
 import {
     CREATIVE_INTERPRETATION_TOOL_NAME,
@@ -218,6 +219,42 @@ describe('generateToolPlanningOutcome', () => {
         });
     });
 
+    it('attributes provider-reported usage from a rejected hosted tool plan to the reported result', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockRejectedValue(
+            new ToolPlanningRejectedError('Hosted AI returned a non-tool response instead of a tool-call batch', {
+                inputTokens: 120,
+                outputTokens: 8,
+                cacheReadInputTokens: 100,
+                cacheWriteInputTokens: null,
+            })
+        );
+        const onProviderResult = vi.fn();
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                undefined,
+                'mute the first track',
+                onProviderResult
+            )
+        ).resolves.toMatchObject({ status: 'rejected' });
+
+        expect(onProviderResult).toHaveBeenCalledOnce();
+        expect(onProviderResult.mock.calls[0]?.[0]).toMatchObject({
+            status: 'failed',
+            finishReason: 'error',
+            usage: {
+                inputTokens: 120,
+                outputTokens: 8,
+                cachedInputTokens: 100,
+                provenance: 'provider-reported',
+            },
+        });
+    });
+
     it('admits a tool-call reply carrying null for an argument the source schema leaves optional', async () => {
         mocks.backendChain.value = ['cloud'];
         const addDeviceToolSchema: ToolSchema = {
@@ -422,7 +459,8 @@ describe('generateToolPlanningOutcome', () => {
             expect.anything(),
             expect.anything(),
             expect.anything(),
-            TOOL_PLAN_MAX_OUTPUT_TOKENS
+            TOOL_PLAN_MAX_OUTPUT_TOKENS,
+            expect.anything()
         );
     });
 
@@ -461,7 +499,8 @@ describe('generateToolPlanningOutcome', () => {
             expect.anything(),
             expect.anything(),
             expect.anything(),
-            1_024
+            1_024,
+            expect.anything()
         );
     });
 

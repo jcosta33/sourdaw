@@ -137,7 +137,7 @@ describe('application-owned tool loop directive forcing', () => {
 
         expect(result).toMatchObject({
             status: 'rejected',
-            reason: 'Provider returned no tool call on the forced final application tool-loop turn.',
+            reason: 'Provider returned no tool call on the final application tool-loop turn.',
             turns: 1,
         });
         const onlyCall = requestTurn.mock.calls[0]?.[0] as { directive: unknown } | undefined;

@@ -68,7 +68,7 @@ describe('generateAnthropicToolCalls', () => {
     });
 
     it('narrows the wire tools and forces tool_choice on a required directive', async () => {
-        const threeTools = [
+        const twoTools = [
             toolSchemas[0]!,
             {
                 type: 'function' as const,
@@ -93,7 +93,7 @@ describe('generateAnthropicToolCalls', () => {
             runtime,
             systemPrompt: 'system',
             userMessage: 'faster',
-            toolSchemas: threeTools,
+            toolSchemas: twoTools,
             maxOutputTokens: 8192,
             directive: { mode: 'required', toolNames: ['setTempo'] },
             signal: new AbortController().signal,
@@ -107,7 +107,7 @@ describe('generateAnthropicToolCalls', () => {
             tool_choice: unknown;
             tools: Array<{ name: string; cache_control?: { type: string } }>;
         };
-        expect(body.tool_choice).toEqual({ type: 'any', disable_parallel_tool_use: true });
+        expect(body.tool_choice).toEqual({ type: 'any' });
         expect(body.tools).toHaveLength(1);
         expect(body.tools[0]?.name).toBe('setTempo');
         expect(body.tools[0]?.cache_control).toEqual({ type: 'ephemeral' });

@@ -38,7 +38,11 @@ function readUsage(payload: Record<string, unknown>): HostedToolPlanUsage | null
 
 function buildToolChoiceExtension(directive: HostedToolChoiceDirective): Record<string, unknown> {
     if (directive.mode === 'required') {
-        return { tool_choice: { type: 'any', disable_parallel_tool_use: true } };
+        // No `disable_parallel_tool_use`: the workflow terminal shape is two calls in one
+        // turn (`selectWorkflowCapability` beside `command.batch.propose`), so capping the
+        // forced turn at one call would strand the batch call out of its workflow scope.
+        // `maxCallsPerTurn` already bounds how many calls one turn may contain.
+        return { tool_choice: { type: 'any' } };
     }
     return {};
 }
