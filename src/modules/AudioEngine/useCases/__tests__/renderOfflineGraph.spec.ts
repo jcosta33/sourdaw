@@ -353,6 +353,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
                     {
                         deviceId: 'toaster-device',
                         deviceType: 'toaster',
+                        contributesAudio: true,
                         node,
                         strategy: {
                             node,
@@ -413,6 +414,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
                     {
                         deviceId: 'compressor-1',
                         deviceType: 'builtin-sidechain-compressor',
+                        contributesAudio: true,
                         node,
                         strategy: {
                             node,
@@ -474,6 +476,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
                     {
                         deviceId: 'compressor-1',
                         deviceType: 'builtin-sidechain-compressor',
+                        contributesAudio: true,
                         node,
                         strategy: {
                             node,

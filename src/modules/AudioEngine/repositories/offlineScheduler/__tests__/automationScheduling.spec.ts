@@ -134,7 +134,7 @@ function makeLane(overrides: Partial<AutomationLane>): AutomationLane {
 // offline-automation capability; built-in Web Audio devices resolve through the
 // real WebAudioDeviceStrategy over their offline node (OE-3).
 function webAudioEntry(deviceId: string, deviceType: string, node: OfflineDeviceNode) {
-    return { deviceId, deviceType, strategy: new WebAudioDeviceStrategy(node, deviceType) };
+    return { deviceId, deviceType, contributesAudio: true, strategy: new WebAudioDeviceStrategy(node, deviceType) };
 }
 
 describe('scheduleAutomationOnParam', () => {
@@ -1084,6 +1084,7 @@ describe('scheduleTrackAutomation — stepped device parameters offline', () => 
                 {
                     deviceId: 'bacteria-1',
                     deviceType: 'bacteria',
+                    contributesAudio: true,
                     strategy: {
                         resolveOfflineAutomation: (name: string) =>
                             name === 'bitDepth'
@@ -1140,6 +1141,7 @@ describe('scheduleTrackAutomation — stepped device parameters offline', () => 
                 {
                     deviceId: 'bacteria-1',
                     deviceType: 'bacteria',
+                    contributesAudio: true,
                     strategy: {
                         resolveOfflineAutomation: (name: string) =>
                             name === 'bitDepth'

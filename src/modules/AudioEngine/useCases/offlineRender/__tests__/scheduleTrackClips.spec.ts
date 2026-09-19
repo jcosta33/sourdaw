@@ -266,6 +266,7 @@ function makeInstrumentEntry(): DeviceNodeEntry {
     return {
         deviceId: 'inst-1',
         deviceType: 'fermenter',
+        contributesAudio: true,
         node: {} as DeviceNodeEntry['node'],
         strategy: {} as DeviceNodeEntry['strategy'],
         instrumentControls: {
@@ -1388,6 +1389,7 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         const entry: DeviceNodeEntry = {
             deviceId: 'inst-1',
             deviceType,
+            contributesAudio: true,
             node: strategy.node,
             strategy,
             instrumentControls: {
