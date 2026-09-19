@@ -1,0 +1,32 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_1228e573df1f42 22-42,71-76,143-149
+AGENTS.md
+  h_1228e573df1f42 288-290
+package.json
+  h_1228e573df1f42 52
+scripts/__tests__/openLane.spec.ts
+  h_1228e573df1f42 102,164,422,503-582
+scripts/__tests__/publishLane.spec.ts
+  h_1228e573df1f42 19,130-133,140-149,181-182,237,520-524,3512-3652
+scripts/__tests__/stampLaneIdentity.spec.ts
+  h_1228e573df1f42 1-74
+scripts/githubAppIdentity.ts
+  h_1228e573df1f42 13-25
+scripts/openLane.ts
+  h_1228e573df1f42 7-8,54-84,92-93,212-214,286-288
+scripts/publishLane.ts
+  h_1228e573df1f42 8-9,537-538,927-952,1123-1126,1554-1569,1694-1697
+scripts/stampLaneIdentity.ts
+  h_1228e573df1f42 1-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e81062e61a0e3e70750442dc067435a91d672d4c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
