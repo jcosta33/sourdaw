@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { renderFindingLineage, type FindingLineage } from '../findingLineage.ts';
+import { parseFindingLineage, renderFindingLineage, type FindingLineage } from '../findingLineage.ts';
 import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { supersessionCommentBody } from '../prContract.ts';
 import {
@@ -610,6 +610,16 @@ describe('pull-request supersession', () => {
     it('pins the canonical lineage marker bytes rather than whatever the serializer returns', () => {
         expect(renderFindingLineage(repairedLineage)).toBe(lineageBody);
     });
+    it('parses the canonical lineage marker bytes it printed', () => {
+        expect(parseFindingLineage(lineageBody)).toEqual(repairedLineage);
+    });
+    it('refuses a lineage payload that repeats a key instead of reading it last-wins', () => {
+        const duplicated = `${LINEAGE_MARKER} {"entries":[{"disposition":"discarded","disposition":"repaired","findingId":"1001","reason":"","replacementFindingId":"2001","replacementPr":2246}],"format":"lineage-v1","oldPr":2244,"replacementPr":2246}`;
+        expect(JSON.parse(duplicated.slice(LINEAGE_MARKER.length))).toEqual(repairedLineage);
+        expect(() => parseFindingLineage(duplicated)).toThrow(
+            /finding lineage marker line is not the canonical key-sorted, whitespace-free JSON record/i
+        );
+    });
     it('rejects a lineage rendering that is valid JSON but not the promised form', () => {
         const payload = lineagePayloadOf(renderFindingLineage(repairedLineage));
         const parsed: unknown = JSON.parse(payload);
@@ -720,6 +730,26 @@ describe('pull-request supersession', () => {
         };
         expect(run(port, transferred, authorNodeId)).toBe('pull-request-superseded:2244:2246');
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+    });
+    it('accepts a transferred entry carrying a replacement finding id', () => {
+        const { port, calls, authorNodeId } = fakePort();
+        const transferred: FindingLineage = {
+            ...repairedLineage,
+            entries: [{ ...repairedEntry, disposition: 'transferred' }],
+        };
+        expect(run(port, transferred, authorNodeId)).toBe('pull-request-superseded:2244:2246');
+        expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+    });
+    it('refuses a transferred entry bound to a different replacement pull request', () => {
+        const { port, calls } = fakePort();
+        const transferred: FindingLineage = {
+            ...repairedLineage,
+            entries: [{ ...repairedEntry, disposition: 'transferred', replacementPr: 9999 }],
+        };
+        expect(() =>
+            supersedePullRequest(oldNumber, head, replacementNumber, transferred, AUTHOR_BOT_NODE_ID, port)
+        ).toThrow(/entries\[0\]\.replacementPr must be 2246, found 9999/i);
+        expect(calls.filter((call) => call.startsWith('comment:') || call.startsWith('close:'))).toEqual([]);
     });
     it('refuses a repaired entry with a null replacement finding id', () => {
         const { port, calls } = fakePort();

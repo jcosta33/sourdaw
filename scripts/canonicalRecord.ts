@@ -47,12 +47,38 @@ export function lastMarkerLine(body: string, marker: string): string | undefined
     return found;
 }
 
+function isJsonValue(value: unknown): value is JsonValue {
+    if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        return true;
+    }
+    if (Array.isArray(value)) {
+        return value.every((entry) => isJsonValue(entry));
+    }
+    if (typeof value === 'object') {
+        return Object.values(value).every((entry) => isJsonValue(entry));
+    }
+    return false;
+}
+
+/**
+ * Parsed only when the payload is already the canonical byte form. `JSON.parse` collapses a repeated
+ * member to its last occurrence, so `Object.keys` can no longer see the repetition: re-encoding the
+ * parsed value and holding it against the raw bytes is what refuses a duplicate key, a reordered key
+ * or stray whitespace. A hand-edited payload therefore cannot be read last-wins into a record whose
+ * bytes this crate never printed.
+ */
 export function parseMarkerPayload(payload: string, label: string): unknown {
     let parsed: unknown;
     try {
         parsed = JSON.parse(payload);
     } catch {
         return fail(`${label} marker line is not valid JSON`);
+    }
+    if (!isJsonValue(parsed)) {
+        return fail(`${label} marker line is not valid JSON`);
+    }
+    if (canonicalJson(parsed) !== payload) {
+        return fail(`${label} marker line is not the canonical key-sorted, whitespace-free JSON record`);
     }
     return parsed;
 }
