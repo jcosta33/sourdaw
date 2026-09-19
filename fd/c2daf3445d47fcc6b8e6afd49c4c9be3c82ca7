@@ -1,0 +1,140 @@
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiResponsesToolCalls.spec.ts
+  s_9e15f5b7ec3308::t_eedd9b371de7a4 271-276
+  s_9e15f5b7ec3308::t_69995695516bfc 163-164
+  s_9e15f5b7ec3308::t_db3ffedbaa1977 114,121
+  s_9e15f5b7ec3308::t_977bf1d8bd7e3b 250-267
+src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts
+  s_9e15f5b7ec3308::t_92d87b0a02bd7b 196
+  s_9e15f5b7ec3308::t_f920fe18f60992 168
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/ToolSchemaProjectionError.ts
+  s_9e15f5b7ec3308::t_1fa95232e1f7e1 1-19
+src/modules/AiRuntime/useCases/recordAgentProviderUsage.ts
+  s_9e15f5b7ec3308::t_9560316cdd44bb 6-23
+  s_9e15f5b7ec3308::t_de08ba3247d6c4 60
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/projectOpenAiStrictToolSchema.ts
+  s_9e15f5b7ec3308::t_f90fd142f38623 50
+  s_9e15f5b7ec3308::t_7504d3538ace09 2
+  s_9e15f5b7ec3308::t_2575c760893500 1,3-16,32-41,45-49,51-53
+  s_9e15f5b7ec3308::t_c6e4e4a277adfa 42-44
+src/modules/AiRuntime/models/ModelProviderProtocol.ts
+  s_9e15f5b7ec3308::t_cc7c44b24f0acf 158-167
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiResponsesToolCalls.ts
+  s_9e15f5b7ec3308::t_7e933e210c19a9 11
+  s_9e15f5b7ec3308::t_ed460a3c652143 152-161
+  s_9e15f5b7ec3308::t_d37dec80dbe69e 125-130,134-138
+  s_9e15f5b7ec3308::t_5e6a5de1411a7b 203-204
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/hostedToolPlan.ts
+  s_9e15f5b7ec3308::t_e3bc5cc52ce316 4-19,24-25
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateCloudToolCalls.ts
+  s_9e15f5b7ec3308::t_05e1ba79e91f8a 86
+  s_9e15f5b7ec3308::t_b8b48efb29a5f7 34
+src/modules/AiRuntime/repositories/__tests__/providerProtocolConformance.ts
+  s_9e15f5b7ec3308::t_79e4a056ef50f2 132-152
+  s_9e15f5b7ec3308::t_288b4edad538b6 6,10-22,46-79
+  s_9e15f5b7ec3308::t_52cfa5e877c981 319-322,324-327,348,350-354
+  s_9e15f5b7ec3308::t_5fd95904e36f47 91-94
+  s_9e15f5b7ec3308::t_0e686b479962bf 80
+  s_9e15f5b7ec3308::t_2dcb58b1b2d560 168
+  s_9e15f5b7ec3308::t_c8c0b29f0546dd 185,188-193,197
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateCloudToolCalls.spec.ts
+  s_9e15f5b7ec3308::t_f596d54a4d7793 136-137,140-142
+  s_9e15f5b7ec3308::t_72d24b1eaf4089 54-55
+  s_9e15f5b7ec3308::t_cf6254772875a8 78-80
+  s_9e15f5b7ec3308::t_47479a9adc7fb2 92,98-99,102-104
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls.ts
+  s_9e15f5b7ec3308::t_adbdf55942601b 140,143-147,151,152-153
+  s_9e15f5b7ec3308::t_38f20447f6804f 192,199,200-205,209-212
+  s_9e15f5b7ec3308::t_c2a614230d9213 191
+  s_9e15f5b7ec3308::t_49f3f854ac45c6 11
+  s_9e15f5b7ec3308::t_2f00dec8ede934 141-142
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/toolSchemaProjectionCore.ts
+  s_9e15f5b7ec3308::t_31383dee2e6ea0 245-249
+  s_9e15f5b7ec3308::t_9a839057cda3cb 1-6,24-35,37-104,108-224,235-244
+src/modules/AiRuntime/useCases/__tests__/hostedUsageAttribution.spec.ts
+  s_9e15f5b7ec3308::t_6be82159671a32 105-114
+  s_9e15f5b7ec3308::t_52920a461d55a1 1-104,115-137,142-143
+  s_9e15f5b7ec3308::t_7f55d1fdf9c532 138-141
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/openAiStrictSchemaProjection.spec.ts
+  s_9e15f5b7ec3308::t_2eba7f3b678c3a 37-44,58,60-65,74-75
+  s_9e15f5b7ec3308::t_09ccbff68e83b0 266-267
+  s_9e15f5b7ec3308::t_b570de54064a97 1-5,7-18,20-21,26-36,45-57,59,76-79,170-265,268-303,305-306,330
+  s_9e15f5b7ec3308::t_84f20351dacaa0 6
+src/modules/AiRuntime/repositories/__tests__/openAiCompatibleProviderAdapter.contract.spec.ts
+  s_9e15f5b7ec3308::t_f0828dac1889d3 200
+  s_9e15f5b7ec3308::t_0ff3d168a0adc7 264,272,276
+  s_9e15f5b7ec3308::t_18aca1bbd1118a 279
+  s_9e15f5b7ec3308::t_a3e39a2ba2177c 37
+  s_9e15f5b7ec3308::t_41fb842f718052 172-176
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts
+  s_9e15f5b7ec3308::t_a6a91704a8a7d2 9
+  s_9e15f5b7ec3308::t_20bccdfa5e5ae5 21-25,30-32
+  s_9e15f5b7ec3308::t_4565307e6ebe2c 142-147
+  s_9e15f5b7ec3308::t_b4222c0fcffa26 52-61
+src/modules/AiRuntime/repositories/__tests__/openAiProviderAdapter.contract.spec.ts
+  s_9e15f5b7ec3308::t_cecb11e06a5b69 301
+  s_9e15f5b7ec3308::t_6b9ffb56c5b895 185-189
+  s_9e15f5b7ec3308::t_d9ce1fde7e5c41 286,294,298-300
+  s_9e15f5b7ec3308::t_ddf4deabbdb392 222
+src/modules/AiRuntime/repositories/__tests__/anthropicProviderAdapter.contract.spec.ts
+  s_9e15f5b7ec3308::t_6d1ed6884b697a 278
+  s_9e15f5b7ec3308::t_3eab29d5ae505e 199
+  s_9e15f5b7ec3308::t_9c17a71a0f3a75 170-175
+  s_9e15f5b7ec3308::t_8c4561abab4eba 263,271,275-277
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  s_9e15f5b7ec3308::t_1d21dc1c56245b 14
+  s_9e15f5b7ec3308::t_eb470f8362d8fe 560
+  s_9e15f5b7ec3308::t_650a1dfb1d5315 152-192,194,196-242,244,247-250
+  s_9e15f5b7ec3308::t_b9240bef7ab5b3 243,245-246
+  s_9e15f5b7ec3308::t_3289bbf17de461 193,195
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/setCloudProviderConfig.spec.ts
+  s_9e15f5b7ec3308::t_a050567e78149f 127,301
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_9e15f5b7ec3308::t_e96bb310f8044b 442-448
+  s_9e15f5b7ec3308::t_db250f0b9c7b96 500-502,522-523
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/projectAnthropicStrictToolSchema.ts
+  s_9e15f5b7ec3308::t_e9b6a6cc626e4a 37-39
+  s_9e15f5b7ec3308::t_913326f402ff96 2
+  s_9e15f5b7ec3308::t_7cdef3d1da1e36 1,3-17,29-36,40-44,46-48
+  s_9e15f5b7ec3308::t_4113ae081bb99b 45
+src/modules/AiRuntime/models/AgentRun.ts
+  s_9e15f5b7ec3308::t_bb3b571f207de3 217-220
+src/modules/AiRuntime/models/HostedLlmProvider.ts
+  s_9e15f5b7ec3308::t_f5b0ba57fedc8f 16-21
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  s_9e15f5b7ec3308::t_7a19bfcf4c1e56 239-287
+src/modules/AiRuntime/repositories/cloudLlm/cloudSession.ts
+  s_9e15f5b7ec3308::t_0ac4b2443efa06 34-37,40
+  s_9e15f5b7ec3308::t_17c7a846409e8e 38-39,41
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_9e15f5b7ec3308::t_e0fb88c6428116 31
+  s_9e15f5b7ec3308::t_14f4658f3bc0c6 600-612,615-622
+  s_9e15f5b7ec3308::t_76e1bdbba222cf 379
+  s_9e15f5b7ec3308::t_2d8a1fb4e09c39 537,554-556
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_9e15f5b7ec3308::t_8828fe53fbd4a3 165-170,388-393,431-436
+  s_9e15f5b7ec3308::t_969ee88057d96a 186-220
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/anthropicStrictSchemaProjection.spec.ts
+  s_9e15f5b7ec3308::t_b87ddb599a31ac 29-33
+  s_9e15f5b7ec3308::t_06f56e04965053 6
+  s_9e15f5b7ec3308::t_68016d46dd7236 37-44,58,60-65,74-75
+  s_9e15f5b7ec3308::t_970df9f5bde079 235-236
+  s_9e15f5b7ec3308::t_7d3dc1cacb25af 1-5,7-18,20-21,26-28,34-36,45-57,59,76-79,153-234,237-271,273-275
+src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts
+  s_9e15f5b7ec3308::t_45d8062cc25431 76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fdc2daf3445d47fcc6b8e6afd49c4c9be3c82ca7",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

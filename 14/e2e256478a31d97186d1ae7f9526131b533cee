@@ -22,6 +22,12 @@ src/modules/AiRuntime/models/AgentAcceptanceOutcome.ts
   s_9e15f5b7ec3308::t_ddbc6d0a61f30f 5,16-55,60,64-65,80-86,90-92,96,98,104,112-113,115,132-133,135,144-145,147
 src/modules/AiRuntime/services/agentAcceptanceScorer.ts
   s_9e15f5b7ec3308::t_d2c6b9093557b1 5,10,12-14,47-49,52-67,94-118,127-129,131,133-134,143-148,151,153,160-165,168-169,195-206,210-211
+src/modules/AiRuntime/repositories/__tests__/anthropicProviderAdapter.contract.spec.ts
+  s_9e15f5b7ec3308::t_8287fd495bb91e 267
+src/modules/AiRuntime/repositories/__tests__/openAiCompatibleProviderAdapter.contract.spec.ts
+  s_9e15f5b7ec3308::t_f72b4746cd777a 268
+src/modules/AiRuntime/repositories/__tests__/openAiProviderAdapter.contract.spec.ts
+  s_9e15f5b7ec3308::t_fdadb7697853bf 291
 ---
 {
   "schema_version": "authorship/3.0.0",
