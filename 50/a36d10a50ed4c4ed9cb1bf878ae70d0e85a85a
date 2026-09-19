@@ -1,0 +1,48 @@
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/classifyPromptDecibelFigures.ts
+  s_9e15f5b7ec3308::t_a79cbb143c69c0 1-149
+src/modules/AiRuntime/useCases/__tests__/levelRequestGrounding.spec.ts
+  s_9e15f5b7ec3308::t_df299008209e7b 1-257
+  s_9e15f5b7ec3308::t_666ac6c9a3126c 258-260
+.agents/skills/review-stances/correctness.md
+  s_9e15f5b7ec3308::t_f875f868b3933c 287-306
+evidence/agent-campaign/manifest.json
+  s_9e15f5b7ec3308::t_4e993536afe5ce 178
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_9e15f5b7ec3308::t_aab159a34d8b0a 4446-4583
+src/modules/AiRuntime/transformers/llmActionStrategies/bridgeArgumentGuards.ts
+  s_9e15f5b7ec3308::t_7d6cc28efeb87d 1,23-122
+src/modules/AiRuntime/transformers/llmActionStrategies/clipEditingStrategies.ts
+  s_9e15f5b7ec3308::t_88053715649ccb 1-2,6-13,37-47,250-254,256-257,259,263
+src/modules/AiRuntime/transformers/llmActionStrategies/coreAutomationStrategy.ts
+  s_9e15f5b7ec3308::t_33e56cfa5cb031 1-2,8,11-56,171,173-175,180,187,199
+src/modules/AiRuntime/transformers/llmActionStrategies/masterVcaStrategy.ts
+  s_9e15f5b7ec3308::t_7b501d1039ac68 1,9,12-22,104-109,116
+src/modules/AiRuntime/transformers/llmActionStrategies/routingStrategy.ts
+  s_9e15f5b7ec3308::t_0ee692ace2877f 1,18,23-33,86-90,92-93,97,108,122-126,128-129,133,153
+src/modules/AiRuntime/transformers/llmActionStrategies/trackStrategy.ts
+  s_9e15f5b7ec3308::t_1f215472cea7d5 1,19,24-34,204-209,211-213,221
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_9e15f5b7ec3308::t_148dd951ea4912 77,1888-1926,1935,1942-1944,2238-2253,2255,2261-2263,2477,2518-2520,2945-2971,2982-2984
+src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts
+  s_9e15f5b7ec3308::t_0373fcfe9e72d0 152-160
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_9e15f5b7ec3308::t_b1af468918b09d 10-18,286,289-297,299,730-743,972-984,1077,1081-1088,1091,1097-1112,1279,1283-1291,1302,1720-1730,2141-2148,2153,2402-2412,2515-2541,2656-2664
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_9e15f5b7ec3308::t_a3ce7120e1400f 1-9,104,634,637-647,649-661,1457,1461-1468,1473,1480-1488,1490,1909,1919-1929,1931-1942,2126,2129-2132,2137-2144,2147,2153,2156-2160,2165-2174,2176,2425-2426,2431-2439,2450-2458,2469
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "50a36d10a50ed4c4ed9cb1bf878ae70d0e85a85a",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
