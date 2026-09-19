@@ -147,7 +147,7 @@ export const NATIVE_DSP_DESCRIPTORS_GUIDANCE = [
                 0,
                 0,
                 [
-                    'shimmer often pairs with this to add pitched content while the tail sustains: enable shimmer only after freeze is confirmed working.',
+                    'shimmer is silenced for as long as freeze stays engaged, regardless of its own setting, and resumes once freeze clears.',
                 ],
                 ['Leaving freeze engaged can sustain audio indefinitely and go unnoticed in a mix.'],
                 NO_SOURCE_SPECIFIC_MODULATION
@@ -201,16 +201,16 @@ export const NATIVE_DSP_DESCRIPTORS_GUIDANCE = [
                 'Enables harmonic saturation on the tail for added warmth or grit.',
                 0,
                 0,
-                ['saturation_type sets which curve this applies: choose saturation_type before enabling saturation.'],
+                ['saturation_type selects the curve applied when saturation is enabled.'],
                 ['Saturation on a long decay can add audible distortion that builds through the tail.'],
                 NO_SOURCE_SPECIFIC_MODULATION
             ),
             saturation_type: parameterGuidance(
                 'Dutch Oven saturation curve',
-                'Selects which harmonic saturation curve is applied to the tail.',
+                'Selects the harmonic saturation curve applied to the tail: 0 is the soft, default tanh curve, 1 adds third-harmonic content, and 2 hard-clips.',
+                0,
                 1,
-                2,
-                ['saturation enables the curve this selects: enable saturation before choosing saturation_type.'],
+                ['saturation must be enabled for saturation_type to take effect.'],
                 ['Switching curves on a sustained tail can produce an audible timbral jump.'],
                 NO_SOURCE_SPECIFIC_MODULATION
             ),
@@ -225,13 +225,13 @@ export const NATIVE_DSP_DESCRIPTORS_GUIDANCE = [
             ),
             density: parameterGuidance(
                 'Dutch Oven diffusion cross-coupling',
-                "Sets how strongly the tank's two delay halves cross-couple, thickening the diffusion of the tail.",
-                0.5,
-                0.9,
+                "Sets how strongly the tank's two delay halves cross-couple, thickening the diffusion of the tail; 1.0 is the neutral default.",
+                0.7,
+                1,
                 [
-                    'diffusion sets the overall smear this cross-coupling thickens: raise density after diffusion is set.',
+                    'diffusion sets the overall smear this cross-coupling thickens: set diffusion before lowering density.',
                 ],
-                ['High density can blur transient detail into an indistinct wash.'],
+                ['Lowering density below its neutral default thins the tail and makes it less diffuse.'],
                 NO_SOURCE_SPECIFIC_MODULATION
             ),
             decay_eq_0: parameterGuidance(
@@ -313,9 +313,9 @@ export const NATIVE_DSP_DESCRIPTORS_GUIDANCE = [
             ),
             vintage: parameterGuidance(
                 'Dutch Oven vintage character',
-                'Applies a coloration stage modeled after a vintage reverb unit to the output.',
+                'Applies a coloration stage modeled after a vintage reverb unit to the output: 0 is the clean, unprocessed mode, and 1 and 2 add progressively stronger band-limiting and a noise floor.',
+                0,
                 1,
-                2,
                 ['algorithm sets the tail this coloration is applied to: choose algorithm before selecting vintage.'],
                 ['A strong vintage setting can noticeably darken or color a bright algorithm.'],
                 NO_SOURCE_SPECIFIC_MODULATION

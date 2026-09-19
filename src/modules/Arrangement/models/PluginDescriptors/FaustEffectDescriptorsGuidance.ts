@@ -28,7 +28,7 @@ export const FAUST_EFFECT_DESCRIPTORS_GUIDANCE = [
             1,
             4,
             [
-                'damping sets the corner frequency the wet path brightens above: lower damping to tame a long decay_time.',
+                'damping darkens the tail above its own corner frequency but does not shorten decay_time: only decay_time itself shortens the low-frequency tail.',
             ],
             [
                 'A long decay_time relative to the fixed 2 s mid-band decay can leave low-frequency rumble ringing under a comparatively short mid-band tail.',
@@ -242,7 +242,7 @@ export const FAUST_EFFECT_DESCRIPTORS_GUIDANCE = [
             0.15,
             0.55,
             ['delay sets the spacing each repeat this feeds back inherits: raise feedback only after delay is set.'],
-            ['High feedback values can run away toward self-oscillation or mask the dry signal.'],
+            ['High feedback produces a long, progressively darker repeat trail that can mask the dry signal.'],
             NO_SOURCE_SPECIFIC_MODULATION
         ),
         dry_wet: parameterGuidance(
