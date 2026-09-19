@@ -1,0 +1,18 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_1228e573df1f42 3607-3610,3614-3624,3637-3645
+scripts/__tests__/publishLane.spec.ts
+  h_1228e573df1f42 659-666,673-674,713-714,720-721,777-778
+scripts/trustedGithubWriteBootstrap.ts
+  h_1228e573df1f42 1409-1410,1416-1419,1423-1427
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "aa4326956ca3e3e96504e3c48b7be0fb10c55387",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
