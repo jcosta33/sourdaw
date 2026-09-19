@@ -1,0 +1,49 @@
+release/open-source-inventory.json
+  s_9e15f5b7ec3308::t_a5c466bc584666 1204
+src/modules/Arrangement/AGENTS.md
+  s_9e15f5b7ec3308::t_d801dcd966991a 8
+src/modules/Arrangement/models/MixRecipe.ts
+  s_9e15f5b7ec3308::t_bab67e86bd3cd3 1-147
+src/modules/Arrangement/repositories/__tests__/mixingRecipeCatalog.spec.ts
+  s_9e15f5b7ec3308::t_08b60a6a132667 1-156
+src/modules/Arrangement/repositories/mixRecipes/bassMixRecipes.ts
+  s_9e15f5b7ec3308::t_552cff131916e2 1-427
+src/modules/Arrangement/repositories/mixRecipes/busMixRecipes.ts
+  s_9e15f5b7ec3308::t_b6575bad34bac2 1-408
+src/modules/Arrangement/repositories/mixRecipes/drumsMixRecipes.ts
+  s_9e15f5b7ec3308::t_f5b183f59525ea 1-405
+src/modules/Arrangement/repositories/mixRecipes/guitarMixRecipes.ts
+  s_9e15f5b7ec3308::t_19a8cb97b09409 1-412
+src/modules/Arrangement/repositories/mixRecipes/keysMixRecipes.ts
+  s_9e15f5b7ec3308::t_8068561406c0da 1-400
+src/modules/Arrangement/repositories/mixRecipes/masterMixRecipes.ts
+  s_9e15f5b7ec3308::t_cd652f47af1a6b 1-414
+src/modules/Arrangement/repositories/mixRecipes/mixRecipeCatalog.ts
+  s_9e15f5b7ec3308::t_bf4ec2379fe199 1-38
+src/modules/Arrangement/repositories/mixRecipes/vocalMixRecipes.ts
+  s_9e15f5b7ec3308::t_c76370276dbad2 1-432
+src/modules/Arrangement/useCases/__tests__/getMixRecipeCatalog.spec.ts
+  s_9e15f5b7ec3308::t_f8694366028771 1-15
+src/modules/Arrangement/useCases/getMixRecipeCatalog.ts
+  s_9e15f5b7ec3308::t_b6d07f8e74d207 1-16
+src/modules/Arrangement/useCases/index.ts
+  s_9e15f5b7ec3308::t_e5e5600a21a9ba 265
+src/modules/AudioAnalysis/useCases/__tests__/mixRecipeMetricAgreement.spec.ts
+  s_9e15f5b7ec3308::t_5b8c2dafc58a9e 1-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6832afa93f0033473b9f411b5deae582ebc4cf11",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
