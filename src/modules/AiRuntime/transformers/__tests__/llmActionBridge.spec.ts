@@ -2716,6 +2716,36 @@ describe('bridgeLlmToolCalls', () => {
         expect(result.rejections.map((rejection) => rejection.name)).toEqual(['setDeviceParameter']);
     });
 
+    it('emits the descriptor native unit only for a value admitted by the descriptor bounds', () => {
+        const accepted = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-eq', paramId: 'frequency', value: 2_400 },
+                },
+            ],
+            context: projectContext,
+        });
+        const rejected = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-eq', paramId: 'frequency', value: 20_001 },
+                },
+            ],
+            context: projectContext,
+        });
+
+        expect(accepted.actions).toEqual([
+            {
+                type: 'setDeviceParameter',
+                payload: expect.objectContaining({ value: 2_400, valueUnit: 'Hz' }),
+            },
+        ]);
+        expect(rejected.actions).toEqual([]);
+        expect(rejected.rejections).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
+    });
+
     it('converts bounded device and send calls for existing project targets', () => {
         const result = bridge({
             calls: [
@@ -2740,6 +2770,7 @@ describe('bridgeLlmToolCalls', () => {
                         deviceId: 'device-eq',
                         paramId: 'frequency',
                         value: 2400,
+                        valueUnit: 'Hz',
                         expectedTrackId: 'track-vocals',
                         expectedDeviceType: 'EQ',
                         expectedDeviceIds: ['device-eq'],

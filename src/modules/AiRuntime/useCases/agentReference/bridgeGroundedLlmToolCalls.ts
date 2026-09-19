@@ -5,6 +5,7 @@ import {
     getExecutableAppActionGroundingRules,
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
+import { normalizeDeviceParameterValueUnit, type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 
 import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
@@ -19,6 +20,7 @@ import {
     type MarkerPlanningSignature,
     type SectionPlanningSignature,
 } from '../../transformers/llmActionBridge';
+import { isValidParameterValue } from '../../transformers/llmActionStrategies/bridgeArgumentGuards';
 import { hasHighLevelCreationEvidence } from '../../transformers/promptParser/hasHighLevelCreationEvidence';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
@@ -1895,6 +1897,25 @@ function findPromptNumbers(maskedScope: string): PromptNumber[] {
     );
 }
 
+function isRatioUnitDenominator(maskedScope: string, number: PromptNumber): boolean {
+    return /(?:\d|\.)\s*:\s*$/u.test(maskedScope.slice(0, number.index));
+}
+
+function getAdjacentDeviceParameterUnit(
+    actionScope: ActionPromptScope,
+    number: PromptNumber
+): DeviceParameterValueUnit | null {
+    if (number.raw.endsWith('%')) {
+        return '%';
+    }
+    const suffix = actionScope.masked.slice(number.end);
+    if (/^\s*:1\b/u.test(suffix)) {
+        return ':1';
+    }
+    const named = /^\s*(dB|Hz|ms|st|semitones)\b/iu.exec(suffix)?.[1];
+    return normalizeDeviceParameterValueUnit(named);
+}
+
 /** The decibel figures the request states in the form this rule accepts, and no others. */
 function getStatedDecibelFigures(
     maskedScope: string,
@@ -1927,7 +1948,9 @@ function getExpectedNumbers(
     if (valueRule.kind !== 'number-if-present') {
         return [];
     }
-    const numbers = findPromptNumbers(actionScope.masked);
+    const numbers = findPromptNumbers(actionScope.masked).filter(
+        (number) => valueRule.descriptorUnitSource === undefined || !isRatioUnitDenominator(actionScope.masked, number)
+    );
     if (numbers.length === 0) {
         return [];
     }
@@ -2491,6 +2514,41 @@ function numbersMatch(valueRule: NumberValueRule, expected: number, asserted: nu
     return Math.abs(expected - asserted) < 0.000_001;
 }
 
+function validateDeviceParameterUnitAndBounds(
+    valueRule: NumberValueRule,
+    assertedValue: number,
+    actionScope: ActionPromptScope,
+    groundedArguments: Record<string, unknown>,
+    context: ProjectContext
+): boolean {
+    const source = valueRule.descriptorUnitSource;
+    if (source === undefined) {
+        return true;
+    }
+    const deviceId = groundedArguments[source.deviceIdArgument];
+    const paramId = groundedArguments[source.paramIdArgument];
+    const device = context.tracks.flatMap((track) => track.devices).find((candidate) => candidate.id === deviceId);
+    const parameter = device?.parameters?.find((candidate) => candidate.id === paramId);
+    if (!parameter || !isValidParameterValue(parameter, assertedValue)) {
+        return false;
+    }
+    const matchingNumbers = findPromptNumbers(actionScope.masked).filter((number) => {
+        if (isRatioUnitDenominator(actionScope.masked, number)) {
+            return false;
+        }
+        return numbersMatch(valueRule, normalizePromptNumber(number, actionScope, valueRule, undefined), assertedValue);
+    });
+    const explicitUnits = matchingNumbers.flatMap((number) => {
+        const unit = getAdjacentDeviceParameterUnit(actionScope, number);
+        return unit === null ? [] : [unit];
+    });
+    if (explicitUnits.length === 0) {
+        return true;
+    }
+    const descriptorUnit = normalizeDeviceParameterValueUnit(parameter.unit);
+    return descriptorUnit !== null && explicitUnits.every((unit) => unit === descriptorUnit);
+}
+
 function validateNumberValue(
     valueRule: NumberValueRule,
     assertedValue: unknown,
@@ -2985,6 +3043,31 @@ function validateGroundedValues(
         }
         if (valueRejection) {
             return valueRejection;
+        }
+    }
+    return null;
+}
+
+function validateDescriptorBackedValues(
+    groundingRules: GroundingRules,
+    groundedArguments: Record<string, unknown>,
+    actionScope: ActionPromptScope,
+    context: ProjectContext
+): string | null {
+    for (const valueRule of groundingRules.valueRules) {
+        if (valueRule.kind !== 'number-if-present' || valueRule.descriptorUnitSource === undefined) {
+            continue;
+        }
+        const assertedValue = groundedArguments[valueRule.argument];
+        const expectedNumbers = getExpectedNumbers(actionScope, valueRule, undefined);
+        if (
+            typeof assertedValue !== 'number' ||
+            expectedNumbers === null ||
+            (expectedNumbers.length > 0 &&
+                !expectedNumbers.some((expected) => numbersMatch(valueRule, expected, assertedValue))) ||
+            !validateDeviceParameterUnitAndBounds(valueRule, assertedValue, actionScope, groundedArguments, context)
+        ) {
+            return getValueMismatchReason(valueRule.argument);
         }
     }
     return null;
@@ -3843,6 +3926,15 @@ function groundToolCall({
     });
     if (scopeAdmissionRejection) {
         return rejection(index, call.name, scopeAdmissionRejection);
+    }
+    const descriptorValueRejection = validateDescriptorBackedValues(
+        groundingRules,
+        groundedArguments,
+        actionScope,
+        context
+    );
+    if (descriptorValueRejection) {
+        return rejection(index, call.name, descriptorValueRejection);
     }
     const valueRejection = admitsPlanCreatedObject
         ? null
