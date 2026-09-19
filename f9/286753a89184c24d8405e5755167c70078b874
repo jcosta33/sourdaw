@@ -1,0 +1,75 @@
+evidence/agent-campaign/manifest.json
+  s_9e15f5b7ec3308::t_fc8a1eabc99695 374,422,434,695
+src/modules/AiRuntime/models/HostedTurnHistory.ts
+  s_9e15f5b7ec3308::t_8ceb087baf41ed 12-14,18,29-33,37
+src/modules/AiRuntime/repositories/__tests__/anthropicProviderAdapter.contract.spec.ts
+  s_9e15f5b7ec3308::t_8970f4220adc70 240-250,261-263
+src/modules/AiRuntime/repositories/__tests__/openAiCompatibleProviderAdapter.contract.spec.ts
+  s_9e15f5b7ec3308::t_d87428a9beaf64 248-258,269-271
+src/modules/AiRuntime/repositories/__tests__/openAiProviderAdapter.contract.spec.ts
+  s_9e15f5b7ec3308::t_16f4dacc2538ac 252-262,273-275
+src/modules/AiRuntime/repositories/__tests__/providerProtocolConformance.ts
+  s_9e15f5b7ec3308::t_14b8eed9b69385 174,207,210,519-533
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/openAiReasoningCarry.spec.ts
+  s_9e15f5b7ec3308::t_7247978ef6c49e 211-234
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts
+  s_9e15f5b7ec3308::t_2a6707b077aba8 53-56,59
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls.ts
+  s_9e15f5b7ec3308::t_cf23dc7f6a929a 68-71,85
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiResponsesToolCalls.ts
+  s_9e15f5b7ec3308::t_662d91096d177a 138-139,149
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_9e15f5b7ec3308::t_206925d318d225 625,1336,1342-1406
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_ef1658860ed589 276-292,429,458
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_d777780ea00f5b 644-660,713,754
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_c691395caf21cc 256-272,312,348,564,714,718,720,725-727
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_a9167e7510e2de 310-326,430,482
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_7c9dc84d55c6c9 292-308,501,548
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_cfa7241e616703 279-295,400,417
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_26c6ced53481a0 603-617,619,622,681,722
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_782087d5c74833 346-362,416,459
+src/modules/AiRuntime/useCases/__tests__/midiOverlapPromptWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_9b6764932b3874 334-350,404,461
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_4f9ad4efb14357 268-284,343,370
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_db5d81d1eaf58c 536-552,605,646
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_2c9a5aaba8b84f 412-428,537-538,544,547,553-554,566-572
+src/modules/AiRuntime/useCases/__tests__/syncopatedArpeggioPromptWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_66adb4e1f3a1a1 223-239,348,376
+src/modules/AiRuntime/useCases/__tests__/verseHallAutomationWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_6db24e33963ed2 234-250,290,326
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_9e15f5b7ec3308::t_aaa8568d06e8d1 189-205,309,331,863-864
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_9e15f5b7ec3308::t_3a3bf5b712da70 65-72,936-943,1046-1048
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_9e15f5b7ec3308::t_3da535d66e78ad 405-424
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_9e15f5b7ec3308::t_4ed3ade3d594a7 69-71,79,489-493,686-693,700,705
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f9286753a89184c24d8405e5755167c70078b874",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
