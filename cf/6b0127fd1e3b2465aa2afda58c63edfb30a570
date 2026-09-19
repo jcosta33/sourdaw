@@ -1,0 +1,14 @@
+scripts/__tests__/stampLaneIdentity.spec.ts
+  h_beb54bf43b47b7 35-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cf6b0127fd1e3b2465aa2afda58c63edfb30a570",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
