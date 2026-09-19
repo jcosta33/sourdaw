@@ -751,13 +751,13 @@ describe('renderOffline effective audibility (OE-4)', () => {
         });
 
         // #4424 — the refusal has to reach the musician through the print's own
-        // error channel, not only through the scheduler's. `scheduleTrackClips`
-        // is a double in this file, so this case threads the strip's real
-        // `contributesAudio` onto a device entry and runs the production
-        // scheduler over it: the value `buildDeviceChain` sets, the refusal
-        // `unrenderableAutomationRefusal` writes, and an export that rejects
-        // instead of handing back a buffer holding a ceiling the monitor had
-        // already left behind.
+        // error channel. `scheduleTrackClips` is a double in this file, so what
+        // this case observes is the route, not the scheduler: given a refusal
+        // raised while scheduling, the export rejects instead of handing back a
+        // buffer holding a ceiling the monitor had already left behind. The
+        // production `scheduleTrackClips -> scheduleTrackAutomation` wiring is
+        // pinned by the scheduler-level specs and by the propagation case in
+        // `scheduleTrackClips.spec.ts`.
         describe('an unrenderable device-parameter lane (#4424)', () => {
             const LIMITER: DeviceFixture = { id: 'limiter-1', type: 'builtin-limiter', bypassed: false };
 
