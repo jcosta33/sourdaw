@@ -241,6 +241,62 @@ describe('coreAutomationStrategy', () => {
         });
     });
 
+    it('validates relative decibels against the snapshot value at the requested beat', () => {
+        expect(bridge({ name: 'addAutomationPoint', arguments: { laneId, beat: 4, deltaDb: -6 } })).toEqual({
+            type: 'addAutomationPoint',
+            payload: { laneId, beat: 4, deltaDb: -6 },
+        });
+        expectRejected('addAutomationPoint', { laneId, beat: 4, deltaDb: 100 });
+        expectRejected('addAutomationPoint', { laneId, beat: 4, deltaDb: 3 }, rejectionReasons.addAutomationPoint, {
+            ...projectContext,
+            automationLanes: [
+                {
+                    ...projectContext.automationLanes![0]!,
+                    points: [
+                        { beat: 0, value: 0, curve: 'linear' },
+                        { beat: 8, value: 0, curve: 'linear' },
+                    ],
+                },
+            ],
+        });
+    });
+
+    it('evaluates linked nonlinear source lanes before admitting relative decibels', () => {
+        const sourceLane = {
+            ...projectContext.automationLanes![0]!,
+            id: 'source',
+            points: [
+                { beat: 0, value: 0.25, curve: 'exponential' as const, tension: 1 },
+                { beat: 8, value: 1, curve: 'linear' as const },
+            ],
+        };
+        const linkedLane = {
+            ...projectContext.automationLanes![0]!,
+            id: 'linked',
+            linkedLaneId: sourceLane.id,
+            linkScale: 2,
+            points: [],
+            maxValue: 2,
+        };
+        const linkedContext = { ...projectContext, automationLanes: [linkedLane, sourceLane] };
+
+        expect(
+            bridge(
+                { name: 'addAutomationPoint', arguments: { laneId: linkedLane.id, beat: 4, deltaDb: 6 } },
+                linkedContext
+            )
+        ).toEqual({
+            type: 'addAutomationPoint',
+            payload: { laneId: linkedLane.id, beat: 4, deltaDb: 6 },
+        });
+        expectRejected(
+            'addAutomationPoint',
+            { laneId: linkedLane.id, beat: 4, deltaDb: 12 },
+            rejectionReasons.addAutomationPoint,
+            linkedContext
+        );
+    });
+
     it('requires changed boolean lane enablement and a changed supported track mode', () => {
         expect(
             bridge(

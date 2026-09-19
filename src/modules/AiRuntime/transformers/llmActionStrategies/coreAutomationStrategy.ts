@@ -1,10 +1,75 @@
+import { gainLaneLevelLaw, type LevelArgument, resolveLevelArgument } from '#/utils/audioLevelLaw';
+import { evaluateAutomationLaneAtBeat } from '#/utils/evaluateAutomationLaneAtBeat';
+
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { type LlmActionRejection } from '../llmActionBridgeContracts';
 import { type ToolCallResult } from '../toolCallParser';
 
-import { findTrack, hasExactKeys, isFiniteNumber, rejection } from './bridgeArgumentGuards';
+import { findTrack, hasExactKeys, isFiniteNumber, readLevelArgument, rejection } from './bridgeArgumentGuards';
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
+
+type AutomationLaneTarget = NonNullable<ProjectContext['automationLanes']>[number];
+
+/** The point's level in the form the request stated, for the handler to resolve. */
+function toAutomationPointPayload(laneId: string, beat: number, argument: LevelArgument) {
+    if ('linear' in argument) {
+        return { laneId, beat, value: argument.linear };
+    }
+    if ('absoluteDb' in argument) {
+        return { laneId, beat, valueDb: argument.absoluteDb };
+    }
+    return { laneId, beat, deltaDb: argument.deltaDb };
+}
+
+/**
+ * Whether a lane draws a linear gain amplitude, which is the only thing a
+ * decibel figure describes. Stated here rather than imported because a
+ * transformer reaches no module's use cases; it is the same pair of facts
+ * `isLinearGainAutomationLane` reads for the handler.
+ */
+function drawsLinearGain(lane: AutomationLaneTarget): boolean {
+    return lane.parameterId === 'gain' && lane.minValue >= 0;
+}
+
+/**
+ * Whether a lane can honour the level the call states.
+ *
+ * Decibels describe a gain amplitude, so every other lane takes the linear form
+ * alone. A relative change also needs a level to start from: the level a gain
+ * lane draws at one beat is interpolated from the points around it, and an
+ * empty lane draws nothing there. Where that level lands is left to the handler,
+ * which reads the live lane rather than this projection of it.
+ */
+function admitsAutomationLevel(
+    lane: AutomationLaneTarget,
+    argument: LevelArgument,
+    beat: number,
+    lanes: readonly AutomationLaneTarget[]
+): boolean {
+    if ('linear' in argument) {
+        return argument.linear >= lane.minValue && argument.linear <= lane.maxValue;
+    }
+    if (!drawsLinearGain(lane)) {
+        return false;
+    }
+    if ('deltaDb' in argument) {
+        const current = evaluateAutomationLaneAtBeat({
+            laneId: lane.id,
+            beat,
+            getLane: (id) => lanes.find((candidate) => candidate.id === id),
+            resolveLaneCeiling: (candidate) => candidate.maxValue,
+            resolveLaneDeclaredMax: (candidate) => candidate.declaredMaxValue ?? candidate.maxValue,
+        });
+        if (current === null) {
+            return false;
+        }
+        const resolution = resolveLevelArgument(argument, current, gainLaneLevelLaw(lane));
+        return resolution.ok && resolution.linear >= lane.minValue && resolution.linear <= lane.maxValue;
+    }
+    const resolution = resolveLevelArgument(argument, lane.minValue, gainLaneLevelLaw(lane));
+    return resolution.ok && resolution.linear >= lane.minValue && resolution.linear <= lane.maxValue;
+}
 
 export const coreAutomationActionNames = [
     'addAutomationLane',
@@ -120,22 +185,23 @@ const coreAutomationStrategyDefinitions = [
         transform: ({ call, context, index }) => {
             const args = call.arguments;
             const lane = findAutomationLane(context, args.laneId);
+            const level = readLevelArgument(args, { linear: 'value', absolute: 'valueDb', relative: 'deltaDb' });
             const hasValidKeys =
-                hasExactKeys(args, ['laneId', 'beat', 'value']) ||
-                hasExactKeys(args, ['laneId', 'beat', 'value', 'curve']);
+                level !== null &&
+                (hasExactKeys(args, ['laneId', 'beat', level.statedKey]) ||
+                    hasExactKeys(args, ['laneId', 'beat', level.statedKey, 'curve']));
             if (args.curve !== undefined && !isProviderAutomationCurve(args.curve)) {
                 return rejection(index, call.name, 'Expected one supported automation curve');
             }
             if (
+                level === null ||
                 !hasValidKeys ||
                 !lane ||
                 !isFiniteNumber(args.beat) ||
                 args.beat < 0 ||
-                !isFiniteNumber(args.value) ||
                 !Number.isFinite(lane.minValue) ||
                 !Number.isFinite(lane.maxValue) ||
-                args.value < lane.minValue ||
-                args.value > lane.maxValue ||
+                !admitsAutomationLevel(lane, level.argument, args.beat, context.automationLanes ?? []) ||
                 lane.points.some((point) => point.beat === args.beat)
             ) {
                 return rejection(
@@ -147,9 +213,7 @@ const coreAutomationStrategyDefinitions = [
             return {
                 type: 'addAutomationPoint',
                 payload: {
-                    laneId: lane.id,
-                    beat: args.beat,
-                    value: args.value,
+                    ...toAutomationPointPayload(lane.id, args.beat, level.argument),
                     ...(args.curve === undefined ? {} : { curve: args.curve }),
                 },
             };

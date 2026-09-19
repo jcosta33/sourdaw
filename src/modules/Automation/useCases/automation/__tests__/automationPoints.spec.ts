@@ -10,7 +10,6 @@ import { updateAutomationPoint } from '../updateAutomationPoint';
 const mocks = vi.hoisted(() => ({
     automationStoreValue: { value: { lanes: [] } },
     automationStoreSet: vi.fn(),
-    interpolateAutomationPointValue: vi.fn(),
 }));
 
 vi.mock('../../../stores/automationStore', () => ({
@@ -20,10 +19,6 @@ vi.mock('../../../stores/automationStore', () => ({
         },
         set: mocks.automationStoreSet,
     },
-}));
-
-vi.mock('../../../services/automationPointAlgorithms', () => ({
-    interpolateAutomationPointValue: mocks.interpolateAutomationPointValue,
 }));
 
 describe('Automation Point Use Cases', () => {
@@ -137,49 +132,30 @@ describe('Automation Point Use Cases', () => {
 
         it('interpolates between points', () => {
             const points = [
-                { beat: 5, value: 0.2 },
-                { beat: 10, value: 0.5 },
+                { beat: 5, value: 0.2, curve: 'linear', tension: 0 },
+                { beat: 10, value: 0.5, curve: 'linear', tension: 0 },
             ];
             mocks.automationStoreValue.value = { lanes: [{ id: 'l1', points }] } as any;
-            mocks.interpolateAutomationPointValue.mockReturnValue(0.35);
 
             const val = getAutomationValueAtBeat('l1', 7.5);
 
             expect(val).toBe(0.35);
-            // Locks the neighbor-passing contract: the interior interpolation
-            // call carries previousPoint/nextPoint so a 'smooth' segment keeps
-            // its Catmull-Rom curvature. With a 2-point lane both neighbors are
-            // undefined (the segment is an endpoint segment).
-            expect(mocks.interpolateAutomationPointValue).toHaveBeenCalledWith({
-                firstPoint: points[0],
-                secondPoint: points[1],
-                beat: 7.5,
-                previousPoint: undefined,
-                nextPoint: undefined,
-            });
         });
 
-        it('passes interior neighbors for a multi-point lane', () => {
+        it('uses interior neighbors for a smooth multi-point lane', () => {
             const points = [
-                { beat: 0, value: 0.0 },
-                { beat: 5, value: 0.2 },
-                { beat: 10, value: 0.5 },
-                { beat: 15, value: 0.9 },
+                { beat: 0, value: -10, curve: 'linear', tension: 0 },
+                { beat: 4, value: 2, curve: 'smooth', tension: 0 },
+                { beat: 8, value: 8, curve: 'linear', tension: 0 },
+                { beat: 12, value: 20, curve: 'linear', tension: 0 },
             ];
-            mocks.automationStoreValue.value = { lanes: [{ id: 'l1', points }] } as any;
-            mocks.interpolateAutomationPointValue.mockReturnValue(0.35);
+            mocks.automationStoreValue.value = {
+                lanes: [{ id: 'l1', points, minValue: -20, maxValue: 30 }],
+            } as any;
 
-            // beat 7.5 sits in the segment [points[1], points[2]] (beforeIdx 1),
-            // so the call must carry points[0] and points[3] as neighbors.
-            getAutomationValueAtBeat('l1', 7.5);
-
-            expect(mocks.interpolateAutomationPointValue).toHaveBeenCalledWith({
-                firstPoint: points[1],
-                secondPoint: points[2],
-                beat: 7.5,
-                previousPoint: points[0],
-                nextPoint: points[3],
-            });
+            // Catmull-Rom with both neighbors yields 3.78125. Omitting them
+            // yields 3.21875, while linear interpolation yields 3.5.
+            expect(getAutomationValueAtBeat('l1', 5)).toBeCloseTo(3.78125, 5);
         });
 
         it('returns null when a linked lane has an empty source (no local fall-through)', () => {
@@ -197,7 +173,6 @@ describe('Automation Point Use Cases', () => {
             // The follower must report null (its empty source is authoritative),
             // never silently sample its own localPoints.
             expect(getAutomationValueAtBeat('follower', 5)).toBeNull();
-            expect(mocks.interpolateAutomationPointValue).not.toHaveBeenCalled();
         });
 
         it('returns null (not a real 0) when linked lanes form a cycle', () => {

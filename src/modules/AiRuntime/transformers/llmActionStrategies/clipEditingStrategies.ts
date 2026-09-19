@@ -1,7 +1,16 @@
+import { CLIP_GAIN_LAW, CLIP_MAX_GAIN, type LevelArgument } from '#/utils/audioLevelLaw';
+
 import { type ProjectContext, type ProjectContextClip } from '../../models/ProjectContext';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 
-import { findClip, hasExactKeys, isFiniteNumber, isSafeTrackColor, rejection } from './bridgeArgumentGuards';
+import {
+    findClip,
+    hasExactKeys,
+    isFiniteNumber,
+    isSafeTrackColor,
+    readResolvedLevelArgument,
+    rejection,
+} from './bridgeArgumentGuards';
 import { type ClipCallName, type ClipStrategyDefinition } from './clipStrategyTypes';
 
 type ClipEditingCallName = Extract<
@@ -24,6 +33,17 @@ type ClipEditingCallName = Extract<
 >;
 
 type ClipTarget = { clip: ProjectContextClip; track: ProjectContext['tracks'][number] };
+
+/** The clip level in the form the request stated, for the handler to resolve. */
+function toClipGainPayload(clipId: string, argument: LevelArgument) {
+    if ('linear' in argument) {
+        return { clipId, gain: argument.linear };
+    }
+    if ('absoluteDb' in argument) {
+        return { clipId, gainDb: argument.absoluteDb };
+    }
+    return { clipId, deltaDb: argument.deltaDb };
+}
 
 /** Same MIDI track, both eligible per the authoritative glue-eligible pair list from the context. */
 function isSameEligibleMidiTrackPair(first: ClipTarget, second: ClipTarget, hasAuthoritativeEligibility: boolean) {
@@ -227,17 +247,20 @@ export const clipEditingStrategyDefinitions = [
         transform: ({ call, context, index }) => {
             const args = call.arguments;
             const source = findClip(context, args.clipId);
+            const level = readResolvedLevelArgument(
+                args,
+                { linear: 'gain', absolute: 'gainDb', relative: 'deltaDb' },
+                { current: source?.clip.gain, law: CLIP_GAIN_LAW, linearBounds: { min: 0, max: CLIP_MAX_GAIN } }
+            );
             if (
-                !hasExactKeys(args, ['clipId', 'gain']) ||
+                level === null ||
+                !hasExactKeys(args, ['clipId', level.statedKey]) ||
                 !source ||
-                source.clip.locked === true ||
-                !isFiniteNumber(args.gain) ||
-                args.gain < 0 ||
-                args.gain > 2
+                source.clip.locked === true
             ) {
                 return rejection(index, call.name, 'Expected an unlocked clipId and finite gain from 0 through 2');
             }
-            return { type: 'setClipGain', payload: { clipId: source.clip.id, gain: args.gain } };
+            return { type: 'setClipGain', payload: toClipGainPayload(source.clip.id, level.argument) };
         },
     },
     {
