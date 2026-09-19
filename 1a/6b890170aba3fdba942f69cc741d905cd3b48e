@@ -1,0 +1,48 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_9e15f5b7ec3308::t_797c7dea600c8e 24,56-60,379-385
+  h_1228e573df1f42 61-65
+AGENTS.md
+  s_9e15f5b7ec3308::t_af5552f267a587 283-285,365-368,389-391
+  h_1228e573df1f42 350-352
+package.json
+  s_9e15f5b7ec3308::t_e792b98e0ffe6d 61
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_9e15f5b7ec3308::t_9282eb3b19ce7e 904,2030,2059
+scripts/__tests__/claimTrackerIssue.spec.ts
+  s_9e15f5b7ec3308::t_0f226e862ae67e 1-4,6-7,8-10,12-14,16-48,50-54,56-125,132-163,179-201,203-307,313-342,447-448
+  h_1228e573df1f42 356
+scripts/__tests__/openLane.spec.ts
+  s_9e15f5b7ec3308::t_2f7a869d903c95 335-339,342-353
+scripts/claimTrackerIssue.ts
+  s_9e15f5b7ec3308::t_82dabbb4e106b5 1,3,5-7,9,12-13,14-60,64-97,99-124,131-132,139-285,287-305,334-337,369-376,381,383-387
+  h_1228e573df1f42 8,321,328-333,346,353-354
+scripts/openLane.ts
+  s_9e15f5b7ec3308::t_191c7488394d71 200-205
+scripts/trustedGithubWriteBootstrap.ts
+  s_9e15f5b7ec3308::t_d4d317f289ee14 31,160-165,277,1377,1389
+release/dependency-license-proofs.json
+  h_1228e573df1f42 64
+release/open-source-inventory.json
+  s_9e15f5b7ec3308::t_4d801cf9dd9e59 169,1696
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1a6b890170aba3fdba942f69cc741d905cd3b48e",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  },
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
