@@ -408,6 +408,29 @@ describe('decibel arguments on level-bearing commands', () => {
 
         expect(secondUndoResult.headConsumed).toBe(true);
         expect(clipGain()).toBeCloseTo(dbToGain(4), 5);
+
+        // An intervening write that pushes no undo entry of its own (a
+        // collaborator's edit, in production) must make redo refuse instead of
+        // silently painting over it: without a frozen `redoAction`, the first
+        // leg falls back to its original, unguarded `gain: 3` request, which
+        // carries no `expectedGain` and overwrites whatever the clip holds
+        // regardless of this divergence.
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => {
+                if (track.id !== TRACK_ID) {
+                    return track;
+                }
+                return {
+                    ...track,
+                    clips: track.clips.map((clip) => (clip.id !== CLIP_ID ? clip : { ...clip, gain: dbToGain(-9) })),
+                };
+            }),
+        });
+
+        await redo();
+
+        expect(clipGain()).toBeCloseTo(dbToGain(-9), 5);
     });
 
     it.each([
@@ -471,6 +494,29 @@ describe('decibel arguments on level-bearing commands', () => {
 
         expect(secondUndoResult.headConsumed).toBe(true);
         expect(sendLevel()).toBe(0.5);
+
+        // An intervening write that pushes no undo entry of its own (a
+        // collaborator's edit, in production) must make redo refuse instead of
+        // silently painting over it: without a frozen `redoAction`, the first
+        // leg falls back to its original, unguarded `levelDb: -12` request,
+        // which carries no `expectedLevel` and overwrites whatever the send
+        // holds regardless of this divergence.
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => {
+                if (track.id !== TRACK_ID) {
+                    return track;
+                }
+                return {
+                    ...track,
+                    sends: track.sends.map((send) => (send.busId !== BUS_ID ? send : { ...send, level: 0.9 })),
+                };
+            }),
+        });
+
+        await redo();
+
+        expect(sendLevel()).toBeCloseTo(0.9, 5);
     });
 
     // A send being created has no level yet, so a relative request measures
