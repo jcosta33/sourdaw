@@ -102,6 +102,12 @@ const PRODUCT_SCOPE_PATH: ReviewChangedPath = {
     deleted: 0,
     binary: false,
 };
+/**
+ * The full product-scope inventory, spec-owned on purpose: trimming the production
+ * PRODUCT_SCOPE_PREFIXES to a proper subset must redden the dropped prefixes' iterations below —
+ * their paths stop firing the gate — instead of silently shrinking this loop.
+ */
+const PRODUCT_SCOPE_PREFIXES_UNDER_TEST = ['src/modules/', 'src/components/', 'electron/'];
 
 /**
  * Fixture Git runs without the ambient global and system configuration. That configuration can wire
@@ -1263,6 +1269,26 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${COMMAND_ONLY_TEST}`);
     });
 
+    it('fires the gate on exactly the product prefixes the contract names', () => {
+        expect([...PRODUCT_SCOPE_PREFIXES]).toEqual(PRODUCT_SCOPE_PREFIXES_UNDER_TEST);
+    });
+
+    // One iteration per product prefix, so trimming PRODUCT_SCOPE_PREFIXES to any proper subset
+    // reddens the iterations whose prefixes it dropped.
+    it.each(PRODUCT_SCOPE_PREFIXES_UNDER_TEST)(
+        'refuses a command-only --test under the product prefix %s',
+        (prefix) => {
+            const { port, calls } = fakePort({
+                changedPaths: [{ path: `${prefix}x.ts`, group: 'handwritten', added: 1, deleted: 0, binary: false }],
+            });
+
+            expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toThrow(
+                COMMAND_ONLY_TEST_REFUSAL
+            );
+            expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        }
+    );
+
     it('skips the gate for test files under a product tree', () => {
         const { port, calls } = fakePort({
             changedPaths: [
@@ -2236,10 +2262,11 @@ describe('lane publish', () => {
 
     /**
      * The two-dot mutation this pins: diffing against main's moving tip instead of the merge base
-     * answers an empty numstat once main advances past the lane, so the lane's own scripts change
-     * vanishes from the read. The merge-base range must still see that change — and, because a
-     * scripts path is never product scope, must classify the lane as not firing the gate, whatever
-     * product paths unrelated main movement carries.
+     * answers the extra src/modules deletion entry main's advance produced — which the toEqual
+     * below catches, and which would fabricate product scope — instead of the lane's own scripts
+     * change. The merge-base range must see exactly that change and, because a scripts path is
+     * never product scope, must classify the lane as not firing the gate, whatever product paths
+     * unrelated main movement carries.
      */
     it('classifies a scripts-only lane by its merge base, never by advanced main', () => {
         const repository = mkdtempSync(join(tmpdir(), 'sourdaw-publish-changed-range-'));
