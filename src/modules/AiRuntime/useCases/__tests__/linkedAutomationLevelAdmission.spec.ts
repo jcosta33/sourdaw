@@ -149,6 +149,9 @@ describe('linked automation level admission', () => {
         });
 
         for (const action of result.actions) {
+            if (action.type !== 'addAutomationPoint') {
+                throw new Error(`Unexpected action type: ${action.type}`);
+            }
             await executeAppAction(action);
         }
 
