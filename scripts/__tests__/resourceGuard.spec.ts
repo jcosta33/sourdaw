@@ -1918,6 +1918,30 @@ describe('guard failure stop enforcement', () => {
             }
         });
 
+        it('keeps the original receipt byte-identical when remapped lint recovery stops with code zero', async () => {
+            const fixture = createLintRecoveryFixture('mapped-stop-code-zero');
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--replace-lint-target', `${fixture.oldTarget}=${fixture.newTarget}`],
+                    {
+                        cwd: fixture.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async () => fakeResult({ code: 0, reason: 'memory' }),
+                        assertModulesPreflight: () => undefined,
+                    }
+                );
+
+                expect(code).toBe(1);
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
         it('retains updated receipt when --recover run fails', async () => {
             const repoRoot = fixtureRoot('recover-fail');
             const laneName = 'agent-106-recover-fail';
