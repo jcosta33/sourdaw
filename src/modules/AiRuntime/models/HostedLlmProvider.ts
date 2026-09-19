@@ -36,4 +36,6 @@ export type HostedLlmProviderInfo = {
     model: string;
     baseUrl: string | null;
     authentication: HostedLlmAuthentication;
+    /** The `openai` provider's configured reasoning effort override; `null` otherwise. */
+    reasoningEffort: HostedReasoningEffort | null;
 };

@@ -126,6 +126,7 @@ class CloudSession {
             model: runtime.model,
             baseUrl: runtime.provider === 'anthropic' ? null : runtime.base_url,
             authentication: runtime.authentication,
+            reasoningEffort: runtime.provider === 'openai' ? (runtime.reasoning_effort ?? null) : null,
         };
         hostedLlmProviderStatusStore.set(providerInfo);
     }

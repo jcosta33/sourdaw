@@ -50,15 +50,21 @@ vi.mock('#/modules/AiRuntime/stores', () => ({
     llmStatusStore: {},
 }));
 
-vi.mock('#/modules/AiRuntime/useCases', () => ({
-    configureCloudProvider: mocks.configureCloudProvider,
-    getDefaultHostedAnthropicModel: () => mocks.catalogModelA.value,
-    HOSTED_REASONING_EFFORTS: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
-    listHostedAnthropicModels: () => [mocks.catalogModelA, mocks.catalogModelB],
-    removeCloudProvider: mocks.removeCloudProvider,
-    resolveBackend: mocks.resolveBackend,
-    setAiBackendPreference: mocks.setAiBackendPreference,
-}));
+vi.mock('#/modules/AiRuntime/useCases', async () => {
+    // Imports the models file directly (not the heavy useCases barrel) so this mock
+    // renders the same reasoning-effort literal set the real component ships, instead
+    // of a copy that can silently drift from it.
+    const { HOSTED_REASONING_EFFORTS } = await import('#/modules/AiRuntime/models/HostedLlmProvider');
+    return {
+        configureCloudProvider: mocks.configureCloudProvider,
+        getDefaultHostedAnthropicModel: () => mocks.catalogModelA.value,
+        HOSTED_REASONING_EFFORTS,
+        listHostedAnthropicModels: () => [mocks.catalogModelA, mocks.catalogModelB],
+        removeCloudProvider: mocks.removeCloudProvider,
+        resolveBackend: mocks.resolveBackend,
+        setAiBackendPreference: mocks.setAiBackendPreference,
+    };
+});
 
 vi.mock('#/modules/BrowserAi/presentations/views', () => ({
     CapabilityReportPanel: () => <div data-testid="capability-report-panel" />,
@@ -143,6 +149,7 @@ describe('AiSection', () => {
             model: mocks.catalogModelA.value,
             baseUrl: null,
             authentication: 'api-key',
+            reasoningEffort: null,
         };
         render(<AiSection />);
 
@@ -195,6 +202,52 @@ describe('AiSection', () => {
         });
     });
 
+    it('forwards no reasoning effort override when connecting with the selector left at Provider default', async () => {
+        render(<AiSection />);
+
+        fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai' } });
+        fireEvent.change(screen.getByLabelText('Hosted AI API key'), { target: { value: 'sk-openai-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+        await waitFor(() => {
+            expect(mocks.configureCloudProvider).toHaveBeenCalledExactlyOnceWith({
+                provider: 'openai',
+                model: 'gpt-5.6-terra',
+                baseUrl: undefined,
+                authentication: 'api-key',
+                apiKey: 'sk-openai-key',
+                reasoningEffort: undefined,
+            });
+        });
+    });
+
+    it('seeds the reasoning effort selector from a configured OpenAI status and forwards it unchanged', async () => {
+        mocks.hostedProvider.value = {
+            provider: 'openai',
+            model: 'gpt-5.6-terra',
+            baseUrl: null,
+            authentication: 'api-key',
+            reasoningEffort: 'high',
+        };
+        render(<AiSection />);
+
+        expect(screen.getByLabelText('Reasoning effort')).toHaveValue('high');
+
+        fireEvent.change(screen.getByLabelText('Hosted AI API key'), { target: { value: 'sk-openai-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+        await waitFor(() => {
+            expect(mocks.configureCloudProvider).toHaveBeenCalledExactlyOnceWith({
+                provider: 'openai',
+                model: 'gpt-5.6-terra',
+                baseUrl: undefined,
+                authentication: 'api-key',
+                apiKey: 'sk-openai-key',
+                reasoningEffort: 'high',
+            });
+        });
+    });
+
     it('requires explicit unauthenticated intent for compatible endpoints and enforces the byte limit', async () => {
         render(<AiSection />);
 
@@ -230,6 +283,7 @@ describe('AiSection', () => {
             model: 'local-model',
             baseUrl: 'http://localhost:1234/v1',
             authentication: 'none',
+            reasoningEffort: null,
         };
         render(<AiSection />);
 

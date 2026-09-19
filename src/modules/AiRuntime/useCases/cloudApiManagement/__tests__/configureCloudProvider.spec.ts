@@ -46,24 +46,27 @@ describe('configureCloudProvider', () => {
         });
     });
 
-    it('forwards a valid reasoning effort override for the OpenAI provider', async () => {
-        await configureCloudProvider({
-            provider: 'openai',
-            model: 'gpt-test',
-            authentication: 'api-key',
-            apiKey: 'sk-test-key',
-            reasoningEffort: 'high',
-        });
+    it.each(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const)(
+        'forwards a valid reasoning effort override of %s for the OpenAI provider',
+        async (reasoningEffort) => {
+            await configureCloudProvider({
+                provider: 'openai',
+                model: 'gpt-test',
+                authentication: 'api-key',
+                apiKey: 'sk-test-key',
+                reasoningEffort,
+            });
 
-        expect(mocks.setCloudProviderConfig).toHaveBeenCalledWith({
-            provider: 'openai',
-            model: 'gpt-test',
-            baseUrl: 'https://api.openai.com/v1',
-            authentication: 'api-key',
-            apiKey: 'sk-test-key',
-            reasoningEffort: 'high',
-        });
-    });
+            expect(mocks.setCloudProviderConfig).toHaveBeenCalledWith({
+                provider: 'openai',
+                model: 'gpt-test',
+                baseUrl: 'https://api.openai.com/v1',
+                authentication: 'api-key',
+                apiKey: 'sk-test-key',
+                reasoningEffort,
+            });
+        }
+    );
 
     it('refuses a reasoning effort value outside the supported set', async () => {
         const configurationWithUnsupportedEffort = {

@@ -115,7 +115,9 @@ export const AiSection = (): ReactElement => {
         configuredProvider?.authentication ?? 'api-key'
     );
     const [apiKey, setApiKey] = useState('');
-    const [reasoningEffort, setReasoningEffort] = useState<HostedReasoningEffortSelection | ''>('');
+    const [reasoningEffort, setReasoningEffort] = useState<HostedReasoningEffortSelection | ''>(
+        configuredProvider?.reasoningEffort ?? ''
+    );
     const [configurationError, setConfigurationError] = useState<string | null>(null);
     const [configurationPending, setConfigurationPending] = useState(false);
     const hostedProvidersAvailable = getPlatformCapabilities().isDesktopApp;
