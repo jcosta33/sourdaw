@@ -1,0 +1,35 @@
+src/modules/AudioEngine/repositories/devices/dynamics/__tests__/applyLimiterCeilingWrite.spec.ts
+  s_ed5aa36a3ba357::t_4fd5d2ef030375 1-72
+src/modules/AudioEngine/repositories/devices/dynamics/applyLimiterCeilingWrite.ts
+  s_ed5aa36a3ba357::t_b9ef71d3139cbd 1-19
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  s_ed5aa36a3ba357::t_0e65f0f2ff61dd 10,205,208-211,213
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/scheduleTrackAutomationFixture.ts
+  s_ed5aa36a3ba357::t_c9da240ee0bb3b 74-77,92-96
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/unrenderableAutomationRefusal.spec.ts
+  s_ed5aa36a3ba357::t_0ce60777a1aed5 39-41,43,52-58,82-83,93,100,102-103,115,117-123,125,127-130,134-136,173,186,195,201
+src/modules/AudioEngine/services/__tests__/deviceResolution.spec.ts
+  s_ed5aa36a3ba357::t_14b65941a21b34 3-5,60-93
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_ed5aa36a3ba357::t_16d8bacf18694a 750-757,787-788,794-807,826-827,836,838-841,844-845,847-859,862,866
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_ed5aa36a3ba357::t_8590296fc9b851 5,7,1364,1397-1398,1400-1403,1408-1415,1417,1433-1437,1472-1473,1477,1479-1484,1489-1494,1497-1513
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_ed5aa36a3ba357::t_b51d12842d0562 5,180-183,361
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f4ac1db50decb55f1c0e9694b5e20a6b295fc9e0",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
