@@ -1,0 +1,14 @@
+scripts/__tests__/prContract.spec.ts
+  h_1228e573df1f42 978-995
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "62c54e445feee5d9c6b8455db2c556fb3500e9d1",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
