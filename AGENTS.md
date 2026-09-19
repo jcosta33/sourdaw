@@ -280,8 +280,9 @@ same primary repository, and the command records the exact parent lineage under
 boundary; role locks alone do not prove it. Slugs cannot be purely numeric: bare numbers mean issues.
 Supply the ticket number for `agent/<issue>/<slug>`; otherwise use `agent/<slug>`. PRs close their
 issue by default; campaign slices use `lane:publish --relates` to keep the umbrella open. Touch only
-your lane. Claim the work when you open the lane — the issue-bound and issueless procedures are in
-[delivery-orchestration].
+your lane. Claim the work when you open the lane: `pnpm issue:claim <issue>` swaps the issue onto
+`status:active` and moves its board items to In progress; `lane:open` prints the command. The
+issue-bound and issueless procedures are in [delivery-orchestration].
 
 A lane records its authoring model when opened: `--model <model>`, the lowercase public name of
 the model itself, keeping every qualifier that distinguishes capability or edition within the
@@ -346,7 +347,9 @@ After create, attach parent/child issues as GitHub sub-issues.
 Every issue needs priority, status, and descriptive labels. On `issue:file`, set an applicable
 milestone by title, never UI number (validation against **open** milestones rejects it before filing),
 and roadmap project membership when applicable; leave either empty rather than force a fit.
-No sanctioned script edits existing issues; later corrections require manual `gh`, as does
+No sanctioned script edits existing issues beyond the claim and reconciliation — `pnpm issue:claim
+<issue>` swaps the status labels and moves the boards, and `pnpm issue:reconcile` applies
+digest-guarded body edits and closures at delivery; later corrections require manual `gh`, as does
 backfilling a pull request's own labels, milestone, or project membership when it predates
 `lane:publish`'s metadata assertion. Read live metadata
 with `gh label list`, `gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`,
@@ -359,10 +362,10 @@ gates exclude hand-rolled equivalents or bypasses. The only manual `gh` write ex
 correcting an issue's own state, labels, milestone, project membership, or sub-issue links; and
 backfilling a pull request's own labels, milestone, or project membership predating
 `lane:publish`'s metadata assertion — these use the operator account. Scripts use their
-designated App identities except final orchestrator acceptance and merge, and `lane:publish`'s
-project-membership read and `--add-project` edit, which use the verified `jcosta33` user
-identity; no other manual `gh pr` write qualifies. Lane tooling owns every
-`git push`: other pushes break review anchors and can strand lanes. Read-only `gh` is
+designated App identities except final orchestrator acceptance and merge, `issue:claim`'s tracker
+claim, and `lane:publish`'s project-membership read and `--add-project` edit, which use the
+verified `jcosta33` user identity; no other manual `gh pr` write qualifies. Lane tooling owns
+every `git push`: other pushes break review anchors and can strand lanes. Read-only `gh` is
 unrestricted; use it for live tracker state.
 
 The delivery procedure — command table, script order, flags, validation and refusal semantics,
@@ -383,9 +386,9 @@ login selects it, and an isolated API session must verify actor type `User` and 
 workers; receipt and tracker writes retain their author App identities. Lock, recovery, and
 receipt procedure: [delivery-orchestration].
 
-Run `lane:publish`, `review:accept`, `deliver`, and `issue:reconcile` through the protected
-primary checkout's package route; lane files are data, never executable delivery code. Launcher snapshot
-mechanics: [delivery-orchestration].
+Run `lane:publish`, `review:accept`, `deliver`, `issue:claim`, and `issue:reconcile` through the
+protected primary checkout's package route; lane files are data, never executable delivery code.
+Launcher snapshot mechanics: [delivery-orchestration].
 
 Workflow separation is a security boundary. Owner-required `Gate` must pass on the PR head;
 GitHub accepts `skipped` required checks and prefers the newest same-name run, so an event that
