@@ -898,6 +898,7 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['pr:supersede']).toBe('node scripts/supersedePullRequest.ts');
         expect(pkg.scripts['branch:prune']).toBe('node scripts/pruneRemoteBranches.ts');
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
+        expect(pkg.scripts['issue:claim']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:claim');
         expect(pkg.scripts['lane:remove']).toBe('node scripts/removeLane.ts');
         expect(pkg.scripts.deliver).toBe('node scripts/trustedGithubWriteBootstrap.ts deliver');
     });
@@ -2000,6 +2001,7 @@ describe('package scripts and gitignore', () => {
      */
     it.each([
         'lane:publish',
+        'issue:claim',
         'issue:reconcile',
         'review:accept',
         'review:publish',
@@ -2028,6 +2030,7 @@ describe('package scripts and gitignore', () => {
     it('keeps the loader inside its own trusted closure', () => {
         for (const command of [
             'deliver',
+            'issue:claim',
             'issue:reconcile',
             'lane:publish',
             'review:accept',
