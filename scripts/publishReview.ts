@@ -53,7 +53,7 @@ import {
     type ReviewEvent,
 } from './reviewDocumentParser.ts';
 import { assertPublicationSafeEvidence } from './reviewDossier.ts';
-import { buildReviewDossier, parseReviewStancesRecord } from './reviewDossierPublication.ts';
+import { buildReviewDossier, recordedReviewStances } from './reviewDossierPublication.ts';
 import { assertReviewerModelDiversity, type AuthorshipLabel } from './reviewerModelDiversity.ts';
 import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
 
@@ -282,10 +282,7 @@ function prepareReviewDossierPublication(input: {
     // dossier must correspond to it one-to-one, and when it is absent the publication carries no
     // stance-completeness constraint. The plan's mechanically derived list is never enforced.
     const stancesPath = join(input.bundle, REVIEW_STANCES_NAME);
-    const stancesRead = readBundleFile(input.port, stancesPath);
-    const recordedStances = stancesRead.present
-        ? parseReviewStancesRecord(stancesRead.value, stancesPath).stances.map((entry) => entry.stance)
-        : undefined;
+    const recordedStances = recordedReviewStances(readBundleFile(input.port, stancesPath), stancesPath);
     const publication = buildReviewDossier({
         plan,
         raw: dossierRead.value,

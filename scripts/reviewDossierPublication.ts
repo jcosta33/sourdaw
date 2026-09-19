@@ -226,6 +226,17 @@ export function parseReviewStancesRecord(value: unknown, path: string): ReviewSt
 }
 
 /**
+ * The dispatched-stance names a bundle's stances.json carries, or undefined when the bundle holds
+ * no such file — the legacy path that carries no stance-completeness constraint.
+ */
+export function recordedReviewStances(
+    read: { present: true; value: unknown } | { present: false },
+    path: string
+): string[] | undefined {
+    return read.present ? parseReviewStancesRecord(read.value, path).stances.map((entry) => entry.stance) : undefined;
+}
+
+/**
  * The two forms never validate as each other, so a refusal here is the retry/replay detection:
  * `parseReviewDossier` accepts only the canonical record, and caller input is assembled below.
  */
