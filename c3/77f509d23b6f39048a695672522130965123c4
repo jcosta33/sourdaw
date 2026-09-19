@@ -1,0 +1,20 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_1228e573df1f42 61-65
+AGENTS.md
+  h_1228e573df1f42 324-326
+scripts/__tests__/claimTrackerIssue.spec.ts
+  h_1228e573df1f42 356
+scripts/claimTrackerIssue.ts
+  h_1228e573df1f42 8,321,328-333,346,353-354
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c377f509d23b6f39048a695672522130965123c4",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
