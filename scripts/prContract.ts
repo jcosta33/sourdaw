@@ -567,6 +567,15 @@ const LEADING_LIST_MARKER = /^(?:[-*•]\s+|[0-9]+[.)]\s+|[a-z][.)]\s+)/i;
 /** Filler words that precede a command without making the segment anything but narration. */
 const LEADING_FILLER_WORD = /^(?:run|runs|ran|execute|executes|executed|same|for|ditto|then|and|also|again)\s+/i;
 
+/** A leading terminated backtick span, for peeling the launch off a segment's front. */
+const LEADING_BACKTICK_SPAN = /^`[^`]*`/;
+
+/** Any terminated backtick span, for removing quoted commands from a segment's prose remainder. */
+const BACKTICK_SPAN = /`[^`]*`/g;
+
+/** A balanced parenthetical, for removing result annotations like `(140 passed)` from a remainder. */
+const PARENTHETICAL = /\([^)]*\)/g;
+
 /** Edge punctuation a first token may trail or lead with (`vitest:`, `pnpm,`). */
 const TOKEN_EDGE_PUNCTUATION = /^[,;:]+|[,;:]+$/g;
 
@@ -634,19 +643,145 @@ function leadingCommandToken(segment: string): string {
 
 /**
  * Words that make a segment teach an observation rather than recite a launch: inflected stems,
- * matched at word start so `confirm` reaches `confirms`/`confirmed` while `format` never matches,
- * plus the play phrases a listening check is written with.
+ * matched at word start so `confirm` reaches `confirms`/`confirmed` and `play` reaches `plays`,
+ * `played`, and `playback` — the old press-play phrases fold into the `play` stem. Tested against
+ * the prose remainder only, never against command text: `wasm:verify` and
+ * `checkModelCached.spec.ts` carry their stems inside tokens the remainder has already dropped.
  */
 const OBSERVATION_CUE =
-    /\b(?:confirm|verif|observ|check|see|expect|watch|listen|hear|notice|open|click|appear|render|show|display|audible)\w*|\b(?:press play|(?:plays?|played) back)\b/i;
+    /\b(?:confirm|verif|observ|check|see|expect|watch|listen|hear|notice|open|click|appear|render|show|display|audible|drag|play|press|select|type|toggle|choose|create|remove|delete|move|resize|scroll|hover|arm|record|restart|start|stop|save|undo|redo|zoom|nudge|cut|copy|paste|split|duplicate|rename|edit|adjust|switch|connect|disconnect|enable|disable|import|export|load|reload|clear|reset|apply|add|set)\w*/i;
 
 /**
- * Whether one segment reads as a tool invocation rather than a step a reviewer can perform. Both
- * halves must hold: the leading token is a command head, and the whole segment carries no
- * observation cue — a launch that teaches what to confirm behind a comma is a step, not narration.
+ * A trailing `.ts`-style extension: a token shaped like a filename is command material no prose
+ * rides on, whatever observation stems its name carries.
+ */
+const FILE_EXTENSION_SUFFIX = /\.[A-Za-z0-9]+$/;
+
+/**
+ * The closed vocabulary a command-only segment's leftover words may draw from before it stops
+ * being narration: the result statuses a command line cites, and the command-annotation words
+ * (the filler set plus prepositions and scope words). Anything beyond it is real instruction.
+ */
+const REMAINDER_VOCABULARY = new Set([
+    'passed',
+    'failed',
+    'failing',
+    'green',
+    'clean',
+    'ok',
+    'okay',
+    'pass',
+    'fail',
+    'fails',
+    'skipped',
+    'unchanged',
+    'red',
+    'reds',
+    'reddens',
+    'errors',
+    'run',
+    'runs',
+    'ran',
+    'execute',
+    'executes',
+    'executed',
+    'same',
+    'for',
+    'ditto',
+    'then',
+    'and',
+    'also',
+    'again',
+    'on',
+    'with',
+    'the',
+    'a',
+    'an',
+    'in',
+    'of',
+    'to',
+    'from',
+    'every',
+    'all',
+    'each',
+    'files',
+    'file',
+    'suite',
+    'suites',
+    'spec',
+    'specs',
+    'test',
+    'tests',
+    'touched',
+    'changed',
+    'focused',
+    'modules',
+    'module',
+    'broad',
+    'extended',
+    'profile',
+    'output',
+    'over',
+    'new',
+    'old',
+    'only',
+    'plus',
+    'via',
+    'using',
+]);
+
+/**
+ * The segment's prose remainder: the leading structure the token check consumes is stripped with
+ * the same marker/filler/backtick machinery, but a leading backtick span leaves a space instead of
+ * swallowing the rest — the observation a launch teaches usually lives after the span.
+ */
+function proseRemainder(segment: string): string {
+    let rest = stripRepeated(segment, LEADING_LIST_MARKER);
+    for (;;) {
+        const stripped = stripRepeated(rest.replace(LEADING_BACKTICK_SPAN, ' '), LEADING_FILLER_WORD);
+        if (stripped === rest) {
+            return stripped;
+        }
+        rest = stripped;
+    }
+}
+
+/** Whether a token is command material no prose can ride on. */
+function isCommandToken(token: string): boolean {
+    return (
+        COMMAND_HEADS.has(token) ||
+        /[/\\:]/.test(token) ||
+        FILE_EXTENSION_SUFFIX.test(token) ||
+        token.startsWith('-') ||
+        !/[a-z]/.test(token)
+    );
+}
+
+/**
+ * The words the segment's leftover prose is made of: backtick spans and parentheticals go first,
+ * then command tokens — heads, paths, extensions, flags, pure numbers and punctuation — drop, so
+ * only annotation words a reader would actually read survive.
+ */
+function proseRemainderWords(segment: string): string[] {
+    const remainder = proseRemainder(segment).replaceAll(BACKTICK_SPAN, ' ').replaceAll(PARENTHETICAL, ' ');
+    return remainder.split(/\s+/).flatMap((token) => {
+        const word = token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
+        return word === '' || isCommandToken(word) ? [] : [word];
+    });
+}
+
+/**
+ * Whether one segment reads as a tool invocation rather than a step a reviewer can perform. All
+ * three must hold: the leading token is a command head, the prose remainder carries no observation
+ * cue, and every leftover word is annotation from the closed vocabulary — any cue or any word
+ * beyond it is real instruction and rescues the segment.
  */
 function isCommandNarration(segment: string): boolean {
-    if (OBSERVATION_CUE.test(segment)) {
+    const words = proseRemainderWords(segment);
+    if (words.some((word) => OBSERVATION_CUE.test(word))) {
+        return false;
+    }
+    if (words.some((word) => !REMAINDER_VOCABULARY.has(word))) {
         return false;
     }
     const token = leadingCommandToken(segment).split(/\s+/)[0] ?? '';
@@ -668,11 +803,13 @@ function testInstructionSegments(text: string): string[] {
 }
 
 /**
- * Whether every segment of `text` narrates a command. A segment is narration only when its whole
- * body is a tool invocation: the leading token must be a command head and the segment must carry
- * no observation cue, so "Run `pnpm dev` and confirm the transport play button toggles" is a step
- * a reviewer can perform, not narration. Deliberately fail-open at the margins: any prose segment
- * — "Open the app and …", "No user-visible change; …", even `None.` — makes this false.
+ * Whether every segment of `text` narrates a command. A segment is narration only when, after the
+ * command material drops out (heads, paths, flags, quoted spans, parentheticals), its prose
+ * remainder is pure annotation: no observation cue, and no word outside the annotation vocabulary.
+ * "Run `pnpm dev` and confirm the transport play button toggles" teaches a step and passes;
+ * "pnpm wasm:verify" keeps its verify stem inside the dropped command token and refuses.
+ * Deliberately fail-open at the margins: any prose segment — "Open the app and …", "No
+ * user-visible change; …", even `None.` — makes this false.
  */
 export function commandOnlyTestInstructions(text: string): boolean {
     const segments = testInstructionSegments(text);

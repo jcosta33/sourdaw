@@ -767,6 +767,21 @@ describe('product-scope test instructions', () => {
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
     });
 
+    it.each([
+        ['a rebuild-and-verify command pair', 'pnpm wasm:all\npnpm wasm:verify'],
+        [
+            'a spec path whose own name carries an observation stem',
+            'pnpm test:run src/modules/BrowserAi/repositories/__tests__/checkModelCached.spec.ts (green)\n' +
+                'pnpm typecheck (clean)',
+        ],
+        ['a seeded spec path', 'pnpm test:run src/utils/seedProject.spec.ts'],
+    ])('refuses %s', (_label, instructions) => {
+        // The stems ride inside command tokens — the colon suffix, the path — which the remainder
+        // drops before any cue or vocabulary test sees them, so these stay narration.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
     it('passes any single prose sentence, including one a filler word opens', () => {
         // "Run" leads the existing fixtures' own How-to-test sentence: filler stripping must stop
         // at the command list, not read the sentence's next word as one.
@@ -803,9 +818,17 @@ describe('product-scope test instructions', () => {
             'a numbered step pairing the command with its observation',
             '1. `pnpm dev` then open the arrangement view and confirm the new clip handle appears',
         ],
+        [
+            'a numbered step pairing the launch with a drag observation',
+            '1. `pnpm dev` and drag a clip onto a lane, the clip lands quantized to the grid',
+        ],
+        [
+            'a numbered step pairing the launch with a listening check',
+            '1. `pnpm dev`, play the transport from bar 1, audio starts at the set tempo',
+        ],
     ])('passes %s', (_label, instructions) => {
         // The launch head alone does not make these narration: each teaches what to observe, so
-        // the whole-segment cue rule keeps them acceptable for a product-scope change.
+        // the remainder rule keeps them acceptable for a product-scope change.
         expect(commandOnlyTestInstructions(instructions)).toBe(false);
         expect(() => assertObservableTestInstructions(instructions)).not.toThrow();
     });
