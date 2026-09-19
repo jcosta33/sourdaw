@@ -166,7 +166,9 @@ describe('claim tracker issue', () => {
             'api',
             'graphql',
             '-f',
-            expect.stringContaining('projectItems(first:20)'),
+            'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){' +
+                'projectItems(first:20){totalCount nodes{id project{id number title owner{... on User{login} ... on Organization{login}}} ' +
+                'fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}}}}',
             '-f',
             'owner=jcosta33',
             '-f',
@@ -174,12 +176,6 @@ describe('claim tracker issue', () => {
             '-F',
             'number=7',
         ]);
-        expect(boardsCall?.[3]).toContain('query($owner:String!,$name:String!,$number:Int!)');
-        expect(boardsCall?.[3]).toContain('issue(number:$number)');
-        expect(boardsCall?.[3]).toContain('projectItems(first:20){totalCount');
-        expect(boardsCall?.[3]).toContain('... on User{login}');
-        expect(boardsCall?.[3]).toContain('... on Organization{login}');
-        expect(boardsCall?.[3]).toContain('fieldValueByName(name:"Status")');
         expect(callsWith(calls, ['project', 'field-list'])).toHaveLength(2);
         expect(calls).toContainEqual(['project', 'field-list', '3', '--owner', 'jcosta33', '--format', 'json']);
         expect(calls).toContainEqual(['project', 'field-list', '2', '--owner', 'jcosta33', '--format', 'json']);
@@ -380,24 +376,32 @@ describe('claim launcher binding', () => {
 });
 
 describe('claim cli wiring', () => {
-    function recordingDeps(order: string[], ghResponses: (args: string[]) => string): ClaimCliDeps {
-        return {
+    type ClaimSession = { env: NodeJS.ProcessEnv; dispose: () => void };
+
+    function recordingDeps(order: string[], ghResponses: (args: string[]) => string) {
+        const createGhSessions: ClaimSession[] = [];
+        const authSession: ClaimSession = { env: {}, dispose: () => order.push('dispose') };
+        const deps: ClaimCliDeps = {
             bindLauncher: () => order.push('bind'),
             authenticate: () => {
                 order.push('authenticate');
-                return { session: { env: {}, dispose: () => order.push('dispose') } };
+                return { session: authSession };
             },
-            createGh: () => (args) => {
-                order.push('gh');
-                return ghResponses(args);
+            createGh: (session) => {
+                createGhSessions.push(session);
+                return (args) => {
+                    order.push('gh');
+                    return ghResponses(args);
+                };
             },
             log: () => undefined,
         };
+        return { deps, createGhSessions, authSession };
     }
 
-    it('binds the launcher, then authenticates, then touches gh, disposing the session last', async () => {
+    it('binds the launcher, then authenticates, then hands gh the authenticated session, disposing it last', async () => {
         const order: string[] = [];
-        const deps = recordingDeps(order, (args) => {
+        const { deps, createGhSessions, authSession } = recordingDeps(order, (args) => {
             if (args[0] === 'issue' && args[1] === 'view') {
                 return JSON.stringify({ labels: [] });
             }
@@ -413,11 +417,27 @@ describe('claim cli wiring', () => {
         await expect(runClaimTrackerIssueCli(['9'], deps)).resolves.toBe(0);
 
         expect(order).toEqual(['bind', 'authenticate', 'gh', 'gh', 'gh', 'dispose']);
+        expect(createGhSessions).toHaveLength(1);
+        expect(createGhSessions[0]).toBe(authSession);
+    });
+
+    it('disposes the session even when the claim refuses after authentication', async () => {
+        const order: string[] = [];
+        const { deps } = recordingDeps(order, (args) => {
+            if (args[0] === 'issue' && args[1] === 'view') {
+                return JSON.stringify({ labels: [{ name: 'status:active' }] });
+            }
+            throw new Error(`unexpected gh call: ${args.join(' ')}`);
+        });
+
+        await expect(runClaimTrackerIssueCli(['7'], deps)).rejects.toThrow(/already carries status:active/);
+
+        expect(order).toEqual(['bind', 'authenticate', 'gh', 'dispose']);
     });
 
     it('refuses before binding or authentication when the argument is not one issue number', async () => {
         const order: string[] = [];
-        const deps = recordingDeps(order, () => {
+        const { deps } = recordingDeps(order, () => {
             throw new Error('gh must not be called');
         });
 
