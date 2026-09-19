@@ -108,6 +108,29 @@ Blind reviewers report only to the orchestrator. Post only validated findings th
 `deliver` refuses `CHANGES_REQUESTED` or unresolved threads, and only a head addressing the finding
 can resolve it. A wrongly posted finding therefore blocks delivery without a repair to make.
 
+`review:prepare` records the change's risk classes — `small`, `ordinary`, `test-only`,
+`cross-domain`, `realtime-audio`, `native-security`, `undo` — and the stances they earn in the head
+bundle's `risk-plan.json`, derived from the same path classification as the size report beside it so
+the two cannot disagree. Classes union when several fire, and no class may require a stance it did
+not earn: `code-craft` is earned only by `ordinary`.
+
+Write the caller-authored `dossier.json` beside `review.json` and `discarded.json`: one entry per
+required stance recording its reviewer model, tier, and outcome, the bounded evidence claims, and the
+limitations. Accepted findings are not declared there; they are the review document's own inline
+comments. `review:publish` refuses a fresh reviewer publication before any remote write when the
+dossier is missing, malformed, or rebound from the head the plan binds; when it does not complete
+exactly the plan's required stances or claims one the classes did not earn; when its accepted findings
+do not match the document's comments one-to-one; or when its recommendation disagrees with the
+document's event. It then persists the canonical append-only record bound to the head; re-publishing
+the same head replays that record unchanged rather than minting a second one.
+
+Evidence values — dossier evidence, limitations, and approval claims — are single-line, trimmed and
+bounded, and are refused when they carry a credential-shaped value, a private-key header, a JWT, a
+bearer token, or raw session-transcript markers. Private reviewer prose belongs nowhere in the record.
+
+A bundle with no `risk-plan.json` predates this contract and publishes exactly as before. Historical
+review and acceptance documents stay readable unchanged, and `review:accept` takes no dossier.
+
 Post validated blockers BEFORE repair: publish a `REQUEST_CHANGES` review against the reviewed
 head, then dispatch repairs. The author pushes the fixed head, answers each thread through
 `review:resolve`, and obtains a fresh review round. Never repair first and approve in one motion:

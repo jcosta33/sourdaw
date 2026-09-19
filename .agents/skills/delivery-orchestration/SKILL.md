@@ -139,9 +139,9 @@ interface. Exclude session diaries, unpublished rounds, and mutation tables.
 ## Review bundles and publication
 
 `review:prepare` prints a primary-root bundle path containing `manifest.json`,
-`diff.patch`, `review-size.json`, `pr.md`, and merge-base `contracts/`. The
-manifest binds PR, base branch, merge-base, and head. The diff and
-deterministic size report use the actual base/head merge-base; handwritten,
+`diff.patch`, `review-size.json`, `risk-plan.json`, `pr.md`, and merge-base
+`contracts/`. The manifest binds PR, base branch, merge-base, and head. The diff
+and deterministic size report use the actual base/head merge-base; handwritten,
 test, documentation, and generated changes (including lockfiles) remain visible
 as separate groups, and unknown paths count as handwritten. Paths are keyed by
 head sha. Re-preparing the same head replaces generated files and preserves
@@ -149,9 +149,43 @@ caller files only while the bound base name and merge-base context match; a
 populated legacy bundle without base identity cannot be reused. Unrelated
 movement of the base tip is allowed when that context is unchanged.
 
+`risk-plan.json` records `format: 'risk-plan-v1'`, the `pr`/`headSha`/`baseSha`
+it is bound to, the change's `riskClasses`, the `requiredStances` those classes
+earn, and the `triggers` that fired. It is derived from the same path
+classification as `review-size.json`, so the stances and the printed size
+summary cannot disagree. Classes union when several fire, and no class may
+require a stance it did not earn: that is the proportionality rule, and
+`code-craft` is required only by `ordinary`.
+
+- `small` (no specialist surface, handwritten change within the small-change
+  budget) — correctness, test-validity.
+- `ordinary` (no specialist surface, over that budget) — correctness,
+  code-craft, module-boundaries, test-validity.
+- `test-only` — test-validity.
+- `cross-domain` — correctness, module-boundaries, test-validity.
+- `realtime-audio` — correctness, realtime-audio, test-validity.
+- `native-security` — correctness, security-platform, test-validity.
+- `undo` — correctness, project-integrity-undo, test-validity.
+
+Parsing recomputes the stance union from `riskClasses`, so a hand-edited plan
+can neither widen nor narrow its own review.
+
 `review:publish` prints the review id and posts as reviewer App only if
 GitHub's live head matches the bundle; fresh approvals also require matching
-base context.
+base context. Fresh reviewer publication also carries the head-bound dossier and
+refuses before any remote write when the plan or dossier is missing, malformed,
+or rebound from the head/base/pr it must bind; when the dossier does not
+complete exactly the plan's required stances or claims one the classes did not
+earn; when its accepted findings do not match the document's comments
+one-to-one; or when its recommendation disagrees with the document's event. It
+then persists the canonical record, `format: 'dossier-v1'`: an append-only event
+chain (`stance-completed`, `finding-accepted`, `finding-discarded`) whose records
+carry `sequence`, `previousDigest`, and `digest`, plus `headDigest` and a
+`dossierDigest` over the header identity. Re-publication of the same head
+replays that persisted record unchanged rather than minting a second one.
+
+Legacy tolerance: a bundle with no `risk-plan.json` predates this contract and
+publishes exactly as before.
 
 ### Headless reviewer dispatch
 
@@ -177,6 +211,26 @@ comment must fit 600 bytes, not characters; there is no minimum.
 Request changes when this head must not merge, and post every blocking comment
 with that review. The summary is a short pointer to those comments, not a
 report.
+
+### Dossier input and discard record
+
+The orchestrator writes the caller-authored `dossier.json` beside `review.json`
+and `discarded.json`, in input form `format: 'dossier-input-v1'`: the same
+`pr`/`headSha`/`baseSha`, one `stances` entry per required stance (`stance`,
+`reviewerModel`, `modelTier` of `economy`/`standard`/`strongest`, `outcome` of
+`blocker-found`/`clean`), the bounded `evidence` claims, and `limitations`. The
+accepted findings are not declared there: they are the review document's own
+inline comments. `discarded.json` is the orchestrator's discard record and is
+now actually read: an array of `{ finding, stance, reason }`, one entry per
+discarded candidate, each with a one-line reason.
+
+Dossier evidence, limitations, and approval-claim values must be single-line,
+trimmed and bounded, and are refused when they carry a credential-shaped value,
+a private-key header, a JWT, a bearer token, or raw session-transcript markers.
+Private reviewer prose belongs nowhere in the record.
+
+Readers of historical review and acceptance documents are unchanged, and
+`review:accept` takes no dossier.
 
 ### APPROVE: compact-v1 evidence
 
