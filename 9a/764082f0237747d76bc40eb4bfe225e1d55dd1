@@ -1,0 +1,21 @@
+src/modules/Automation/useCases/automation/__tests__/automationPoints.spec.ts
+  s_ed5aa36a3ba357::t_46bb896d982138 135-136,145,147-150,152-158
+src/modules/Automation/useCases/automation/getAutomationValueAtBeat.ts
+  s_ed5aa36a3ba357::t_46bb896d982138 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9a764082f0237747d76bc40eb4bfe225e1d55dd1",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
