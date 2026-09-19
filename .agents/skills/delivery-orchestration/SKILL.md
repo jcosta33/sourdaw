@@ -127,7 +127,11 @@ retitles existing PRs, including after follow-up commits or merges. The body
 follows [`.github/pull_request_template.md`](../../../.github/pull_request_template.md);
 the script controls format and rejects malformed bodies. New PRs require
 explicit `--summary` and `--test`; later supplied flags replace their section,
-omitted flags preserve it. Publishing neither enables auto-merge nor posts
+omitted flags preserve it. A product-scope change — any handwritten path under
+`src/modules/`, `src/components/`, or `electron/` — refuses a `--test` whose
+every segment narrates a command; it must teach user/reviewer-observable steps
+and their expected result, while a body preserved from an existing pull request
+is not re-judged. Publishing neither enables auto-merge nor posts
 reviews.
 
 `lane:publish` targets `main` for ordinary lanes and the verified parent branch

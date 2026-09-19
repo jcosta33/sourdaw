@@ -46,7 +46,12 @@ import {
     type GuardFailureReceipt,
     type IssueRelationship,
 } from './prContract.ts';
-import { formatReviewDiffSummary, summarizeReviewDiff } from './reviewDiffSummary.ts';
+import {
+    changedReviewPaths,
+    formatReviewDiffSummary,
+    summarizeReviewDiff,
+    type ReviewChangedPath,
+} from './reviewDiffSummary.ts';
 import {
     assertStackAcyclic,
     parseStackParents,
@@ -56,6 +61,7 @@ import {
     stackPublicationBase,
     writeLaneStack,
 } from './stackedLanes.ts';
+import { assertObservableTestInstructions } from './testInstructions.ts';
 
 export { canonicalPath, containsPath };
 
@@ -83,6 +89,19 @@ export type StackPublicationContext = {
 
 export const PUBLISH_LANE_USAGE =
     'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]';
+
+/**
+ * The source trees whose changes a user runs in the app: a lane touching any of them is product
+ * scope, and its How-to-test section has to teach an observable step, not recite checks. Declared
+ * above the guidance so the printed tree list is derived from it rather than retyped beside it.
+ */
+export const PRODUCT_SCOPE_PREFIXES = ['src/modules/', 'src/components/', 'electron/'] as const;
+
+/**
+ * The `--test` contract the usage line has no room to state, printed under it by `--help`. Usage
+ * stays one line because refusals embed it verbatim; the rule rides beside it.
+ */
+export const PUBLISH_LANE_TEST_GUIDANCE = `--test teaches how a reviewer verifies the change; for product-scope changes (${PRODUCT_SCOPE_PREFIXES.join(', ')}) it must give user/reviewer-observable steps and their expected result, and CI or author checks do not substitute.`;
 
 /**
  * The same authoring-model rule `lane:open` enforces, mirrored here rather than imported: the
@@ -524,6 +543,17 @@ export function addPullRequestProjectsArgs(number: number, titles: string[]): st
     ];
 }
 
+/**
+ * Product scope means a *handwritten* change under a product tree. Test, docs, and generated paths
+ * under the same trees have no user-observable surface of their own, so they never fire the gate.
+ */
+export function isProductScopeChange(paths: readonly ReviewChangedPath[]): boolean {
+    return paths.some(
+        (entry) =>
+            entry.group === 'handwritten' && PRODUCT_SCOPE_PREFIXES.some((prefix) => entry.path.startsWith(prefix))
+    );
+}
+
 export type PublishLanePort = {
     baseSha: () => string;
     worktrees: () => PublishWorktree[];
@@ -544,6 +574,8 @@ export type PublishLanePort = {
     readPullRequestMergeability: (number: number) => PullRequestMergeability;
     /** The paths a real trial merge of `base` and `head` conflicts on, in the lane's own repository. */
     conflictingPaths: (lane: string, base: string, head: string) => string[];
+    /** The lane's changed paths between `baseSha` and `headSha`, classified for scope gates. */
+    changedPaths: (lane: string, baseSha: string, headSha: string) => readonly ReviewChangedPath[];
     createPullRequest: (input: { branch: string; title: string; body: string; base?: string }) => number;
     updatePullRequest: (number: number, input: { body: string }) => void;
     saveAuthorModel: (branch: string, model: string) => void;
@@ -1473,6 +1505,16 @@ function pullRequestWrite(
         }
         resolvedSummary = whatFromBody(existing.body);
     }
+    // Gated on the flag, never the resolved value: a body preserved verbatim from an existing pull
+    // request (--test omitted) is not re-judged, so in-flight pull requests keep their semantics,
+    // while every fresh create and explicit rewrite teaches an observable step when the change is
+    // product scope. This runs before any write, so a refusal leaves nothing pushed.
+    if (testInstructions !== undefined) {
+        const changedPaths = port.changedPaths(lane.path, baseSha, headSha);
+        if (isProductScopeChange(changedPaths)) {
+            assertObservableTestInstructions(testInstructions);
+        }
+    }
     const pullRequestTitle = typeof existingTitle === 'string' ? existingTitle : laneSubject;
     return {
         title: laneSubject,
@@ -1728,6 +1770,21 @@ export function shellPort(
             }
             console.log(formatReviewDiffSummary(summarizeReviewDiff(lane, result.stdout)));
         },
+        // Merge-base range, like reportDiff above: a two-dot range would diff against main's moving
+        // tip, so unrelated origin/main movement past the merge base would fabricate product scope
+        // for a lane that never touched it. Classified from the lane root like reportDiff, so the
+        // gate and the size report cannot disagree about a linguist-generated marking.
+        changedPaths: (lane, baseSha, headSha) =>
+            changedReviewPaths(
+                lane,
+                Buffer.from(
+                    spawnCapture(executables.git, ['diff', '--numstat', '-z', `${baseSha}...${headSha}`], {
+                        cwd: lane,
+                        env: session.env,
+                        trim: false,
+                    })
+                )
+            ),
         readPullRequestMergeability: (number) => {
             try {
                 return mergeabilityFromPullRequestRow(
@@ -1995,6 +2052,7 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
     const parsed = parsePublishLaneArgs(args);
     if (parsed.help) {
         console.log(PUBLISH_LANE_USAGE.replace('usage:', 'Usage:'));
+        console.log(PUBLISH_LANE_TEST_GUIDANCE);
         return 0;
     }
     if (parsed.issue === undefined && parsed.lanePath === undefined) {
