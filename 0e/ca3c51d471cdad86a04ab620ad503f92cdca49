@@ -1,0 +1,14 @@
+crates/proof-chamber/tests/plate_parameter_surface.rs
+  h_1228e573df1f42 350-387
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0eca3c51d471cdad86a04ab620ad503f92cdca49",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
