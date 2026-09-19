@@ -672,9 +672,7 @@ export function assembleReviewDossier(input: {
     return dossier;
 }
 
-export function completedStances(
-    dossier: ReviewDossier
-): {
+export function completedStances(dossier: ReviewDossier): {
     stance: ReviewDossierStance;
     reviewerModel: string;
     modelTier: ReviewModelTier;
