@@ -186,6 +186,11 @@ const INPUT_REFUSALS: readonly InputRefusalCase[] = [
         message: /input stances\[0\]\.reviewerModel must be a non-blank string/,
     },
     {
+        label: 'a credential-shaped reviewerModel',
+        value: { ...INPUT, stances: [{ ...CORRECTNESS_STANCE, reviewerModel: `ghp_${'A'.repeat(24)}` }] },
+        message: /input stances\[0\]\.reviewerModel value at index 0 contains a GitHub token/,
+    },
+    {
         label: 'a duplicate stance',
         value: { ...INPUT, stances: [CORRECTNESS_STANCE, CORRECTNESS_STANCE] },
         message: /input stances\[1\]\.stance duplicates stances\[0\]\.stance: correctness/,
@@ -394,6 +399,42 @@ const BUILD_REFUSALS: readonly BuildRefusalCase[] = [
                 recommendation: 'approve',
             }),
         message: /review dossier input pr must be a positive safe integer/,
+    },
+    {
+        label: 'a fresh input whose pr disagrees with the plan',
+        run: () =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: { ...INPUT, pr: 1 },
+                discarded: [],
+                comments: [],
+                recommendation: 'approve',
+            }),
+        message: /review dossier input pr mismatch: record has 1, expected 2999/,
+    },
+    {
+        label: 'a fresh input whose headSha disagrees with the plan',
+        run: () =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: { ...INPUT, headSha: 'other-head' },
+                discarded: [],
+                comments: [],
+                recommendation: 'approve',
+            }),
+        message: /review dossier input headSha mismatch: record has "other-head", expected "a{40}"/,
+    },
+    {
+        label: 'a fresh input whose baseSha disagrees with the plan',
+        run: () =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: { ...INPUT, baseSha: 'other-base' },
+                discarded: [],
+                comments: [],
+                recommendation: 'approve',
+            }),
+        message: /review dossier input baseSha mismatch: record has "other-base", expected "b{40}"/,
     },
     {
         label: 'an input identity with a blank headSha',

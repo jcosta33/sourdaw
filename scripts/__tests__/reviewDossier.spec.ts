@@ -264,6 +264,96 @@ describe('assembleReviewDossier discarded input', () => {
     });
 });
 
+describe('assembleReviewDossier evidence safety', () => {
+    const CREDENTIAL = `ghp_${'A'.repeat(24)}`;
+
+    function eventsWith(index: number, replacement: ReviewDossierEvent): ReviewDossierEvent[] {
+        return BASE_EVENTS.map((event, eventIndex) => (eventIndex === index ? replacement : event));
+    }
+
+    it('should refuse a credential-shaped reviewerModel and name the field', () => {
+        expect(() =>
+            assembleWith({
+                events: eventsWith(0, {
+                    kind: 'stance-completed',
+                    stance: 'correctness',
+                    reviewerModel: CREDENTIAL,
+                    modelTier: 'strongest',
+                    outcome: 'clean',
+                }),
+            })
+        ).toThrow(/event 0 reviewerModel value at index 0 contains a GitHub token/);
+    });
+
+    it('should refuse a credential-shaped accepted finding id and name the field', () => {
+        expect(() =>
+            assembleWith({
+                events: eventsWith(1, {
+                    kind: 'finding-accepted',
+                    findingId: CREDENTIAL,
+                    path: 'scripts/reviewDossier.ts',
+                    line: 42,
+                    side: 'RIGHT',
+                }),
+            })
+        ).toThrow(/event 1 findingId value at index 0 contains a GitHub token/);
+    });
+
+    it('should refuse a credential-shaped accepted path and name the field', () => {
+        expect(() =>
+            assembleWith({
+                events: eventsWith(1, {
+                    kind: 'finding-accepted',
+                    findingId: 'finding-1',
+                    path: `AKIA${'C'.repeat(16)}`,
+                    line: 42,
+                    side: 'RIGHT',
+                }),
+            })
+        ).toThrow(/event 1 path value at index 0 contains an AWS access key id/);
+    });
+
+    it('should refuse a transcript marker in an accepted path and name the field', () => {
+        expect(() =>
+            assembleWith({
+                events: eventsWith(1, {
+                    kind: 'finding-accepted',
+                    findingId: 'finding-1',
+                    path: '⏺ Read scripts/reviewDossier.ts',
+                    line: 42,
+                    side: 'RIGHT',
+                }),
+            })
+        ).toThrow(/event 1 path value at index 0 contains a session transcript marker/);
+    });
+
+    it('should refuse a credential-shaped discarded finding id and name the field', () => {
+        expect(() =>
+            assembleWith({
+                discarded: [{ finding: CREDENTIAL, stance: 'correctness', reason: 'cannot reproduce on this head' }],
+            })
+        ).toThrow(/discarded\[0\] finding value at index 0 contains a GitHub token/);
+    });
+
+    it('should assemble safe reviewer model, finding id, path and finding id unchanged', () => {
+        const dossier = assembleWith({
+            discarded: [{ finding: 'finding-3', stance: 'correctness', reason: 'cannot reproduce on this head' }],
+        });
+
+        expect(completedStances(dossier).map((entry) => entry.reviewerModel)).toEqual([
+            'model-correctness',
+            'model-test-validity',
+        ]);
+        expect(acceptedFindings(dossier)).toEqual([
+            { findingId: 'finding-1', path: 'scripts/reviewDossier.ts', line: 42, side: 'RIGHT' },
+        ]);
+        expect(discardedDispositions(dossier)).toEqual([
+            { findingId: 'finding-2', stance: 'correctness', reason: 'stale diff context' },
+            { findingId: 'finding-3', stance: 'correctness', reason: 'cannot reproduce on this head' },
+        ]);
+    });
+});
+
 describe('assembleReviewDossier refusals', () => {
     it('should refuse a duplicate completed stance', () => {
         expect(() => assembleWith({ events: [...BASE_EVENTS, SECOND_CORRECTNESS_STANCE] })).toThrow(
@@ -456,6 +546,43 @@ describe('parseReviewDossier refusals', () => {
         record.reason = `ghp_${'A'.repeat(24)}`;
 
         expect(() => parseReviewDossier(mutated)).toThrow(/event 2 reason value at index 0 contains a GitHub token/);
+    });
+
+    it('should refuse a credential-shaped reviewerModel in a persisted record', () => {
+        const mutated = cloneDossier();
+        const record = recordAt(mutated, 0);
+        if (record.kind !== 'stance-completed') {
+            throw new Error('fixture must start with a stance-completed record');
+        }
+        record.reviewerModel = `ghp_${'A'.repeat(24)}`;
+
+        expect(() => parseReviewDossier(mutated)).toThrow(
+            /event 0 reviewerModel value at index 0 contains a GitHub token/
+        );
+    });
+
+    it('should refuse a transcript marker in a persisted accepted path', () => {
+        const mutated = cloneDossier();
+        const record = recordAt(mutated, 1);
+        if (record.kind !== 'finding-accepted') {
+            throw new Error('fixture must carry an accepted finding at index 1');
+        }
+        record.path = '⏺ Read scripts/reviewDossier.ts';
+
+        expect(() => parseReviewDossier(mutated)).toThrow(
+            /event 1 path value at index 0 contains a session transcript marker/
+        );
+    });
+
+    it('should refuse a credential-shaped finding id in a persisted discard event', () => {
+        const mutated = cloneDossier();
+        const record = recordAt(mutated, 2);
+        if (record.kind !== 'finding-discarded') {
+            throw new Error('fixture must carry a discard at index 2');
+        }
+        record.findingId = `ghp_${'A'.repeat(24)}`;
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/event 2 findingId value at index 0 contains a GitHub token/);
     });
 
     it('should accept a bounded, safe dossier', () => {

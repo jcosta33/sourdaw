@@ -203,14 +203,15 @@ function readNonBlankString(label: string, value: unknown): string {
 }
 
 /**
- * Discard reasons are published evidence like any other recorded value, so a reason carries the
- * same single-line, trimmed, bounded and credential-refusing rules. The non-blank read runs first
- * so a blank reason still names itself rather than the safety rule that also catches it.
+ * Every caller-written string the record persists is published evidence like any other recorded
+ * value, so it carries the same single-line, trimmed, bounded and credential-refusing rules. The
+ * non-blank read runs first so a blank value still names itself rather than the safety rule that
+ * also catches it.
  */
-function readDiscardReason(label: string, value: unknown): string {
-    const reason = readNonBlankString(label, value);
-    assertPublicationSafeEvidence(label, [reason]);
-    return reason;
+function readPublicationSafeString(label: string, value: unknown): string {
+    const text = readNonBlankString(label, value);
+    assertPublicationSafeEvidence(label, [text]);
+    return text;
 }
 
 function readPositiveInteger(label: string, value: unknown): number {
@@ -276,7 +277,7 @@ function readEvent(
         return {
             kind,
             stance: readLiteral(`${label} stance`, record.stance, isReviewStanceId, 'a known review stance'),
-            reviewerModel: readNonBlankString(`${label} reviewerModel`, record.reviewerModel),
+            reviewerModel: readPublicationSafeString(`${label} reviewerModel`, record.reviewerModel),
             modelTier: readLiteral(
                 `${label} modelTier`,
                 record.modelTier,
@@ -289,17 +290,17 @@ function readEvent(
     if (kind === 'finding-accepted') {
         return {
             kind,
-            findingId: readNonBlankString(`${label} findingId`, record.findingId),
-            path: readNonBlankString(`${label} path`, record.path),
+            findingId: readPublicationSafeString(`${label} findingId`, record.findingId),
+            path: readPublicationSafeString(`${label} path`, record.path),
             line: readPositiveInteger(`${label} line`, record.line),
             side: readLiteral(`${label} side`, record.side, isSide, 'LEFT or RIGHT'),
         };
     }
     return {
         kind,
-        findingId: readNonBlankString(`${label} findingId`, record.findingId),
+        findingId: readPublicationSafeString(`${label} findingId`, record.findingId),
         stance: readLiteral(`${label} stance`, record.stance, isReviewStanceId, 'a known review stance'),
-        reason: readDiscardReason(`${label} reason`, record.reason),
+        reason: readPublicationSafeString(`${label} reason`, record.reason),
     };
 }
 
@@ -347,9 +348,9 @@ function readDiscardedEntry(value: unknown, index: number): ReviewDossierEvent {
     assertExactKeys(value, DISCARDED_KEYS, label);
     return {
         kind: 'finding-discarded',
-        findingId: readNonBlankString(`${label} finding`, value.finding),
+        findingId: readPublicationSafeString(`${label} finding`, value.finding),
         stance: readLiteral(`${label} stance`, value.stance, isReviewStanceId, 'a known review stance'),
-        reason: readDiscardReason(`${label} reason`, value.reason),
+        reason: readPublicationSafeString(`${label} reason`, value.reason),
     };
 }
 

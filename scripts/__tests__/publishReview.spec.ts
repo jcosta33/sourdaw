@@ -5166,6 +5166,41 @@ describe('fresh reviewer dossier publication', () => {
         }
     );
 
+    type DossierInputDisagreement = { label: string; dossier: Record<string, unknown>; message: RegExp };
+
+    const DOSSIER_INPUT_DISAGREEMENTS: readonly DossierInputDisagreement[] = [
+        {
+            label: 'pr against the plan',
+            dossier: dossierInput({ pr: number + 1 }),
+            message: /review dossier input pr mismatch: record has 43, expected 42/u,
+        },
+        {
+            label: 'headSha against the plan',
+            dossier: dossierInput({ headSha: 'e'.repeat(40) }),
+            message: /review dossier input headSha mismatch: record has "e{40}", expected "c{40}"/u,
+        },
+        {
+            label: 'baseSha against the plan',
+            dossier: dossierInput({ baseSha: 'a'.repeat(40) }),
+            message: /review dossier input baseSha mismatch: record has "a{40}", expected "d{40}"/u,
+        },
+    ];
+
+    it.each(DOSSIER_INPUT_DISAGREEMENTS)(
+        'refuses a fresh dossier whose $label disagrees and never posts',
+        ({ dossier, message }) => {
+            const fixture = dossierFixture({ plan: riskPlan(), dossier });
+            try {
+                expect(refusalMessage(() => publishReview(number, fixture.port))).toMatch(message);
+                expect(fixture.calls).not.toContain('post');
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toEqual([]);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        }
+    );
+
     it('publishes a bundle with no risk plan exactly as before and writes no dossier', () => {
         const fixture = dossierFixture();
         try {

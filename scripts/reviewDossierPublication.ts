@@ -12,6 +12,7 @@ import { fail } from './prContract.ts';
 import {
     acceptedFindings,
     assembleReviewDossier,
+    assertPublicationSafeEvidence,
     completedStances,
     discardedDispositions,
     parseReviewDossier,
@@ -122,6 +123,13 @@ function readNonBlankString(label: string, value: unknown): string {
     return value;
 }
 
+/** Caller-authored strings are persisted into the record, so they carry the evidence-safety rules. */
+function readPublicationSafeString(label: string, value: unknown): string {
+    const text = readNonBlankString(label, value);
+    assertPublicationSafeEvidence(label, [text]);
+    return text;
+}
+
 function readPositiveInteger(label: string, value: unknown): number {
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
         fail(`${label} must be a positive safe integer, found ${describeValue(value)}`);
@@ -145,7 +153,7 @@ function readStances(value: unknown): ReviewDossierStanceInput[] {
         seen.set(stance, index);
         stances.push({
             stance,
-            reviewerModel: readNonBlankString(`${label}.reviewerModel`, entry.reviewerModel),
+            reviewerModel: readPublicationSafeString(`${label}.reviewerModel`, entry.reviewerModel),
             modelTier: readLiteral(
                 `${label}.modelTier`,
                 entry.modelTier,
@@ -214,6 +222,9 @@ function tryParsePersistedDossier(raw: unknown): ReviewDossier | undefined {
 
 function assembleFromInput(input: ReviewDossierBuildInput): ReviewDossier {
     const parsed = parseReviewDossierInput(input.raw);
+    assertSameValue('review dossier input pr', parsed.pr, input.plan.pr);
+    assertSameValue('review dossier input headSha', parsed.headSha, input.plan.headSha);
+    assertSameValue('review dossier input baseSha', parsed.baseSha, input.plan.baseSha);
     const stanceEvents = parsed.stances.map((stance): ReviewDossierEvent => ({
         kind: 'stance-completed',
         stance: stance.stance,
