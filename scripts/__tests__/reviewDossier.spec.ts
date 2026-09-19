@@ -1,0 +1,465 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+    GENESIS_DIGEST,
+    REVIEW_DOSSIER_FORMAT,
+    REVIEW_DOSSIER_MAX_BYTES,
+    REVIEW_EVIDENCE_FIELD_MAX_BYTES,
+    acceptedFindings,
+    assembleReviewDossier,
+    assertPublicationSafeEvidence,
+    completedStances,
+    discardedDispositions,
+    parseReviewDossier,
+    reviewDossierEventDigest,
+    serializeReviewDossier,
+} from '../reviewDossier.ts';
+
+import type { ReviewDossier, ReviewDossierEvent, ReviewDossierEventRecord } from '../reviewDossier.ts';
+import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
+
+const PLAN: ReviewRiskPlan = {
+    format: 'risk-plan-v1',
+    pr: 2999,
+    headSha: 'a'.repeat(40),
+    baseSha: 'b'.repeat(40),
+    riskClasses: ['small'],
+    requiredStances: ['correctness', 'test-validity'],
+    triggers: ['small:handwritten-lines<=200'],
+};
+
+const EVIDENCE_ENTRY = {
+    observable: 'the spec fails when the digest check is reverted',
+    verification: 'pnpm test:run scripts/__tests__/reviewDossier.spec.ts',
+    observed: 'one failing assertion on the digest rule',
+};
+
+const LIMITATION = 'the native audio path is not exercised on this head';
+
+const BASE_EVENTS: readonly ReviewDossierEvent[] = [
+    {
+        kind: 'stance-completed',
+        stance: 'correctness',
+        reviewerModel: 'model-correctness',
+        modelTier: 'strongest',
+        outcome: 'blocker-found',
+    },
+    { kind: 'finding-accepted', findingId: 'finding-1', path: 'scripts/reviewDossier.ts', line: 42, side: 'RIGHT' },
+    { kind: 'finding-discarded', findingId: 'finding-2', stance: 'correctness', reason: 'stale diff context' },
+    {
+        kind: 'stance-completed',
+        stance: 'test-validity',
+        reviewerModel: 'model-test-validity',
+        modelTier: 'standard',
+        outcome: 'clean',
+    },
+];
+
+const SECOND_CORRECTNESS_STANCE: ReviewDossierEvent = {
+    kind: 'stance-completed',
+    stance: 'correctness',
+    reviewerModel: 'model-correctness-second',
+    modelTier: 'economy',
+    outcome: 'clean',
+};
+
+const UNREQUIRED_STANCE: ReviewDossierEvent = {
+    kind: 'stance-completed',
+    stance: 'code-craft',
+    reviewerModel: 'model-craft',
+    modelTier: 'economy',
+    outcome: 'clean',
+};
+
+type AssembleInput = Parameters<typeof assembleReviewDossier>[0];
+
+function assembleWith(overrides: Partial<AssembleInput>): ReviewDossier {
+    return assembleReviewDossier({
+        plan: PLAN,
+        events: BASE_EVENTS,
+        discarded: [],
+        evidence: [EVIDENCE_ENTRY],
+        limitations: [LIMITATION],
+        recommendation: 'request-changes',
+        ...overrides,
+    });
+}
+
+function validDossier(): ReviewDossier {
+    return assembleWith({});
+}
+
+function cloneDossier(): ReviewDossier {
+    return structuredClone(validDossier());
+}
+
+function recordAt(dossier: ReviewDossier, index: number): ReviewDossierEventRecord {
+    const record = dossier.events[index];
+    if (record === undefined) {
+        throw new Error(`no event record at index ${index}`);
+    }
+    return record;
+}
+
+function oversizedEvidence(): { observable: string; verification: string; observed: string }[] {
+    return Array.from({ length: 30 }, (_unused, index) => ({
+        observable: 'x'.repeat(1_900),
+        verification: 'y'.repeat(1_900),
+        observed: `entry-${index}`,
+    }));
+}
+
+describe('review dossier chain', () => {
+    it('should start a contiguous zero-based chain at GENESIS_DIGEST', () => {
+        const dossier = validDossier();
+
+        expect(dossier.events.map((record) => record.sequence)).toEqual([0, 1, 2, 3]);
+        expect(recordAt(dossier, 0).previousDigest).toBe(GENESIS_DIGEST);
+        expect(recordAt(dossier, 1).previousDigest).toBe(recordAt(dossier, 0).digest);
+        expect(GENESIS_DIGEST).toBe('0'.repeat(64));
+    });
+
+    it('should bind headDigest to the last record digest', () => {
+        const dossier = validDossier();
+
+        expect(dossier.headDigest).toBe(recordAt(dossier, dossier.events.length - 1).digest);
+        expect(dossier.headDigest).not.toBe(GENESIS_DIGEST);
+    });
+
+    it('should cover the payload, sequence and predecessor in the event digest', () => {
+        const event: ReviewDossierEvent = {
+            kind: 'stance-completed',
+            stance: 'correctness',
+            reviewerModel: 'model-a',
+            modelTier: 'standard',
+            outcome: 'clean',
+        };
+        const baseline = reviewDossierEventDigest({ ...event, sequence: 0, previousDigest: GENESIS_DIGEST });
+
+        expect(baseline).toMatch(/^[0-9a-f]{64}$/u);
+        expect(reviewDossierEventDigest({ ...event, sequence: 1, previousDigest: GENESIS_DIGEST })).not.toBe(baseline);
+        expect(reviewDossierEventDigest({ ...event, sequence: 0, previousDigest: 'f'.repeat(64) })).not.toBe(baseline);
+    });
+});
+
+describe('serializeReviewDossier', () => {
+    it('should emit a stable key order, four-space indent and a trailing newline', () => {
+        const text = serializeReviewDossier(validDossier());
+
+        expect(text.endsWith('\n')).toBe(true);
+        expect(text).toContain('\n    "pr": 2999,');
+        expect(text.indexOf('"format"')).toBeLessThan(text.indexOf('"pr"'));
+        expect(text.indexOf('"pr"')).toBeLessThan(text.indexOf('"headSha"'));
+        expect(text).toContain(`"format": "${REVIEW_DOSSIER_FORMAT}"`);
+    });
+
+    it('should round-trip serialize to parse and back byte-identically', () => {
+        const text = serializeReviewDossier(validDossier());
+
+        expect(serializeReviewDossier(parseReviewDossier(JSON.parse(text)))).toBe(text);
+    });
+
+    it('should preserve event order through serialize and parse', () => {
+        const dossier = validDossier();
+        const reparsed = parseReviewDossier(JSON.parse(serializeReviewDossier(dossier)));
+
+        expect(reparsed.events.map((record) => record.digest)).toEqual(dossier.events.map((record) => record.digest));
+        expect(reparsed.events.map((record) => record.sequence)).toEqual([0, 1, 2, 3]);
+    });
+});
+
+describe('derived views', () => {
+    it('should report completed stances from stance-completed events', () => {
+        expect(completedStances(validDossier())).toEqual([
+            {
+                stance: 'correctness',
+                reviewerModel: 'model-correctness',
+                modelTier: 'strongest',
+                outcome: 'blocker-found',
+            },
+            {
+                stance: 'test-validity',
+                reviewerModel: 'model-test-validity',
+                modelTier: 'standard',
+                outcome: 'clean',
+            },
+        ]);
+    });
+
+    it('should report accepted findings from finding-accepted events', () => {
+        expect(acceptedFindings(validDossier())).toEqual([
+            { findingId: 'finding-1', path: 'scripts/reviewDossier.ts', line: 42, side: 'RIGHT' },
+        ]);
+    });
+
+    it('should report discarded dispositions from finding-discarded events', () => {
+        expect(discardedDispositions(validDossier())).toEqual([
+            { findingId: 'finding-2', stance: 'correctness', reason: 'stale diff context' },
+        ]);
+    });
+});
+
+describe('assembleReviewDossier discarded input', () => {
+    it('should append valid discarded entries after caller events in array order', () => {
+        const dossier = assembleWith({
+            discarded: [
+                { finding: 'finding-3', stance: 'correctness', reason: 'cannot reproduce on this head' },
+                { finding: 'finding-4', stance: 'test-validity', reason: 'already covered by finding-1' },
+            ],
+        });
+
+        expect(dossier.events).toHaveLength(BASE_EVENTS.length + 2);
+        expect(recordAt(dossier, BASE_EVENTS.length).kind).toBe('finding-discarded');
+        expect(discardedDispositions(dossier).map((entry) => entry.findingId)).toEqual([
+            'finding-2',
+            'finding-3',
+            'finding-4',
+        ]);
+    });
+
+    it('should name the offending discarded entry index', () => {
+        expect(() =>
+            assembleWith({
+                discarded: [
+                    { finding: 'finding-3', stance: 'correctness', reason: 'valid entry' },
+                    { finding: '', stance: 'correctness', reason: 'blank finding id' },
+                ],
+            })
+        ).toThrow(/discarded\[1\] finding/);
+    });
+
+    it('should refuse a discarded payload that is not an array', () => {
+        expect(() => assembleWith({ discarded: { finding: 'finding-3' } })).toThrow(
+            /review dossier discarded must be an array/
+        );
+    });
+});
+
+describe('assembleReviewDossier refusals', () => {
+    it('should refuse a duplicate completed stance', () => {
+        expect(() => assembleWith({ events: [...BASE_EVENTS, SECOND_CORRECTNESS_STANCE] })).toThrow(
+            /completes stance more than once: correctness/
+        );
+    });
+
+    it('should refuse a required stance with no completed record', () => {
+        const withoutCorrectness = BASE_EVENTS.filter(
+            (event) => !(event.kind === 'stance-completed' && event.stance === 'correctness')
+        );
+
+        expect(() => assembleWith({ events: withoutCorrectness })).toThrow(
+            /has no completed record for required stance: correctness/
+        );
+    });
+
+    it('should refuse a completed stance the plan did not require', () => {
+        expect(() => assembleWith({ events: [...BASE_EVENTS, UNREQUIRED_STANCE] })).toThrow(
+            /completes a stance the plan did not require: code-craft/
+        );
+    });
+
+    it('should refuse a finding id that is both accepted and discarded', () => {
+        expect(() =>
+            assembleWith({
+                discarded: [{ finding: 'finding-1', stance: 'correctness', reason: 'contradicts acceptance' }],
+            })
+        ).toThrow(/both accepts and discards finding: finding-1/);
+    });
+
+    it('should refuse a duplicate accepted finding id', () => {
+        const duplicateAcceptance: ReviewDossierEvent = {
+            kind: 'finding-accepted',
+            findingId: 'finding-1',
+            path: 'scripts/reviewDossier.ts',
+            line: 7,
+            side: 'LEFT',
+        };
+
+        expect(() => assembleWith({ events: [...BASE_EVENTS, duplicateAcceptance] })).toThrow(
+            /repeats a finding-accepted finding id: finding-1/
+        );
+    });
+
+    it('should refuse a discard under a stance the plan did not require', () => {
+        expect(() =>
+            assembleWith({ discarded: [{ finding: 'finding-8', stance: 'code-craft', reason: 'out of scope' }] })
+        ).toThrow(/discards a finding under a stance the plan did not require: code-craft/);
+    });
+
+    it('should refuse a blank discard reason', () => {
+        expect(() =>
+            assembleWith({ discarded: [{ finding: 'finding-9', stance: 'correctness', reason: '   ' }] })
+        ).toThrow(/discarded\[0\] reason must be a non-blank string/);
+    });
+
+    it('should refuse unsorted required stances', () => {
+        expect(() => assembleWith({ plan: { ...PLAN, requiredStances: ['test-validity', 'correctness'] } })).toThrow(
+            /requiredStances must be sorted/
+        );
+    });
+
+    it('should refuse unsafe evidence and name the offending field', () => {
+        const credential = `AKIA${'C'.repeat(16)}`;
+
+        expect(() => assembleWith({ evidence: [{ ...EVIDENCE_ENTRY, observed: credential }] })).toThrow(
+            /evidence\[0\]\.observed/
+        );
+    });
+
+    it('should refuse an unsafe limitation', () => {
+        expect(() => assembleWith({ limitations: ['Assistant: leaked transcript'] })).toThrow(
+            /limitations value at index 0 contains a transcript role prefix/
+        );
+    });
+
+    it('should refuse a dossier larger than the byte bound', () => {
+        expect(() => assembleWith({ evidence: oversizedEvidence() })).toThrow(
+            new RegExp(`exceeds ${REVIEW_DOSSIER_MAX_BYTES} bytes`)
+        );
+    });
+});
+
+describe('parseReviewDossier refusals', () => {
+    it('should refuse a deleted middle record', () => {
+        const mutated = cloneDossier();
+        mutated.events.splice(1, 1);
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/event 1 sequence must be 1/);
+    });
+
+    it('should refuse swapped records', () => {
+        const mutated = cloneDossier();
+        const first = recordAt(mutated, 1);
+        const second = recordAt(mutated, 2);
+        mutated.events[1] = second;
+        mutated.events[2] = first;
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/sequence must be 1/);
+    });
+
+    it('should refuse a rewritten previousDigest', () => {
+        const mutated = cloneDossier();
+        recordAt(mutated, 1).previousDigest = 'f'.repeat(64);
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/event 1 previousDigest does not chain/);
+    });
+
+    it('should refuse a rewritten payload that keeps its old digest', () => {
+        const mutated = cloneDossier();
+        const record = recordAt(mutated, 0);
+        if (record.kind !== 'stance-completed') {
+            throw new Error('fixture must start with a stance-completed record');
+        }
+        record.reviewerModel = 'model-rewritten';
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/event 0 digest does not match its payload/);
+    });
+
+    it('should refuse a rebound headSha', () => {
+        const mutated = cloneDossier();
+        mutated.headSha = 'c'.repeat(40);
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/dossierDigest does not match its payload/);
+    });
+
+    it('should refuse a headDigest that is not the last record digest', () => {
+        const mutated = cloneDossier();
+        mutated.headDigest = GENESIS_DIGEST;
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/headDigest must be/);
+    });
+
+    it('should refuse a mismatched dossierDigest', () => {
+        const mutated = cloneDossier();
+        mutated.dossierDigest = GENESIS_DIGEST;
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/dossierDigest does not match its payload/);
+    });
+
+    it('should refuse a sequence gap', () => {
+        const mutated = cloneDossier();
+        recordAt(mutated, 1).sequence = 7;
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/event 1 sequence must be 1/);
+    });
+
+    it('should refuse a wrong format', () => {
+        expect(() => parseReviewDossier({ ...cloneDossier(), format: 'dossier-v2' })).toThrow(
+            new RegExp(`format must be ${REVIEW_DOSSIER_FORMAT}`)
+        );
+    });
+
+    it('should refuse a missing field', () => {
+        const { format: _unused, ...withoutFormat } = cloneDossier();
+
+        expect(() => parseReviewDossier(withoutFormat)).toThrow(/fields must be/);
+    });
+
+    it('should refuse a non-positive pr', () => {
+        expect(() => parseReviewDossier({ ...cloneDossier(), pr: 0 })).toThrow(/pr must be a positive safe integer/);
+    });
+
+    it('should refuse a blank headSha', () => {
+        expect(() => parseReviewDossier({ ...cloneDossier(), headSha: '   ' })).toThrow(
+            /headSha must be a non-blank string/
+        );
+    });
+
+    it('should refuse unsorted required stances', () => {
+        expect(() =>
+            parseReviewDossier({ ...cloneDossier(), requiredStances: ['test-validity', 'correctness'] })
+        ).toThrow(/requiredStances must be sorted/);
+    });
+
+    it('should refuse a dossier larger than the byte bound', () => {
+        const mutated = cloneDossier();
+        mutated.evidence = oversizedEvidence();
+
+        expect(() => parseReviewDossier(mutated)).toThrow(new RegExp(`exceeds ${REVIEW_DOSSIER_MAX_BYTES} bytes`));
+    });
+
+    it('should accept a bounded, safe dossier', () => {
+        expect(() => parseReviewDossier(validDossier())).not.toThrow();
+        expect(Buffer.byteLength(serializeReviewDossier(validDossier()), 'utf8')).toBeLessThanOrEqual(
+            REVIEW_DOSSIER_MAX_BYTES
+        );
+    });
+});
+
+const UNSAFE_FIXTURES: { name: string; value: string }[] = [
+    { name: 'a gh-prefixed GitHub token', value: `ghp_${'A'.repeat(24)}` },
+    { name: 'a fine-grained GitHub token', value: `github_pat_${'B'.repeat(24)}` },
+    { name: 'an AWS access key id', value: `AKIA${'C'.repeat(16)}` },
+    { name: 'a private key header', value: '-----BEGIN RSA PRIVATE KEY-----' },
+    { name: 'a JSON web token', value: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl' },
+    { name: 'a bearer credential', value: 'Bearer ghp_abcdefghijklmnop' },
+    { name: 'a serialized assistant turn', value: '{"role": "assistant", "content": "review"}' },
+    { name: 'a serialized user turn', value: '{"role":"user","content":"review"}' },
+    { name: 'a Human transcript line', value: 'Human: please review' },
+    { name: 'an Assistant transcript line', value: 'Assistant: reviewed' },
+    { name: 'a System transcript line', value: 'System: instructions' },
+    { name: 'a session marker', value: '⏺ Read scripts/reviewDossier.ts' },
+    { name: 'a session tag', value: '<session id="1">' },
+    { name: 'a multiline value', value: 'first line\nsecond line' },
+    { name: 'an over-long value', value: 'x'.repeat(REVIEW_EVIDENCE_FIELD_MAX_BYTES + 1) },
+    { name: 'an edge-untrimmed value', value: ' padded value ' },
+    { name: 'a blank value', value: '   ' },
+];
+
+describe('assertPublicationSafeEvidence', () => {
+    it.each(UNSAFE_FIXTURES)('should refuse $name and name the field', ({ value }) => {
+        expect(() => assertPublicationSafeEvidence('evidence[0].observed', [value])).toThrow(
+            /evidence\[0\]\.observed value at index 0/
+        );
+    });
+
+    it('should name the offending index of a value list', () => {
+        expect(() => assertPublicationSafeEvidence('limitations', ['safe value', `ghp_${'A'.repeat(24)}`])).toThrow(
+            /limitations value at index 1/
+        );
+    });
+
+    it('should pass a bounded safe value', () => {
+        expect(() => assertPublicationSafeEvidence('evidence[0].observed', [EVIDENCE_ENTRY.observed])).not.toThrow();
+    });
+});
