@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { dbToGain } from '#/utils/audioLevelLaw';
+import { dbToGain, gainToDb } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type Clip, type Track, createTrack } from '../../models/Track';
+import { clampTrackGain } from '../../useCases/setTrackGainPan/clampTrackGain';
 import { projectTrackThroughPriorBatchActions } from '../projectTrackThroughPriorBatchActions';
 
 function clip(id: string, trackId: string): Clip {
@@ -103,6 +104,22 @@ describe('projectTrackThroughPriorBatchActions', () => {
         ]);
 
         expect(projected.clips.find((candidate) => candidate.id === 'clip-a')?.gain).toBeCloseTo(dbToGain(-7), 5);
+    });
+
+    it('compounds two setTrackGain actions in the same batch against the clamped projected gain', () => {
+        // The writer clamps a resolved gain on write, so the projection must clamp
+        // it too: an unclamped `gain: 3` would plan the second action's `deltaDb`
+        // against a figure the store could never actually hold.
+        const track = { ...trackWithClips('track-1', []), gain: 0.8 };
+
+        const projected = projectFor(track, [
+            { type: 'setTrackGain', payload: { trackId: 'track-1', gain: 3, expectedGain: track.gain } },
+            { type: 'setTrackGain', payload: { trackId: 'track-1', deltaDb: -6, expectedGain: clampTrackGain(3) } },
+        ]);
+
+        const clamped = clampTrackGain(3);
+        expect(clamped).not.toBeCloseTo(3, 5);
+        expect(projected.gain).toBeCloseTo(dbToGain(gainToDb(clamped) - 6), 6);
     });
 
     it('projects the exact earlier automation mode for later expected-state validation', () => {

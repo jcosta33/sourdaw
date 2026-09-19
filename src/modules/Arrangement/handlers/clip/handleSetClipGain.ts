@@ -84,24 +84,34 @@ export const handleSetClipGain = createHandler<'setClipGain'>({
                 ? getPlannedTrackState(context, clip.trackId)?.clips.find((candidate) => candidate.id === clip.id)
                 : undefined;
         const previousClip = plannedClip ?? clip;
-        const requested = previousClip === undefined ? null : requestedGain(alpha, previousClip.gain);
+        if (previousClip === undefined) {
+            return { label: 'Set clip gain', inverseAction: null };
+        }
+        const requested = requestedGain(alpha, previousClip.gain);
+        if (!requested.ok) {
+            return { label: 'Set clip gain', inverseAction: null };
+        }
+        // Both replay legs predict through the same clamp the writer uses, the
+        // same reason `handleSetTrackGain` freezes `restored`/`written` once: a
+        // project file can hold a clip gain outside [0, 2] (an older law, a hand
+        // edit), and an inverse or redo that promises that raw figure back can
+        // never validate once the writer clamps it, conflicting forever.
+        const restored = clampClipGain(previousClip.gain);
+        const written = clampClipGain(requested.linear);
         return {
             label: 'Set clip gain',
             // The inverse expects the gain this action is about to write, clamped the same way the
             // write clamps it. That makes the undo compensable: it refuses instead of clobbering a
             // gain something else moved after the forward action landed. It restores the stored
             // amplitude linearly whatever form the forward action used.
-            inverseAction:
-                previousClip && requested?.ok
-                    ? {
-                          type: 'setClipGain',
-                          payload: {
-                              clipId: previousClip.id,
-                              gain: previousClip.gain,
-                              expectedGain: clampClipGain(requested.linear),
-                          },
-                      }
-                    : null,
+            inverseAction: {
+                type: 'setClipGain',
+                payload: {
+                    clipId: previousClip.id,
+                    gain: restored,
+                    expectedGain: written,
+                },
+            },
             // Without this, `redo.ts` would replay the forward action's own
             // `deltaDb`/`gainDb`, re-resolving it against whatever gain the clip
             // holds at redo time instead of the gain this `describe` actually
@@ -109,17 +119,14 @@ export const handleSetClipGain = createHandler<'setClipGain'>({
             // expects, conflicting on every later undo. Stated linearly, the same
             // way the inverse is, so replay always lands exactly where forward
             // execution did.
-            redoAction:
-                previousClip && requested?.ok
-                    ? {
-                          type: 'setClipGain',
-                          payload: {
-                              clipId: previousClip.id,
-                              gain: clampClipGain(requested.linear),
-                              expectedGain: previousClip.gain,
-                          },
-                      }
-                    : undefined,
+            redoAction: {
+                type: 'setClipGain',
+                payload: {
+                    clipId: previousClip.id,
+                    gain: written,
+                    expectedGain: restored,
+                },
+            },
         };
     },
     undoable: true,
