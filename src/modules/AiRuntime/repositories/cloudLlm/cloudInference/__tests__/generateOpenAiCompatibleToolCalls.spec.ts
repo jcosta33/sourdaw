@@ -190,9 +190,9 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             throw new Error('Expected a JSON request body');
         }
         const body = JSON.parse(request.body) as {
-            tools: Array<{ strict?: boolean; function: { parameters: Record<string, unknown> } }>;
+            tools: Array<{ function: { strict?: boolean; parameters: Record<string, unknown> } }>;
         };
-        expect(body.tools[0]?.strict).toBe(true);
+        expect(body.tools[0]?.function.strict).toBe(true);
         expect(body.tools[0]?.function.parameters).not.toHaveProperty(['properties', 'bpm', 'minimum']);
         expect(result.strictToolSchemas).toBe(true);
         expect(result.usage).toEqual({
@@ -240,9 +240,10 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             throw new Error('Expected a JSON request body');
         }
         const body = JSON.parse(request.body) as {
-            tools: Array<{ strict?: boolean; function: { parameters: Record<string, unknown> } }>;
+            tools: Array<{ function: { strict?: boolean; parameters: Record<string, unknown> } }>;
         };
-        expect(body.tools[0]?.strict).toBeUndefined();
+        expect(body.tools[0]?.function.strict).toBeUndefined();
+        expect(body.tools[0]).not.toHaveProperty('strict');
         expect(body.tools[0]?.function.parameters).toHaveProperty(['properties', 'bpm', 'minimum'], 20);
         expect(result.strictToolSchemas).toBe(false);
     });
